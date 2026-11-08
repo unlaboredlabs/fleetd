@@ -26,7 +26,6 @@ import {
 } from "./types.ts";
 
 export const FIXTURE_ORDER = "W8";
-export const FIXTURE_NOW = Date.parse("2026-10-18T10:30:00.000Z");
 const MIN = 60_000;
 const PAGES = ["about", "pricing", "contact"] as const;
 

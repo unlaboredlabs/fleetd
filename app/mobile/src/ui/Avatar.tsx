@@ -14,7 +14,7 @@ import { SessionContext } from "../hubContext";
 import { useTheme } from "../theme";
 
 /** "#RRGGBB" mixed toward white by `amount` (0 to 1). */
-export const lighter = (hex: string, amount: number): string => {
+const lighter = (hex: string, amount: number): string => {
   const n = Number.parseInt(hex.slice(1), 16);
   const mix = (c: number) => Math.round(c + (255 - c) * amount);
   return `rgb(${String(mix((n >> 16) & 255))},${String(mix((n >> 8) & 255))},${String(mix(n & 255))})`;

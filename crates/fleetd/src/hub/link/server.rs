@@ -1203,14 +1203,9 @@ impl NodeLinkServer {
         }
     }
 
-    /// Runs one node link until the socket ends (the framework's node WebSocket route calls this). Never fails:
-    /// refusals close the socket with a NodeLinkClose code.
-    pub async fn handle(self: &Arc<Self>, socket: WebSocket) {
-        self.handle_counted(socket, None).await
-    }
-
-    /// [`Self::handle`], with the count of bytes its connection read (see `hub::http`), which keeps a link whose frame
-    /// is still coming in alive.
+    /// Runs one node link until the socket ends (the framework's node WebSocket route calls this), with the count of
+    /// bytes its connection read (see `hub::http`), which keeps a link whose frame is still coming in alive. Never
+    /// fails: refusals close the socket with a NodeLinkClose code.
     pub async fn handle_counted(
         self: &Arc<Self>,
         socket: WebSocket,

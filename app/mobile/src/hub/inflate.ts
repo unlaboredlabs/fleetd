@@ -7,7 +7,7 @@ import { Inflate, Z_SYNC_FLUSH } from "pako";
 /** The `auth` and `ready` feature that says the sender reads compressed frames. */
 export const DEFLATE_FEATURE = "deflate";
 /** One message never inflates past this: a frame that would is the link's fault, which is dropped. */
-export const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
+const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
 
 const TAIL = new Uint8Array([0, 0, 0xff, 0xff]);
 

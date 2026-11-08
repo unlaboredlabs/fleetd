@@ -219,13 +219,9 @@ pub async fn run_confined(run: ConfinedRun<'_>, roots: &[String]) -> RunOutcome 
 }
 
 /// Runs one `cmd_check` and always answers it. `exitCode` is null when the command timed out, died of a signal,
-/// could not start, or was refused; `outputTail` then says which.
-pub async fn run_cmd_check(frame: CmdCheck, roots: &[String]) -> CmdResult {
-    run_cmd_check_from(frame, roots, None).await
-}
-
-/// `run_cmd_check` on a node whose home is `home`: the command gets it as `FLEETD_NODE_HOME`, so what it keeps (the
-/// merge train's build caches) stays in the node's own home, wherever `--home` put it.
+/// could not start, or was refused; `outputTail` then says which. On a node whose home is `home`, the command gets it
+/// as `FLEETD_NODE_HOME`, so what it keeps (the merge train's build caches) stays in the node's own home, wherever
+/// `--home` put it.
 pub async fn run_cmd_check_from(
     frame: CmdCheck,
     roots: &[String],
@@ -321,19 +317,21 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), workspace.join("escape")).unwrap();
         let roots = vec![root.path().to_string_lossy().into_owned()];
 
-        let ok = run_cmd_check(
+        let ok = run_cmd_check_from(
             check(
                 &workspace,
                 &["sh", "-c", "echo out; echo err >&2; exit 3"],
                 30,
             ),
             &roots,
+            None,
         )
         .await;
         assert_eq!(parts(&ok), (Some(3), "out\nerr\n", false));
-        let literal = run_cmd_check(
+        let literal = run_cmd_check_from(
             check(&workspace, &["echo", "$HOME; touch pwned"], 30),
             &roots,
+            None,
         )
         .await;
         assert_eq!(literal.output_tail.as_str(), "$HOME; touch pwned\n");
@@ -345,9 +343,10 @@ mod tests {
             workspace.join("escape"),
             workspace.join("..").join(".."),
         ] {
-            let refused = run_cmd_check(
+            let refused = run_cmd_check_from(
                 check(&cwd, &["touch", marker.to_str().unwrap()], 30),
                 &roots,
+                None,
             )
             .await;
             assert_eq!((refused.exit_code, refused.timed_out), (None, false));
@@ -365,23 +364,37 @@ mod tests {
             );
         }
         assert!(!marker.exists());
-        let missing = run_cmd_check(check(&workspace.join("missing"), &["true"], 30), &roots).await;
+        let missing = run_cmd_check_from(
+            check(&workspace.join("missing"), &["true"], 30),
+            &roots,
+            None,
+        )
+        .await;
         assert!(
             missing
                 .output_tail
                 .contains("does not exist on this machine")
         );
-        let file = run_cmd_check(check(&workspace.join("README.md"), &["true"], 30), &roots).await;
+        let file = run_cmd_check_from(
+            check(&workspace.join("README.md"), &["true"], 30),
+            &roots,
+            None,
+        )
+        .await;
         assert!(file.output_tail.contains("is not a directory"));
-        let unknown =
-            run_cmd_check(check(&workspace, &["no-such-command-fleetd"], 30), &roots).await;
+        let unknown = run_cmd_check_from(
+            check(&workspace, &["no-such-command-fleetd"], 30),
+            &roots,
+            None,
+        )
+        .await;
         assert_eq!(unknown.exit_code, None);
         assert_eq!(
             unknown.output_tail.as_str(),
             "could not start no-such-command-fleetd: spawn no-such-command-fleetd ENOENT"
         );
 
-        let long = run_cmd_check(
+        let long = run_cmd_check_from(
             check(
                 &workspace,
                 &[
@@ -392,6 +405,7 @@ mod tests {
                 30,
             ),
             &roots,
+            None,
         )
         .await;
         assert_eq!(long.output_tail.len(), OUTPUT_TAIL_MAX);
@@ -413,14 +427,14 @@ mod tests {
         );
         let ready = tokio::task::spawn_blocking(move || std::fs::read_to_string(fifo).unwrap());
         let (result, pid) = tokio::join!(
-            run_cmd_check(check(root.path(), &["sh", "-c", &script], 1), &roots),
+            run_cmd_check_from(check(root.path(), &["sh", "-c", &script], 1), &roots, None),
             ready
         );
         assert_eq!(
             parts(&result),
             (None, "started\n[fleetd: killed after 1 s]", true)
         );
-        // run_cmd_check returns only after the output pipes closed, and the background sleep held them: it has
+        // run_cmd_check_from returns only after the output pipes closed, and the background sleep held them: it has
         // been killed and is exiting, whoever reaps it.
         let pid: i32 = pid.unwrap().trim().parse().unwrap();
         assert!(dead(pid));

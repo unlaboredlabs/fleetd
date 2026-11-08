@@ -59,7 +59,6 @@ pub struct Session {
     pub started_at: Timestamp,
     pub start: Instant,
     pub dir: PathBuf,
-    pub backend: fleetd_contracts::browser::DesktopBackend,
     pub kind: SessionKind,
     /// Taken out of the lock for each use, so a long agent-desktop command never holds up the session's end: what it
     /// was lent goes once the last use is done.
@@ -92,7 +91,6 @@ pub struct Opened {
     /// The agent session's secrets (its project's, its order's, its MCP servers'), scrubbed from the action log.
     pub secrets: Secrets,
     pub kind: SessionKind,
-    pub backend: fleetd_contracts::browser::DesktopBackend,
     /// A Mac screen session that starts without the lease.
     pub observing: bool,
 }
@@ -110,7 +108,6 @@ impl Session {
             started_at: Timestamp(crate::node::util::now_iso()),
             start: Instant::now(),
             dir: opened.dir,
-            backend: opened.backend,
             kind: opened.kind,
             lent: Mutex::new(Some(Arc::from(lent))),
             screen,

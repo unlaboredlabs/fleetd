@@ -180,13 +180,6 @@
   min-width: 0;
 }
 
-.fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: 440px;
-}
-
 .test {
   display: flex;
   flex-wrap: wrap;

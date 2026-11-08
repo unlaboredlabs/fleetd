@@ -159,8 +159,6 @@ pub struct NodeCommandError {
     /// "offline", "lost", "no_reply", "invalid", "not_found" or "failed".
     pub reason: String,
     pub message: String,
-    /// The node's own fix, when it gave one.
-    pub fix: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]

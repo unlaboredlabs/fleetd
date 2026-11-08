@@ -1,6 +1,6 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
 // rules, the chat reducers, whose a project is and the tools it calls, the Add project flow, a project's allowed
-// profiles and worktrees, its approvals', payments', Telegram's and linked hubs' words, the prose diff a skill's
+// profiles, its approvals', payments', Telegram's and linked hubs' words, the prose diff a skill's
 // history shows, the Update button's run and its wording, the characters an approval card marks, the state glyph's
 // frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that import no
 // packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks when they
@@ -20,14 +20,12 @@ export type {
   IconFace,
   ProjectIcon,
   ChatReplyTo,
-  AppServerMessage,
   ChatDelta,
   ChatHistoryOutput,
   ChatMessage,
   ChatMessageEventData,
   CommandApprovalItem,
   FleetStatus,
-  GatedRunSpec,
   HubEvent,
   HumanRequest,
   ProjectChatState,
@@ -36,7 +34,6 @@ export type {
   ToolInput,
   ToolName,
   ToolOutput,
-  ToolPermission,
   ToolPreview,
   UpdateRun,
   AgentRow,
@@ -46,12 +43,10 @@ export type {
   ProfilesListOutput,
   ProjectSettings,
   TodoItem,
-  AutoApproved,
   NaviApprovalMode as ApprovalMode,
   NaviApprovalsOutput as ApprovalsOutput,
   NaviPurchasesOutput as PurchasesOutput,
   OnePasswordCardsOutput,
-  PurchaseLogEntry,
   TelegramBridge,
   HubLink,
   SkillOrigin,
@@ -63,9 +58,9 @@ export type {
   BrowserSession,
   BrowserSessionEventData,
 } from "../../desktop/src/shared/contracts";
-export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, PROTOCOL_VERSION } from "../../desktop/src/shared/contracts";
+export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
-export { hubOrigin, normalizeCode, protocolFit, type PairFailure } from "../../desktop/src/shared/pairing";
+export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
 export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
@@ -79,26 +74,22 @@ export {
   rows as foundRows,
   target,
   type Discovery,
-  type FailAction,
-  type Failure,
   type Found,
   type Ready,
   type Request,
-  type Worker,
 } from "../../desktop/src/renderer/screens/projects/discovery";
-export { initialAdd, requestWhat, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
+export { initialAdd, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { checkerLine, FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { statusWords as telegramWords } from "../../desktop/src/renderer/screens/settings/telegramModel";
 export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
-export { unsavedWorktrees } from "../../desktop/src/renderer/screens/settings/projectModel";
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
-export { updatesView, type Line, type PartLine, type UpdatesView } from "../../desktop/src/renderer/screens/updates/model";
+export { updatesView, type Line, type PartLine } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
-export { cellFrames, CELLS, GRAIN, GRAIN_BEATS, LEVELS, litOn, phaseOf, RING, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
+export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
 export {
   adminNames,
@@ -111,7 +102,6 @@ export {
   pickHost,
   slotLine,
   whyOff,
-  type HostChoice,
   type OffReason,
   type ScreenKind,
 } from "../../desktop/src/renderer/screens/sessions/pickScreen";

@@ -28,7 +28,7 @@ export const loadPaired = async (): Promise<Paired | null> => {
   }
 };
 
-export const savePaired = (paired: Paired): Promise<void> => SecureStore.setItemAsync(KEY, JSON.stringify(paired), HUB);
+const savePaired = (paired: Paired): Promise<void> => SecureStore.setItemAsync(KEY, JSON.stringify(paired), HUB);
 
 export const forgetPaired = (): Promise<void> => SecureStore.deleteItemAsync(KEY);
 
@@ -64,7 +64,7 @@ export const loadPushDevice = (): Promise<string | null> => SecureStore.getItemA
  * written each time Mute changes. The extension reads it once the notification-actions change (W182, T1251) lands;
  * until then Mute only greys the chat's count in the app, and its notifications still alert.
  */
-export const MUTED = "fleetd.muted-chats";
+const MUTED = "fleetd.muted-chats";
 
 export const saveMuted = (keys: readonly string[]): Promise<void> => SecureStore.setItemAsync(MUTED, JSON.stringify(keys), PUSH);
 

@@ -133,18 +133,6 @@ export const shopNotFound = (at?: Point): string =>
 const PAY = "#3d3dc4";
 const payLogo = (x: number, y: number) => rect(x, y - 24, 30, 30, PAY, 8) + text(x + 42, y, "Example Pay", 22, "#1a1a2e", 700);
 
-export const paySignIn = (filled: boolean, at?: Point): string =>
-  svg(
-    rect(0, 0, W, H, "#f5f6fb") +
-      rect(400, 120, 480, 480, "#fff", 12, "#e3e4ee") +
-      payLogo(440, 190) +
-      text(440, 250, "Sign in to your dashboard", 22, "#1a1a2e", 700) +
-      field(440, 290, 400, "Email", filled ? "finance" : "") +
-      field(440, 380, 400, "Password", filled ? "••••••••••••••" : "") +
-      button(440, 480, 400, "Continue", PAY),
-    at,
-  );
-
 export const payCode = (digits: string, at?: Point): string => {
   let boxes = "";
   for (let i = 0; i < 6; i++) {

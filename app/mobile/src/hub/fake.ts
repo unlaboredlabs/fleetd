@@ -1,7 +1,7 @@
 // A hub on the other end of the client, for tests: records what the client sends and plays the hub's frames.
 import type { ConnectionEvents, Transport } from "./client";
 
-export interface FakeLink {
+interface FakeLink {
   readonly url: string;
   readonly sent: Array<Record<string, unknown>>;
   closed: boolean;
