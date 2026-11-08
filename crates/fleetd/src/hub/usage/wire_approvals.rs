@@ -25,7 +25,6 @@ fn node_error(e: crate::hub::link::commands::NodeCommandError) -> NodeCommandErr
         }
         .into(),
         message: e.message,
-        fix: None,
     }
 }
 
@@ -35,7 +34,6 @@ fn frame<T: DeserializeOwned>(mut input: Value) -> Result<T, NodeCommandError> {
     serde_json::from_value(input).map_err(|e| NodeCommandError {
         reason: "invalid".into(),
         message: e.to_string(),
-        fix: None,
     })
 }
 
@@ -56,7 +54,6 @@ fn machine_id(m: &str) -> Result<fleetd_contracts::ids::MachineId, NodeCommandEr
     convert(&m).ok_or_else(|| NodeCommandError {
         reason: "invalid".into(),
         message: format!("{m} is not a machine id"),
-        fix: None,
     })
 }
 
@@ -115,14 +112,12 @@ impl ApprovalNodes for OpsPorts {
                 return Err(NodeCommandError {
                     reason: "offline".into(),
                     message: format!("{m}'s node is not linked to the hub"),
-                    fix: None,
                 });
             }
             if link.node_lacks(&machine, fleetd_contracts::node_link::CAP_GATED_RESUME) {
                 return Err(NodeCommandError {
                     reason: "old".into(),
                     message: format!("{m}'s node is too old to keep a command's result"),
-                    fix: None,
                 });
             }
             let input =
@@ -155,7 +150,6 @@ impl ApprovalNodes for OpsPorts {
             let r = r.ok_or_else(|| NodeCommandError {
                 reason: "invalid".into(),
                 message: "not a machine and thread id".into(),
-                fix: None,
             })?;
             self.hub()
                 .executors
@@ -176,15 +170,14 @@ fn thread_ref(m: &str, t: &str) -> Option<ThreadRef> {
 }
 
 fn executor_error(e: ExecutorError) -> NodeCommandError {
-    let (reason, fix) = match &e {
-        ExecutorError::MachineNotConnected { .. } => ("offline", None),
-        ExecutorError::ThreadNotFound { .. } => ("not_found", None),
-        ExecutorError::NodeRequestFailed { fix, .. } => ("failed", fix.clone()),
+    let reason = match &e {
+        ExecutorError::MachineNotConnected { .. } => "offline",
+        ExecutorError::ThreadNotFound { .. } => "not_found",
+        ExecutorError::NodeRequestFailed { .. } => "failed",
     };
     NodeCommandError {
         reason: reason.into(),
         message: e.to_string(),
-        fix,
     }
 }
 

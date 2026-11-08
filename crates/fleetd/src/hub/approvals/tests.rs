@@ -522,7 +522,6 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a's node is not linked to the hub".into(),
-        fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
     fake.woken_times(2).await;
@@ -816,7 +815,6 @@ async fn a_command_whose_link_dropped_reports_its_kept_result_and_never_runs_aga
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "lost".into(),
         message: "the link to lab-a's node dropped while the command ran".into(),
-        fix: None,
     });
     *fake.linked.lock().unwrap() = true;
     *fake.resume_reply.lock().unwrap() = Ok(GatedOutcome {
@@ -853,7 +851,6 @@ async fn a_command_whose_link_dropped_reports_its_kept_result_and_never_runs_aga
     *fake.resume_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "old".into(),
         message: "lab-a's node is too old to keep a command's result".into(),
-        fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
     fake.woken_times(3).await;
@@ -1152,7 +1149,6 @@ async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_
     *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a is offline".into(),
-        fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
     let q2 = fake.request("Q2");
