@@ -333,7 +333,7 @@ fn store_refusal(e: RequestStoreError) -> ApprovalRefused {
         RequestStoreError::Invalid(why) => refuse("invalid", why, None),
         RequestStoreError::Moved { id, now } => refuse(
             "invalid",
-            format!("{id} is already {}.", now.as_str()),
+            format!("{}.", store::settled(&id, now)),
             Some("Nothing to do: someone settled it first."),
         ),
         RequestStoreError::Store(error) => {
@@ -749,7 +749,7 @@ impl Approvals {
         if r.state != RequestState::Open {
             return Err(refuse(
                 "invalid",
-                format!("{id} is already {}.", r.state.as_str()),
+                format!("{}.", store::settled(&id, r.state)),
                 Some("Nothing to enter: it is settled."),
             ));
         }
@@ -982,7 +982,7 @@ impl Approvals {
         if r.state != RequestState::Open {
             return Err(refuse(
                 "invalid",
-                format!("{} is already {}.", r.request_id, r.state.as_str()),
+                format!("{}.", store::settled(&r.request_id, r.state)),
                 Some("Nothing to answer: it is settled."),
             ));
         }
@@ -1063,7 +1063,7 @@ impl Approvals {
         if r.state != RequestState::Open {
             return Err(refuse(
                 "invalid",
-                format!("{} is already {}.", r.request_id, r.state.as_str()),
+                format!("{}.", store::settled(&r.request_id, r.state)),
                 Some("Nothing to withdraw."),
             ));
         }

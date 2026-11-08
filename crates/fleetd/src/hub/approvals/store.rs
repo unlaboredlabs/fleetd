@@ -25,6 +25,15 @@ pub struct NewRequest {
     pub at_ms: i64,
 }
 
+/// What a request already came to, for a change that finds it settled: "Q1 is already approved", "Q1 already ran".
+pub fn settled(id: &str, state: RequestState) -> String {
+    match state {
+        RequestState::Ran => format!("{id} already ran"),
+        RequestState::Failed => format!("{id} already ran, and failed"),
+        state => format!("{id} is already {}", state.as_str()),
+    }
+}
+
 /// Why a write was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum RequestStoreError {
@@ -33,7 +42,7 @@ pub enum RequestStoreError {
     #[error("{0}")]
     Invalid(String),
     /// The request was no longer in the state the change expected: someone else changed it first.
-    #[error("{id} is already {}", .now.as_str())]
+    #[error("{}", settled(.id, *.now))]
     Moved { id: String, now: RequestState },
     #[error(transparent)]
     Store(#[from] StoreError),

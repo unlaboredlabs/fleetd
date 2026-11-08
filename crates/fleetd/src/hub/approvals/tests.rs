@@ -466,7 +466,7 @@ async fn approve_runs_the_stored_command_and_wakes_the_lead_with_its_outcome() {
     let again = a.answer(&person(), "Q1", true, None).await.unwrap_err();
     assert_eq!(
         (again.code.as_str(), again.message.as_str()),
-        ("invalid", "Q1 is already ran.")
+        ("invalid", "Q1 already ran.")
     );
     assert_eq!(
         fake.runs.lock().unwrap().len(),
