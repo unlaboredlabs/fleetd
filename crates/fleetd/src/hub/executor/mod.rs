@@ -354,9 +354,10 @@ struct Slot {
     supervisor: Option<JoinHandle<()>>,
     /// The supervisor's inbox: machine events, applied in order.
     events: Option<mpsc::UnboundedSender<MachineEventFrame>>,
-    /// Set once the node accepted the subscription on the current link.
-    live: bool,
-    /// When `live` was last set, in ms.
+    /// The link whose subscription the node accepted, while its supervisor runs. Only that link's supervisor clears
+    /// it: an older one ending late leaves a newer link's alone.
+    live_link: Option<u64>,
+    /// When `live_link` was last set, in ms.
     live_since_ms: i64,
     /// Once the node said the current link's replay is out (`caught_up`).
     caught_up: Option<CaughtUp>,
@@ -566,28 +567,37 @@ fn from_session_error(
     }
 }
 
-/// Clears the slot's live flag and its thread follows when a supervisor ends, however it ends.
+/// Clears the slot's live link and its thread follows when a supervisor ends, however it ends, while the slot still
+/// names its link: one that was slow to stop after a newer link went live leaves that link live.
 struct LiveGuard {
     executors: Arc<Executors>,
     machine_id: MachineId,
+    link_id: u64,
 }
 
 impl Drop for LiveGuard {
     fn drop(&mut self) {
         let mut machines = self.executors.machines.lock().unwrap();
-        if let Some(slot) = machines.get_mut(&self.machine_id) {
-            slot.live = false;
-            for (_, w) in slot.watches.drain() {
-                if let Some(task) = w.task.lock().unwrap().take() {
-                    task.abort();
-                }
-                w.settle(Ready::Failed(ExecutorError::MachineNotConnected {
-                    machine_id: self.machine_id.clone(),
-                }));
-            }
+        if let Some(slot) = machines.get_mut(&self.machine_id)
+            && slot.live_link == Some(self.link_id)
+        {
+            slot.live_link = None;
+            drop_watches(slot, &self.machine_id);
+            drop(machines);
+            self.executors.set_live(&self.machine_id, false);
         }
-        drop(machines);
-        self.executors.set_live(&self.machine_id, false);
+    }
+}
+
+/// Ends the slot's thread follows: they were made on a link that is no longer live.
+fn drop_watches(slot: &mut Slot, machine_id: &MachineId) {
+    for (_, w) in slot.watches.drain() {
+        if let Some(task) = w.task.lock().unwrap().take() {
+            task.abort();
+        }
+        w.settle(Ready::Failed(ExecutorError::MachineNotConnected {
+            machine_id: machine_id.clone(),
+        }));
     }
 }
 
@@ -804,13 +814,31 @@ impl Executors {
 
     /// Takes over the machine's link and (re)subscribes. Idempotent for the same link.
     pub async fn attach(self: &Arc<Self>, machine_id: &MachineId, sessions: NodeSessions) {
+        self.take_link(machine_id, sessions, false).await;
+    }
+
+    /// Subscribes again on a link that is up but not live (its heartbeats arrive, `hub/link`): its supervisor is
+    /// replaced by a new one. Does nothing once the link is live, or after a newer link took over.
+    pub async fn reattach(self: &Arc<Self>, machine_id: &MachineId, sessions: NodeSessions) {
+        self.take_link(machine_id, sessions, true).await;
+    }
+
+    async fn take_link(
+        self: &Arc<Self>,
+        machine_id: &MachineId,
+        sessions: NodeSessions,
+        again: bool,
+    ) {
         let (tx, rx) = mpsc::unbounded_channel();
         let link_id = sessions.link_id;
         let old = {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines.entry(machine_id.clone()).or_default();
             // Two links of one machine can get here in either order: an older one coming late must not take over.
-            if slot.link.as_ref().is_some_and(|l| l.link_id >= link_id) {
+            let current = slot.link.as_ref().map(|l| l.link_id);
+            if current.is_some_and(|c| c > link_id)
+                || (current == Some(link_id) && (!again || slot.live_link == Some(link_id)))
+            {
                 return;
             }
             slot.link = Some(sessions);
@@ -830,41 +858,60 @@ impl Executors {
         {
             let this = self.clone();
             let id = machine_id.clone();
-            slot.supervisor = Some(tokio::spawn(async move { this.supervise(id, rx).await }));
+            slot.supervisor = Some(tokio::spawn(async move {
+                this.supervise(id, link_id, rx).await
+            }));
         }
     }
 
     /// Drops the link. The machine's shell state is kept, so a later attach resumes from its cursor.
     pub async fn detach(&self, machine_id: &MachineId) {
-        self.set_runner_ready(machine_id, false);
-        let task = self
-            .machines
-            .lock()
-            .unwrap()
-            .get_mut(machine_id)
-            .and_then(|s| {
-                s.link = None;
-                s.events = None;
-                s.pending.clear();
-                s.supervisor.take()
-            });
+        self.drop_link(machine_id, None).await;
+    }
+
+    /// Drops the link only if it is still `link_id` (a newer link may have taken over).
+    pub async fn detach_link(&self, machine_id: &MachineId, link_id: u64) {
+        self.drop_link(machine_id, Some(link_id)).await;
+    }
+
+    /// Checks and clears under one lock, so a newer link that attaches meanwhile is never the one dropped.
+    async fn drop_link(&self, machine_id: &MachineId, only: Option<u64>) {
+        let task = {
+            let mut machines = self.machines.lock().unwrap();
+            let Some(slot) = machines.get_mut(machine_id) else {
+                if only.is_none() {
+                    self.set_runner_ready(machine_id, false);
+                }
+                return;
+            };
+            if only.is_some() && slot.link.as_ref().map(|l| l.link_id) != only {
+                return;
+            }
+            // Under the lock too: a newer link can only attach, and be announced ready, after this.
+            self.set_runner_ready(machine_id, false);
+            slot.link = None;
+            slot.events = None;
+            slot.pending.clear();
+            slot.supervisor.take()
+        };
         if let Some(task) = task {
             task.abort();
             let _ = task.await;
         }
     }
 
-    /// Drops the link only if it is still `link_id` (a newer link may have taken over).
-    pub async fn detach_link(&self, machine_id: &MachineId, link_id: u64) {
-        let current = self
-            .machines
-            .lock()
-            .unwrap()
-            .get(machine_id)
-            .and_then(|s| s.link.as_ref().map(|l| l.link_id));
-        if current == Some(link_id) {
-            self.detach(machine_id).await;
+    /// What the 2026-11-08 outage left: the link up and heartbeating, its executor not live.
+    #[cfg(test)]
+    pub(crate) fn test_go_dark(&self, machine_id: &MachineId) {
+        if let Some(slot) = self.machines.lock().unwrap().get_mut(machine_id) {
+            slot.live_link = None;
         }
+        self.set_live(machine_id, false);
+    }
+
+    /// Whether the slot's link is the one its node accepted the subscription on.
+    fn slot_live(s: &Slot) -> bool {
+        s.live_link.is_some() && s.link.as_ref().map(|l| l.link_id) == s.live_link
     }
 
     pub fn is_connected(&self, machine_id: &MachineId) -> bool {
@@ -872,7 +919,7 @@ impl Executors {
             .lock()
             .unwrap()
             .get(machine_id)
-            .is_some_and(|s| s.live && s.link.is_some())
+            .is_some_and(Self::slot_live)
     }
 
     /// When the machine's current link went live, in ms; None while it has no live link.
@@ -881,7 +928,7 @@ impl Executors {
             .lock()
             .unwrap()
             .get(machine_id)
-            .filter(|s| s.live && s.link.is_some())
+            .filter(|s| Self::slot_live(s))
             .map(|s| s.live_since_ms)
     }
 
@@ -892,7 +939,7 @@ impl Executors {
             .lock()
             .unwrap()
             .get(machine_id)
-            .filter(|s| s.live && s.link.is_some())
+            .filter(|s| Self::slot_live(s))
             .and_then(|s| s.caught_up)
     }
 
@@ -1160,11 +1207,13 @@ impl Executors {
     async fn supervise(
         self: Arc<Self>,
         machine_id: MachineId,
+        link_id: u64,
         mut events: mpsc::UnboundedReceiver<MachineEventFrame>,
     ) {
         let _guard = LiveGuard {
             executors: self.clone(),
             machine_id: machine_id.clone(),
+            link_id,
         };
         let cursor = match self.store.cursor_get(&machine_id) {
             Ok(c) => c,
@@ -1221,16 +1270,40 @@ impl Executors {
                 }
             }
         }
-        if let Some(slot) = self.machines.lock().unwrap().get_mut(&machine_id) {
-            slot.live = true;
+        {
+            let mut machines = self.machines.lock().unwrap();
+            let Some(slot) = machines
+                .get_mut(&machine_id)
+                .filter(|s| s.link.as_ref().is_some_and(|l| l.link_id == link_id))
+            else {
+                return;
+            };
+            // An older link's supervisor that hasn't stopped yet leaves its follows to this one, which ends them.
+            if slot.live_link.is_some_and(|l| l != link_id) {
+                drop_watches(slot, &machine_id);
+            }
+            slot.live_link = Some(link_id);
             slot.live_since_ms = now_ms(self.clock.as_ref());
             slot.caught_up = None;
         }
         self.set_live(&machine_id, true);
         while let Some(frame) = events.recv().await {
+            // A supervisor slow to stop applies nothing once a newer link took over: its subscription replays it.
+            if !self.is_current(&machine_id, link_id) {
+                return;
+            }
             self.handle_machine_event(&machine_id, Some(frame.seq), &frame.event, baseline)
                 .await;
         }
+    }
+
+    fn is_current(&self, machine_id: &MachineId, link_id: u64) -> bool {
+        self.machines
+            .lock()
+            .unwrap()
+            .get(machine_id)
+            .and_then(|s| s.link.as_ref())
+            .is_some_and(|l| l.link_id == link_id)
     }
 
     async fn handle_machine_event(
@@ -1472,7 +1545,7 @@ impl Executors {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines
                 .get_mut(machine_id)
-                .filter(|s| s.live && s.link.is_some())
+                .filter(|s| Self::slot_live(s))
                 .ok_or_else(|| ExecutorError::MachineNotConnected {
                     machine_id: machine_id.clone(),
                 })?;
@@ -2213,7 +2286,7 @@ impl Executors {
         let machines = self.machines.lock().unwrap();
         machines
             .iter()
-            .filter(|(_, s)| s.live && s.link.is_some())
+            .filter(|(_, s)| Self::slot_live(s))
             .flat_map(|(machine_id, s)| {
                 s.shell.threads.iter().filter_map(move |(thread_id, t)| {
                     let run = t
