@@ -18,7 +18,7 @@ const fake = () => {
   return { transport, sent, events: () => events };
 };
 
-const handlers = () => ({ onOpen: vi.fn(), onText: vi.fn(), onPong: vi.fn(), onClose: vi.fn() });
+const handlers = () => ({ onOpen: vi.fn(), onText: vi.fn(), onHeard: vi.fn(), onClose: vi.fn() });
 
 describe("timedTransport", () => {
   it("passes everything through and reports the first link's milestones, then its first calls", () => {
