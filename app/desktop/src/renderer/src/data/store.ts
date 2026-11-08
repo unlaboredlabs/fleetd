@@ -18,6 +18,7 @@ import {
   type LiveLane,
   type Machine,
   type MachineLive,
+  type HubUpdateData,
   type OrderCard,
   type ProjectRef,
   type ProjectSummary,
@@ -88,6 +89,11 @@ export interface DataState {
   readonly version?: string | undefined;
   /** The last time a link came back on a newer fleetd than the one before it, in this window: epoch ms. */
   readonly updated?: { readonly from: string; readonly to: string; readonly at: number } | undefined;
+  /**
+   * The hub's update going on, or its last one, as the snapshot and each `hub.update` event say it (the hub row's
+   * word); undefined from a hub that never updated itself, or one from before it said.
+   */
+  readonly update?: HubUpdateData | undefined;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
   readonly generation: number;
   /**
@@ -239,6 +245,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
             projects: byId(snap.projects, projectKey),
             slots: snap.slots,
             chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
+            // A hub sends null for none.
+            update: snap.update ?? undefined,
           },
           { resumed: true },
         ];
@@ -258,6 +266,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           chats: heldChats(s.chats),
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
           chatStop: undefined,
+          update: snap.update ?? undefined,
         },
         { refetchAll: true },
       ];
@@ -380,6 +389,11 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     orderEvents: ordersNamed(event).reduce((rings, id) => withOrderEvent(rings, id, event), s.orderEvents),
   };
   switch (event.type) {
+    case "hub.update": {
+      const update = eventData<"hub.update">(event as HubEventOf<"hub.update">);
+      if (update !== undefined) next = { ...next, update };
+      break;
+    }
     case "workstream.state": {
       const state = dataField(event, "state");
       if (state !== undefined) next = patchOrder(next, workstreamId, { state: state as OrderCard["state"] });

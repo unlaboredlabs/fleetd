@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
+import type { HubUpdateData, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
 import type { AppUpdate, Release } from "../../../shared/updates";
 import { restartOf } from "../shell/model";
@@ -27,7 +27,16 @@ const HUB_DONE: UpdatePart = { part: "hub", name: "the hub", from: MINE, state: 
 const runOf = (parts: UpdatePart[], finished: boolean): UpdateRun =>
   ({ id: "U1", channel: "edge", to: NEXT, startedAt: "2026-10-26T09:58:00.000Z", parts, ...(finished ? { finishedAt: "2026-10-26T09:59:00.000Z" } : {}) });
 
-const quiet = (over: { app?: AppUpdate; hub?: HubState; run?: UpdateRun | null; ready?: string | null; administers?: boolean; updated?: { from: string; to: string; at: number }; version?: string }) => {
+const quiet = (over: {
+  app?: AppUpdate;
+  hub?: HubState;
+  run?: UpdateRun | null;
+  ready?: string | null;
+  administers?: boolean;
+  updated?: { from: string; to: string; at: number };
+  update?: HubUpdateData;
+  version?: string;
+}) => {
   const administers = over.administers ?? true;
   const version = over.version ?? MINE;
   const view = updatesView({
@@ -39,7 +48,7 @@ const quiet = (over: { app?: AppUpdate; hub?: HubState; run?: UpdateRun | null; 
     administers,
     now: NOW,
   });
-  return quietOf({ view, hub: over.hub ?? LIVE, updated: over.updated, release, administers, now: NOW, timeZone: "UTC" });
+  return quietOf({ view, hub: over.hub ?? LIVE, updated: over.updated, update: over.update, release, administers, now: NOW, timeZone: "UTC" });
 };
 
 describe("the hub row's word", () => {
@@ -109,6 +118,53 @@ describe("the hub row's word", () => {
     expect(member?.word.text).toBe("Put back");
     expect(member?.note?.action).toBeUndefined();
     expect(member?.note?.body).toBe("It runs its old build, and nothing was lost. An admin can try it again.");
+  });
+});
+
+describe("the hub's own word on its update (hub.update)", () => {
+  const said = (over: Partial<HubUpdateData>): HubUpdateData => ({
+    runId: "U1",
+    state: "updating",
+    hub: "done",
+    from: MINE,
+    to: NEXT,
+    startedAt: "2026-10-26T09:58:00.000Z",
+    machines: [
+      { machineId: "builder", name: "builder", state: "done" },
+      { machineId: "mac", name: "mac", state: "restarting" },
+    ],
+    ...over,
+  });
+
+  it("says Updating… with how many machines are on it, for an admin", () => {
+    const q = quiet({ update: said({}), version: NEXT });
+    expect(q?.word.text).toBe("Updating…");
+    expect(q?.note).toMatchObject({ title: "Updating to Edge · Oct 23, 10:30 UTC", body: "1 of 2 machines on it." });
+    expect(quiet({ update: said({}), version: NEXT, administers: false })?.note?.body).toBeUndefined();
+  });
+
+  it("says Updated with what changed since its old build, for 15 minutes after it finished", () => {
+    const update = said({ state: "updated", finishedAt: "2026-10-26T09:59:00.000Z", machines: [] });
+    const q = quiet({ update, version: NEXT });
+    expect(q?.word.text).toBe("Updated");
+    expect(q?.note).toMatchObject({ title: "Updated to Edge · Oct 23, 10:30 UTC", aside: "09:59", notes: ["Agents keep working while fleetd updates", "Status loads faster"] });
+    expect(quiet({ update: { ...update, finishedAt: "2026-10-26T09:44:00.000Z" }, version: NEXT })).toBeNull();
+  });
+
+  it("says Put back, naming the machine that missed the build and the hub's words, for a day", () => {
+    const update = said({ state: "put_back", finishedAt: "2026-10-26T09:59:00.000Z", message: "mac didn't come up healthy, so it was put back", machines: [{ machineId: "mac", name: "mac", state: "rolled_back" }] });
+    const q = quiet({ update, version: NEXT });
+    expect(q?.word).toEqual({ text: "Put back", tone: "danger" });
+    expect(q?.note).toMatchObject({
+      title: "Edge · Oct 23, 10:30 UTC didn't go in on mac",
+      body: "mac didn't come up healthy, so it was put back. It runs its old build, and nothing was lost.",
+      action: { label: "Try again", run: "retry" },
+    });
+    expect(quiet({ update: { ...update, finishedAt: "2026-10-25T09:00:00.000Z" }, version: NEXT })).toBeNull();
+  });
+
+  it("leaves a current update to what else there is to say: the build ready, for an admin", () => {
+    expect(quiet({ update: said({ state: "current", finishedAt: "2026-10-26T09:59:00.000Z" }), ready: NEXT })?.word.text).toBe("Update");
   });
 });
 
