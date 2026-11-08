@@ -172,8 +172,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `tasks_list` → `src/hub/tasks` (read) <!-- tool:`tasks_list` -->
 - [x] `task_get` → `src/hub/tasks` (read) <!-- tool:`task_get` -->
 - [ ] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
-- [ ] `usage_status` → `src/hub/usage` (read) <!-- tool:`usage_status` -->
-- [ ] `usage_resume` → `src/hub/usage` (operate) <!-- tool:`usage_resume` -->
+- [x] `usage_status` → `src/hub/usage` (read) <!-- tool:`usage_status` -->
+- [x] `usage_resume` → `src/hub/usage` (operate) <!-- tool:`usage_resume` -->
 - [x] `attachment_part` → `src/hub/orders` (operate) <!-- tool:`attachment_part` -->
 - [x] `attachment_put` → `src/hub/orders` (operate) <!-- tool:`attachment_put` -->
 - [x] `attachment_get` → `src/hub/orders` (read) <!-- tool:`attachment_get` -->
@@ -239,13 +239,13 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [ ] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
-- [ ] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
+- [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
 - [ ] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
 - [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
-- [ ] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
+- [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
 - [ ] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
 - [ ] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
 
@@ -622,7 +622,7 @@ every `fleetd` command.
 - [ ] lead call `automation_confirm` → `src/hub/lead_calls` <!-- lead:lead call `automation_confirm` -->
 - [x] lead call `checklist` → `src/hub/lead_calls` <!-- lead:lead call `checklist` -->
 - [x] lead call `skill_install` → `src/hub/lead_calls` <!-- lead:lead call `skill_install` -->
-- [ ] lead call `usage_resume` → `src/hub/lead_calls` <!-- lead:lead call `usage_resume` -->
+- [x] lead call `usage_resume` → `src/hub/lead_calls` <!-- lead:lead call `usage_resume` -->
 - [x] lead call `browser_session` → `src/hub/lead_calls` <!-- lead:lead call `browser_session` -->
 - [x] lead call `browser_recording_part` → `src/hub/lead_calls` <!-- lead:lead call `browser_recording_part` -->
 - [x] lead call `browser_takeover` → `src/hub/lead_calls` <!-- lead:lead call `browser_takeover` -->
