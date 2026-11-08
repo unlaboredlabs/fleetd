@@ -5,6 +5,7 @@ tool:`profile_update`
 tool:`profiles_list`
 tool:`project_add`
 tool:`project_avatar_get`
+tool:`project_avatar_set`
 tool:`project_discover`
 tool:`project_env_set`
 tool:`project_icon_set`

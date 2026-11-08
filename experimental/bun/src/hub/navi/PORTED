@@ -5,6 +5,7 @@ tool:`navi_approvals`
 tool:`navi_archive`
 tool:`navi_asks`
 tool:`navi_card_set`
+tool:`navi_create`
 tool:`navi_list`
 tool:`navi_purchases`
 tool:`navi_rename`
