@@ -201,6 +201,8 @@ struct FakeGh {
     /// The finished runs a schedule started on main, newest first, and the jobs of each by run id.
     scheduled: Mutex<Vec<Value>>,
     run_jobs: Mutex<HashMap<u64, Value>>,
+    /// The workflow runs a person or a schedule started, (run id, event): on every commit. Every other run is a push.
+    run_events: Mutex<Vec<(u64, &'static str)>>,
     /// The workflow files of a branch's tree, by branch: read at its head in place of main's.
     tree_workflows: Mutex<HashMap<String, Vec<(&'static str, &'static str)>>>,
 }
@@ -570,6 +572,16 @@ impl FakeGh {
                         .collect(),
                 ))
             }
+            (["actions", "runs"], "GET") if query.contains("head_sha=") => {
+                let runs: Vec<Value> = self
+                    .run_events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(id, event)| json!({ "id": id, "event": event }))
+                    .collect();
+                ok(json!({ "workflow_runs": runs }))
+            }
             (["actions", "runs"], "GET") if query.contains("event=schedule") => {
                 ok(json!({ "workflow_runs": *self.scheduled.lock().unwrap() }))
             }
@@ -747,7 +759,15 @@ impl FakeGh {
                     return ok(json!({ "check_runs": self.failing_again(runs.clone()) }));
                 }
                 if let Some(runs) = &*self.runs.lock().unwrap() {
-                    return ok(json!({ "check_runs": self.failing_again(runs()) }));
+                    // GitHub names the commit each run is on, as main's CI read takes it.
+                    let head = self.head_of(sha).unwrap_or_else(|| sha.to_string());
+                    let mut runs = self.failing_again(runs());
+                    for r in runs.as_array_mut().into_iter().flatten() {
+                        if r.get("head_sha").is_none() {
+                            r["head_sha"] = json!(head);
+                        }
+                    }
+                    return ok(json!({ "check_runs": runs }));
                 }
                 match self.ci {
                     FakeCi::Macos { .. } => return ok(self.macos_runs(sha)),
@@ -1596,6 +1616,7 @@ impl Kit {
             tree_workflows: Mutex::default(),
             required: Mutex::default(),
             scheduled: Mutex::default(),
+            run_events: Mutex::default(),
             run_jobs: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
@@ -7394,7 +7415,7 @@ async fn a_refused_re_run_backs_off_and_stops_after_three_tries() {
 }
 
 /// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one
-/// main requires: failing there, it opens a fix order.
+/// main requires: failing there, and again on its one re-run, it opens a fix order.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_check_the_batch_skips_that_fails_on_main_opens_a_fix_order() {
     let kit = kit_on(&RepoCi {
@@ -7426,6 +7447,9 @@ async fn a_check_the_batch_skips_that_fails_on_main_opens_a_fix_order() {
             run(50, "rust (macos)", Some("failure"))
         ]),
     );
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50]);
+    assert!(kit.host.orders.lock().unwrap().is_empty());
     kit.train.step(REPO).await;
     let orders = kit.host.orders.lock().unwrap().clone();
     assert_eq!(orders.len(), 1);
@@ -8134,9 +8158,9 @@ const SLOW: [Slow; 2] = [
 ];
 
 /// W54: after a merge, the train watches the checks it didn't wait for on the merged commit, in any repo. One that
-/// fails opens a fix order for the project, plainly worded with the run's link, once per failure: the same check
-/// failing again on the next merge, while that order is open, opens none, and once the order is closed a new failure
-/// opens a new one. Once every check finished, the watch ends.
+/// fails is re-run once, and failing again opens a fix order for the project, plainly worded with the run's link, once
+/// per failure: the same check failing again on the next merge, while that order is open, opens none and isn't re-run,
+/// and once the order is closed a new failure is re-run and opens a new one. Once every check finished, the watch ends.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
     for repo in &SLOW {
@@ -8147,8 +8171,11 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
         train_file(&kit, repo.fast, &[]);
         // The slow check runs while the train merges, then fails on main.
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (now, slow, names) = (
+        // The slow check's run, a new one for each merge's commit.
+        let slow_run = Arc::new(std::sync::atomic::AtomicU64::new(50));
+        let (now, slow_id, slow, names) = (
             failed.clone(),
+            slow_run.clone(),
             repo.slow,
             repo.required
                 .iter()
@@ -8163,10 +8190,12 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
                 .map(|(i, n)| run(i as u64 + 1, n, Some("success")))
                 .collect();
             let done = now.load(std::sync::atomic::Ordering::SeqCst);
-            runs.push(run(50, slow, done.then_some("failure")));
+            let id = slow_id.load(std::sync::atomic::Ordering::SeqCst);
+            runs.push(run(id, slow, done.then_some("failure")));
             runs
         });
         let orders = || kit.host.orders.lock().unwrap().clone();
+        let reruns = || kit.gh.reruns.lock().unwrap().clone();
 
         let a = kit
             .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
@@ -8182,10 +8211,13 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
 
         failed.store(true, std::sync::atomic::Ordering::SeqCst);
         kit.train.step(REPO).await;
+        assert_eq!(reruns(), [50], "re-run once first");
+        assert!(orders().is_empty(), "nothing failed twice yet");
+        kit.train.step(REPO).await;
         let opened = orders();
         assert_eq!(opened.len(), 1, "{:?}", repo.required);
         let text = &opened[0].1;
-        assert!(text.starts_with(&format!("Fix the check `{slow}` on main: it failed after the merge train merged https://github.com/{REPO}/pull/7 as {}.", &merged[..12])), "{text}");
+        assert!(text.starts_with(&format!("Fix the check `{slow}` on main: it failed after the merge train merged https://github.com/{REPO}/pull/7 as {}, and again when the train re-ran it once.", &merged[..12])), "{text}");
         assert!(
             text.contains(&format!("https://github.com/{REPO}/actions/runs/50/job/50")),
             "{text}"
@@ -8203,6 +8235,7 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
         failed.store(true, std::sync::atomic::Ordering::SeqCst);
         kit.train.step(REPO).await;
         assert_eq!(orders().len(), 1, "the open order has it");
+        assert_eq!(reruns(), [50], "and nothing re-runs it");
 
         // Its order closed, a new failure opens a new one.
         kit.host.closed_orders.lock().unwrap().insert("W100".into());
@@ -8210,9 +8243,12 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
             .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
             .await;
         failed.store(false, std::sync::atomic::Ordering::SeqCst);
+        slow_run.store(60, std::sync::atomic::Ordering::SeqCst);
         assert!(kit.train.step(REPO).await);
         assert_eq!(state_of(&kit, &c), ChangeState::Merged);
         failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        kit.train.step(REPO).await;
+        assert_eq!(reruns(), [50, 60]);
         kit.train.step(REPO).await;
         assert_eq!(orders().len(), 2);
 
@@ -8247,9 +8283,16 @@ async fn a_check_red_on_main_holds_nothing_and_its_note_says_whether_a_fix_is_un
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(kit.train.main_ci_note(REPO), None, "main isn't red");
 
-    // `ios sessions` fails on the merged commit: main reads red, and the watch opens its fix order.
+    // `ios sessions` fails on the merged commit: main reads red while the watch re-runs it, and it fails again there,
+    // so the watch opens its fix order.
     failed.store(true, std::sync::atomic::Ordering::SeqCst);
     clock.turn(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+    assert_eq!(
+        kit.train.main_ci_note(REPO).as_deref(),
+        Some("`ios sessions` is red on main, re-running once")
+    );
     kit.train.step(REPO).await;
     assert_eq!(kit.host.orders.lock().unwrap().len(), 1);
     assert_eq!(
@@ -8275,6 +8318,225 @@ async fn a_check_red_on_main_holds_nothing_and_its_note_says_whether_a_fix_is_un
         kit.train.main_ci_note(REPO).as_deref(),
         Some("`ios sessions` is red on main, no fix under way")
     );
+}
+
+/// A kit whose `unit` gates merges and whose `ios sessions` runs only after them, as job 50 of workflow run `run`:
+/// `ios` says how it is done (None while it runs) from the jobs the train re-ran so far.
+fn kit_with_late_ios(
+    clock: &Arc<Dial>,
+    run: u64,
+    ios: impl Fn(&[u64]) -> Vec<Value> + Send + Sync + 'static,
+) -> Kit {
+    let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+    *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
+    train_file(&kit, &[], &[]);
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![job(1, 1, "unit", "success")];
+        for mut r in ios(&reruns.lock().unwrap()) {
+            r["html_url"] = json!(format!(
+                "https://github.com/{REPO}/actions/runs/{run}/job/{}",
+                if r["id"] == 50 { 50 } else { 51 }
+            ));
+            runs.push(r);
+        }
+        runs
+    });
+    kit
+}
+
+/// W520: a check that passed on the batch (or that it skips) and fails on main after the merge, a flake or a GitHub
+/// blip, is re-run once, its own job: passing then, it opens no fix order, and the status says it is re-run while main
+/// waits for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_that_fails_on_main_and_passes_its_one_re_run_opens_nothing() {
+    let clock = Arc::new(Dial::default());
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (now, rerun_done) = (
+        failed.clone(),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    );
+    let done = rerun_done.clone();
+    let kit = kit_with_late_ios(&clock, 40, move |reruns| {
+        let first = now
+            .load(std::sync::atomic::Ordering::SeqCst)
+            .then_some("failure");
+        let mut runs = vec![run(50, "ios sessions", first)];
+        if !reruns.is_empty() {
+            let passed = done.load(std::sync::atomic::Ordering::SeqCst);
+            runs.push(run(51, "ios sessions", passed.then_some("success")));
+        }
+        runs
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50], "its own job, once");
+    // The re-run goes: main waits for it, and the status says why.
+    clock.turn(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert_eq!(
+        kit.train.main_ci_note(REPO).as_deref(),
+        Some("`ios sessions` failed on main after the merge, re-running once")
+    );
+
+    rerun_done.store(true, std::sync::atomic::Ordering::SeqCst);
+    clock.turn(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert_eq!(kit.train.main_ci_note(REPO), None, "main is green");
+    clock.turn(Duration::from_secs(6 * 60));
+    kit.train.step(REPO).await;
+    assert!(
+        kit.host.orders.lock().unwrap().is_empty(),
+        "a flake opens nothing"
+    );
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 1);
+    assert!(
+        kit.train.records.watches(REPO).is_empty(),
+        "the watch ended"
+    );
+}
+
+/// W520: failing again on its one re-run, the check opens exactly one fix order, saying so, and is never re-run again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_that_fails_on_main_and_on_its_re_run_opens_one_fix_order() {
+    let clock = Arc::new(Dial::default());
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = failed.clone();
+    // GitHub's re-run of job 50 fails again (`failing_again`).
+    let kit = kit_with_late_ios(&clock, 40, move |_| {
+        let first = now
+            .load(std::sync::atomic::Ordering::SeqCst)
+            .then_some("failure");
+        vec![run(50, "ios sessions", first)]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50]);
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+    for _ in 0..3 {
+        clock.turn(Duration::from_secs(61));
+        kit.train.step(REPO).await;
+    }
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 1, "exactly one order");
+    assert!(
+        orders[0]
+            .1
+            .contains("and again when the train re-ran it once."),
+        "{}",
+        orders[0].1
+    );
+    assert_eq!(
+        *kit.gh.reruns.lock().unwrap(),
+        [50],
+        "re-run once, never twice"
+    );
+    assert_eq!(
+        kit.train.main_ci_note(REPO).as_deref(),
+        Some("`ios sessions` is red on main, fix in progress")
+    );
+}
+
+/// W520, review of #1303: a blip that fails two jobs of one workflow run on main gives each its one re-run. GitHub re-runs
+/// no job of a run that is going, so the second waits for the next pass rather than taking a refusal for a fix order.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_jobs_failing_in_one_run_on_main_are_each_re_run_once() {
+    let clock = Arc::new(Dial::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+    *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
+    train_file(&kit, &[], &[]);
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = failed.clone();
+    answer_checks(&kit, move || {
+        let done = now.load(std::sync::atomic::Ordering::SeqCst);
+        let edge = |id: u64, name: &str| {
+            let mut r = job(id, 40, name, "failure");
+            if !done {
+                r["status"] = json!("in_progress");
+                r["conclusion"] = Value::Null;
+            }
+            r
+        };
+        vec![
+            job(1, 1, "unit", "success"),
+            edge(50, "edge / desktop-linux"),
+            edge(51, "edge / desktop-macos"),
+        ]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    kit.train.step(REPO).await;
+    assert_eq!(
+        *kit.gh.reruns.lock().unwrap(),
+        [50],
+        "one job of the run at a time"
+    );
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+    // Both fail again on their re-runs (`failing_again`): each opens its one order, after its re-run.
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50, 51]);
+    kit.train.step(REPO).await;
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 2, "{orders:?}");
+    for (_, text) in &orders {
+        assert!(
+            text.contains("and again when the train re-ran it once."),
+            "{text}"
+        );
+    }
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2, "never re-run twice");
+}
+
+/// W520: a run a person started on a merged commit (a manual Mobile release, `workflow_dispatch`) isn't the merge's: its
+/// failure is neither re-run nor given a fix order. A failed scheduled run is `scheduled`'s, not the watch's.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_manual_release_run_on_main_opens_nothing() {
+    for event in ["workflow_dispatch", "schedule"] {
+        let clock = Arc::new(Dial::default());
+        let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let now = failed.clone();
+        let kit = kit_with_late_ios(&clock, 77, move |_| {
+            if now.load(std::sync::atomic::Ordering::SeqCst) {
+                vec![run(50, "ios", Some("failure"))]
+            } else {
+                Vec::new()
+            }
+        });
+        kit.gh.run_events.lock().unwrap().push((77, event));
+        let a = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+            .await;
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+        failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        for _ in 0..3 {
+            clock.turn(Duration::from_secs(61));
+            kit.train.step(REPO).await;
+        }
+        assert!(kit.host.orders.lock().unwrap().is_empty(), "{event}");
+        assert!(kit.gh.reruns.lock().unwrap().is_empty(), "{event}");
+        clock.turn(Duration::from_secs(6 * 60));
+        kit.train.step(REPO).await;
+        assert!(kit.train.records.watches(REPO).is_empty(), "{event}");
+    }
 }
 
 /// With nothing required and nothing added, the train waited for every check before merging: nothing is watched after.

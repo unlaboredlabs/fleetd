@@ -796,6 +796,36 @@ impl TrainGitHub {
         Ok(runs.workflow_runs)
     }
 
+    /// The workflow runs on commit `sha`, whatever their branch, each its id and the event that started it (`push`,
+    /// `workflow_dispatch`, `schedule`...): one page of 100.
+    pub async fn sha_run_events(
+        &self,
+        repo: &str,
+        sha: &str,
+    ) -> Result<Vec<(u64, String)>, GhError> {
+        #[derive(Deserialize)]
+        struct Run {
+            id: u64,
+            event: String,
+        }
+        #[derive(Deserialize)]
+        struct Runs {
+            workflow_runs: Vec<Run>,
+        }
+        let runs: Runs = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/runs?head_sha={sha}&per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(runs
+            .workflow_runs
+            .into_iter()
+            .map(|r| (r.id, r.event))
+            .collect())
+    }
+
     /// The jobs of a workflow run, each at its latest attempt.
     pub async fn run_jobs(&self, repo: &str, run: u64) -> Result<Vec<RunJob>, GhError> {
         #[derive(Deserialize)]
