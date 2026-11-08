@@ -124,12 +124,12 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_get` → `src/hub/executor` (read) <!-- tool:`project_get` -->
 - [x] `thread_tail` → `src/hub/executor` (read) <!-- tool:`thread_tail` -->
 - [x] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
-- [ ] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
-- [ ] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
-- [ ] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
-- [ ] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
-- [ ] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
-- [ ] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
+- [x] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
+- [x] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
+- [x] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
+- [x] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
+- [x] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
+- [x] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
 - [ ] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
 - [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
 - [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
@@ -238,7 +238,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
-- [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
+- [x] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
