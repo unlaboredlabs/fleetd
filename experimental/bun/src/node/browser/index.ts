@@ -337,11 +337,9 @@ export function start(node: Node, given?: Broker): Broker {
   onHub(node, "browser_control", (f) => b.control(f as unknown as BrowserControlFrame));
   node.area("items").on((thread, item) => void b.item(thread, item));
   // As the Rust node lists them for its sessions (node/link.rs `hello`): live view and takeover, hosting a session for
-  // an agent elsewhere (sealed to this node), and ending a screen whose task ended. Not on the agents' Mac, which hosts
-  // no browser (mac_tool lists its own).
-  if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {
-    node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END]);
-  }
+  // an agent elsewhere (sealed to this node), and ending a screen whose task ended. The agents' Mac lists them too
+  // (agents_mac `toolOnly` keeps them): its own screen is a session it hosts for agents on other machines.
+  node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END]);
   // An agent's claude drives its browser through agent-browser, at this node's proxy (Rust's `SessionHooks::env`
   // and `plugin_dirs`), through the node core's launch area.
   if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {

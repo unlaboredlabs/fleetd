@@ -12,7 +12,8 @@ import { charKeysym, keysym } from "./x11.ts";
 
 /** The start of a result's text a step keeps. */
 const RESULT_CHARS = 500;
-/** How often the node looks at the screen. */
+/** How often the node looks at the screen: a look starts this long after the last one started (10 frames a second
+ * while reading and encoding take less), or at once when they took longer. */
 export const FRAME_EVERY = 100;
 /** Without DAMAGE telling it, the node reads the whole screen at least this often. */
 const FULL_EVERY = 2_000;
@@ -201,7 +202,8 @@ export class Session {
         await Bun.sleep(FRAME_EVERY);
         continue;
       }
-      const full = performance.now() - lastFull >= FULL_EVERY;
+      const started = performance.now();
+      const full = started - lastFull >= FULL_EVERY;
       try {
         if (this.screen.changed() || full) {
           const raw = await this.screen.serial(() => this.screen.grabRaw());
@@ -219,7 +221,7 @@ export class Session {
         return;
       }
       this.sendLive(false);
-      await Bun.sleep(FRAME_EVERY);
+      await Bun.sleep(Math.max(0, FRAME_EVERY - (performance.now() - started)));
     }
   }
 

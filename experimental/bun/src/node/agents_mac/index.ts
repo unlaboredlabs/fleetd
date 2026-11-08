@@ -35,7 +35,7 @@ import type { Node } from "../api.ts";
 import type { NodeConfig } from "../config.ts";
 import { readMac, run as runChecks } from "./checks.ts";
 import { checkedFile, type MacHealth, writeHealth } from "./common.ts";
-import { answer, askLost, CHECK_EVERY, every, type Fresh, overlay, takeUp } from "./grants.ts";
+import { answer, CHECK_EVERY, every, type Fresh, overlay, takeUp } from "./grants.ts";
 import { Installing } from "./tools.ts";
 
 export { blocksSimulators, HOMEBREW_BINS } from "./checks.ts";
@@ -141,14 +141,13 @@ export class AgentsMac {
   }
 
   /** Holds the keep-awake assertion, installs the pinned tools, and checks the setup every CHECK_EVERY until stopped.
-   * Asks macOS for a grant when setup asks it to and again for one an update lost, and restarts the node once a fresh
-   * process has a grant it lacks. */
+   * Asks macOS for a grant only when setup asks it to, and restarts the node once a fresh process has a grant it
+   * lacks. */
   async start(): Promise<void> {
     mkdirSync(this.home, { recursive: true });
     const held = await keepAwake("fleetd: the agents' Mac stays awake");
     if (typeof held === "string") console.warn(`the agents' Mac can't hold its keep-awake assertion: ${held}`);
     else this.awake = held;
-    askLost(this.home);
     if (process.platform === "darwin") {
       const grants = async () => {
         if (this.stopped) return;
