@@ -1,0 +1,16 @@
+app:/app client `browser_frame_ack`
+app:/app client `browser_input`
+app:/app client `browser_watch`
+app:/app server `browser_frame`
+link:hub→node `browser_control` send
+link:hub→node `browser_input` send
+link:hub→node `browser_watch` send
+link:node→hub `browser_frame` handle
+loop:hub loop `browser::run_end_outlived`
+loop:hub loop `browser::run_prune`
+loop:hub loop `browser::thumbs::run`
+tool:`browser_control`
+tool:`browser_recording_get`
+tool:`browser_retention_set`
+tool:`browser_sessions`
+tool:`screens_count`

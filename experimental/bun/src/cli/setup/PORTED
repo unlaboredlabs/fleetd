@@ -1,0 +1,3 @@
+cli:`fleetd doctor`
+cli:`fleetd machine set`
+cli:`fleetd uninstall`

@@ -8,8 +8,8 @@ untouched and stays the product.
 ```sh
 cd experimental/bun
 bun install                # tsc-rs and Bun's types, pinned in bun.lock
-bun run gen                # regenerate src/gen/ and PORT_MAP.md from the Rust tree
-bun run progress           # PORT_MAP.md's ticks, counted per area
+bun run gen                # regenerate src/gen/ and PORT_MAP.md from the Rust tree and the PORTED files
+bun run progress           # the PORTED files' ticks, counted per area
 bun run typecheck          # tsc-rs -p tsconfig.json
 bun test
 bun run compile            # dist/fleetd, one binary: fleetd hub start, fleetd node …, every other command
@@ -65,9 +65,15 @@ port, by area, with its module; each area's writer owns its modules' directories
   `src/gen/wire.ts` has its tags, session call ops, lead call ops and agent-mcp's tools, generated from the Rust source.
 - **Native pieces.** Only where the research said so: a session's PTY stays with the Rust binary's
   `fleetd session-host`, and the screen helper's JPEG work with its Rust helper; the Bun node starts those binaries.
-- **PORT_MAP.md.** Tick an item when its module does it and a test covers it; `bun run gen` keeps ticks and adds
-  what the Rust code grows. The file holds no done counts, so parallel PRs ticking different areas don't conflict:
-  `bun run progress` prints them per area. CI fails when a generated file is stale: run `bun run gen` and commit.
+- **PORT_MAP.md.** Generated: never edit it. Tick an item when its module does it and a test covers it by adding
+  the item's key (the `<!-- … -->` id on its PORT_MAP.md line, without the comment marks) as a line of its module's
+  `src/<module>/PORTED`, e.g. `src/hub/app_ws/PORTED`. Create the file if it isn't there; for a module that is one
+  file, such as `src/cli/project.ts`, it goes in a directory of that name (`src/cli/project/PORTED`). Then run
+  `bun run gen`, which sorts the file, and commit both. Each module ticks in its own file, so parallel PRs don't
+  conflict, and the merge train regenerates PORT_MAP.md itself on a conflict. A `- [x]` left in PORT_MAP.md by a
+  branch from before PORTED still counts, and moves into its module's PORTED when you run `bun run gen`, so to untick
+  an item, remove its key from PORTED and its `x` from PORT_MAP.md. `bun run progress` prints the counts per area. CI fails when a generated
+  file or PORTED is stale, or a PORTED line isn't one of its module's items: run `bun run gen` and commit.
 
 ## Notes
 

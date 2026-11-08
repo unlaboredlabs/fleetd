@@ -130,6 +130,9 @@ export type LeadSocketHooks = {
   maskFor: (session: string) => Masker;
   /** Answers a `browser_call` (node/browser's); without it, browser calls are refused. */
   browser?: (session: string, frame: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** Answers a session's `fleetd mac` step (node/mac_tool's, through node.area("local")): `{ result }` or `{ error }`.
+   * Without it, `mac` is refused. */
+  mac?: (session: string, frame: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 
 /** Answers one line from the socket. */
@@ -172,7 +175,26 @@ export async function answerLine(line: string, pid: number | undefined, hooks: L
         fix: "agents reach this Mac with `mac run` and `mac sim` from their own machine; a person runs fleetd commands on theirs",
       }),
     );
-  if (op === "mac") return reply(errorFrame(call.id, { code: "invalid", message: "this node doesn't reach the agents' Mac" }));
+  // `fleetd mac` is the node's to answer, for the session its process runs in: never masked or sent on as it is.
+  if (op === "mac") {
+    if (!hooks.mac) return reply(errorFrame(call.id, { code: "invalid", message: "this node doesn't reach the agents' Mac" }));
+    const attributed = attribute(call, peer());
+    if (isResult(attributed)) return reply(attributed);
+    if (attributed.threadId === undefined)
+      return reply(
+        errorFrame(call.id, {
+          code: "forbidden",
+          message: "the agents' Mac is for agents' sessions, and this call comes from none",
+          fix: "run fleetd mac from an agent's session",
+        }),
+      );
+    const answered = await hooks.mac(attributed.threadId, attributed as unknown as Record<string, unknown>);
+    return reply(
+      answered.error !== undefined
+        ? errorFrame(call.id, answered.error as McpToolError)
+        : { id: call.id, result: answered.result },
+    );
+  }
   if (NODE_OPS.includes(op))
     return reply(
       errorFrame(call.id, {

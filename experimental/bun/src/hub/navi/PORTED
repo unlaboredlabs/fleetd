@@ -1,0 +1,19 @@
+loop:hub loop `navi::bridge::run`
+loop:hub loop `navi::erase::run`
+tool:`navi_approvals_set`
+tool:`navi_approvals`
+tool:`navi_archive`
+tool:`navi_asks`
+tool:`navi_card_set`
+tool:`navi_list`
+tool:`navi_purchases`
+tool:`navi_site_revoke`
+tool:`navi_sites`
+tool:`project_approvals_set`
+tool:`project_approvals`
+tool:`project_archive`
+tool:`project_asks`
+tool:`project_card_set`
+tool:`project_purchases`
+tool:`project_site_revoke`
+tool:`project_sites`

@@ -1,0 +1,12 @@
+cli:`fleetd project add`
+cli:`fleetd project archive`
+cli:`fleetd project list`
+cli:`fleetd project profile`
+cli:`fleetd project profiles`
+cli:`fleetd project remove`
+cli:`fleetd project repo add`
+cli:`fleetd project repo list`
+cli:`fleetd project repo remove`
+cli:`fleetd project set`
+cli:`fleetd project stop`
+cli:`fleetd project unarchive`

@@ -1,0 +1,23 @@
+http:GET `/node/link`
+link:hub→node `challenge` send
+link:hub→node `cmd_check` send
+link:hub→node `gated_resume` send
+link:hub→node `gated_run` send
+link:hub→node `hb` send
+link:hub→node `node_action` send
+link:hub→node `secret_deliver` send
+link:hub→node `session_call` send
+link:hub→node `welcome` send
+link:node→hub `clone_progress` handle
+link:node→hub `cmd_result` handle
+link:node→hub `gated_result` handle
+link:node→hub `hb` handle
+link:node→hub `hello` handle
+link:node→hub `machine_event` handle
+link:node→hub `node_action_result` handle
+link:node→hub `secret_result` handle
+link:node→hub `session_reply` handle
+link:node→hub `slept` handle
+link:node→hub `spans` handle
+link:node→hub `thread_event` handle
+loop:hub loop `link.start`

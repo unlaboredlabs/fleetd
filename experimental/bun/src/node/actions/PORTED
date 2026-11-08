@@ -1,0 +1,2 @@
+link:hub→node `node_action` handle
+link:node→hub `node_action_result` send
