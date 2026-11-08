@@ -2682,6 +2682,19 @@ impl Tasks {
             let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
             return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
         }
+        // Nor does one archived in the app: its lead takes no turn, even one that outlived its stop.
+        if self
+            .d
+            .db
+            .with(|c| Ok(crate::hub::navi::store::archived(c, r)?))
+            .map_err(store_error)?
+        {
+            return Err(lead_error(
+                ErrorCode::Invalid,
+                "This project is archived: it starts no agents.",
+                Some("Ask the person to bring it back in the app first."),
+            ));
+        }
         // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
         // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
         // the store only.
