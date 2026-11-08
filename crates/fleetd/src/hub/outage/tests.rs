@@ -256,3 +256,43 @@ async fn a_removed_machine_pages_nobody() {
     w.wait(30 * MINUTE);
     assert!(w.pushed().await.is_empty());
 }
+
+#[tokio::test]
+async fn a_busy_machine_down_pages_once_from_its_first_offline() {
+    let mut w = world().await;
+    let at = iso_ms(now_ms(w.hub.clock.as_ref()));
+    w.hub
+        .store
+        .thread_upsert(&crate::hub::store::StoredThread {
+            thread: serde_json::from_value(json!({
+                "machineId": "devbox", "threadId": "t1", "projectId": "app", "title": "T1", "status": "running",
+                "headline": "", "latestMessageTail": "", "lastProgressAt": at, "stale": false, "asOf": at,
+            }))
+            .unwrap(),
+            last_sequence: None,
+            last_run_id: None,
+            last_run_status: None,
+        })
+        .unwrap();
+    w.set(MachineStatus::Offline, "machine.offline");
+    w.wait(5 * MINUTE);
+    // The hub's own 5-minute sweep says nothing of it, and a hub restart marking it offline again doesn't move when
+    // the outage began.
+    w.hub.sweep.run_once().await;
+    w.set(MachineStatus::Offline, "machine.offline");
+    assert!(w.pushed().await.is_empty());
+    w.wait(5 * MINUTE);
+    assert_eq!(w.pushed().await, ["aa11"]);
+    let (_, body) = w.last_body();
+    assert!(
+        body.starts_with("devbox has been offline for 10m"),
+        "{body}"
+    );
+    w.wait(20 * MINUTE);
+    w.hub.sweep.run_once().await;
+    w.set(MachineStatus::Online, "machine.online");
+    w.wait(MINUTE);
+    assert_eq!(w.pushed().await, ["aa11"]);
+    let (_, body) = w.last_body();
+    assert_eq!(body, "devbox is back online after 30m00s");
+}
