@@ -197,6 +197,27 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
+/// The daemons, which serve until stopped: a closed connection is an error each of them handles, so SIGPIPE stays
+/// ignored for them, as Rust sets it up.
+fn is_daemon(argv: &[String]) -> bool {
+    match argv.first().map(String::as_str) {
+        Some("hub") => argv.get(1).map(String::as_str) == Some("start"),
+        Some("node") => argv.get(1).map(String::as_str) == Some("run"),
+        Some("push-relay") => !argv.iter().any(|a| a == "set"),
+        Some("agent-mcp" | "update-finish") => true,
+        _ => false,
+    }
+}
+
+/// A one-shot command whose reader goes away (`fleetd status | head -1`) ends quietly, as Unix tools do, instead of
+/// panicking in `print!` with exit 101: the default SIGPIPE ends it on its next write to the closed pipe. Sockets
+/// never raise it (Rust sends with MSG_NOSIGNAL or sets SO_NOSIGPIPE), and children get the default anyway.
+fn quiet_on_closed_stdout() {
+    use nix::sys::signal::{SigHandler, Signal, signal};
+    // SAFETY: SIG_DFL installs no handler, so no code of ours runs in signal context.
+    let _ = unsafe { signal(Signal::SIGPIPE, SigHandler::SigDfl) };
+}
+
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`, `chat --follow`) or wait on other processes
 /// or the hub (setup, `update`, `status`, `steer`, `chat`, `work`).
 fn is_long_running(argv: &[String]) -> bool {
@@ -303,7 +324,11 @@ pub fn main() -> ExitCode {
         return crate::node::runner::host::main(&argv[1..]);
     }
     crate::home::init_from_argv(&argv);
-    if let Some(text) = help_for(&argv) {
+    let help = help_for(&argv);
+    if help.is_some() || !is_daemon(&argv) {
+        quiet_on_closed_stdout();
+    }
+    if let Some(text) = help {
         print!("{text}");
         return ExitCode::SUCCESS;
     }
@@ -405,6 +430,30 @@ mod tests {
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn only_daemons_keep_sigpipe_ignored() {
+        for daemon in [
+            &["hub", "start", "--listen", "127.0.0.1:4790"][..],
+            &["node", "run"],
+            &["push-relay"],
+            &["push-relay", "--listen", "127.0.0.1:4791"],
+            &["agent-mcp"],
+            &["update-finish", "plan.json"],
+        ] {
+            assert!(is_daemon(&argv(daemon)), "{daemon:?}");
+        }
+        for one_shot in [
+            &["status"][..],
+            &["hub", "key", "list"],
+            &["node", "restart"],
+            &["push-relay", "set", "off"],
+            &["project", "set", "P1"],
+            &["chat", "--follow"],
+        ] {
+            assert!(!is_daemon(&argv(one_shot)), "{one_shot:?}");
+        }
     }
 
     #[test]
