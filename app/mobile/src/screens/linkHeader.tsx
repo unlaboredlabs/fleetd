@@ -19,7 +19,7 @@ export const useHubWord = (): { readonly word: HubWord | undefined; readonly lin
   const { state, paired } = useHub();
   const run = useRun();
   const [now, setNow] = useState(() => Date.now());
-  const input = { hub: state.hub, restart: state.restart, run, now: Date.now() };
+  const input = { hub: state.hub, restart: state.restart, run, update: state.hubUpdate, now: Date.now() };
   const next = nextChange(input);
   useEffect(() => {
     if (next === undefined) return;

@@ -130,3 +130,38 @@ describe("an admin's run, while the hub is live", () => {
     expect(nextChange(at(s, endMs + UPDATED_FOR_MS, back))).toBe(endMs + FAILED_FOR_MS);
   });
 });
+
+describe("the hub's own word on its update (hub.update, the snapshot's update), for everyone", () => {
+  const base = { runId: "u1", from: "0.9.1", to: "0.9.2", startedAt: "2026-11-08T10:00:00Z" };
+  const ended = "2026-11-08T10:05:00Z";
+  const endMs = Date.parse(ended);
+  const live1 = step(initial({ phase: "connecting", hub: HUB, attempt: 0 }), { t: "state", state: live() }, T);
+  const event = (data: unknown, replayed = false): HubFrame => ({ t: "event", event: { seq: 2, at: ended, type: "hub.update", summary: "", data }, ...(replayed ? { replayed: true as const } : {}) }) as HubFrame;
+
+  it("is read from the snapshot (null or absent is none) and kept by its events, not by replayed ones", () => {
+    expect(step(live1, { t: "snapshot", snapshot: { ...snapshot, update: null } as unknown as FleetStatus }, T).hubUpdate).toBeUndefined();
+    const s = step(live1, { t: "snapshot", snapshot: { ...snapshot, update: { ...base, state: "updating", hub: "waiting", machines: [] } } as unknown as FleetStatus }, T);
+    expect(s.hubUpdate).toMatchObject({ runId: "u1", state: "updating", to: "0.9.2" });
+    expect(step(s, event({ ...base, state: "updated", finishedAt: ended }), T).hubUpdate?.state).toBe("updated");
+    expect(step(s, event({ ...base, state: "updated", finishedAt: ended }, true), T).hubUpdate?.state).toBe("updating");
+  });
+
+  it("says Updating… while it goes on, a member's restart through it too, even with no reason on the close", () => {
+    const update = { ...base, state: "updating" };
+    expect(hubWord({ ...at(live1, T), update })).toEqual({ text: "Updating…", tone: "quiet", busy: false });
+    const down = restartedAt("hub restarting");
+    expect(hubWord({ ...at(down, T + 1000), update })?.text).toBe("Updating…");
+    expect(slowLine({ ...at(down, T + SLOW_RESTART_MS), update, hubName: "devbox" })?.text).toBe("Still updating. What you send goes once it's back.");
+  });
+
+  it("says Updated, Put back or Not Updated for a while after it ended, and nothing for one that found every machine current", () => {
+    const word = (state: string, now: number) => hubWord({ ...at(live1, now), update: { ...base, state, finishedAt: ended } })?.text;
+    expect(word("updated", endMs + 1000)).toBe("Updated");
+    expect(word("updated", endMs + UPDATED_FOR_MS)).toBeUndefined();
+    expect(word("put_back", endMs + 1000)).toBe("Put back");
+    expect(word("failed", endMs + UPDATED_FOR_MS)).toBe("Not Updated");
+    expect(word("failed", endMs + FAILED_FOR_MS)).toBeUndefined();
+    expect(word("current", endMs + 1000)).toBeUndefined();
+    expect(nextChange({ ...at(live1, endMs + 1000), update: { ...base, state: "updated", finishedAt: ended } })).toBe(endMs + UPDATED_FOR_MS);
+  });
+});

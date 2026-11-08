@@ -58,9 +58,39 @@ export type Restart =
   | { readonly t: "down" | "back"; readonly since: number; readonly planned: boolean; readonly update: boolean; readonly from: string | undefined; readonly at?: number }
   | { readonly t: "updated"; readonly at: number; readonly from: string; readonly to: string; readonly took: number };
 
+/**
+ * The hub's update as its row says it, for everyone: the `hub.update` event's data, and the app snapshot's `update`
+ * (contracts HubUpdateData), the update going on or the last one; undefined from a hub before them, or one that never
+ * updated itself.
+ */
+export interface HubUpdate {
+  readonly runId: string;
+  /** `updating`, `updated`, `put_back`, `failed` or `current` (HubUpdatePhase), or a newer hub's. */
+  readonly state: string;
+  readonly from: string;
+  readonly to?: string | undefined;
+  readonly startedAt: string;
+  readonly finishedAt?: string | undefined;
+  /** With `failed` or `put_back`: what happened, in one sentence. */
+  readonly message?: string | undefined;
+}
+
+/** A HubUpdate from the wire, or undefined: absent, null (an older hub's snapshot) or not one. */
+export const hubUpdateOf = (v: unknown): HubUpdate | undefined => {
+  if (typeof v !== "object" || v === null) return undefined;
+  const u = v as Record<string, unknown>;
+  const str = (x: unknown): string | undefined => (typeof x === "string" ? x : undefined);
+  const runId = str(u.runId);
+  const state = str(u.state);
+  const startedAt = str(u.startedAt);
+  if (runId === undefined || state === undefined || startedAt === undefined) return undefined;
+  return { runId, state, from: str(u.from) ?? "", to: str(u.to), startedAt, finishedAt: str(u.finishedAt), message: str(u.message) };
+};
+
 export interface State {
   readonly hub: HubState;
   readonly restart: Restart | null;
+  readonly hubUpdate: HubUpdate | undefined;
   /** Undefined until the first snapshot. */
   readonly projects: Readonly<Record<Key, ProjectSummary>> | undefined;
   readonly chatStates: Readonly<Record<Key, ProjectChatState>>;
@@ -111,6 +141,7 @@ export interface State {
 export const initial = (hub: HubState): State => ({
   hub,
   restart: null,
+  hubUpdate: undefined,
   projects: undefined,
   chatStates: {},
   machines: [],
@@ -273,6 +304,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
         ...s,
         projects: Object.fromEntries(snap.projects.map((p) => [keyOf(p), p])),
         machines: snap.machines,
+        hubUpdate: hubUpdateOf((snap as { update?: unknown }).update),
         chatStates,
         turnSince: Object.fromEntries(Object.entries(s.turnSince).filter(([key]) => chatStates[key]?.leadWorking === true)),
       };
@@ -335,6 +367,8 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     const known = s.machines.some((m) => m.machineId === event.machineId && m.status !== status);
     return known ? { ...s, machines: s.machines.map((m) => (m.machineId === event.machineId ? { ...m, status } : m)) } : s;
   }
+  // Missed while the link was down: the snapshot before it has the update as it is now.
+  if (event.type === "hub.update") return replayed ? s : { ...s, hubUpdate: hubUpdateOf(event.data) ?? s.hubUpdate };
   if (event.type === "chat.waiting") {
     // What a chat waits for, missed while the link was down: the snapshot before it says it as it is now.
     if (replayed) return s;
