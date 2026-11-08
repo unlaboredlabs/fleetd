@@ -114,6 +114,17 @@ export const UPLOAD_BUSY_SECS = 30 * 60;
 /** Space on the volume holding a node's worktrees and build cache. */
 export type NodeDisk = { freeBytes: number; totalBytes: number; minFreeBytes: number };
 
+/**
+ * The machine's IPv4, as its node reads its network interfaces: only those of its own hardware count, not loopback,
+ * tunnels (Tailscale), bridges or containers' veths.
+ */
+export type NodeNetwork = {
+  /** One of them holds a routable IPv4 address: not 169.254.x link-local, what's left when DHCP times out. */
+  ipv4: boolean;
+  /** While `ipv4` is false, the interface to bring back: the one holding a link-local address, else the first. */
+  iface?: string;
+};
+
 /** One claude.ai usage window, as claude's `rate_limit_event` last reported it. */
 export type LoginLimit = {
   limitType: string;
@@ -145,6 +156,8 @@ export type NodeLoad = {
   diskPerAgentBytes?: number;
   limits?: LoginLimit[];
   disk?: NodeDisk;
+  /** Absent off Linux, on a machine with no network hardware of its own (a container), and from older nodes. */
+  network?: NodeNetwork;
   hosts?: HostCheck[];
   android?: ScreenHealth;
   ios?: ScreenHealth;
