@@ -1,9 +1,9 @@
 // Approvals' ports over the real hub (crates/fleetd/src/hub/usage/wire_approvals.rs): the node link's secret and
 // gated-run commands, the hub's store, the lead's wake with a request's outcome, and the hooks other areas fill.
 import type { HumanRequest, McpServer, ProjectRef } from "../../shared/contracts.ts";
-import { NotImplemented } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
+import { linkOf } from "../cloud/node.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import type { ApprovalsDeps } from "./index.ts";
@@ -18,26 +18,8 @@ import {
 } from "./ports.ts";
 import { Requests } from "./store.ts";
 
-/** The node link's side approvals uses (T2253's `hub.area("link")`, D346). */
-export type Link = {
-  request(machineId: string, frame: Record<string, unknown>): Promise<Record<string, unknown>>;
-  can(machineId: string, cap: string): boolean;
-  linkId(machineId: string): string | undefined;
-};
-
 /** A node that keeps an approved command's result for a `gated_resume` (node_link.rs `CAP_GATED_RESUME`). */
 const CAP_GATED_RESUME = "gated_resume";
-
-/** The link, once its area made it; a hub without one has every node offline. */
-function linkOf(hub: Hub): Link | undefined {
-  try {
-    return hub.area<Link>("link", () => {
-      throw new NotImplemented("src/hub/link");
-    });
-  } catch {
-    return undefined;
-  }
-}
 
 /** A node command's failure in approvals' terms: the link's own error carries its reason. */
 function nodeError(e: unknown): NodeCommandError {
