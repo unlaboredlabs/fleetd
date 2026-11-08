@@ -74,8 +74,28 @@ const listed = (names: readonly string[]): string => (names.length < 2 ? names.j
 const newSince = (from: string | null, release: Release | null | undefined, administers: boolean): string[] =>
   administers && from !== null && release !== null && release !== undefined ? notesSince(release.changes, from, "hub").lines.slice(0, NOTES_SHOWN) : [];
 
+/** The machines that didn't take the build: failed or put back. A skipped one is left out, as the run's words leave it
+ * out: the signal doesn't say whether it was only offline. */
+const missedOf = (u: HubUpdateData): string[] => u.machines.filter((m) => m.state === "failed" || m.state === "rolled_back").map((m) => m.name);
+
+/** Put back: which part didn't take the build and why, with Try again for an admin. */
+const putBack = (u: HubUpdateData, to: string, { administers }: QuietInput): Quiet => {
+  const missed = missedOf(u);
+  const names = listed(u.hub === "failed" || u.hub === "rolled_back" ? ["the hub", ...missed] : missed);
+  const said = u.message === undefined ? "" : `${u.message.replace(/\.$/u, "")}. `;
+  return quiet("putBack", {
+    title: names === "" ? `The update to ${to} didn't go in` : `${to} didn't go in on ${names}`,
+    danger: true,
+    notes: [],
+    body: administers ? `${said}It runs its old build, and nothing was lost.` : "It runs its old build, and nothing was lost. An admin can try it again.",
+    ...(administers ? { action: { label: "Try again", run: "retry" as const } } : {}),
+    details: administers,
+  });
+};
+
 /** The hub's own word on its update (hub.update): going on, or finished lately; undefined when it has nothing to say. */
-const ofHub = (u: HubUpdateData, { view, release, administers, now, timeZone }: QuietInput): Quiet | undefined => {
+const ofHub = (u: HubUpdateData, input: QuietInput): Quiet | undefined => {
+  const { view, release, administers, now, timeZone } = input;
   const admin = { details: administers };
   const to = u.to === undefined ? "the new build" : titled(versionLabel(u.to));
   const ago = u.finishedAt === undefined ? 0 : now - Date.parse(u.finishedAt);
@@ -93,6 +113,9 @@ const ofHub = (u: HubUpdateData, { view, release, administers, now, timeZone }: 
       });
     }
     case "updated":
+      // The hub updated, but a machine didn't take the build: it is put back there, as the run says (the hub's signal
+      // says it only in `machines`).
+      if (missedOf(u).length > 0) return ago >= FAILED_SHOWN_MS ? undefined : putBack(u, to, input);
       if (ago >= RESULT_SHOWN_MS) return undefined;
       return quiet("updated", {
         title: `Updated to ${to}`,
@@ -101,20 +124,8 @@ const ofHub = (u: HubUpdateData, { view, release, administers, now, timeZone }: 
         ...admin,
       });
     case "put_back":
-    case "failed": {
-      if (ago >= FAILED_SHOWN_MS) return undefined;
-      const missed = u.machines.filter((m) => m.state === "failed" || m.state === "rolled_back" || m.state === "skipped").map((m) => m.name);
-      const names = listed(u.hub === "failed" || u.hub === "rolled_back" ? ["the hub", ...missed] : missed);
-      const said = u.message === undefined ? "" : `${u.message.replace(/\.$/u, "")}. `;
-      return quiet("putBack", {
-        title: names === "" ? `The update to ${to} didn't go in` : `${to} didn't go in on ${names}`,
-        danger: true,
-        notes: [],
-        body: administers ? `${said}It runs its old build, and nothing was lost.` : "It runs its old build, and nothing was lost. An admin can try it again.",
-        ...(administers ? { action: { label: "Try again", run: "retry" as const } } : {}),
-        ...admin,
-      });
-    }
+    case "failed":
+      return ago >= FAILED_SHOWN_MS ? undefined : putBack(u, to, input);
     default:
       return undefined;
   }

@@ -152,15 +152,35 @@ describe("the hub's own word on its update (hub.update)", () => {
   });
 
   it("says Put back, naming the machine that missed the build and the hub's words, for a day", () => {
-    const update = said({ state: "put_back", finishedAt: "2026-10-26T09:59:00.000Z", message: "mac didn't come up healthy, so it was put back", machines: [{ machineId: "mac", name: "mac", state: "rolled_back" }] });
+    const update = said({ state: "put_back", hub: "rolled_back", finishedAt: "2026-10-26T09:59:00.000Z", message: "the hub didn't come up healthy, so it was put back", machines: [] });
     const q = quiet({ update, version: NEXT });
     expect(q?.word).toEqual({ text: "Put back", tone: "danger" });
     expect(q?.note).toMatchObject({
-      title: "Edge · Oct 23, 10:30 UTC didn't go in on mac",
-      body: "mac didn't come up healthy, so it was put back. It runs its old build, and nothing was lost.",
+      title: "Edge · Oct 23, 10:30 UTC didn't go in on the hub",
+      body: "the hub didn't come up healthy, so it was put back. It runs its old build, and nothing was lost.",
       action: { label: "Try again", run: "retry" },
     });
     expect(quiet({ update: { ...update, finishedAt: "2026-10-25T09:00:00.000Z" }, version: NEXT })).toBeNull();
+  });
+
+  it("says Put back when the hub updated but a machine didn't take the build, as the hub sends it", () => {
+    // The hub's part done, a machine rolled back and one offline: the hub says `updated`, the machines say the rest.
+    const update = said({
+      state: "updated",
+      finishedAt: "2026-10-26T09:59:00.000Z",
+      machines: [
+        { machineId: "builder", name: "builder", state: "rolled_back" },
+        { machineId: "mac", name: "mac", state: "skipped" },
+        { machineId: "box", name: "box", state: "done" },
+      ],
+    });
+    const q = quiet({ update, version: NEXT });
+    expect(q?.word).toEqual({ text: "Put back", tone: "danger" });
+    expect(q?.note).toMatchObject({ title: "Edge · Oct 23, 10:30 UTC didn't go in on builder", action: { label: "Try again", run: "retry" } });
+    // Still there after 15 minutes, as a put back is: for a day.
+    expect(quiet({ update: { ...update, finishedAt: "2026-10-26T09:30:00.000Z" }, version: NEXT })?.word.text).toBe("Put back");
+    // A machine only skipped (offline, say) isn't one that missed it.
+    expect(quiet({ update: { ...update, machines: [{ machineId: "mac", name: "mac", state: "skipped" }] }, version: NEXT })?.word.text).toBe("Updated");
   });
 
   it("leaves a current update to what else there is to say: the build ready, for an admin", () => {
