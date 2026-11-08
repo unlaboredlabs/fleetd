@@ -291,3 +291,17 @@ test("time_breakdown: whole days from the roll-ups past retention, the edges fro
   expect(time(hub).nodeCursor("devbox")).toBe(0);
   done();
 });
+
+test("thread_window needs read on the machine, and says why it can't reach an offline one", async () => {
+  const { hub, done } = testHub();
+  const tools = new Registry();
+  registerAll(tools);
+  const input = { machineId: "lab-a", threadId: "t1", itemId: "i1" };
+  const none = { ...caller("read"), grants: [{ role: "read" as const, machines: ["lab-b"] }] };
+  const refused = (await tools.call(hub, none, "thread_window", input)) as { error?: { kind: string; error?: { code: string } } };
+  expect(refused.error?.error?.code).toBe("forbidden");
+  const offline = (await tools.call(hub, caller("read"), "thread_window", input)) as { error?: { kind: string; error?: { code: string } } };
+  expect(offline.error?.kind).toBe("tool");
+  expect(offline.error?.error?.code).not.toBe("failed");
+  done();
+});
