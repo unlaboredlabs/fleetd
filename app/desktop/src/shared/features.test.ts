@@ -17,7 +17,8 @@ const served = (): string[] => {
   const rust = readFileSync(join(root, "crates/fleetd-contracts/src/app.rs"), "utf8");
   const list = /pub const APP_FEATURES: \[&str; \d+\] = \[([^\]]*)\]/.exec(rust)?.[1];
   if (list === undefined) throw new Error("APP_FEATURES not found in app.rs");
-  return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
+  // A string, or a constant of app.rs (APP_DEFLATE).
+  return [...list.matchAll(/"([^"]+)"|([A-Z][A-Z0-9_]*)/g)].map((m) => m[1] ?? new RegExp(`pub const ${m[2] ?? ""}: &str = "([^"]+)"`).exec(rust)?.[1] ?? "");
 };
 
 /** Each feature a source gates on: `features.includes(…)` with a string or a constant (a helper's variable, such as
