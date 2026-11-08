@@ -104,9 +104,24 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   useAnnounce(hubSays.line?.text);
   const word = state.hub.phase === "live" ? hubSays.word : link;
   const me = meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase, link?.restart === true ? link.text : undefined);
+  // A tap on the word opens Settings, whose Update section says what happened (UpdateFleetd.tsx), as the avatar does.
   useLayoutEffect(() => {
-    navigation.setOptions({ title: word?.text ?? "", headerTitleStyle: { fontSize: type.subhead.fontSize, fontWeight: "600", color: word?.tone === "danger" ? t.danger : t.secondary } });
-  }, [navigation, word?.text, word?.tone, t.danger, t.secondary]);
+    const text = word?.text;
+    const color = word?.tone === "danger" ? t.danger : t.secondary;
+    const openSettings = () => {
+      swiped.close();
+      root.navigate("Settings");
+    };
+    navigation.setOptions({
+      title: text ?? "",
+      headerTitle: () =>
+        text === undefined ? null : (
+          <Pressable onPress={openSettings} accessibilityRole="button" accessibilityLabel={text} accessibilityHint="Opens Settings" hitSlop={10} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}>
+            <Text style={[styles.word, { color }]}>{text}</Text>
+          </Pressable>
+        ),
+    });
+  }, [navigation, root, swiped, word?.text, word?.tone, t.danger, t.secondary]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -509,6 +524,7 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
 const ROW_RADIUS = 16;
 
 const styles = StyleSheet.create({
+  word: { fontSize: type.subhead.fontSize, fontWeight: "600" },
   slow: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, textAlign: "center" },
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },
   filters: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.md },
