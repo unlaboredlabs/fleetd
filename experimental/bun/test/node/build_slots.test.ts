@@ -27,8 +27,9 @@ describe("what waits", () => {
     expect(compilesNothing(w("run --help"))).toBe(true);
     expect(compilesNothing(w("run prog --help"))).toBe(false);
   });
-  test("slots fit memory, a quarter kept back", () => {
+  test("slots fit memory, one per 16 GB", () => {
     expect(slotsFit(undefined)).toBe(2);
+    expect(slotsFit(59.5 * 2 ** 30)).toBe(3);
     expect(slotsFit(64 * 2 ** 30)).toBe(4);
     expect(slotsFit(8 * 2 ** 30)).toBe(1);
     expect(queuedLine(1, 0)).toBe("fleetd: queued for a build slot (next in line; 1 slot on this machine): it starts once one frees");
