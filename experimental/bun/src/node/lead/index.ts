@@ -234,8 +234,32 @@ export async function serveLeadSocket(path: string, hooks: LeadSocketHooks): Pro
     if (live) throw new Error(`another fleetd node is already serving ${path}; stop it first`);
     rmSync(path, { force: true });
   }
-  /** One decoder per connection, streaming: a character split across two reads comes out whole. */
-  type Conn = { buf: string; done: boolean; pid: number | undefined; decoder: TextDecoder };
+  /** One decoder per connection, streaming: a character split across two reads comes out whole. `out`: what of the
+   * answer the socket hasn't taken yet. */
+  type Conn = { buf: string; done: boolean; pid: number | undefined; decoder: TextDecoder; out?: Uint8Array };
+  /** Writes what is left of the answer and, once all of it is out, ends the connection. Bun's sockets don't buffer: a
+   * write past what the kernel takes at once returns short, and the rest goes when the socket drains. An answer past
+   * the socket's buffer (a screenshot, a long `mac run` output) went cut otherwise, and its caller waited for a line
+   * that never ended. */
+  const flush = (socket: Bun.Socket<Conn>) => {
+    const out = socket.data.out;
+    if (!out) return;
+    const wrote = socket.write(out);
+    if (wrote < 0) {
+      socket.data.out = undefined;
+      return;
+    }
+    if (wrote < out.length) {
+      socket.data.out = out.subarray(wrote);
+      return;
+    }
+    socket.data.out = undefined;
+    socket.end();
+  };
+  const answerWith = (socket: Bun.Socket<Conn>, frame: unknown) => {
+    socket.data.out = new TextEncoder().encode(`${JSON.stringify(frame)}\n`);
+    flush(socket);
+  };
   const server = Bun.listen<Conn>({
     unix: path,
     socket: {
@@ -250,13 +274,14 @@ export async function serveLeadSocket(path: string, hooks: LeadSocketHooks): Pro
         if (nl < 0) {
           if (conn.buf.length > MAX_BROWSER_FRAME_BYTES) {
             conn.done = true;
-            socket.end(`${JSON.stringify({ t: "lead_result", id: "invalid", error: { code: "invalid", message: `frame is larger than ${MAX_BROWSER_FRAME_BYTES} bytes` } })}\n`);
+            answerWith(socket, { t: "lead_result", id: "invalid", error: { code: "invalid", message: `frame is larger than ${MAX_BROWSER_FRAME_BYTES} bytes` } });
           }
           return;
         }
         conn.done = true;
         respond(socket, conn.buf.slice(0, nl));
       },
+      drain: flush,
       // Half-open: a caller that ends its side after writing still gets the answer.
       end(socket) {
         const conn = socket.data;
@@ -270,7 +295,7 @@ export async function serveLeadSocket(path: string, hooks: LeadSocketHooks): Pro
   });
   const respond = (socket: Bun.Socket<Conn>, line: string) => {
     answerLine(line, socket.data.pid, hooks).then(
-      (answer) => socket.end(`${JSON.stringify(answer)}\n`),
+      (answer) => answerWith(socket, answer),
       () => socket.end(),
     );
   };

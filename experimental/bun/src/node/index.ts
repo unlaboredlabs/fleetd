@@ -9,7 +9,7 @@ import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
 import { Node } from "./api.ts";
 import { registerAreas, stopAreas } from "./areas.ts";
-import { agentsMac, isAgentsMac } from "./agents_mac/index.ts";
+import { agentsMac, isAgentsMac, mayJoin } from "./agents_mac/index.ts";
 import { helloCapabilities, refusedOnMac } from "./link/tool_only.ts";
 import { findHelper } from "./runner/helper.ts";
 import { runCmdCheck } from "./cmd/index.ts";
@@ -115,6 +115,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       home: typeof flags.home === "string" ? flags.home : undefined,
       enrollOnly: flags["enroll-only"] === true,
       claudeConfigDir: typeof flags["claude-config-dir"] === "string" ? flags["claude-config-dir"] : undefined,
+      mac: flags.mac === true,
     });
   }
   if (sub === "run") {
@@ -125,12 +126,18 @@ export async function nodeCommand(argv: string[]): Promise<number> {
   return fail(`unknown command 'node ${sub ?? ""}'.\nusage:\n${NODE_USAGE}`);
 }
 
-export type JoinArgs = { hub: string; token: string; machine: string; home?: string; enrollOnly?: boolean; claudeConfigDir?: string };
+/** `mac`: `--mac`, the agents' Mac (agents_mac), its own screen on. */
+export type JoinArgs = { hub: string; token: string; machine: string; home?: string; enrollOnly?: boolean; claudeConfigDir?: string; mac?: boolean };
 
 /** Creates the node key and config, enrolls with the one-time token, then keeps the link up. */
 export async function join_(args: JoinArgs): Promise<number> {
   if (!isMachineId(args.machine)) {
     process.stderr.write(`fleetd: machine id '${args.machine}' must match [a-z0-9-]{1,32}\n`);
+    return 1;
+  }
+  const refused = args.mac ? mayJoin() : undefined;
+  if (refused) {
+    process.stderr.write(`fleetd: ${refused}\n`);
     return 1;
   }
   const home = args.home ?? defaultNodeHome();
@@ -139,6 +146,7 @@ export async function join_(args: JoinArgs): Promise<number> {
     machineId: args.machine,
     name: args.machine,
     ...(args.claudeConfigDir ? { claudeConfigDir: args.claudeConfigDir } : {}),
+    ...(args.mac ? { mac: { enabled: true }, agentsMac: true } : {}),
     enrolled: false,
   };
   try {

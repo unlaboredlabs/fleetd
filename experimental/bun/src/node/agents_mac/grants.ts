@@ -5,8 +5,9 @@
 // it restart again and again.
 //
 // The node is also the one that asks macOS for a grant, so fleetd (not Terminal or the app) is what lands in System
-// Settings' list: setup's grant step writes `askFile` and the node asks within 2 s (`answer`). At its start it asks
-// again for a grant an update lost (`lost`), and the grant's check says so.
+// Settings' list: setup's grant step writes `askFile` and the node asks within 2 s (`answer`). Only then: a grant an
+// update lost (`lost`) is said by its check, whose fix asks, as a node asking by itself at each start would show
+// macOS's prompt again and again (#1340).
 //
 // `grantsCommand` is `fleetd node grants [--ask <grant>] [--wait <secs>]` (cli/node.rs), with the setup helpers it uses
 // (cli/setup/mac_finish.rs `grant`, `ask_node`, `open_pane`, `not_asked`).
@@ -144,14 +145,6 @@ export function answer(home: string, ask: (id: MacCheckId) => void = (id) => tcc
   if (id) {
     console.info(`the agents' Mac asks macOS for ${id}, as setup asked`);
     ask(id);
-  }
-}
-
-/** At the node's start: asks macOS again for each grant an update lost, so its prompt is at the Mac. */
-export function askLost(home: string): void {
-  for (const id of lost(own(), seen(home), VERSION)) {
-    console.warn(`the agents' Mac lost ${id} with an update to ${VERSION}: it asks macOS again`);
-    tcc.ask(id);
   }
 }
 
