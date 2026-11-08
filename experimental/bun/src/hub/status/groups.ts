@@ -2,7 +2,6 @@
 // how they ended; PRs no agent covers; requests and screens waiting on the person. Counted in full, listed at most
 // STATUS_ITEMS_PER_GROUP per group, newest first. Idle and done items stop being news after 7 days.
 import type {
-  AgentLane,
   Change,
   ChangeState,
   HumanRequest,
@@ -17,6 +16,7 @@ import type {
   TaskState,
 } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
+import { lookups, prRef, projectChanges, taskLane } from "../orders/index.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 
@@ -24,32 +24,6 @@ export const WINDOW_MS = 7 * 24 * 3_600_000;
 export const STATUS_ITEMS_PER_GROUP = 8;
 const TASK_SCAN = 500;
 const ENDED_SCAN = 100;
-
-/** The orders area's lane and PR reads (T2246's `status_groups`, made when its tasks area starts). */
-export type StatusGroupsSeam = {
-  taskLane(task: Task, changes: [Change, PrRef][]): Pick<AgentLane, "status" | "pr" | "statusReason">;
-  projectChanges(r: ProjectRef): Change[];
-  prRef(change: Change): PrRef;
-};
-
-/** Until the orders area makes it: a task's lane from its own state, and no PRs. */
-const LANE_OF: Record<TaskState, LaneStatus> = {
-  queued: "queued",
-  running: "working",
-  idle: "idle",
-  done: "done",
-  failed: "failed",
-  cancelled: "cancelled",
-};
-
-const WITHOUT_ORDERS: StatusGroupsSeam = {
-  taskLane: (task) => ({ status: LANE_OF[task.state] ?? "idle" }),
-  projectChanges: () => [],
-  prRef: (c) => ({ changeId: c.changeId, number: c.prNumber, repo: c.repo, reviewsDone: 0, reviewsNeeded: 1, state: c.state }) as PrRef,
-};
-
-/** The orders area's `status_groups`, read without making it (D354). */
-export const statusGroups = (hub: Hub): StatusGroupsSeam => hub.peek<StatusGroupsSeam>("status_groups") ?? WITHOUT_ORDERS;
 
 /** One line of at most `max` UTF-16 units, with "…" when cut (rows.rs `clip`). */
 export function clip(s: string, max: number): string {
@@ -204,10 +178,10 @@ const WHY = 160;
 
 export function read(hub: Hub, r: ProjectRef, needsYou: boolean, now: number): [StatusCounts, StatusItem[]] {
   const since = now - WINDOW_MS;
-  const seam = statusGroups(hub);
   const tasks = tasksOf(hub, r, since);
-  const changes = seam.projectChanges(r);
-  const prs: [Change, PrRef][] = changes.map((c) => [c, seam.prRef(c)]);
+  const changes = projectChanges(hub, r);
+  const prs: [Change, PrRef][] = changes.map((c) => [c, prRef(c)]);
+  const look = lookups(hub);
   const open = openOrders(hub, r);
   const requests = openRequests(hub, r, 50);
   const items: StatusItem[] = [];
@@ -215,7 +189,7 @@ export function read(hub: Hub, r: ProjectRef, needsYou: boolean, now: number): [
   const threads = new Set<string>();
   const listed = new Set(tasks.map((t) => t.taskId));
   for (const task of tasks) {
-    const lane = seam.taskLane(task, prs);
+    const lane = taskLane(task, prs, look);
     const reviewer = task.kind === "review";
     if (reviewer && lane.status !== "waiting") continue;
     if (task.threadRef) threads.add(task.threadRef.threadId);

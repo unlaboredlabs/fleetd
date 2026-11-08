@@ -8,7 +8,7 @@ import type { Caller } from "../api/registry.ts";
 import { others } from "../navi/owner.ts";
 import { events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
-import { type Flip, fresh } from "./fresh.ts";
+import { type Flip, Fresh, fresh } from "./fresh.ts";
 import { read } from "./rows.ts";
 
 export { fresh, github, train, GITHUB_STALE_MS, TRAIN_STALE_MS } from "./fresh.ts";
@@ -64,6 +64,7 @@ export class Status {
   /** One pass of the follower: every due flip as an event; returns how long to sleep before the next deadline. */
   tick(): number {
     const f = fresh(this.hub);
+    if (!(f instanceof Fresh)) return HOUR_MS;
     for (const flip of f.check(this.hub.clock.now())) this.emitFlip(flip);
     const deadline = f.nextDeadline();
     return deadline === undefined ? HOUR_MS : Math.min(HOUR_MS, Math.max(0, deadline - this.hub.clock.now()));
@@ -78,7 +79,13 @@ export class Status {
       if (signal.aborted) return;
       timer = setTimeout(next, this.tick());
     };
-    const unsubscribe = fresh(this.hub).onNotify(() => queueMicrotask(next));
+    const f = fresh(this.hub);
+    // A stand-in made under this area's name first (D354) has no deadlines to follow.
+    if (!(f instanceof Fresh)) {
+      console.warn("status: another area made status_fresh first; source freshness isn't followed");
+      return;
+    }
+    const unsubscribe = f.onNotify(() => queueMicrotask(next));
     signal.addEventListener("abort", () => (clearTimeout(timer), unsubscribe()), { once: true });
     next();
   }
