@@ -502,7 +502,7 @@ export class Approvals {
       await this.deps.hub.wakeRequest(answered);
       return answered;
     }
-    if (approve) void this.runApproved(answered);
+    if (approve) void this.runApproved(answered).catch((e) => console.error(`approvals: ${answered.requestId} didn't run:`, e));
     else await this.deps.hub.wakeRequest(answered);
     return this.get(requestId) ?? answered;
   }
@@ -556,7 +556,9 @@ export class Approvals {
     for (const r of this.listQuiet({ states: ["approved"], kind: "approval" })) {
       if (!r.gated) continue;
       if (r.evidence?.startsWith(RUNNING)) {
-        void this.recover(r, `the hub restarted while it ran on ${r.projectRef.machineId}`);
+        void this.recover(r, `the hub restarted while it ran on ${r.projectRef.machineId}`).catch((e) =>
+          console.error(`approvals: ${r.requestId}'s result wasn't recovered:`, e),
+        );
       } else {
         this.quietly(() => this.reopen(r.requestId, NOT_RUN_AFTER_RESTART));
       }
@@ -686,8 +688,12 @@ export class Approvals {
       const page = await this.deps.events.wait({ cursor, types: ["project.removed"], timeoutSec: 3600 }, this.deps.signal);
       cursor = page.cursor;
       for (const event of page.events) {
-        if (event.machineId !== undefined && event.projectId !== undefined) {
+        if (event.machineId === undefined || event.projectId === undefined) continue;
+        // One event's failure is logged, never the follower's end.
+        try {
           await this.closeOpen({ machineId: event.machineId, projectId: event.projectId }, undefined, "the project was removed");
+        } catch (e) {
+          console.error(`approvals: a removed project's requests weren't closed (${event.seq}):`, e);
         }
       }
     }

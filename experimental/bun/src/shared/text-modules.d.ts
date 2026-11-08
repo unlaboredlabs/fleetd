@@ -3,3 +3,9 @@ declare module "*.sql" {
   const text: string;
   export default text;
 }
+
+// `import rs from "x.rs" with { type: "text" }`: a Rust source read for a constant both builds share.
+declare module "*.rs" {
+  const text: string;
+  export default text;
+}

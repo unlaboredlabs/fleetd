@@ -321,9 +321,9 @@ approvals, secrets, integrations, updates, cloud machines.
 - [ ] `machine_remove` → `src/hub/machine_setup` (admin) <!-- tool:`machine_remove` -->
 - [ ] `machine_join` → `src/hub/machine_setup` (admin) <!-- tool:`machine_join` -->
 - [ ] `machine_claude_login` → `src/hub/machine_setup` (admin) <!-- tool:`machine_claude_login` -->
-- [ ] `hub_update` → `src/hub/update` (admin) <!-- tool:`hub_update` -->
-- [ ] `hub_update_status` → `src/hub/update` (read) <!-- tool:`hub_update_status` -->
-- [ ] `hub_update_settings` → `src/hub/update` (admin) <!-- tool:`hub_update_settings` -->
+- [x] `hub_update` → `src/hub/update` (admin) <!-- tool:`hub_update` -->
+- [x] `hub_update_status` → `src/hub/update` (read) <!-- tool:`hub_update_status` -->
+- [x] `hub_update_settings` → `src/hub/update` (admin) <!-- tool:`hub_update_settings` -->
 
 ### Background loops
 
@@ -331,8 +331,8 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] hub loop `mcp_oauth::run_renew` → `src/hub/mcp_oauth` <!-- loop:hub loop `mcp_oauth::run_renew` -->
 - [x] hub loop `mcp_servers::tools::run_forget` → `src/hub/mcp_servers` <!-- loop:hub loop `mcp_servers::tools::run_forget` -->
 - [ ] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
-- [ ] hub loop `updates.prefetch_loop` → `src/hub/update` <!-- loop:hub loop `updates.prefetch_loop` -->
-- [ ] hub loop `updates.resume` → `src/hub/update` <!-- loop:hub loop `updates.resume` -->
+- [x] hub loop `updates.prefetch_loop` → `src/hub/update` <!-- loop:hub loop `updates.prefetch_loop` -->
+- [x] hub loop `updates.resume` → `src/hub/update` <!-- loop:hub loop `updates.resume` -->
 
 ## node-core
 

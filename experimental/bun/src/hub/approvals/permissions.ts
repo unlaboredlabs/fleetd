@@ -48,7 +48,14 @@ export async function followThreads(a: Approvals): Promise<void> {
   while (!a.deps.signal?.aborted) {
     const page = await a.deps.events.wait({ cursor, types: THREAD_EVENTS, timeoutSec: 3600 }, a.deps.signal);
     cursor = page.cursor;
-    for (const event of page.events) await onThreadEvent(a, event);
+    for (const event of page.events) {
+      // One event's failure (a hook, a store read) is logged, never the follower's end: on_thread_event can't fail.
+      try {
+        await onThreadEvent(a, event);
+      } catch (e) {
+        console.error(`approvals: a thread event wasn't handled (${event.seq}):`, e);
+      }
+    }
   }
 }
 

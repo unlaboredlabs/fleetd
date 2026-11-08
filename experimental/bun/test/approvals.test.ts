@@ -572,3 +572,30 @@ test("the navi port's hooks are looked up at each call, the defaults kept for th
   expect(await hooks.naviLead(p1, "T1")).toBe(true);
   expect(await hooks.naviSite(p1, "x.example")).toBeUndefined();
 });
+
+test("a thread event that throws is logged, and the follower goes on", async () => {
+  const { followThreads } = await import("../src/hub/approvals/permissions.ts");
+  const fake = new Fake();
+  const stop = new AbortController();
+  let calls = 0;
+  fake.hooks.naviLead = async () => {
+    calls++;
+    if (calls === 1) throw new Error("the navi port failed");
+    return true;
+  };
+  const a = new Approvals({ ...fake.approvals().deps, hooks: fake.hooks, signal: stop.signal });
+  const quiet = console.error;
+  console.error = () => {};
+  const following = followThreads(a);
+  await Bun.sleep(5);
+  for (const id of ["p-1", "p-2"]) {
+    fake.pending = { requestId: id, toolName: "Write", summary: "x", input: { path: `/${id}` } };
+    fake.events.append({ at: "x", type: "thread.waiting", machineId: "lab-a", projectId: "p1", threadId: "T1", summary: "", data: { permission: { requestId: id, toolName: "Write", summary: "x" } } });
+    await Bun.sleep(20);
+  }
+  stop.abort();
+  await following;
+  console.error = quiet;
+  expect(calls).toBe(2);
+  expect(fake.request("Q1")?.permission?.requestId).toBe("p-2");
+});
