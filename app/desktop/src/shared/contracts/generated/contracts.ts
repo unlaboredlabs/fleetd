@@ -288,8 +288,22 @@ export type AppClientMessage = {
   project?: ProjectRef;
   t: "presence";
 } | {
+  /**
+   * Sent only to a hub whose `ready` names `frame_acks`. True: the client sends a `browser_frame_ack` for each
+   * `browser_frame` it gets, and the hub sends the next ones only as the earlier are acked. Absent: frames go
+   * as fast as the socket takes them.
+   */
+  acks?: boolean;
+  /**
+   * Sent only to a hub whose `ready` names `frame_acks`, with `acks`. The most frames a second the client
+   * draws: the hub sends no more, always the newest, and the last of a burst once its gap is up.
+   */
+  fps?: number;
   session?: BrowserSessionId;
   t: "browser_watch";
+} | {
+  seq: number;
+  t: "browser_frame_ack";
 } | {
   input: BrowserInput;
   session: BrowserSessionId;
@@ -459,17 +473,30 @@ export type AttachmentBlock = {
 
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
+  length?: number;
+  /**
+   * A png, jpeg or webp image larger than this many pixels a side comes shrunk to fit, as a JPEG (a PNG where it is
+   * clear), when that is smaller than the file: `preview` says so. Anything else comes as itself.
+   */
+  maxSide?: number;
+  /** The piece of the file from this byte, at most `length` (absent: ATTACHMENT_PART_BYTES); ignored with maxSide. */
+  offset?: number;
   projectRef: ProjectRef;
 };
 
 export type AttachmentGetOutput = {
   attachmentId: AttachmentId;
+  /** The file's size, whatever dataB64 holds. */
   bytes: number;
-  /** Standard base64. */
+  /** Standard base64: the file, its piece from `offset`, or its preview. */
   dataB64: string;
   mime: AttachmentMime;
   name: string;
   next?: string;
+  /** Where dataB64 starts in the file, when it is a piece: the input's offset, echoed. */
+  offset?: number;
+  /** True when dataB64 is the image shrunk to maxSide, in `mime`'s type rather than the file's. */
+  preview?: boolean;
   truncated?: boolean;
 };
 

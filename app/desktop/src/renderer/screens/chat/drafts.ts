@@ -8,7 +8,8 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AttachmentMime, AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/contracts";
+import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts";
+import { sendFile, type Wait } from "../../../shared/transfer";
 import { TAKES } from "../../../shared/files";
 import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, TEXT_HEAD, toBase64 } from "./attachments";
 
@@ -45,19 +46,21 @@ export interface Drafts {
 
 const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.error === undefined;
 
-/** A call carries at most a piece's worth, so a larger file goes as attachment_part pieces, in order, then its last. */
-export async function upload(layer: Pick<DataLayer, "call">, file: File, mime: AttachmentMime): Promise<Upload> {
-  const piece = (at: number) => file.slice(at, Math.min(at + ATTACHMENT_PART_BYTES, file.size)).arrayBuffer().then(toBase64);
-  const failed = (o: { readonly error: { readonly message: string } }): Upload => ({ ok: false, message: o.error.message });
-  let uploadId: string | undefined;
-  let at = 0;
-  for (; at + ATTACHMENT_PART_BYTES < file.size; at += ATTACHMENT_PART_BYTES) {
-    const o = await layer.call("attachment_part", { ...(uploadId === undefined ? {} : { uploadId, offset: at }), dataB64: await piece(at) }, { timeoutMs: 120_000 });
-    if (!o.ok) return failed(o);
-    uploadId = o.output.uploadId;
-  }
-  const o = await layer.call("attachment_put", { name: file.name, mime, dataB64: await piece(at), ...(uploadId === undefined ? {} : { uploadId }) }, { timeoutMs: 120_000 });
-  return o.ok ? { ok: true, ref: { attachmentId: o.output.attachmentId, name: file.name, mime, bytes: o.output.bytes } } : failed(o);
+/**
+ * A call carries at most a piece's worth, so a larger file goes as attachment_part pieces, in order, then its last; a
+ * piece a dropped link cut off goes again once it is back (shared/transfer.ts).
+ */
+export async function upload(layer: Pick<DataLayer, "call">, file: File, mime: AttachmentMime, wait?: Wait): Promise<Upload> {
+  const sent = await sendFile(
+    (tool, input, timeoutMs) => layer.call(tool, input as never, { timeoutMs }),
+    file.size,
+    (start, end) => file.slice(start, Math.min(end, file.size)).arrayBuffer().then(toBase64),
+    file.name,
+    mime,
+    undefined,
+    wait,
+  );
+  return sent.ok ? { ok: true, ref: { attachmentId: sent.attachmentId, name: file.name, mime, bytes: sent.bytes } } : sent;
 }
 
 export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Record<string, string>> = {}): Drafts {

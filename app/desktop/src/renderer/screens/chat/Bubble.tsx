@@ -6,6 +6,7 @@
 import { Check, Forward, Paperclip, Reply, Send, SmilePlus } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
+import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -64,14 +65,15 @@ function FileChip({ file, box }: { file: AttachmentRef; box?: (el: Element | nul
   );
 }
 
-// An image shows itself, fetched once its chip has been on screen (the list mounts rows it drops again at once while
-// it measures, and those never read), and opens large when clicked. Until then, and if it can't be read, it is a file
-// like any other.
+// An image shows its preview, fetched once its chip has been on screen (the list mounts rows it drops again at once
+// while it measures, and those never read), and opens large when clicked. Until then, and if it can't be read, it is a
+// file like any other.
 // It shows at its size in points (a Retina screenshot at half its pixels) within IMAGE_MAX, whatever its pixels, so it
-// sits in its side's corner like the bubble above it.
+// sits in its side's corner like the bubble above it. A preview fits PREVIEW_SIDE.desktop, twice the box, so it fills
+// the box as the picture would, sharp on a Retina screen; a picture smaller than that comes as itself.
 function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
   const [seen, box] = useSeen();
-  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId }, { enabled: seen });
+  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId, maxSide: PREVIEW_SIDE.desktop }, { enabled: seen });
   const open = useOpenImage();
   const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
   const dataB64 = got.data?.dataB64;

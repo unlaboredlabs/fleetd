@@ -31,6 +31,15 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Whether `jpeg` differs from the last one, which it becomes.
+pub fn fresh(last: &mut Option<u64>, jpeg: &[u8]) -> bool {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    jpeg.hash(&mut hasher);
+    let hash = hasher.finish();
+    last.replace(hash) != Some(hash)
+}
+
 /// The screenshot loop for one simulator.
 pub struct Screen {
     simctl: Simctl,
@@ -91,6 +100,7 @@ async fn shoot(
     let mut failing = false;
     let looping = Instant::now();
     let mut first = true;
+    let mut last = None::<u64>;
     while frames.receiver_count() > 0 {
         let began = Instant::now();
         let taken = match simctl.screenshot(&udid, &shot).await {
@@ -103,6 +113,11 @@ async fn shoot(
         }) {
             Ok((jpeg, width, height)) => {
                 failing = false;
+                // A still screen shoots the same bytes: the watcher has them already.
+                if !fresh(&mut last, &jpeg) {
+                    tokio::time::sleep(MIN_GAP.saturating_sub(began.elapsed())).await;
+                    continue;
+                }
                 if first {
                     first = false;
                     tracing::debug!(

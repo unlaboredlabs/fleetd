@@ -14,7 +14,8 @@ export type ClientMessage =
   | { t: "live"; board: boolean; focus?: string }
   | { t: "chat"; project?: { machineId: string; projectId: string } }
   | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
-  | { t: "browser_watch"; session?: string }
+  | { t: "browser_watch"; session?: string; acks?: true }
+  | { t: "browser_frame_ack"; seq: number }
   | { t: "browser_input"; session: string; input: BrowserInput }
   | { t: "screen_thumbs"; on: boolean };
 

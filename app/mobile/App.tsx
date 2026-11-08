@@ -19,7 +19,7 @@ import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { diskCache, forgetCache } from "./src/cacheStore";
+import { diskCache, diskPreviews, forgetCache } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
@@ -201,7 +201,7 @@ const go = (route: Route, state: Pick<State, "requests" | "projects">): boolean 
 };
 
 function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget: (why?: string) => void; opened: ShortcutLink | null; onOpened: () => void }) {
-  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), cache: diskCache }), [paired]);
+  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);

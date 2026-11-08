@@ -8,6 +8,8 @@ throwaway hub's port (its own FLEETD_HOME and port, never a real hub):
 - delay: half the RTT each way, plus one RTT for the TCP handshake before the first byte;
 - bandwidth: each direction serialises its bytes at --mbit, with 52 bytes of TCP/IP header per 1448-byte segment;
 - loss: a lost segment stalls its direction for an RTO plus a trip (head-of-line, as TCP sees it) and counts twice;
+- --queue B: the bottleneck holds at most B bytes waiting to go out; past that the proxy stops reading, so the sender
+  feels the link (its socket fills) as behind a real router. Absent: it holds everything (a sender never waits);
 - --nat-idle S: a flow quiet both ways for S seconds is blackholed, as a cellular NAT forgets it: nothing gets through
   and neither end is told.
 Control port, one command a line, answered with a JSON line: `stats` (bytes up and down, segments, connections),
@@ -29,6 +31,7 @@ p.add_argument("--loss", type=float, default=0.015)
 p.add_argument("--mbit", type=float, default=1.0)
 p.add_argument("--nat-idle", type=float, default=0.0)
 p.add_argument("--seed", type=int, default=1)
+p.add_argument("--queue", type=int, default=0)
 a = p.parse_args()
 random.seed(a.seed)
 MSS, HDR = 1448, 52
@@ -71,7 +74,12 @@ async def pipe(reader, writer, d, key, flow):
     delivering = asyncio.create_task(deliver())
     try:
         while True:
-            data = await reader.read(65536)
+            if a.queue:
+                # The bottleneck's buffer is full: read nothing more until it drains.
+                backlog = (d.free - time.monotonic()) * a.mbit * 1e6 / 8
+                if backlog > a.queue:
+                    await asyncio.sleep((backlog - a.queue) * 8 / (a.mbit * 1e6))
+            data = await reader.read(16384 if a.queue else 65536)
             if not data or flow["dead"]:
                 break
             now = time.monotonic()

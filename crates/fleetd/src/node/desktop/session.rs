@@ -18,17 +18,16 @@ use fleetd_contracts::browser::{
     SessionKind,
 };
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::node_link::NodeToHub;
 use fleetd_contracts::prim::{Int, NonEmpty};
 use serde_json::{Value, json};
 
 use super::screen::{Lent, Screen};
 use super::x11;
 use crate::node::browser::FrameSlot;
+use crate::node::browser::fit::{self, Pacer};
 use crate::node::browser::record::{self, Meta, Scrub, VideoSink};
 use crate::node::mask::Secrets;
 use crate::node::util::AbortOnDrop;
-use crate::node::wire::to_json;
 
 /// The start of a result's text the action log keeps.
 const RESULT_CHARS: usize = 500;
@@ -49,6 +48,31 @@ struct Live {
     watcher: Option<Arc<FrameSlot>>,
     seq: u64,
     last: Option<BrowserFrame>,
+    /// Whether `last` waits for the watcher's link ([`Pacer::wait`]).
+    pending: bool,
+    pacer: Pacer,
+}
+
+impl Live {
+    /// The newest frame to the watcher, if it waits and the link has room for it now (or `now` anyway).
+    fn send(&mut self, now: bool) {
+        let (Some(watcher), Some(last)) = (&self.watcher, &self.last) else {
+            return;
+        };
+        if !(self.pending || now) {
+            return;
+        }
+        if !now
+            && !self
+                .pacer
+                .wait(watcher.budget(last.session_id.as_str()))
+                .is_zero()
+        {
+            return;
+        }
+        fit::offer(watcher, &mut self.pacer, last.clone());
+        self.pending = false;
+    }
 }
 
 pub struct Session {
@@ -241,12 +265,7 @@ impl Session {
         if let Some(last) = &mut live.last {
             last.control = control;
         }
-        if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
-            watcher.replace(
-                self.id.as_str(),
-                to_json(&NodeToHub::BrowserFrame(last.clone())),
-            );
-        }
+        live.send(true);
     }
 
     /// Sends this session's frames to the hub from now on (`Some`), the newest at once, or no more.
@@ -256,11 +275,16 @@ impl Session {
         if live.watcher.is_some() {
             tracing::debug!(target: "fleetd::stages", screen = %self.id, ms = self.offset_ms(), frame = live.last.is_some(), "desktop watched");
         }
-        if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
-            let mut last = last.clone();
-            last.control = self.control();
-            watcher.replace(self.id.as_str(), to_json(&NodeToHub::BrowserFrame(last)));
+        let control = self.control();
+        if let Some(last) = &mut live.last {
+            last.control = control;
         }
+        live.send(true);
+    }
+
+    /// The frame that waited for the watcher's link, once it has room.
+    fn flush_live(&self) {
+        lock(&self.live).send(false);
     }
 
     /// Queues a person's input behind what came before it, if they have control as it comes; once queued it goes,
@@ -314,13 +338,9 @@ impl Session {
         {
             live.watcher = None;
         }
-        if let Some(watcher) = &live.watcher {
-            watcher.replace(
-                self.id.as_str(),
-                to_json(&NodeToHub::BrowserFrame(frame.clone())),
-            );
-        }
         live.last = Some(frame);
+        live.pending = true;
+        live.send(false);
     }
 
     /// Time passes on a still screen: its frame keeps showing in the video.
@@ -519,6 +539,7 @@ async fn capture(session: std::sync::Weak<Session>) {
                 return;
             }
         }
+        this.flush_live();
         if last_tick.elapsed() >= Duration::from_secs(1) {
             this.tick(at);
             last_tick = Instant::now();

@@ -3,6 +3,7 @@
 import { Dialog as D } from "radix-ui";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { createContext, useContext, type KeyboardEvent, type MouseEvent } from "react";
+import { PREVIEW_SIDE } from "../../../shared/transfer";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { stepShot, type Shot } from "./shots";
@@ -17,9 +18,10 @@ export const useOpenImage = (): ((attachmentId: string) => void) | undefined => 
 export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef; shots: readonly Shot[]; at: string; onAt: (at: string | undefined) => void }) {
   const n = shots.findIndex((s) => s.attachmentId === at);
   const shot = shots[n];
-  // The bubble already read it: the same query, so it shows at once.
-  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: at });
-  const data = got.data;
+  // The bubble already read its preview: shown at once, until the picture itself comes.
+  const quick = useToolQuery("attachment_get", { projectRef: project, attachmentId: at, maxSide: PREVIEW_SIDE.desktop });
+  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: at }, { enabled: quick.data?.preview === true });
+  const data = quick.data?.preview === true ? (got.data ?? quick.data) : quick.data;
   const before = stepShot(shots, at, -1);
   const after = stepShot(shots, at, 1);
   const label = shot?.caption ?? shot?.name ?? data?.name ?? "Image";
@@ -41,7 +43,7 @@ export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef;
           <figure className={v.figure}>
             {data === undefined ? (
               <Text size="sm" tone="quiet">
-                {got.isError ? "Couldn’t load this." : "Loading…"}
+                {quick.isError ? "Couldn’t load this." : "Loading…"}
               </Text>
             ) : (
               <img key={at} className={v.image} src={`data:${data.mime};base64,${data.dataB64}`} alt={label} />

@@ -43,6 +43,10 @@ serde_path_to_error = "0.1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# The screens' JPEGs in tests (a debug build) as fast as in a release: unoptimized, each frame takes a busy core.
+[profile.dev.package.jpeg-encoder]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

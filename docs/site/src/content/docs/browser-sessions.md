@@ -86,6 +86,11 @@ On the [phone](/docs/mobile#screens), a live screen shows as a card in its chat,
 **Take Over**, then a tap clicks, a drag scrolls and a held touch presses and drags; the keyboard button types into the
 page, the site at the top is its address bar, and **Hand Back** returns it. It's the same live view and takeover, at most 12 frames a second.
 
+On a slow link the live view shows the newest frame, not a backlog. The app acks each frame, and the hub sends the next
+one as the link is about to finish the last, so what you see and what your keys do lag by about a frame's trip, not by
+seconds of queued frames. When frames have to wait, the hub tells the screen's machine how much the slowest watcher's
+link carries, and the machine sends less. An app or hub from before this paces nothing, as before.
+
 Once it has ended, the screen plays its recording, the panel's whole width. **Steps**, at the end of the player's
 controls, opens its steps beside the recording (under it in a narrow panel). Each step jumps the recording to its
 moment and opens the page as that step found it. Press **Steps** again to close them. They start closed each time you

@@ -73,11 +73,14 @@ tempfile = "3"
 # desktop sessions: the node reads the screen (GetImage, DAMAGE) and types and clicks (XTEST) over its own X11
 # connection, and encodes the frames as JPEG
 x11rb = { version = "=0.14.0", default-features = false, features = ["xtest", "damage"] }
-jpeg-encoder = "=0.7.1"
+# `simd`: AVX2 colour conversion and DCT where the CPU has it (a fifth less time a frame), else as without
+jpeg-encoder = { version = "=0.7.1", features = ["simd"] }
 # project avatars: a person's picture is decoded, cropped and resized on the hub, and kept re-encoded without its metadata
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 # chat files: an Office file's text, inflated from its zip
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# updates: a build downloaded packed (`<asset>.lzma`, a third of its size), unpacked as it streams in
+lzma-rs = { version = "0.3", default-features = false, features = ["stream"] }
 
 # node power: macOS sleep assertions through IOKit, loaded at run time (the darwin build links no framework)
 [target.'cfg(target_os = "macos")'.dependencies]

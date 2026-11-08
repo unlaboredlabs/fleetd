@@ -134,10 +134,13 @@ export const updates = (fixtureFile: string | null): Updates => {
   let loading: Promise<boolean> | null = null;
   const load = async (): Promise<boolean> => {
     const { AppImageUpdater, DebUpdater, MacUpdater } = await import("electron-updater");
-    const options = { provider: "generic" as const, url };
+    // Differential: only the blocks that changed since the build this app runs come down (update-yml.sh publishes the
+    // blockmaps), one range per request, as GitHub's asset store refuses multipart ranges. The AppImage's maps are
+    // inside the old and the new file. The Mac's old map is the one cached with its last download, so its first two
+    // updates after an install download the whole zip. A result that doesn't match the feed's sha512 (a zip the
+    // staple-later flow replaced, a stale cache) is downloaded whole instead.
+    const options = { provider: "generic" as const, url, useMultipleRangeRequest: false };
     const u = process.platform === "darwin" ? new MacUpdater(options) : deb ? new DebUpdater(options) : new AppImageUpdater(options);
-    // The staple-later flow replaces a published zip, so blockmaps aren't published; always download the whole file.
-    u.disableDifferentialDownload = true;
     u.autoDownload = !deb;
     u.autoInstallOnAppQuit = !deb;
     u.on("update-available", ({ version }) => {

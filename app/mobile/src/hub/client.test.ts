@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, READY_TIMEOUT_MS, REPLAY_MAX, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 import { Deflate, Z_SYNC_FLUSH } from "pako";
+import { MAX_FPS } from "../screen";
 
 const HUB = "http://devbox:4790";
 
@@ -30,6 +31,8 @@ describe("HubClient", () => {
     const { hub, client, frames, states } = setup();
     client.start();
     expect(hub.link.url).toBe("ws://devbox:4790/app");
+    // The auth rides the upgrade too, for a hub that answers it a round trip sooner.
+    expect(hub.link.headers).toEqual({ authorization: "Bearer key_abc", "x-fleetd-features": "deflate" });
     hub.link.open();
     // The snapshot goes with the auth, not a round trip after it: the hub reads them in order.
     expect(hub.link.sent).toEqual([{ t: "auth", key: "key_abc", features: ["deflate"] }, { t: "snapshot" }]);
@@ -168,6 +171,89 @@ describe("HubClient", () => {
     expect(first.closed).toBe(true);
     expect(hub.links).toHaveLength(2);
     expect(states().at(-1)).toMatchObject({ phase: "connecting" });
+  });
+
+  describe("back from a long time behind", () => {
+    // iOS stops the timers behind: the clock jumps, and nothing ticked meanwhile.
+    const behind = (client: HubClient, ms: number) => {
+      client.sleep();
+      vi.setSystemTime(Date.now() + ms);
+      client.wake();
+    };
+
+    it("takes a fresh link that is ready before the old one says a word, and replays what was missed", () => {
+      const { hub, client, frames, states } = setup();
+      client.start();
+      const first = hub.ready();
+      first.frame(snapshot);
+      first.frame({ t: "event", seq: 8, type: "task.started" });
+      behind(client, RACE_AFTER_BEHIND_MS + 1);
+      // The probe on the old link and a fresh link, at once.
+      expect(first.sent.filter((m) => m.t === "call" && m.tool === "hub_info")).toHaveLength(1);
+      expect(hub.links).toHaveLength(2);
+      const fresh = hub.link;
+      fresh.open();
+      expect(fresh.sent.map((m) => m.t)).toEqual(["auth", "snapshot"]);
+      // Its frames wait until it is the link: the app still reads the old one meanwhile.
+      fresh.frame({ t: "ready", protocol: 1, version: "0.1.0" });
+      expect(first.closed).toBe(true);
+      expect(states().at(-1)).toMatchObject({ phase: "live" });
+      fresh.frame({ ...snapshot, cursor: 9 });
+      // Back from the last event applied, so the one missed replays.
+      expect(fresh.sent.at(-1)).toEqual({ t: "events", cursor: 8 });
+      expect(frames.at(-1)).toMatchObject({ t: "snapshot", replay: true });
+      // No third link when the probe's wait runs out.
+      vi.advanceTimersByTime(WAKE_PROBE_MS);
+      expect(hub.links).toHaveLength(2);
+      expect(fresh.closed).toBe(false);
+    });
+
+    it("keeps the old link, and its calls, when it answers first, and closes the fresh one", async () => {
+      const { hub, client, frames } = setup();
+      client.start();
+      const first = hub.ready();
+      const pending = client.call("requests_list", { state: "open" });
+      behind(client, RACE_AFTER_BEHIND_MS + 1);
+      const fresh = hub.link;
+      fresh.open();
+      const probe = first.sent.filter((m) => m.t === "call" && m.tool === "hub_info").at(-1);
+      first.frame({ t: "result", id: probe?.id, output: {} });
+      expect(fresh.closed).toBe(true);
+      fresh.frame({ t: "ready", protocol: 1 });
+      vi.advanceTimersByTime(WAKE_PROBE_MS);
+      expect(first.closed).toBe(false);
+      expect(frames.filter((f) => f.t === "state")).toHaveLength(2);
+      const call = first.sent.find((m) => m.t === "call" && m.tool === "requests_list");
+      first.frame({ t: "result", id: call?.id, output: { requests: [] } });
+      await expect(pending).resolves.toEqual({ ok: true, output: { requests: [] } });
+    });
+
+    it("goes on with the fresh link still dialling when the probe's wait runs out, or the old link ends", () => {
+      for (const end of ["wait", "close"] as const) {
+        const { hub, client, states } = setup();
+        client.start();
+        const first = hub.ready();
+        behind(client, RACE_AFTER_BEHIND_MS + 1);
+        const fresh = hub.link;
+        if (end === "wait") vi.advanceTimersByTime(WAKE_PROBE_MS);
+        else first.close(1006);
+        expect(first.closed).toBe(true);
+        expect(hub.links).toHaveLength(2);
+        expect(states().at(-1)).toMatchObject({ phase: "connecting" });
+        fresh.open();
+        fresh.frame({ t: "ready", protocol: 1 });
+        expect(states().at(-1)).toMatchObject({ phase: "live" });
+        client.stop();
+      }
+    });
+
+    it("only asks the old link after a short time behind", () => {
+      const { hub, client } = setup();
+      client.start();
+      hub.ready();
+      behind(client, RACE_AFTER_BEHIND_MS);
+      expect(hub.links).toHaveLength(1);
+    });
   });
 
   it("asks rather than counts the sleep as silence when its timer wakes late", () => {
@@ -335,6 +421,7 @@ describe("compressed frames", () => {
     vi.advanceTimersByTime(backoff(0));
     hub.link.open();
     expect(hub.sentOf("auth")).toEqual([{ t: "auth", key: "key_abc" }]);
+    expect(hub.link.headers).toEqual({ authorization: "Bearer key_abc", "x-fleetd-features": "" });
   });
 });
 
@@ -367,6 +454,22 @@ describe("watching a screen", () => {
     expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });
     hub.link.frame(frame("Bsee", 3));
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
+  });
+
+  it("acks each frame of the watched screen to a hub that paces them, and none to one that doesn't", () => {
+    const { hub, client } = setup();
+    client.watch("Bsee");
+    client.start();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(frame("Bsee", 1));
+    expect(hub.sentOf("browser_frame_ack")).toEqual([]);
+    client.reconnectNow();
+    hub.ready(["browser_sessions", "frame_acks"]);
+    expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch", session: "Bsee", acks: true, fps: MAX_FPS });
+    hub.link.frame(frame("Bsee", 2));
+    // Another screen's, on its way after a change: acked never.
+    hub.link.frame(frame("Bother", 3));
+    expect(hub.sentOf("browser_frame_ack")).toEqual([{ t: "browser_frame_ack", seq: 2 }]);
   });
 
   it("hands a refusal of what was just sent to the live view, and asks for the events again all the same", () => {

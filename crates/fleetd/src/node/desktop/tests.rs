@@ -1088,3 +1088,23 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     );
     desktops.shutdown().await;
 }
+
+#[test]
+fn a_desktops_frames_keep_coloured_text_sharp() {
+    // Red columns a pixel wide on black, as a terminal's red text: 4:2:0 would blend each with its black neighbour.
+    let (width, height) = (64u32, 32u32);
+    let bgra: Vec<u8> = (0..width * height)
+        .flat_map(|i| match i % width % 2 {
+            0 => [0, 0, 230, 255],
+            _ => [0, 0, 0, 255],
+        })
+        .collect();
+    let jpeg = super::screen::jpeg(&bgra, width, height).unwrap();
+    let shown = image::load_from_memory(&jpeg).unwrap().into_rgb8();
+    assert_eq!(shown.dimensions(), (width, height));
+    let (red, black) = (shown.get_pixel(20, 16), shown.get_pixel(21, 16));
+    assert!(
+        red[0] > 180 && black[0] < 70,
+        "red {red:?}, black {black:?}"
+    );
+}

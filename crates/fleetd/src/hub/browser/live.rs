@@ -2,7 +2,9 @@
 //! watches it (`browser_watch` on, sent with each new watcher, off after the last), and again after a reconnect. The
 //! hub keeps no frame: each goes out to the app connections watching its session as it comes, and a slow one skips
 //! frames rather than queueing them. A node answers each `on` with the session's newest frame, so a watcher who joins
-//! a still page (a phone beside the desktop) sees it at once, not at its next change.
+//! a still page (a phone beside the desktop) sees it at once, not at its next change. An app that acks its frames
+//! says what its link carries (app_ws/pace.rs); the node hears the slowest's (`browser_watch`'s `kbps`), so its
+//! encoder fits the screen to it.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -41,7 +43,50 @@ pub struct Live {
     pub thumbs: Arc<super::thumbs::Thumbs>,
     /// Each live session's latest step, and the machine whose heartbeat said it.
     steps: Mutex<HashMap<BrowserSessionId, (MachineId, BrowserAction)>>,
+    /// Watched sessions' frame budgets: each watch's, and the one the node was last told.
+    budgets: Mutex<HashMap<BrowserSessionId, Budgets>>,
 }
+
+#[derive(Default)]
+struct Budgets {
+    /// Each watch's limit, by its id: `None` while its link keeps up (or its app doesn't ack).
+    by_watch: HashMap<u64, Option<u32>>,
+    told: Option<u32>,
+    told_at: Option<std::time::Instant>,
+}
+
+/// A watched session's budget changes this little, or this soon after the last, go untold: each `browser_watch` costs
+/// a frame, as the node sends its newest again.
+const RETELL_SHARE: f64 = 0.2;
+const RETELL_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
+
+impl Budgets {
+    /// The slowest watch's limit.
+    fn slowest(&self) -> Option<u32> {
+        self.by_watch.values().flatten().copied().min()
+    }
+
+    /// The budget to tell the node now, if it should be told: `force` after a watch ends.
+    fn retell(&mut self, force: bool) -> Option<Option<u32>> {
+        let now = std::time::Instant::now();
+        let new = self.slowest();
+        let moved = match (self.told, new) {
+            (Some(a), Some(b)) => (f64::from(a) - f64::from(b)).abs() > f64::from(a) * RETELL_SHARE,
+            (a, b) => a != b,
+        };
+        let soon = self
+            .told_at
+            .is_some_and(|at| now.duration_since(at) < RETELL_EVERY);
+        if !moved || (soon && !force) {
+            return None;
+        }
+        self.told = new;
+        self.told_at = Some(now);
+        Some(new)
+    }
+}
+
+static WATCH_IDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Default for Live {
     fn default() -> Self {
@@ -53,6 +98,7 @@ impl Default for Live {
             first: Mutex::default(),
             thumbs: Arc::default(),
             steps: Mutex::default(),
+            budgets: Mutex::default(),
         }
     }
 }
@@ -63,16 +109,86 @@ pub struct Watch {
     link: Weak<NodeLinkServer>,
     session: BrowserSessionId,
     pub frames: broadcast::Receiver<BrowserFrame>,
+    id: u64,
 }
 
-fn watch_frame(session: &BrowserSessionId, on: bool) -> HubToNode {
+/// What one watch's link carries, told to the session's node as it changes ([`Watch::budget`]).
+#[derive(Clone)]
+pub struct WatchBudget {
+    live: Weak<Live>,
+    link: Weak<NodeLinkServer>,
+    session: BrowserSessionId,
+    id: u64,
+}
+
+impl WatchBudget {
+    /// The watch's link carries `kbps` (`None`: it keeps up).
+    pub fn set(&self, kbps: Option<u32>) {
+        let (Some(live), Some(link)) = (self.live.upgrade(), self.link.upgrade()) else {
+            return;
+        };
+        let tell = {
+            let mut budgets = live.budgets_lock();
+            let Some(b) = budgets.get_mut(&self.session) else {
+                return;
+            };
+            // Ended already: its entry went with it.
+            let Some(mine) = b.by_watch.get_mut(&self.id) else {
+                return;
+            };
+            if *mine == kbps {
+                return;
+            }
+            *mine = kbps;
+            b.retell(false)
+        };
+        if let Some(kbps) = tell {
+            live.tell(&link, &self.session, kbps);
+        }
+    }
+}
+
+fn watch_frame(session: &BrowserSessionId, on: bool, kbps: Option<u32>) -> HubToNode {
     HubToNode::BrowserWatch(BrowserWatchFrame {
         session_id: session.clone(),
         on,
+        kbps,
     })
 }
 
+impl Watch {
+    /// This watch's say in its session's budget.
+    pub fn budget(&self) -> WatchBudget {
+        WatchBudget {
+            live: self.live.clone(),
+            link: self.link.clone(),
+            session: self.session.clone(),
+            id: self.id,
+        }
+    }
+}
+
 impl Live {
+    fn budgets_lock(&self) -> std::sync::MutexGuard<'_, HashMap<BrowserSessionId, Budgets>> {
+        self.budgets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The budget the node holding `session` was last told.
+    fn told(&self, session: &BrowserSessionId) -> Option<u32> {
+        self.budgets_lock().get(session).and_then(|b| b.told)
+    }
+
+    /// Tells the node holding a watched `session` its new budget.
+    fn tell(&self, link: &NodeLinkServer, session: &BrowserSessionId, kbps: Option<u32>) {
+        let machine = self.lock().get(session).map(|(m, _)| m.clone());
+        if let Some(machine) = machine {
+            tracing::debug!(target: "fleetd::stages", screen = %session, ?kbps, "screen's frame budget");
+            link.send_to(&machine, watch_frame(session, true, kbps));
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<BrowserSessionId, (MachineId, usize)>> {
         self.watched
             .lock()
@@ -122,12 +238,20 @@ impl Live {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(session.clone(), std::time::Instant::now());
         }
-        link.send_to(machine, watch_frame(session, true));
+        let id = WATCH_IDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let kbps = {
+            let mut budgets = self.budgets_lock();
+            let b = budgets.entry(session.clone()).or_default();
+            b.by_watch.insert(id, None);
+            b.told
+        };
+        link.send_to(machine, watch_frame(session, true, kbps));
         Watch {
             live: Arc::downgrade(self),
             link: Arc::downgrade(link),
             session: session.clone(),
             frames,
+            id,
         }
     }
 
@@ -136,7 +260,7 @@ impl Live {
         self.lock()
             .iter()
             .filter(|(_, (m, _))| m == machine)
-            .map(|(session, _)| watch_frame(session, true))
+            .map(|(session, _)| watch_frame(session, true, self.told(session)))
             .collect()
     }
 
@@ -274,6 +398,25 @@ impl Drop for Watch {
         let Some(live) = self.live.upgrade() else {
             return;
         };
+        // Its say in the budget goes: the next slowest's is told, or none with the last watch.
+        let tell = {
+            let mut budgets = live.budgets_lock();
+            match budgets.get_mut(&self.session) {
+                Some(b) => {
+                    b.by_watch.remove(&self.id);
+                    if b.by_watch.is_empty() {
+                        budgets.remove(&self.session);
+                        None
+                    } else {
+                        b.retell(true)
+                    }
+                }
+                None => None,
+            }
+        };
+        if let (Some(kbps), Some(link)) = (tell, self.link.upgrade()) {
+            live.tell(&link, &self.session, kbps);
+        }
         let last = {
             let mut watched = live.lock();
             match watched.get_mut(&self.session) {
@@ -294,7 +437,7 @@ impl Drop for Watch {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&self.session);
-            link.send_to(&machine, watch_frame(&self.session, false));
+            link.send_to(&machine, watch_frame(&self.session, false, None));
         }
     }
 }

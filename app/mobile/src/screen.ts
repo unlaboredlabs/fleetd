@@ -236,7 +236,7 @@ export const ENTER: readonly BrowserInput[] = key("Enter");
 // ---- frames: the newest drawn at most so often, the last one always ----
 
 /** The most frames a second the phone draws: a page's screencast can send 25, more than a phone needs to follow it. */
-const MAX_FPS = 12;
+export const MAX_FPS = 12;
 
 /**
  * Paces the frames drawn: one at once, then at most one each `gapMs`, always the newest, and the last of a burst once

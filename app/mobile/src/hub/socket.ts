@@ -1,8 +1,11 @@
 // The real transport: React Native's WebSocket. Text frames, and Binary ones a hub that offers compression sends.
 import type { Transport } from "./client";
 
-export const webSocketTransport: Transport = (url, events) => {
-  const socket = new WebSocket(url);
+/** React Native's WebSocket takes the upgrade's headers as a third argument, on iOS and Android alike. */
+type NativeWebSocket = new (url: string, protocols: undefined, options: { headers: Record<string, string> }) => WebSocket;
+
+export const webSocketTransport: Transport = (url, events, headers) => {
+  const socket = headers === undefined ? new WebSocket(url) : new (WebSocket as unknown as NativeWebSocket)(url, undefined, { headers: { ...headers } });
   socket.binaryType = "arraybuffer";
   let closed = false;
   const close = (code: number, reason: string) => {

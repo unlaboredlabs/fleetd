@@ -13,7 +13,7 @@ use fleetd_contracts::browser::{
     BrowserControl, BrowserControlTo, BrowserFrame, BrowserInput, BrowserSessionId, KeyAction,
     MouseAction, MouseButton,
 };
-use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+use fleetd_contracts::node_link::HubToNode;
 use fleetd_contracts::prim::{Int, NonEmpty};
 use tokio::sync::watch;
 
@@ -21,8 +21,8 @@ use super::ios::Simulators;
 use super::scrcpy::{Frame, Input, TouchAction};
 use super::{Devices, Router};
 use crate::node::browser::FrameSlot;
+use crate::node::browser::fit::{self, Pacer};
 use crate::node::util::AbortOnDrop;
-use crate::node::wire::to_json;
 
 /// What live view needs of a kind of device session: Android's ([`Devices`]) and iOS's ([`Simulators`]).
 pub trait Screens: Send + Sync {
@@ -101,7 +101,8 @@ pub fn browser_frame(
     }
 }
 
-/// Puts each new frame of `frames` into `slot` (the newest so far at once), until the session's stream ends.
+/// Puts each new frame of `frames` into `slot` (the newest so far at once), fitted to the watcher's link
+/// ([`fit`](crate::node::browser::fit)), until the session's stream ends.
 pub async fn pump(
     session: BrowserSessionId,
     mut frames: watch::Receiver<Option<Frame>>,
@@ -110,6 +111,7 @@ pub async fn pump(
 ) {
     let watched = std::time::Instant::now();
     let mut first = true;
+    let mut pacer = Pacer::default();
     loop {
         let frame = frames.borrow_and_update().clone();
         if let Some(frame) = frame {
@@ -121,8 +123,16 @@ pub async fn pump(
                     "screen timing: a watch's first frame went to the hub"
                 );
             }
-            let out = browser_frame(&session, &frame, control());
-            slot.replace(session.as_str(), to_json(&NodeToHub::BrowserFrame(out)));
+            fit::offer(
+                &slot,
+                &mut pacer,
+                browser_frame(&session, &frame, control()),
+            );
+            // The frames that come meanwhile wait: only the newest of them goes.
+            let wait = pacer.wait(slot.budget(session.as_str()));
+            if !wait.is_zero() {
+                tokio::time::sleep(wait).await;
+            }
         }
         if frames.changed().await.is_err() {
             return;

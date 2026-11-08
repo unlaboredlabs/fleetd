@@ -33,9 +33,12 @@ pub type AppCallId = Text<1, 64>;
 ///   `browser_sessions` names each screen's machine and latest step, and the `screens_count` tool exists.
 /// - `artifacts`: the `artifacts_list` and `artifact_get` tools and the `artifacts.changed` event: a chat's Artifacts.
 /// - `deflate` ([`APP_DEFLATE`]): compressed frames, both ways, for a client whose `auth` asked for them.
+/// - `frame_acks`: `browser_watch`'s `acks` and `browser_frame_ack` are read: a client that acks each `browser_frame`
+///   has only a few in flight, so on a slow link it sees the newest screen rather than one queued seconds ago, and the
+///   hub fits the screen's encoding to what the link carries.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 9] = [
+pub const APP_FEATURES: [&str; 10] = [
     "presence",
     "browser_sessions",
     "navi_asks",
@@ -45,6 +48,7 @@ pub const APP_FEATURES: [&str; 9] = [
     "screen_thumbs",
     "artifacts",
     APP_DEFLATE,
+    "frame_acks",
 ];
 
 /// Compressed /app frames, the node link's `link_deflate` scheme (node_link.rs): a client lists this in its `auth`'s
@@ -55,6 +59,14 @@ pub const APP_FEATURES: [&str; 9] = [
 /// client may send its own frames compressed the same way, only once `ready` listed this: an older hub reads Binary as
 /// text. A message inflating past 64 MiB, or not at all, ends the connection.
 pub const APP_DEFLATE: &str = "deflate";
+
+/// The `auth` and the `snapshot` in the upgrade request itself, a round trip sooner: a client sends its key as
+/// `Authorization: Bearer <key>` and its `auth` features comma-separated in this header. A hub that takes the key
+/// sends `ready` and then a `snapshot` right after the 101, and treats the connection's first frame, the same `auth`,
+/// and a `snapshot` right after it as already answered; so the client sends both as before, and an older hub, which
+/// ignores the headers, answers them. A key the hub refuses there is only ignored: the `auth` frame is refused as
+/// always.
+pub const APP_FEATURES_HEADER: &str = "x-fleetd-features";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -114,6 +126,20 @@ pub enum AppClientMessage {
     BrowserWatch {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<crate::browser::BrowserSessionId>,
+        /// Sent only to a hub whose `ready` names `frame_acks`. True: the client sends a `browser_frame_ack` for each
+        /// `browser_frame` it gets, and the hub sends the next ones only as the earlier are acked. Absent: frames go
+        /// as fast as the socket takes them.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        acks: bool,
+        /// Sent only to a hub whose `ready` names `frame_acks`, with `acks`. The most frames a second the client
+        /// draws: the hub sends no more, always the newest, and the last of a burst once its gap is up.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fps: Option<crate::prim::Int<1, 60>>,
+    },
+    /// Sent only to a hub whose `ready` names `frame_acks`, while a `browser_watch` with `acks` runs.
+    /// A `browser_frame` came: its `seq`.
+    BrowserFrameAck {
+        seq: u64,
     },
     /// Sent only to a hub whose `ready` names `browser_sessions` in its features.
     /// A person's mouse or keys for a session they took over (`browser_control` human): a human key with operate on

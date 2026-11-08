@@ -34,7 +34,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "attachment_get",
-        "One file of a project's chat or orders, base64, at most 5 MiB: to show an image a message carries. Read on the project's machine.",
+        "One file of a project's chat or orders, base64, at most 25 MiB: to show an image a message carries. maxSide gives an image's preview, shrunk to fit (preview: true); offset (and length) one piece of the file, for a large one read in pieces. Read on the project's machine.",
     ),
     (
         "fleetd_status",
@@ -490,11 +490,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "attachment_part",
-        "One piece of a file too large for one call, in order: the first (no uploadId) starts an upload, each next passes the uploadId it returned and offset (the bytes sent so far). Finish with attachment_put, the last piece and the uploadId. An upload untouched for an hour is deleted.",
+        "One piece of a file too large for one call, in order: the first (no uploadId) starts an upload, each next passes the uploadId it returned and offset (the bytes sent so far). Finish with attachment_put, the last piece and the uploadId. A piece sent again after its answer was lost is answered as taken. An upload untouched for an hour is deleted.",
     ),
     (
         "attachment_put",
-        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 25 MiB, base64) for a later chat_send: the whole file, or with uploadId the last piece after attachment_part. Unused uploads are deleted after 24 h.",
+        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 25 MiB, base64) for a later chat_send: the whole file, or with uploadId the last piece after attachment_part; the same uploadId again answers with the file it stored. Unused uploads are deleted after 24 h.",
     ),
     (
         "project_files",

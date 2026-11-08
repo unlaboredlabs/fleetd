@@ -26,6 +26,16 @@ export const STABLE_MS = 30_000;
 export const RESUME_MAX_EVENTS = 200;
 /** What this client reads compressed: the hub then sends frames as permessage-deflate Binary (transport.ts). */
 export const CLIENT_FEATURES = ["deflate"] as const;
+/**
+ * The auth on the upgrade request too: a hub that reads it sends `ready` and the snapshot right after the 101, a round
+ * trip sooner, and takes the `auth` and `snapshot` frames that follow as answered; an older hub ignores the headers.
+ */
+export const upgradeHeaders = (key: string): Record<string, string> => ({
+  authorization: `Bearer ${key}`,
+  "x-fleetd-features": CLIENT_FEATURES.join(","),
+});
+/** A frame this long or longer goes compressed to a hub that reads `deflate`: an upload's piece, not the chatter. */
+export const DEFLATE_UP_BYTES = 16 * 1024;
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
 /** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
@@ -82,8 +92,12 @@ export class HubClient implements HubSource {
   #browser = false;
   /** The browser session whose frames to forward; sent again on each connection. */
   #watch: string | null = null;
+  /** The hub paces frames to their acks (ready's `frame_acks`): the watch asks for it, and each frame is acked. */
+  #frameAcks = false;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
   #thumbsServed = false;
+  /** This connection's hub reads compressed frames from the app: its `ready` listed `deflate`. */
+  #deflateUp = false;
   /** A window shows the Screens page; sent again on each connection. */
   #thumbs = false;
   #nextPresenceId = 0;
@@ -141,7 +155,7 @@ export class HubClient implements HubSource {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
       this.#pending.set(id, { resolve, timer });
-      this.#connection?.send(text);
+      this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
     });
   }
 
@@ -216,9 +230,11 @@ export class HubClient implements HubSource {
       onOpen: () => {
         if (this.#connection !== connection) return;
         opened = true;
+        this.#deflateUp = false;
         this.#heardAt = Date.now();
         // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
-        // than a round trip after `ready`; refused, the hub closes before it reads them.
+        // than a round trip after `ready`; refused, the hub closes before it reads them. A hub that took the auth on
+        // the upgrade has sent `ready` and the snapshot already, and takes these two as answered.
         this.#send({ t: "auth", key: this.#options.key, features: [...CLIENT_FEATURES] });
         this.#firstSnapshot = true;
         this.#send({ t: "snapshot" });
@@ -236,9 +252,10 @@ export class HubClient implements HubSource {
       onClose: (code, reason, error) => {
         if (this.#connection !== connection) return;
         this.#connection = null;
+        this.#deflateUp = false;
         this.#onClose(code, reason, error, opened);
       },
-    });
+    }, upgradeHeaders(this.#options.key));
     this.#connection = connection;
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;
@@ -276,7 +293,9 @@ export class HubClient implements HubSource {
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
+        this.#frameAcks = frame.features?.includes("frame_acks") ?? false;
         this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
+        this.#deflateUp = frame.features?.includes("deflate") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
@@ -326,7 +345,10 @@ export class HubClient implements HubSource {
       case "browser_frame": {
         const { t: _t, ...browser } = frame;
         // Only the watched session's: one that was watched before a change can still be on its way.
-        if (browser.sessionId === this.#watch) this.#options.emit({ t: "browser_frame", frame: browser });
+        if (browser.sessionId !== this.#watch) return;
+        // As it comes: the hub sends the next frames as these arrive, so a slow link shows the newest, not a backlog.
+        if (this.#frameAcks) this.#send({ t: "browser_frame_ack", seq: browser.seq });
+        this.#options.emit({ t: "browser_frame", frame: browser });
         return;
       }
       case "screen_thumb": {
@@ -440,7 +462,7 @@ export class HubClient implements HubSource {
   }
 
   #sendWatch(): void {
-    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch });
+    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch, ...(this.#frameAcks ? { acks: true as const } : {}) });
   }
 
   #sendChat(): void {
@@ -454,7 +476,8 @@ export class HubClient implements HubSource {
   }
 
   #send(message: ClientMessage): void {
-    this.#connection?.send(JSON.stringify(message));
+    const text = JSON.stringify(message);
+    this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
   }
 
   #setState(state: HubState): void {

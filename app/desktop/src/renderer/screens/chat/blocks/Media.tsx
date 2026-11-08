@@ -1,7 +1,8 @@
-// Checklists, and an image or clip already on the hub (attachment_get, read once the bubble is on screen). In the chat
+// Checklists, and an image or clip already on the hub (attachment_get, its preview read once the bubble is on screen). In the chat
 // an image opens large in the viewer when clicked; a clip plays where it is.
 import { Check, Circle } from "lucide-react";
 import type { AttachmentBlock, ChecklistBlock } from "../../../../shared/contracts";
+import { PREVIEW_SIDE } from "../../../../shared/transfer";
 import { useToolQuery } from "../../../src/data/react";
 import { useSeen } from "../../live";
 import { cx, Text } from "../../../ui";
@@ -37,7 +38,8 @@ export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }
   const project = useBubbleActions()?.project;
   const open = useOpenImage();
   const [seen, box] = useSeen();
-  const got = useToolQuery("attachment_get", { projectRef: project ?? { machineId: "", projectId: "" }, attachmentId: media.attachmentId }, { enabled: project !== undefined && seen });
+  // An image shows its preview, which the viewer swaps for the picture itself; a clip comes as itself.
+  const got = useToolQuery("attachment_get", { projectRef: project ?? { machineId: "", projectId: "" }, attachmentId: media.attachmentId, ...(clip ? {} : { maxSide: PREVIEW_SIDE.desktop }) }, { enabled: project !== undefined && seen });
   const data = got.data;
   const src = data === undefined ? undefined : `data:${data.mime};base64,${data.dataB64}`;
   const alt = media.caption ?? data?.name ?? "";

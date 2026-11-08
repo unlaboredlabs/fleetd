@@ -586,6 +586,166 @@ async fn live_frames_go_only_to_their_watchers_and_the_node_hears_each_watch_and
 }
 
 #[tokio::test]
+async fn the_node_hears_the_slowest_watchers_budget_and_the_next_one_when_it_leaves() {
+    use fleetd_contracts::browser::BrowserSessionId;
+    use fleetd_contracts::node_link::{CAP_BROWSER, HubToNode};
+    let (hub, _clock, _home) = hub();
+    let live = hub.link.browser_live.clone();
+    let devbox = MachineId::unchecked("devbox");
+    let mut node = hub.link.test_link(&devbox, &[CAP_BROWSER]);
+    async fn heard(
+        node: &mut tokio::sync::mpsc::UnboundedReceiver<HubToNode>,
+    ) -> Vec<(bool, Option<u32>)> {
+        let mut said = Vec::new();
+        while let Ok(Some(frame)) =
+            tokio::time::timeout(Duration::from_millis(200), node.recv()).await
+        {
+            if let HubToNode::BrowserWatch(w) = frame {
+                said.push((w.on, w.kbps));
+            }
+        }
+        said
+    }
+    let s1 = BrowserSessionId::unchecked(S1);
+    let phone = live.watch(&hub.link, &devbox, &s1);
+    let desk = live.watch(&hub.link, &devbox, &s1);
+    assert_eq!(heard(&mut node).await, [(true, None), (true, None)]);
+    // The phone's link fills at 800 kbit/s; the desktop's at 3000 changes nothing, the phone's being slower.
+    phone.budget().set(Some(800));
+    desk.budget().set(Some(3000));
+    desk.budget().set(Some(3100));
+    assert_eq!(heard(&mut node).await, [(true, Some(800))]);
+    // A watcher joining or a node coming back hears it too, not a reset.
+    assert_eq!(
+        live.rewatch(&devbox),
+        [HubToNode::BrowserWatch(
+            fleetd_contracts::browser::BrowserWatchFrame {
+                session_id: s1.clone(),
+                on: true,
+                kbps: Some(800),
+            }
+        )]
+    );
+    let third = live.watch(&hub.link, &devbox, &s1);
+    assert_eq!(heard(&mut node).await, [(true, Some(800))]);
+    // The phone goes: the desktop's is told at once.
+    drop(phone);
+    assert_eq!(heard(&mut node).await, [(true, Some(3100))]);
+    // A budget set after its watch ended changes nothing.
+    drop(third);
+    let ended = desk.budget();
+    drop(desk);
+    assert_eq!(heard(&mut node).await, [(false, None)]);
+    ended.set(Some(10));
+    assert!(heard(&mut node).await.is_empty());
+    assert!(live.rewatch(&devbox).is_empty());
+}
+
+/// Over a real /app socket: a watch that acks has a frame or two in flight; one that came meanwhile is replaced by
+/// the newest, which goes once an ack makes room. A watch that doesn't ack gets each frame as it comes, as before, and
+/// neither gets a frame it already has.
+#[tokio::test]
+async fn an_acking_watch_has_few_frames_in_flight_then_the_newest() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    node_call(&hub, &r, report(S1, "live", json!([])), "browser_session")
+        .await
+        .unwrap();
+    let devbox = MachineId::unchecked("devbox");
+    let _node = hub
+        .link
+        .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}/app", listener.local_addr().unwrap());
+    tokio::spawn(crate::hub::http::serve(
+        listener,
+        hub.clone(),
+        Arc::new(crate::hub::api::registry()),
+    ));
+    let grants: Vec<fleetd_contracts::auth::Grant> =
+        serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+    let key = hub
+        .auth
+        .create_key("phone", &grants, fleetd_contracts::auth::KeyKind::Human)
+        .unwrap()
+        .key;
+    let frame = |seq: u64| -> fleetd_contracts::browser::BrowserFrame {
+        serde_json::from_value(json!({
+            "sessionId": S1, "seq": seq, "jpegB64": "AAAA", "width": 4, "height": 3, "control": "agent",
+        }))
+        .unwrap()
+    };
+    for acks in [true, false] {
+        let (mut app, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        for m in [
+            json!({ "t": "auth", "key": key }),
+            json!({ "t": "browser_watch", "session": S1, "acks": acks }),
+        ] {
+            app.send(Message::text(m.to_string())).await.unwrap();
+        }
+        // What reaches the app until it is quiet for a moment: the seqs of its frames.
+        async fn got(
+            app: &mut (
+                     impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+                     + Unpin
+                 ),
+        ) -> Vec<u64> {
+            let mut seqs = Vec::new();
+            while let Ok(Some(Ok(m))) =
+                tokio::time::timeout(Duration::from_millis(300), app.next()).await
+            {
+                // The hub's round trip ping is answered by the socket itself.
+                let Message::Text(text) = m else { continue };
+                let v: Value = serde_json::from_str(&text).unwrap();
+                if v["t"] == "browser_frame" {
+                    seqs.push(v["seq"].as_u64().unwrap());
+                }
+            }
+            seqs
+        }
+        got(&mut app).await;
+        for seq in 1..=4 {
+            hub.link.browser_frame(&devbox, frame(seq));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        if !acks {
+            // The node's newest again (for another watcher's `on`) isn't sent twice.
+            hub.link.browser_frame(&devbox, frame(4));
+            assert_eq!(
+                got(&mut app).await,
+                [1, 2, 3, 4],
+                "an older client's watch, unpaced"
+            );
+            continue;
+        }
+        // Before the round trip's pong, two in flight (the app hasn't read the ping yet); 3 and 4 wait, 4 in 3's place.
+        assert_eq!(got(&mut app).await, [1, 2], "two in flight");
+        // An ack covers the frames before it too.
+        app.send(Message::text(
+            json!({ "t": "browser_frame_ack", "seq": 2 }).to_string(),
+        ))
+        .await
+        .unwrap();
+        assert_eq!(
+            got(&mut app).await,
+            [4],
+            "the newest, not the one it replaced"
+        );
+        // An ack of a frame never sent changes nothing. With the round trip and rate known, a link this fast takes the
+        // next frame while 4 is still unacked: what's in flight is far less than two round trips' work.
+        app.send(Message::text(
+            json!({ "t": "browser_frame_ack", "seq": 99 }).to_string(),
+        ))
+        .await
+        .unwrap();
+        hub.link.browser_frame(&devbox, frame(5));
+        assert_eq!(got(&mut app).await, [5], "pipelined on a fast link");
+    }
+}
+
+#[tokio::test]
 async fn partial_uploads_count_toward_the_cap_and_go_once_stale_past_the_retention() {
     let (hub, clock, home) = hub();
     let r = project("storefront");

@@ -1,5 +1,6 @@
-// A chat's file opened or saved on this computer: main reads it from the hub itself (attachment_get), so its bytes never
-// cross to the page, and keeps it under a name of its type (shared/files.ts), so opening it never runs it.
+// A chat's file opened or saved on this computer: main reads it from the hub itself (attachment_get, in pieces that
+// resume after a drop: shared/transfer.ts), so its bytes never cross to the page, and keeps it under a name of its type
+// (shared/files.ts), so opening it never runs it.
 
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -8,6 +9,7 @@ import { join } from "node:path";
 import { BrowserWindow, dialog, shell, type WebContents } from "electron";
 
 import { openedFileName, safeFileName } from "../shared/files";
+import { readFile, type Wait } from "../shared/transfer";
 import type { CallOutcome, OpenOutcome } from "../shared/hub";
 import type { FileRequest } from "../shared/ipc";
 
@@ -15,17 +17,17 @@ type Call = (tool: string, input: unknown) => Promise<CallOutcome>;
 
 type Got = { readonly ok: true; readonly name: string; readonly mime: string; readonly bytes: Buffer } | { readonly ok: false; readonly message: string };
 
-const read = async (call: Call, request: FileRequest): Promise<Got> => {
-  const got = await call("attachment_get", { projectRef: request.projectRef, attachmentId: request.attachmentId });
-  if (!got.ok) return { ok: false, message: `The file couldn't be read: ${got.error.message}` };
-  const out = got.output as { name?: unknown; mime?: unknown; dataB64?: unknown };
+const read = async (call: Call, request: FileRequest, wait?: Wait): Promise<Got> => {
+  const got = await readFile((tool, input) => call(tool, input), { projectRef: request.projectRef, attachmentId: request.attachmentId }, undefined, wait);
+  if (!got.ok) return { ok: false, message: `The file couldn't be read: ${got.message}` };
+  const out = got.file as { name?: unknown; mime?: unknown; dataB64?: unknown };
   if (typeof out.name !== "string" || typeof out.mime !== "string" || typeof out.dataB64 !== "string") return { ok: false, message: "The hub sent no file." };
   return { ok: true, name: safeFileName(out.name, out.mime), mime: out.mime, bytes: Buffer.from(out.dataB64, "base64") };
 };
 
 /** Opens the file in this computer's app for its type, from a folder of its own in the temp directory. */
-export const openFile = async (call: Call, request: FileRequest, dir = tmpdir()): Promise<OpenOutcome> => {
-  const got = await read(call, request);
+export const openFile = async (call: Call, request: FileRequest, dir = tmpdir(), wait?: Wait): Promise<OpenOutcome> => {
+  const got = await read(call, request, wait);
   if (!got.ok) return got;
   const folder = join(dir, "fleetd-files", randomBytes(8).toString("hex"));
   const path = join(folder, openedFileName(got.name, got.mime));

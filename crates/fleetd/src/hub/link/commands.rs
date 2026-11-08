@@ -20,8 +20,9 @@ pub const MAX_TIMEOUT_SEC: u32 = fleetd_contracts::ledger::GATED_MAX_TIMEOUT_SEC
 const REPLY_GRACE_SEC: u64 = 30;
 /// A node update downloads the new binary before it answers.
 const UPDATE_WAIT_SEC: u64 = 600;
-/// A node's `claude install`, which has 10 minutes of its own.
-const CLAUDE_WAIT_SEC: u64 = 660;
+/// A node's `claude install`, a minute past its own limit (45 minutes, for a slow link). A node from before gives up
+/// after 10 and says so.
+const CLAUDE_WAIT_SEC: u64 = crate::node::runner::claude::install::INSTALL_WAIT.as_secs() + 60;
 /// A node's login: 30 s for its URL, or a minute to end once it has the code, and a grace.
 const LOGIN_WAIT_SEC: u64 = 90;
 /// How long the hub waits for a node to write a secret.

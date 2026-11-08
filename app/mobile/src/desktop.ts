@@ -1,10 +1,10 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
-// rules, the chat reducers, whose a project is and the tools it calls, the Add project flow, a project's allowed
-// profiles, its approvals', payments', Telegram's and linked hubs' words, the prose diff a skill's
-// history shows, the Update button's run and its wording, the characters an approval card marks, the state glyph's
-// frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that import no
-// packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks when they
-// change.
+// rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
+// project flow, a project's allowed profiles, its approvals', payments', Telegram's and linked hubs' words, the prose
+// diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
+// state glyph's frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that
+// import no packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks
+// when they change.
 export type {
   ApprovalDecision,
   AttachmentGetOutput,
@@ -63,6 +63,7 @@ export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/h
 export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
+export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";
 export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
