@@ -184,6 +184,8 @@ it("lists the machines, each with its page and Remove, and Repair only for one t
   expect(row("laptop")?.textContent).toContain("If the machine is on, Repair sets its node up again.");
   expect(row("devbox")?.textContent).not.toContain("Repair sets");
   expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
+  // Every row ends in a chevron, so it reads as one that opens without a hover.
+  for (const name of names) expect(row(name ?? "")?.lastElementChild?.matches("svg[aria-hidden='true']")).toBe(true);
 
   // No raw version on a row: the machine's page says it.
   expect(row("devbox")?.textContent).not.toContain("0.9.0");
