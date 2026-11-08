@@ -44,3 +44,5 @@ export function trainChanges(hub: Hub, filter: ListFilter): Change[] {
 
 /** The repo's train: the project it runs in and its watch window (`records().train(repo)`). */
 export const trainOf = (hub: Hub, repo: string): TrainRow | undefined => changeRecords(hub).train(repo);
+
+export { trainDigest, trainUnlanded } from "./digest.ts";

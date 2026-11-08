@@ -103,3 +103,35 @@ test("the hub's host fails gracefully while Tasks and the intake aren't in the h
   expect(sent).toEqual(["T1: hi"]);
   expect(await host.branchPrefix(PROJECT)).toBe("slot/1/fleetd/");
 });
+
+test("a writer's command that prints its PR URL starts the train's ready pass at once", async () => {
+  const { k, hub } = lab();
+  start(hub);
+  k.train.stop();
+  const { namesAPr } = await import("../src/hub/executor/index.ts");
+  expect(namesAPr({ status: "completed", kind: { type: "command", output: "https://github.com/acme/storefront/pull/9\n" } })).toBe(true);
+  expect(namesAPr({ status: "running", kind: { type: "command", output: "https://github.com/acme/storefront/pull/9" } })).toBe(false);
+  expect(namesAPr({ status: "completed", kind: { type: "tool", output: "https://github.com/acme/storefront/pull/9" } })).toBe(false);
+  k.db.conn
+    .query("INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, thread_id, data) VALUES (31, ?, ?, 'W1', 'running', 's-31', ?)")
+    .run(PROJECT.machineId, PROJECT.projectId, JSON.stringify({ taskId: "T31", projectRef: PROJECT, workstreamId: "W1", kind: "write", state: "running", title: "t" }));
+  k.train.records.ensureTrain(REPO, PROJECT, k.clock.ms);
+  k.train.lastReadyCheck.set(REPO, k.clock.ms);
+  executorHooks(hub).foundPr({ machineId: PROJECT.machineId, threadId: "s-31" });
+  expect(k.train.lastReadyCheck.has(REPO)).toBe(false);
+});
+
+test("the lead digest's merge train lines", async () => {
+  const { trainDigest, trainUnlanded } = await import("../src/hub/train/index.ts");
+  const { k, hub } = lab();
+  expect(trainDigest(hub, PROJECT)).toBeUndefined();
+  k.pr(10, "fleetd/T10-a", { FAIL: "x\n" });
+  k.train.gate = new (await import("./train_kit.ts")).CleanGate();
+  await k.enqueue(10);
+  await k.settle();
+  const lines = trainDigest(hub, PROJECT, "2026-10-17T09:00:00.000Z")!;
+  expect(lines[0]).toBe(`- ${REPO}: queue empty`);
+  expect(lines[1]).toStartWith(`- X1 ci_failed: ${REPO}#10, by T10; CI failed on `);
+  expect(lines[1]).toEndWith("Back with its author; the train retries its next push");
+  expect(trainUnlanded(hub, PROJECT, "W1")).toEqual(["#10 ci_failed"]);
+});
