@@ -99,6 +99,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
 - [x] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
 - [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
+- [x] hub loop `outage::run` → `src/hub/outage` <!-- loop:hub loop `outage::run` -->
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
 - [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
