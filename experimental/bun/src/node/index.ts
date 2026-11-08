@@ -8,6 +8,7 @@ import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
 import { Node } from "./api.ts";
 import { registerAreas, stopAreas } from "./areas.ts";
+import { findHelper } from "./runner/helper.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
@@ -67,23 +68,10 @@ export function machineFingerprint(): string | undefined {
   return undefined;
 }
 
-/** The Rust fleetd binary that hosts sessions and runs agent-mcp: FLEETD_NATIVE_BIN, else `fleetd` on PATH. */
-export function nativeBin(): string {
-  if (process.env.FLEETD_NATIVE_BIN) return process.env.FLEETD_NATIVE_BIN;
-  const own = (() => {
-    try {
-      return realpathSync(process.execPath);
-    } catch {
-      return process.execPath;
-    }
-  })();
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    const bin = join(dir, "fleetd");
-    try {
-      if (dir && existsSync(bin) && realpathSync(bin) !== own) return bin;
-    } catch {}
-  }
-  return "fleetd";
+/** The session-host helper (./runner/helper.ts): the Rust build that hosts sessions and runs agent-mcp; never this
+ * binary. Undefined when the machine has none, which the node reports as degraded. */
+export function nativeBin(): string | undefined {
+  return findHelper();
 }
 
 type Flags = Record<string, string | true>;
