@@ -58,6 +58,11 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   h.sims = sims;
   void simulators.start();
   sweeps.set(h, setInterval(() => sims.endIdle(SIM_IDLE), 60_000));
+  // The doctor's iOS row (load.rs `ios`): no Xcode, no Node.js, the golden being made or why it failed, or ready.
+  node.area("hb").contribute((hb) => {
+    const ios = simulators.health();
+    if (hb.load && ios) (hb.load as Record<string, unknown>).ios = ios;
+  });
   return sims;
 }
 const sweeps = new WeakMap<Host, Timer>();
