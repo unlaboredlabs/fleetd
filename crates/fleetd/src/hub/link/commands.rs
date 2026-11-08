@@ -190,6 +190,20 @@ impl NodeCommands {
     }
 
     /// Whether the machine's node is linked now.
+    /// What the hub waits on the machine's node for now: its `cmd_check`s (the train's checks and regenerations) and
+    /// its approved commands (`gated_run`, `gated_resume`). A node restart cuts both off.
+    pub fn running(&self, machine_id: &MachineId) -> (usize, usize) {
+        let state = self.state.lock().unwrap();
+        let on = |reply: &str| {
+            state
+                .pending
+                .values()
+                .filter(|p| &p.machine_id == machine_id && p.reply == reply)
+                .count()
+        };
+        (on("cmd_result"), on("gated_result"))
+    }
+
     pub fn linked(&self, machine_id: &MachineId) -> bool {
         self.state.lock().unwrap().links.contains_key(machine_id)
     }
@@ -475,8 +489,12 @@ impl NodeCommands {
     pub async fn hold_node(
         &self,
         machine_id: &MachineId,
+        unhosted: bool,
     ) -> Result<NodeActionResult, NodeCommandError> {
-        let request = json!({ "t": "node_action", "action": NodeActionKind::Hold });
+        let mut request = json!({ "t": "node_action", "action": NodeActionKind::Hold });
+        if unhosted {
+            request["unhosted"] = json!(true);
+        }
         self.node_action(machine_id, request, 30).await
     }
 
@@ -620,6 +638,7 @@ mod tests {
             login_url: None,
             steps: None,
             hosts: None,
+            hosted: None,
         })
     }
 

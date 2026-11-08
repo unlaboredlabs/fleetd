@@ -10,7 +10,7 @@ use fleetd_contracts::node_link::{
     NodeUpdate,
 };
 
-use super::{NodeAnswer, NodeFacts, Refusal, UpdatePorts};
+use super::{Held, NodeAnswer, NodeFacts, Refusal, UpdatePorts};
 use crate::hub::api::Hub;
 use crate::update::finish::{self, Plan};
 use crate::update::service::{self, Service};
@@ -131,15 +131,22 @@ impl UpdatePorts for HubPorts {
         })
     }
 
-    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>> {
+    fn hold_node<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        unhosted: bool,
+    ) -> BoxFuture<'a, Result<Held, String>> {
         Box::pin(async move {
             let hub = self.hub().ok_or("the hub is stopping")?;
             let answer = hub
                 .node_commands
-                .hold_node(machine_id)
+                .hold_node(machine_id, unhosted)
                 .await
                 .map_err(|e| e.message)?;
-            Ok(answer.steps.unwrap_or(0))
+            Ok(Held {
+                steps: answer.steps.unwrap_or(0),
+                hosted: answer.hosted,
+            })
         })
     }
 
@@ -217,24 +224,31 @@ impl UpdatePorts for HubPorts {
     }
 }
 
-/// What runs on the machine that its node's restart would end: live sessions (a browser, a device, a desktop). Agents'
-/// runs carry on by themselves, so they aren't in it.
+/// What runs on the machine that its node's restart would end: live sessions (a browser, a device, a desktop), the
+/// approved commands running there, and the checks and regenerations the hub runs there (the train's `cmd_check`s).
+/// Agents' runs carry on by themselves, so they aren't in it.
 fn busy(hub: &Hub, machine_id: &MachineId) -> Option<String> {
     let now = crate::hub::store::now_ms(hub.clock.as_ref());
     let sessions = hub
         .db
         .with(|c| crate::hub::machine_roles::live_on(c, machine_id, now))
         .unwrap_or(0);
+    let (checks, approved) = hub.node_commands.running(machine_id);
+    busy_words(usize::try_from(sessions).unwrap_or(0), approved, checks)
+}
+
+/// [`busy`] in words: "1 live session and 2 approved commands"; None when nothing runs.
+pub(super) fn busy_words(sessions: usize, approved: usize, checks: usize) -> Option<String> {
     let count = |n: usize, one: &str, many: &str| match n {
         0 => None,
         1 => Some(format!("1 {one}")),
         n => Some(format!("{n} {many}")),
     };
-    let words: Vec<String> = [count(
-        usize::try_from(sessions).unwrap_or(0),
-        "live session",
-        "live sessions",
-    )]
+    let words: Vec<String> = [
+        count(sessions, "live session", "live sessions"),
+        count(approved, "approved command", "approved commands"),
+        count(checks, "check", "checks"),
+    ]
     .into_iter()
     .flatten()
     .collect();

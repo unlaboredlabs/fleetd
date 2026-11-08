@@ -3,8 +3,9 @@
 //! SHA256SUMS, the swap that keeps the binary it replaces, the services `fleetd init` made (`service`), and the watcher
 //! that restarts one, checks it came up on the new build and puts the previous one back if not (`finish`).
 //!
-//! A restart never waits for work to finish: a lead's turn and running agents carry on by themselves afterwards in
-//! their threads and worktrees, the merge train takes up what it was merging, and an approved command runs on through
+//! A restart never waits for work to finish: a lead's turn and running agents carry on by themselves through it, under
+//! session hosts in systemd scopes of their own that outlive the node (node/runner/host.rs), or afterwards in their
+//! threads and worktrees where they can't, the merge train takes up what it was merging, and an approved command runs on through
 //! a hub restart and reports its result once its node is linked again (node/gated.rs). One its node's restart cut off
 //! goes back to the person as may have run, never run again.
 //!

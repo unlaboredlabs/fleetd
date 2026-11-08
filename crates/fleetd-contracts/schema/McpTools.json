@@ -8301,7 +8301,7 @@
           "description": "Retry this machine of the last run, whose hub updated: its node, then its Claude Code."
         },
         "now": {
-          "description": "Update now: nodes restart without waiting for their agents to finish their step.",
+          "description": "Update now: nodes restart without waiting for what runs on them.",
           "type": "boolean"
         },
         "startOver": {
@@ -8424,7 +8424,7 @@
           "type": "boolean"
         },
         "drainMinutes": {
-          "description": "How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait.",
+          "description": "How long a node waits at most for what its restart would cut off, in minutes, 0 to 240; 0 doesn't wait.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -23688,7 +23688,7 @@
           "type": "string"
         },
         "now": {
-          "description": "Update now: its nodes don't wait for their agents to finish their step. Absent otherwise.",
+          "description": "Update now: its nodes don't wait for what runs on them. Absent otherwise.",
           "type": "boolean"
         },
         "parts": {
@@ -23726,7 +23726,7 @@
           "type": "boolean"
         },
         "drainMinutes": {
-          "description": "How long a node waits for its agents to finish their step, in minutes.",
+          "description": "How long a node waits at most for what its restart would cut off, in minutes.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"

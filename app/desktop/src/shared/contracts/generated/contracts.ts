@@ -3147,7 +3147,7 @@ export type HubUpdateInput = {
   channel?: HubChannel;
   /** Retry this machine of the last run, whose hub updated: its node, then its Claude Code. */
   machine?: MachineId;
-  /** Update now: nodes restart without waiting for their agents to finish their step. */
+  /** Update now: nodes restart without waiting for what runs on them. */
   now?: boolean;
   /**
    * Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part
@@ -3215,7 +3215,7 @@ export type HubUpdateSettingsInput = {
    * 10 minutes of the last update install once, as the newest, at the end of those 10 minutes. Off by default.
    */
   auto?: boolean;
-  /** How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait. */
+  /** How long a node waits at most for what its restart would cut off, in minutes, 0 to 240; 0 doesn't wait. */
   drainMinutes?: number;
 };
 
@@ -8458,7 +8458,7 @@ export type UpdateRun = {
   /** Set once every part has its result. */
   finishedAt?: Timestamp;
   id: string;
-  /** Update now: its nodes don't wait for their agents to finish their step. Absent otherwise. */
+  /** Update now: its nodes don't wait for what runs on them. Absent otherwise. */
   now?: boolean;
   /** The hub first, then per machine, by name, its node and its Claude Code. */
   parts: UpdatePart[];
@@ -8471,7 +8471,7 @@ export type UpdateRun = {
 export type UpdateSettings = {
   /** Updates install by themselves as soon as a build is ready, at most one in 10 minutes. */
   auto: boolean;
-  /** How long a node waits for its agents to finish their step, in minutes. */
+  /** How long a node waits at most for what its restart would cut off, in minutes. */
   drainMinutes: number;
 };
 

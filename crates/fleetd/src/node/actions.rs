@@ -69,6 +69,7 @@ pub async fn run_node_action(
                 login_url: None,
                 steps: None,
                 hosts: None,
+                hosted: None,
                 stage: None,
             },
             None,
@@ -114,6 +115,7 @@ pub async fn run_node_action(
                         login_url: None,
                         steps: None,
                         hosts: None,
+                        hosted: None,
                     },
                     None,
                 ),
@@ -174,6 +176,7 @@ pub async fn run_node_action(
                         login_url: None,
                         steps: None,
                         hosts: None,
+                        hosted: None,
                     },
                     None,
                 )
@@ -190,17 +193,32 @@ pub async fn run_node_action(
             ),
         },
         NodeActionKind::Hold => {
-            let steps = sessions.hold();
+            // Hosts outlive the node only in scopes of their own: without one a host shares the node's cgroup.
+            let scoped = frame.unhosted == Some(true)
+                && tokio::task::spawn_blocking(crate::node::runner::scope::current)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
+            let hosted = scoped.then_some(crate::node::runner::host::PROTOCOL);
+            let steps = match hosted {
+                Some(_) => sessions.unhosted_mid_step(),
+                None => sessions.hold(),
+            };
             (
                 NodeActionResult {
                     id: frame.id,
                     ok: true,
                     stage: None,
-                    message: head_text(&format!("holding; {steps} mid-step")),
+                    message: head_text(&match hosted {
+                        Some(_) => format!("hosted agents carry on; {steps} not hosted mid-step"),
+                        None => format!("holding; {steps} mid-step"),
+                    }),
                     probe: None,
                     login_url: None,
                     steps: Some(steps),
                     hosts: None,
+                    hosted,
                 },
                 None,
             )
@@ -233,6 +251,7 @@ pub async fn run_node_action(
                     login_url: None,
                     steps: None,
                     hosts,
+                    hosted: None,
                 },
                 None,
             )
@@ -256,6 +275,7 @@ pub async fn run_node_action(
                         login_url: None,
                         steps: None,
                         hosts: None,
+                        hosted: None,
                     },
                     answer.watch,
                 ),
@@ -287,6 +307,7 @@ fn login_answer(
         login_url: done.ok().filter(|_| url).map(head_text),
         steps: None,
         hosts: None,
+        hosted: None,
     }
 }
 
@@ -304,5 +325,6 @@ pub fn failed(
         login_url: None,
         steps: None,
         hosts: None,
+        hosted: None,
     }
 }

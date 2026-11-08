@@ -1,10 +1,12 @@
 //! `hub_update`: the hub updates itself to the newest build of its channel, then tells every connected node to do the
 //! same, with the CLI's own pieces (`crate::update`). The hub restarts at once: agents don't need it mid-step (a fleetd
-//! tool call they make while it restarts fails, and they try again). A node waits for its agents first, for a while
-//! at most ([`Updates::drain`]): it holds their tool calls that haven't started (`node_action` `hold`, node/hold.rs)
-//! until none runs, then restarts, so they resume between steps rather than redo one; past the deadline it restarts
-//! whatever runs, which carries on by itself afterwards (`crate::update`'s doc says how). Update now (`now`) doesn't
-//! wait.
+//! tool call they make while it restarts fails, and they try again). A node restarts at once too when nothing its
+//! restart would cut off runs: its agents run under hosts in systemd scopes of their own, which carry on through it,
+//! mid-step included. It waits only for a live session, an approved command, a check the hub runs there or a session
+//! that isn't hosted (a Navi's) mid-step, for a while at most ([`Updates::drain`], 2 minutes by default). Where its
+//! agents can't carry on (no scopes, or a new build on another host protocol) it holds their tool calls that haven't
+//! started (`node_action` `hold`, node/hold.rs) until none runs, as before; past the deadline it restarts whatever
+//! runs, which carries on by itself afterwards (`crate::update`'s doc says how). Update now (`now`) doesn't wait.
 //!
 //! Ahead of any update, every 2 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
 //! prefetch`]), and asks its nodes to do the same, so that pressing Update only swaps and restarts; the app says
@@ -107,8 +109,14 @@ pub trait UpdatePorts: Send + Sync {
     fn nodes(&self) -> Vec<NodeFacts>;
     /// Asks the node to download `update` ahead of its update, without waiting for its answer.
     fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate);
-    /// Holds the node's agents between steps for a while (`node_action` `hold`): how many are still mid-step.
-    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>>;
+    /// Holds the node's agents between steps for a while (`node_action` `hold`): how many are still mid-step. With
+    /// `unhosted`, a node whose agents carry on through its restart (its answer's `hosted`) holds none, and counts only
+    /// the sessions that don't.
+    fn hold_node<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        unhosted: bool,
+    ) -> BoxFuture<'a, Result<Held, String>>;
     /// Resolves once the machine's link goes live or drops after this call. Made before the facts it follows are
     /// read, so a change between the two isn't missed.
     fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()>;
@@ -128,6 +136,16 @@ pub trait UpdatePorts: Send + Sync {
     ) -> BoxFuture<'a, Result<NodeAnswer, String>>;
     /// Tells the apps how the update looks now (the `hub.update` event); called only when that changed.
     fn announce(&self, update: &HubUpdateData);
+}
+
+/// A node's answer to its hold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Held {
+    /// Its sessions still mid-step: with `unhosted` and `hosted`, only those not hosted.
+    pub steps: u32,
+    /// The host protocol of its sessions' hosts, when they carry on through its restart; None when they don't, and from
+    /// an older node.
+    pub hosted: Option<u32>,
 }
 
 /// A node's answer to its update, and the wait for its second.
@@ -204,10 +222,13 @@ pub struct Updates {
     check_failed: Mutex<Option<String>>,
     /// What [`UpdatePorts::announce`] last told the apps, so a write that changes nothing they show sends nothing.
     announced: Mutex<Option<HubUpdateData>>,
+    /// Bumped at each write of the run: a cloud machine's catch-up waits on it for the run going on to end.
+    saved: tokio::sync::watch::Sender<u64>,
 }
 
-/// How long a node waits for its agents to finish their step by default.
-pub const DRAIN_MINUTES: u64 = 10;
+/// How long a node waits by default for what its restart would cut off (a live session, a Navi mid-step, an approved
+/// command, a check), or for its agents to finish their step where they don't carry on through it.
+pub const DRAIN_MINUTES: u64 = 2;
 
 /// `<hub home>/update/settings.json`, written by `hub_update_settings` (or a person); every field optional.
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -287,6 +308,7 @@ impl Updates {
             next_check: Mutex::default(),
             check_failed: Mutex::default(),
             announced: Mutex::default(),
+            saved: tokio::sync::watch::Sender::new(0),
         })
     }
 
@@ -948,6 +970,7 @@ impl Updates {
             self.save_last_auto(run);
         }
         self.announce(run);
+        self.saved.send_modify(|n| *n = n.wrapping_add(1));
         let wrote = fs::create_dir_all(&self.dir).and_then(|()| {
             crate::update::replace_file(
                 &self.dir.join("run.json"),
@@ -1442,11 +1465,15 @@ impl Updates {
                 ),
             );
         }
-        // The node holds its agents' tool calls that haven't started, and waits for those running to finish (and for
-        // what else can't carry on through a restart: a live session), so the restart finds its agents
-        // between steps. At the deadline it updates whatever runs; Update now doesn't wait.
+        // The node waits only for what its restart would cut off: a live session, an approved command, a check the hub
+        // runs there, and a session that isn't hosted (a Navi's) mid-step. Its hosted agents carry on through the
+        // restart, mid-step included, so they aren't held or waited for, unless they can't: a machine without systemd
+        // scopes, whose hosts die with the node, or a new build on another host protocol, whose node won't take them
+        // back. Then it holds every agent's tool calls that haven't started, and waits for those running to finish, as
+        // before. At the deadline it updates whatever runs; Update now doesn't wait.
         let by = now_ms(self.clock.as_ref()) + ms(self.drain());
         let mut said = None;
+        let mut carry_on = true;
         while let Some(now) = facts(ports) {
             if current(&now) {
                 return;
@@ -1455,7 +1482,17 @@ impl Updates {
                 break;
             }
             let agents = match now.can_hold {
-                true => ports.hold_node(machine_id).await.unwrap_or(0),
+                true => {
+                    let mut held = ports
+                        .hold_node(machine_id, carry_on)
+                        .await
+                        .unwrap_or_default();
+                    if carry_on && held.hosted != Some(crate::node::runner::host::PROTOCOL) {
+                        carry_on = false;
+                        held = ports.hold_node(machine_id, false).await.unwrap_or_default();
+                    }
+                    held.steps
+                }
                 false => 0,
             };
             if agents == 0 && now.busy.is_none() {
@@ -1554,12 +1591,24 @@ impl Updates {
     /// Brings the machine's Claude Code to the version the hub's build was tested with, once its node runs that build.
     /// A cloud machine's catch-up at its hello (hub/cloud): one that slept through an update gets it now. Its node is
     /// brought to the hub's build, which restarts it (`Restarting`: the rest waits for its next hello); one on the hub's
-    /// build gets the Claude Code that build was tested with. Nothing while an update runs, which takes every node it
-    /// sees online itself, nor from a hub built by hand, which updates nobody.
+    /// build gets the Claude Code that build was tested with. While an update runs, which takes every node it saw online
+    /// itself, it waits for the run to end first; nothing from a hub built by hand, which updates nobody.
     pub async fn catch_up(&self, machine_id: &MachineId) -> Result<NodeCatchUp, String> {
         let ports = self.ports().ok_or("the hub's updates aren't wired")?;
-        if !ports.release_build() || self.status().is_some_and(|r| self.going(&r)) {
+        if !ports.release_build() {
             return Ok(NodeCatchUp::Current);
+        }
+        // A machine that wakes while an update goes on (it slept through the run's start, so the run skipped it) waits
+        // for the run to end, not ready for work meanwhile, then comes to the build the hub runs by then: at once, not
+        // at the next automatic update.
+        let mut saved = self.saved.subscribe();
+        while self
+            .status()
+            .is_some_and(|r| r.finished_at.is_none() && self.going(&r))
+        {
+            if saved.changed().await.is_err() {
+                break;
+            }
         }
         let node = ports
             .nodes()

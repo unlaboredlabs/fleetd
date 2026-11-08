@@ -508,6 +508,7 @@ fn refusal(bad: &Undecodable) -> Option<NodeToHub> {
             login_url: None,
             steps: None,
             hosts: None,
+            hosted: None,
         }),
         "session_call" => NodeToHub::SessionReply(SessionReplyFrame {
             id,
@@ -1033,6 +1034,7 @@ async fn run_link_once(
                         login_url: None,
                         steps: None,
                         hosts: None,
+                        hosted: None,
                     },
                 ))
             }

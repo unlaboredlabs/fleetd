@@ -1,6 +1,6 @@
 //! `fleetd update [--check] [--channel edge|stable] [--now]`: replaces this binary with the latest build of a release
 //! channel, then restarts the hub and node services that run this binary: the hub at once, the node once its agents
-//! finish the step they're on (it holds the ones that haven't started, node/hold.rs), 10 minutes at most; `--now`
+//! finish the step they're on (it holds the ones that haven't started, node/hold.rs), 2 minutes at most; `--now`
 //! doesn't wait. What a restart cuts off carries on by itself afterwards (see `crate::update`). The desktop app's
 //! Update button does the same through the hub (`hub_update`), for the hub and every node; this is the way for a
 //! machine without the app.
