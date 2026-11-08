@@ -347,7 +347,7 @@ export class Executors {
     return this.runners.get(machineId);
   }
 
-  private rememberRunner(machineId: MachineId, info: RunnerInfo): void {
+  rememberRunner(machineId: MachineId, info: RunnerInfo): void {
     this.runners.set(machineId, info);
   }
 
