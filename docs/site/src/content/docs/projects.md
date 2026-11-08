@@ -868,9 +868,10 @@ $ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead --ke
 ✓ Projects allow lead once they pick it on their Agents page (project_set); new agents on it run claude-opus-5-5 at xhigh. Leads start on lead (claude-opus-5-5 at xhigh) from each lead's next start.
 ```
 
-`fleetd project profiles` marks it `lead`. Picking the default (`fleetd project profile high --lead`) puts leads back
-on whichever profile is the default. Deleting the lead's profile does the same, and says so: `medium is gone, and no
-project allows it any more. Leads ran on it, so they start on the default, high, again from their next start.`
+`fleetd project profiles` marks it `lead`. Picking the default
+(`fleetd project profile high --lead --key-file ~/.fleetd/human.key`) puts leads back on whichever profile is the
+default. Deleting the lead's profile does the same, and says so: `medium is gone, and no project allows it any more.
+Leads ran on it, so they start on the default, high, again from their next start.`
 
 A change applies to agents started after it. Agents already running keep the model and effort they started on, and
 each agent's usage, time and lane report the model it really ran on. A node older than the hub runs effort `xhigh` as high, and
