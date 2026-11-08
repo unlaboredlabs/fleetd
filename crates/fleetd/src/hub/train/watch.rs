@@ -116,9 +116,13 @@ impl Train {
             };
             self.recovered(&w, &runs);
             let mut events = None;
+            // The workflow runs it re-ran a job of in this pass: going again, though `runs` read them done.
+            let mut reran_now = std::collections::HashSet::new();
             let mut waiting = false;
             for check in failed_after(&runs, &fast, &batch) {
-                waiting |= self.failed_check(&w, &check, &runs, &mut events).await;
+                waiting |= self
+                    .failed_check(&w, &check, &runs, &mut events, &mut reran_now)
+                    .await;
             }
             let done = runs.iter().all(|r| r.status == "completed");
             if done && !waiting && now - w.since_ms >= WATCH_SETTLE_MS {
@@ -161,14 +165,16 @@ impl Train {
     /// What the watch does about `check` failing on `w`'s commit (`runs`, its checks): nothing more once its failure
     /// there has a fix order, or it is a manual or scheduled run (`events`, the commit's workflow runs, read once a
     /// pass). Otherwise the open fix order of the same check takes it; failed again after the train re-ran it, it opens
-    /// one; failed the first time, its job is re-run once, when its workflow run is done (GitHub re-runs none before).
-    /// True while the watch still has to see that re-run.
+    /// one; failed the first time, its job is re-run once, when its workflow run is done (GitHub re-runs none before,
+    /// so a run with a job re-run this pass, `reran_now`, waits for the next). True while the watch still has to see
+    /// that re-run.
     async fn failed_check(
         &self,
         w: &Watch,
         check: &CheckRun,
         runs: &[CheckRun],
         events: &mut Option<Vec<(u64, String)>>,
+        reran_now: &mut std::collections::HashSet<u64>,
     ) -> bool {
         let (repo, sha, name) = (w.repo.as_str(), w.sha.as_str(), check.name.as_str());
         let now = self.now_ms();
@@ -204,6 +210,9 @@ impl Train {
             runs.iter()
                 .any(|r| r.status != "completed" && r.workflow_run() == Some(run))
         };
+        if !reran && run.is_some_and(|r| reran_now.contains(&r)) {
+            return true;
+        }
         if !reran && run.is_some_and(busy) {
             return false;
         }
@@ -258,6 +267,7 @@ impl Train {
                 );
                 self.records
                     .put_watch_check(repo, sha, name, id, RERAN, now);
+                reran_now.extend(run);
                 true
             }
             Err(e) => {

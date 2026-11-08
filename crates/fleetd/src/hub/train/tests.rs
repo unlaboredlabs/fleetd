@@ -8407,6 +8407,61 @@ async fn a_check_that_fails_on_main_and_on_its_re_run_opens_one_fix_order() {
     );
 }
 
+/// W520, review of #1303: a blip that fails two jobs of one workflow run on main gives each its one re-run. GitHub re-runs
+/// no job of a run that is going, so the second waits for the next pass rather than taking a refusal for a fix order.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_jobs_failing_in_one_run_on_main_are_each_re_run_once() {
+    let clock = Arc::new(Dial::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+    *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
+    train_file(&kit, &[], &[]);
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = failed.clone();
+    answer_checks(&kit, move || {
+        let done = now.load(std::sync::atomic::Ordering::SeqCst);
+        let edge = |id: u64, name: &str| {
+            let mut r = job(id, 40, name, "failure");
+            if !done {
+                r["status"] = json!("in_progress");
+                r["conclusion"] = Value::Null;
+            }
+            r
+        };
+        vec![
+            job(1, 1, "unit", "success"),
+            edge(50, "edge / desktop-linux"),
+            edge(51, "edge / desktop-macos"),
+        ]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    kit.train.step(REPO).await;
+    assert_eq!(
+        *kit.gh.reruns.lock().unwrap(),
+        [50],
+        "one job of the run at a time"
+    );
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+    // Both fail again on their re-runs (`failing_again`): each opens its one order, after its re-run.
+    kit.train.step(REPO).await;
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [50, 51]);
+    kit.train.step(REPO).await;
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 2, "{orders:?}");
+    for (_, text) in &orders {
+        assert!(
+            text.contains("and again when the train re-ran it once."),
+            "{text}"
+        );
+    }
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2, "never re-run twice");
+}
+
 /// W520: a run a person started on a merged commit (a manual Mobile release, `workflow_dispatch`) isn't the merge's: its
 /// failure is neither re-run nor given a fix order. A failed scheduled run is `scheduled`'s, not the watch's.
 #[tokio::test(flavor = "multi_thread")]
