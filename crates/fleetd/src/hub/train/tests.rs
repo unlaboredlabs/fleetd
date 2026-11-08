@@ -8500,6 +8500,15 @@ async fn a_fast_check_red_on_main_after_the_merge_is_re_run_once_then_opens_one_
         "{}",
         orders[0].1
     );
+    // The train waited for it and it passed on the batch: the order says so, not that it ran only after the merge.
+    assert!(
+        orders[0].1.contains(
+            "It passed on the merge train's batch, but failed on main's own run: look at what that run does \
+             differently"
+        ) && !orders[0].1.contains("doesn't wait for this check"),
+        "{}",
+        orders[0].1
+    );
     assert_eq!(*kit.gh.reruns.lock().unwrap(), [50], "never re-run twice");
 }
 
