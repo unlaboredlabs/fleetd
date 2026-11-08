@@ -152,6 +152,16 @@ export const machineIdProblem = (name: string): string | undefined => {
   return /^[a-z0-9-]{1,32}$/u.test(name.trim()) ? undefined : "Lower-case letters, digits and dashes, up to 32.";
 };
 
+/** A hub that listens on its own machine only (127.0.0.1, localhost): a line for another machine can't reach it. */
+export const onlyHere = (hubUrl: string): boolean => {
+  try {
+    const host = new URL(hubUrl).hostname;
+    return host === "localhost" || host === "[::1]" || /^127\./u.test(host);
+  } catch {
+    return false;
+  }
+};
+
 /** "Works once, until 14:32." in the person's own clock. */
 export const untilLine = (expiresAt: string): string =>
   `The code works once, until ${new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;

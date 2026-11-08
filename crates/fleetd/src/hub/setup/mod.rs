@@ -157,7 +157,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 vec![noted(
                     "Hub address",
                     base,
-                    "Another address: run fleetd init again on the hub and pick it.",
+                    "Another address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>.",
                 )],
             )],
             test: Some("Reach the hub at its address".into()),
@@ -175,20 +175,19 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Add a machine",
                     Some(
-                        "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, \
-                     Settings › Hub › Machines › Add machine does the same.",
+                        "The hub's own machine can run agents too. In the app, Settings › Hub › Machines › Add \
+                     machine does each of these.",
                     ),
                     vec![],
                     vec![
+                        command("The hub's own machine, on it", "fleetd machine add --local", None),
                         command(
-                            "On the hub, for a code",
+                            "Another machine, on the hub",
                             "fleetd pair --worker <name>",
-                            None,
-                        ),
-                        command(
-                            "On the machine",
-                            format!("fleetd init --join {base} --code <code>"),
-                            Some("Or, from the hub, over SSH: fleetd machine add <ssh host>."),
+                            Some(
+                                "It prints one line to run on that machine, which installs fleetd and joins. Or, over \
+                                 SSH from the hub: fleetd machine add <ssh host>.",
+                            ),
                         ),
                     ],
                 ),

@@ -33,6 +33,7 @@ import {
   lineState,
   lineWords,
   machineIdProblem,
+  onlyHere,
   pickable,
   resumable,
   runLine,
@@ -670,6 +671,11 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
           {copied === false ? (
             <Text size="xs" tone="danger">
               {"Couldn't copy it. Select the line and copy it by hand."}
+            </Text>
+          ) : null}
+          {onlyHere(made.join.hubUrl) ? (
+            <Text size="xs" tone="danger">
+              {`The hub listens on its own machine only (${made.join.hubUrl}), so no other machine can reach it. First move it to your tailnet or LAN: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>. Then make a new line.`}
             </Text>
           ) : null}
         </div>

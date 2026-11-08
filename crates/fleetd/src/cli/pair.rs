@@ -383,10 +383,43 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         false,
         "fleetd pair --worker",
     )?;
-    Ok(format!(
+    let mut text = format!(
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
-        join.line, join.expires_at
-    ))
+        join.line,
+        until_words(&join.expires_at)
+    );
+    if let Some(note) = loopback_note(&join.hub) {
+        text += &format!("\n{note}\n");
+    }
+    Ok(text)
+}
+
+/// A code's expiry as people read it: `00:53 UTC`, or the timestamp as it is when it doesn't parse.
+pub fn until_words(expires_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(expires_at)
+        .map(|at| {
+            at.with_timezone(&chrono::Utc)
+                .format("%H:%M UTC")
+                .to_string()
+        })
+        .unwrap_or_else(|_| expires_at.to_owned())
+}
+
+/// A join line for a hub that listens on this machine only works on this machine: says so, with where to change it.
+pub fn loopback_note(hub: &str) -> Option<String> {
+    let url = reqwest::Url::parse(hub).ok()?;
+    let local = match url.host()? {
+        url::Host::Domain(name) => name.eq_ignore_ascii_case("localhost"),
+        url::Host::Ipv4(ip) => ip.is_loopback(),
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+    };
+    local.then(|| {
+        format!(
+            "The hub listens on this machine only ({hub}), so no other machine can reach it. First move it to your \
+             tailnet or LAN: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>. Then make a \
+             new line."
+        )
+    })
 }
 
 /// `fleetd pair --worker-codes`: the worker codes that can still be used, by id, never the codes themselves.
@@ -580,6 +613,29 @@ fn phone_qr(minted: &Minted) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_join_line_for_a_hub_only_this_machine_reaches_says_so() {
+        for hub in [
+            "http://127.0.0.1:4790",
+            "http://localhost:4790",
+            "http://[::1]:4790",
+        ] {
+            let note = super::loopback_note(hub).unwrap();
+            assert!(note.contains("fleetd init --listen"), "{note}");
+        }
+        assert_eq!(
+            super::loopback_note("http://devbox.example.ts.net:4790"),
+            None
+        );
+        assert_eq!(super::loopback_note("http://100.64.0.7:4790"), None);
+    }
+
+    #[test]
+    fn a_codes_expiry_reads_as_a_time() {
+        assert_eq!(super::until_words("2026-11-08T00:53:35.918Z"), "00:53 UTC");
+        assert_eq!(super::until_words("soon"), "soon");
+    }
 
     #[test]
     fn the_worker_command_installs_and_joins_in_one_step() {

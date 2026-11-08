@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, MAC_TOKEN_MS, macCodeOver, macCodeState, machineIdProblem, pickable, resumable, shortOutput, sshProblem } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, MAC_TOKEN_MS, macCodeOver, macCodeState, machineIdProblem, onlyHere, pickable, resumable, shortOutput, sshProblem } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -92,6 +92,11 @@ describe("Add machine's model", () => {
     expect(lineState(repair, true, at + 15 * 60_000, false)).toBe("expired");
     expect(lineWords("waiting", "laptop")).toBe("Waiting for laptop…");
     expect(lineWords("joined", "laptop")).toBe("laptop joined.");
+  });
+
+  it("knows a hub only its own machine reaches, whose line no other machine can use", () => {
+    for (const url of ["http://127.0.0.1:4790", "http://localhost:4790", "http://[::1]:4790"]) expect(onlyHere(url)).toBe(true);
+    for (const url of ["http://devbox.tail1234.ts.net:4790", "http://100.64.0.7:4790", "not a url"]) expect(onlyHere(url)).toBe(false);
   });
 
   it("tells a host that refused the hub's key from one that didn't answer, each with what to run on the hub", () => {

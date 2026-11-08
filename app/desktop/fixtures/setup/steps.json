@@ -20,7 +20,7 @@
           "values": [
             {
               "label": "Hub address",
-              "note": "Another address: run fleetd init again on the hub and pick it.",
+              "note": "Another address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>.",
               "value": "http://devbox:4790"
             }
           ]
@@ -49,19 +49,19 @@
       "parts": [
         {
           "links": [],
-          "note": "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, Settings › Hub › Machines › Add machine does the same.",
+          "note": "The hub's own machine can run agents too. In the app, Settings › Hub › Machines › Add machine does each of these.",
           "title": "Add a machine",
           "values": [
             {
               "command": true,
-              "label": "On the hub, for a code",
-              "value": "fleetd pair --worker <name>"
+              "label": "The hub's own machine, on it",
+              "value": "fleetd machine add --local"
             },
             {
               "command": true,
-              "label": "On the machine",
-              "note": "Or, from the hub, over SSH: fleetd machine add <ssh host>.",
-              "value": "fleetd init --join http://devbox:4790 --code <code>"
+              "label": "Another machine, on the hub",
+              "note": "It prints one line to run on that machine, which installs fleetd and joins. Or, over SSH from the hub: fleetd machine add <ssh host>.",
+              "value": "fleetd pair --worker <name>"
             }
           ]
         },

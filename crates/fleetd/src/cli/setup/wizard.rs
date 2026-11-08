@@ -19,7 +19,7 @@ use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen};
 use crate::cli::hub_key::open_hub;
 use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
-use crate::node::runner::claude::setup::{ClaudeSetup, describe};
+use crate::node::runner::claude::setup::describe;
 use crate::node::runner::claude::version::{self, VersionVerdict};
 use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStatus, SetupStepId};
 
@@ -410,7 +410,8 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
             true,
         )?;
         if !hub {
-            list.set_sections(2);
+            // "This machine" was the first of three: then Join a hub, Worker.
+            list.set_sections(3);
             return join_hub(opts, ui, list).await;
         }
     }
@@ -423,7 +424,8 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
     };
 
     list.section("Logins");
-    let claude = hub_claude(ui, list).await?;
+    let claude_here = which("claude").is_some();
+    hub_claude(ui, list).await?;
     let gh_ok = gh_check(ui, list).await?;
     let identity = commit_identity(opts, ui, list, gh_ok).await?;
 
@@ -463,7 +465,7 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
     let (mut added, mut idle) = (Vec::new(), Vec::new());
     list.section("Workers");
     if hub_up {
-        let (local, ids, by_hand) = workers(opts, ui, list, net.as_ref(), claude.as_ref()).await?;
+        let (local, ids, by_hand) = workers(opts, ui, list, net.as_ref(), claude_here).await?;
         summary.workers = ids.iter().chain(&by_hand).cloned().collect();
         (added, idle) = (ids, by_hand);
         list.section("Project");
@@ -621,7 +623,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
                 }
                 return Ok(worker_end(list, "This Mac is the agents' Mac now."));
             }
-            worker_claude(ui, list, &added, None).await?;
+            worker_claude(ui, list, &added, false).await?;
         }
         Err(_) => failed_with_log(
             list,
@@ -672,7 +674,7 @@ async fn repair_worker(
                 &format!("enrolled with {}", joined.hub),
             );
             notes(list, &said);
-            worker_claude(ui, list, &added, None).await?;
+            worker_claude(ui, list, &added, false).await?;
         }
         Err(_) => failed_with_log(
             list,
@@ -824,14 +826,14 @@ fn session_env() -> Vec<(String, String)> {
 }
 
 /// The user's own claude, as fleetd's sessions run it. Offers the login when it is logged out.
-async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>, Stopped> {
+async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
     let Some(binary) = which("claude") else {
         list.failed(
             "claude",
             "is not installed; fleetd's agents run through it",
             &install("claude"),
         );
-        return Ok(None);
+        return Ok(());
     };
     let (mut logged, mut updated) = (false, false);
     loop {
@@ -876,7 +878,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
                 }
                 _ => list.failed("claude", &detail, "claude auth login"),
             }
-            return Ok(None);
+            return Ok(());
         }
         if setup.proxy_source.as_deref() == Some("environment") {
             list.warn(
@@ -901,9 +903,9 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
                 why.strip_prefix("claude ").unwrap_or(&why),
                 &fix,
             );
-            return Ok(None);
+            return Ok(());
         }
-        return Ok(Some(setup));
+        return Ok(());
     }
 }
 
@@ -961,8 +963,8 @@ async fn gh_check(ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
         }
         list.failed(
             "gh",
-            "not logged in; the merge train and PR checks need it",
-            "gh auth login",
+            "not logged in; the merge train and PR checks need it until the hub has its GitHub App",
+            "gh auth login, or the hub's GitHub App: fleetd init --step github",
         );
         return Ok(false);
     }
@@ -1047,7 +1049,7 @@ async fn workers(
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-    claude: Option<&ClaudeSetup>,
+    claude_here: bool,
 ) -> Result<(Option<String>, Vec<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
@@ -1119,8 +1121,7 @@ async fn workers(
             Ok(Some(added)) => {
                 node_line(list, id, &added, "online");
                 notes(list, &said);
-                let this_one = host.is_none().then_some(claude).flatten();
-                worker_claude(ui, list, &added, this_one).await?;
+                worker_claude(ui, list, &added, host.is_none() && claude_here).await?;
                 if added.run_by_hand.is_none() {
                     ids.push(added.machine_id.clone());
                 } else {
@@ -1184,15 +1185,16 @@ async fn await_runner_checks(opts: &InitOptions, list: &mut Checklist, ids: &[St
     }
 }
 
-/// claude on a worker, as its node runs it. This machine's was checked above, so it isn't asked twice.
+/// claude on a worker, as its node runs it. `checked_here`: this machine's claude was checked under Logins, its
+/// login offered there, so it isn't asked or listed twice.
 async fn worker_claude(
     ui: &Ui,
     list: &mut Checklist,
     added: &Added,
-    here: Option<&ClaudeSetup>,
+    checked_here: bool,
 ) -> Result<(), Stopped> {
     let title = format!("claude on {}", added.machine_id);
-    if added.target.local && here.is_some() {
+    if added.target.local && checked_here {
         return Ok(());
     }
     let config_dir = added.claude_config_dir.as_deref();
@@ -1550,7 +1552,7 @@ async fn walk(
     client: &mut crate::cli::mcp_client::McpClient,
     step: &HubSetupStep,
 ) -> Result<SetupStatus, Stopped> {
-    list.section(&format!(
+    list.heading(&format!(
         "{} · {}",
         step.title,
         steps::need_words(&step.need)

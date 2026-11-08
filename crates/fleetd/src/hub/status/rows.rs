@@ -313,14 +313,22 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
                 note
             })
         });
+        // Why it can't, where the machine says (claude is not logged in), so the row names the fix's subject.
+        let cant = match machine.and_then(|m| m.degraded_reason.as_deref()) {
+            Some(why) if !why.trim().is_empty() => {
+                format!(
+                    "{mname} can't run agents: {} (see Machines)",
+                    why.trim().trim_end_matches('.')
+                )
+            }
+            _ => format!("{mname} can't run agents (see Machines)"),
+        };
         let blocked = match machine.map(|m| m.status) {
             Some(MachineStatus::Offline) => Some(format!("{mname} is offline")),
-            Some(MachineStatus::Degraded) if usage_paused.is_some() => Some(format!(
-                "{mname} can't run agents (see Machines), and its usage is paused"
-            )),
-            Some(MachineStatus::Degraded) => {
-                Some(format!("{mname} can't run agents (see Machines)"))
+            Some(MachineStatus::Degraded) if usage_paused.is_some() => {
+                Some(format!("{cant}, and its usage is paused"))
             }
+            Some(MachineStatus::Degraded) => Some(cant),
             _ if usage_paused.is_some() => usage_paused.clone(),
             _ if usage_hit => Some(format!("usage limit reached on {mname}")),
             _ => hub.link.paused(&r.machine_id),

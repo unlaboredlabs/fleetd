@@ -825,6 +825,25 @@ impl Prepared {
     }
 }
 
+/// The join to run again after one that stopped before it enrolled: its code is still unused, and a plain `fleetd init`
+/// would ask whether this machine is the hub.
+fn join_again(hub: &str, code: &str, machine_id: &str, identity: Option<&GitIdentity>) -> String {
+    use super::units::q;
+    let mut line = format!(
+        "fleetd init --join {} --code {} --machine-id {}",
+        q(hub),
+        q(code),
+        q(machine_id)
+    );
+    if let Some(identity) = identity {
+        line += &format!(
+            " --git-identity {}",
+            q(&format!("{} <{}>", identity.name, identity.email))
+        );
+    }
+    line
+}
+
 /// Checks `a` and reads what `machine add` needs from the hub's setup and from `exe`, the fleetd the machine gets.
 pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     let local = a.host.is_none();
@@ -896,7 +915,9 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
         claude_config_dir: a.claude_config_dir.clone(),
         mac: a.mac,
     };
-    let again = if joining {
+    let again = if let Enroll::Token(code) = &a.enroll {
+        join_again(&hub_url, code, &machine_id, a.git_identity.as_ref())
+    } else if joining {
         "fleetd init again".to_owned()
     } else if local {
         "fleetd machine add --local".to_owned()

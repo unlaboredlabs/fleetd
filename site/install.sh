@@ -64,16 +64,23 @@ sha256() {
   fi
 }
 
-# fetch <asset> <dest>: download one release asset and check it against SHA256SUMS.
+# fetch <asset> <dest>: download one release asset and check it against SHA256SUMS. A release going up replaces its
+# assets first and SHA256SUMS last, so a mismatch reads both again, twice, 10 s apart, before it refuses.
 fetch() {
-  expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
-  [ -n "$expected" ] || return 1
-  curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
-  actual="$(sha256 "$2")"
-  [ "$actual" = "$expected" ] || {
+  tries=0
+  while :; do
+    expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
+    [ -n "$expected" ] || return 1
+    curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
+    actual="$(sha256 "$2")"
+    [ "$actual" != "$expected" ] || return 0
     rm -f "$2"
-    die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
-  }
+    tries=$((tries + 1))
+    [ "$tries" -le 2 ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
+    warn "checksum mismatch for $1, perhaps a new release going up; checking again in 10 s"
+    sleep 10
+    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+  done
 }
 
 # swap <new> <dest>: put a new file or directory in place by renaming, never by writing into the old one. A running
