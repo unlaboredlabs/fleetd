@@ -119,12 +119,33 @@ const COMPONENTS: Components = {
 
 const WITH_BLOCKS: Components = { ...COMPONENTS, pre: pre(true) };
 
+/**
+ * A small LRU of parsed blocks, keyed by text and how it parses: a row that mounts again (a chat opened again, a message
+ * scrolled back into view) reuses its block's elements instead of parsing it again. react-markdown's Markdown is a plain
+ * function with no hooks, and its elements hold no state, so one tree serves every mount.
+ */
+const PARSED_MAX = 500;
+const parsed = new Map<string, ReactElement>();
+
+export function parsedBlock(source: string, blocks: boolean, breaks = false): ReactElement {
+  const key = `${blocks ? "1" : "0"}${breaks ? "1" : "0"}${source}`;
+  const hit = parsed.get(key);
+  if (hit !== undefined) {
+    parsed.delete(key);
+    parsed.set(key, hit);
+    return hit;
+  }
+  const tree = ReactMarkdown({ children: source, remarkPlugins: breaks ? REMARK_BREAKS : REMARK, components: blocks ? WITH_BLOCKS : COMPONENTS, skipHtml: true });
+  parsed.set(key, tree);
+  if (parsed.size > PARSED_MAX) {
+    const oldest = parsed.keys().next().value;
+    if (oldest !== undefined) parsed.delete(oldest);
+  }
+  return tree;
+}
+
 const Block = memo(function Block({ source, blocks, breaks }: { source: string; blocks: boolean; breaks: boolean }) {
-  return (
-    <ReactMarkdown remarkPlugins={breaks ? REMARK_BREAKS : REMARK} components={blocks ? WITH_BLOCKS : COMPONENTS} skipHtml>
-      {source}
-    </ReactMarkdown>
-  );
+  return parsedBlock(source, blocks, breaks);
 });
 
 /** Block by block: a reply streaming in re-parses only its last block, the one still growing. */
