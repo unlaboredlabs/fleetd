@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { parseQuietHours, quietUntil, quietWindows } from "../src/hub/attention/index.ts";
 import { executorHooks } from "../src/hub/executor/hooks.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
+import { link } from "../src/hub/link/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { Machine } from "../src/shared/contracts.ts";
@@ -112,6 +113,84 @@ test("an older link never takes over, and a dropped one leaves the machine stale
   node.ex.detachLink("devbox", 2);
   expect(node.ex.isConnected("devbox")).toBe(false);
   await expect(node.ex.call("devbox", "read", { op: "runner_info" }, 1000)).rejects.toThrow("has no live node link");
+});
+
+test("an old link's supervisor slow to stop leaves the new link live, and applies nothing after it took over", async () => {
+  const k = kit();
+  store(k.hub).machineUpsert(machine());
+  const node = fakeNode(k, 1);
+  await node.ex.awaitLive("devbox");
+  // The old supervisor is held inside an event when its link drops.
+  const applied: number[] = [];
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const apply = node.ex.handleMachineEvent.bind(node.ex);
+  node.ex.handleMachineEvent = async (m, seq, e, baseline) => {
+    applied.push(seq ?? -1);
+    if (seq === 1) await held;
+    return apply(m, seq, e, baseline);
+  };
+  node.event({ type: "project_removed", projectId: "a" });
+  await settle();
+  expect(applied).toEqual([1]);
+  // The new link subscribes and goes live; a frame queues for it while the old supervisor is still held.
+  const fresh = fakeNode(k, 2);
+  await fresh.ex.awaitLive("devbox");
+  fresh.ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "project_removed", projectId: "b" } });
+  release();
+  await settle();
+  expect(node.ex.isConnected("devbox")).toBe(true);
+  expect(node.ex.liveSince("devbox")).toBe(k.clock.ms);
+  // Only the new link's supervisor applied the frame, once.
+  expect(applied).toEqual([1, 2]);
+});
+
+test("a heartbeating link whose sessions aren't live is attached again after 30 s; a live one is left alone", async () => {
+  const k = kit();
+  store(k.hub).machineUpsert(machine());
+  const sent: HubToNodeSession[] = [];
+  const ex = executors(k.hub);
+  const sessions = {
+    linkId: 7,
+    send(frame: HubToNodeSession) {
+      sent.push(frame);
+      queueMicrotask(() => ex.handleFrame("devbox", { t: "session_reply", id: frame.id, result: { ok: { kind: "done" } } }));
+    },
+  };
+  const subscribes = () => sent.filter((f) => f.t === "session_call" && (f.call as { op: string }).op === "subscribe").length;
+  ex.attach("devbox", sessions);
+  await ex.awaitLive("devbox");
+  expect(subscribes()).toBe(1);
+  const links = link(k.hub);
+  const state: { sessions: typeof sessions; darkSince?: number } = { sessions };
+
+  // Live: heartbeats leave it be, however long they come.
+  links.reattachIfDark("devbox", state);
+  k.clock.ms += 60_000;
+  links.reattachIfDark("devbox", state);
+  await settle();
+  expect(subscribes()).toBe(1);
+
+  // Its executor goes dark while the link stays up: heartbeats wait about 30 s, then attach it again.
+  ex.goDarkForTest("devbox");
+  expect(ex.isConnected("devbox")).toBe(false);
+  const warn = console.warn;
+  console.warn = () => {};
+  links.reattachIfDark("devbox", state);
+  k.clock.ms += 20_000;
+  links.reattachIfDark("devbox", state);
+  await settle();
+  expect(subscribes()).toBe(1);
+  k.clock.ms += 11_000;
+  links.reattachIfDark("devbox", state);
+  console.warn = warn;
+  await ex.awaitLive("devbox");
+  expect(subscribes()).toBe(2);
+  expect(ex.isConnected("devbox")).toBe(true);
+  // Attaching a live link again does nothing.
+  ex.reattach("devbox", sessions);
+  await settle();
+  expect(subscribes()).toBe(2);
 });
 
 test("a call is answered by the reply with its id, or fails with the node's words, or times out", async () => {
