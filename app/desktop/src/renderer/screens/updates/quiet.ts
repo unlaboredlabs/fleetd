@@ -68,8 +68,9 @@ const listed = (names: readonly string[]): string => (names.length < 2 ? names.j
 
 /** The row's word and its note, the most pressing first; null when there is nothing to say. */
 export const quietOf = ({ view, hub, updated, release, administers, now, timeZone }: QuietInput): Quiet | null => {
+  // An update restarting says so; any other restart or stop says nothing of updates.
   const restart = restartOf(hub, now);
-  if (restart !== null) return restart.phase === "outage" ? null : quiet("restarting", null);
+  if (restart !== null) return restart.to !== null && restart.phase !== "outage" ? quiet("restarting", null) : null;
   const admin = { details: administers };
   const line = view.line;
   const to = view.to === null ? "the new build" : titled(view.to);

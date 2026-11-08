@@ -24,7 +24,9 @@ const settled = (): boolean => {
   return kind === "available" || kind === "ready" || kind === "manual" || kind === "checking" || kind === "unsupported";
 };
 
-export function UpdatesHost() {
+/** One per hub, each following its own hub's updates; `commands` on the screen's hub's only, so the palette has one of
+ * each. */
+export function UpdatesHost({ commands = true }: { commands?: boolean }) {
   const ready = useAppUpdate()?.app.kind === "ready";
   const deps = useFlowDeps();
   const admin = useSettledAdministers();
@@ -39,22 +41,20 @@ export function UpdatesHost() {
     return () => clearInterval(every);
   }, [live, deps]);
 
-  useCommands(
-    [
-      {
-        id: "app.checkForUpdates",
-        title: "Check for updates",
-        detail: "The hub, its machines and this app",
-        group: "actions",
-        keywords: ["update", "upgrade", "version", "what's new"],
-        run: () => {
-          openUpdates(admin, hub);
-          if (!settled()) runApp("check");
-        },
+  const list = [
+    {
+      id: "app.checkForUpdates",
+      title: "Check for updates",
+      detail: "The hub, its machines and this app",
+      group: "actions" as const,
+      keywords: ["update", "upgrade", "version", "what's new"],
+      run: () => {
+        openUpdates(admin, hub);
+        if (!settled()) runApp("check");
       },
-      { id: "app.restartToUpdate", title: "Restart to update", group: "actions", keywords: ["update", "install"], enabled: () => ready, run: () => runApp("install") },
-    ],
-    [ready, admin, hub],
-  );
+    },
+    { id: "app.restartToUpdate", title: "Restart to update", group: "actions" as const, keywords: ["update", "install"], enabled: () => ready, run: () => runApp("install") },
+  ];
+  useCommands(commands ? list : [], [commands, ready, admin, hub]);
   return null;
 }

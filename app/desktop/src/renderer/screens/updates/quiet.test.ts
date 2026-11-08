@@ -47,11 +47,13 @@ describe("the hub row's word", () => {
     expect(quiet({ version: NEXT })).toBeNull();
   });
 
-  it("says Updating… while the hub restarts, then nothing past 2 minutes: an outage says itself", () => {
-    const away = (ms: number): HubState => ({ phase: "retrying", hub: "http://devbox:4790", reason: "x", retryAt: NOW, restarting: NOW - ms });
+  it("says Updating… while the hub restarts into a new build, then nothing past 2 minutes: an outage says itself", () => {
+    const away = (ms: number): HubState => ({ phase: "retrying", hub: "http://devbox:4790", reason: "x", retryAt: NOW, restarting: NOW - ms, updatingTo: NEXT });
     expect(quiet({ hub: away(2_000), version: NEXT })).toEqual({ kind: "restarting", word: { text: "Updating…", tone: "quiet" }, note: null });
     expect(quiet({ hub: away(60_000), version: NEXT })?.kind).toBe("restarting");
     expect(quiet({ hub: away(121_000), version: NEXT })).toBeNull();
+    // A restart or stop that isn't an update says nothing of updates.
+    expect(quiet({ hub: { phase: "retrying", hub: "http://devbox:4790", reason: "x", retryAt: NOW, restarting: NOW - 2_000 }, version: NEXT })).toBeNull();
     // Any other drop isn't a restart.
     expect(quiet({ hub: { phase: "retrying", hub: "http://devbox:4790", reason: "x", retryAt: NOW }, version: NEXT })).toBeNull();
   });
@@ -111,9 +113,11 @@ describe("the hub row's word", () => {
 });
 
 describe("a restart's phases", () => {
-  it("is quiet for 30 s, long until 2 minutes, then an outage", () => {
-    const at = (ms: number) => restartOf({ phase: "connecting", hub: "h", attempt: 0, restarting: NOW - ms }, NOW)?.phase;
+  it("is quiet for 30 s, long until 2 minutes, then an outage, for an update; any other restart only while held", () => {
+    const at = (ms: number) => restartOf({ phase: "connecting", hub: "h", attempt: 0, restarting: NOW - ms, updatingTo: NEXT }, NOW)?.phase;
     expect([at(0), at(29_999), at(30_000), at(119_999), at(120_000)]).toEqual(["quiet", "quiet", "long", "long", "outage"]);
+    const plain = (ms: number) => restartOf({ phase: "connecting", hub: "h", attempt: 0, restarting: NOW - ms }, NOW)?.phase;
+    expect([plain(0), plain(9_999), plain(10_000), plain(40_000)]).toEqual(["quiet", "quiet", "outage", "outage"]);
     expect(restartOf(LIVE, NOW)).toBeNull();
   });
 });

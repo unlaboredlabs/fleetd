@@ -14,9 +14,9 @@ import s from "./updates.module.css";
 const noInput = {};
 
 export function AutoUpdates() {
-  const auto = useAutoUpdates();
-  const ready = useReady();
   const layer = useDataLayer();
+  const auto = useAutoUpdates(layer.hub);
+  const ready = useReady(layer.hub);
   const role = useHubRole();
   const member = !role.pending && !role.offline && !role.administers;
   const people = useToolQuery("people_list", noInput, { enabled: member });
