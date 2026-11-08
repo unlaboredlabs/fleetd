@@ -23,7 +23,10 @@ use super::github::{
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::next::{Reruns, gated_name, proven_runs, upstreams};
-use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, is_draft};
+use super::records::{
+    ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, WAIT_BLOCKED, WAIT_REGEN, WAIT_UNSTARTED,
+    WAITING, is_draft,
+};
 use super::regen::Conflict;
 use super::repeats::warn_hourly;
 use super::reverts;
@@ -527,12 +530,6 @@ pub struct Train {
     pub(super) upstream_reads: Mutex<HashMap<String, (i64, super::next::UpstreamPull)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
-    /// Per waiting Change, the head the train first saw, when, and whether its checks started or it was flagged
-    /// (`unstarted_checks`). Kept in memory: after a restart the wait starts again.
-    unstarted: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
-    /// Per Change its review's findings block, the head, since when the train saw it blocked there, and whether the
-    /// lead heard (`still_blocked`). Kept in memory: after a restart the wait starts again.
-    blocked: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
     /// Per timed-out Change, the cancelled runs the train re-ran after the timeout (`late_cancelled`).
     late_reruns: Mutex<HashMap<ChangeId, Reruns>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -551,8 +548,6 @@ pub struct Train {
     pub(super) repo_checks: Mutex<HashMap<(String, String), super::repo_checks::Cached>>,
     /// Each repo and base's `.fleetd/regenerate.json` and when it was read (`regen`).
     pub(super) regen_configs: Mutex<HashMap<(String, String), super::regen::Cached>>,
-    /// Per Change and head, where its regeneration stands. Kept in memory: after a restart a conflict is tried again.
-    pub(super) regens: Mutex<HashMap<super::regen::RegenKey, super::regen::Regen>>,
     /// The Changes and heads whose added migrations were read.
     pub(super) migrations_read: Mutex<HashSet<super::regen::RegenKey>>,
     /// The regenerations running in the background.
@@ -581,13 +576,16 @@ impl Train {
         options: TrainOptions,
         gate: impl FnOnce(Weak<Train>) -> Arc<dyn ReviewGate>,
     ) -> Arc<Train> {
+        let records = ChangeRecords::new(db);
+        // A regeneration running when the hub stopped stopped with it: it is tried again.
+        records.end_waits_in(WAIT_REGEN, super::regen::Regen::RUNNING);
         Arc::new_cyclic(|me| Train {
             me: me.clone(),
             gate: gate(me.clone()),
             host,
             github: TrainGitHub::new(gh, options.fresh.clone(), clock.clone()),
             clock,
-            records: ChangeRecords::new(db),
+            records,
             options,
             rows: Mutex::new(()),
             step_locks: Mutex::default(),
@@ -607,8 +605,6 @@ impl Train {
             after_lock: tokio::sync::Mutex::new(()),
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
-            unstarted: Mutex::default(),
-            blocked: Mutex::default(),
             late_reruns: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -618,7 +614,6 @@ impl Train {
             tasks: Mutex::default(),
             repo_checks: Mutex::default(),
             regen_configs: Mutex::default(),
-            regens: Mutex::default(),
             migrations_read: Mutex::default(),
             regen_tasks: Mutex::default(),
             regen_turns: Mutex::default(),
@@ -2530,8 +2525,9 @@ impl Train {
             ChangeState::CiFailed,
         ];
         let changes = self.records.in_train(repo, &waiting);
-        lock(&self.unstarted).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
-        lock(&self.blocked).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        let waiting_ids: Vec<ChangeId> = changes.iter().map(|c| c.change_id.clone()).collect();
+        self.records
+            .keep_waits(repo, &[WAIT_UNSTARTED, WAIT_BLOCKED], &waiting_ids);
         lock(&self.late_reruns).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
         let live: Vec<ChangeId> = self
             .records
@@ -2614,25 +2610,20 @@ impl Train {
     async fn still_blocked(&self, change: &Change, blocked: bool) {
         let head = change.head_sha.as_str();
         let now = self.now_ms();
-        let tell = {
-            let mut seen = lock(&self.blocked);
-            if !blocked {
-                seen.remove(&change.change_id);
-                return;
-            }
-            let entry = seen
-                .entry(change.change_id.clone())
-                .or_insert_with(|| (head.to_string(), now, false));
-            if entry.0 != head {
-                *entry = (head.to_string(), now, false);
-            }
-            let tell = !entry.2 && now - entry.1 >= BLOCKED_WAKE.as_millis() as i64;
-            entry.2 |= tell;
-            tell
-        };
-        if !tell {
+        if !blocked {
+            self.records.end_wait(&change.change_id, WAIT_BLOCKED);
             return;
         }
+        self.records
+            .start_wait(change, WAIT_BLOCKED, head, now, WAITING);
+        let Some(wait) = self.records.wait(&change.change_id, WAIT_BLOCKED) else {
+            return;
+        };
+        if wait.state != WAITING || now - wait.since_ms < BLOCKED_WAKE.as_millis() as i64 {
+            return;
+        }
+        self.records
+            .set_wait(&change.change_id, WAIT_BLOCKED, head, "told");
         let text = format!(
             "its review's blocking findings have held it at {} for {} min with no new push. If you resolved them \
              without a patch (by narrowing the brief, say), call `change_enqueue` for it again: a fresh full review of \
@@ -2655,17 +2646,15 @@ impl Train {
     async fn unstarted_checks(&self, change: &Change, base: &str) {
         let head = change.head_sha.as_str();
         let now = self.now_ms();
+        self.records
+            .start_wait(change, WAIT_UNSTARTED, head, now, WAITING);
+        let Some(wait) = self.records.wait(&change.change_id, WAIT_UNSTARTED) else {
+            return;
+        };
+        if wait.state != WAITING
+            || now - wait.since_ms < self.options.checks_start_wait.as_millis() as i64
         {
-            let mut seen = lock(&self.unstarted);
-            let entry = seen
-                .entry(change.change_id.clone())
-                .or_insert_with(|| (head.to_string(), now, false));
-            if entry.0 != head {
-                *entry = (head.to_string(), now, false);
-            }
-            if entry.2 || now - entry.1 < self.options.checks_start_wait.as_millis() as i64 {
-                return;
-            }
+            return;
         }
         let Ok(ci) = self.ci_config(&change.repo, base).await else {
             return;
@@ -2695,9 +2684,8 @@ impl Train {
                 return;
             }
         };
-        if let Some(entry) = lock(&self.unstarted).get_mut(&change.change_id) {
-            entry.2 = true;
-        }
+        self.records
+            .set_wait(&change.change_id, WAIT_UNSTARTED, head, "read");
         if started {
             return;
         }
@@ -3484,7 +3472,7 @@ impl Train {
                 && self.gate.resolved(existing.clone()).await
             {
                 self.note(&existing.change_id, RESOLVED);
-                lock(&self.blocked).remove(&existing.change_id);
+                self.records.end_wait(&existing.change_id, WAIT_BLOCKED);
             }
             self.kick(&repo);
             let existing = self.records.get(&existing.change_id).unwrap_or(existing);

@@ -63,6 +63,23 @@ pub struct Watch {
     pub since_ms: i64,
 }
 
+/// The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, and its
+/// regeneration.
+pub const WAIT_UNSTARTED: &str = "unstarted";
+pub const WAIT_BLOCKED: &str = "blocked";
+pub const WAIT_REGEN: &str = "regen";
+/// A wait's state before it came to anything.
+pub const WAITING: &str = "waiting";
+
+/// One of the train's waits on a Change, kept across restarts (`train_waits`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Wait {
+    pub head: String,
+    /// When it began at `head`.
+    pub since_ms: i64,
+    pub state: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainRow {
     pub repo: String,
@@ -559,6 +576,103 @@ impl ChangeRecords {
                 params![repo.to_lowercase(), check, sha, order.as_str(), at_ms],
             )
             .expect("put a fix order")
+        });
+    }
+
+    /// The train's `kind` of wait on the Change (`train_waits`): the head it is at, since when, and its state.
+    pub fn wait(&self, change_id: &ChangeId, kind: &str) -> Option<Wait> {
+        sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT head, since_ms, state FROM train_waits WHERE change_id = ?1 AND kind = ?2",
+                params![change_id.as_str(), kind],
+                |r| {
+                    Ok(Wait {
+                        head: r.get(0)?,
+                        since_ms: r.get(1)?,
+                        state: r.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .expect("a train wait")
+        })
+    }
+
+    /// Starts the `kind` of wait on the Change at `head` from `now_ms` in `state`, unless one is at that head already:
+    /// true when it started. A wait at another head starts over.
+    pub fn start_wait(
+        &self,
+        change: &Change,
+        kind: &str,
+        head: &str,
+        now_ms: i64,
+        state: &str,
+    ) -> bool {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT INTO train_waits (change_id, kind, repo, head, since_ms, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT (change_id, kind) DO UPDATE SET head = excluded.head, since_ms = excluded.since_ms,
+                 state = excluded.state WHERE head != excluded.head",
+                params![
+                    change.change_id.as_str(),
+                    kind,
+                    change.repo.as_str().to_lowercase(),
+                    head,
+                    now_ms,
+                    state
+                ],
+            )
+            .expect("start a train wait")
+                == 1
+        })
+    }
+
+    /// Moves the `kind` of wait on the Change at `head` to `state`; a wait at another head stays as it is.
+    pub fn set_wait(&self, change_id: &ChangeId, kind: &str, head: &str, state: &str) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "UPDATE train_waits SET state = ?4 WHERE change_id = ?1 AND kind = ?2 AND head = ?3",
+                params![change_id.as_str(), kind, head, state],
+            )
+            .expect("set a train wait")
+        });
+    }
+
+    pub fn end_wait(&self, change_id: &ChangeId, kind: &str) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "DELETE FROM train_waits WHERE change_id = ?1 AND kind = ?2",
+                params![change_id.as_str(), kind],
+            )
+            .expect("end a train wait")
+        });
+    }
+
+    /// Ends `repo`'s waits of these kinds on Changes not in `live`; other repos' stay.
+    pub fn keep_waits(&self, repo: &str, kinds: &[&str], live: &[ChangeId]) {
+        let ids: Vec<&str> = live.iter().map(|id| id.as_str()).collect();
+        let (kinds, ids) = (
+            serde_json::to_string(kinds).expect("kinds"),
+            serde_json::to_string(&ids).expect("ids"),
+        );
+        sql(&self.db, |conn| {
+            conn.execute(
+                "DELETE FROM train_waits WHERE repo = ?1 AND kind IN (SELECT value FROM json_each(?2))
+                 AND change_id NOT IN (SELECT value FROM json_each(?3))",
+                params![repo.to_lowercase(), kinds, ids],
+            )
+            .expect("keep train waits")
+        });
+    }
+
+    /// Ends every `kind` of wait in `state`, of any repo.
+    pub fn end_waits_in(&self, kind: &str, state: &str) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "DELETE FROM train_waits WHERE kind = ?1 AND state = ?2",
+                params![kind, state],
+            )
+            .expect("end train waits")
         });
     }
 

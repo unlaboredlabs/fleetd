@@ -13,6 +13,7 @@ use serde::Deserialize;
 use super::contract::{Change, ChangeId, ChangeState};
 use super::github::Pull;
 use super::host::NodeRun;
+use super::records::WAIT_REGEN;
 use super::repeats::warn_hourly;
 use super::service::{Train, error_text, lock, repo_lock, short};
 
@@ -258,7 +259,8 @@ again=$(git status --porcelain --untracked-files=all | head -n 3 | tr '\n' ' ')
 say "done $(git rev-parse HEAD)"
 "#;
 
-/// Where a regeneration of a Change at one head stands.
+/// Where a regeneration of a Change at one head stands, kept in `train_waits` so a restart doesn't try a failed one
+/// again. One running when the hub stopped is tried again: the hub runs each of its steps, so none goes on without it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Regen {
     Running,
@@ -266,6 +268,24 @@ pub(super) enum Regen {
     Pushed,
     /// It couldn't: the Change went back to its author, or (for a migration alone) went on as it was.
     Failed,
+}
+
+impl Regen {
+    pub(super) const RUNNING: &str = "running";
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Regen::Running => Regen::RUNNING,
+            Regen::Pushed => "pushed",
+            Regen::Failed => "failed",
+        }
+    }
+
+    fn parse(state: &str) -> Option<Regen> {
+        [Regen::Running, Regen::Pushed, Regen::Failed]
+            .into_iter()
+            .find(|r| r.as_str() == state)
+    }
 }
 
 /// A Change at one head, in its repo: one train serves every repo.
@@ -337,13 +357,16 @@ impl Train {
 
     /// Where the regeneration of the Change at its current head stands, if one began.
     pub(super) fn regen(&self, change: &Change) -> Option<Regen> {
-        lock(&self.regens).get(&regen_key(change)).copied()
+        self.records
+            .wait(&change.change_id, WAIT_REGEN)
+            .filter(|w| w.head == change.head_sha.as_str())
+            .and_then(|w| Regen::parse(&w.state))
     }
 
     /// Drops what the train remembers of regenerations of `repo`'s Changes no longer in `live`; other repos' stay.
     pub(super) fn forget_regens(&self, repo: &str, live: &[ChangeId]) {
         let gone = |r: &str, id: &ChangeId| r == repo && !live.contains(id);
-        lock(&self.regens).retain(|(r, id, _), _| !gone(r, id));
+        self.records.keep_waits(repo, &[WAIT_REGEN], live);
         lock(&self.migrations_read).retain(|(r, id, _)| !gone(r, id));
     }
 
@@ -416,6 +439,15 @@ impl Train {
         self.start_regen(change, pull, &why, false).await
     }
 
+    fn set_regen(&self, change: &Change, regen: Regen) {
+        self.records.set_wait(
+            &change.change_id,
+            WAIT_REGEN,
+            change.head_sha.as_str(),
+            regen.as_str(),
+        );
+    }
+
     /// Starts the regeneration of the Change at its head in the background: false when its repo has no usable config
     /// or its PR's branch is in another repo. `bounce`: a failure sends it back to its author with `why` and the
     /// reason; else it goes on as it was.
@@ -435,13 +467,12 @@ impl Train {
         let Some(me) = self.me.upgrade() else {
             return false;
         };
-        let key = regen_key(change);
+        let (head, now) = (change.head_sha.as_str(), self.now_ms());
+        if !self
+            .records
+            .start_wait(change, WAIT_REGEN, head, now, Regen::RUNNING)
         {
-            let mut regens = lock(&self.regens);
-            if regens.contains_key(&key) {
-                return true;
-            }
-            regens.insert(key.clone(), Regen::Running);
+            return true;
         }
         tracing::info!(change_id = %change.change_id, why, "train: regenerating instead of sending it back");
         self.update(&change.change_id, None, |mut c| {
@@ -575,7 +606,6 @@ impl Train {
         bounce: bool,
         outcome: Result<String, String>,
     ) {
-        let key = regen_key(change);
         let ours = |c: &Change| {
             c.head_sha == change.head_sha
                 && [
@@ -589,7 +619,7 @@ impl Train {
         };
         match outcome {
             Ok(sha) => {
-                lock(&self.regens).insert(key, Regen::Pushed);
+                self.set_regen(change, Regen::Pushed);
                 tracing::info!(change_id = %change.change_id, sha, "train: regenerated and pushed");
                 let note = format!(
                     "it {why}; the train rebased it onto {}, regenerated its generated files and pushed {}, which goes \
@@ -606,7 +636,7 @@ impl Train {
                 self.tell_pushed(change, pull, &sha).await;
             }
             Err(reason) => {
-                lock(&self.regens).insert(key, Regen::Failed);
+                self.set_regen(change, Regen::Failed);
                 tracing::info!(change_id = %change.change_id, reason, "train: could not regenerate");
                 let current = self.records.get(&change.change_id).filter(|c| ours(c));
                 let moved = match self.github.pull(&change.repo, change.pr_number.get()).await {

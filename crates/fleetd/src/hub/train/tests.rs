@@ -1468,6 +1468,8 @@ struct FakeGate {
     held: Mutex<HashSet<i64>>,
     /// Ready with no review at all, as a hub from before every PR was reviewed could have left a Change.
     unreviewed: Mutex<bool>,
+    /// PR numbers whose review's findings block them, read on each pass over them in review.
+    blocked: Mutex<HashSet<i64>>,
 }
 
 impl ReviewGate for FakeGate {
@@ -1488,6 +1490,21 @@ impl ReviewGate for FakeGate {
         };
         self.reviewed.lock().unwrap().push(change);
         Box::pin(async move { verdict })
+    }
+
+    fn again(&self, change: Change) -> BoxFut<'_, Verdict> {
+        let blocked = self
+            .blocked
+            .lock()
+            .unwrap()
+            .contains(&change.pr_number.get());
+        Box::pin(async move {
+            if blocked {
+                Verdict::Blocked
+            } else {
+                Verdict::Pending
+            }
+        })
     }
 }
 
@@ -7668,11 +7685,16 @@ async fn a_failed_scheduled_run_on_main_opens_one_fix_order_with_the_commits_sin
 impl Kit {
     /// A new train on this kit's database, GitHub and hub, as after a hub restart; the old one stopped.
     fn restarted(&self) -> Arc<Train> {
+        self.restarted_on(Arc::new(SystemClock))
+    }
+
+    /// `restarted`, on `clock`.
+    fn restarted_on(&self, clock: Arc<dyn Clock>) -> Arc<Train> {
         self.train.stop();
         let gate = self.gate.clone();
         let train = Train::new(
             self.host.clone(),
-            Arc::new(SystemClock),
+            clock,
             self.db.clone(),
             self.gh.clone(),
             TrainOptions {
@@ -8781,3 +8803,4 @@ mod pipeline;
 mod regen;
 mod repos;
 mod rereviews;
+mod restarts;
