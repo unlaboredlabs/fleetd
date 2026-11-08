@@ -36,6 +36,7 @@ import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliv
 import { fleetdDir } from "../shared/home.ts";
 import { VERSION } from "../shared/version.ts";
 import { protect } from "./oom.ts";
+import { uploads } from "./flush.ts";
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
             [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
@@ -375,7 +376,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     ...(enrolled ? { onEnrolled: enrolled } : {}),
     capabilities: () => (hello = helloCapabilities(CAPABILITIES, node.area("caps").list(), mac)),
     heartbeat: async () => {
-      const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: 0, hosted: 0 } };
+      const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },
