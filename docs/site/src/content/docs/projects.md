@@ -116,7 +116,8 @@ The same actions are in Settings → Projects → Repos, and agents have `projec
 
 ## Project settings {#settings}
 
-Open a project's settings in the desktop app: Settings → Projects, then pick the project.
+Open a project's settings in the desktop app: Settings → Projects, then pick the project, or **Open settings** in its
+right-click menu. Its **Project** page has these, in order:
 
 | Setting | Does |
 |---|---|
@@ -124,25 +125,24 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Only me | Who sees and uses it. See [Only me](#only-me). |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
+| Worktrees | Where the project's agents' worktrees go on its machine (`~/.fleetd/node/worktrees/<project>/`, one per agent), the branch new ones start from (the repo's default branch, freshly fetched; see [Which branch](#branches)), and how many are there now, with how many hold uncommitted changes. It needs the machine online. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | Telegram | Talk to its lead from Telegram. See [Telegram](#telegram). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
 | Integrations | The accounts its lead reads and sends through. See [Integrations](/docs/integrations). |
 | Sign-ins | **Forget sign-ins…** signs its browser out of every site. See [Sign-ins](#sign-ins). |
-| Skills | What its lead learned and what was installed for it. See [Skills](#skills). |
+| Skills | **Open its skills** goes to the list on its Agents page. See [Skills](#skills). |
 | Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
-| MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
 | Archive | See [Archive](#archive). |
 | Delete project | See [Delete a project](#delete). |
 
-Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with
-chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo; off,
-memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
-
-The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
-agent), the branch new ones start from (the repo's default branch, freshly fetched; see [Which branch](#branches)),
-and how many are there now. That part needs the machine online.
+Its other pages: **Agents** has its [max agents](#max-agents), the [task profiles](#models) it allows, its own
+[MCP servers](/docs/mcp-servers) (and the global ones it gets) and its [skills](#skills). **Instructions & memory**
+has its instructions, what its lead remembers, and **Refresh memory every night**: on (the default), around 04:00 on a
+day with chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo;
+off, memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
+**Automations** has its [automations](/docs/automations), and **Prompts** the prompts its agents get.
 
 ### Environment variables {#env}
 
@@ -243,8 +243,11 @@ on the hub, as every project with a repo is by default.
 - **Your private life stays in it.** Keep family, health, money and accounts in an Only me project's memory, never in
   your user memory: every piece of work you start reads your user memory, so it holds only how you like to work.
   [Memory import](/docs/what-agents-are-told#memory-import) runs only in an Only me project of yours.
-- **Paying and 1Password need it on.** A card fill and a [secure input](#secure-input) from 1Password run only in an
-  Only me project. Turned off, a project keeps its card but doesn't pay until it is on again.
+- **Its lead uses its owner's.** An Only me project's lead and agents run on its owner's Claude, and its lead's
+  1Password fills ([purchases](#purchases), [secure input](#secure-input), logins) fall back on its owner's token. A
+  shared project's lead has only the project's own `OP_SERVICE_ACCOUNT_TOKEN` variable.
+- **Its automations' runs close themselves.** In an Only me project, an [automation](/docs/automations)'s run closes its
+  order once the lead's turn for it ends; in a shared one, the lead closes it.
 
 Your own Only me projects come first in your sidebar, in your order; drag a row to move it. ⌘1–9 (Ctrl on Linux and
 Windows) open the first nine.
@@ -252,9 +255,9 @@ Windows) open the first nine.
 ### Archive {#archive}
 
 **Archive**, in a project's right-click menu or at the end of its settings, takes it out of the sidebar and stops its
-lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. An archived project is listed in
-Settings › Projects, with **Bring back**; it comes back as it was, and its lead starts with your next message. A
-message to an archived project waits until you bring it back.
+lead, with **Undo** in the notice. Its chat, memory, folder and settings stay. An archived project is still in
+Settings › Projects' picker, marked *(archived)*, and its **Archive** setting says **Bring back**; it comes back as it
+was, and its lead starts with your next message. A message to an archived project waits until you bring it back.
 
 ```sh
 fleetd project archive devbox/taxes
@@ -273,7 +276,9 @@ those changes are lost. The app lists the worktrees again when you click it, so 
 machine is offline or can't list them.
 
 What stays, unless you delete its folder: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
-repo, and its pull requests on GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
+repo, and its pull requests on GitHub. Add the folder again any time, as a new project with nothing it had; the toast
+after a delete has **Add the folder again**. A project whose machine was removed from the hub has no worktrees to
+list: its delete only forgets it in fleetd.
 
 ### Nightly worktree cleanup {#cleanup}
 
@@ -465,13 +470,15 @@ not fleetd's rules.
 
 A project can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You aren't asked
 (decision `projects.one-model`, D310): each purchase goes in its purchases log, fleetd fills the card into the
-checkout, the lead never sees it, and the chat says what was paid. It pays only in an [Only me](#only-me) project.
+checkout, the lead never sees it, and the chat says what was paid. Any project's lead can pay, but an archived one's.
 Keep the card in fleetd's own vault, and make it a virtual card with a monthly limit or a low-limit card: an agent
 on the machine could read what the token reads ([why](/docs/security#agent-reach)).
 
 1. **Pick a card.** In the project's settings, **Payments** lists the Credit Card items the project's 1Password token
    reads: its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › Your accounts ›
-   1Password). Pick one. fleetd keeps only its `op://vault/item` reference.
+   1Password). Pick one. fleetd keeps only its `op://vault/item` reference. At the checkout the fill reads it with
+   the project's own variable, else, in an [Only me](#only-me) project, its owner's token: a shared project pays only
+   with a variable of its own.
 2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
    name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
    record: the shop, the total, each item, and the card.
@@ -504,8 +511,8 @@ why, and fleetd checks the page is on that site and the field is there.
   phone app shows what is asked and sends you to the desktop app to enter it, and a Telegram chat never asks for the
   value, since a chat there isn't sealed.
 - **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the lead names that
-  field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes, in an
-  [Only me](#only-me) project. You aren't asked (D310).
+  field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes, with the token a
+  [purchase](#purchases) uses. You aren't asked (D310).
 
 The value never reaches the lead, the chat, a transcript, a recording or a log. From the fill on, the project's
 browser session refuses to read values back, and the field shows as blurred dots. A page that moved to another site
