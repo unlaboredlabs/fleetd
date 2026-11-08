@@ -122,8 +122,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 - [x] `fleetd_status` → `src/hub/executor` (read) <!-- tool:`fleetd_status` -->
 - [x] `project_get` → `src/hub/executor` (read) <!-- tool:`project_get` -->
-- [ ] `thread_tail` → `src/hub/executor` (read) <!-- tool:`thread_tail` -->
-- [ ] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
+- [x] `thread_tail` → `src/hub/executor` (read) <!-- tool:`thread_tail` -->
+- [x] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
 - [ ] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
 - [ ] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
 - [ ] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
@@ -223,7 +223,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
 - [ ] `project_stop` → `src/hub/chat` (operate) <!-- tool:`project_stop` -->
 - [x] `agents_list` → `src/hub/agents` (read) <!-- tool:`agents_list` -->
-- [ ] `agent_work` → `src/hub/agents` (read) <!-- tool:`agent_work` -->
+- [x] `agent_work` → `src/hub/agents` (read) <!-- tool:`agent_work` -->
 - [ ] `chat_stop` → `src/hub/chat` (operate) <!-- tool:`chat_stop` -->
 - [ ] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
 - [ ] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
