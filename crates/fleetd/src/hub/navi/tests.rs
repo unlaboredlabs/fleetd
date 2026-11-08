@@ -315,6 +315,27 @@ fn a_folder_name_is_plain_lowercase_words() {
     assert_eq!(super::slug(&"x".repeat(90)).len(), 40);
 }
 
+/// Bug hunt: a folder added with a title typed with a space after it kept the space ("What should the lead do in
+/// Project 01 ?"); a new folder's title was trimmed, an existing one's wasn't.
+#[tokio::test]
+async fn an_added_folders_title_is_trimmed_as_a_new_ones_is() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS]).await;
+    ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "title": " Project 01 " }),
+    )
+    .await;
+    let mut titles = vec![];
+    while let Ok(c) = calls.try_recv() {
+        if let SessionCall::ProjectUpsert { title, .. } = c {
+            titles.push(title.to_string());
+        }
+    }
+    assert_eq!(titles, ["Project 01"]);
+}
+
 #[tokio::test]
 async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
     let (hub, _home) = hub();

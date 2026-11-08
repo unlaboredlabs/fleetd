@@ -660,7 +660,7 @@ pub async fn add(
     }
     let m = target_machine(&hub, input.machine_id.as_ref())?;
     require(caller, Role::Operate, Some(&m))?;
-    let title = input.title.as_ref().map(|t| t.as_str().to_owned());
+    let title = input.title.as_ref().map(|t| t.as_str().trim().to_owned());
     let dry_run = input.dry_run == Some(true);
     let only_me = OnlyMe::of(&hub, caller, input.only_me)?;
     if input.create == Some(true) {
