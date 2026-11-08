@@ -13,6 +13,7 @@ use serde::Deserialize;
 use super::contract::{Change, ChangeId, ChangeState};
 use super::github::Pull;
 use super::host::NodeRun;
+use super::repeats::warn_hourly;
 use super::service::{Train, error_text, lock, repo_lock, short};
 
 /// Where a repo says how its generated files are made, on its base branch.
@@ -321,12 +322,12 @@ impl Train {
             Ok(Some(text)) => match Regenerate::parse(&text) {
                 Ok(config) => Some(config),
                 Err(why) => {
-                    tracing::warn!(repo, base, why, "train: the regenerate config is not used");
+                    warn_hourly!(self, [repo, base], why; repo, base, why, "train: the regenerate config is not used");
                     None
                 }
             },
             Err(e) => {
-                tracing::warn!(repo, base, error = %e.message, "train: the regenerate config not read");
+                warn_hourly!(self, [repo, base], e.message; repo, base, error = %e.message, "train: the regenerate config not read");
                 return None;
             }
         };
@@ -384,7 +385,7 @@ impl Train {
         let added = match self.github.added_files(repo, change.pr_number.get()).await {
             Ok(added) => added,
             Err(e) => {
-                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: the PR's files not read");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: the PR's files not read");
                 return false;
             }
         };
@@ -397,7 +398,7 @@ impl Train {
                     .map(String::from)
                     .collect(),
                 Err(e) => {
-                    tracing::warn!(change_id = %change.change_id, error = %e.message, "train: the base's migrations not read");
+                    warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: the base's migrations not read");
                     return false;
                 }
             }
@@ -654,7 +655,7 @@ impl Train {
             .message_task(&change.project_ref, super::service::TRAIN_BY, task_id, text)
             .await
         {
-            tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not told of the push");
+            warn_hourly!(self, [change.change_id, task_id], e; change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not told of the push");
         }
     }
 

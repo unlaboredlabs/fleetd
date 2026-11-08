@@ -4,6 +4,7 @@
 use fleetd_contracts::project_settings::{CheckName, TRAIN_CHECKS_MAX, TrainSettings};
 use serde::Deserialize;
 
+use super::repeats::warn_hourly;
 use super::service::{Train, lock};
 
 pub const PATH: &str = ".fleetd/train.json";
@@ -61,7 +62,7 @@ impl Train {
                 }
             },
             Err(e) => {
-                tracing::warn!(repo, base, error = %e.message, "train: {PATH} not read");
+                warn_hourly!(self, [repo, base], e.message; repo, base, error = %e.message, "train: {PATH} not read");
                 return None;
             }
         };
