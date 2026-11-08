@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "Invited Ada (p_ID) as admin.\nInvite link:  fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4790&code=CODE\nCode:         CODE  (single use, valid until TIME)\nHub address:  http://127.0.0.1:4790\n\nSend Ada the link, or the code and hub address to enter in the fleetd app. The device it pairs is theirs.\nTake it back with `fleetd invite revoke inv_ID`.\n",
+  "stderr": ""
+}

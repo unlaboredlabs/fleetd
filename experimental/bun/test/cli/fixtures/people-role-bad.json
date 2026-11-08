@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: the role must be owner, admin or member\n\nusage:\n  invite --name <name> [--role <member|admin|owner>]\n  invite --person <personId>\n             invite someone to this hub: prints a link and a code (single use, 7 days) that pair\n             their app as a device of a new person, a member unless --role; with --person, one\n             more device of someone already here\n  invite list\n  invite revoke <inviteId>\n             takes back an open invite; someone it invited who never joined goes with it\n  people\n             the hub's people, with their role and devices\n  people role <personId> <owner|admin|member>\n  people remove <personId>\n             signs out all their devices; one device: fleetd hub key revoke <keyId>. The hub\n             always keeps an owner\n"
+}

@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: a new person needs a name: fleetd invite --name <name>\n"
+}

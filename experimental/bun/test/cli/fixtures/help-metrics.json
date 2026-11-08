@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path>]\n             what the factory turned out: PRs merged per day by route, time from order to\n             merged, your minutes per merged PR and the share through fleetd, over the last\n             --days calendar days (1-400, today included) in this machine's zone; one project by\n             id or title (<machine>/<project> when two machines have one), the whole fleet\n             without one. Landed changes are kept 400 days. On the hub machine it needs no\n             --hub or --key-file\n",
+  "stderr": ""
+}

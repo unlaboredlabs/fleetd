@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  update [--check] [--channel <c>] [--now]\n             replace this fleetd with the latest release, then restart its hub at once and its\n             node once its agents finish the step they're on (10 min at most; --now doesn't wait):\n             what they were running carries on by itself. The app's Update button does this for\n             the hub and every node; this is for a machine without the app. --channel edge (the\n             newest build of main) or stable; default: the channel this build came from\n",
+  "stderr": ""
+}

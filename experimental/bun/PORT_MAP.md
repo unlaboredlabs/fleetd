@@ -495,83 +495,83 @@ every `fleetd` command.
 
 ### CLI commands
 
-- [ ] `fleetd agent-device` → `src/cli/agent_device` <!-- cli:`fleetd agent-device` -->
+- [x] `fleetd agent-device` → `src/cli/agent_device` <!-- cli:`fleetd agent-device` -->
 - [x] `fleetd agent-mcp` → `src/cli/agent_mcp` <!-- cli:`fleetd agent-mcp` -->
-- [ ] `fleetd build-slot` → `src/node/build_slots` <!-- cli:`fleetd build-slot` -->
-- [ ] `fleetd chat` → `src/cli/chat` <!-- cli:`fleetd chat` -->
-- [ ] `fleetd chat history` → `src/cli/chat` <!-- cli:`fleetd chat history` -->
-- [ ] `fleetd cloud stop` → `src/cli/cloud` <!-- cli:`fleetd cloud stop` -->
-- [ ] `fleetd doctor` → `src/cli/setup` <!-- cli:`fleetd doctor` -->
+- [x] `fleetd build-slot` → `src/node/build_slots` <!-- cli:`fleetd build-slot` -->
+- [x] `fleetd chat` → `src/cli/chat` <!-- cli:`fleetd chat` -->
+- [x] `fleetd chat history` → `src/cli/chat` <!-- cli:`fleetd chat history` -->
+- [x] `fleetd cloud stop` → `src/cli/cloud` <!-- cli:`fleetd cloud stop` -->
+- [x] `fleetd doctor` → `src/cli/setup` <!-- cli:`fleetd doctor` -->
 - [ ] `fleetd github-app` → `src/cli/github_app` <!-- cli:`fleetd github-app` -->
 - [ ] `fleetd github-app create` → `src/cli/github_app` <!-- cli:`fleetd github-app create` -->
 - [ ] `fleetd github-app remove` → `src/cli/github_app` <!-- cli:`fleetd github-app remove` -->
 - [ ] `fleetd github-app test` → `src/cli/github_app` <!-- cli:`fleetd github-app test` -->
-- [ ] `fleetd help` → `src/cli` <!-- cli:`fleetd help` -->
-- [ ] `fleetd hub key create` → `src/cli/hub_key` <!-- cli:`fleetd hub key create` -->
-- [ ] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
-- [ ] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
+- [x] `fleetd help` → `src/cli` <!-- cli:`fleetd help` -->
+- [x] `fleetd hub key create` → `src/cli/hub_key` <!-- cli:`fleetd hub key create` -->
+- [x] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
+- [x] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
 - [ ] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
 - [ ] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
 - [ ] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
-- [ ] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
-- [ ] `fleetd invite list` → `src/cli/people` <!-- cli:`fleetd invite list` -->
-- [ ] `fleetd invite revoke` → `src/cli/people` <!-- cli:`fleetd invite revoke` -->
-- [ ] `fleetd mac` → `src/cli/mac_tool` <!-- cli:`fleetd mac` -->
+- [x] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
+- [x] `fleetd invite list` → `src/cli/people` <!-- cli:`fleetd invite list` -->
+- [x] `fleetd invite revoke` → `src/cli/people` <!-- cli:`fleetd invite revoke` -->
+- [x] `fleetd mac` → `src/cli/mac_tool` <!-- cli:`fleetd mac` -->
 - [ ] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
 - [ ] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
-- [ ] `fleetd machine set` → `src/cli/setup` <!-- cli:`fleetd machine set` -->
-- [ ] `fleetd metrics` → `src/cli/metrics` <!-- cli:`fleetd metrics` -->
-- [ ] `fleetd navi` → `src/cli/navi` <!-- cli:`fleetd navi` -->
-- [ ] `fleetd navi archive` → `src/cli/navi` <!-- cli:`fleetd navi archive` -->
-- [ ] `fleetd navi create` → `src/cli/navi` <!-- cli:`fleetd navi create` -->
-- [ ] `fleetd navi list` → `src/cli/navi` <!-- cli:`fleetd navi list` -->
-- [ ] `fleetd navi rename` → `src/cli/navi` <!-- cli:`fleetd navi rename` -->
-- [ ] `fleetd navi unarchive` → `src/cli/navi` <!-- cli:`fleetd navi unarchive` -->
+- [x] `fleetd machine set` → `src/cli/setup` <!-- cli:`fleetd machine set` -->
+- [x] `fleetd metrics` → `src/cli/metrics` <!-- cli:`fleetd metrics` -->
+- [x] `fleetd navi` → `src/cli/navi` <!-- cli:`fleetd navi` -->
+- [x] `fleetd navi archive` → `src/cli/navi` <!-- cli:`fleetd navi archive` -->
+- [x] `fleetd navi create` → `src/cli/navi` <!-- cli:`fleetd navi create` -->
+- [x] `fleetd navi list` → `src/cli/navi` <!-- cli:`fleetd navi list` -->
+- [x] `fleetd navi rename` → `src/cli/navi` <!-- cli:`fleetd navi rename` -->
+- [x] `fleetd navi unarchive` → `src/cli/navi` <!-- cli:`fleetd navi unarchive` -->
 - [ ] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
 - [ ] `fleetd node grants` → `src/cli/node` <!-- cli:`fleetd node grants` -->
 - [ ] `fleetd node join` → `src/cli/node` <!-- cli:`fleetd node join` -->
 - [ ] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
 - [ ] `fleetd node run` → `src/cli/node` <!-- cli:`fleetd node run` -->
-- [ ] `fleetd pair` → `src/cli/pair` <!-- cli:`fleetd pair` -->
-- [ ] `fleetd people` → `src/cli/people` <!-- cli:`fleetd people` -->
-- [ ] `fleetd people remove` → `src/cli/people` <!-- cli:`fleetd people remove` -->
-- [ ] `fleetd people role` → `src/cli/people` <!-- cli:`fleetd people role` -->
-- [ ] `fleetd project add` → `src/cli/project` <!-- cli:`fleetd project add` -->
-- [ ] `fleetd project archive` → `src/cli/project` <!-- cli:`fleetd project archive` -->
-- [ ] `fleetd project list` → `src/cli/project` <!-- cli:`fleetd project list` -->
-- [ ] `fleetd project profile` → `src/cli/project` <!-- cli:`fleetd project profile` -->
-- [ ] `fleetd project profiles` → `src/cli/project` <!-- cli:`fleetd project profiles` -->
-- [ ] `fleetd project remove` → `src/cli/project` <!-- cli:`fleetd project remove` -->
-- [ ] `fleetd project repo add` → `src/cli/project` <!-- cli:`fleetd project repo add` -->
-- [ ] `fleetd project repo list` → `src/cli/project` <!-- cli:`fleetd project repo list` -->
-- [ ] `fleetd project repo remove` → `src/cli/project` <!-- cli:`fleetd project repo remove` -->
-- [ ] `fleetd project set` → `src/cli/project` <!-- cli:`fleetd project set` -->
-- [ ] `fleetd project stop` → `src/cli/project` <!-- cli:`fleetd project stop` -->
-- [ ] `fleetd project unarchive` → `src/cli/project` <!-- cli:`fleetd project unarchive` -->
+- [x] `fleetd pair` → `src/cli/pair` <!-- cli:`fleetd pair` -->
+- [x] `fleetd people` → `src/cli/people` <!-- cli:`fleetd people` -->
+- [x] `fleetd people remove` → `src/cli/people` <!-- cli:`fleetd people remove` -->
+- [x] `fleetd people role` → `src/cli/people` <!-- cli:`fleetd people role` -->
+- [x] `fleetd project add` → `src/cli/project` <!-- cli:`fleetd project add` -->
+- [x] `fleetd project archive` → `src/cli/project` <!-- cli:`fleetd project archive` -->
+- [x] `fleetd project list` → `src/cli/project` <!-- cli:`fleetd project list` -->
+- [x] `fleetd project profile` → `src/cli/project` <!-- cli:`fleetd project profile` -->
+- [x] `fleetd project profiles` → `src/cli/project` <!-- cli:`fleetd project profiles` -->
+- [x] `fleetd project remove` → `src/cli/project` <!-- cli:`fleetd project remove` -->
+- [x] `fleetd project repo add` → `src/cli/project` <!-- cli:`fleetd project repo add` -->
+- [x] `fleetd project repo list` → `src/cli/project` <!-- cli:`fleetd project repo list` -->
+- [x] `fleetd project repo remove` → `src/cli/project` <!-- cli:`fleetd project repo remove` -->
+- [x] `fleetd project set` → `src/cli/project` <!-- cli:`fleetd project set` -->
+- [x] `fleetd project stop` → `src/cli/project` <!-- cli:`fleetd project stop` -->
+- [x] `fleetd project unarchive` → `src/cli/project` <!-- cli:`fleetd project unarchive` -->
 - [ ] `fleetd prompts diff` → `src/cli/prompts` <!-- cli:`fleetd prompts diff` -->
 - [ ] `fleetd prompts edit` → `src/cli/prompts` <!-- cli:`fleetd prompts edit` -->
 - [ ] `fleetd prompts list` → `src/cli/prompts` <!-- cli:`fleetd prompts list` -->
 - [ ] `fleetd prompts reset` → `src/cli/prompts` <!-- cli:`fleetd prompts reset` -->
 - [ ] `fleetd prompts show` → `src/cli/prompts` <!-- cli:`fleetd prompts show` -->
 - [ ] `fleetd push-relay` → `src/push_relay` <!-- cli:`fleetd push-relay` -->
-- [ ] `fleetd push-relay set` → `src/push_relay` <!-- cli:`fleetd push-relay set` -->
-- [ ] `fleetd status` → `src/cli/status` <!-- cli:`fleetd status` -->
-- [ ] `fleetd steer` → `src/cli/steer` <!-- cli:`fleetd steer` -->
-- [ ] `fleetd steer withdraw` → `src/cli/steer` <!-- cli:`fleetd steer withdraw` -->
-- [ ] `fleetd steers` → `src/cli/steer` <!-- cli:`fleetd steers` -->
-- [ ] `fleetd time` → `src/cli/time` <!-- cli:`fleetd time` -->
-- [ ] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
+- [x] `fleetd push-relay set` → `src/push_relay` <!-- cli:`fleetd push-relay set` -->
+- [x] `fleetd status` → `src/cli/status` <!-- cli:`fleetd status` -->
+- [x] `fleetd steer` → `src/cli/steer` <!-- cli:`fleetd steer` -->
+- [x] `fleetd steer withdraw` → `src/cli/steer` <!-- cli:`fleetd steer withdraw` -->
+- [x] `fleetd steers` → `src/cli/steer` <!-- cli:`fleetd steers` -->
+- [x] `fleetd time` → `src/cli/time` <!-- cli:`fleetd time` -->
+- [x] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
 - [ ] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
 - [ ] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
 - [x] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
-- [ ] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->
-- [ ] `fleetd usage` → `src/cli/usage` <!-- cli:`fleetd usage` -->
-- [ ] `fleetd usage resume` → `src/cli/usage` <!-- cli:`fleetd usage resume` -->
-- [ ] `fleetd version` → `src/cli` <!-- cli:`fleetd version` -->
-- [ ] `fleetd work` → `src/cli/work` <!-- cli:`fleetd work` -->
-- [ ] `fleetd work claim` → `src/cli/work` <!-- cli:`fleetd work claim` -->
-- [ ] `fleetd work done` → `src/cli/work` <!-- cli:`fleetd work done` -->
-- [ ] `fleetd work drop` → `src/cli/work` <!-- cli:`fleetd work drop` -->
+- [x] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->
+- [x] `fleetd usage` → `src/cli/usage` <!-- cli:`fleetd usage` -->
+- [x] `fleetd usage resume` → `src/cli/usage` <!-- cli:`fleetd usage resume` -->
+- [x] `fleetd version` → `src/cli` <!-- cli:`fleetd version` -->
+- [x] `fleetd work` → `src/cli/work` <!-- cli:`fleetd work` -->
+- [x] `fleetd work claim` → `src/cli/work` <!-- cli:`fleetd work claim` -->
+- [x] `fleetd work done` → `src/cli/work` <!-- cli:`fleetd work done` -->
+- [x] `fleetd work drop` → `src/cli/work` <!-- cli:`fleetd work drop` -->
 
 ## mcp
 

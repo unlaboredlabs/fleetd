@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "On mac-1, run:\n\n  curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example:4799 --code fle_CODE --machine-id mac-1 --git-identity 'Dev O'\\''Neil <dev@users.noreply.github.com>'\n\nThe code works once, until HH:MM UTC. mac-1 needs claude installed and must reach the hub at that address.\n",
+  "stderr": ""
+}

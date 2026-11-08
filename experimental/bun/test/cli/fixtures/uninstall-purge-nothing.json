@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "no hub service at $HOME/.config/systemd/user/fleetd-hub.service\nfleetd: $HOME/hub does not look like a hub home (no hub.sqlite or setup.json); not deleting it\n"
+}

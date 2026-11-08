@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: --page is for history\n\nusage:\n  chat <machine>/<project> \"<text>\" [--now] [--wait | --follow] --key-file <key> [--hub <url>]\n             write to a project's lead, as the app does: it starts the lead's next turn, or lands at\n             its next step while it works; --now (a human key) stops that step and delivers at once.\n             --wait prints the lead's reply when its turn ends; --follow streams it as it is written.\n             Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent\n             key as that agent, by its name\n  chat history <project> [--page <n>] --key-file <key> [--hub <url>]\n             the project's chat: who wrote each message, when, and what; the newest page, older\n             ones with --page\n"
+}

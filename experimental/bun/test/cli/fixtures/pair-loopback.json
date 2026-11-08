@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "No QR for a phone: the hub is only at http://127.0.0.1:4790, which a phone can't reach. Give the hub an address your phone reaches, its tailnet or LAN address: on the hub, run `fleetd init --listen <ip>:<port> --url http://<name>:<port>` (Settings › Hub › Setup › Where the hub listens), then pair the phone again.\n\nPairing code: CODE  (single use, valid until TIME)\nGrants:       admin on every machine\nHub address:  http://127.0.0.1:4790\nPairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4790&code=CODE\n\nThe fleetd app on this machine pairs by itself when it opens. On a phone or another device,\nenter the code and hub address above in the app, or open the link there.\n",
+  "stderr": ""
+}

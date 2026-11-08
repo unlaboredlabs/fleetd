@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: --person pairs another device of someone: it takes no --name or --role\n"
+}

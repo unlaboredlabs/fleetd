@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd steer: cannot read --key-file: No such file or directory (os error 2)\n"
+}

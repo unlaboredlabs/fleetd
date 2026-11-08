@@ -1,0 +1,5 @@
+{
+  "code": 64,
+  "stdout": "",
+  "stderr": "mac: mac sim start [--device <type>], a type as xcrun simctl list devicetypes names it\nmac: see mac --help\n"
+}
