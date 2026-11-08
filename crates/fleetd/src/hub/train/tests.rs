@@ -8458,9 +8458,11 @@ async fn a_failed_manual_release_run_on_main_opens_nothing() {
         let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let now = failed.clone();
         let kit = kit_with_late_ios(&clock, 77, move |_| {
-            now.load(std::sync::atomic::Ordering::SeqCst)
-                .then(|| vec![run(50, "ios", Some("failure"))])
-                .unwrap_or_default()
+            if now.load(std::sync::atomic::Ordering::SeqCst) {
+                vec![run(50, "ios", Some("failure"))]
+            } else {
+                Vec::new()
+            }
         });
         kit.gh.run_events.lock().unwrap().push((77, event));
         let a = kit
