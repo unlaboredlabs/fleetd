@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGENT, SERVICE, agentSpawn, lowest, score } from "../../src/node/oom.ts";
+import { AGENT, SERVICE, agentScoreLine, agentSpawn, lowest, score } from "../../src/node/oom.ts";
 import { enrolled, enrolledRetry } from "../../src/node/index.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import { tempHome } from "../helpers.ts";
@@ -27,6 +27,8 @@ test.if(linux)("an agent's process starts at the agent score, with its own pid, 
   const [exe, args] = agentSpawn("/bin/cat", ["/proc/self/oom_score_adj"]);
   expect(spawnSync(exe, args, { encoding: "utf8" }).stdout.trim()).toBe(String(AGENT));
   expect(agentSpawn("/no/such/host", ["x"])).toEqual(["/no/such/host", ["x"]]);
+  // What the node starts through a shell anyway (Chrome, a desktop's apps) takes the score from its line.
+  expect(spawnSync("/bin/sh", ["-c", `${agentScoreLine()}exec cat /proc/self/oom_score_adj`], { encoding: "utf8" }).stdout.trim()).toBe(String(AGENT));
 });
 
 test.if(linux)("a session's host starts at the agent score; a killed node's scratch dirs go at the next start", async () => {
