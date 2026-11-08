@@ -220,6 +220,20 @@ test("health says what desktop sessions run in, and why not", async () => {
   expect(await healthOf(dir, { runtime: ok.docker })).toMatchObject({ state: "ready", backend: "container" });
 });
 
+test("the heartbeat's load.desktop says what desktop sessions run in, as Rust's node/load.rs does", async () => {
+  if (process.platform !== "linux") return;
+  const dir = scratch();
+  const { xvfb, x11, locks } = fakes(dir, "fail");
+  const t = testNode("devbox", { desktop: { backend: "xvfb", xvfb, x11Dir: x11, lockDir: locks, windowManagers: [], pool: 0 } });
+  cleanups.push(t.done);
+  forgetRuntimeCheck();
+  const d = startDesktop(t.node);
+  cleanups.push(() => d.shutdown());
+  const hb = { load: { cpus: 4, load1: 0, limits: [] }, steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
+  await t.node.area("hb").fill(hb as never);
+  expect((hb.load as { desktop?: unknown }).desktop).toMatchObject({ state: "ready", backend: "xvfb" });
+});
+
 test("an agent opens a desktop, screenshots, clicks, types and launches on it, a person takes over, and it ends", async () => {
   if (process.platform !== "linux") return;
   const dir = scratch();

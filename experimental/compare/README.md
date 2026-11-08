@@ -31,4 +31,5 @@ Rules the scripts keep, and a run by hand should too:
   through the machine's build slots: `build.ts` reports cargo's own time ("Finished … in"), which leaves the wait out. Numbers only compare within one machine and one load: each result records the load average.
 
 `results/rust/` is the committed baseline. To compare: build the Bun binary, run the same scripts with
-`--impl bun`, then `node report.ts rust bun`.
+`--impl bun`, then `node report.ts rust bun`. `results/bun/behaviour.json` is the Bun build's run on main `aa0abbd6e`:
+every suite passes, 57 of 57 rows, all-Bun fleet (with `bun run helper`'s session-host beside it).
