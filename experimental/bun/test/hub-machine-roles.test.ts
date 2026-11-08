@@ -311,3 +311,14 @@ test("an admin of every machine sets the recordings' retention", async () => {
   const roles = (await t.tools.call(t.hub, caller("read"), "machine_roles", {})) as { output: { retention: unknown } };
   expect(roles.output.retention).toEqual({ retentionDays: 7, maxGbPerProject: 2 });
 });
+
+test("hub.area(\"machine_roles\") says whether a machine runs agents, for the train", async () => {
+  setup();
+  const roles = t.hub.area<{ agents(m: string): boolean }>("machine_roles", () => {
+    throw new Error("the machine_roles area's start makes it");
+  });
+  expect(roles.agents("box2")).toBe(true);
+  expect(roles.agents("nowhere")).toBe(true);
+  await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "box2", roles: ["sessions"] });
+  expect(roles.agents("box2")).toBe(false);
+});

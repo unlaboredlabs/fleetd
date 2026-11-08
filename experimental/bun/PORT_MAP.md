@@ -457,7 +457,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] node→hub `browser_frame` handle → `src/hub/browser` <!-- link:node→hub `browser_frame` handle -->
 - [x] node→hub `session_host_result` send → `src/node/session_route` <!-- link:node→hub `session_host_result` send -->
 - [x] node→hub `session_host_result` handle → `src/hub/machine_roles` <!-- link:node→hub `session_host_result` handle -->
-- [ ] node→hub `mac_result` send → `src/node/mac_tool` <!-- link:node→hub `mac_result` send -->
+- [x] node→hub `mac_result` send → `src/node/mac_tool` <!-- link:node→hub `mac_result` send -->
 - [x] node→hub `mac_result` handle → `src/hub/mac_tool` <!-- link:node→hub `mac_result` handle -->
 - [x] hub→node `browser_watch` send → `src/hub/browser` <!-- link:hub→node `browser_watch` send -->
 - [x] hub→node `browser_watch` handle → `src/node/browser` <!-- link:hub→node `browser_watch` handle -->
@@ -468,11 +468,11 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] hub→node `session_host` send → `src/hub/machine_roles` <!-- link:hub→node `session_host` send -->
 - [x] hub→node `session_host` handle → `src/node/session_route` <!-- link:hub→node `session_host` handle -->
 - [x] hub→node `mac_call` send → `src/hub/mac_tool` <!-- link:hub→node `mac_call` send -->
-- [ ] hub→node `mac_call` handle → `src/node/mac_tool` <!-- link:hub→node `mac_call` handle -->
+- [x] hub→node `mac_call` handle → `src/node/mac_tool` <!-- link:hub→node `mac_call` handle -->
 - [x] hub→node `relay_dial` send → `src/hub/machine_roles` <!-- link:hub→node `relay_dial` send -->
 - [x] hub→node `relay_dial` handle → `src/node/session_route` <!-- link:hub→node `relay_dial` handle -->
 - [x] hub→node `session_step` send → `src/hub/machine_roles` <!-- link:hub→node `session_step` send -->
-- [ ] hub→node `session_step` handle → `src/node/session_route` <!-- link:hub→node `session_step` handle -->
+- [x] hub→node `session_step` handle → `src/node/session_route` <!-- link:hub→node `session_step` handle -->
 - [x] hub→node `session_end` send → `src/hub/machine_roles` <!-- link:hub→node `session_end` send -->
 - [x] hub→node `session_end` handle → `src/node/screens` <!-- link:hub→node `session_end` handle -->
 

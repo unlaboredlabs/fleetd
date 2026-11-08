@@ -9,8 +9,7 @@
 // its channels to the session's own proxy here.
 //
 // TODO(bun): devices, desktops and the agents' Mac's screen (their starts and steps through the hub), 1Password fills
-// of a session hosted elsewhere, a hosted session's secrets for scrubbing its recording, `session_step` into the
-// runner's recording (the Bun node records none yet).
+// of a session hosted elsewhere, a hosted session's secrets for scrubbing its recording.
 import { seal } from "../../shared/sealed_box.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type {
@@ -20,11 +19,15 @@ import type {
   SessionHostFrame,
   SessionRouteResult,
 } from "../../shared/screens_wire.ts";
-import { type Broker, broker as brokerOf } from "../browser/index.ts";
+import { type Broker, broker as brokerOf, drivesBrowser } from "../browser/index.ts";
+import type { ThreadItem } from "../../shared/sessions.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "../browser/node.ts";
 import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { dial, relayUrl } from "./relay.ts";
+
+/** A step's output past this goes cut. */
+const STEP_OUTPUT = 64 * 1024;
 
 /** How long the node waits for the hub to place a session: past the hub's own wait for a runner's start. */
 export const ROUTE_WAIT = 150_000;
@@ -41,6 +44,8 @@ export class Router {
   /** This node's agents' sessions hosted elsewhere: their relay on the hub and its key. */
   readonly remotes = new Map<string, { url: string; key: Uint8Array; sessionId?: string }>();
   readonly hosted: Hosted = new Map();
+  /** A hosted start's secrets, to scrub its recording with: read once by the broker, then gone from here. */
+  private readonly secretsFor = new Map<string, [string, string][]>();
 
   constructor(
     private readonly node: Node,
@@ -99,8 +104,12 @@ export class Router {
     return result;
   }
 
-  /** A call for a screen on this machine, of whichever kind (node/device's router). */
+  /** A call for a screen on this machine, of whichever kind (node/device's router); a hosted start's secrets with it. */
   private here(thread: string, frame: BrowserCallFrame): Promise<{ op: string } & Record<string, unknown>> {
+    const secrets = this.secretsFor.get(thread);
+    this.secretsFor.delete(thread);
+    // A hosted browser's start: the broker scrubs its recording with them, read once there.
+    if (secrets && frame.call.op === "session_start") this.broker.secretsFor(thread, secrets);
     return screens(this.node).handle(thread, frame);
   }
 
@@ -126,6 +135,7 @@ export class Router {
         if (relayKey.length !== 32) return refuse("the session's sealed relay key is not 32 bytes");
         // TODO(bun): a person's screen on a project's kept profile (`navi`): the Bun broker keeps no profiles yet.
         this.hosted.set(key, relayKey);
+        this.secretsFor.set(key, Array.isArray(opened.secrets) ? opened.secrets : []);
         try {
           return { id, result: await this.here(key, frame.frame) };
         } catch (e) {
@@ -139,6 +149,24 @@ export class Router {
     } catch (e) {
       if (e instanceof ToolError) return { id, error: e.toJSON() };
       return { id, error: { code: "failed", message: (e as Error).message } };
+    }
+  }
+
+  /**
+   * A finished `agent-browser` command of the agent's whose session runs on another machine: sent to the runner for
+   * its recording (`session_step`), its output cut short. TODO(bun): masked with the session's secrets first, as
+   * session_route.rs `masked_step` does, once the Bun node holds them.
+   */
+  async step(thread: string, item: ThreadItem): Promise<void> {
+    if (this.broker.live(thread) || !this.remotes.has(thread)) return;
+    const kind = item.kind;
+    if (kind.type !== "command" || !drivesBrowser(kind.command) || (item.status !== "completed" && item.status !== "failed")) return;
+    const output = kind.output === undefined ? undefined : kind.output.slice(0, STEP_OUTPUT);
+    const sent = { ...item, kind: { ...kind, ...(output === undefined ? {} : { output }) } };
+    try {
+      await hubCall(this.node, "session_step", { threadId: thread, item: sent }, { threadId: thread });
+    } catch (e) {
+      console.info(`session step not sent to its runner: ${(e as Error).message}`);
     }
   }
 
@@ -172,6 +200,10 @@ export function start(node: Node, given?: Router): Router {
     void r.host(frame).then((answer) => toHub(node, { t: "session_host_result", id: frame.id, frame: answer }));
   });
   onHub(node, "relay_dial", (f) => r.dial(f as unknown as RelayDialFrame));
+  // A step of the agent's for the recording of a session hosted here, under the key the hub gave it.
+  onHub(node, "session_step", (f) => void brokerOf(node).item(String(f.hostKey), f.item as ThreadItem));
+  // And the other way: an agent's command that drove its session hosted elsewhere goes to the runner's recording.
+  node.area("items").on((thread, item) => void r.step(thread, item));
   const b = brokerOf(node);
   b.remote = (thread) => r.remotes.get(thread);
   b.gone = (thread) => void r.remotes.delete(thread);

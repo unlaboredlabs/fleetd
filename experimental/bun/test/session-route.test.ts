@@ -76,10 +76,12 @@ test("a session the hub places on another machine: sealed to it, started there, 
 
   // Two nodes, each answering its lead calls through the hub as the link would.
   const hubUrl = `http://127.0.0.1:${server.port}`;
+  const itemFns = new Map<string, TestNode["node"]>();
   const nodes = new Map<string, { node: TestNode["node"]; router: Router; link: TestNode["link"]; local: TestNode["local"] }>();
   for (const [machine, secret] of [["devbox", crypto.getRandomValues(new Uint8Array(32))], ["box2", runnerSecret]] as const) {
     const tn = testNode(machine, { hub: hubUrl });
     const node = tn.node;
+    itemFns.set(machine, node);
     const broker = startNodeBrowser(node, new Broker(node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
     const router = startRoute(node, new Router(node, broker, new NodeBoxKey(secret)));
     const link = tn.link;
@@ -130,6 +132,23 @@ test("a session the hub places on another machine: sealed to it, started there, 
   // The hub carried ciphertext alone.
   expect(piped.length).toBeGreaterThan(2);
   expect(piped.some((p) => p.includes("hunter2") || p.includes("Page.navigate"))).toBe(false);
+  // The agent's command that drove it goes to the runner's recording, under its host key.
+  {
+    itemFns.get("devbox")!.area("items").ended("t1", {
+      id: "i9",
+      status: "completed",
+      title: "open",
+      startedAt: "2026-11-08T12:00:00.000Z",
+      completedAt: "2026-11-08T12:00:00.200Z",
+      updatedAt: "2026-11-08T12:00:00.200Z",
+      kind: { type: "command", command: "agent-browser open https://example.com", exitCode: 0 },
+    } as never);
+  }
+  const { broker: brokerOf } = await import("../src/node/browser/index.ts");
+  for (let i = 0; i < 100 && brokerOf(runner.node).steps().length === 0; i++) await Bun.sleep(10);
+  expect(brokerOf(runner.node).steps()).toEqual([
+    { sessionId: started.sessionId, step: expect.objectContaining({ tool: "agent-browser", args: { command: "agent-browser open https://example.com" } }) },
+  ]);
   ws.close();
   await agentNode.local.call("session_end", {}, "t1");
   expect(agentNode.router.remotes.size).toBe(0);

@@ -5,10 +5,11 @@ import type { Hub } from "../api/hub.ts";
 import { sleep } from "../browser/thumbs.ts";
 import { registerLeadCalls as registerMac } from "../mac_tool/index.ts";
 import { registerLeadCalls } from "./calls.ts";
-import { prune } from "./places.ts";
+import { machineRoles, prune } from "./places.ts";
 import { run as runScreens } from "./screens.ts";
 
 export function start(hub: Hub): void {
+  machineRoles(hub);
   registerLeadCalls(hub);
   registerMac(hub);
   void runPrune(hub);

@@ -49,6 +49,10 @@ export function rolesOn(c: Database, m: string): Roles {
     : { agents: true, sessions: true, maxSessions: undefined };
 }
 
+/** This area's own service, `hub.area("machine_roles")`: whether a machine runs agents (the train's node_run reads it). */
+export const machineRoles = (hub: Hub) =>
+  hub.area("machine_roles", (h) => ({ agents: (machineId: string) => rolesOn(h.db.conn, machineId).agents }));
+
 export function setRoles(c: Database, m: string, r: Roles): void {
   c.query(
     `INSERT INTO machine_roles (machine_id, agents, sessions, max_sessions) VALUES (?1, ?2, ?3, ?4)
