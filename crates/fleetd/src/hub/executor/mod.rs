@@ -2920,6 +2920,30 @@ impl Executors {
         self.call(&r.machine_id, op, call, wait).await.map(|_| ())
     }
 
+    /// Whether the project's file at `rel_path` already holds the bytes whose sha256 is `sha256`. Only for a node
+    /// listing `CAP_HAS_FILE`.
+    pub async fn has_file(
+        &self,
+        r: &ProjectRef,
+        rel_path: &str,
+        sha256: &str,
+    ) -> Result<bool, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::HasFile {
+            project_id: r.project_id.clone(),
+            rel_path: non_empty(&r.machine_id, op, "path", rel_path)?,
+            sha256: non_empty(&r.machine_id, op, "sha256", sha256)?,
+        };
+        match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::HasFile { has } => Ok(has),
+            _ => Err(failed(
+                &r.machine_id,
+                op,
+                "the node sent no answer to has_file",
+            )),
+        }
+    }
+
     /// The repo's default branch at `cwd`, else its current branch; `None` when it has neither (not a checkout) or no
     /// commit yet (a new repo).
     pub async fn default_branch(

@@ -172,6 +172,32 @@ pub fn put_file(root: &Path, rel_path: &str, bytes: &[u8]) -> Result<(), String>
     exclude_attachments(root)
 }
 
+/// Whether `rel_path`, under `.fleetd/attachments/`, is a plain file holding the bytes whose sha256 is `sha256`
+/// (lowercase hex): then the hub needn't send it again. False for a path [`put_file`] wouldn't write, a symlink
+/// anywhere on the way, or a file that isn't there.
+pub fn has_file(root: &Path, rel_path: &str, sha256: &str) -> bool {
+    use sha2::{Digest, Sha256};
+
+    if !attachment_path_ok(rel_path) {
+        return false;
+    }
+    let (Ok(root), Ok(real)) = (root.canonicalize(), root.join(rel_path).canonicalize()) else {
+        return false;
+    };
+    if real != root.join(rel_path) || !real.is_file() {
+        return false;
+    }
+    let Ok(mut file) = std::fs::File::open(&real) else {
+        return false;
+    };
+    let mut hash = Sha256::new();
+    if std::io::copy(&mut file, &mut hash).is_err() {
+        return false;
+    }
+    let got: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    got == sha256
+}
+
 /// One file a session made, read for its chat: its name, type, whole size and the piece from `offset`. `path` is
 /// relative to `root` (the session's working directory) or absolute; after `..` and every symlink are resolved it
 /// must still lie under `root`, at most [`ATTACHMENT_MAX_BYTES`]. Without `file` it must be a png, jpeg, webp or gif
@@ -397,6 +423,33 @@ mod tests {
         for d in [outside, repo, repo2, repo3, repo4] {
             std::fs::remove_dir_all(d).unwrap();
         }
+    }
+
+    /// `has_file` says yes only for the very bytes at that path under the attachments directory, never through a
+    /// symlink.
+    #[test]
+    fn has_file_is_true_only_for_those_bytes_there() {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::symlink;
+        let png: String = Sha256::digest(b"png")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let dir = scratch("has");
+        let rel = ".fleetd/attachments/chat/shot.png";
+        assert!(!has_file(&dir, rel, &png), "not there yet");
+        put_file(&dir, rel, b"png").unwrap();
+        assert!(has_file(&dir, rel, &png));
+        assert!(!has_file(&dir, rel, &"0".repeat(64)), "other bytes");
+        std::fs::write(dir.join("shot.png"), b"png").unwrap();
+        assert!(
+            !has_file(&dir, "shot.png", &png),
+            "outside the attachments directory"
+        );
+        let link = ".fleetd/attachments/chat/link.png";
+        symlink(dir.join(rel), dir.join(link)).unwrap();
+        assert!(!has_file(&dir, link, &png), "a symlink");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";

@@ -504,6 +504,15 @@ pub enum SessionCall {
         rel_path: NonEmpty,
         data_b64: NonEmpty,
     },
+    /// Whether the file at `rel_path`, under the project's `.fleetd/attachments/`, already holds the bytes whose
+    /// sha256 is `sha256` (lowercase hex): the hub then skips its `put_file`. Only nodes listing
+    /// [`crate::node_link::CAP_HAS_FILE`] get it.
+    #[serde(rename_all = "camelCase")]
+    HasFile {
+        project_id: ProjectId,
+        rel_path: NonEmpty,
+        sha256: NonEmpty,
+    },
     /// An image session `session_id` made, for its project's chat (`chat_image`): `path` is relative to the session's
     /// own working directory, or absolute inside it, symlinks resolved. A png, jpeg, webp or gif by its bytes, at most
     /// [`crate::mcp::ATTACHMENT_MAX_BYTES`]; the reply holds at most [`IMAGE_PIECE_BYTES`] of it from `offset`.
@@ -792,6 +801,10 @@ pub enum SessionOutput {
     /// Answer to `withdraw`: whether claude dropped it.
     Withdrawn {
         cancelled: bool,
+    },
+    /// Answer to `has_file`.
+    HasFile {
+        has: bool,
     },
     /// Answer to `list_files`: repo-relative paths.
     Files {
