@@ -40,4 +40,12 @@ export class Hub {
     if (!this.areas.has(name)) this.areas.set(name, make(this));
     return this.areas.get(name) as T;
   }
+
+  /**
+   * An area its owner already made, or undefined; never makes one (D355). For a consumer whose owner's module isn't in
+   * the build yet: read it at each use, so it finds the area as soon as the owner makes it.
+   */
+  peek<T>(name: string): T | undefined {
+    return this.areas.get(name) as T | undefined;
+  }
 }
