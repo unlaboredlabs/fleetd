@@ -38,6 +38,9 @@ pub const WAITING_FOR_RUNNERS: &str = "waiting for CI runners";
 /// it hasn't.
 pub const WAITING_ON: &str = "held: waiting on ";
 
+/// Why an upstream PR closed unmerged hasn't merged: it won't.
+pub(crate) const CLOSED: &str = "it was closed without merging";
+
 /// How long GitHub's answer for an upstream PR with no open Change is trusted: a pass reads it for the hold and for the
 /// lead's line, and each held Change asks.
 const UPSTREAM_TTL_MS: i64 = 10_000;
@@ -52,7 +55,7 @@ pub(super) enum UpstreamPull {
 }
 
 /// The first of a Change's `after` PRs that hasn't merged.
-pub(super) struct Waiting {
+pub(crate) struct Waiting {
     /// The Change's hold: `WAITING_ON`, the PR and why it hasn't merged.
     pub note: String,
     /// It failed CI or review, or left the train unmerged: the lead hears of it.
@@ -904,7 +907,7 @@ impl Train {
     /// Whether `project_ref`'s person sees the project `url`'s PR belongs to (D338): the one its Change on the train is
     /// in, else each project with its repo. A PR of a repo no project has goes, as before: the train reads only its
     /// state on GitHub, which the lead reads too.
-    pub(super) fn sees_pr(&self, project_ref: &ProjectRef, url: &GitHubPrUrl) -> bool {
+    pub(crate) fn sees_pr(&self, project_ref: &ProjectRef, url: &GitHubPrUrl) -> bool {
         let Some(parsed) = parse_pr_url(url.as_str()) else {
             return true;
         };
@@ -916,8 +919,9 @@ impl Train {
         projects.is_empty() || projects.iter().any(|p| self.host.sees(project_ref, p))
     }
 
-    /// Where the upstream PR stands: None once it merged. Its Change on the train says, else GitHub.
-    async fn upstream(&self, url: &GitHubPrUrl) -> Option<Waiting> {
+    /// Where the upstream PR stands: None once it merged. Its Change on the train says, else GitHub. A task's `wait_ci`
+    /// with `merged` reads it too.
+    pub(crate) async fn upstream(&self, url: &GitHubPrUrl) -> Option<Waiting> {
         let parsed = parse_pr_url(url.as_str())?;
         let (repo, n) = (parsed.repo.to_lowercase(), parsed.pr_number);
         let latest = self.records.latest_for(&repo, n);
@@ -941,7 +945,7 @@ impl Train {
             Some((_, ChangeState::Refused | ChangeState::Abandoned)) | None => {
                 match self.upstream_pull(url.as_str(), &repo, n).await {
                     UpstreamPull::Merged => return None,
-                    UpstreamPull::Closed => ("it was closed without merging".to_string(), true),
+                    UpstreamPull::Closed => (CLOSED.to_string(), true),
                     UpstreamPull::Open => match latest.map(|c| c.state) {
                         Some(ChangeState::Refused) => ("the train refused it".to_string(), true),
                         Some(_) => ("it left the train unmerged".to_string(), true),

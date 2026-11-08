@@ -1,6 +1,6 @@
 //! `wait_ci` over a real hub with a fake node and fake GitHub reads: a task waits on a run or a PR of its project, is
 //! woken with one line once it finishes and not before, and a run of another repo, a URL that is no run or PR and a
-//! lead's call are refused.
+//! lead's call are refused. With `merged`, a PR's wait wakes its task when the PR merges, fails on the train or closes.
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -13,19 +13,24 @@ use serde_json::json;
 use tokio::sync::mpsc;
 
 use super::cap_tests::{AT, Node, hub, running};
-use super::ci_wait::{CiReads, Read, Target, summary, target_of};
+use super::ci_wait::{CiReads, HubReads, Merge, Read, Target, summary, target_of};
 use super::guard_tests::{insert, serve};
 use crate::hub::api::Hub;
 use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::work::BoxFut;
+use fleetd_contracts::ids::ProjectRef;
 
 const RUN: &str = "https://github.com/acme/shop/actions/runs/4242";
 const PR: &str = "https://github.com/acme/shop/pull/7";
+const PR2: &str = "https://github.com/acme/shop/pull/8";
 
-/// GitHub as the test sets it: each target's read, running until set.
+/// GitHub as the test sets it: each target's read, running until set; and each PR's way to merging, pending until set.
 #[derive(Default)]
-struct Reads(Mutex<HashMap<String, Result<Read, String>>>);
+struct Reads(
+    Mutex<HashMap<String, Result<Read, String>>>,
+    Mutex<HashMap<String, Merge>>,
+);
 
 impl Reads {
     fn set(&self, url: &str, read: Read) {
@@ -38,12 +43,21 @@ impl Reads {
             .unwrap()
             .insert(url.to_owned(), Err(error.to_owned()));
     }
+
+    fn merge(&self, url: &str, merge: Merge) {
+        self.1.lock().unwrap().insert(url.to_owned(), merge);
+    }
 }
 
 impl CiReads for Reads {
     fn read<'a>(&'a self, target: &'a Target) -> BoxFut<'a, Result<Read, String>> {
         let read = self.0.lock().unwrap().get(&target.url()).cloned();
         Box::pin(async move { read.unwrap_or(Ok(Read::Running)) })
+    }
+
+    fn merge<'a>(&'a self, _: &'a ProjectRef, target: &'a Target) -> BoxFut<'a, Merge> {
+        let merge = self.1.lock().unwrap().get(&target.url()).cloned();
+        Box::pin(async move { merge.unwrap_or(Merge::Pending) })
     }
 }
 
@@ -71,7 +85,24 @@ fn shop_repo(hub: &Hub) {
 }
 
 fn wait(hub: &Hub, agent: CallerAgent, url: &str) -> Result<LeadCallResult, McpToolError> {
-    let call: LeadCall = serde_json::from_value(json!({ "op": "wait_ci", "url": url })).unwrap();
+    wait_with(hub, agent, json!({ "op": "wait_ci", "url": url }))
+}
+
+/// wait_ci with `merged`.
+fn wait_merged(hub: &Hub, url: &str) -> Result<LeadCallResult, McpToolError> {
+    wait_with(
+        hub,
+        t1(),
+        json!({ "op": "wait_ci", "url": url, "merged": true }),
+    )
+}
+
+fn wait_with(
+    hub: &Hub,
+    agent: CallerAgent,
+    input: serde_json::Value,
+) -> Result<LeadCallResult, McpToolError> {
+    let call: LeadCall = serde_json::from_value(input).unwrap();
     crate::hub::tasks::policy::check(&agent, "wait_ci")?;
     let caller = LeadCaller {
         project_ref: hub
@@ -533,4 +564,161 @@ async fn the_leads_agents_list_says_a_done_task_waits_on_ci() {
     reads.set(PR, Read::Over("was merged".into()));
     assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 2);
     assert_eq!(agents(json!({ "op": "task_list" })), None);
+}
+
+/// T1 ended its turn waiting.
+fn ended_t1(hub: &Hub) {
+    insert(
+        hub,
+        json!({ "taskId": "T1", "title": "build on the seam", "state": "done", "startedAt": AT, "endedAt": AT,
+                "threadRef": { "machineId": "lab-a", "threadId": "t9" },
+                "result": { "status": "done", "tail": "Waiting on #7 and #8 to merge.", "at": AT } }),
+    );
+}
+
+/// W520: a writer whose next step builds on two other PRs waits on each to merge and ends its turn. Their checks
+/// finishing doesn't wake it; each merge does, and once both merged nothing is left to wake it.
+#[tokio::test]
+async fn an_ended_task_waiting_on_two_prs_to_merge_is_woken_as_they_merge() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    ended_t1(&hub);
+    let Ok(LeadCallResult::WaitCi(asked)) = wait_merged(&hub, &format!("{PR}/files")) else {
+        panic!("wait_ci was not answered")
+    };
+    assert_eq!(asked.url.as_str(), PR);
+    assert!(asked.next.unwrap().contains("when the PR merges"));
+    wait_merged(&hub, PR2).unwrap();
+
+    let reads = Reads::default();
+    let green = Read::Finished {
+        conclusion: None,
+        label: "3f9c2ab".into(),
+        failing: vec![],
+        total: 12,
+    };
+    reads.set(PR, green.clone());
+    reads.set(PR2, green);
+    assert_eq!(
+        hub.tasks.poll_ci_waits(&reads).await,
+        0,
+        "green but not merged"
+    );
+    assert!(sent(&mut calls).is_empty());
+
+    reads.merge(PR, Merge::Merged);
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    reads.merge(PR2, Merge::Merged);
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    assert_eq!(
+        sent(&mut calls),
+        [
+            format!("A PR you waited on to merge (wait_ci merged) has merged: {PR}."),
+            format!("A PR you waited on to merge (wait_ci merged) has merged: {PR2}."),
+        ]
+    );
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0, "both waits ended");
+}
+
+/// One of the two PRs closes unmerged: the task is woken at once, told which and why, and that wait ends; the other
+/// still waits. A failure on the train wakes it once and the wait goes on, as its writer fixes the PR; a new failure
+/// after the PR is back on its way wakes it again.
+#[tokio::test]
+async fn a_merge_wait_wakes_early_when_its_pr_closes_unmerged_or_fails_on_the_train() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    ended_t1(&hub);
+    wait_merged(&hub, PR).unwrap();
+    wait_merged(&hub, PR2).unwrap();
+    let reads = Reads::default();
+
+    reads.merge(PR2, Merge::Over("it was closed without merging".into()));
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    assert_eq!(
+        sent(&mut calls),
+        [format!(
+            "A PR you waited on to merge (wait_ci merged) won't merge: {PR2}: it was closed without merging. Ask \
+             your lead what to build on instead."
+        )]
+    );
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0);
+
+    reads.merge(PR, Merge::Failed("its CI failed".into()));
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    let woke = sent(&mut calls);
+    assert_eq!(woke.len(), 1);
+    assert!(
+        woke[0].starts_with(&format!(
+            "A PR you waited on to merge (wait_ci merged) failed on the merge train: {PR}: its CI failed."
+        )),
+        "{woke:?}"
+    );
+    assert_eq!(
+        hub.tasks.poll_ci_waits(&reads).await,
+        0,
+        "the same failure once"
+    );
+    // Asked again while it still fails, it isn't told again.
+    wait_merged(&hub, PR).unwrap();
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0);
+    reads.merge(PR, Merge::Pending);
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0);
+    reads.merge(PR, Merge::Failed("its CI failed".into()));
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1, "failed again");
+    reads.merge(PR, Merge::Merged);
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 1);
+    assert_eq!(sent(&mut calls).len(), 2);
+    assert_eq!(hub.tasks.poll_ci_waits(&reads).await, 0);
+}
+
+/// The hub's reads take a PR's merge from its Change on the merge train, which a batch merges by closing the PR:
+/// merged there is merged, CI failed there is a failure.
+#[tokio::test]
+async fn the_hubs_merge_read_is_the_trains() {
+    use fleetd_contracts::train::{Change, ChangeState};
+    let (hub, _home) = hub();
+    let project = super::recovery_tests::project();
+    let change = |n: i64, state: &str| -> Change {
+        serde_json::from_value(json!({
+            "changeId": "X1", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "repo": "acme/shop",
+            "prNumber": n, "prUrl": format!("https://github.com/acme/shop/pull/{n}"),
+            "branch": format!("fleetd/T{n}-seam"), "taskId": format!("T{n}"), "workstreamId": "W1",
+            "headSha": "a".repeat(40), "state": state, "reviews": [],
+            "createdAt": AT, "updatedAt": AT,
+        }))
+        .unwrap()
+    };
+    hub.train.records().create(change(7, "merged"));
+    let failed = hub.train.records().create(change(8, "ci_failed"));
+    assert_eq!(failed.state, ChangeState::CiFailed);
+    let reads = HubReads(hub.clone());
+    let merge = |url: &str| {
+        let target = target_of(url).unwrap();
+        futures_util::FutureExt::now_or_never(reads.merge(&project, &target)).unwrap()
+    };
+    assert_eq!(merge(PR), Merge::Merged);
+    assert_eq!(merge(PR2), Merge::Failed("its CI failed".into()));
+}
+
+/// `merged` takes only a PR, and the lead's digest says a done task waits on one merging.
+#[tokio::test]
+async fn merged_takes_only_a_pr_and_the_digest_says_so() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    shop_repo(&hub);
+    ended_t1(&hub);
+    let run = wait_merged(&hub, RUN).unwrap_err();
+    assert_eq!(run.code, ErrorCode::Invalid);
+    assert!(run.message.contains("only a PR merges"), "{}", run.message);
+    wait_merged(&hub, PR).unwrap();
+    let project = super::recovery_tests::project();
+    let later = Timestamp("2026-10-19T11:00:00.000Z".into());
+    assert_eq!(
+        hub.tasks.digest_lines(&project, Some(&later), 10),
+        [format!(
+            "- T1 done: build on the seam; waits on CI, and wait_ci wakes it as each ends: {PR} (until it merges)"
+        )]
+    );
 }

@@ -101,7 +101,9 @@ loop. Your own pushes aren't gated.
 ### Agents wait without polling {#waiting}
 
 An agent never sleeps or polls. To wait on CI, it calls `wait_ci` and ends its turn, and the hub wakes it when the run
-ends. To wait on a job of its own that's too long for one command (a `mac run --bg` build, `scripts/check.sh
+ends. To wait on another PR merging (a stacked PR, a seam another writer adds), it calls `wait_ci` with the PR's URL and
+`merged: true`: the hub wakes it when the merge train merges the PR, or when the PR fails on the train or closes
+unmerged. To wait on a job of its own that's too long for one command (a `mac run --bg` build, `scripts/check.sh
 --background`), it arms Claude's Monitor tool and ends its turn. The Monitor's filter prints only the job's end: success
 and every failure. Each line the Monitor prints starts a new turn for the agent. The task shows as working again, and
 its lead gets the result when that turn ends, as after a message.
