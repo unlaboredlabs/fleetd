@@ -2,7 +2,9 @@
 // fleetd's node speaks, in the shapes recorded in crates/fleetd/src/node/runner/fixtures at version.rs TESTED, and
 // does no model call: each user message is one turn that runs the message's `lab-run: <shell>` lines in its cwd, one
 // Bash tool call each, and replies `lab-ok`; a `lab-slow: <ms>` line waits that long before each call after the first, as
-// a slow runner between tool calls. Every user message is filed in the session file claude would write, so
+// a slow runner between tool calls. A lab that wants replies of its own (the phone lab's chats) writes replies.json in
+// its run dir (FLEETD_LAB_DIR, which kit.ts's wrapper sets): `[[needle, reply], …]`, the first whose needle the message
+// holds answers it instead of `lab-ok`. Every user message is filed in the session file claude would write, so
 // scenarios read what an agent was told (its brief, a lead's digest, a recovery note) as for the real claude.
 //
 // usage (from the `claude` wrapper kit.ts writes): node fakeClaude.ts <claude args…>
@@ -96,6 +98,12 @@ const result = (userUuid: string, startedMs: number, text: string | null, interr
     uuid: randomUUID(),
   });
 
+const cannedReply = (text: string): string | undefined => {
+  const file = process.env.FLEETD_LAB_DIR === undefined ? undefined : path.join(process.env.FLEETD_LAB_DIR, "replies.json");
+  if (file === undefined || !fs.existsSync(file)) return undefined;
+  return (JSON.parse(fs.readFileSync(file, "utf8")) as Array<[string, string]>).find(([needle]) => text.includes(needle))?.[1];
+};
+
 /** The running turn's user message, and its tool's process (its own group, as claude's Bash tool). */
 let current: string | undefined;
 let tool: ChildProcess | undefined;
@@ -147,7 +155,7 @@ const turn = async (msg: Msg) => {
     lifecycle(userUuid, "cancelled");
     return;
   }
-  const reply = "lab-ok";
+  const reply = cannedReply(text) ?? "lab-ok";
   assistant([{ type: "text", text: reply }], userUuid);
   file({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: reply }] } });
   result(userUuid, startedMs, reply, false);

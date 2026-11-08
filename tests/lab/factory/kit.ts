@@ -68,11 +68,11 @@ interface Proc {
   readonly child: ChildProcess;
 }
 
-const freePort = () =>
+const freePort = (host: string) =>
   new Promise<number>((resolve, reject) => {
     const server = net.createServer();
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, host, () => {
       const port = (server.address() as net.AddressInfo).port;
       server.close(() => resolve(port));
     });
@@ -80,9 +80,9 @@ const freePort = () =>
 
 /**
  * Sets up the run under `dir` (which must be empty or missing), runs `body`, and stops everything it started however
- * `body` ends.
+ * `body` ends. `host` is the address the hub listens on (default 127.0.0.1; the phone lab gives the tailnet's).
  */
-export async function withFactory(dir: string, body: (f: Factory) => Promise<void>) {
+export async function withFactory(dir: string, body: (f: Factory) => Promise<void>, opts: { readonly host?: string } = {}) {
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
   const procs: Array<Proc> = [];
   /** Processes the node started (sessions, their tools), recorded before each stop so none outlives the run. */
@@ -112,7 +112,8 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   // `claude` on the node's PATH is the stand-in; `fleetd` is the build under test, for the agents' shells.
   const bin = path.join(dir, "bin");
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh\nexec '${process.execPath}' '${path.join(HERE, "fakeClaude.ts")}' "$@"\n`, { mode: 0o755 });
+  // FLEETD_LAB_DIR: where the stand-in finds replies.json, the lab's canned replies (fakeClaude.ts).
+  fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh\nFLEETD_LAB_DIR='${dir}' exec '${process.execPath}' '${path.join(HERE, "fakeClaude.ts")}' "$@"\n`, { mode: 0o755 });
   const [fleetdBin, fleetdPrefix] = fleetdCommand([]);
   fs.writeFileSync(path.join(bin, "fleetd"), `#!/bin/sh\nexec ${[fleetdBin, ...fleetdPrefix].map((a) => `'${a}'`).join(" ")} "$@"\n`, { mode: 0o755 });
   const PATH = `${bin}:${process.env.PATH ?? ""}`;
@@ -131,13 +132,14 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   const hubUser = path.join(dir, "hub-user");
   const hubEnv = { ...env(hubUser), FLEETD_HOME: dir };
   fs.mkdirSync(hubUser, { recursive: true });
-  const port = await freePort();
-  const hubUrl = `http://127.0.0.1:${port}`;
+  const host = opts.host ?? "127.0.0.1";
+  const port = await freePort(host);
+  const hubUrl = `http://${host}:${port}`;
   const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: hubEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
   let client: Client | undefined;
   try {
-    start("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${port}`], hubEnv);
+    start("hub", ["hub", "start", "--home", hubHome, "--listen", `${host}:${port}`], hubEnv);
     await until("hub /healthz", 60_000, async () => {
       const up = await fetch(`${hubUrl}/healthz`).then((r) => r.ok, () => false);
       return up ? true : (await sleep(250), undefined);

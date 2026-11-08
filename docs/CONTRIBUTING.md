@@ -19,6 +19,8 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
   hub may extend gets `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know
   yet.
 - `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
+- `app/mobile`: the phone app (Expo); its README says how to try it on the agents' Mac's simulator, and
+  `scripts/phone-lab.sh up` gives it a seeded throwaway hub to pair with.
 - `tests/lab`: the factory lab (`factory/`, offline, in CI), and the tools that record claude's fixtures, the site's
   captures and the demo.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` is
