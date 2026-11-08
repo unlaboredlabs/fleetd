@@ -277,3 +277,97 @@ fn the_agents_mac_join_needs_a_login_at_the_macs_screen() {
         stderr(&output)
     );
 }
+
+/// A release going up replaces its assets before its SHA256SUMS: a mismatch reads the sums again before refusing, so an
+/// install in that window gets the new build; a mismatch that stays is still refused, with nothing installed.
+#[test]
+fn a_release_going_up_mid_install_is_read_again_and_a_wrong_sum_still_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    for (publish_finishes, installs) in [(true, true), (false, false)] {
+        let release = Release::new();
+        let assets = release.dir.path().join("assets");
+        let good = std::fs::read_to_string(assets.join("SHA256SUMS")).unwrap();
+        let stale = good.replace(&sha256(STUB.as_bytes()), &"0".repeat(64));
+        std::fs::write(assets.join("SHA256SUMS"), stale).unwrap();
+        std::fs::write(assets.join("SHA256SUMS.next"), &good).unwrap();
+        // The installer's `sleep` is when the publish finishes: the right sums are up after it, or never.
+        let bin = release.dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let sleep = if publish_finishes {
+            "#!/bin/sh\ncp \"$ASSETS/SHA256SUMS.next\" \"$ASSETS/SHA256SUMS\"\n"
+        } else {
+            "#!/bin/sh\n"
+        };
+        std::fs::write(bin.join("sleep"), sleep).unwrap();
+        std::fs::set_permissions(bin.join("sleep"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let output = release.run(&format!(
+            "PATH={}:$PATH ASSETS={} sh \"$INSTALLER\" --no-init",
+            bin.display(),
+            assets.display()
+        ));
+        let err = stderr(&output);
+        assert_eq!(output.status.success(), installs, "{err}");
+        assert!(err.contains("checking again in 10 s"), "{err}");
+        assert_eq!(err.contains("not installing"), !installs, "{err}");
+        assert_eq!(release.home().join(".local/bin/fleetd").exists(), installs);
+    }
+}
+
+/// Ubuntu 24.04 ships no FUSE 2: the installed AppImage exited at once ("AppImages require FUSE to run") while the
+/// installer had said the app was installed. Without libfuse.so.2 the menu entry unpacks the AppImage at each start,
+/// and the installer says how to install it.
+#[cfg(target_os = "linux")]
+#[test]
+fn without_fuse_2_the_app_runs_unpacked_and_says_so() {
+    use std::os::unix::fs::PermissionsExt;
+    let entry = |libs: &str| {
+        let release = Release::new();
+        let assets = release.dir.path().join("assets");
+        let app = "#!/bin/sh\nexit 0\n";
+        std::fs::write(assets.join("fleetd-desktop-linux-x86_64.AppImage"), app).unwrap();
+        let mut sums = std::fs::read_to_string(assets.join("SHA256SUMS")).unwrap();
+        sums += &format!(
+            "{}  fleetd-desktop-linux-x86_64.AppImage\n",
+            sha256(app.as_bytes())
+        );
+        std::fs::write(assets.join("SHA256SUMS"), sums).unwrap();
+        // ldconfig -p lists the libraries this machine has.
+        let bin = release.dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            bin.join("ldconfig"),
+            format!("#!/bin/sh\nprintf '%s\\n' '{libs}'\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(bin.join("ldconfig"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let output = release.run(&format!(
+            "PATH={}:$PATH sh \"$INSTALLER\" --app --no-init",
+            bin.display()
+        ));
+        assert!(output.status.success(), "{}", stderr(&output));
+        let desktop = std::fs::read_to_string(
+            release
+                .home()
+                .join(".local/share/applications/fleetd-desktop.desktop"),
+        )
+        .unwrap();
+        let exec = desktop
+            .lines()
+            .find(|l| l.starts_with("Exec="))
+            .unwrap()
+            .to_owned();
+        (exec, stderr(&output))
+    };
+    let (exec, said) = entry("\tlibc.so.6 (libc6,x86-64) => /lib/x86_64-linux-gnu/libc.so.6");
+    assert!(
+        exec.starts_with("Exec=env APPIMAGE_EXTRACT_AND_RUN=1 /"),
+        "{exec}"
+    );
+    assert!(exec.ends_with("fleetd-desktop.AppImage %u"), "{exec}");
+    assert!(said.contains("libfuse2t64"), "{said}");
+    let (exec, said) = entry("\tlibfuse.so.2 (libc6,x86-64) => /lib/x86_64-linux-gnu/libfuse.so.2");
+    assert!(!exec.contains("APPIMAGE_EXTRACT_AND_RUN"), "{exec}");
+    assert!(!said.contains("FUSE"), "{said}");
+}

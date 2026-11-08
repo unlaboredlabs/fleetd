@@ -121,6 +121,10 @@ machine from a list.
 
 It is safe to run again: a real run reads the machine's state first and skips what is done.
 
+It never takes over another fleetd's node. When the user's systemd manager already runs `fleetd-node.service` from
+another home (the same account with another `HOME`, say), adding or joining stops before it changes anything and says
+so. Pass `--no-service` to enrol the node without a service, and start it with the command it prints.
+
 ### The hub machine {#local}
 
 ```sh
@@ -149,9 +153,13 @@ to repair the hub machine's node.
    ```
 
 2. Paste the printed command into a terminal on the new machine. It installs fleetd and joins the hub with that
-   address and code, without asking for them.
+   address and code, without asking for them. Where fleetd is already installed and `fleetd init` asks what the
+   machine is, pick **A worker** and paste the same line: it takes the hub, the code, the machine's name and the
+   commit identity from it.
 
-The code works once, for 15 minutes. The new machine must reach the hub's address.
+The code works once, for 15 minutes. The new machine must reach the hub's address. A hub that is only at
+`127.0.0.1` or `localhost` gives a line that works on its own computer alone; `fleetd pair --worker` and Add machine
+say so. Give the hub its tailnet or LAN address first: on the hub, `fleetd init --listen <ip>:<port> --url http://<name>:<port>`.
 
 A machine has one code that works at a time: printing a new one replaces the machine's open code.
 

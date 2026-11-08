@@ -49,11 +49,41 @@ fn values_are_computed_for_this_hub_and_work_on_plain_http() {
     assert_eq!(ids, SetupStepId::ALL);
     let address = &steps[0].parts[0].values[0];
     assert_eq!(address.value, HUB);
-    let machines = &steps[1].parts[0].values[1];
-    assert_eq!(
-        machines.value,
-        format!("fleetd init --join {HUB} --code <code>")
+    // A hub only this machine reaches stays done, and says what that rules out, with the way to change it.
+    let only_here = guides("http://127.0.0.1:4790")[0].parts[0].values[0]
+        .note
+        .clone()
+        .unwrap();
+    assert!(
+        only_here.starts_with("Only this machine can reach the hub"),
+        "{only_here}"
     );
+    assert!(
+        only_here.contains("fleetd init --listen <ip>:<port>"),
+        "{only_here}"
+    );
+    assert!(
+        address
+            .note
+            .as_deref()
+            .is_some_and(|n| n.starts_with("Another address"))
+    );
+    // The hub's own machine and another one, each with what runs where: no `fleetd init` to send you back to.
+    let machines: Vec<_> = steps[1].parts[0]
+        .values
+        .iter()
+        .map(|v| v.value.as_str())
+        .collect();
+    assert_eq!(
+        machines,
+        ["fleetd machine add --local", "fleetd pair --worker <name>"]
+    );
+    let reach = |hub: &str| guides(hub)[1].parts[0].values[1].note.clone();
+    assert!(
+        reach("http://127.0.0.1:4861").is_some_and(|h| h.contains("no other machine reaches")),
+        "a loopback hub says its line works only there"
+    );
+    assert!(reach(HUB).is_some_and(|h| h.contains("installs fleetd and joins")));
     // The Claude key is named for this hub, and a hub reached by address names itself "hub".
     let key_name = |steps: &[fleetd_contracts::setup::HubSetupStep]| {
         steps[2]

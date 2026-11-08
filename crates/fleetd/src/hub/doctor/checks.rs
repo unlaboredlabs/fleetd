@@ -199,9 +199,9 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
         return hub_entry(
             "gh_auth",
             Fail,
-            "gh is not logged in on the hub; the merge train and PR checks need it.",
+            "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
             Some(manual(
-                "Log gh in on the hub machine",
+                "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
                 Some("gh auth login".into()),
             )),
         );

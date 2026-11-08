@@ -33,6 +33,7 @@ import {
   lineState,
   lineWords,
   machineIdProblem,
+  onlyHereLine,
   pickable,
   resumable,
   runLine,
@@ -667,6 +668,11 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
               ? `${untilLine(made.join.expiresAt)} Paste it in Terminal on the Mac, logged in at its screen (su and ssh won't do). It opens Privacy & Security and waits for each grant.`
               : `${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
           </Text>
+          {onlyHereLine(made.join.hubUrl) === undefined ? null : (
+            <Text size="xs" tone="warning">
+              {onlyHereLine(made.join.hubUrl)}
+            </Text>
+          )}
           {copied === false ? (
             <Text size="xs" tone="danger">
               {"Couldn't copy it. Select the line and copy it by hand."}

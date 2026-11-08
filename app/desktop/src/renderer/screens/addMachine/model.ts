@@ -185,6 +185,23 @@ export const lineWords = (state: LineState, machineId: string): string =>
         ? "The code expired before the line ran. Make a new one."
         : `Waiting for ${machineId}…`;
 
+/**
+ * Why a join line made for `hubUrl` works only on the hub's own computer (a hub on 127.0.0.1, say), with the fix;
+ * undefined when another machine can reach that address.
+ */
+export const onlyHereLine = (hubUrl: string): string | undefined => {
+  let host: string;
+  try {
+    host = new URL(hubUrl).hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+  } catch {
+    return undefined;
+  }
+  const loopback = host === "localhost" || host.endsWith(".localhost") || /^127\./u.test(host) || host === "::1" || host === "0.0.0.0" || host === "::";
+  return loopback
+    ? `The hub is only at ${hubUrl}, which no other machine reaches, so this line works only on the hub's own computer. For another machine, give the hub its tailnet or LAN address in Settings › Hub › Setup › Where the hub listens, then make the line again.`
+    : undefined;
+};
+
 /** A Mac setup code as shown: `123 456`. */
 export const spacedCode = (code: string): string => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code);
 

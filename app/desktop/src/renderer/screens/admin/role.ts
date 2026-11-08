@@ -28,11 +28,12 @@ export function useHubRole(): HubRoleView {
   // The query waits for a fresh connection, so without one it would stay pending for ever.
   const fresh = useData((st) => st.fresh);
   const old = info.error instanceof CallError && lacksTool(info.error.error);
-  const unanswered = info.data === undefined && info.error === null;
+  const unanswered = info.data === undefined && !old;
   return {
     administers: old || administers(info.data),
     me: info.data?.me,
-    pending: unanswered && fresh,
+    pending: unanswered && info.error === null && fresh,
+    // A call that failed as the hub went away is no answer either: the owner was told to ask an admin.
     offline: unanswered && !fresh,
   };
 }

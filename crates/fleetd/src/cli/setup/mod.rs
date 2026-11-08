@@ -39,11 +39,12 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <u
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the hub to you
   init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
-       [--claude-config-dir <dir>] [--mac]
+       [--claude-config-dir <dir>] [--mac] [--no-service]
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code; --mac joins the
-             agents' Mac, from Terminal logged in at its screen (no claude there)
+             agents' Mac, from Terminal logged in at its screen (no claude there);
+             --no-service enrols the node but leaves running it to you, and prints how
   init --step <address|machines|claude|github|onepassword|people|mac|cloud>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
@@ -285,6 +286,16 @@ async fn sh(command: &str, log: &dyn Fn(&str)) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// What [`sh`] said when the service manager refused, without the command line it ran: `service didn't start: why`.
+fn service_failure(said: &str) -> String {
+    let why = said.split_once("): ").map_or("", |(_, why)| why.trim());
+    if why.is_empty() {
+        "service didn't start".to_owned()
+    } else {
+        format!("service didn't start: {why}")
+    }
 }
 
 /// The hub service runs this very binary.
@@ -599,10 +610,11 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
     sh(&services.restart(Role::Hub, unit == Unit::Changed), log)
         .await
         .map_err(|message| Failure {
-            message,
+            message: service_failure(&message),
             fix: if platform == Platform::Linux {
                 format!(
-                    "systemctl --user status {} shows why",
+                    "systemctl --user status {} shows why. Without a user systemd (a container, WSL), \
+                     fleetd init --no-service prints how to run the hub yourself",
                     units::systemd_name(Role::Hub)
                 )
             } else {
@@ -913,6 +925,21 @@ pub async fn setup_command(command: &str, argv: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_service_that_did_not_start_says_why_without_the_command_line() {
+        let said = "XDG_RUNTIME_DIR=/run/user/1000 systemctl --user reset-failed fleetd-hub.service 2>/dev/null; \
+                    XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart fleetd-hub.service failed (exit 1): \
+                    Failed to connect to user scope bus via local transport";
+        assert_eq!(
+            service_failure(said),
+            "service didn't start: Failed to connect to user scope bus via local transport"
+        );
+        assert_eq!(
+            service_failure("systemctl --user restart fleetd-hub.service failed (exit 1): "),
+            "service didn't start"
+        );
+    }
 
     #[test]
     fn a_home_without_setup_points_at_init_and_keeps_a_hub_run_by_hand() {

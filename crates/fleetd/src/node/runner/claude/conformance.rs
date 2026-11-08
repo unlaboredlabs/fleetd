@@ -133,14 +133,32 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         }
         Err(problem) => {
             info.conformance_ok = Some(false);
-            problems.push(format!(
-                "{problem} This claude's stream-json differs from the one fleetd was tested with. Fix: claude \
-                 install {TESTED}"
-            ));
+            problems.push(unanswered(&problem, info.version_ok));
         }
     }
     info.problem = (!problems.is_empty()).then(|| problems.join(" "));
     info
+}
+
+/// How the probe's timeout begins.
+const UNANSWERED: &str = "claude did not answer the initialize probe";
+
+/// Why the initialize probe failed, with its fix. A claude in the tested range that only ran out of time speaks the
+/// stream-json fleetd knows, so installing the tested version is no fix: on a busy devbox the probe timed out at
+/// 2.1.314 and said to install 2.1.314.
+fn unanswered(problem: &str, version_ok: bool) -> String {
+    if version_ok && problem.starts_with(UNANSWERED) {
+        format!(
+            "{problem} This claude is a version fleetd was tested with, so it is more likely slow or stuck than \
+             different: a busy machine, or an MCP server or network call it waits on as it starts. Fix: run claude on \
+             this machine to see what it waits on; fleetd checks again by itself."
+        )
+    } else {
+        format!(
+            "{problem} This claude's stream-json differs from the one fleetd was tested with. Fix: claude install \
+             {TESTED}"
+        )
+    }
 }
 
 /// `claude -p` for an account's Test: one short answer on the smallest model in one turn, no MCP servers, the user
@@ -331,7 +349,7 @@ async fn initialize(binary: &Path, env: &[(String, String)]) -> Result<String, S
         .unwrap_or_default();
     let answer = match answer {
         Err(_) => Err(format!(
-            "claude did not answer the initialize probe within {}s.{skipped}",
+            "{UNANSWERED} within {}s.{skipped}",
             TIMEOUT.as_secs()
         )),
         Ok(Err(e)) => Err(e),
@@ -495,6 +513,28 @@ mod tests {
             .filter(|r| r["dir"] == "out")
             .map(|r| r["msg"].clone())
             .collect()
+    }
+
+    /// A probe that times out at the tested version names no install of the version that is there.
+    #[test]
+    fn an_unanswered_probe_at_the_tested_version_says_slow_not_different() {
+        let timeout = "claude did not answer the initialize probe within 30s.";
+        let tested = unanswered(timeout, true);
+        assert!(tested.contains("slow or stuck"), "{tested}");
+        assert!(!tested.contains("claude install"), "{tested}");
+        let other = unanswered(timeout, false);
+        assert!(
+            other.contains(&format!("Fix: claude install {TESTED}")),
+            "{other}"
+        );
+        let exited = unanswered(
+            "claude exited without answering the initialize probe: boom.",
+            true,
+        );
+        assert!(
+            exited.ends_with(&format!("Fix: claude install {TESTED}")),
+            "{exited}"
+        );
     }
 
     /// The answer claude 2.1.302 gave, with an empty config dir and no credentials.

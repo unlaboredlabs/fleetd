@@ -825,6 +825,35 @@ impl Prepared {
     }
 }
 
+/// The join to run again after one that stopped before it enrolled: its code is still unused, and a plain `fleetd init`
+/// would ask whether this machine is the hub. It keeps every flag the join had. The agents' Mac's line also names the
+/// hub's version, which only the pasted line has, so that one is pasted again.
+fn join_again(a: &AddArgs, hub: &str, code: &str, machine_id: &str) -> String {
+    use super::units::q;
+    if a.mac {
+        return "the join line you pasted again (it has --mac and the hub's version)".to_owned();
+    }
+    let mut line = format!(
+        "fleetd init --join {} --code {} --machine-id {}",
+        q(hub),
+        q(code),
+        q(machine_id)
+    );
+    if let Some(identity) = &a.git_identity {
+        line += &format!(
+            " --git-identity {}",
+            q(&format!("{} <{}>", identity.name, identity.email))
+        );
+    }
+    if let Some(dir) = &a.claude_config_dir {
+        line += &format!(" --claude-config-dir {}", q(dir));
+    }
+    if a.no_service {
+        line += " --no-service";
+    }
+    line
+}
+
 /// Checks `a` and reads what `machine add` needs from the hub's setup and from `exe`, the fleetd the machine gets.
 pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     let local = a.host.is_none();
@@ -883,7 +912,7 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     };
     let input = MachineAddInput {
         machine_id: machine_id.clone(),
-        hub_url,
+        hub_url: hub_url.clone(),
         git_identity: a
             .git_identity
             .clone()
@@ -896,7 +925,9 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
         claude_config_dir: a.claude_config_dir.clone(),
         mac: a.mac,
     };
-    let again = if joining {
+    let again = if let Enroll::Token(code) = &a.enroll {
+        join_again(a, &hub_url, code, &machine_id)
+    } else if joining {
         "fleetd init again".to_owned()
     } else if local {
         "fleetd machine add --local".to_owned()
@@ -939,6 +970,11 @@ fn dry_run(r: &Resolved) -> Result<(), Stop> {
             .strip_suffix("/.fleetd")
             .unwrap_or(&plan.layout.fleetd)
     ));
+    if !r.local
+        && let Some(note) = crate::cli::pair::worker_reach_note(&r.input.hub_url)
+    {
+        say(&format!("note: {note}"));
+    }
     say("[probe] read the machine's state (read-only)");
     let total = plan.steps.len();
     let exe = r.exe.display().to_string();
@@ -975,6 +1011,11 @@ pub async fn prepare(
             format!(" on {}", r.host)
         }
     ));
+    if !r.local
+        && let Some(note) = crate::cli::pair::worker_reach_note(&r.input.hub_url)
+    {
+        progress.say(&format!("note: {note}"));
+    }
     progress.begin(Begin {
         stage: Stage::Probe,
         title: "read the machine's state (read-only)".into(),
@@ -1603,6 +1644,28 @@ mod tests {
             !remote.contains("ssh-copy-id") && remote.contains("on builder-1"),
             "{remote}"
         );
+    }
+
+    /// A join that stopped is run again with every flag it had: without them, a worker set up with its own claude
+    /// account or no service would come back with the default ones, and the agents' Mac as a plain worker.
+    #[test]
+    fn a_stopped_join_is_run_again_with_every_flag_it_had() {
+        let args = |mac: bool| AddArgs {
+            git_identity: Some(GitIdentity {
+                name: "Ada".into(),
+                email: "1+ada@users.noreply.github.com".into(),
+            }),
+            claude_config_dir: Some("/home/ada/.claude-work".into()),
+            mac,
+            ..AddArgs::local("laptop".into(), false)
+        };
+        assert_eq!(
+            join_again(&args(false), "http://hub:4790", "fle_c", "laptop"),
+            "fleetd init --join http://hub:4790 --code fle_c --machine-id laptop --git-identity 'Ada \
+             <1+ada@users.noreply.github.com>' --claude-config-dir /home/ada/.claude-work --no-service"
+        );
+        let mac = join_again(&args(true), "http://hub:4790", "fle_c", "mac");
+        assert!(mac.starts_with("the join line you pasted"), "{mac}");
     }
 
     #[test]

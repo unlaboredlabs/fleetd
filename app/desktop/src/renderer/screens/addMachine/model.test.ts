@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, MAC_TOKEN_MS, macCodeOver, macCodeState, machineIdProblem, pickable, resumable, shortOutput, sshProblem } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, MAC_TOKEN_MS, macCodeOver, macCodeState, machineIdProblem, onlyHereLine, pickable, resumable, shortOutput, sshProblem } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -15,6 +15,15 @@ const run = (runId: string, state: MachineAddRun["state"]): MachineAddRun => ({
 });
 
 describe("Add machine's model", () => {
+  it("says a line for a hub on loopback works only on the hub's own computer", () => {
+    for (const url of ["http://127.0.0.1:4797", "http://localhost:4790", "http://[::1]:4790", "http://0.0.0.0:4790"]) {
+      expect(onlyHereLine(url)).toContain(`only at ${url}`);
+    }
+    expect(onlyHereLine("http://devbox.tailnet.ts.net:4790")).toBeUndefined();
+    expect(onlyHereLine("http://100.101.102.103:4790")).toBeUndefined();
+    expect(onlyHereLine("not a url")).toBeUndefined();
+  });
+
   const FP = "a".repeat(64);
 
   it("adds any computer that isn't the hub's through main, whatever its name", () => {

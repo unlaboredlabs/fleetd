@@ -706,28 +706,35 @@ impl Auth {
                 .optional()?)
         })?;
         let m = machine_id.as_str();
-        let (why, short) = match row {
-            None => (
-                "unknown, replaced or revoked enrollment token".to_owned(),
-                None,
-            ),
-            Some((_, _, Some(_))) => ("enrollment token was already used".to_owned(), None),
-            Some((_, expires, None)) if expires <= now => {
-                ("enrollment token expired".to_owned(), None)
+        let why = match row {
+            None => "unknown, replaced or revoked enrollment token".to_owned(),
+            Some((_, _, Some(_))) => "enrollment token was already used".to_owned(),
+            Some((_, expires, None)) if expires <= now => "enrollment token expired".to_owned(),
+            // A name typed in by hand (the host's, by default) for a code made for another: the code still works.
+            Some((machine, _, None)) => {
+                let why = format!("enrollment token is for machine {machine}, not {m}");
+                return Err(refusal(&[
+                    (
+                        why.clone(),
+                        format!(
+                            "join as {machine} (--machine-id {machine}), or on the hub run fleetd pair --worker {m} for a code for {m}"
+                        ),
+                    ),
+                    (why, format!("join as {machine} (--machine-id {machine})")),
+                    (
+                        format!("the code is for {machine}"),
+                        format!("--machine-id {machine}"),
+                    ),
+                ])
+                .into());
             }
-            Some((machine, _, None)) => (
-                format!("enrollment token is for machine {machine}, not {m}"),
-                Some(format!("the code is for {machine}")),
-            ),
         };
-        let short = short.unwrap_or_else(|| why.clone());
         Err(refusal(&[
             (
                 why.clone(),
                 format!("on the hub, run fleetd pair --worker {m} for a new code"),
             ),
             (why, format!("fleetd pair --worker {m} on the hub")),
-            (short, format!("fleetd pair --worker {m} on the hub")),
         ])
         .into())
     }

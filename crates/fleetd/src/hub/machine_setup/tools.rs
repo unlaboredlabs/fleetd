@@ -390,6 +390,10 @@ async fn machine_join(
             input.machine_id, join.expires_at, join.hub
         ),
     };
+    let next = match crate::cli::pair::worker_reach_note(&join.hub) {
+        Some(note) => format!("{next} {note}"),
+        None => next,
+    };
     Ok(MachineJoinOutput {
         next: Some(next),
         machine_id: input.machine_id,

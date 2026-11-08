@@ -50,6 +50,10 @@ In a terminal, the installer then starts the setup wizard, `fleetd init`. Contin
 - Running it again replaces what it installed.
 - Only `fleetd init` sets up services.
 - The desktop app updates itself. Installed over an earlier fleetd app, it replaces it and keeps its pairing.
+- On Linux, the app is an AppImage, which mounts itself with FUSE 2 (`libfuse.so.2`). Ubuntu 24.04 and other newer
+  distributions don't install it. Without it, the installer says so and the menu entry unpacks the app at each start
+  instead, which is slower. To start it quicker, install FUSE 2 (`sudo apt install libfuse2t64`, or `libfuse2` before
+  Ubuntu 24.04) and run the installer again.
 
 To read the script first, open [fleetd.sh/install.sh](https://fleetd.sh/install.sh).
 

@@ -88,12 +88,13 @@ function Entry() {
  * `old`: a hub from before people, which has none of the people tools; `info: null`, not even hub_info. `what`: the
  * Settings page the route names, the main sidebar, or Settings' own sidebar.
  */
-const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sidebar" | "settings" = "page", old = false) => {
+const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sidebar" | "settings" = "page", old = false, down = false) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
       if ((old && tool !== "hub_info") || (info === null && tool === "hub_info")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
+      if (down) return Promise.resolve({ ok: false, error: { code: "offline", message: "Not connected to the hub.", fix: "Wait for the connection to come back." } });
       const output =
         tool === "hub_info"
           ? { version: "0.0.0", protocol: 1, busy: [], ...info }
@@ -148,6 +149,7 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [] } });
     await new Promise((r) => setTimeout(r, 0));
+    if (down) listener({ t: "state", state: { phase: "retrying", hub: "devbox:4790", reason: "Nothing is listening at 127.0.0.1:4790.", retryAt: Date.now() + 7000 } });
   });
   // hub_info first, then the page's own reads.
   for (let i = 0; i < 3; i++) await settle();
@@ -284,6 +286,15 @@ it("tells a member who follows a link to a Hub page that it isn't theirs, and re
   expect(sent("people_list")).toEqual([]);
   expect(sent("claude_settings_get")).toEqual([]);
 });
+
+it("tells the owner of a hub that went offline to connect, not to ask an admin", async () => {
+  window.location.hash = "#/settings/hub/people";
+  await render({ me: sam, admin: true }, "page", false, true);
+  // hub_info gives up after its retries (1 s, then 2 s) with an error, and no answer.
+  await act(() => new Promise((r) => setTimeout(r, 3500)));
+  expect(host.querySelector("[data-screen='settings.hub.offline']")).not.toBeNull();
+  expect(host.textContent).not.toContain("Ask one of them");
+}, 10_000);
 
 it("lists the people with their roles and devices, and changes a role", async () => {
   window.location.hash = "#/settings/hub/people";
