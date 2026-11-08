@@ -36,15 +36,19 @@ fn home() -> PathBuf {
 /// The hub and node services `fleetd init` created for `exe`: the unit files whose command line names it, hubs first.
 /// A lab's units, which run another binary, are left alone.
 pub fn services(exe: &Path) -> Vec<Service> {
-    let dir = if cfg!(target_os = "macos") {
+    services_in(&unit_dir(), exe)
+}
+
+/// Where the user's service manager reads the unit files `fleetd init` wrote.
+pub fn unit_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
         home().join("Library/LaunchAgents")
     } else {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home().join(".config"))
             .join("systemd/user")
-    };
-    services_in(&dir, exe)
+    }
 }
 
 pub fn services_in(dir: &Path, exe: &Path) -> Vec<Service> {
@@ -109,6 +113,88 @@ pub fn restart(service: &Service) -> Result<(), String> {
         Ok(s) if s.success() => Ok(()),
         Ok(s) => Err(format!("restarting {} exited with {s}", service.name)),
         Err(e) => Err(format!("couldn't restart {}: {e}", service.name)),
+    }
+}
+
+/// At a hub's or node's start under its systemd user unit: the unit rewritten from today's template when it was
+/// written by an older fleetd (an update swaps only the binary, so the settings added since never reached it), and
+/// enabled when it isn't, so the service starts at the next boot (a missing boot link left the devbox's node down for
+/// 16 hours). Run by the new binary after an update's restart, so the update applies it; a rewritten unit takes effect
+/// at the next restart. Off Linux, outside such a unit, or with a unit edited by hand, nothing changes.
+pub fn refresh_own_unit() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let Some(name) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|c| crate::node::runner::scope::own_unit(&c))
+    else {
+        return;
+    };
+    let Some(service) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| services(&exe).into_iter().find(|s| s.name == name))
+    else {
+        return;
+    };
+    match rewrite(&unit_dir().join(&service.name), &service) {
+        Ok(false) => {}
+        Ok(true) => match daemon_reload() {
+            Ok(()) => tracing::info!(unit = %name, "rewrote the unit from today's template"),
+            Err(e) => {
+                tracing::warn!(unit = %name, "rewrote the unit from today's template, but {e}")
+            }
+        },
+        Err(e) => tracing::warn!(unit = %name, "couldn't rewrite the unit: {e}"),
+    }
+    if let Err(e) = enable(&service.name) {
+        tracing::warn!(unit = %name, "it may not start at the next boot: {e}");
+    }
+}
+
+/// Rewrites the unit at `path` from today's template; whether it changed.
+fn rewrite(path: &Path, service: &Service) -> Result<bool, String> {
+    use crate::cli::setup::units::{Role, refresh_systemd_unit};
+    let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let role = if service.hub() { Role::Hub } else { Role::Node };
+    let Some(fresh) = refresh_systemd_unit(&text, role) else {
+        return Ok(false);
+    };
+    let staged = path.with_extension("service.new");
+    fs::write(&staged, fresh)
+        .and_then(|()| fs::rename(&staged, path))
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Enables `name` when `systemctl --user is-enabled` says it isn't.
+fn enable(name: &str) -> Result<(), String> {
+    let run = |args: &[&str]| {
+        let mut cmd = user_manager(Command::new("systemctl"));
+        cmd.arg("--user").args(args);
+        cmd.stdout(Stdio::null()).stderr(Stdio::null()).status()
+    };
+    if run(&["is-enabled", "--quiet", name]).is_ok_and(|s| s.success()) {
+        return Ok(());
+    }
+    match run(&["enable", name]) {
+        Ok(s) if s.success() => {
+            tracing::info!(unit = %name, "enabled the unit, which wasn't, so it starts at boot");
+            Ok(())
+        }
+        Ok(s) => Err(format!("systemctl --user enable {name} exited with {s}")),
+        Err(e) => Err(format!("couldn't run systemctl: {e}")),
+    }
+}
+
+/// Has the systemd user manager read the unit files again; the error is one plain reason.
+pub fn daemon_reload() -> Result<(), String> {
+    let mut cmd = user_manager(Command::new("systemctl"));
+    cmd.args(["--user", "daemon-reload"]);
+    match cmd.stdout(Stdio::null()).stderr(Stdio::null()).status() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("systemctl --user daemon-reload exited with {s}")),
+        Err(e) => Err(format!("couldn't run systemctl: {e}")),
     }
 }
 
