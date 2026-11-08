@@ -344,10 +344,11 @@ fn wait_for_agents(deadline: Duration) {
     let started = Instant::now();
     let mut said = None;
     loop {
-        let steps = super::agent_mcp::send_to_node(
+        let steps = super::agent_mcp::send_to_node_within(
             &socket,
             &serde_json::json!({ "t": "hold" }),
             Duration::from_secs(10),
+            Duration::ZERO,
         )
         .ok()
         .and_then(|answer| answer["steps"].as_u64())

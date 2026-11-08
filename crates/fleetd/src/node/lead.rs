@@ -30,9 +30,12 @@ pub fn lead_socket_path(home: &Path) -> PathBuf {
     home.join("node.sock")
 }
 
-pub const HUB_UNREACHABLE: &str =
-    "fleetd hub unreachable; the node keeps retrying — try again shortly";
+pub const HUB_UNREACHABLE: &str = "fleetd hub is restarting; try again shortly";
+/// How long a call waits for the hub link to be up.
 const LINK_WAIT: Duration = Duration::from_secs(5);
+/// How long it waits instead when the link dropped within [`RECENT_DROP`]: the hub is likely restarting for an update.
+const RELINK_WAIT: Duration = Duration::from_secs(30);
+const RECENT_DROP: Duration = Duration::from_secs(60);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
@@ -48,6 +51,8 @@ struct RelayState {
     tool_only: bool,
     /// What answers a session's `fleetd mac` (node/mac_tool); without it, `mac` is refused.
     mac: Option<MacHandler>,
+    /// When the hub link last dropped.
+    dropped: Option<tokio::time::Instant>,
 }
 
 /// Holds the node's agents between steps, answering how many are still mid-step (node/hold.rs).
@@ -106,6 +111,7 @@ impl Drop for Attached {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.send = None;
+            state.dropped = Some(tokio::time::Instant::now());
             std::mem::take(&mut state.pending)
         };
         for (id, answer) in pending {
@@ -185,11 +191,17 @@ impl LeadRelay {
         self.call_within(frame, ANSWER_TIMEOUT).await
     }
 
-    /// [`LeadRelay::call`], waiting up to `wait` for the answer: for calls the hub may take longer over.
+    /// [`LeadRelay::call`], waiting up to `wait` for the answer: for calls the hub may take longer over. A call is
+    /// sent once: one lost after sending may have run, so it is never sent again.
     pub async fn call_within(&self, mut frame: LeadCallFrame, wait: Duration) -> LeadResultFrame {
         let cli_id = frame.id.clone();
         let mut linked = self.linked.subscribe();
-        let up = tokio::time::timeout(LINK_WAIT, linked.wait_for(|up| *up))
+        let restarting = self
+            .lock()
+            .dropped
+            .is_some_and(|at| at.elapsed() < RECENT_DROP);
+        let link_wait = if restarting { RELINK_WAIT } else { LINK_WAIT };
+        let up = tokio::time::timeout(link_wait, linked.wait_for(|up| *up))
             .await
             .is_ok_and(|r| r.is_ok());
         let (id, answer) = {
@@ -880,5 +892,52 @@ mod hold_tests {
         );
         let none = ask(PeerSession::Outside, None).await;
         assert!(none["error"].is_object(), "{none}");
+    }
+}
+
+#[cfg(test)]
+mod relink_tests {
+    use super::*;
+
+    fn call() -> LeadCallFrame {
+        serde_json::from_value(serde_json::json!({
+            "id": "cli-1", "cwd": "/w", "call": { "op": "decisions_search", "query": "health" },
+        }))
+        .unwrap()
+    }
+
+    /// The hub restarting for an update drops the link for seconds: a call made meanwhile waits for it to come back
+    /// and is answered. Past a minute down, a call waits only [`LINK_WAIT`] as before.
+    #[tokio::test(start_paused = true)]
+    async fn a_call_rides_through_the_hub_restarting() {
+        let relay = LeadRelay::new();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        drop(relay.attach(tx));
+        let calling = tokio::spawn({
+            let relay = relay.clone();
+            async move { relay.call(call()).await }
+        });
+        tokio::time::sleep(Duration::from_secs(8)).await;
+        assert!(!calling.is_finished());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let link = relay.attach(tx);
+        let sent: serde_json::Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+        assert_eq!(sent["call"]["op"], "decisions_search", "{sent}");
+        relay.resolve(
+            serde_json::from_value(serde_json::json!({
+                "id": sent["id"], "result": { "op": "decisions_search", "decisions": [] },
+            }))
+            .unwrap(),
+        );
+        let answer = calling.await.unwrap();
+        assert_eq!(answer.id.as_str(), "cli-1");
+        assert!(answer.result.is_some() && answer.error.is_none());
+
+        drop(link);
+        tokio::time::sleep(RECENT_DROP).await;
+        let started = tokio::time::Instant::now();
+        let answer = relay.call(call()).await;
+        assert_eq!(started.elapsed(), LINK_WAIT);
+        assert_eq!(answer.error.unwrap().message, HUB_UNREACHABLE);
     }
 }
