@@ -2797,3 +2797,14 @@ async fn a_secret_a_get_form_encoded_is_masked_everywhere_it_goes() {
         }
     }
 }
+
+#[test]
+fn a_watch_budget_is_kept_per_session_until_it_ends() {
+    let slot = super::FrameSlot::default();
+    assert_eq!(slot.budget("B1"), None);
+    slot.set_budget("B1", Some(600));
+    slot.set_budget("B2", Some(4000));
+    assert_eq!(slot.budget("B1"), Some(600));
+    slot.set_budget("B1", None);
+    assert_eq!((slot.budget("B1"), slot.budget("B2")), (None, Some(4000)));
+}
