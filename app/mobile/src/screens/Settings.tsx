@@ -1,6 +1,6 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // their name, their role on the hub), which a tap offers to give or take away a photo; then the hub (how the link is,
-// its address and version), for an admin its update, Import Memory and notifications, this phone and its app, and
+// its address and version), for an admin its update, Import Memory, this phone (its notifications, name and app), and
 // Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
@@ -95,7 +95,7 @@ export function Settings() {
     }
   };
   const profile = (pressed: boolean) => (
-    <View style={[styles.me, { backgroundColor: pressed ? t.fillQuiet : t.cell }]}>
+    <View style={[styles.me, pressed && { backgroundColor: t.fillQuiet }]}>
       <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />
       <View style={styles.meText}>
         <Text style={[styles.name, { color: t.label }]} numberOfLines={1}>
@@ -112,7 +112,7 @@ export function Settings() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: t.cell }]}>
         {me === undefined ? (
           <View accessible accessibilityLabel={name}>
             {profile(false)}
@@ -139,11 +139,11 @@ export function Settings() {
         ) : null}
       </ListSection>
       <UpdateFleetd />
-      <ListSection header="You">
-        <ListRow title="Import Memory" detail="What ChatGPT, Claude or another assistant knows about you" onPress={() => navigation.navigate("ImportMemory")} />
-        <ListRow title="Notifications" detail="Sealed to this phone's own key, so only it can read them" value={notifications} onPress={onNotifications} />
+      <ListSection header="Memory">
+        <ListRow title="Import Memory" detail="What another assistant knows about you" onPress={() => navigation.navigate("ImportMemory")} />
       </ListSection>
       <ListSection header="This phone">
+        <ListRow title="Notifications" detail="Sealed so only this phone reads them" value={notifications} onPress={onNotifications} />
         <ListRow title="Name" value={Device.deviceName ?? undefined} />
         <ListRow title="App version" value={version} selectable />
         <ListRow title="App update" value={updateWords()} />
