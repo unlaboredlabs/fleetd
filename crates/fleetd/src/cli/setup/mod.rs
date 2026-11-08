@@ -44,7 +44,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--listen <host:port>] [--url <u
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code; --mac joins the
              agents' Mac, from Terminal logged in at its screen (no claude there)
-  init --step <address|machines|claude|github|people|mac>
+  init --step <address|machines|claude|github|onepassword|people|mac|cloud>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps

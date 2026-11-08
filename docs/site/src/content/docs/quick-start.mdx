@@ -27,8 +27,10 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
    curl -fsSL https://fleetd.sh | sh
    ```
 
-   The installer starts the wizard, `fleetd init`. Press Enter to take the default at each question. It walks through
-   six parts:
+   The installer starts the wizard, `fleetd init`. On a desktop with the fleetd app it first asks whether to set up
+   here or in the app ("Continue in the desktop app" opens the app's setup). It then asks whether this machine is the
+   hub or a worker of a hub you already have. Press Enter to take the default at each question. As the hub, it walks
+   through six parts:
 
    | Part | What it sets up |
    |---|---|
@@ -116,6 +118,8 @@ point and pick up again later, from any of them.
 | GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub accounts › GitHub, then each person connects theirs in Settings › Your accounts › GitHub; or `gh auth login` on the hub. |
 | 1Password | `onepassword` | Before the first login agents fill: a vault of fleetd's own, with only the logins and a low-limit or virtual card it needs, and a service account that reads only it, pasted in Settings › Your accounts › 1Password. Done once each saved token's Test reads one vault ([why](/docs/security#agent-reach)). |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
+| A Mac for agents | `mac` | Optional. One Mac every project's agents use for Xcode builds and iOS simulators: [the agents' Mac](/docs/agents-mac). |
+| Cloud machines (boat.dev) | `cloud` | Optional. Machines on your own boat.dev account that take work when yours are at their agent limit: [Cloud machines](/docs/cloud-machines). |
 
 Optional steps never block anything, and stay in the list until they are done. Secrets are never typed in the terminal: a
 step that takes one names the page in the app that seals it on your device.
