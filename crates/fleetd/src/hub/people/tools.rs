@@ -126,6 +126,7 @@ async fn people_list(
         devices: List::unchecked(devices),
         invites: List::unchecked(invites),
         me,
+        this_device: is_human(&caller).then(|| caller.key_id.clone()),
         next: None,
         truncated: None,
     })

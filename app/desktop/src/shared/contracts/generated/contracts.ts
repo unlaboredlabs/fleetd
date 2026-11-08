@@ -5141,6 +5141,8 @@ export type PeopleListOutput = {
   me?: PersonId;
   next?: string;
   people: Person[];
+  /** The device this call came from: the caller's own key. Absent for an agent key, and from older hubs. */
+  thisDevice?: string;
   truncated?: boolean;
 };
 

@@ -2736,6 +2736,8 @@ output!(PeopleListOutput {
     invites: List<Invite, 0, PEOPLE_MAX>,
     /// The caller's person; absent for an agent key.
     me: Option<PersonId>,
+    /// The device this call came from: the caller's own key. Absent for an agent key, and from older hubs.
+    this_device: Option<NonEmpty>,
 });
 
 // invite_create: an owner or admin invites someone. Without personId it adds a person, who needs a name (role: member

@@ -44,7 +44,8 @@ phone paired with `fleetd pair` gets that code's `--role`.
 The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). **Disconnect**, in the
 app's Settings tab, asks first,
 then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If the hub
-can't be reached, you can forget it anyway and sign the phone out later under Settings › You in the desktop app.
+can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under Settings ›
+You › Your devices in the desktop app.
 
 Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any

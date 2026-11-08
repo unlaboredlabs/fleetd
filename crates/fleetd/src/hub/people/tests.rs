@@ -173,7 +173,8 @@ async fn an_invite_redeemed_binds_the_device_to_its_person_and_the_people_list_s
         json!({ "personId": alice.person_id }),
     )
     .await;
-    let phone = redeem(&hub, more["code"].as_str().unwrap(), "Alice's phone");
+    let phone_key = redeem_key(&hub, more["code"].as_str().unwrap(), "Alice's phone");
+    let phone = hub.auth.verify(&phone_key).unwrap();
     assert_eq!(phone.person.as_ref(), Some(&alice));
 
     let listed = ok(&hub, &owner, "people_list", json!({})).await;
@@ -235,8 +236,9 @@ async fn an_invite_redeemed_binds_the_device_to_its_person_and_the_people_list_s
     assert_eq!(hers["people"].as_array().unwrap().len(), 2);
     assert_eq!(hers["devices"].as_array().unwrap().len(), 2);
     assert_eq!(hers["invites"], json!([]));
+    assert_eq!(hers["thisDevice"], laptop.key_id.as_str());
 
-    // She signs out her phone; she can't sign out the owner's desk.
+    // She signs out her phone, whose key stops working; she can't sign out the owner's desk.
     ok(
         &hub,
         &laptop,
@@ -245,6 +247,7 @@ async fn an_invite_redeemed_binds_the_device_to_its_person_and_the_people_list_s
     )
     .await;
     assert!(revoked(&hub, phone.key_id.as_str()));
+    assert!(hub.auth.verify(&phone_key).is_err());
     assert_eq!(
         refused(
             &hub,
