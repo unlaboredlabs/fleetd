@@ -126,7 +126,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
 - [x] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
 - [x] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
-- [ ] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
+- [x] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
 - [x] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
 - [x] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
 - [x] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->

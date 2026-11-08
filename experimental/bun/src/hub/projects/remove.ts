@@ -1,12 +1,8 @@
 // project_remove (crates/fleetd/src/hub/projects/tools.rs `remove`): removes the checkouts of its repos with it, erases
 // the project (navi/erase.rs, one rule for every project since D310), and asks each hub it is linked to to revoke its
 // link. A project whose machine the hub no longer has is only forgotten in the hub.
-//
-// The erase is T2285's `src/hub/navi/erase.ts`, not on main yet: until it is, a removal is refused before it touches
-// anything, on the node or in the hub.
-import type { Database } from "bun:sqlite";
 import type { ProjectRef, ProjectRemoveInput } from "../../shared/contracts.ts";
-import { NotImplemented, ToolError } from "../../shared/errors.ts";
+import { ToolError } from "../../shared/errors.ts";
 import { CAP_NAVI_ERASE, CAP_PROJECT_ERASE, CAP_PROJECT_SETTINGS } from "../../shared/node_link.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
@@ -18,6 +14,7 @@ import { fromExecutor } from "../executor/tools.ts";
 import { revokeAllThere } from "../hub_links/client.ts";
 import { kept } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
+import { asked, erase } from "../navi/erase.ts";
 import { of as naviOf } from "../navi/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
@@ -25,18 +22,6 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { otherCheckouts } from "./repos.ts";
 import { tooOld } from "./settings.ts";
-
-/** What erasing a project takes (navi/erase.rs `asked`, `erase`): T2285's `src/hub/navi/erase.ts`. */
-type Erase = {
-  /** Marked first: should the node remove it but its answer never come, the hub still erases it. */
-  asked(db: Database, r: ProjectRef): void;
-  eraseIn(db: Database, home: string, r: ProjectRef): void;
-};
-
-/** The erase, imported statically once T2285's `src/hub/navi/erase.ts` is on main. */
-function eraser(): Erase {
-  throw new NotImplemented("src/hub/navi/erase.ts (erasing a project, T2285)");
-}
 
 const ERASED =
   "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser " +
@@ -71,8 +56,8 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
       `Run fleetd update on ${m}, then delete it again.`,
     );
   }
-  const erase = eraser();
-  erase.asked(hub.db.conn, r);
+  // Marked first: should the node remove it but its answer never come, the hub still erases it (navi/erase.ts `run`).
+  asked(hub, r);
   const checkouts: string[] = [];
   for (const checkout of otherCheckouts(hub, r)) {
     if (repos.holders(hub.db.conn, checkout).every((h) => h.project.machineId === r.machineId && h.project.projectId === r.projectId)) {
@@ -85,7 +70,7 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
       throw fromExecutor(e);
     });
   }
-  erase.eraseIn(hub.db.conn, hub.config.home, r);
+  erase(hub, r);
   revokeAllThere(hub, links);
   const next = removeFolder
     ? `${ERASED}, and its folder with everything in it.`
@@ -101,7 +86,7 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
 function forgetGone(hub: Hub, r: ProjectRef): { ok: true; next: string } {
   const project = store(hub).projectGet(r);
   if (!project) throw unknownProject(r);
-  eraser().eraseIn(hub.db.conn, hub.config.home, r);
+  erase(hub, r);
   store(hub).machineProjectForget(r);
   events(hub).append({
     at: isoMs(hub.clock.now()),

@@ -45,6 +45,9 @@ async function node(k: ReturnType<typeof kit>, caps: string[], answer: Answer = 
       case "project_upsert":
         event({ type: "project_upserted", projectId: call.projectId, title: call.title, workspaceRoot: call.workspaceRoot, updatedAt: AT });
         return { ok: { kind: "done" } };
+      case "project_remove":
+        event({ type: "project_removed", projectId: call.projectId });
+        return { ok: { kind: "done" } };
       default:
         return { ok: { kind: "done" } };
     }
@@ -320,21 +323,72 @@ test("attaching a project of its own archives it, and an archived project takes 
   expect(refused).toMatchObject({ error: { error: { code: "invalid", message: "This project is archived: its directory is repo site of project web on devbox." } } });
 });
 
-test("removing a project waits for the erase port, after its gates", async () => {
+test("removing a project checks its gates, then removes it and the checkouts only it holds, and erases it", async () => {
   const k = kit();
-  const r = { machineId: "devbox", projectId: "app" };
-  // A machine the hub no longer has: the project is unknown, or forgotten once the erase is ported.
-  expect(await k.refused(operate, "project_remove", r)).toBe("not_found");
+  const app = { machineId: "devbox", projectId: "app" };
+  const caps = (list: string[]) => (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(list));
   store(k.hub).machineUpsert({ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "offline", lastSeenAt: AT });
-  expect(await k.refused(operate, "project_remove", r)).toBe("machine_offline");
-  await node(k, ["repos"]);
-  const old = await k.call(operate, "project_remove", r);
+  expect(await k.refused(operate, "project_remove", app)).toBe("machine_offline");
+  const git = { kind: "repo_facts" as const, exists: true, isGit: true, workflowFiles: [] };
+  const n = await node(k, ["repos"], (call) => (call.op === "repo_inspect" ? { ok: git } : undefined));
+  gh(k, {});
+  for (const [id, root] of [["app", "/work/app"], ["shop", "/work/shop"]]) {
+    n.event({ type: "project_upserted", projectId: id, title: id, workspaceRoot: root, updatedAt: AT });
+  }
+  await settle();
+  const old = await k.call(operate, "project_remove", app);
   expect(old).toMatchObject({ error: { error: { code: "invalid", message: "Update fleetd on devbox first: its node is too old to erase a project, so nothing was deleted" } } });
-  (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(["project_erase"]));
-  expect(await k.refused(operate, "project_remove", { ...r, removeWorktrees: true })).toBe("invalid");
-  const pending = await k.call(operate, "project_remove", r);
-  expect(pending).toMatchObject({ error: { error: { code: "failed", message: expect.stringContaining("src/hub/navi/erase.ts") } } });
-  expect(await k.refused(key("read"), "project_remove", r)).toBe("forbidden");
+  caps(["repos", "project_erase"]);
+  // Its worktrees go only from a node that takes project settings.
+  expect(await k.refused(operate, "project_remove", { ...app, removeWorktrees: true })).toBe("invalid");
+  expect(await k.refused(key("read"), "project_remove", app)).toBe("forbidden");
+  caps(["repos", "project_erase", "project_settings"]);
+  // app holds api alone; api2 is shop's too, so it stays.
+  await k.ok(operate, "project_repo_add", { ...app, path: "/work/api" });
+  await settle();
+  await k.ok(operate, "project_repo_add", { ...app, path: "/work/api2" });
+  await settle();
+  await k.ok(operate, "project_repo_add", { machineId: "devbox", projectId: "shop", path: "/work/api2" });
+  const checkout = (name: string) => repos.byName(k.hub.db.conn, app, name)?.checkout.projectId;
+  const api = checkout("api");
+  const api2 = checkout("api2");
+  n.calls.length = 0;
+  const out = await k.ok(operate, "project_remove", { ...app, removeWorktrees: true });
+  expect(out).toEqual({
+    ok: true,
+    next: "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser sign-ins, linked hubs, transcripts, attachments and screen recordings. Its folder, files and branches stay on the machine.",
+  });
+  expect(n.calls.filter((c) => c.op === "project_remove")).toEqual([
+    { op: "project_remove", projectId: "app", removeWorktrees: true, erase: true },
+    { op: "project_remove", projectId: api as string, removeWorktrees: true },
+  ]);
+  // Erased in the hub, its mark included; the node's project_removed takes it and api out of the list.
+  expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM navi_erases").get()).toEqual({ n: 0 });
+  await settle();
+  expect(store(k.hub).projectsList("devbox").map((p) => p.projectId).sort()).toEqual([api2 as string, "shop"].sort());
+  // Its folder goes only when asked, never a checkout's; shop holds api2 alone now, so it goes too.
+  n.calls.length = 0;
+  const folder = await k.ok(operate, "project_remove", { machineId: "devbox", projectId: "shop", removeFolder: true });
+  expect(folder.next).toEndWith(", and its folder with everything in it.");
+  expect(n.calls.filter((c) => c.op === "project_remove")).toEqual([
+    { op: "project_remove", projectId: "shop", erase: true, removeFolder: true },
+    { op: "project_remove", projectId: api2 as string },
+  ]);
+});
+
+test("a project of a machine the hub no longer has is forgotten in the hub, and says so", async () => {
+  const k = kit();
+  const r = { machineId: "gone", projectId: "app" };
+  expect(await k.refused(operate, "project_remove", r)).toBe("not_found");
+  store(k.hub).projectsUpsertMany("gone", [
+    { machineId: "gone", projectId: "app", title: "App", workspaceRoot: "/w/app", lastActivityAt: AT, threads: { running: 0, idle: 0, failed: 0, waiting: 0 } } as never,
+  ]);
+  const out = await k.ok(operate, "project_remove", r);
+  expect(out.next).toBe("gone is no longer in the hub, so no machine held its files: fleetd forgot the project, its chat and its settings.");
+  expect(store(k.hub).projectGet(r)).toBeUndefined();
+  expect(events(k.hub).page(0, ["project.removed"]).events.map((e) => [e.summary, e.data])).toEqual([
+    ['Project "App" on gone was forgotten: its machine was removed', { title: "App" }],
+  ]);
 });
 
 test("an order's variables: refused for a closed order, recorded, and dropped once it closes", async () => {
