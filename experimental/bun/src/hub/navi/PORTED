@@ -7,6 +7,8 @@ tool:`navi_asks`
 tool:`navi_card_set`
 tool:`navi_list`
 tool:`navi_purchases`
+tool:`navi_rename`
+tool:`navi_signins_forget`
 tool:`navi_site_revoke`
 tool:`navi_sites`
 tool:`project_approvals_set`
@@ -15,5 +17,6 @@ tool:`project_archive`
 tool:`project_asks`
 tool:`project_card_set`
 tool:`project_purchases`
+tool:`project_signins_forget`
 tool:`project_site_revoke`
 tool:`project_sites`
