@@ -4,6 +4,7 @@
 import type { HubEvent, ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
+import { runnerProblem } from "../link/server.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
 
@@ -91,8 +92,13 @@ const sleep = (ms: number, signal: AbortSignal) =>
   });
 
 const TIMED_OUT = Symbol("timed out");
-const within = <T>(ms: number, p: Promise<T>): Promise<T | typeof TIMED_OUT> =>
-  Promise.race([p, new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), ms))]);
+function within<T>(ms: number, p: Promise<T>): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 export type SteerExpired = (steer: string, reason: "ttl" | "refused") => void;
 
@@ -252,7 +258,7 @@ export class WriteQueue {
   private startFlusher(machineId: string): void {
     if (this.flushers.has(machineId) || this.stopped.signal.aborted) return;
     this.flushers.add(machineId);
-    void this.flush(machineId);
+    this.flush(machineId).catch((error) => console.error(`write queue: the flusher for ${machineId} stopped:`, error));
   }
 
   /** Delivers one machine's queue in order, waiting for its connection as needed. Ends when the queue is empty. */
@@ -294,7 +300,11 @@ export class WriteQueue {
     } finally {
       this.flushers.delete(machineId);
       // An enqueue racing this exit starts a new flusher.
-      if (!signal.aborted && this.head(machineId)) this.startFlusher(machineId);
+      try {
+        if (!signal.aborted && this.head(machineId)) this.startFlusher(machineId);
+      } catch (error) {
+        console.error("write queue: queued writes not read:", error);
+      }
     }
   }
 
@@ -319,22 +329,39 @@ export class WriteQueue {
   }
 }
 
-/** The executor's methods the queue writes through; `sendWith` arrives with the executor's send. */
+/** The executor's send, which arrives with its thread send (executor/mod.rs `send_with`). */
 type ExecutorSend = {
   sendWith?(target: ThreadRef, message: string, clientRequestId: string, opts: SendOpts): Promise<Sent>;
 };
 
-/** The queue's writer over the hub's executor. */
+/**
+ * The queue's writer over the hub's executor (queue/ports.rs `impl ThreadWriter for Executors`): a machine takes
+ * writes once it is ready (live, and announced online), a linked one whose runner can't run refuses in the runner's
+ * words, and a send goes through the executor's `sendWith`. Until the executor has `sendWith`, no machine reads as
+ * ready, so every write waits in the queue and none is dropped as refused.
+ */
 export function executorWriter(hub: Hub): ThreadWriter {
   const ex = () => executors(hub);
+  const send = () => (ex() as unknown as ExecutorSend).sendWith;
   return {
-    isConnected: (m) => ex().isConnected(m),
-    awaitLive: (m, signal) => ex().awaitLive(m, signal),
+    isConnected: (m) => send() !== undefined && ex().isReady(m) && ex().isConnected(m),
+    awaitLive: (m, signal) =>
+      send() !== undefined
+        ? ex().awaitReady(m, signal)
+        : new Promise<void>((resolve) => (signal?.aborted ? resolve() : signal?.addEventListener("abort", () => resolve(), { once: true }))),
+    refusal: (m) => {
+      // Only while linked: a machine that is away waits in the queue whatever its runner said last.
+      if (!ex().isConnected(m)) return undefined;
+      const info = ex().cachedRunner(m);
+      const problem = info ? runnerProblem(info as never) : undefined;
+      // TODO(hub-work): the fix line (executor/providers.rs `runner_fix`) once the providers' guides are ported.
+      return problem === undefined ? undefined : new WriteError("NodeRequestFailed", `the node on ${m} refused or failed the send request: ${problem}`);
+    },
     sendWith: async (target, message, clientRequestId, opts) => {
-      const send = (ex() as unknown as ExecutorSend).sendWith;
-      if (!send) throw new WriteError("NodeRequestFailed", `the node on ${target.machineId} refused or failed the send request: the hub's executor can't send yet`);
+      const sendWith = send();
+      if (!sendWith) throw new WriteError("MachineNotConnected", `machine ${target.machineId} has no live node link`);
       try {
-        return await send.call(ex(), target, message, clientRequestId, opts);
+        return await sendWith.call(ex(), target, message, clientRequestId, opts);
       } catch (error) {
         const e = error as { kind?: string; message?: string; extra?: { fix?: string } };
         if (e.kind === "not_connected") throw new WriteError("MachineNotConnected", e.message ?? "");

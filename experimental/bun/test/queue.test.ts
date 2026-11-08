@@ -152,3 +152,16 @@ test("keeps the queue across a restart", async () => {
   expect(writer.sent).toEqual(["survives"]);
   again.stop();
 });
+
+test("over the hub's executor, a write waits in the queue until the executor can send, never dropped as refused", async () => {
+  const { executorWriter } = await import("../src/hub/queue/index.ts");
+  const { hub, events } = kit();
+  const queue = new WriteQueue(hub, executorWriter(hub));
+  queue.start();
+  const sent = await queue.send(t1, "wait for me", "r1");
+  expect(sent.queued).toBe(true);
+  await settle();
+  expect(hub.db.all("SELECT 1 FROM queued_writes").length).toBe(1);
+  expect(events()).toEqual([]);
+  queue.stop();
+});
