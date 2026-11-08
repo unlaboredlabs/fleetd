@@ -445,7 +445,6 @@ fn the_simulator_budget_comes_from_the_macs_memory_unless_set() {
     let set = MacToolConfig {
         enabled: Some(true),
         simulators: Some(3),
-        ..Default::default()
     };
     assert_eq!(Host::new(set, key, dir.path().join("work")).sim_budget(), 3);
 }

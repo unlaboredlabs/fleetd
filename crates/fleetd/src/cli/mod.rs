@@ -478,7 +478,7 @@ mod tests {
                 .unwrap()
                 .contains("metrics [--project <p>] [--days 30]")
         );
-        assert!(usage_text().contains("  metrics --retention <days>"));
+        assert!(!usage_text().contains("--retention"), "retention is fixed");
         // After `--` it is an argument, and unknown commands keep their error.
         assert_eq!(help(&["task", "--", "-h"]), None);
         assert_eq!(help(&["frobnicate", "--help"]), None);

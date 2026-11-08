@@ -683,15 +683,13 @@ async fn the_lead_makes_lists_edits_pauses_runs_and_deletes_its_projects_automat
     };
     assert!(paused.automation.paused && paused.automation.next_run_at.is_none());
     assert_eq!(paused.automation.name.as_str(), "Weekly report");
-    // An older node still sends automation_pause.
-    let LeadCallResult::AutomationPause(resumed) = call(
-        &autos,
-        &me,
-        "automation_pause",
-        json!({ "automationId": id, "paused": false }),
+    // An older node still sends automation_pause; agent-mcp sends a lead's to automation_update.
+    let older: LeadCall = serde_json::from_value(
+        json!({ "op": "automation_pause", "automationId": id, "paused": false }),
     )
-    .await
-    .unwrap() else {
+    .unwrap();
+    let LeadCallResult::AutomationPause(resumed) = calls::answer(&autos, &me, older).await.unwrap()
+    else {
         panic!()
     };
     assert!(!resumed.automation.paused);
