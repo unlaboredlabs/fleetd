@@ -163,7 +163,15 @@ async fn a_person_sets_their_own_picture_everyone_sees_it_and_removing_it_brings
     let info = ok(&hub, &phone, "hub_info", json!({})).await;
     assert!(info["me"].get("avatar").is_none(), "{info}");
     assert_eq!(
-        code(call(&hub, &phone, "person_avatar_get", json!({ "personId": me.person_id })).await),
+        code(
+            call(
+                &hub,
+                &phone,
+                "person_avatar_get",
+                json!({ "personId": me.person_id })
+            )
+            .await
+        ),
         ErrorCode::NotFound
     );
     assert_eq!(picture_changes(&hub).len(), 2);
@@ -186,19 +194,45 @@ async fn only_a_persons_own_device_sets_theirs_and_a_removed_person_loses_it() {
     let alice = redeem(&hub, invite["code"].as_str().unwrap(), "Alice's phone");
     let alice_id = alice.person.clone().unwrap().person_id;
     let id = upload_photo(&hub, &alice).await;
-    ok(&hub, &alice, "person_avatar_set", json!({ "attachmentId": id })).await;
+    ok(
+        &hub,
+        &alice,
+        "person_avatar_set",
+        json!({ "attachmentId": id }),
+    )
+    .await;
     let list = ok(&hub, &owner, "people_list", json!({})).await;
     let people = list["people"].as_array().unwrap();
     assert!(people[0].get("avatar").is_none(), "{list}");
     assert!(people[1]["avatar"].is_string(), "{list}");
 
     // Removed, they keep their name but not their picture.
-    ok(&hub, &owner, "person_remove", json!({ "personId": alice_id })).await;
+    ok(
+        &hub,
+        &owner,
+        "person_remove",
+        json!({ "personId": alice_id }),
+    )
+    .await;
     assert_eq!(
-        code(call(&hub, &owner, "person_avatar_get", json!({ "personId": alice_id })).await),
+        code(
+            call(
+                &hub,
+                &owner,
+                "person_avatar_get",
+                json!({ "personId": alice_id })
+            )
+            .await
+        ),
         ErrorCode::NotFound
     );
-    let list = ok(&hub, &owner, "people_list", json!({ "includeRemoved": true })).await;
+    let list = ok(
+        &hub,
+        &owner,
+        "people_list",
+        json!({ "includeRemoved": true }),
+    )
+    .await;
     let gone = list["people"]
         .as_array()
         .unwrap()

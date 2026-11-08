@@ -1508,9 +1508,7 @@ input!(PersonAvatarSetInput {
     /// The square of it to keep; absent: the largest square in its middle. Clamped to the picture.
     crop: Option<AvatarCrop>,
 });
-output!(PersonAvatarSetOutput {
-    person: Person
-});
+output!(PersonAvatarSetOutput { person: Person });
 input!(PersonAvatarGetInput {
     person_id: PersonId,
 });
