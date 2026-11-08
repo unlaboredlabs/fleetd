@@ -58,9 +58,7 @@ export function register(tools: Registry): void {
     const w = workstreamGet(hub.db.conn, id);
     if (!w || !allows(caller, "read", w.projectRef.machineId)) throw unknownOrder(id);
     const project = w.projectRef;
-    let requests = openRequests(hub, 500).filter(
-      (r) => r.workstreamId === id && r.projectRef?.machineId === project.machineId && r.projectRef?.projectId === project.projectId,
-    );
+    let requests = openRequests(hub, 200, project).filter((r) => r.workstreamId === id);
     const joined = join(hub, w, projectChanges(hub, project), requests.length);
     let truncated = joined.truncated || requests.length > ORDER_ASKS;
     requests = requests.slice(0, ORDER_ASKS);

@@ -7,14 +7,15 @@
 // asks go into chats as "<person> via <label>", reach only the link's projects, and what happens to them goes out on
 // the link's feed (`feed`) instead of a wake. A call that names a linked hub goes there (hub_links/client.ts).
 //
-// Other areas' parts are looked up at run time (D352): the chat's `sendAsAgent` (src/hub/chat), the status rows
-// (`statusRows`, src/hub/status), the checklist (`checklistRead`, src/hub/checklist) and the hub-link client's `ask`,
-// `status` and `linked` (src/hub/hub_links).
+// The checklist is read from its module. The parts of areas not ported yet are looked up at run time, so the bridge
+// runs without them: the chat's `sendAsAgent` (src/hub/chat), the status rows (`statusRows`, src/hub/status) and the
+// hub-link client's `ask`, `status` and `linked` (src/hub/hub_links). A call that needs a missing one says so.
 import type { Database } from "bun:sqlite";
 import type { Grant, HubEvent, PersonRef, ProjectRef, ProjectSummary, Role, TodoItem } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
+import { read as readChecklist } from "../checklist/index.ts";
 import { workstreamGet, workstreamsList } from "../orders/workstreams.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -91,7 +92,6 @@ type StatusRow = {
 type Found = {
   sendAsAgent?: (hub: Hub, to: ProjectRef, by: string, body: string, requestId: string) => Promise<{ leadWaiting?: string | boolean }>;
   statusRows?: (hub: Hub, nowMs: number) => StatusRow[];
-  checklistRead?: (hub: Hub, r: ProjectRef) => { items: TodoItem[] };
   ask?: (hub: Hub, navi: ProjectRef, label: string, call: ProjectMessageCall) => Promise<ProjectMessageResult>;
   status?: (hub: Hub, navi: ProjectRef, label: string, call: FactoryStatusCall) => Promise<FactoryStatusResult>;
   linked?: (hub: Hub, navi: ProjectRef) => unknown[];
@@ -104,16 +104,14 @@ const look = async (path: string, names: (keyof Found)[]) => {
     for (const name of names) if (typeof m[name] === "function") (found as Record<string, unknown>)[name] = m[name];
   } catch {}
 };
-// Variables, so the bundler leaves them to run time and a missing module is no build error.
+// Paths in variables, so a module not written yet is no type error; a missing one leaves its names unset.
 const CHAT = "../chat/index.ts";
 const STATUS = "../status/index.ts";
-const CHECKLIST = "../checklist/index.ts";
 const LINKS_CLIENT = "../hub_links/client.ts";
 const LINKS = "../hub_links/index.ts";
 const loading = Promise.all([
   look(CHAT, ["sendAsAgent"]),
   look(STATUS, ["statusRows"]),
-  look(CHECKLIST, ["checklistRead"]),
   look(LINKS_CLIENT, ["ask", "status"]),
   look(LINKS, ["linked"]),
 ]);
@@ -359,7 +357,7 @@ export function factoryStatus(hub: Hub, asker: Asker, call: FactoryStatusCall): 
     const r = row.projectRef;
     if (!reaches(asker, r) || hidden.has(r) || (only && !same(only, r))) continue;
     const orders = workstreamsList(hub.db.conn, { projectRef: r, state: "open", limit: 20 });
-    const checklist = found.checklistRead ? found.checklistRead(hub, r).items : [];
+    const checklist = readChecklist(hub.db, r).items;
     const toIt = asks.filter((a) => same(a.to, r) && a.toHub === undefined);
     const askedFor = (w: string) => toIt.find((a) => a.orders.includes(w))?.handle;
     projects.push({
@@ -487,7 +485,15 @@ export async function run(hub: Hub): Promise<void> {
       await events(hub).wait({ cursor, types: TYPES, timeoutSec: 3600 }, signal);
     } catch (error) {
       console.error("navi bridge: events not followed:", error);
-      await Bun.sleep(5000);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(done, 5000);
+        function done() {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", done);
+          resolve();
+        }
+        signal.addEventListener("abort", done, { once: true });
+      });
     }
   }
 }

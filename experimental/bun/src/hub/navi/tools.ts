@@ -16,7 +16,7 @@ import { link } from "../link/server.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { trainChanges } from "../orders/sources.ts";
+import { anyMerged } from "../orders/sources.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
@@ -95,7 +95,7 @@ export function register(tools: Registry): void {
           ? a.orders.flatMap((id) => {
               const w = workstreamGet(hub.db.conn, id);
               if (!w || !allows(caller, "read", w.projectRef.machineId)) return [];
-              const merged = trainChanges(hub, { projectRef: w.projectRef, state: "merged", limit: 500 }).some((c) => c.workstreamId === w.workstreamId);
+              const merged = anyMerged(hub, w.projectRef, w.workstreamId);
               return [
                 {
                   workstreamId: w.workstreamId,
