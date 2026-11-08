@@ -19,6 +19,8 @@ export interface MenuItem {
   readonly destructive?: boolean;
   /** Opens something of iOS's own (a picker, a sheet), which can't come up until the menu's window is gone. */
   readonly presents?: boolean;
+  /** Changes only this screen (Reply's quote over the composer): on iOS's own menu it runs as it's picked, not once the menu has gone. */
+  readonly instant?: boolean;
 }
 
 /** How long the menu's window takes to go, before a picker or sheet can come up. */

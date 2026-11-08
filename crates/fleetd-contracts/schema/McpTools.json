@@ -8238,7 +8238,7 @@
       "properties": {
         "autoAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at\nthe earliest. Absent when nothing is ready, or automatic updates are off."
+          "description": "With `settings.auto`: when the build that is ready installs by itself, 10 minutes after the last update started\nat the earliest. Absent when nothing is ready, or automatic updates are off."
         },
         "autoSkips": {
           "description": "With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and\nit was put back; a newer build installs as usual, and Update still installs this one.",
@@ -8259,7 +8259,7 @@
         },
         "nextCheck": {
           "$ref": "#/$defs/Timestamp",
-          "description": "With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes)."
+          "description": "With `settings.auto`: when the hub next looks at the channel for a newer build (every 2 minutes)."
         },
         "ready": {
           "description": "The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update\nonly swaps and restarts: what \"fleetd <version> is ready\" names. Absent when there is none newer.",
@@ -8290,7 +8290,7 @@
     "HubUpdateSettingsInput": {
       "properties": {
         "auto": {
-          "description": "Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update\nstarted, whichever builds came out in between. Off by default.",
+          "description": "Updates install by themselves as soon as a build is ready, at most one in 10 minutes: builds that come out within\n10 minutes of the last update install once, as the newest, at the end of those 10 minutes. Off by default.",
           "type": "boolean"
         },
         "drainMinutes": {
@@ -23592,7 +23592,7 @@
       "description": "How the hub updates: `<hub home>/update/settings.json`.",
       "properties": {
         "auto": {
-          "description": "Updates install by themselves, at most once an hour.",
+          "description": "Updates install by themselves as soon as a build is ready, at most one in 10 minutes.",
           "type": "boolean"
         },
         "drainMinutes": {

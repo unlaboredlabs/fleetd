@@ -6,10 +6,11 @@
 //! whatever runs, which carries on by itself afterwards (`crate::update`'s doc says how). Update now (`now`) doesn't
 //! wait.
 //!
-//! Ahead of any update, every 10 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
+//! Ahead of any update, every 2 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
 //! prefetch`]), and asks its nodes to do the same, so that pressing Update only swaps and restarts; the app says
 //! "fleetd <version> is ready" then ([`Updates::ready`]). With automatic updates on, the same look starts an update
-//! by itself, at most once an hour ([`Updates::auto_tick`]): to the build ready, or to the hub's own build for a
+//! by itself as soon as a build is ready ([`Updates::auto_tick`]), but at most one in 10 minutes, so the builds edge
+//! publishes merge after merge go as one update to the newest: to the build ready, or to the hub's own build for a
 //! machine an update left behind; the last one's result stays in `<hub home>/update/last-auto.json`.
 //!
 //! The hub downloads the build and checks it against the release's SHA256SUMS (a failure changes nothing), while
@@ -153,7 +154,8 @@ pub struct Timing {
     pub drain_poll: Duration,
     /// How long a node waits for its agents at most, unless the hub's update settings say otherwise.
     pub drain: Duration,
-    /// Automatic updates: how long after the last update started the next may start, at the earliest.
+    /// Automatic updates: how long after the last update started the next may start, at the earliest: the window that
+    /// gathers builds published close together into one update.
     pub auto_gap: Duration,
 }
 
@@ -166,10 +168,11 @@ impl Default for Timing {
             node_back: Duration::from_secs(HEALTH_WAIT_SECS * 3),
             // The new build's 90 s and the previous build's 90 s once put back, with room to spare.
             restart: Duration::from_secs(HEALTH_WAIT_SECS * 3),
-            prefetch_every: Duration::from_secs(600),
+            // Downloads from the release CDN, not GitHub's API: no rate limit to mind.
+            prefetch_every: Duration::from_secs(120),
             drain_poll: Duration::from_secs(5),
             drain: Duration::from_secs(DRAIN_MINUTES * 60),
-            auto_gap: Duration::from_secs(3600),
+            auto_gap: Duration::from_secs(600),
         }
     }
 }
@@ -205,7 +208,8 @@ pub const DRAIN_MINUTES: u64 = 10;
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
-    /// Updates install by themselves, at most once an hour ([`Updates::auto_tick`]). Off when absent.
+    /// Updates install by themselves as soon as a build is ready, at most one in 10 minutes ([`Updates::auto_tick`]).
+    /// Off when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     auto: Option<bool>,
     /// How long a node waits for its agents at most, in minutes; 0 doesn't wait.
@@ -364,7 +368,7 @@ impl Updates {
     }
 
     /// With automatic updates on, and a build ready or a machine left behind ([`Self::behind`]): when the update
-    /// starts by itself, ms (now, when the last update started an hour ago or more). None otherwise, while an update
+    /// starts by itself, ms (now, when the last update started 10 minutes ago or more). None otherwise, while an update
     /// goes on, or for a build put back ([`Self::auto_skips`]).
     pub fn auto_at(&self) -> Option<i64> {
         if !self.settings().auto || self.auto_skips().is_some() {
@@ -384,9 +388,9 @@ impl Updates {
     }
 
     /// Automatic updates: downloads the channel's newest build ahead ([`Self::prefetch`]), and, when the settings turn
-    /// them on, starts an update to it once the last update started an hour ago or more, or to the hub's build for a
-    /// machine left behind. Builds that come out within the hour aren't installed one by one: the one update that
-    /// follows takes the newest. It waits for agents as the Update button does. The update it started, if any.
+    /// them on, starts an update to it once the last update started 10 minutes ago or more ([`Timing::auto_gap`]), or to
+    /// the hub's build for a machine left behind. Builds that come out within those 10 minutes aren't installed one by
+    /// one: the one update that follows takes the newest. It waits for agents as the Update button does. The update it started, if any.
     pub async fn auto_tick(self: &Arc<Self>) -> Option<UpdateRun> {
         self.prefetch().await;
         let due = self.auto_at()?;
@@ -474,15 +478,25 @@ impl Updates {
         self.dir.join("fleetd.next")
     }
 
-    /// Runs [`Self::auto_tick`] now and every [`Timing::prefetch_every`]. Runs until the hub stops.
+    /// Runs [`Self::auto_tick`] now and every [`Timing::prefetch_every`], or sooner when a build ready is due to
+    /// install by itself. Runs until the hub stops.
     pub async fn prefetch_loop(self: Arc<Self>) {
         loop {
             if let Some(run) = self.auto_tick().await {
                 tracing::info!("update: started {} by itself (automatic updates)", run.id);
             }
-            *self.next_check.lock().unwrap() =
-                Some(now_ms(self.clock.as_ref()) + ms(self.timing.prefetch_every));
-            self.clock.sleep(self.timing.prefetch_every).await;
+            let now = now_ms(self.clock.as_ref());
+            let every = now + ms(self.timing.prefetch_every);
+            // A second at least: an update due that didn't start (not wired yet) mustn't spin.
+            let next = self
+                .auto_at()
+                .map_or(every, |due| due.max(now + 1_000).min(every));
+            *self.next_check.lock().unwrap() = Some(next);
+            self.clock
+                .sleep(Duration::from_millis(
+                    u64::try_from(next - now).unwrap_or(0),
+                ))
+                .await;
         }
     }
 

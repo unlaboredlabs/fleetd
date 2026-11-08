@@ -2978,8 +2978,8 @@ output!(HubUpdateOutput {
     left_over: Option<bool>,
     /// The hub's update settings.
     settings: Option<UpdateSettings>,
-    /// With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at
-    /// the earliest. Absent when nothing is ready, or automatic updates are off.
+    /// With `settings.auto`: when the build that is ready installs by itself, 10 minutes after the last update started
+    /// at the earliest. Absent when nothing is ready, or automatic updates are off.
     auto_at: Option<Timestamp>,
     /// With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and
     /// it was put back; a newer build installs as usual, and Update still installs this one.
@@ -2987,7 +2987,7 @@ output!(HubUpdateOutput {
     /// The last automatic update that finished, kept apart from `run`: a person's update after it doesn't hide it.
     /// Absent until one has finished.
     last_auto: Option<LastAutoUpdate>,
-    /// With `settings.auto`: when the hub next looks at the channel for a newer build (every 10 minutes).
+    /// With `settings.auto`: when the hub next looks at the channel for a newer build (every 2 minutes).
     next_check: Option<Timestamp>,
     /// With `settings.auto`: why automatic updates hold back now, in one sentence (the hub runs a local build, the
     /// build ready was put back, the last look at the channel failed). Absent while nothing holds them back.
@@ -3028,8 +3028,8 @@ input!(HubUpdateStatusInput {});
 // hub_update_settings: changes the hub's update settings; a field left out stays as it is. Admin on every machine, a
 // human key only.
 input!(HubUpdateSettingsInput {
-    /// Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update
-    /// started, whichever builds came out in between. Off by default.
+    /// Updates install by themselves as soon as a build is ready, at most one in 10 minutes: builds that come out within
+    /// 10 minutes of the last update install once, as the newest, at the end of those 10 minutes. Off by default.
     auto: Option<bool>,
     /// How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait.
     drain_minutes: Option<u32>,
@@ -3042,7 +3042,7 @@ pub const DRAIN_MINUTES_MAX: u32 = 240;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSettings {
-    /// Updates install by themselves, at most once an hour.
+    /// Updates install by themselves as soon as a build is ready, at most one in 10 minutes.
     pub auto: bool,
     /// How long a node waits for its agents to finish their step, in minutes.
     pub drain_minutes: u32,
