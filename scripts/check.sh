@@ -122,6 +122,12 @@ base=$(git merge-base origin/main HEAD) || exit 1
 marks=$(git rev-parse --git-path fleetd-checked)
 target=${CARGO_TARGET_DIR:-target}
 [[ $target == /* ]] || target=$PWD/$target
+# A target dir another worktree builds into too: both build the same deps/fleetd-<hash>, and cargo's lock doesn't cover
+# the test run, so one check can run the other tree's tests (it happened on the devbox). Said, not refused.
+case $target in
+  "$(git rev-parse --show-toplevel)"/*) ;;
+  *) echo "check.sh: warning: the Rust target dir $target is outside this worktree; another worktree's check building there can swap the test binary this one runs" >&2 ;;
+esac
 
 # changed <path>...: whether a path under these differs from the base, in a commit, the worktree or an untracked file.
 changed() {
