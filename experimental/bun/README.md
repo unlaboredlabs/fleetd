@@ -45,6 +45,11 @@ port, by area, with its module; each area's writer owns its modules' directories
   `export function register(tools: Registry) { tools.add("project_get", async (hub, caller, input) => …) }`. Input and
   output are typed from the contracts' `ToolMap`; the registry checks the tool's role first. Throw a `ToolError` to
   refuse. `src/gen/areas.ts` calls every module's `register`, so no one edits a shared list.
+- **Lead calls.** A module answers the lead calls its Rust `calls.rs` registers, in `src/hub/<module>/calls.ts`:
+  `leadCalls(hub).register("task_spawn", (caller, call) => …)` from its `loops.ts` `start(hub)` (src/hub/lead_calls).
+  `caller` is `{ projectRef, by, agent, threadId? }`, already attributed and through the policy; return the result
+  without its `op` (the dispatch adds it), or throw a `ToolError` to refuse. The link answers each `lead_call` frame
+  with `onLeadCallFrame(hub, machineId, frame, send)`.
 - **Loops.** `src/hub/<module>/loops.ts` `start(hub)` starts the module's background loops (the Rust hub's
   `start_loops`); stop them on `hub.shutdown.signal`.
 - **Routes.** Each HTTP route is a stub in its module (`src/hub/pair/http.ts`, `src/hub/app_ws/socket.ts`, …) that
