@@ -263,7 +263,14 @@ export async function pollCiWaits(
         }
       }
     } else {
-      const m = await reads.merge(task.projectRef, target);
+      // A merge read that fails (the train's records busy) leaves the wait as it is, for the next pass.
+      let m: Merge;
+      try {
+        m = await reads.merge(task.projectRef, target);
+      } catch (error) {
+        console.warn(`merge wait: the train not read (${url}):`, error);
+        continue;
+      }
       if (m.kind === "pending") {
         // Back on its way, its next failure wakes the task again.
         if (merged !== "") told(db, taskId, url, "");

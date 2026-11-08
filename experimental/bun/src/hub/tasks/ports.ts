@@ -32,7 +32,7 @@ import { forTask as claudeForTask, orderRefusal, taskAccountKey } from "../claud
 import { chat } from "../chat/index.ts";
 import { isPool } from "../cloud/outbox.ts";
 import { ExecutorError, executors, READ_TIMEOUT_MS, STOP_TIMEOUT_MS } from "../executor/index.ts";
-import { launch as executorLaunch, send as executorSend, sendWith, startedRun as executorStartedRun } from "../executor/sessions.ts";
+import { launch as executorLaunch, send as executorSend, sendBrief, sendWith, startedRun as executorStartedRun } from "../executor/sessions.ts";
 import { pendingQuestionText } from "../executor/thread_view.ts";
 import { deliverAtLaunch, refusal as githubRefusal } from "../github_app/sessions.ts";
 import { doneWhenText } from "../leads/digest.ts";
@@ -217,6 +217,8 @@ export interface TaskPorts {
   /** The thread, and where its worktree's branch started when it has one. Throws a PortError. */
   launch(machineId: MachineId, request: LaunchRequest): Promise<{ threadId: string; base?: WorktreeBase }>;
   send(thread: ThreadRef, message: string, clientRequestId: string): Promise<void>;
+  /** `send` that waits at most 15 s for the node, never two minutes: for a send made under the tasks lock. */
+  sendBrief(thread: ThreadRef, message: string, clientRequestId: string): Promise<void>;
   /** A send as a steer's run: at the turn's boundary, with its id and riders. */
   sendSteer(thread: ThreadRef, message: string, clientRequestId: string, steer: HeldSteer): Promise<void>;
   /** What the node rebuilt the thread's worktree from the last time it was gone, and when. */
@@ -382,6 +384,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
         );
       }),
     send: (thread, message, id) => call(async () => void (await executorSend(hub, thread, message, id))),
+    sendBrief: (thread, message, id) => call(async () => void (await sendBrief(hub, thread, message, id))),
     sendSteer: (thread, message, id, steer) =>
       call(async () => void (await sendWith(hub, thread, message, id, { mode: "boundary", steer: steer.id, riders: steer.riders }))),
     recreatedFrom: (thread) => ex().tracked(thread)?.recreatedFrom,

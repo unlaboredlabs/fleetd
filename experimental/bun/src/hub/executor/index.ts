@@ -475,7 +475,6 @@ export class Executors {
     }
   }
 
-
   /** One link's lifetime: subscribe after the stored cursor, then apply the machine stream until detached. */
   private async supervise(machineId: MachineId, slot: Slot, signal: AbortSignal): Promise<void> {
     const cursor = store(this.hub).cursorGet(machineId);

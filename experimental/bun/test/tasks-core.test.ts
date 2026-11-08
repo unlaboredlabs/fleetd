@@ -292,6 +292,8 @@ test("cap_set's pause: running agents above a lowered max push their work and qu
   const queued = k.t.get(paused[0] as string) as Task;
   expect(queued.state).toBe("queued");
   expect(queued.queuedReason).toBe("paused: max agents lowered to 1; resumes when a slot frees");
+  // Sent under the tasks lock, so as a brief send: a busy node holds the lock 15 s at most.
+  expect(k.ports.briefs.length).toBe(1);
   expect(k.ports.sends.at(-1)?.message).toContain("1");
   k.hub.shutdown.abort();
 });
@@ -364,4 +366,23 @@ test("the steer area's task_message stays the lead's message_agent, as Rust's st
   registerLeadCalls(k.hub);
   expect(leadCalls(k.hub).handler("task_message")).toBe(steers);
   expect(leadCalls(k.hub).handler("task_spawn")).toBeDefined();
+});
+
+test("the GitHub notices go out to every agent on the machine at once, as brief sends", async () => {
+  const k = tasksKit();
+  await k.spawn("One", "read");
+  await k.spawn("Two", "read");
+  let inFlight = 0;
+  let most = 0;
+  k.ports.sendBrief = async (_thread, message) => {
+    inFlight += 1;
+    most = Math.max(most, inFlight);
+    await Bun.sleep(10);
+    inFlight -= 1;
+    k.ports.briefs.push(message);
+  };
+  await k.t.githubReach("lab-a", false);
+  expect(k.ports.briefs.length).toBe(2);
+  expect(most).toBe(2);
+  expect(k.ports.briefs[0]?.startsWith("This machine can't reach GitHub right now")).toBe(true);
 });

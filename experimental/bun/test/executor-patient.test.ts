@@ -104,3 +104,20 @@ test("a refused send fails at once, a silent node after two minutes, and a dropp
     hub.shutdown.abort();
   }
 });
+
+test("a brief send, made under a lock others wait on, waits 15 s at most and goes out once", async () => {
+  const { hub, sends } = await node();
+  jest.useFakeTimers();
+  try {
+    const { sendBrief } = await import("../src/hub/executor/sessions.ts");
+    const brief = sendBrief(hub, thread, "push your work and wait", "req-1").catch((e) => e);
+    await tick(0);
+    await tick(15_000);
+    const e = (await brief) as ExecutorError;
+    expect(e.extra.nodeMessage).toBe("no answer within 15 s");
+    expect(sends().length).toBe(1);
+  } finally {
+    jest.useRealTimers();
+    hub.shutdown.abort();
+  }
+});

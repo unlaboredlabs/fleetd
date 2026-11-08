@@ -122,3 +122,17 @@ test("merged takes only a PR, and the lead's digest says a done task waits on on
   ]);
   k.hub.shutdown.abort();
 });
+
+test("a merge read that fails leaves the wait for the next pass, and the poll goes on", async () => {
+  const k = await ended();
+  await k.waitMerged(PR);
+  const reads = new Reads();
+  reads.merge = async () => {
+    throw new Error("database is locked");
+  };
+  expect(await k.poll(reads)).toBe(0);
+  const healthy = new Reads();
+  healthy.merges.set(PR, { kind: "merged" });
+  expect(await k.poll(healthy)).toBe(1);
+  k.hub.shutdown.abort();
+});

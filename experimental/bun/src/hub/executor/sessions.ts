@@ -286,7 +286,26 @@ function archivedLead(hub: Hub, r: ThreadRef): [string, string] | undefined {
   ];
 }
 
-export async function sendWith(hub: Hub, r: ThreadRef, message: string, clientRequestId: string, opts: SendOpts = {}): Promise<SendOutcome> {
+export function sendWith(hub: Hub, r: ThreadRef, message: string, clientRequestId: string, opts: SendOpts = {}): Promise<SendOutcome> {
+  return sendWithin(hub, r, message, clientRequestId, opts, true);
+}
+
+/**
+ * A plain send that waits at most READ_TIMEOUT_MS for the node, never PATIENCE_MS (executor `send_brief`): for a caller
+ * that holds a lock others wait on.
+ */
+export const sendBrief = (hub: Hub, r: ThreadRef, message: string, clientRequestId: string) =>
+  sendWithin(hub, r, message, clientRequestId, {}, false);
+
+/** A send, `patient`: again and again while a busy node doesn't answer (`callPatient`); else once, as `call`. */
+async function sendWithin(
+  hub: Hub,
+  r: ThreadRef,
+  message: string,
+  clientRequestId: string,
+  opts: SendOpts,
+  patient: boolean,
+): Promise<SendOutcome> {
   // Every turn of every lead goes through here: an archived project's lead takes none (W79).
   const archived = archivedLead(hub, r);
   if (archived) throw ExecutorError.failed(r.machineId, "send", archived[0], archived[1]);
@@ -294,8 +313,9 @@ export async function sendWith(hub: Hub, r: ThreadRef, message: string, clientRe
   if (message === "") throw ExecutorError.failed(r.machineId, "send", "the message is empty");
   const [mcp, mcpSent] = changedMcp(hub, r);
   const [skills, skillsNow] = changedSkills(hub, r);
-  // A busy node may take a while to take it: the same send goes again until it answers (the node dedupes on runId).
-  const out = await executors(hub).callPatient(
+  // A busy node may take a while to take it: a patient send goes again until it answers (the node dedupes on runId).
+  const ex = executors(hub);
+  const out = await (patient ? ex.callPatient.bind(ex) : ex.call.bind(ex))(
     r.machineId,
     "send",
     {
