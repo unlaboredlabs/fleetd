@@ -723,3 +723,11 @@ function gatedRefusal(call: GatedRunInput, cwd: string): string | undefined {
 export const approvals = (hub: Hub) => hub.area("approvals", (h) => new Approvals(hubDeps(h)));
 
 import { hubDeps } from "./wire.ts";
+
+/**
+ * Every open request, newest first, at most `limit` (leads/wiring.rs `open_requests`); of one project when `project`
+ * is given. What the orders board counts per workstream (D352).
+ */
+export function openRequests(hub: Hub, limit: number, project?: ProjectRef): HumanRequest[] {
+  return new Requests(hub.db).list({ ...(project ? { projectRef: project } : {}), states: ["open"], limit });
+}

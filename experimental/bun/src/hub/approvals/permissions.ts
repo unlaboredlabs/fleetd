@@ -11,7 +11,8 @@
 import type { CheckerNote, HubEvent, HumanRequest, ProjectRef, ToolPermission, ToolPreview } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 import { AUTOMATION_CONFIRM_TOOL, type Approvals, projectOf } from "./index.ts";
-import type { Action, Checked, PendingPermission, PermissionDecision } from "./ports.ts";
+import { verdict as policyVerdict } from "../integrations/policy.ts";
+import type { Action, Checked, PendingPermission, PermissionDecision, PromptVerdict } from "./ports.ts";
 import { personOnly } from "./purchases.ts";
 import { clip } from "./text.ts";
 
@@ -93,7 +94,16 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
   const automationId = toObject(input).automationId;
   const automation =
     confirming && typeof automationId === "string" ? await hooks.naviAutomation(project, automationId) : undefined;
-  const verdict = hooks.promptVerdict(project, tool, input, servers, automation);
+  // The integrations policy first, for an MCP server's tool; then the Navi's own rules (its confirm step, its bridge,
+  // automation confirm), which the navi port sets.
+  const policy = policyVerdict(tool, input, servers);
+  const verdict: PromptVerdict | undefined = policy
+    ? "allow" in policy
+      ? { allow: true }
+      : "block" in policy
+        ? { deny: policy.block }
+        : { ask: policy.ask }
+    : hooks.promptVerdict(project, tool, input, servers, automation);
   let decided: PermissionDecision | undefined;
   let preview: ToolPreview | undefined;
   if (verdict && "allow" in verdict) decided = ALLOW;

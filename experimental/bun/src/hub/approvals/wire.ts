@@ -4,6 +4,7 @@ import type { HumanRequest, McpServer, ProjectRef } from "../../shared/contracts
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
 import { linkOf } from "../cloud/node.ts";
+import { mcpServers } from "../mcp_servers/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import type { ApprovalsDeps } from "./index.ts";
@@ -107,7 +108,14 @@ export function hubDeps(hub: Hub): ApprovalsDeps {
   const deps: ApprovalsDeps = {
     requests: new Requests(hub.db),
     nodes: linkNodes(hub, (m, t) => deps.hooks.pendingPermission(m, t)),
-    hub: storeHub(hub, async () => []),
+    hub: storeHub(hub, async (r) => {
+      try {
+        return mcpServers(hub).serversFor(r);
+      } catch (e) {
+        console.warn("approvals: the project's MCP servers were not read:", e);
+        return [];
+      }
+    }),
     hooks: defaultHooks(),
     events: events(hub),
     clock: hub.clock,

@@ -110,9 +110,8 @@ export type ApprovalHooks = {
   /** An action ran without asking: an entry in the Navi's auto-approved log (checker.rs `auto_approved`). */
   naviAutoApproved(project: ProjectRef, action: Action, by: "checker" | "yolo", reason?: string): Promise<void>;
   /**
-   * The policy's verdict on a prompt before any card (integrations/policy.rs `verdict`, then navi confirm.rs
-   * `refused`/`preview`, automations calls.rs `confirm_preview`, navi bridge.rs `preview`); undefined: no rule, so
-   * the approval mode decides.
+   * The Navi's rules on a prompt the integrations policy had no word on (navi confirm.rs `refused`/`preview`,
+   * automations calls.rs `confirm_preview`, navi bridge.rs `preview`); undefined: no rule, so the approval mode decides.
    */
   promptVerdict(
     project: ProjectRef,

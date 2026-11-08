@@ -346,7 +346,15 @@ test("a prompt becomes one approval and approve runs the tool with exactly the i
   // The same prompt again files nothing more.
   await onThreadEvent(a, threadEvent("thread.waiting", fake.pending));
   const open = fake.request("Q1");
-  expect(open.permission).toEqual({ threadId: "T1", requestId: "p-1", toolName: "mcp__mail__send", summary: "send a mail", input });
+  // A tool of the person's own server asks, with the policy's preview of exactly what it sends.
+  expect(open.permission).toEqual({
+    threadId: "T1",
+    requestId: "p-1",
+    toolName: "mcp__mail__send",
+    summary: "send a mail",
+    input,
+    preview: { server: "mail", tool: "send", action: "send", title: "Use send on mail", input: '{\n  "body": "hi",\n  "to": "ada@example.com"\n}' },
+  });
   expect(fake.request("Q2")).toBeUndefined();
   await a.answer(person, "Q1", true);
   expect(fake.answers).toEqual([
@@ -535,4 +543,21 @@ test("the tools and lead calls go through the hub's registries", async () => {
   );
   const hidden = await tools.call(hub, { ...human, person: { personId: "P1", name: "Ada" } }, "requests_list", {});
   expect((hidden as { output: { requests: HumanRequest[] } }).output.requests).toEqual([]);
+});
+
+test("openRequests lists the open ones, newest first", async () => {
+  const { Hub } = await import("../src/hub/api/hub.ts");
+  const { openRequests } = await import("../src/hub/approvals/index.ts");
+  const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => 0 });
+  const requests = new Requests(hub.db);
+  for (const w of ["W1", "W2", "W1"]) {
+    requests.create({ projectRef: p1, workstreamId: w, kind: "approval", text: "t", gated: migration() as never, at: "x", atMs: 0 });
+  }
+  requests.updateFrom("Q2", "open", (r) => (r.state = "denied"));
+  expect(openRequests(hub, 500).map((r) => [r.requestId, r.workstreamId])).toEqual([
+    ["Q3", "W1"],
+    ["Q1", "W1"],
+  ]);
+  expect(openRequests(hub, 1).length).toBe(1);
+  expect(openRequests(hub, 10, { machineId: "lab-a", projectId: "p2" })).toEqual([]);
 });
