@@ -263,3 +263,15 @@ test("secret, gated and resumed runs get their own replies; spans and clone prog
   node.close();
   await node.closed;
 });
+
+test("start() makes the activity tracker, so the executor's first thread events have somewhere to go", async () => {
+  const { start } = await import("../src/hub/link/loops.ts");
+  const fresh = tempHome();
+  const built = build(fresh.dir, { host: "127.0.0.1", port: 0 });
+  expect((built.hub as unknown as { areas: Map<string, unknown> }).areas.has("activity")).toBe(false);
+  start(built.hub);
+  expect((built.hub as unknown as { areas: Map<string, unknown> }).areas.has("activity")).toBe(true);
+  built.hub.shutdown.abort();
+  built.hub.db.close();
+  fresh.done();
+});

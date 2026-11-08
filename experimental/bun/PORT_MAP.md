@@ -24,14 +24,14 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] /app client `snapshot` → `src/hub/app_ws` <!-- app:/app client `snapshot` -->
 - [x] /app client `events` → `src/hub/app_ws` <!-- app:/app client `events` -->
 - [x] /app client `call` → `src/hub/app_ws` <!-- app:/app client `call` -->
-- [ ] /app client `live` → `src/hub/app_ws` <!-- app:/app client `live` -->
+- [x] /app client `live` → `src/hub/app_ws` <!-- app:/app client `live` -->
 - [x] /app client `presence` → `src/hub/app_ws` <!-- app:/app client `presence` -->
 - [x] /app server `ready` → `src/hub/app_ws` <!-- app:/app server `ready` -->
 - [x] /app server `snapshot` → `src/hub/app_ws` <!-- app:/app server `snapshot` -->
 - [x] /app server `event` → `src/hub/app_ws` <!-- app:/app server `event` -->
 - [x] /app server `result` → `src/hub/app_ws` <!-- app:/app server `result` -->
 - [x] /app server `error` → `src/hub/app_ws` <!-- app:/app server `error` -->
-- [ ] /app server `live` → `src/hub/app_ws` <!-- app:/app server `live` -->
+- [x] /app server `live` → `src/hub/app_ws` <!-- app:/app server `live` -->
 
 ### MCP tools (/mcp and /app `call`)
 

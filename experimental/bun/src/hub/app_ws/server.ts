@@ -18,6 +18,7 @@ import type { Caller, Registry } from "../api/registry.ts";
 import type { SocketData } from "../http/route.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "../link/deflate.ts";
 import { record as recordPresence } from "../metrics/presence.ts";
+import { register as registerLive } from "./live/index.ts";
 import { events } from "../store/events.ts";
 import { type Others, others, visible } from "./visible.ts";
 
@@ -106,6 +107,17 @@ export class AppConn {
     return this.ws.getBufferedAmount();
   }
 
+  /** Whether this second of the connection's budget still has room. */
+  room(now: number): boolean {
+    if (now - this.budget.second >= 1000) this.budget = { second: now, bytes: 0 };
+    return this.budget.bytes < MAX_BYTES_PER_SEC;
+  }
+
+  spend(now: number, bytes: number): void {
+    if (now - this.budget.second >= 1000) this.budget = { second: now, bytes: 0 };
+    this.budget.bytes += bytes;
+  }
+
   /**
    * Reserves `bytes` of this second's budget when they fit (or the second is still empty), returning 0; otherwise
    * the milliseconds until the next second.
@@ -165,6 +177,8 @@ function readMessage(text: string): { message?: AppMessage; id?: string } {
         return validCallId(m.id) && typeof m.tool === "string";
       case "presence":
         return typeof m.focused === "boolean" && typeof m.input === "boolean" && (m.project === undefined || isProjectRef(m.project));
+      case "live":
+        return typeof m.board === "boolean";
       case undefined:
         return false;
       default:
@@ -198,6 +212,7 @@ export class AppWs {
     hub.shutdown.signal.addEventListener("abort", () => {
       for (const conn of [...this.conns]) this.close(conn, CLOSE_GOING_AWAY, "hub shutting down");
     });
+    registerLive(hub, this);
   }
 
   // ---- The seam (D346).
@@ -339,7 +354,6 @@ export class AppWs {
     }
   }
 
-  /** Whether the connection's key was refused since it authed; a refusal is sent first. */
   /**
    * Checks the connection's key as it is now: true when it was refused since it authed (the refusal is sent first).
    * Otherwise the caller it verifies as replaces the connection's, so a changed role or grant holds from the next

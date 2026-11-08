@@ -148,8 +148,8 @@ test("the seam: on(type) serves an area's message, sendTo answers it, onClose he
   });
   const key = insertKey(hub.db, all, "chatter");
   const { app } = await authed(key);
-  await app.send({ t: "live", board: true });
-  expect(await app.tag("error")).toMatchObject({ code: "failed", message: "not ported to Bun yet: src/hub/app_ws/live (app message live)" });
+  await app.send({ t: "screen_thumbs", on: true });
+  expect(await app.tag("error")).toMatchObject({ code: "failed", message: "not ported to Bun yet: src/hub/browser (app message screen_thumbs)" });
   await app.send({ t: "chat", project: { machineId: "devbox", projectId: "p1" } });
   expect(await app.tag("chat_delta")).toMatchObject({ echo: { machineId: "devbox", projectId: "p1" } });
   ws.broadcast({ t: "hello_all" });
