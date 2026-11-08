@@ -45,6 +45,7 @@ export type SessionLocal = {
   allowedOnly?: boolean;
   role?: SessionRole;
   orderId?: string;
+  setup?: import("../../shared/contracts.ts").WorktreeSetup;
   setupPending?: boolean;
   profile?: string;
   fast?: boolean;

@@ -36,7 +36,7 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
 /** Every capability the Bun node lists in its hello: what its modules take. Self-update, Claude Code's install and
  * login and screens aren't ported, so their capabilities aren't listed. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -173,6 +173,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const relay = new LeadRelay();
   relay.hold = () => sessions.hold();
   const node = new Node(home, config, relay);
+  sessions.onItemEnded = (session, item) => node.area("items").ended(session, item);
   registerAreas(node);
   const link = node.area("link");
   const local = node.area("local");
@@ -184,7 +185,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   });
   const shutdown = new AbortController();
   const wakes = new Wakes();
-  runPower({ running: () => sessions.running(), wakes, onWake: () => {}, signal: shutdown.signal });
+  runPower({ running: () => sessions.running(), wakes, onWake: () => sessions.woke(), signal: shutdown.signal });
   const roots = config.cmdRoots ?? [homeDir()];
   const secretsCtx: SecretsContext = { machineId: config.machineId, roots, home, boxKey };
   const gated = new GatedRuns(home, config.machineId);
@@ -262,7 +263,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       };
     },
     handle,
-    woke: () => wakes.next(),
+    woke: (signal) => wakes.next(signal),
     signal: shutdown.signal,
   });
   void fatal.then((refused) => {

@@ -8,6 +8,11 @@ import { join } from "node:path";
 
 const argv = process.argv.slice(2);
 const [, dir, session] = argv;
+const flag = (name: string) => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
+const model = flag("--model") ?? "";
 if (!dir || !session) process.exit(2);
 mkdirSync(dir, { recursive: true });
 const kept: [number, string][] = [];
@@ -64,8 +69,27 @@ Bun.listen({
         } else if (cmd?.Send) {
           const { run_id, text } = cmd.Send;
           emit({ RunStarted: { run_id } });
+          // `flaky:` fails its first try as claude does when the network drops; `refuse-model:` fails while claude
+          // runs on any model but the profile's own.
+          if (text.includes("flaky:")) {
+            emit({ RunEnded: { run_id, outcome: { Failed: { class: "network", message: "Connection error.", retries: 0 } }, usage: null } });
+            continue;
+          }
+          if (text.includes("refuse-model:") && model !== "claude-opus-5-5") {
+            emit({ RunEnded: { run_id, outcome: { Failed: { class: "invalid_request", message: `model ${model} not found`, apiStatus: 404, retries: 0, model } }, usage: null } });
+            continue;
+          }
           if (text.includes("spans:"))
             emit({ Spans: [1, 2, 3].map((n) => ({ key: `${run_id}/${n}`, kind: "run", sessionId: session, runId: run_id, startMs: n, endMs: n + 1, status: "ok" })) });
+          if (text.includes("monitor:")) {
+            const at = new Date().toISOString();
+            emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input: { description: "ci", timeout_ms: 600000 } } } });
+          }
+          if (text.includes("hang:")) {
+            // A turn whose stream went quiet: it ends only when interrupted.
+            waiting = { run: run_id, text: "" };
+            continue;
+          }
           if (text.includes("ask:")) {
             waiting = { run: run_id, text };
             emit({ PermissionRequest: { request_id: `req-${run_id}`, tool_use_id: "tu1", tool_name: "Bash", input: { command: "ls" }, summary: "ls" } });
