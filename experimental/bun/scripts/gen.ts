@@ -6,6 +6,7 @@
 //
 //   bun scripts/gen.ts           writes them
 //   bun scripts/gen.ts --check   writes nothing, fails when one is out of date (CI)
+//   bun scripts/gen.ts --status  writes nothing, prints how many items each area has ticked (bun run progress)
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -369,12 +370,13 @@ message, session and lead call, agent-mcp tool, CLI command and background loop,
 \`bun run gen\` keeps the ticks. Don't add items by hand: a new one comes from the Rust code.
 
 `;
+// No done counts in the file: parallel PRs each tick their own area, and a shared count would make them conflict.
+// `bun run progress` prints them instead.
 const total = items.length;
 const done = items.filter((i) => ticked.has(i.key)).length;
-portMap += `**${done} / ${total} done.**\n\n`;
 for (const [area, what] of Object.entries(AREAS)) {
   const mine = items.filter((i) => i.area === area);
-  portMap += `## ${area}\n\n${what}. ${mine.filter((i) => ticked.has(i.key)).length} / ${mine.length} done.\n`;
+  portMap += `## ${area}\n\n${what}.\n`;
   for (const [section, title] of Object.entries(SECTIONS)) {
     const here = mine.filter((i) => i.key.startsWith(`${section}:`));
     if (here.length === 0) continue;
@@ -439,6 +441,14 @@ const outputs: [string, string][] = [
   [join(BUN, "src/gen/wire.ts"), wireTs],
   [PORT_MAP, portMap],
 ];
+if (process.argv.includes("--status")) {
+  for (const area of Object.keys(AREAS)) {
+    const mine = items.filter((i) => i.area === area);
+    console.log(`${area.padEnd(36)} ${mine.filter((i) => ticked.has(i.key)).length} / ${mine.length}`);
+  }
+  console.log(`${"total".padEnd(36)} ${done} / ${total}`);
+  process.exit(0);
+}
 const check = process.argv.includes("--check");
 let stale = 0;
 for (const [path, text] of outputs) {
