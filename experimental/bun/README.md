@@ -65,6 +65,8 @@ port, by area, with its module; each area's writer owns its modules' directories
   `src/gen/wire.ts` has its tags, session call ops, lead call ops and agent-mcp's tools, generated from the Rust source.
 - **Native pieces.** Only where the research said so: a session's PTY stays with the Rust binary's
   `fleetd session-host`, and the screen helper's JPEG work with its Rust helper; the Bun node starts those binaries.
+  The session host ships beside the Bun build as `fleetd-session-host` (`bun run helper` copies a Rust build into
+  `dist/`; `FLEETD_NATIVE_BIN` names another); a node without one shows as degraded, and starts no session.
 - **PORT_MAP.md.** Generated: never edit it. Tick an item when its module does it and a test covers it by adding
   the item's key (the `<!-- … -->` id on its PORT_MAP.md line, without the comment marks) as a line of its module's
   `src/<module>/PORTED`, e.g. `src/hub/app_ws/PORTED`. Create the file if it isn't there; for a module that is one
