@@ -52,6 +52,9 @@ const CALLS: Record<string, [NodeOperation, number]> = {
   claude_models: ["read", 15_000],
   mcp_test: ["read", 45_000],
   answer: ["answer", 15_000],
+  repo_scan: ["read", 10_000],
+  repo_inspect: ["read", 10_000],
+  repo_clone: ["project", 60 * 60_000],
 };
 
 /** executor/tools.rs `from_executor`: an executor failure as the tool's error. */

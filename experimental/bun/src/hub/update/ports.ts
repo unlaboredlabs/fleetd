@@ -23,14 +23,7 @@ export function healthUrl(host: string, port: number): string {
 
 /** What runs on the machine that its node's restart would end (machine_roles `live_on`), when that area says. */
 function busy(hub: Hub, machineId: string): string | undefined {
-  let liveOn: ((m: string) => number) | undefined;
-  try {
-    liveOn = hub.area<(m: string) => number>("machine_roles_live", () => {
-      throw new Error("not set");
-    });
-  } catch {
-    liveOn = undefined;
-  }
+  const liveOn = hub.peek<(m: string) => number>("machine_roles_live");
   const n = liveOn?.(machineId) ?? 0;
   return n === 0 ? undefined : n === 1 ? "1 live session" : `${n} live sessions`;
 }

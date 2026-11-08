@@ -9,3 +9,9 @@ declare module "*.rs" {
   const text: string;
   export default text;
 }
+
+// `import sh from "x.sh" with { type: "text" }`: a script the hub renders and hands a machine.
+declare module "*.sh" {
+  const text: string;
+  export default text;
+}
