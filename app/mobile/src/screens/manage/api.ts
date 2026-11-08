@@ -22,7 +22,7 @@ export const FORGET_MS = 60_000;
 export const REMOVE_MS = 80_000;
 
 /** Checkouts on the machines and the person's GitHub repos (`gh repo list` can take a while), machine ids as names. */
-export const DISCOVER_MS = 45_000;
+const DISCOVER_MS = 45_000;
 
 export const discover = async (hub: Hub, name: (machineId: string) => string): Promise<Result<Discovery>> => {
   const r = await hub.call("project_discover", {}, DISCOVER_MS);

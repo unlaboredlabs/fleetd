@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
-import { describe, groups, hubWideFor, inFeed, layout, linesOf, typesFor, unreadCount, type ActivityKind, type Row } from "./model";
+import { describe, groups, hubWideFor, inFeed, layout, linesOf, typesFor, type ActivityKind, type Row } from "./model";
 
 const project = { machineId: "devbox", projectId: "storefront" } as const;
 const NOW = Date.parse("2026-10-19T15:00:00.000Z");
@@ -199,7 +199,6 @@ group("since you last looked", () => {
       "day:Yesterday",
       "line:Agent started",
     ]);
-    expect(unreadCount(lines, seen.seq)).toBe(1);
   });
 
   it("isn't shown when nothing is new, or before the person ever looked", () => {
@@ -207,7 +206,6 @@ group("since you last looked", () => {
     const newest = lines[0]?.seq ?? 0;
     expect(shape(layout(lines, { nowMs: NOW, timeZone: TZ, seenSeq: newest }))).not.toContain("since");
     expect(shape(layout(lines, { nowMs: NOW, timeZone: TZ }))).not.toContain("since");
-    expect(unreadCount(lines, undefined)).toBe(0);
   });
 
   it("goes above a day's name when the first seen line starts an older day", () => {

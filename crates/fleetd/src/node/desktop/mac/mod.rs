@@ -203,11 +203,6 @@ impl MacLent {
             launched: AtomicU32::new(0),
         })
     }
-
-    /// The apps launched with `--cdp` that are still open.
-    pub fn cdp_apps(&self) -> Vec<u32> {
-        lock(&self.cdp).iter().map(|(pid, _)| *pid).collect()
-    }
 }
 
 /// When process `pid` started, as `ps` says it; None where there's no such process.
@@ -450,7 +445,6 @@ impl Desktops {
                     ffmpeg: self.ffmpeg(),
                     secrets,
                     kind: SessionKind::Mac,
-                    backend: DesktopBackend::Mac,
                     observing: held_by.is_some(),
                 },
             );

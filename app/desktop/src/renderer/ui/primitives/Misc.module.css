@@ -153,12 +153,6 @@
   line-height: var(--leading-xs);
   color: var(--quiet);
 }
-.chipLabel {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .strong {
   color: var(--text);
   font-weight: var(--weight-strong);

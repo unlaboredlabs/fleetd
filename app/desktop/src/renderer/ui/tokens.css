@@ -146,7 +146,6 @@
 
   /* Fixed heights keep rows and controls aligned across screens. */
   --row: 28px;
-  --line: 18px;
   --control: 24px;
   --field: 28px;
   --bar: 40px;

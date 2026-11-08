@@ -97,7 +97,7 @@ export const orderLines = (orders: readonly OrderCard[]): OrderLine[] =>
     }));
 
 /** How many recent merges its screen lists. */
-export const MERGES_SHOWN = 5;
+const MERGES_SHOWN = 5;
 
 /** Merged in the last this many days: what pr_list is asked for. */
 export const MERGES_DAYS = 14;
@@ -110,7 +110,7 @@ export const merges = (prs: readonly PrRow[]): PrRow[] =>
     .slice(0, MERGES_SHOWN);
 
 /** How many checklist items its screen lists; the rest are counted. */
-export const CHECKLIST_SHOWN = 8;
+const CHECKLIST_SHOWN = 8;
 
 export interface Checklist {
   /** What's being done first, then what's to do, then what's done. */
@@ -187,7 +187,7 @@ export const deleteBlocked = (settings: ProjectSettings): string | undefined =>
   settings.worktrees === undefined ? `Its worktrees can't be listed now: ${settings.worktreesUnknown ?? "its machine hasn't listed them."} Delete once they can.` : undefined;
 
 /** How many suggestions New Project lists under the field. */
-export const SUGGESTIONS_SHOWN = 12;
+const SUGGESTIONS_SHOWN = 12;
 
 /** What New Project suggests for what is typed: checkouts on the machines and the person's GitHub repos, best first. */
 export const suggestions = (text: string, d: Discovery | null): Found[] => {

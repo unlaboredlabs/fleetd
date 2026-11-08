@@ -213,9 +213,9 @@ export const landingOf = (
 };
 
 /** Which side a row sits on: the person's on the right, the lead's and agents' on the left, the rest centred. */
-export type Side = "me" | "them" | "center";
+type Side = "me" | "them" | "center";
 
-export const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
+const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
   item.kind !== "message" ? "center" : item.author === "human" ? "me" : item.author === "system" ? "center" : "them";
 
 export type ThreadRow =
@@ -246,7 +246,7 @@ const sameItem = (a: ChatItem, b: ChatItem): boolean => {
 };
 
 /** Messages this close together are one burst. */
-export const GROUP_MS = 5 * 60_000;
+const GROUP_MS = 5 * 60_000;
 
 const msOf = (at: string): number => {
   const ms = Date.parse(at);
