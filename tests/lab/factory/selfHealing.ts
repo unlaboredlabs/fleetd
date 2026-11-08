@@ -14,14 +14,17 @@ export async function selfHealing(f: Factory) {
   const { project } = f;
   const human = f.humanCheckout();
   const w = f.workstream("Stock report.");
-  // The stand-in runs each `lab-run:` line as a Bash call: commit and push the report, then keep working.
+  // The stand-in runs each `lab-run:` line as a Bash call: commit and push the report, then keep working, in one call,
+  // so the run is inside it from the push on. Split in two, the worktree went between the calls on a slow runner and
+  // the next one's shell couldn't start in it (`spawn sh ENOENT`): the run ended before its node died (#1151's CI).
+  // `lab-slow` keeps that gap wide open here, so a split comes back failing every time.
   const spawned = f.spawnWriter(
     w,
     "stock report",
     [
       "Write the stock report, commit and push it, then keep checking stock.",
-      "lab-run: printf 'apples: 3\\n' > REPORT.md && git add REPORT.md && git commit -q -m 'report: stock levels' && git push -q origin HEAD",
-      "lab-run: sleep 600",
+      "lab-run: printf 'apples: 3\\n' > REPORT.md && git add REPORT.md && git commit -q -m 'report: stock levels' && git push -q origin HEAD && sleep 600",
+      "lab-slow: 1000",
     ].join("\n"),
   );
   const taskId = spawned.taskId as string;
@@ -36,10 +39,15 @@ export async function selfHealing(f: Factory) {
   });
   ok(`${taskId} pushed ${branch} at ${pushed.slice(0, 7)} and is still running`);
 
-  // Lost under it: the worktree's directory and the local branch, as a cleanup or a person might; then the node dies.
+  // Lost under it: the worktree's directory and the local branch, as a cleanup or a person might; then, a while later
+  // (longer than `lab-slow`), the node dies.
+  const beforeLoss = await f.cursor();
   git(project.root, "worktree", "remove", "--force", wt);
   git(project.root, "branch", "-q", "-D", branch);
   check(!fs.existsSync(wt), `${wt} is gone`);
+  await sleep(2000);
+  const ended = (await f.eventsSince(beforeLoss)).filter((e) => e.threadId === threadId && /^thread\.(completed|failed|interrupted)$/u.test(e.type));
+  check(ended.length === 0, `${taskId}'s run is still going when its node dies: ${ended.map((e) => `${e.type} ${e.summary}`).join("; ")}`);
   const beforeKill = await f.cursor();
   await f.killNode();
   await f.startNode();

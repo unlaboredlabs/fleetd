@@ -1,7 +1,8 @@
 // An offline stand-in for `claude`, for the factory lab (CI has no claude and no network). It speaks the stream-json
 // fleetd's node speaks, in the shapes recorded in crates/fleetd/src/node/runner/fixtures at version.rs TESTED, and
 // does no model call: each user message is one turn that runs the message's `lab-run: <shell>` lines in its cwd, one
-// Bash tool call each, and replies `lab-ok`. Every user message is filed in the session file claude would write, so
+// Bash tool call each, and replies `lab-ok`; a `lab-slow: <ms>` line waits that long before each call after the first, as
+// a slow runner between tool calls. Every user message is filed in the session file claude would write, so
 // scenarios read what an agent was told (its brief, a lead's digest, a recovery note) as for the real claude.
 //
 // usage (from the `claude` wrapper kit.ts writes): node fakeClaude.ts <claude args…>
@@ -107,6 +108,12 @@ const bash = (command: string) =>
     let output = "";
     child.stdout!.on("data", (d) => (output += String(d)));
     child.stderr!.on("data", (d) => (output += String(d)));
+    // A shell that can't start (its cwd deleted under it: `spawn sh ENOENT`) is a failed tool call, as claude reports
+    // it, not a crash of the whole session.
+    child.on("error", (error) => {
+      tool = undefined;
+      resolve({ code: 127, output: `${output}${error.message}` });
+    });
     child.on("close", (code) => {
       tool = undefined;
       resolve({ code, output });
@@ -124,7 +131,9 @@ const turn = async (msg: Msg) => {
   out(init());
   out({ type: "system", subtype: "status", status: "requesting", session_id: sessionId, uuid: randomUUID(), user_message_uuids: [userUuid] });
   const commands = [...text.matchAll(/^lab-run: (.+)$/gmu)].map((m) => m[1]!);
-  for (const command of commands) {
+  const slowMs = Number(/^lab-slow: (\d+)$/mu.exec(text)?.[1] ?? 0);
+  for (const [i, command] of commands.entries()) {
+    if (i > 0 && slowMs > 0) await new Promise((r) => setTimeout(r, slowMs));
     if (interrupted) break;
     const id = `toolu_lab_${randomUUID().replace(/-/gu, "")}`;
     assistant([{ type: "tool_use", id, name: "Bash", input: { command } }], userUuid);
