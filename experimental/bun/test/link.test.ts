@@ -301,3 +301,50 @@ test("the usage soft brake pauses new agents at its figure, holds above the lift
   node.close();
   await node.closed;
 });
+
+test("a frame that doesn't decode is refused alone; a broken lead call is answered; a flood closes the link", async () => {
+  const node = await linked("worker-14");
+  const quiet = console.warn;
+  const warned: string[] = [];
+  console.warn = (line: string) => warned.push(line);
+  try {
+    node.send("not json");
+    node.send({ t: "from_the_future", id: "f1", secret: "s3cret" });
+    node.send({ t: "lead_call", id: "c9", call: { op: "factory_status" } });
+    const answer = await node.next((f) => f.t === "lead_result" && f.id === "c9");
+    expect(answer.error).toMatchObject({ code: "invalid", message: "the hub could not read this call: missing field `cwd`" });
+    // The link carries on: a request still gets its reply.
+    const action = links.request("worker-14", { t: "node_action", action: "probe" });
+    const asked = await node.next((f) => f.t === "node_action");
+    node.send({ t: "node_action_result", id: asked.id, ok: true, message: "fine" });
+    expect((await action).message).toBe("fine");
+    expect(warned.some((w) => w.includes("tag=from_the_future") && w.includes("refused it alone"))).toBe(true);
+    expect(warned.some((w) => w.includes("s3cret"))).toBe(false);
+    for (let i = 0; i < 18; i++) node.send({ t: "nope" });
+    expect(await node.closed).toEqual({ code: 4000, reason: "too many frames that do not decode" });
+  } finally {
+    console.warn = quiet;
+  }
+});
+
+test("no IPv4 and no GitHub degrade the machine with the fix; sessions still start; its address back clears it", async () => {
+  const node = await linked("worker-15");
+  await until(() => store(hub).machineGet("worker-15")?.status === "online");
+  const beat = (ipv4: boolean) =>
+    node.send({ t: "hb", at: new Date().toISOString(), load: { cpus: 8, load1: 1, network: { ipv4, iface: "enp3s0" } } });
+  beat(false);
+  await Bun.sleep(30);
+  expect(store(hub).machineGet("worker-15")?.status).toBe("online");
+  links.githubReached("worker-15", false);
+  const reason =
+    "no IPv4 network on enp3s0, so GitHub can't be reached. Fix: run `sudo networkctl reconfigure enp3s0` or `sudo netplan apply`";
+  expect(store(hub).machineGet("worker-15")).toMatchObject({ status: "degraded", degradedReason: reason });
+  expect(links.networkProblem("worker-15")).toBe(reason);
+  expect(links.ready("worker-15")).toBe(true);
+  beat(true);
+  await until(() => store(hub).machineGet("worker-15")?.status === "online");
+  expect(links.networkProblem("worker-15")).toBeUndefined();
+  expect(store(hub).machineGet("worker-15")?.degradedReason).toBeUndefined();
+  node.close();
+  await node.closed;
+});

@@ -17,6 +17,7 @@ import type { Change, Claim, LandingRoute, MachineId, ProjectRef } from "../../s
 import { jsPrefix } from "../../shared/text.ts";
 import { leadWakes, trainLine } from "../api/leads.ts";
 import type { Hub } from "../api/hub.ts";
+import { link } from "../link/server.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { every } from "../sweep/index.ts";
@@ -184,6 +185,8 @@ export async function scan(hub: Hub, ports: LandingPorts): Promise<void> {
   await askTheRest(hub, ports, scopes, reach);
   const w = work(hub);
   for (const [machine, reached] of reach) {
+    // With no IPv4 there too, the machine shows degraded until either is back (hub/link/network.ts).
+    link(hub).githubReached(machine, reached);
     if (!w.githubReached(machine, reached)) continue;
     try {
       await w.onGithubReach(machine, reached);
