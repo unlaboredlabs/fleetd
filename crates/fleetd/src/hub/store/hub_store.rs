@@ -273,6 +273,8 @@ impl HubStore {
     /// [`MACHINE_TABLES`] that name it or one of its threads, as [`Self::machine_remove`] does for the whole machine.
     /// Another machine's rows under the same project id stay. How many rows went.
     pub fn machine_project_forget(&self, r: &ProjectRef) -> Result<usize, StoreError> {
+        // A hub-wide row's empty key is no project's: forgetting it would delete every hub-wide server and skill.
+        crate::hub::navi::erase::a_project(r)?;
         let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
         self.db.transaction(|conn| {
             let mut n = conn

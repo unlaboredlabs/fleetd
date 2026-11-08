@@ -107,7 +107,8 @@ pub fn finish_pending(hub: &Hub) -> Result<usize, StoreError> {
 /// or pins do. A delete from before every project was erased (D310) left its chat, orders, leads and settings; one
 /// since, its max agents and its place in each order. Each is erased and forgotten as a project of a removed machine
 /// is (`projects::tools::forget_gone`), which clears every one of those rows, so a second run finds none. A project
-/// any machine has under that id is never touched. Run at the hub's start; how many were pruned.
+/// any machine has under that id is never touched, nor a hub-wide row ([`hub_wide`]). Run at the hub's start; how
+/// many were pruned.
 ///
 /// [`HubStore::machine_project_forget`]: crate::hub::store::HubStore::machine_project_forget
 pub fn prune_orphans(hub: &Hub) -> Result<usize, StoreError> {
@@ -121,6 +122,24 @@ pub fn prune_orphans(hub: &Hub) -> Result<usize, StoreError> {
         hub.store.machine_project_forget(&r)?;
     }
     Ok(orphans.len())
+}
+
+/// A hub-wide row's key, which no project has: a hub-wide MCP server's and skill's are an empty machine and project
+/// (`mcp_servers::scope_key`, `skills::versions`). Erasing it as a project's would delete every hub-wide server and
+/// skill, and, an empty project's folders being their roots, every project's memory and skills.
+pub fn hub_wide(machine_id: &str, project_id: &str) -> bool {
+    machine_id.is_empty() || project_id.is_empty()
+}
+
+/// Refuses a hub-wide key ([`hub_wide`]) where a project's is meant.
+pub fn a_project(r: &ProjectRef) -> Result<(), StoreError> {
+    if hub_wide(r.machine_id.as_str(), r.project_id.as_str()) {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "an empty machine or project id is the hub's own, not a project's: nothing was erased",
+        )));
+    }
+    Ok(())
 }
 
 /// [`prune_orphans`]' projects, as (machine, project).
@@ -149,7 +168,10 @@ fn orphans(c: &Connection) -> Result<BTreeSet<(String, String)>, StoreError> {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        out.extend(rows.into_iter().filter(|(_, p)| !live.contains(p)));
+        out.extend(
+            rows.into_iter()
+                .filter(|(m, p)| !live.contains(p) && !hub_wide(m, p)),
+        );
     }
     for table in ["sidebar_orders", "chat_pins"] {
         let lists = c
@@ -160,7 +182,10 @@ fn orphans(c: &Connection) -> Result<BTreeSet<(String, String)>, StoreError> {
             let refs: Vec<ProjectRef> = serde_json::from_str(&refs).unwrap_or_default();
             out.extend(
                 refs.into_iter()
-                    .filter(|r| !live.contains(r.project_id.as_str()))
+                    .filter(|r| {
+                        let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
+                        !live.contains(p) && !hub_wide(m, p)
+                    })
                     .map(|r| (r.machine_id.to_string(), r.project_id.to_string())),
             );
         }
@@ -213,6 +238,7 @@ pub async fn run(hub: Arc<Hub>) {
 /// Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark ([`asked`]). Run once its node has
 /// forgotten it.
 pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
+    a_project(r)?;
     // Its tasks' rows go below, so their slots are given back here, while the board still knows whose they are.
     hub.slots.forget_project(r)?;
     erase_in(&hub.db, &hub.config.home, r)
@@ -221,6 +247,7 @@ pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
 /// [`erase`] in the hub database `db` whose home is `home`: `fleetd machine remove` erases a machine's projects
 /// with it, from outside the hub's process too.
 pub fn erase_in(db: &HubDb, home: &Path, r: &ProjectRef) -> Result<(), StoreError> {
+    a_project(r)?;
     let (recordings, blobs) = db.transaction(|c| rows(c, r))?;
     for id in &recordings {
         gone(&crate::hub::browser::dir_in(

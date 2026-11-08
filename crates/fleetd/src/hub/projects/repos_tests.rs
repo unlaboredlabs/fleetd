@@ -1000,3 +1000,65 @@ async fn a_deleted_projects_links_to_other_hubs_go_with_it() {
         .unwrap();
     assert_eq!(links, 0);
 }
+
+/// W465 review: hub-wide rows are keyed by an empty machine and project (a hub-wide MCP server, a hub-wide skill's
+/// versions and switches), which no project has: the start's prune is no delete of theirs. Before, it took ('', '')
+/// for a deleted project and erased them, and every project's memory and skills with them (an empty project's
+/// folders are those folders' roots).
+#[tokio::test]
+async fn the_starts_prune_leaves_hub_wide_rows_and_every_projects_files() {
+    use crate::hub::navi::erase::prune_orphans;
+    use fleetd_contracts::skills::SkillScope;
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.db
+        .with(|c| {
+            c.execute_batch(
+                "INSERT INTO mcp_servers (machine_id, project_id, name, data) VALUES ('', '', 'docs', '{}');
+                 INSERT INTO skill_versions (machine_id, project_id, name, version, author, by_name, text, at_ms)
+                   VALUES ('', '', 'review', 1, 'person', 'Ann', 'Review it.', 0);
+                 INSERT INTO skill_uses (machine_id, project_id, name, off) VALUES ('', '', 'review', 1);",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let memory = hub
+        .db
+        .memory()
+        .project_dir(&project("app"))
+        .unwrap()
+        .join("MEMORY.md");
+    let skill = hub
+        .db
+        .skills()
+        .scope_dir(SkillScope::Project, Some(&project("app")))
+        .unwrap()
+        .join("deploy/SKILL.md");
+    for file in [&memory, &skill] {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "kept").unwrap();
+    }
+
+    assert_eq!(prune_orphans(&hub).unwrap(), 0);
+    // Nor is an empty ref erased or forgotten when asked directly.
+    let none = ProjectRef {
+        machine_id: MachineId::unchecked(""),
+        project_id: ProjectId::unchecked(""),
+    };
+    assert!(crate::hub::navi::erase::erase(&hub, &none).is_err());
+    assert!(hub.store.machine_project_forget(&none).is_err());
+    let rows = |table: &str| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?))
+            .unwrap()
+    };
+    assert_eq!(
+        (
+            rows("mcp_servers"),
+            rows("skill_versions"),
+            rows("skill_uses")
+        ),
+        (1, 1, 1)
+    );
+    assert!(memory.exists() && skill.exists());
+}
