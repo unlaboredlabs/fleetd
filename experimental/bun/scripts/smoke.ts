@@ -12,7 +12,9 @@ const fail = (why: string): never => {
 
 try {
   const version = Bun.spawnSync([bin, "version"], { cwd: home, env: { ...process.env, FLEETD_HOME: home } });
-  if (!/^fleetd \S+ \(protocol \d+\)\n$/.test(version.stdout.toString())) fail(`version said ${version.stdout}`);
+  if (!/^fleetd \S+ \(protocol \d+\)\n$/.test(version.stdout.toString())) {
+    fail(`version said ${version.stdout} (exit ${version.exitCode ?? version.signalCode}): ${version.stderr}`);
+  }
 
   const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
   const port = probe.port;
