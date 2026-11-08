@@ -21,19 +21,19 @@ const CARDS_MS = 240_000;
 
 const ref = (p: ProjectRef): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
-export const readPurchases = async (hub: Hub, p: ProjectRef): Promise<Result<PurchasesOutput>> => {
+const readPurchases = async (hub: Hub, p: ProjectRef): Promise<Result<PurchasesOutput>> => {
   const r = await hub.call(PROJECT_TOOLS.purchases, ref(p));
   return r.ok ? { ok: true, value: r.output } : r;
 };
 
 /** The Credit Card items its machine's 1Password token reads, with the token it fills from. */
-export const readCards = async (hub: Hub, p: ProjectRef): Promise<Result<OnePasswordCardsOutput>> => {
+const readCards = async (hub: Hub, p: ProjectRef): Promise<Result<OnePasswordCardsOutput>> => {
   const r = await hub.call("onepassword_cards", { navi: ref(p) }, CARDS_MS);
   return r.ok ? { ok: true, value: r.output } : r;
 };
 
 /** A card picked by its op:// reference, or none. */
-export const setCard = async (hub: Hub, p: ProjectRef, card: string | undefined): Promise<Result<null>> => {
+const setCard = async (hub: Hub, p: ProjectRef, card: string | undefined): Promise<Result<null>> => {
   const r = await hub.call(PROJECT_TOOLS.cardSet, { ...ref(p), ...(card === undefined ? {} : { card }) });
   return r.ok ? { ok: true, value: null } : r;
 };

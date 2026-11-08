@@ -49,7 +49,7 @@ export type RootParams = {
   Screen: { key: Key; sessionId: string };
 } & ManageParams;
 /** A project's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
-export type ManageParams = {
+type ManageParams = {
   /** `back`: once made, back to where it was opened (Import Memory) rather than to its chat. */
   NewProject: { back?: boolean } | undefined;
   /** A screen of the person's own for a project: its kind and machine, then its live view (NewScreen.tsx). */
