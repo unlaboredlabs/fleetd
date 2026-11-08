@@ -50,21 +50,34 @@ export function cap<T>(items: T[], max: number): { items: T[]; truncated?: true 
 export type QueueSent = { queued: boolean; queuedUntil?: string; runId?: string };
 
 /** What the write queue and usage layer give the areas that send turns (hub/queue/ports.rs), until they're ported. */
+/** A send's mode and the steer it carries (hub/queue/ports.rs `SendOpts`). */
+export type SendOpts = { mode?: "boundary" | "now"; steer?: string; riders?: string[] };
+
 export type QueuePorts = {
-  send(thread: { machineId: string; threadId: string }, message: string, clientRequestId: string, wakeId?: string): Promise<QueueSent>;
+  send(thread: { machineId: string; threadId: string }, message: string, clientRequestId: string, wakeId?: string, opts?: SendOpts): Promise<QueueSent>;
+  /** Drops a queued steer's write from the offline queue; false when it holds none. */
+  withdrawSteer(steerId: string): boolean;
+  /** Whether the offline queue still holds the steer's write. */
+  hasSteer(steerId: string): boolean;
   isConnected(machineId: string): boolean;
   /** Why the usage layer holds the thread's turns now (a paused login, a parked thread); undefined when it doesn't. */
   usageHold(thread: { machineId: string; threadId: string }): Promise<string | undefined> | string | undefined;
   whenClear(thread: { machineId: string; threadId: string }): Promise<void>;
 };
 
-/** `queuePorts(hub)`: the write queue's owner sets these; until then a send fails as undelivered. */
+/**
+ * `queuePorts(hub)`: a seam under this area's own name (never the queue area's, D354). The write queue's owner sets
+ * these methods on it when it starts (`Object.assign(queuePorts(hub), …)`), whichever loads first; until then a send
+ * fails as undelivered.
+ */
 export const queuePorts = (hub: Hub) =>
   hub.area<QueuePorts>("queue_ports", () => ({
     send: async () => {
       throw new ToolError("machine_offline", "The hub's write queue is not ported to Bun yet.");
     },
     isConnected: () => false,
+    withdrawSteer: () => false,
+    hasSteer: () => false,
     usageHold: () => undefined,
     whenClear: () => new Promise<void>(() => {}),
   }));

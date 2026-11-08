@@ -116,8 +116,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### /app websocket messages
 
-- [ ] /app client `chat` → `src/hub/chat` <!-- app:/app client `chat` -->
-- [ ] /app server `chat_delta` → `src/hub/chat` <!-- app:/app server `chat_delta` -->
+- [x] /app client `chat` → `src/hub/chat` <!-- app:/app client `chat` -->
+- [x] /app server `chat_delta` → `src/hub/chat` <!-- app:/app server `chat_delta` -->
 
 ### MCP tools (/mcp and /app `call`)
 
@@ -159,13 +159,13 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
 - [x] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
 - [x] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
-- [ ] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
-- [ ] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
+- [x] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
+- [x] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
 - [x] `profiles_list` → `src/hub/projects` (read) <!-- tool:`profiles_list` -->
 - [x] `profile_create` → `src/hub/projects` (admin) <!-- tool:`profile_create` -->
 - [x] `profile_update` → `src/hub/projects` (admin) <!-- tool:`profile_update` -->
 - [x] `profile_delete` → `src/hub/projects` (admin) <!-- tool:`profile_delete` -->
-- [ ] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
+- [x] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
 - [x] `decisions_search` → `src/hub/ledger` (read) <!-- tool:`decisions_search` -->
 - [x] `decisions_record` → `src/hub/ledger` (operate) <!-- tool:`decisions_record` -->
 - [x] `decisions_list` → `src/hub/ledger` (read) <!-- tool:`decisions_list` -->
@@ -217,8 +217,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `time_breakdown` → `src/hub/time` (read) <!-- tool:`time_breakdown` -->
 - [x] `time_insights` → `src/hub/time` (read) <!-- tool:`time_insights` -->
 - [ ] `thread_window` → `src/hub/time` (read) <!-- tool:`thread_window` -->
-- [ ] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
-- [ ] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
+- [x] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
+- [x] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
 - [ ] `chat_send` → `src/hub/chat` (operate) <!-- tool:`chat_send` -->
 - [ ] `chat_history` → `src/hub/chat` (read) <!-- tool:`chat_history` -->
 - [ ] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
@@ -235,13 +235,13 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
-- [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
+- [x] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
 - [x] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [x] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
-- [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
+- [x] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
 - [ ] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
 - [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
@@ -589,16 +589,16 @@ every `fleetd` command.
 
 ### Lead calls (agent-mcp → node → hub)
 
-- [ ] lead call `brief_create` → `src/hub/lead_calls` <!-- lead:lead call `brief_create` -->
+- [x] lead call `brief_create` → `src/hub/lead_calls` <!-- lead:lead call `brief_create` -->
 - [x] lead call `request_secret` → `src/hub/lead_calls` <!-- lead:lead call `request_secret` -->
 - [x] lead call `request_withdraw` → `src/hub/lead_calls` <!-- lead:lead call `request_withdraw` -->
 - [x] lead call `decide` → `src/hub/lead_calls` <!-- lead:lead call `decide` -->
 - [x] lead call `decisions_search` → `src/hub/lead_calls` <!-- lead:lead call `decisions_search` -->
 - [ ] lead call `task_spawn` → `src/hub/lead_calls` <!-- lead:lead call `task_spawn` -->
 - [ ] lead call `task_list` → `src/hub/lead_calls` <!-- lead:lead call `task_list` -->
-- [ ] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
+- [x] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
 - [ ] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
-- [ ] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
+- [x] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
 - [ ] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
 - [ ] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
 - [x] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->
