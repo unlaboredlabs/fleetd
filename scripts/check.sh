@@ -25,8 +25,8 @@
 #   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
 #   fails there when one of its fixtures has no answer for it.
 #
-# The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, so a run of them all waits for a build slot
-# 3 times: clippy, that build, the tests.
+# The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, and so do the tests picked: a run of them
+# all waits for a build slot 3 times: clippy, that build, the tests.
 #
 # It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
@@ -38,7 +38,7 @@
 # checked (the worktree's, committed or not) in the git dir's fleetd-checked once every check the changes touch has
 # passed on it, in one run or in several (scripts/check.sh rust-tests reruns only the one that failed). A check's pass
 # is kept under its key, the hash of its inputs: the Rust ones .github/rust-scope.sh's paths, the site those and its
-# own, desktop app/desktop and every path's name, qa app/desktop and the hub's schemas, each with this script. So a
+# own, desktop and qa the whole tree (their tests read files across it), each with this script. So a
 # run with none named skips a check that already passed on the same inputs, and says so: a desktop fix on a branch
 # whose Rust passed doesn't run the Rust checks again. So run it after your final rebase onto origin/main, and commit
 # exactly what it checked. One too long for a command's time limit runs with --background, and --wait, run with
@@ -90,15 +90,14 @@ key() {
   case $check in
     rust-lint | rust-docs | rust-tests) set -- "${rust_paths[@]}" ;;
     site) set -- "${site_paths[@]}" ;;
-    # And every path's name, for the case clashes.
-    desktop) set -- app/desktop .github/workflows/ci.yml ;;
-    # The fixtures read the hub's JSON Schemas (app/desktop/scripts/fixtures-key.ts).
-    qa) set -- app/desktop .github/workflows/desktop-qa.yml crates/fleetd-contracts/schema ;;
+    # The desktop app's tests and screens read files across the repo (the Rust crates' features, the phone app's
+    # sources, every path's name for the case clashes): the whole tree. Neither waits for a build slot.
+    desktop | qa)
+      echo "$tree"
+      return
+      ;;
   esac
-  {
-    git ls-tree -r "$tree" -- scripts/check.sh "$@"
-    [ "$check" != desktop ] || git ls-tree -r --name-only "$tree"
-  } | git hash-object --stdin
+  git ls-tree -r "$tree" -- scripts/check.sh "$@" | git hash-object --stdin
 }
 
 # The worktree's tree: committed or not, untracked files too, but not ignored ones.
@@ -249,7 +248,7 @@ if $tests_wanted; then
         rel=${f#crates/fleetd/src/}
         case $rel in lib.rs | main.rs) ;; *) mods+=("${rel%.rs}::") ;; esac
         ;;
-      crates/fleetd/tests/*.rs) [ -e "$f" ] && itests+=(--test "$(basename "$f" .rs)") ;;
+      crates/fleetd/tests/*.rs) [ -e "$f" ] && itests+=("$(basename "$f" .rs)") ;;
       crates/fleetd/*) ;;
       crates/*/*) c=${f#crates/}; crates+=("${c%%/*}") ;;
     esac
@@ -259,14 +258,51 @@ if $tests_wanted; then
     step rust-tests "$target/debug/fleetd-schema" --check
   fi
   mapfile -t mods < <(printf '%s\n' "${mods[@]}" | sort -u | sed '/^$/d')
+  mapfile -t itests < <(printf '%s\n' "${itests[@]}" | sort -u | sed '/^$/d')
   mapfile -t crates < <(printf '%s\n' "${crates[@]}" | sort -u | sed '/^$/d')
+  # The tests picked build in one cargo, so they wait for one build slot. Without other crates, only the lib and the
+  # integration tests picked build (a target flag would apply to every package).
+  packages=() targets=()
+  { [ ${#mods[@]} -gt 0 ] || [ ${#itests[@]} -gt 0 ]; } && packages+=(-p fleetd)
+  for c in "${crates[@]}"; do packages+=(-p "$c"); done
+  if [ ${#crates[@]} -eq 0 ]; then
+    [ ${#mods[@]} -gt 0 ] && targets+=(--lib)
+    for t in "${itests[@]}"; do targets+=(--test "$t"); done
+  fi
   if cargo nextest --version >/dev/null 2>&1; then
     run_tests() { cargo nextest run --locked --no-tests=pass "$@"; }
+    # The picked tests under one nextest, a filterset choosing them.
+    picked_tests() {
+      local m t c filter=''
+      for m in "${mods[@]}"; do filter+="${filter:+ | }(package(fleetd) & kind(lib) & test(/^$m/))"; done
+      for t in "${itests[@]}"; do filter+="${filter:+ | }binary_id(fleetd::$t)"; done
+      for c in "${crates[@]}"; do filter+="${filter:+ | }package($c)"; done
+      run_tests "${packages[@]}" "${targets[@]}" -E "$filter"
+    }
   else
-    run_tests() {
-      local args=() filters=() seen=false
-      for a in "$@"; do if [ "$a" = -- ]; then seen=true; elif $seen; then filters+=("$a"); else args+=("$a"); fi; done
-      cargo test --locked "${args[@]}" -- "${filters[@]}"
+    run_tests() { cargo test --locked "$@"; }
+    # The picked tests' binaries, built by one `cargo test --no-run`, each run as cargo test runs it, from its package's
+    # directory: the lib's with the modules as its filters, the integration tests picked, the other crates' every one.
+    test_binaries='select(.reason == "compiler-artifact" and .profile.test and .executable != null)
+      | [.manifest_path, .target.name, .target.kind[0], .executable] | @tsv'
+    picked_tests() {
+      local manifest name kind exe dir status=0
+      cargo test --locked --no-run --message-format=json-render-diagnostics "${packages[@]}" "${targets[@]}" \
+        >"$tmp/tests.json" || return
+      while IFS=$'\t' read -r manifest name kind exe; do
+        dir=$(dirname "$manifest")
+        filters=()
+        if [ "$(basename "$dir")" = fleetd ]; then
+          if [ "$kind" = lib ] && [ ${#mods[@]} -gt 0 ]; then
+            filters=("${mods[@]}")
+          elif [ "$kind" != test ] || [[ " ${itests[*]} " != *" $name "* ]]; then
+            continue
+          fi
+        fi
+        echo "     Running $name ($kind of ${dir#"$PWD"/}) ${filters[*]}"
+        (cd "$dir" && CARGO_MANIFEST_DIR=$dir "$exe" "${filters[@]}") || status=1
+      done < <(jq -r "$test_binaries" "$tmp/tests.json")
+      return $status
     }
   fi
   if [ ${#mods[@]} -eq 0 ] && [ ${#itests[@]} -eq 0 ] && [ ${#crates[@]} -eq 0 ]; then
@@ -276,12 +312,10 @@ if $tests_wanted; then
       echo "==> rust-tests: no change picks a test module; CI runs them all"
     fi
   fi
-  [ ${#mods[@]} -gt 0 ] && step rust-tests run_tests -p fleetd --lib -- "${mods[@]}"
-  [ ${#itests[@]} -gt 0 ] && step rust-tests run_tests -p fleetd "${itests[@]}"
-  # The other crates in one cargo, so in one build slot.
-  packages=()
-  for c in "${crates[@]}"; do packages+=(-p "$c"); done
-  [ ${#packages[@]} -gt 0 ] && step rust-tests run_tests "${packages[@]}"
+  if [ ${#packages[@]} -gt 0 ]; then
+    echo "==> rust-tests: the tests of ${packages[*]} ${targets[*]}, in one cargo; in the lib, ${mods[*]:-none}"
+    step rust-tests picked_tests
+  fi
 fi
 
 if $site_wanted; then

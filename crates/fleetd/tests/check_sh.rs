@@ -24,7 +24,6 @@ impl Repo {
             ("Cargo.toml", "[workspace]\n"),
             ("app/desktop/src/renderer/Screen.tsx", "export {};\n"),
             ("app/desktop/qa/screen.spec.ts", "export {};\n"),
-            ("crates/fleetd-contracts/schema/hello.json", "{}\n"),
             ("docs/site/src/content/docs/index.md", "# fleetd\n"),
             ("README.md", "fleetd\n"),
             (".gitignore", "target/\n"),
@@ -118,30 +117,36 @@ fn a_change_keeps_the_keys_of_the_checks_that_dont_read_it() {
     repo.write("app/desktop/qa/screen.spec.ts", "export const x = 1;\n");
     assert_eq!(repo.changed_since(&start), ["desktop", "qa"]);
     let desktop_fixed = repo.keys();
-    // A Rust change, untracked: the Rust checks and the site (its `fleetd help`); desktop for the new path's name.
+    // A Rust change, untracked: the Rust checks, the site (its `fleetd help`), and desktop and qa, whose tests read
+    // the whole tree (the crates' features among it).
     repo.write("crates/a/src/new.rs", "\n");
     assert_eq!(
         repo.changed_since(&desktop_fixed),
-        ["desktop", "rust-docs", "rust-lint", "rust-tests", "site"]
+        [
+            "desktop",
+            "qa",
+            "rust-docs",
+            "rust-lint",
+            "rust-tests",
+            "site"
+        ]
     );
     let rust_added = repo.keys();
-    // An edit outside every check's inputs changes no key; a new file there, only desktop's (its case clashes).
+    // The phone app's sources and a README: desktop and qa only.
+    repo.write("app/mobile/src/features.ts", "export {};\n");
+    assert_eq!(repo.changed_since(&rust_added), ["desktop", "qa"]);
+    let mobile = repo.keys();
     repo.write("README.md", "fleetd, edited\n");
-    assert!(repo.changed_since(&rust_added).is_empty());
-    repo.write("NOTES.md", "\n");
-    assert_eq!(repo.changed_since(&rust_added), ["desktop"]);
-    // The hub's schemas, which the QA fixtures read, are Rust inputs too.
-    let notes = repo.keys();
-    repo.write("crates/fleetd-contracts/schema/hello.json", "{\"a\":1}\n");
-    assert_eq!(
-        repo.changed_since(&notes),
-        ["qa", "rust-docs", "rust-lint", "rust-tests", "site"]
-    );
+    assert_eq!(repo.changed_since(&mobile), ["desktop", "qa"]);
+    // The site's own pages: the site, and desktop and qa.
+    let readme = repo.keys();
+    repo.write("docs/site/src/content/docs/index.md", "# fleetd, edited\n");
+    assert_eq!(repo.changed_since(&readme), ["desktop", "qa", "site"]);
     // check.sh itself is every check's input.
-    let schema = repo.keys();
+    let site = repo.keys();
     let script = std::fs::read_to_string(repo.path("scripts/check.sh")).unwrap();
     repo.write("scripts/check.sh", &format!("{script}\n"));
-    assert_eq!(repo.changed_since(&schema).len(), 6);
+    assert_eq!(repo.changed_since(&site).len(), 6);
     // Committed, the same tree has the same keys.
     let edited = repo.keys();
     repo.git(&["add", "-A"]);
