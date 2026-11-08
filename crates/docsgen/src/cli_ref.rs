@@ -203,7 +203,10 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
                 synopsis.join("\n")
             ));
             if !entry.desc.is_empty() {
-                md.push_str(&format!("{}\n\n", prose(&entry.desc.join(" "), &commands, &words)));
+                md.push_str(&format!(
+                    "{}\n\n",
+                    prose(&entry.desc.join(" "), &commands, &words)
+                ));
             }
         }
     }
@@ -311,7 +314,11 @@ mod tests {
             "the command `fleetd pair --worker` prints, then `fleetd doctor`. `--yes` (or `~/.fleetd/hub`) and `fleetd node join`"
         );
         assert_eq!(
-            prose("one device: fleetd hub key revoke <keyId>. The", &commands, &words),
+            prose(
+                "one device: fleetd hub key revoke <keyId>. The",
+                &commands,
+                &words
+            ),
             "one device: `fleetd hub key revoke` \\<keyId\\>. The"
         );
         assert_eq!(
