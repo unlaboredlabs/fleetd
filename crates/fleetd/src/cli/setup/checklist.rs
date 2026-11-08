@@ -107,13 +107,23 @@ impl Checklist {
 
     /// A group header: `◆  Logins  2/6`.
     pub fn section(&mut self, name: &str) {
-        self.stop_spinner();
         self.section += 1;
         let count = if self.sections > 0 {
             format!("  {}/{}", self.section, self.sections)
         } else {
             String::new()
         };
+        self.header(name, &count);
+    }
+
+    /// A header outside the numbered groups (a setup step opened after the last one), so the count never runs past
+    /// its total.
+    pub fn heading(&mut self, name: &str) {
+        self.header(name, "");
+    }
+
+    fn header(&mut self, name: &str, count: &str) {
+        self.stop_spinner();
         if self.rich {
             let gap = if !self.bar_above {
                 format!("{}\n", style(BAR).dim().for_stderr())
@@ -298,21 +308,27 @@ impl Checklist {
                     self.out(&bar);
                 }
             } else {
-                self.boxed(
-                    &format!("{} step(s) need you", needs_you.len()),
-                    &needs_you.join("\n"),
-                );
+                self.boxed(&need_you_title(needs_you.len()), &needs_you.join("\n"));
             }
             let _ = cliclack::outro(next);
         } else {
             if !needs_you.is_empty() {
-                self.out(&format!("\n{} step(s) need you:", needs_you.len()));
+                self.out(&format!("\n{}:", need_you_title(needs_you.len())));
                 for line in needs_you {
                     self.out(&format!("  {line}"));
                 }
             }
             self.out(&format!("\n{next}"));
         }
+    }
+}
+
+/// "1 step needs you", "3 steps need you".
+fn need_you_title(n: usize) -> String {
+    if n == 1 {
+        "1 step needs you".to_owned()
+    } else {
+        format!("{n} steps need you")
     }
 }
 
@@ -379,6 +395,12 @@ mod tests {
             ),
             "│  fleetd://pair?hub=http%3A%2F%2Fdevbox.example:4791&code=X"
         );
+    }
+
+    #[test]
+    fn the_closing_box_counts_its_steps_in_words() {
+        assert_eq!(need_you_title(1), "1 step needs you");
+        assert_eq!(need_you_title(3), "3 steps need you");
     }
 
     #[test]

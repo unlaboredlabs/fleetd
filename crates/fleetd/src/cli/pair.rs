@@ -239,11 +239,25 @@ pub fn phone_url<'a>(urls: impl IntoIterator<Item = &'a str>) -> Option<&'a str>
     })
 }
 
+/// Why a worker told to reach the hub at `hub` (a join line, `machine add` over SSH) can join only from the hub's own
+/// computer: `None` when another machine can reach that address. Plain text, no backticks: the app's setup step and
+/// Add machine show it as it is.
+pub fn worker_reach_note(hub: &str) -> Option<String> {
+    phone_url([hub]).is_none().then(|| {
+        format!(
+            "The hub is only at {hub}, which no other machine reaches, so only a node on the hub's own computer can \
+             join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init \
+             --listen <ip>:<port> --url http://<name>:<port> (Settings › Hub › Setup › Where the hub listens), then \
+             try again."
+        )
+    })
+}
+
 /// What to do when the hub has no address `device` ("your phone", "the Mac") can reach, `then` once it has one.
 pub fn loopback_only_fix(device: &str, then: &str) -> String {
     format!(
-        "Give the hub an address {device} reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
-         pick it (Settings › Hub › Setup › Where the hub listens says how), then {then}."
+        "Give the hub an address {device} reaches, its tailnet or LAN address: on the hub, run `fleetd init --listen \
+         <ip>:<port> --url http://<name>:<port>` (Settings › Hub › Setup › Where the hub listens), then {then}."
     )
 }
 
@@ -406,10 +420,26 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         false,
         "fleetd pair --worker",
     )?;
-    Ok(format!(
+    let mut text = format!(
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
-        join.line, join.expires_at
-    ))
+        join.line,
+        until_words(&join.expires_at)
+    );
+    if let Some(note) = worker_reach_note(&join.hub) {
+        text += &format!("\n{note}\n");
+    }
+    Ok(text)
+}
+
+/// A code's expiry as people read it: `00:53 UTC`, or the timestamp as it is when it doesn't parse.
+pub fn until_words(expires_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(expires_at)
+        .map(|at| {
+            at.with_timezone(&chrono::Utc)
+                .format("%H:%M UTC")
+                .to_string()
+        })
+        .unwrap_or_else(|_| expires_at.to_owned())
 }
 
 /// `fleetd pair --worker-codes`: the worker codes that can still be used, by id, never the codes themselves.
@@ -617,6 +647,12 @@ fn phone_qr(minted: &Minted) -> (String, bool) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_codes_expiry_reads_as_a_time() {
+        assert_eq!(super::until_words("2026-11-08T00:53:35.918Z"), "00:53 UTC");
+        assert_eq!(super::until_words("soon"), "soon");
+    }
 
     #[test]
     fn the_worker_command_installs_and_joins_in_one_step() {
@@ -848,6 +884,20 @@ mod tests {
             deep_link("http://[fd7a:115c:a1e0::1]:4790", "ABCD-EFGH"),
             "fleetd://pair?hub=http%3A%2F%2F%5Bfd7a%3A115c%3Aa1e0%3A%3A1%5D%3A4790&code=ABCD-EFGH"
         );
+    }
+
+    /// A hub set up on 127.0.0.1 (a second fleet's, say) printed a worker line with no word that another machine
+    /// can't reach it.
+    #[test]
+    fn a_worker_line_on_a_loopback_hub_says_only_this_computer_reaches_it() {
+        let note = worker_reach_note("http://127.0.0.1:4797").unwrap();
+        assert!(note.contains("only at http://127.0.0.1:4797"), "{note}");
+        assert!(note.contains("fleetd init --listen <ip>:<port>"), "{note}");
+        // The app shows it as plain text.
+        assert!(!note.contains('`'), "{note}");
+        assert!(worker_reach_note("http://localhost:4790").is_some());
+        assert_eq!(worker_reach_note("http://devbox.tailnet.ts.net:4790"), None);
+        assert_eq!(worker_reach_note("http://100.101.102.103:4790"), None);
     }
 
     #[test]

@@ -166,7 +166,7 @@ it("says a hub only on loopback can't pair a phone, and how to give it an addres
     error: {
       code: "failed",
       message: "The hub is only at http://127.0.0.1:4790, which a phone can't reach.",
-      fix: "Give the hub an address your phone reaches, its tailnet or LAN address: run `fleetd init` again on the hub and pick it.",
+      fix: "Give the hub an address your phone reaches, its tailnet or LAN address: on the hub, run `fleetd init --listen <ip>:<port> --url http://<name>:<port>`.",
     },
   });
   await render("http://127.0.0.1:4790");
@@ -175,7 +175,7 @@ it("says a hub only on loopback can't pair a phone, and how to give it an addres
   expect(qr()).toBeNull();
   const alert = panel()?.querySelector("[role='alert']");
   expect(alert?.textContent).toContain("which a phone can't reach");
-  expect(alert?.querySelector("code")?.textContent).toBe("fleetd init");
+  expect(alert?.querySelector("code")?.textContent).toBe("fleetd init --listen <ip>:<port> --url http://<name>:<port>");
 });
 
 it("offers a new code once the code has expired, and shows no QR for it", async () => {

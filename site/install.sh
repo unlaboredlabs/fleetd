@@ -64,16 +64,23 @@ sha256() {
   fi
 }
 
-# fetch <asset> <dest>: download one release asset and check it against SHA256SUMS.
+# fetch <asset> <dest>: download one release asset and check it against SHA256SUMS. A release going up replaces its
+# assets first and SHA256SUMS last, so a mismatch reads both again, twice, 10 s apart, before it refuses.
 fetch() {
-  expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
-  [ -n "$expected" ] || return 1
-  curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
-  actual="$(sha256 "$2")"
-  [ "$actual" = "$expected" ] || {
+  tries=0
+  while :; do
+    expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
+    [ -n "$expected" ] || return 1
+    curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
+    actual="$(sha256 "$2")"
+    [ "$actual" != "$expected" ] || return 0
     rm -f "$2"
-    die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
-  }
+    tries=$((tries + 1))
+    [ "$tries" -le 2 ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
+    warn "checksum mismatch for $1, perhaps a new release going up; checking again in 10 s"
+    sleep 10
+    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+  done
 }
 
 # swap <new> <dest>: put a new file or directory in place by renaming, never by writing into the old one. A running
@@ -133,6 +140,19 @@ replaced_gpui() {
   say "it replaces the previous fleetd app: quit that one if it is open. The new app keeps its pairing."
 }
 
+# fuse2: whether the AppImage can mount itself, which takes FUSE 2's libfuse.so.2. Ubuntu 24.04 and other newer
+# distributions don't install it, and the AppImage then exits at once ("AppImages require FUSE to run"). Without it
+# the menu entry runs the app with APPIMAGE_EXTRACT_AND_RUN=1, which unpacks it at each start instead of mounting it.
+# With no ldconfig to ask, it is taken as there.
+fuse2() {
+  ldconfig="$(command -v ldconfig 2>/dev/null || true)"
+  for c in /sbin/ldconfig /usr/sbin/ldconfig; do
+    [ -n "$ldconfig" ] || { [ -x "$c" ] && ldconfig="$c"; }
+  done
+  [ -n "$ldconfig" ] || return 0
+  "$ldconfig" -p 2>/dev/null | grep -q 'libfuse\.so\.2'
+}
+
 install_app_linux() {
   if ! fetch fleetd-desktop-linux-x86_64.AppImage "$tmp/fleetd-desktop.AppImage"; then
     warn "no desktop app for linux-$arch on the $channel channel yet; skipping it"
@@ -151,6 +171,11 @@ install_app_linux() {
     mv "$tmp/squashfs-root/fleetd-desktop.png" "$app_dir.new/fleetd.png" 2>/dev/null || true
   fi
   swap "$app_dir.new" "$app_dir"
+  launch="$app_dir/fleetd-desktop.AppImage"
+  if ! fuse2; then
+    launch="env APPIMAGE_EXTRACT_AND_RUN=1 $launch"
+    warn "this machine has no FUSE 2 (libfuse.so.2), which the app's AppImage mounts itself with, so its menu entry unpacks it at each start instead. For a quicker start, install it (sudo apt install libfuse2t64 on Ubuntu 24.04 and later, libfuse2 before), then run this installer again. From a terminal: APPIMAGE_EXTRACT_AND_RUN=1 $app_dir/fleetd-desktop.AppImage"
+  fi
   # Named after the app's Wayland app_id / WM_CLASS (desktopName in app/desktop/package.json), so its windows get
   # this entry's name and icon. %u hands a fleetd:// pairing link to the app.
   cat >"$apps_dir/.fleetd-desktop.desktop.new" <<DESKTOP
@@ -158,7 +183,7 @@ install_app_linux() {
 Type=Application
 Name=fleetd
 Comment=Watch and steer your software factory
-Exec=$app_dir/fleetd-desktop.AppImage %u
+Exec=$launch %u
 Icon=$app_dir/fleetd.png
 Terminal=false
 Categories=Development;

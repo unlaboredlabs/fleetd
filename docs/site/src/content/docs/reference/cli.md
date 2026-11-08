@@ -61,10 +61,10 @@ set up fleetd step by step in a terminal: the hub on this machine (home default 
 
 ```text
 fleetd init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
-    [--claude-config-dir <dir>] [--mac]
+    [--claude-config-dir <dir>] [--mac] [--no-service]
 ```
 
-make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code; `--mac` joins the agents' Mac, from Terminal logged in at its screen (no claude there)
+make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code; `--mac` joins the agents' Mac, from Terminal logged in at its screen (no claude there); `--no-service` enrols the node but leaves running it to you, and prints how
 
 ### fleetd init {#init-step}
 

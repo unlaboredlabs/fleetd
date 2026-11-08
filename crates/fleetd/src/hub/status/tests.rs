@@ -453,6 +453,26 @@ async fn a_usage_pause_blocks_the_row_and_names_itself_beside_a_degraded_machine
         r.usage_paused_reason.as_ref().map(|l| l.as_str()),
         Some(paused)
     );
+
+    // The machine's own reason, when it gives one, says what to fix.
+    let machine = json!({
+        "machineId": "devbox", "name": "devbox", "tags": [], "status": "degraded",
+        "lastSeenAt": crate::hub::store::iso_ms(T0 as i64), "nodeVersion": "0.0.0",
+        "degradedReason": "claude is not logged in",
+    });
+    hub.store
+        .machine_upsert(&serde_json::from_value(machine).unwrap(), None)
+        .unwrap();
+    announce(
+        &hub,
+        fleetd_contracts::events::HubEventType::MachineDegraded,
+    );
+    assert_eq!(
+        row(&hub).blocked_reason.as_ref().map(|l| l.as_str()),
+        Some(
+            "devbox can't run agents: claude is not logged in (see Machines), and its usage is paused"
+        )
+    );
 }
 
 /// W78: a check red on main holds no merge, so the row isn't blocked: it carries a warning that names the check and

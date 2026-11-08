@@ -357,9 +357,20 @@ fn open_enrollment_tokens_list_by_id_without_the_code_and_revoke_by_it() {
 fn enrollment_tokens_only_enroll_their_machine_and_survive_a_wrong_machine_attempt() {
     let (auth, _, _) = setup();
     let EnrollToken { token, .. } = auth.create_enroll_token(&m("lab-a"), "test").unwrap();
+    let wrong = unauthorized(auth.consume_enroll_token(&token, &m("lab-b"), "pub"));
     assert_eq!(
-        unauthorized(auth.consume_enroll_token(&token, &m("lab-b"), "pub")).message,
+        wrong.message,
         "enrollment token is for machine lab-a, not lab-b"
+    );
+    // The code still works under its own name: that comes first, not a new code for the wrong one.
+    assert!(
+        wrong
+            .fix
+            .as_deref()
+            .unwrap()
+            .starts_with("join as lab-a (--machine-id lab-a)"),
+        "{:?}",
+        wrong.fix
     );
     assert_eq!(
         unauthorized(auth.consume_enroll_token("fle_bogus", &m("lab-a"), "pub")).message,

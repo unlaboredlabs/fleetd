@@ -37,8 +37,9 @@ The QR code holds a link, `fleetd://pair?hub=<the hub's address>&code=<the code>
 own scanner (the Camera app, a page, a message), it names the hub and asks before pairing, as anyone can send one.
 The address is one a phone can reach: the one the desktop app reaches the hub at, else the hub's own tailnet or LAN
 address, never `127.0.0.1` or `localhost`. When the hub has only a loopback address, you get no QR code and a note
-saying so. Run `fleetd init` again on the hub and pick its tailnet or LAN address (Settings › Hub › Setup › Where the
-hub listens says how), then pair again. A phone paired from the desktop app is yours and gets your device's role. A
+saying so. Give the hub its tailnet or LAN address: on the hub, run
+`fleetd init --listen <ip>:<port> --url http://<name>:<port>` (Settings › Hub › Setup › Where the hub listens), then
+pair again. A phone paired from the desktop app is yours and gets your device's role. A
 phone paired with `fleetd pair` gets that code's `--role`.
 
 The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). Settings, behind your

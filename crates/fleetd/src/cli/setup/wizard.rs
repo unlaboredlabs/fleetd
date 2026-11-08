@@ -19,12 +19,14 @@ use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen};
 use crate::cli::hub_key::open_hub;
 use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
-use crate::node::runner::claude::setup::{ClaudeSetup, describe};
+use crate::node::runner::claude::setup::describe;
 use crate::node::runner::claude::version::{self, VersionVerdict};
 use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStatus, SetupStepId};
 
 const PORT: u16 = 4790;
 const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";
+/// A join that stopped before it enrolled: a plain `fleetd init` would ask what this machine is, as on a new one.
+const JOIN_AGAIN: &str = "Then run the join command its fix names: a plain fleetd init doesn't keep the hub or the code.";
 
 /// The user pressed Esc or Ctrl-C at a prompt.
 struct Stopped;
@@ -410,7 +412,8 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
             true,
         )?;
         if !hub {
-            list.set_sections(2);
+            // "This machine" was the first of three: then Join a hub, Worker.
+            list.set_sections(3);
             return join_hub(opts, ui, list).await;
         }
     }
@@ -423,7 +426,8 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
     };
 
     list.section("Logins");
-    let claude = hub_claude(ui, list).await?;
+    let claude_here = which("claude").is_some();
+    hub_claude(ui, list).await?;
     let gh_ok = gh_check(ui, list).await?;
     let identity = commit_identity(opts, ui, list, gh_ok).await?;
 
@@ -463,7 +467,7 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
     let (mut added, mut idle) = (Vec::new(), Vec::new());
     list.section("Workers");
     if hub_up {
-        let (local, ids, by_hand) = workers(opts, ui, list, net.as_ref(), claude.as_ref()).await?;
+        let (local, ids, by_hand) = workers(opts, ui, list, net.as_ref(), claude_here).await?;
         summary.workers = ids.iter().chain(&by_hand).cloned().collect();
         (added, idle) = (ids, by_hand);
         list.section("Project");
@@ -539,30 +543,117 @@ fn setup_link() -> String {
     format!("fleetd://setup?v=1&cli={}&home={}", enc(&cli), enc(&home))
 }
 
+/// The join line `fleetd pair --worker` prints (`curl … | sh -s -- --join <hub> --code <code> --machine-id <name>
+/// [--git-identity '…']`, or the `fleetd init --join …` a stopped join names), pasted where the wizard asks for the hub.
+#[derive(Debug, PartialEq)]
+struct PastedJoin {
+    hub: String,
+    code: String,
+    machine_id: Option<String>,
+    identity: Option<GitIdentity>,
+}
+
+fn pasted_join(line: &str) -> Option<PastedJoin> {
+    let words = shell_words(line)?;
+    let after = |flag: &str| {
+        words
+            .iter()
+            .position(|w| w == flag)
+            .and_then(|i| words.get(i + 1))
+            .cloned()
+    };
+    let hub = after("--join")?;
+    reqwest::Url::parse(&hub).ok()?;
+    Some(PastedJoin {
+        hub,
+        code: after("--code")?,
+        machine_id: after("--machine-id"),
+        identity: after("--git-identity").and_then(|id| parse_git_identity(&id)),
+    })
+}
+
+/// `line` split as sh would split its words: 'single' and "double" quotes, and backslashes outside single quotes.
+/// None for an unclosed quote.
+fn shell_words(line: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut word: Option<String> = None;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            c if c.is_whitespace() => words.extend(word.take()),
+            '\'' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next()? {
+                        '\'' => break,
+                        c => w.push(c),
+                    }
+                }
+            }
+            '"' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next()? {
+                        '"' => break,
+                        '\\' => w.push(chars.next()?),
+                        c => w.push(c),
+                    }
+                }
+            }
+            '\\' => word.get_or_insert_with(String::new).push(chars.next()?),
+            c => word.get_or_insert_with(String::new).push(c),
+        }
+    }
+    words.extend(word);
+    Some(words)
+}
+
 /// Not the hub: join one as a worker with the one-time code `fleetd pair --worker` printed there.
 async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, Stopped> {
     list.section("Join a hub");
+    let mut pasted = None;
     let (hub, code) = match &opts.join {
         Some(join) => join.clone(),
         None => {
-            list.note("On the hub, run: fleetd pair --worker <name for this machine>");
+            list.note(
+                "On the hub, run: fleetd pair --worker <name for this machine>, and paste the line it prints here",
+            );
             let hub = ui.input(
                 list,
-                "Hub address",
+                "The line it printed, or the hub's address",
                 "",
-                "http://devbox.tailnet.ts.net:4790",
-                |s| {
-                    reqwest::Url::parse(s)
-                        .map(|_| ())
-                        .map_err(|_| "a URL, as fleetd pair --worker prints it".to_owned())
+                "curl -fsSL https://fleetd.sh | sh -s -- --join … or http://devbox.tailnet.ts.net:4790",
+                |s| match pasted_join(s) {
+                    Some(_) => Ok(()),
+                    None => reqwest::Url::parse(s).map(|_| ()).map_err(|_| {
+                        "the line fleetd pair --worker printed, or the hub's URL".to_owned()
+                    }),
                 },
             )?;
-            let code = ui.input(list, "One-time code", "", "", needed)?;
-            (hub, code)
+            match pasted_join(&hub) {
+                // The line carries the code, the name the code was made for and the hub's commit identity.
+                Some(line) => {
+                    let join = (line.hub.clone(), line.code.clone());
+                    pasted = Some(line);
+                    join
+                }
+                None => {
+                    let code = ui.input(list, "One-time code", "", "", needed)?;
+                    (hub, code)
+                }
+            }
         }
     };
-    let machine_id = match &opts.machine_id {
-        Some(id) => id.clone(),
+    let identity = opts
+        .identity
+        .clone()
+        .or_else(|| pasted.as_ref().and_then(|p| p.identity.clone()));
+    let machine_id = match opts
+        .machine_id
+        .clone()
+        .or_else(|| pasted.and_then(|p| p.machine_id))
+    {
+        Some(id) => id,
         None if opts.join.is_some() || !ui.interactive => machine_id_from_host(&local_host_name()),
         None => ui.input(
             list,
@@ -594,7 +685,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         hub.trim(),
         machine::Enroll::Token(code.trim().to_owned()),
         machine::AddArgs {
-            git_identity: opts.identity.clone(),
+            git_identity: identity,
             claude_config_dir: opts.claude_config_dir.clone(),
             mac: opts.mac,
             ..machine::AddArgs::local(machine_id.clone(), opts.with_service)
@@ -619,21 +710,24 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
                          shows each check.",
                     );
                 }
-                return Ok(worker_end(list, "This Mac is the agents' Mac now."));
+                return Ok(worker_end(list, "This Mac is the agents' Mac now.", true));
             }
-            worker_claude(ui, list, &added, None).await?;
+            worker_claude(ui, list, &added, false).await?;
         }
-        Err(_) => failed_with_log(
-            list,
-            &title,
-            "could not join",
-            &said,
-            &format!(
-                "a used or expired code: on the hub, fleetd pair --worker {machine_id} prints a new command"
-            ),
-        ),
+        Err(_) => {
+            failed_with_log(
+                list,
+                &title,
+                "could not join",
+                &said,
+                &format!(
+                    "a used or expired code: on the hub, fleetd pair --worker {machine_id} prints a new command"
+                ),
+            );
+            return Ok(worker_end(list, "", false));
+        }
     }
-    Ok(worker_end(list, "This machine is a worker now."))
+    Ok(worker_end(list, "This machine is a worker now.", true))
 }
 
 /// A worker that joined by itself, run again: keeps its enrolment and only checks and repairs what it runs.
@@ -672,7 +766,7 @@ async fn repair_worker(
                 &format!("enrolled with {}", joined.hub),
             );
             notes(list, &said);
-            worker_claude(ui, list, &added, None).await?;
+            worker_claude(ui, list, &added, false).await?;
         }
         Err(_) => failed_with_log(
             list,
@@ -682,7 +776,7 @@ async fn repair_worker(
             "fix the cause above, then run fleetd init again",
         ),
     }
-    Ok(worker_end(list, "This machine is a worker."))
+    Ok(worker_end(list, "This machine is a worker.", true))
 }
 
 /// The tail of what a captured step printed, as a dim note, then its ✗ line.
@@ -738,18 +832,25 @@ fn node_line(list: &mut Checklist, title: &str, added: &Added, done: &str) {
     }
 }
 
-fn worker_end(list: &mut Checklist, ok: &str) -> u8 {
+/// `enrolled`: this machine is the hub's node now, so a plain `fleetd init` again repairs it (`repair_worker`).
+fn worker_end(list: &mut Checklist, ok: &str, enrolled: bool) -> u8 {
     let failed = list.failures().next().is_some();
     let needs = list.needs_you();
-    let next = if failed {
+    let next = worker_next(list, ok, enrolled);
+    list.outro(&needs, &next);
+    u8::from(failed)
+}
+
+fn worker_next(list: &Checklist, ok: &str, enrolled: bool) -> String {
+    if !enrolled {
+        JOIN_AGAIN.to_owned()
+    } else if list.failures().next().is_some() {
         AGAIN.to_owned()
     } else if !list.todos.is_empty() {
         "Then run fleetd init again.".to_owned()
     } else {
         format!("{ok} Its agents start from orders you send in the fleetd app.")
-    };
-    list.outro(&needs, &next);
-    u8::from(failed)
+    }
 }
 
 async fn reachability(
@@ -824,14 +925,14 @@ fn session_env() -> Vec<(String, String)> {
 }
 
 /// The user's own claude, as fleetd's sessions run it. Offers the login when it is logged out.
-async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>, Stopped> {
+async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
     let Some(binary) = which("claude") else {
         list.failed(
             "claude",
             "is not installed; fleetd's agents run through it",
             &install("claude"),
         );
-        return Ok(None);
+        return Ok(());
     };
     let (mut logged, mut updated) = (false, false);
     loop {
@@ -876,7 +977,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
                 }
                 _ => list.failed("claude", &detail, "claude auth login"),
             }
-            return Ok(None);
+            return Ok(());
         }
         if setup.proxy_source.as_deref() == Some("environment") {
             list.warn(
@@ -901,9 +1002,9 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
                 why.strip_prefix("claude ").unwrap_or(&why),
                 &fix,
             );
-            return Ok(None);
+            return Ok(());
         }
-        return Ok(Some(setup));
+        return Ok(());
     }
 }
 
@@ -961,8 +1062,8 @@ async fn gh_check(ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
         }
         list.failed(
             "gh",
-            "not logged in; the merge train and PR checks need it",
-            "gh auth login",
+            "not logged in; the merge train and PR checks need it until the hub has its GitHub App",
+            "gh auth login, or the hub's GitHub App: fleetd init --step github",
         );
         return Ok(false);
     }
@@ -1047,7 +1148,7 @@ async fn workers(
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-    claude: Option<&ClaudeSetup>,
+    claude_here: bool,
 ) -> Result<(Option<String>, Vec<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
@@ -1119,8 +1220,7 @@ async fn workers(
             Ok(Some(added)) => {
                 node_line(list, id, &added, "online");
                 notes(list, &said);
-                let this_one = host.is_none().then_some(claude).flatten();
-                worker_claude(ui, list, &added, this_one).await?;
+                worker_claude(ui, list, &added, host.is_none() && claude_here).await?;
                 if added.run_by_hand.is_none() {
                     ids.push(added.machine_id.clone());
                 } else {
@@ -1184,15 +1284,16 @@ async fn await_runner_checks(opts: &InitOptions, list: &mut Checklist, ids: &[St
     }
 }
 
-/// claude on a worker, as its node runs it. This machine's was checked above, so it isn't asked twice.
+/// claude on a worker, as its node runs it. `checked_here`: this machine's claude was checked under Logins, its
+/// login offered there, so it isn't asked or listed twice.
 async fn worker_claude(
     ui: &Ui,
     list: &mut Checklist,
     added: &Added,
-    here: Option<&ClaudeSetup>,
+    checked_here: bool,
 ) -> Result<(), Stopped> {
     let title = format!("claude on {}", added.machine_id);
-    if added.target.local && here.is_some() {
+    if added.target.local && checked_here {
         return Ok(());
     }
     let config_dir = added.claude_config_dir.as_deref();
@@ -1550,7 +1651,7 @@ async fn walk(
     client: &mut crate::cli::mcp_client::McpClient,
     step: &HubSetupStep,
 ) -> Result<SetupStatus, Stopped> {
-    list.section(&format!(
+    list.heading(&format!(
         "{} · {}",
         step.title,
         steps::need_words(&step.need)
@@ -1761,6 +1862,55 @@ mod tests {
             "npm install -g @anthropic-ai/claude-code@latest"
         );
         assert_eq!(update_command_for("/usr/local/bin/claude"), "claude update");
+    }
+
+    /// Typed in by hand, a join lost the commit identity and named the machine after its host, though the line `fleetd
+    /// pair --worker` printed had both: pasted where the wizard asks for the hub, the line gives them all.
+    #[test]
+    fn the_printed_join_line_pasted_in_gives_the_hub_code_name_and_identity() {
+        let line = crate::cli::pair::join_line(
+            "http://devbox.tailnet.ts.net:4790",
+            "fle_abc",
+            "laptop",
+            Some("O'Neil Ada <1+ada@users.noreply.github.com>"),
+        );
+        let pasted = pasted_join(&line).unwrap();
+        assert_eq!(pasted.hub, "http://devbox.tailnet.ts.net:4790");
+        assert_eq!(pasted.code, "fle_abc");
+        assert_eq!(pasted.machine_id.as_deref(), Some("laptop"));
+        let identity = pasted.identity.unwrap();
+        assert_eq!(
+            (identity.name.as_str(), identity.email.as_str()),
+            ("O'Neil Ada", "1+ada@users.noreply.github.com")
+        );
+        // The rerun line a stopped join names works too; a bare address or half a line is not a pasted line.
+        let rerun =
+            pasted_join("fleetd init --join http://hub:4790 --code c --machine-id mac").unwrap();
+        assert_eq!(
+            (rerun.hub.as_str(), rerun.code.as_str()),
+            ("http://hub:4790", "c")
+        );
+        assert_eq!(rerun.identity, None);
+        assert_eq!(pasted_join("http://hub:4790"), None);
+        assert_eq!(pasted_join("sh -s -- --join http://hub:4790"), None);
+        assert_eq!(pasted_join("--join http://hub:4790 --code 'open"), None);
+    }
+
+    /// A join that stopped before it enrolled leaves nothing a plain `fleetd init` finds: it asked "What is this
+    /// machine? ● The hub" under a fix that named the whole join command.
+    #[test]
+    fn a_join_that_never_enrolled_sends_you_back_to_its_join_command() {
+        let mut list = Checklist::plain();
+        list.failed(
+            "laptop",
+            "could not join: claude is not installed on the machine",
+            "on the machine, run curl -fsSL https://claude.ai/install.sh | bash, then run fleetd init --join …",
+        );
+        let next = worker_next(&list, "", false);
+        assert!(next.contains("join command its fix names"), "{next}");
+        assert!(!next.contains("Run fleetd init to continue"), "{next}");
+        // Enrolled, a plain fleetd init repairs it.
+        assert_eq!(worker_next(&list, "", true), AGAIN);
     }
 
     /// --yes, no terminal, a scripted --join: a logged-out claude or gh is reported, never logged in interactively.

@@ -8,7 +8,9 @@ use base64::Engine;
 use serde_json::{Value, json};
 
 use super::state::{GitIdentity, git_identity_env};
-use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
+use super::units::{
+    Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, systemd_name, unit_path,
+};
 use crate::node::runner::claude::version::{self, VersionVerdict};
 
 pub use crate::node::runner::claude::version::INSTALL as CLAUDE_INSTALL;
@@ -83,6 +85,9 @@ pub struct Facts {
     /// macOS: `yes` while launchd has the user's `gui/<uid>` domain (they are logged in at the Mac's screen), `no`
     /// when it hasn't; empty or `unknown` elsewhere.
     pub gui: String,
+    /// Linux: the file the user's systemd manager loads `fleetd-node.service` from; empty when it loads none or there
+    /// is no manager to ask.
+    pub loaded_unit: String,
     pub files: HashMap<String, Option<String>>,
     /// Size in bytes: for files whose content the probe must not read (the login).
     pub sizes: HashMap<String, Option<u64>>,
@@ -131,6 +136,7 @@ pub fn probe_command(fleetd: Option<&str>) -> String {
         r#"CL=$(command -v claude || true); for c in "$H/.local/bin/claude" "$H/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -n "$CL" ] && break; [ -x "$c" ] && CL=$c; done"#.into(),
         r#"if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi"#.into(),
         r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
+        format!(r#"U=; if [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then U=$({} show -p FragmentPath --value {} 2>/dev/null || true); fi; echo "loaded_unit $U""#, ServiceManager::linux_ctl("$(id -u)"), systemd_name(Role::Node)),
         r#"G=unknown; if [ "$(uname -s)" = Darwin ]; then if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then G=yes; else G=no; fi; fi; echo "gui $G""#.into(),
         format!(r#"for f in {}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\n'; echo; fi; done"#, quoted(&reads)),
         format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(std::slice::from_ref(&l.env_file))),
@@ -171,6 +177,7 @@ pub fn parse_facts(output: &str) -> Result<Facts, String> {
             }
             "linger" => facts.linger = rest.trim().into(),
             "gui" => facts.gui = rest.trim().into(),
+            "loaded_unit" => facts.loaded_unit = rest.trim().into(),
             "file" => {
                 let (path, data) = rest.split_once(' ').unwrap_or((rest, ""));
                 let bytes = base64::engine::general_purpose::STANDARD
@@ -478,6 +485,18 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             unit_file(Role::Node).rsplit('/').next().unwrap_or_default()
         ));
     }
+    // The manager loads its units from the home it started with: under another HOME, a unit written here is never
+    // read, and restarting fleetd-node.service would restart the node it does run.
+    if input.service && !facts.loaded_unit.is_empty() && facts.loaded_unit != unit_file(Role::Node)
+    {
+        return Err(format!(
+            "this user's systemd manager runs {} from {}, another fleetd's node, not from this home ({}); nothing was \
+             changed. Fix: run this from that home, or pass --no-service and start the node by hand",
+            systemd_name(Role::Node),
+            facts.loaded_unit,
+            facts.home
+        ));
+    }
     let node_changed = input.service && existing_unit != Some(text.as_str());
     let node_existed = input.service && existing_unit.is_some();
     if node_changed {
@@ -632,7 +651,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ));
     }
     if input.git_identity.is_none() {
-        notes.push(r#"no commit identity on the hub. Fix: fleetd init --git-identity "Name <id+user@users.noreply.github.com>", then add this machine again."#.into());
+        notes.push(r#"no commit identity for this machine's agents. Fix: on the hub, fleetd init --git-identity "Name <id+user@users.noreply.github.com>", then add this machine again; a machine joining by itself gets it in the line fleetd pair --worker prints."#.into());
     }
     Ok(MachinePlan {
         platform,
@@ -1370,6 +1389,45 @@ mod tests {
             plan_machine_add(&facts, &input()).is_ok(),
             "the default fleet keeps rewriting its own unit"
         );
+    }
+
+    /// The user's systemd manager loads `fleetd-node.service` from the home it started with. A join run under another
+    /// HOME (a desktop session with a home of its own, on the devbox) wrote its unit where that manager never looks,
+    /// and its restart restarted the devbox's own node. A plan whose unit isn't the one the manager runs is refused
+    /// before anything changes.
+    #[test]
+    fn a_node_service_the_manager_loads_from_elsewhere_is_left_alone() {
+        let mut facts = fresh_facts("ada", "x64");
+        facts.home = "/srv/desk/home".into();
+        facts.config_home = "/srv/desk/home/.config".into();
+        facts.loaded_unit = "/home/ada/.config/systemd/user/fleetd-node.service".into();
+        let Err(refused) = plan_machine_add(&facts, &input()) else {
+            panic!("restarts the node the manager runs from another home");
+        };
+        assert!(
+            refused.contains("/home/ada/.config/systemd/user/fleetd-node.service"),
+            "{refused}"
+        );
+        assert!(refused.contains("--no-service"), "{refused}");
+        let no_service = MachineAddInput {
+            service: false,
+            ..input()
+        };
+        assert!(plan_machine_add(&facts, &no_service).is_ok());
+        facts.loaded_unit = "/srv/desk/home/.config/systemd/user/fleetd-node.service".into();
+        assert!(plan_machine_add(&facts, &input()).is_ok(), "its own unit");
+        facts.loaded_unit = String::new();
+        assert!(plan_machine_add(&facts, &input()).is_ok(), "none loaded");
+
+        let parsed = parse_facts(
+            "home /h\nos Linux\nloaded_unit /h/.config/systemd/user/fleetd-node.service\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.loaded_unit,
+            "/h/.config/systemd/user/fleetd-node.service"
+        );
+        assert!(probe_command(None).contains("show -p FragmentPath --value fleetd-node.service"));
     }
 
     #[test]

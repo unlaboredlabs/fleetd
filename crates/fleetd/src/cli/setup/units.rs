@@ -253,7 +253,12 @@ impl ServiceManager {
 
     /// A non-PAM SSH session has no XDG_RUNTIME_DIR, without which `systemctl --user` cannot find the user manager.
     fn ctl(&self) -> String {
-        format!("XDG_RUNTIME_DIR=/run/user/{} systemctl --user", self.uid)
+        Self::linux_ctl(&self.uid.to_string())
+    }
+
+    /// `systemctl --user` for the user manager of `uid` (a number, or shell that prints one).
+    pub fn linux_ctl(uid: &str) -> String {
+        format!("XDG_RUNTIME_DIR=/run/user/{uid} systemctl --user")
     }
 
     fn target(&self, role: Role) -> String {
