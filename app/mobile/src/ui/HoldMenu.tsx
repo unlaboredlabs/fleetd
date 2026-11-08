@@ -9,16 +9,32 @@ import { sfSymbol } from "./Icon";
 import { Menu, type MenuItem, type Rect } from "./Menu";
 
 interface NativeProps {
-  readonly actions: ReadonlyArray<{ id: string; title: string; systemImage: string; destructive: boolean }>;
+  readonly actions: ReadonlyArray<{ id: string; title: string; systemImage: string; destructive: boolean; instant: boolean }>;
   readonly menuTitle?: string | undefined;
   readonly previewRadius: number;
   readonly previewColor?: string | undefined;
   readonly onAction: (e: NativeSyntheticEvent<{ id: string }>) => void;
+  readonly onClosed: () => void;
   readonly style?: StyleProp<ViewStyle>;
   readonly children: ReactNode;
 }
 
 const NativeMenu: ComponentType<NativeProps> | null = Platform.OS === "ios" ? requireNativeView<NativeProps>("FleetdContextMenu") : null;
+
+// An instant action runs while iOS's menu is still going away. A field focused under it then loses its keyboard's
+// animation (the composer leaps up by the keyboard's height, the keyboard slides in after), so focus waits for it to go.
+let closing: ReturnType<typeof setTimeout> | undefined;
+const waiting: Array<() => void> = [];
+const closed = () => {
+  clearTimeout(closing);
+  closing = undefined;
+  for (const fn of waiting.splice(0)) fn();
+};
+/** Runs `fn` once no hold menu is going away: now, or as it goes. */
+export const afterMenu = (fn: () => void): void => {
+  if (closing === undefined) fn();
+  else waiting.push(fn);
+};
 
 export function HoldMenu({
   items,
@@ -76,11 +92,16 @@ export function HoldMenu({
   if (NativeMenu !== null) {
     return (
       <NativeMenu
-        actions={items.map((m) => ({ id: m.label, title: m.label, systemImage: sfSymbol(m.icon), destructive: m.destructive === true }))}
+        actions={items.map((m) => ({ id: m.label, title: m.label, systemImage: sfSymbol(m.icon), destructive: m.destructive === true, instant: m.instant === true }))}
         menuTitle={title}
         previewRadius={radius}
         previewColor={color}
-        onAction={(e) => run(e.nativeEvent.id)}
+        onAction={(e) => {
+          // Its close ends in about a second; the timer only stands in for a menu whose view went with it.
+          if (items.some((m) => m.label === e.nativeEvent.id && m.instant === true)) closing ??= setTimeout(closed, 2000);
+          run(e.nativeEvent.id);
+        }}
+        onClosed={closed}
       >
         {face}
       </NativeMenu>

@@ -7,7 +7,7 @@
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useRef, type ComponentRef } from "react";
+import { useEffect, useLayoutEffect, useRef, type ComponentRef } from "react";
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import type { AttachmentRef } from "../desktop";
@@ -18,6 +18,7 @@ import { space, type, useTheme } from "../theme";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
 import { haptics } from "./haptics";
+import { afterMenu } from "./HoldMenu";
 import { Icon } from "./Icon";
 import { MenuButton } from "./MenuButton";
 import { grows, quick, useReduceMotion } from "./motion";
@@ -72,10 +73,19 @@ export function Composer({
   }, [ready, stop, reduce, shown]);
   const sendStyle = useAnimatedStyle(() => ({ opacity: shown.value, transform: [{ scale: 0.6 + 0.4 * shown.value }] }));
 
-  // A reply picked now brings the keyboard up; one the draft held when the chat opened doesn't.
+  // A quote comes in the same frame as the thread makes room for it: as it comes or goes, the height is read as it's
+  // laid out, not frames later from onLayout, which the menu still going away holds up. onLayout follows the rest.
+  const bar = useRef<ComponentRef<typeof View>>(null);
+  const quoting = reply !== undefined;
+  useLayoutEffect(() => {
+    const height = bar.current?.getBoundingClientRect().height;
+    if (height !== undefined && height > 0) onHeight?.(height);
+  }, [quoting]);
+
+  // A reply picked now brings the keyboard up, once its menu has gone; one the draft held when the chat opened doesn't.
   const replyAtOpen = useRef(reply);
   useEffect(() => {
-    if (reply !== undefined && reply !== replyAtOpen.current) input.current?.focus();
+    if (reply !== undefined && reply !== replyAtOpen.current) afterMenu(() => input.current?.focus());
   }, [reply]);
 
   const send = () => {
@@ -152,7 +162,7 @@ export function Composer({
   };
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(bottomInset, space.sm) }]} onLayout={(e: LayoutChangeEvent) => onHeight?.(e.nativeEvent.layout.height)}>
+    <View ref={bar} style={[styles.bar, { paddingBottom: Math.max(bottomInset, space.sm) }]} onLayout={(e: LayoutChangeEvent) => onHeight?.(e.nativeEvent.layout.height)}>
       {reply === undefined ? null : (
         <Glass style={styles.reply}>
           <View style={[styles.replyRule, { backgroundColor: t.accent }]} />
