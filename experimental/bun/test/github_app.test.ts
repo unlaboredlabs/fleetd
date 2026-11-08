@@ -278,7 +278,8 @@ test("only an owner or admin sets it up; the manifest goes to the account or the
   expect(JSON.parse(mine.manifest).url).toBe("http://devbox.example.ts.net:4790");
   const org = await call(l, a, "github_app_manifest", { name: "fleetd", redirect: "http://127.0.0.1:5555/cb", organization: "acme" });
   expect(org.postTo).toEndWith("/organizations/acme/settings/apps/new");
-  expect((await refusedWith(l, a, "github_app_manifest", { name: "x", redirect: "https://example.com/" })).code).toBe("invalid");
+  const bad = await l.tools.call(l.hub, a, "github_app_manifest", { name: "x", redirect: "https://example.com/" });
+  expect("error" in bad && bad.error.kind).toBe("invalid");
   expect((await refusedWith(l, a, "github_app_test")).code).toBe("not_found");
 });
 

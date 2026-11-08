@@ -72,7 +72,7 @@ test("changes_list filters by grant and leaves out another person's Only me proj
   const none = await tools.call(hub, elsewhere, "changes_list", { projectRef: { machineId: "devbox", projectId: "web" } });
   expect("error" in none && none.error.kind === "tool" && none.error.error.code).toBe("forbidden");
   const bad = await tools.call(hub, owner, "changes_list", { limit: 500 });
-  expect("error" in bad && bad.error.kind === "tool" && bad.error.error.code).toBe("invalid");
+  expect("error" in bad && bad.error.kind).toBe("invalid");
 });
 
 test("other areas read the train through trainChanges and trainOf", async () => {
