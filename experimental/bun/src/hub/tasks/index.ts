@@ -56,6 +56,7 @@ import { type StoredTask, type TaskFilter, TaskRecords } from "./records.ts";
 import * as recovery from "./recovery.ts";
 import {
   branchFor,
+  fullResultText,
   briefText,
   GITHUB_BACK,
   GITHUB_DOWN,
@@ -1051,7 +1052,12 @@ export class Tasks {
     const task = stored.task;
     const threadRef = task.threadRef as ThreadRef;
     const thread = store(this.hub).threadGet(threadRef);
-    const text = thread?.thread.latestMessageTail ?? "";
+    let text = thread?.thread.latestMessageTail ?? "";
+    // The summary keeps only the ends of a long reply: the lead reads it whole with `agents` and its taskId.
+    if (fullResultText(text) !== undefined) {
+      const whole = await this.ports.latestText?.(threadRef);
+      if (whole !== undefined && whole.trim().length > text.trim().length) text = whole;
+    }
     const error =
       why ?? (thread && status === "failed" && thread.thread.lastError ? `[${thread.thread.lastError.class}] ${thread.thread.lastError.message}` : "");
     const write = task.kind === "write";
@@ -1065,6 +1071,7 @@ export class Tasks {
         ? `Not resumed automatically: ${escalated}. Decide: continue it with instructions (message_agent), split the work, or cancel it.`
         : "";
     const tail = [text.trim(), error, escalation].filter((s) => s !== "").join("\n\n");
+    const fullResult = fullResultText(tail);
     const result: TaskResult = {
       status,
       tail: resultText(tail, TAIL_MAX),
@@ -1077,7 +1084,7 @@ export class Tasks {
     if (branch !== undefined) next.branch = branch;
     if (changes?.worktreePath !== undefined) next.worktreePath = changes.worktreePath;
     // The PR lookup is marked pending in the same write, so no crash between them loses it.
-    TaskRecords.putEnded(this.db, { task: next }, write);
+    TaskRecords.putEnded(this.db, { task: next }, write, fullResult);
     this.releaseAll(task);
     this.wakeResult(next, result, escalated !== undefined);
     // Last, so whoever waits on it sees the slot and the wake already settled.
@@ -2036,6 +2043,11 @@ export class Tasks {
 
   get(taskId: TaskId): Task | undefined {
     return TaskRecords.get(this.db, taskId)?.task;
+  }
+
+  /** The task's whole final result, when its `result.tail` cuts it. */
+  fullResult(taskId: TaskId): string | undefined {
+    return TaskRecords.fullResult(this.db, taskId);
   }
 
   /** The task whose agent runs in `thread`, if one does. */

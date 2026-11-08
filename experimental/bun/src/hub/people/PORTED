@@ -2,5 +2,7 @@ tool:`device_revoke`
 tool:`invite_create`
 tool:`invite_revoke`
 tool:`people_list`
+tool:`person_avatar_get`
+tool:`person_avatar_set`
 tool:`person_remove`
 tool:`person_set`

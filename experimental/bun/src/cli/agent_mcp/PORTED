@@ -1,4 +1,5 @@
 agent-mcp:agent-mcp tool `agents`
+agent-mcp:agent-mcp tool `artifact_read`
 agent-mcp:agent-mcp tool `ask_lead`
 agent-mcp:agent-mcp tool `automation_confirm`
 agent-mcp:agent-mcp tool `automation_create`

@@ -10,6 +10,7 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { pairCodes } from "../pair/codes.ts";
 import { deepLink } from "../pair/urls.ts";
 import { store } from "../store/hub_store.ts";
+import * as avatar from "./avatar.ts";
 import { announce, change, forgetPerson } from "./events.ts";
 import { administers, cleanName } from "./roles.ts";
 import { people, refOf } from "./store.ts";
@@ -244,4 +245,5 @@ export function register(tools: Registry): void {
     if (!after) throw notFound();
     return { device: after };
   });
+  avatar.register(tools);
 }
