@@ -123,7 +123,7 @@ jobs:
         run: |
           pnpm fixtures
           pnpm build:test
-          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+          CSC_IDENTITY_AUTO_DISCOVERY=false "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
             -c.mac.identity=- -c.mac.hardenedRuntime=false
           node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
       - name: Packaged recording (macOS)

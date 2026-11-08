@@ -469,7 +469,7 @@ jobs:
         # PR that renames or removes a screen breaks only the edge build. Headless, so no virtual display.
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - name: Packaged recording (Linux)
         # FLEETD_RECORD in the packed app, which loads the recorder page from the asar; Demo recording below runs out/.
@@ -607,6 +607,6 @@ jobs:
       - name: Pack and check the mac app
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
           node scripts/mac-layout-check.ts dist-test/mac-arm64/fleetd.app
           ../../.github/release/desktop-fuses-check.sh dist-test/mac-arm64/fleetd.app

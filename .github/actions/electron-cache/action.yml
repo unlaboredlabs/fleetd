@@ -5,6 +5,8 @@
 # The jobs that only run Electron for Linux share one key; a job that packs names what it packs (`packs`), since the
 # first job to save a key fixes what it holds. A key's first run starts from the newest cache of the same OS (another
 # key's, or an older version's) and downloads only what that lacks; a cache saves only when its job passes.
+# So that a cold cache still fills during an outage, the steps that download run under retry.sh, which tries a failed
+# download again.
 name: Electron downloads
 description: Restores and saves Electron's and electron-builder's downloads, keyed on their versions.
 inputs:
