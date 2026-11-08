@@ -3240,14 +3240,23 @@ impl Train {
     }
 
     /// While main-branch CI is red, a note for the status view: which checks, and whether a fix is under way (an open
-    /// fix order for the check, `watch`). The train doesn't hold merges for it, so it is a warning, not a block.
+    /// fix order for the check, `watch`) or the watch re-runs them once; while it waits on that re-run, which checks.
+    /// The train doesn't hold merges for it, so it is a warning, not a block.
     pub fn main_ci_note(&self, repo: &str) -> Option<String> {
         let repo = repo.to_lowercase();
-        let ci = self
-            .sync
-            .main_ci(&repo)
-            .filter(|m| m.state == CiState::Red)?;
+        let ci = self.sync.main_ci(&repo)?;
         let base = self.sync.base(&repo).unwrap_or_else(|| "main".into());
+        // A check the watch re-runs once after it failed on the merged commit: said while main waits for it.
+        let rerunning = self.rerunning(&repo, &ci.sha);
+        if ci.state != CiState::Red {
+            return (ci.state == CiState::Pending && !rerunning.is_empty()).then(|| {
+                let names: Vec<String> = rerunning.iter().map(|n| format!("`{n}`")).collect();
+                format!(
+                    "{} failed on {base} after the merge, re-running once",
+                    names.join(", ")
+                )
+            });
+        }
         let fixing: Vec<&String> = ci
             .failing
             .iter()
@@ -3269,7 +3278,9 @@ impl Train {
             1 => format!("{} is red on {base}", quoted(&mut ci.failing.iter())),
             _ => format!("{} are red on {base}", quoted(&mut ci.failing.iter())),
         };
-        let fix = if fixing.is_empty() {
+        let fix = if fixing.is_empty() && ci.failing.iter().any(|n| rerunning.contains(n)) {
+            "re-running once".to_string()
+        } else if fixing.is_empty() {
             "no fix under way".to_string()
         } else if fixing.len() == ci.failing.len() {
             "fix in progress".to_string()

@@ -454,8 +454,65 @@ impl ChangeRecords {
                 "DELETE FROM train_watches WHERE repo = ?1 AND sha = ?2",
                 params![repo.to_lowercase(), sha],
             )
-            .expect("end a watch")
+            .expect("end a watch");
+            conn.execute(
+                "DELETE FROM train_watch_checks WHERE repo = ?1 AND sha = ?2",
+                params![repo.to_lowercase(), sha],
+            )
+            .expect("end a watch's checks")
         });
+    }
+
+    /// What the watch did about the checks of merged commit `sha` (`put_watch_check`): each check's name, its run's
+    /// id, what it did, and when, oldest first.
+    pub fn watch_checks(&self, repo: &str, sha: &str) -> Vec<(String, i64, String, i64)> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT check_name, run_id, did, at_ms FROM train_watch_checks
+                     WHERE repo = ?1 AND sha = ?2 ORDER BY at_ms, rowid",
+                )
+                .expect("prepare");
+            stmt.query_map(params![repo.to_lowercase(), sha], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
+        })
+    }
+
+    /// Records that the watch did `did` about run `run_id` of `check` on merged commit `sha`.
+    pub fn put_watch_check(
+        &self,
+        repo: &str,
+        sha: &str,
+        check: &str,
+        run_id: i64,
+        did: &str,
+        at_ms: i64,
+    ) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO train_watch_checks (repo, sha, check_name, run_id, did, at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![repo.to_lowercase(), sha, check, run_id, did, at_ms],
+            )
+            .expect("put a watched check")
+        });
+    }
+
+    /// The fix order `check` failing at `sha` itself is for, when it has one.
+    pub fn fix_order_at(&self, repo: &str, check: &str, sha: &str) -> Option<WorkstreamId> {
+        sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT workstream_id FROM train_fix_orders WHERE repo = ?1 AND check_name = ?2 AND sha = ?3",
+                params![repo.to_lowercase(), check, sha],
+                |r| Ok(WorkstreamId::unchecked(r.get::<_, String>(0)?)),
+            )
+            .optional()
+            .expect("fix order at a commit")
+        })
     }
 
     /// The newest fix order opened for `check` failing on the repo's base, and the commit it failed on.
