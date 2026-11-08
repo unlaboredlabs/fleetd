@@ -14,7 +14,10 @@ test("a flush holds the agents, checkpoints the database and says what waits", a
     const db = new Database(join(home.dir, "sessions.sqlite"));
     db.run("PRAGMA journal_mode=WAL");
     db.run("CREATE TABLE t (x); INSERT INTO t VALUES (1);");
-    expect(await flush(home.dir, 0)).toBe("flushed: agents held between steps, no recording waits, database checkpointed, disk synced");
+    // The disk's own sync is the whole machine's, and slow on a busy one: the test's counts it.
+    let synced = 0;
+    expect(await flush(home.dir, 0, () => void synced++)).toBe("flushed: agents held between steps, no recording waits, database checkpointed, disk synced");
+    expect(synced).toBe(1);
     db.close();
     expect(existsSync(holdPath(home.dir))).toBe(true);
     const wal = join(home.dir, "sessions.sqlite-wal");
@@ -41,7 +44,7 @@ test("a recording that ended and hasn't reached the hub waits; one still recordi
     utimesSync(join(old, "session.json"), longAgo, longAgo);
     utimesSync(old, longAgo, longAgo);
     expect(uploads(home.dir)).toBe(2);
-    expect(await flush(home.dir, 0)).toBe("flushed: agents held between steps, 2 recordings wait for the next wake, database checkpointed, disk synced");
+    expect(await flush(home.dir, 0, () => {})).toBe("flushed: agents held between steps, 2 recordings wait for the next wake, database checkpointed, disk synced");
   } finally {
     home.done();
   }
