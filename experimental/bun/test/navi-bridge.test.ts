@@ -5,6 +5,7 @@ import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { answer, bridgeOf, found, step } from "../src/hub/navi/bridge.ts";
 import { start } from "../src/hub/navi/loops.ts";
+import { apply } from "../src/hub/checklist/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import type { ProjectRef } from "../src/shared/contracts.ts";
 import { key, kit, project, workstream } from "./work-kit.ts";
@@ -126,4 +127,38 @@ test("start fills navi_bridge whoever asked first, and registers the two lead ca
   expect(listed.asks).toEqual([{ toTitle: "Storefront", handle: "N1", to: ref("storefront"), text: "Gift cards, please.", at: "2026-10-17T10:00:00.000Z", orders: [] }]);
   expect((await ok(key("read"), "navi_asks", { navi: ref("checkout") })).next).toBe("This project has asked no other project for anything yet.");
   stop.abort();
+});
+
+test("factory_status reads the other projects with their open orders, checklist and asks", async () => {
+  const { hub } = setup();
+  found.statusRows = (_hub, _now) =>
+    ["navi", "storefront", "checkout"].map((id) => ({ projectRef: ref(id), title: id, state: "idle", agentsRunning: 0 }));
+  await answer(hub, ref("navi"), message("Gift cards, please."));
+  const w = workstream(hub, ref("storefront"), "Gift cards");
+  hub.db.conn.query("INSERT INTO navi_ask_orders (workstream_id, n) VALUES (?, 1)").run(w.workstreamId);
+  apply(hub.db, ref("storefront"), { items: [{ text: "ship gift cards" }, { text: "old", state: "done" }] }, 0);
+  const out = (await answer(hub, ref("navi"), { op: "factory_status" })) as { projects: { projectRef: ProjectRef; openOrders: unknown[]; checklist: { text: string }[]; asks: { handle: string; orders: string[] }[] }[]; next: string };
+  // Its own project is left out.
+  expect(out.projects.map((p) => p.projectRef.projectId)).toEqual(["storefront", "checkout"]);
+  const shop = out.projects[0]!;
+  expect(shop.openOrders).toEqual([{ workstreamId: w.workstreamId, title: "Gift cards", asked: "N1" }]);
+  expect(shop.checklist.map((i) => i.text)).toEqual(["ship gift cards"]);
+  expect(shop.asks).toEqual([{ handle: "N1", text: "Gift cards, please.", at: "2026-10-17T10:00:00.000Z", orders: [w.workstreamId] }]);
+  expect(out.next).toBe("factory_status with project reads one. Write to a project's lead with project_message.");
+  delete found.statusRows;
+});
+
+test("navi_asks says an order merged once any PR of it did, however many others merged since", async () => {
+  const { hub, ok } = setup();
+  await answer(hub, ref("navi"), message("Gift cards, please."));
+  const w = workstream(hub, ref("storefront"), "Gift cards");
+  hub.db.conn.query("INSERT INTO navi_ask_orders (workstream_id, n) VALUES (?, 1)").run(w.workstreamId);
+  const merged = (n: number, workstreamId: string) =>
+    hub.db.conn
+      .query("INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data) VALUES ('o/r', ?, 'merged', 'devbox', 'storefront', ?, ?)")
+      .run(n, n, JSON.stringify({ workstreamId, state: "merged" }));
+  merged(1, w.workstreamId);
+  for (let i = 2; i < 520; i++) merged(i, "W999");
+  const listed = await ok(key("read"), "project_asks", { project: ref("navi") });
+  expect(listed.asks[0].orders).toEqual([{ workstreamId: w.workstreamId, title: "Gift cards", state: "open", merged: true }]);
 });
