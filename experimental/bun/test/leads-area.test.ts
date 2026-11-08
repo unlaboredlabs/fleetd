@@ -10,7 +10,8 @@ import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
-import type { HubEvent } from "../src/shared/contracts.ts";
+import { changeRecords } from "../src/hub/train/index.ts";
+import type { Change, HubEvent } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 /** A manual clock whose sleeps resolve as it advances. */
@@ -237,4 +238,27 @@ test("with the real ports, a lead start reaches the executor, and autoStart hold
   expect(held.kind).toBe("held");
   if (held.kind === "held") expect(held.message).toBe(held.error.message);
   t.done();
+});
+
+test("the digest's Merge train section comes from the train: a merged PR shows at the lead's start", async () => {
+  const { hub, launches, done } = withLead();
+  changeRecords(hub).create({
+    changeId: "X1",
+    projectRef: PROJECT,
+    repo: "acme/shop",
+    prNumber: 7,
+    prUrl: "https://github.com/acme/shop/pull/7",
+    branch: "pr-7",
+    workstreamId: "W1",
+    headSha: "a".repeat(40),
+    state: "merged",
+    reviews: [],
+    createdAt: "2026-11-08T09:00:00.000Z",
+    updatedAt: "2026-11-08T09:30:00.000Z",
+  } as unknown as Change);
+  await leads(hub).start(PROJECT);
+  expect(launches[0]?.prompt).toContain("Merge train");
+  expect(launches[0]?.prompt).toContain("- X1 merged: ");
+  expect(leadWiring(hub).hooks.trainLines?.(PROJECT, "2026-11-08T10:00:00.000Z")).toEqual([]);
+  done();
 });
