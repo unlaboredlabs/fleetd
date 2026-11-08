@@ -1005,7 +1005,7 @@ impl NodeLinkServer {
             machine_id: machine_id.clone(),
             link_id: id,
         };
-        let _commands = self.deps.commands.attach(&machine_id, cmd_tx);
+        let _commands = self.deps.commands.attach(&machine_id, id, cmd_tx);
         // After the attaches, so whoever acts on the announcement can already run commands and sessions there.
         let _runner = AbortOnDrop(self.follow_runner(&machine_id));
         self.check_runner(&machine_id);

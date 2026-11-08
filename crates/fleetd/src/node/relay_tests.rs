@@ -222,7 +222,7 @@ fn devbox_link(hub: &Arc<Hub>) -> (LeadRelay, Vec<Box<dyn std::any::Any + Send>>
         });
     }
     let (hub_tx, hub_rx) = mpsc::unbounded_channel::<HubToNode>();
-    let linked = hub.node_commands.attach(&mid("devbox"), hub_tx);
+    let linked = hub.node_commands.attach(&mid("devbox"), 1, hub_tx);
     (
         relay,
         vec![Box::new(attached), Box::new(linked), Box::new(hub_rx)],
@@ -238,7 +238,7 @@ fn mac1_link(
     box_key: Arc<NodeBoxKey>,
 ) -> crate::hub::link::commands::AttachedLink {
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
-    let linked = hub.node_commands.attach(&mid("mac1"), tx);
+    let linked = hub.node_commands.attach(&mid("mac1"), 1, tx);
     let (hub, broker, url, hosted) = (hub.clone(), broker.clone(), url.to_owned(), hosted.clone());
     tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
