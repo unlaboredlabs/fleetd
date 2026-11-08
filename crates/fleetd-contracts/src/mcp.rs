@@ -3806,14 +3806,6 @@ macro_rules! tools {
                     $(McpToolName::$variant => generator.subschema_for::<$output>(),)*
                 }
             }
-
-            /// Decodes `input` as this tool's input, defaults applied, and re-encodes it: the input as its
-            /// handler sees it. Handlers decode their typed input with `serde_json::from_value` instead.
-            pub fn decode_input(self, input: serde_json::Value) -> Result<serde_json::Value, serde_json::Error> {
-                match self {
-                    $(McpToolName::$variant => serde_json::to_value(serde_json::from_value::<$input>(input)?),)*
-                }
-            }
         }
 
     };
