@@ -2661,6 +2661,79 @@ async fn a_session_taking_over_a_branch_works_in_the_earlier_sessions_worktree()
     assert_eq!((spec.cwd.as_path(), spec.resume), (path.as_path(), false));
 }
 
+/// A task restarted fresh goes on with its scratch dir: the files it kept in $TMPDIR (clones, worktrees, drafts) are
+/// still there in its new session, and through a node restart. They go only when the task ends, with its worktree.
+#[tokio::test]
+async fn a_task_keeps_its_scratch_dir_across_its_sessions_until_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    before.project(&root).await;
+    let workspace = |from: Option<&str>| SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: from.map(ThreadId::unchecked),
+    };
+    before
+        .ok(launch("s1", RuntimeMode::FullAccess, workspace(None)))
+        .await;
+    before.settled("r1").await;
+    let node = dir.path().join("node");
+    let scratch = super::share::scratch_dir(&node, "s1");
+    std::fs::create_dir_all(scratch.join("clone")).unwrap();
+    std::fs::write(scratch.join("clone/edit.txt"), "not committed\n").unwrap();
+    before
+        .ok(SessionCall::Stop {
+            session_id: ThreadId::unchecked("s1"),
+            remove_worktree: false,
+        })
+        .await;
+    assert!(scratch.join("clone/edit.txt").exists());
+
+    let SessionCall::Launch(mut fresh) =
+        launch("s2", RuntimeMode::FullAccess, workspace(Some("s1")))
+    else {
+        unreachable!()
+    };
+    fresh.run_id = NonEmpty::unchecked("q1");
+    before.ok(SessionCall::Launch(fresh)).await;
+    before.settled("q1").await;
+    let spec = &before.runner.spawned()[1];
+    let tmpdir = spec.env.iter().rev().find(|(k, _)| k == "TMPDIR");
+    assert_eq!(tmpdir.map(|(_, v)| v.as_str()), scratch.to_str());
+    assert!(scratch.join("clone/edit.txt").exists());
+    assert!(!super::share::scratch_dir(&node, "s2").exists());
+
+    // A node restart keeps it, and sweeps a dir no session uses.
+    std::fs::create_dir_all(node.join("tmp/left-behind")).unwrap();
+    before.service.shutdown().await;
+    drop(before);
+    let after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    assert!(scratch.join("clone/edit.txt").exists());
+    assert!(!node.join("tmp/left-behind").exists());
+
+    // Its end removes its worktree, and the scratch dir with it.
+    after
+        .ok(SessionCall::Stop {
+            session_id: ThreadId::unchecked("s2"),
+            remove_worktree: true,
+        })
+        .await;
+    assert!(!dir.path().join("node/worktrees/p1/s1").exists());
+    assert!(!scratch.exists());
+}
+
 /// A task's session restarted after its process went must resume its conversation for anything but its first message:
 /// without it, a recovery note alone would reach an agent that knows nothing of its task, so claude's start is refused
 /// when the conversation is gone (the hub then restarts the task with its brief). The first message again may start

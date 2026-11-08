@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::node::store::SessionRow;
+
 /// The test runner's variable: vitest's worker count, the desktop's and the phone's suites alike.
 const TEST_WORKERS_VAR: &str = "VITEST_MAX_WORKERS";
 
@@ -42,6 +44,14 @@ pub fn jobs_env(env: &[(String, String)], n: u64) -> Vec<(String, String)> {
 /// under the 104 bytes macOS allows a socket path. Never under /tmp, which is often tmpfs and counts against memory.
 pub fn scratch_dir(home: &Path, session_id: &str) -> PathBuf {
     home.join("tmp").join(scratch_name(session_id))
+}
+
+/// The session whose scratch dir `row` uses: the one it took over (`SessionLocal::scratch_of`), else its own.
+pub fn scratch_owner(row: &SessionRow) -> &str {
+    row.local
+        .scratch_of
+        .as_deref()
+        .unwrap_or(row.summary.session_id.as_str())
 }
 
 fn scratch_name(session_id: &str) -> String {
@@ -100,8 +110,8 @@ pub fn remove_scratch(home: &Path, session_id: &str) {
     }
 }
 
-/// Removes every scratch dir under `<home>/tmp` but those of `keep`, the sessions whose worktree is still there.
-/// Returns how many went.
+/// Removes every scratch dir under `<home>/tmp` but those of `keep`, the scratch owners of the sessions whose worktree
+/// is still there. Returns how many went.
 pub fn sweep_scratch(home: &Path, keep: &[String]) -> usize {
     let keep: HashSet<String> = keep.iter().map(|id| scratch_name(id)).collect();
     let Ok(entries) = std::fs::read_dir(home.join("tmp")) else {
