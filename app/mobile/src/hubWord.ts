@@ -98,8 +98,8 @@ export const slowLine = (input: WordInput & { readonly hubName: string }): SlowL
   const ms = now - restart.since;
   if (ms < SLOW_RESTART_MS) return undefined;
   if (ms >= LONG_RESTART_MS) return { text: `${hubName} hasn't come back after ${String(Math.round(LONG_RESTART_MS / 60_000))} minutes`, tone: "warning" };
-  const what = restart.update || going(run) ? "update" : "restart";
-  return { text: `${hubName} is taking a little longer to ${what}. What you send goes once it's back.`, tone: "quiet" };
+  // One line on a phone's width: the bar already says what is going on.
+  return { text: `Still ${restart.update || going(run) ? "updating" : "restarting"}. What you send goes once it's back.`, tone: "quiet" };
 };
 
 /** When the bar's word next changes by itself (epoch ms), so a screen wakes for it; undefined when nothing will. */

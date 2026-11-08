@@ -51,7 +51,7 @@ describe("a planned restart", () => {
     const s = restartedAt("updating to 0.9.2");
     const line = (now: number) => slowLine({ ...at(s, now), hubName: "devbox" });
     expect(line(T + SLOW_RESTART_MS - 1)).toBeUndefined();
-    expect(line(T + SLOW_RESTART_MS)).toEqual({ text: "devbox is taking a little longer to update. What you send goes once it's back.", tone: "quiet" });
+    expect(line(T + SLOW_RESTART_MS)).toEqual({ text: "Still updating. What you send goes once it's back.", tone: "quiet" });
     expect(line(T + LONG_RESTART_MS)).toEqual({ text: "devbox hasn't come back after 2 minutes", tone: "warning" });
     expect(hubWord(at(s, T + LONG_RESTART_MS))?.text).toBe("Connecting…");
     expect(nextChange(at(s, T))).toBe(T + RESTART_HOLD_MS);
