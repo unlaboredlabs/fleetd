@@ -2,19 +2,18 @@
 // Node.js, which agent-device runs on, into `<node home>/mac`; agent-device, which drives iOS simulators; and
 // agent-desktop, which drives the Mac's own apps. Nothing comes from the person's Homebrew, which agents can't write and
 // must not plant binaries in. CocoaPods alone does, and the tools check says how (checks.ts).
-//
-// TODO(bun): agent-device's and agent-desktop's installs (node/device's and the Mac screen's, not ported yet): until
-// they are, the tools check says they aren't installed.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { install as installAgentDesktop, VERSION as AGENT_DESKTOP } from "../desktop/mac/agent_desktop.ts";
+import { findAgentDevice, install as installAgentDevice, VERSION as AGENT_DEVICE } from "../device/agent_device.ts";
 import { toolsDir } from "./common.ts";
 
 /** The Node.js release the Mac installs (an LTS). */
 export const NODE_VERSION = "24.22.2";
-/** The agent-device and agent-desktop releases the Rust node pins. */
-export const AGENT_DEVICE_VERSION = "0.21.31";
-export const AGENT_DESKTOP_VERSION = "1.1.0";
+/** The agent-device and agent-desktop releases the node pins (node/device's and the Mac screen's). */
+export const AGENT_DEVICE_VERSION = AGENT_DEVICE;
+export const AGENT_DESKTOP_VERSION = AGENT_DESKTOP;
 
 /** nodejs.org's SHASUMS256.txt for each of its macOS tarballs. */
 const NODE_SHA256: Record<string, string> = {
@@ -60,7 +59,8 @@ export class Installing {
 async function install(home: string, fetcher: typeof fetch): Promise<void> {
   if (process.platform !== "darwin") throw new Error("the agents' Mac's tools run on macOS only");
   if (!pinned(nodeDir(home), NODE_VERSION) || !existsSync(join(nodeBin(home), "node"))) await installNode(home, fetcher);
-  throw new Error("the Bun node doesn't install agent-device and agent-desktop yet");
+  if (!findAgentDevice(home)) await installAgentDevice(home);
+  await installAgentDesktop(home, fetcher);
 }
 
 /** Downloads, checks and unpacks the pinned Node.js into `<home>/mac/node`. */

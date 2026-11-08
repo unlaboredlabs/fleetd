@@ -9,8 +9,10 @@
 // `browser_control` for a desktop's id come here, every other id to the broker. node/device's router sends each
 // session call to the kind it is for (`router(node).desktops`).
 //
-// TODO(bun): the agents' Mac's own screen (`session_start` kind mac, desktop/mac/: ScreenCaptureKit, CGEvent and
-// agent-desktop) and the recordings (session.ts). A Mac's node refuses kind mac until they are ported.
+// The agents' Mac's own screen is a session here too (`session_start` kind mac, desktop/mac/): on the screen the Mac's
+// node runs in rather than a display of its own, and leased to one session at a time.
+//
+// TODO(bun): the recordings (session.ts).
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BrowserControlTo, BrowserSessionState, HostCheck } from "../../shared/contracts.ts";
@@ -25,6 +27,10 @@ import { homeDir } from "../util.ts";
 import { image as pinnedImage, Runtime } from "./container.ts";
 import { type Backend, clearLeftovers, Pool, type Settings } from "./display.ts";
 import { onPath } from "./paths.ts";
+import { install as installAgentDesktop, macDir } from "./mac/agent_desktop.ts";
+import { type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE_MINUTES, MacLent, type MacConfig, macEnabled, observes } from "./mac/index.ts";
+import { MacScreen } from "./mac/screen.ts";
+import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
@@ -225,11 +231,22 @@ export class Desktops implements Screens {
   };
   /** What the hello lists for desktop sessions now (`capabilities`), kept for the `caps` seam, which reads it at once. */
   capsNow: string[] = [];
+  /** node.json's `mac`: the agents' Mac's screen, where this node lends it. */
+  readonly mac: MacConfig;
+  /** The Mac screen session that holds the Mac's screen now. */
+  private lease: string | undefined;
+  /** What stands in the way of the Mac's screen now (mac/index.ts `blocked`; a test's own). */
+  macGate: () => Blocked | undefined = macBlocked;
+  /** The Mac's own screen, for a session to read and drive (a test's own). */
+  openMacScreen: (scratch: string) => Screen = (scratch) => MacScreen.open(scratch);
 
   constructor(
     private readonly node: Node,
     readonly config: DesktopConfig = desktopConfig(node),
-  ) {}
+    mac?: MacConfig,
+  ) {
+    this.mac = mac ?? ((node.config.mac ?? {}) as MacConfig);
+  }
 
   private sessionsArea(): SessionsArea | undefined {
     try {
@@ -251,6 +268,10 @@ export class Desktops implements Screens {
    * them otherwise. */
   start(): void {
     rmSync(statePath(this.node.home), { force: true });
+    // Where it lends the Mac's screen, agent-desktop is installed now, so the first Mac screen doesn't wait for it.
+    if (macEnabled(this.mac)) {
+      void installAgentDesktop(this.node.home).catch((e: Error) => console.warn(`agent-desktop not installed yet: ${e.message}`));
+    }
     if (enabled(this.config)) {
       if (this.config.enabled === true) this.beginPrepare();
       else {
@@ -364,11 +385,7 @@ export class Desktops implements Screens {
     switch (call.op) {
       case "session_start":
         if (call.kind === "mac") {
-          throw new ToolError(
-            "failed",
-            "This machine lends no Mac screen: the Bun node doesn't port the agents' Mac's own screen yet.",
-            "say so in your result",
-          );
+          return { op: "session_start", ...(await this.macStart(thread, frame.cwd, String(call.purpose ?? "a Mac screen session"))) };
         }
         return { op: "session_start", ...(await this.sessionStart(thread, frame.cwd, String(call.purpose ?? "a desktop session"))) };
       case "session_end":
@@ -450,6 +467,7 @@ export class Desktops implements Screens {
   private async close(session: Session): Promise<Record<string, unknown>> {
     session.logStep("session_end", {}, true);
     await session.close();
+    this.releaseLease(session.id);
     const note = session.note() ? `${session.note()}; ${NO_RECORDING}` : NO_RECORDING;
     await this.report(session, "recorded", { endedAt: new Date().toISOString(), note });
     return { sessionId: session.id, kind: session.kind, files: [], note };
@@ -497,6 +515,7 @@ export class Desktops implements Screens {
         session.logStep("agent_resumed", {}, true);
         void this.report(session, "live");
     }
+    if (session.kind === "mac" && session.observing() && !observes(call)) await this.takeLease(session);
     try {
       return await session.act(call);
     } catch (e) {
@@ -514,6 +533,113 @@ export class Desktops implements Screens {
       message:
         "Asked: it shows under waiting on you. Carry on with what you can; while a person has control your desktop actions answer so, and after they hand it back take a screenshot first.",
     };
+  }
+
+  /** Who holds the Mac's lease, in a line for the others; undefined while nobody does. */
+  heldBy(): string | undefined {
+    const holder = this.lease === undefined ? undefined : this.byId(this.lease);
+    return holder ? this.describe(holder) : undefined;
+  }
+
+  /** The lease's holder `session`, in a line for the others. */
+  private describe(session: Session): string {
+    if (session.control() === "human") return `a person has taken it over ("${session.purpose}")`;
+    return `another agent's session "${session.purpose}" holds it (idle ${Math.floor(session.idleFor() / 60_000)} min; it ends after ${MAC_IDLE_MINUTES} min idle)`;
+  }
+
+  /** `session_start` kind mac: the Mac's screen, leased to this session if nobody holds it, else observed. */
+  async macStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
+    if (!macEnabled(this.mac)) {
+      throw new ToolError(
+        "failed",
+        "This machine lends no Mac screen: it is off in its node.json, or this isn't a Mac.",
+        "say so in your result: an admin turns the Mac screen on, on the Mac's page in Settings › Hub › Machines",
+      );
+    }
+    const open = this.sessions.get(thread);
+    if (open) throw new ToolError("invalid", `Mac screen session ${open.id} is open.`, "use it, or end it with session_end before starting another");
+    // Checked at every start: Fast User Switching, a lock or a revoked grant can change it at any time.
+    const gate = this.macGate();
+    if (gate) {
+      throw new ToolError("failed", `The Mac's screen can't be lent now: ${gate.message}.`, "say so in your result, with what a person must do at the Mac");
+    }
+    const agentDesktop = await installAgentDesktop(this.node.home).catch((e: Error) => e);
+    let screen: Screen;
+    try {
+      screen = this.openMacScreen(macDir(this.node.home));
+    } catch (e) {
+      throw new ToolError("failed", `The Mac's screen can't be read here: ${(e as Error).message}.`, "say so in your result");
+    }
+    return this.openMac(thread, cwd, purpose, screen, agentDesktop);
+  }
+
+  /** Opens a Mac screen session on `screen`, holding the lease if nobody does, else observing. */
+  async openMac(thread: string, cwd: string, purpose: string, screen: Screen, agentDesktop: string | Error): Promise<Record<string, unknown>> {
+    if (this.starting.has(thread) || this.sessions.has(thread)) {
+      throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
+    }
+    const id = newId();
+    let lent: MacLent;
+    try {
+      lent = new MacLent(join(macDir(this.node.home), "sessions", id), agentDesktop);
+    } catch (e) {
+      throw new ToolError("failed", `The node could not make the session's folder: ${(e as Error).message}.`, "say so in your result; the node's log says why");
+    }
+    let mask: Masker;
+    try {
+      mask = this.hooks.maskFor(thread);
+    } catch (e) {
+      await lent.drop();
+      throw new ToolError(
+        "failed",
+        `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
+        "try again; if it keeps failing, check the node's log",
+      );
+    }
+    // A holder whose session is gone holds nothing.
+    const heldBy = this.heldBy();
+    const session = new Session(lent, screen, { id, thread, cwd, purpose, mask, kind: "mac", observing: heldBy !== undefined });
+    if (heldBy === undefined) this.lease = id;
+    this.sessions.set(thread, session);
+    session.open();
+    session.logStep("session_start", { purpose, kind: "mac", observing: heldBy !== undefined }, true, heldBy);
+    void this.report(session, "live");
+    return { sessionId: id, desktop: "mac", ...(heldBy ? { heldBy: heldBy.slice(0, 300) } : {}), startMs: session.offsetMs() };
+  }
+
+  /** Before an action of an observing session that acts on the screen: takes the lease if nobody holds it, else
+   * refuses with who does. */
+  private async takeLease(session: Session): Promise<void> {
+    const heldElsewhere = () => this.lease !== undefined && this.lease !== session.id && this.byId(this.lease) !== undefined;
+    if (heldElsewhere()) {
+      throw new ToolError(
+        "invalid",
+        `The Mac's screen is someone else's now: ${this.heldBy() ?? "another session holds it"}. You can observe it meanwhile: screenshot, cursor_position, wait and agent-desktop's reading commands (snapshot, find, get, is, list-apps).`,
+        "carry on with what you can without it and try again later; once it's free, your next action takes it",
+      );
+    }
+    const gate = this.macGate();
+    if (gate) {
+      throw new ToolError("failed", `The Mac's screen can't be lent now: ${gate.message}.`, "say so in your result, with what a person must do at the Mac");
+    }
+    if (heldElsewhere()) {
+      throw new ToolError("invalid", "Another session took the Mac's screen just now.", "carry on with what you can without it and try again later");
+    }
+    this.lease = session.id;
+    session.setObserving(false);
+  }
+
+  /** A person takes a Mac screen session over: the lease is theirs through it, and whoever held it only observes. */
+  private personTakesLease(session: Session): void {
+    const before = this.lease;
+    this.lease = session.id;
+    if (before !== undefined && before !== session.id) this.byId(before)?.setObserving(true);
+    session.setObserving(false);
+  }
+
+  /** A session ended: the lease is free if it held it. */
+  private releaseLease(id: string): void {
+    if (this.lease === id) this.lease = undefined;
   }
 
   /** The hub's live view for one of these sessions: false when the id isn't one of these. */
@@ -539,7 +665,10 @@ export class Desktops implements Screens {
     if (!session) return false;
     const to: BrowserControlTo = frame.control;
     const now = session.control();
-    if (to === "human" && now !== "human") session.setControl("human", frame.by);
+    if (to === "human" && now !== "human") {
+      if (session.kind === "mac") this.personTakesLease(session);
+      session.setControl("human", frame.by);
+    }
     else if (to === "agent" && now === "human") session.setControl("handing_back", frame.by);
     void this.report(session, "live");
     return true;
@@ -562,9 +691,10 @@ export class Desktops implements Screens {
 
   /** Ends sessions idle past the limit. */
   async housekeep(): Promise<void> {
-    const limit = 60_000 * (this.config.idleMinutes ?? IDLE_MINUTES);
+    const linux = 60_000 * (this.config.idleMinutes ?? IDLE_MINUTES);
+    const mac = 60_000 * MAC_IDLE_MINUTES;
     for (const [thread, session] of [...this.sessions]) {
-      if (session.idleFor() >= limit && session.control() === "agent") {
+      if (session.idleFor() >= (session.kind === "mac" ? mac : linux) && session.control() === "agent") {
         console.info(`desktop session ${session.id} idle; ending it`);
         this.sessions.delete(thread);
         await this.close(session);
@@ -629,6 +759,13 @@ export async function prepare(home: string, config: DesktopConfig, state: (h: De
   }
   if (xvfb) return onXvfb(xvfb);
   throw new Error("this machine has neither docker or podman nor Xvfb");
+}
+
+/** The agents' Mac's screen as the heartbeat's host line reads it (hosts.rs `mac_screen`): on in node.json on a Mac,
+ * what stands in the way of it now, and who holds it. */
+export function macScreen(node: Node): { enabled: boolean; blocked(): Blocked | undefined; heldBy(): string | undefined } {
+  const d = desktops(node);
+  return { enabled: macEnabled(d.mac), blocked: () => d.macGate(), heldBy: () => d.heldBy() };
 }
 
 /** The node's desktops: `given` (a test's) when it is the first to ask, else the node's own. */
