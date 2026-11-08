@@ -7,8 +7,7 @@
 // entries, written here the way `remember` writes them: a secret refused, an entry the memory already says skipped, a
 // merged one in place of the old, and the cap held, the most durable kinds first. One `memory.changed` at the end.
 //
-// The turn runs through a `Turn`, as in Rust: `importPorts(hub).turn`, which the executor's turn fills once it is
-// ported; tests set their own.
+// The turn runs through a `Turn`, as in Rust: `importPorts(hub).turn`, the executor's by default; tests set their own.
 import type { MemoryImported, MemoryImportOutput, MemoryImportSkip, MemorySkipped, PersonId, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_ALLOWED_ONLY } from "../../shared/node_link.ts";
@@ -19,38 +18,23 @@ import { requireHuman, unknownProject } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
 import { ClaudeAccountStore, isRefusal, launchAccount } from "../claude_accounts/index.ts";
 import { CAP_CLAUDE_ACCOUNTS } from "../claude_accounts/tools.ts";
+import type { LaunchInput, LaunchOptions } from "../executor/sessions.ts";
+import { Owner, type Turn, turn } from "../executor/turn.ts";
 import { all as onlyMe, of as naviOf, others } from "../navi/store.ts";
 import { profiles } from "../projects/profiles.ts";
 import { prompts } from "../prompts/store.ts";
 import { redact } from "../redact.ts";
 import { changed } from "./calls.ts";
 import { activePeople, Memory, type RememberCall, type You, userTarget, youTarget } from "./index.ts";
-import { job, type LaunchInput, refreshPorts, runNow } from "./refresh.ts";
+import { job, refreshPorts, runNow } from "./refresh.ts";
 
 export const IMPORT_ENTRIES_MAX = 200;
 
-/** How the import's turn starts: no tools at all, no MCP server, fleetd's included. */
-export type TurnOptions = {
-  role: "plain";
-  mcp: { userServers: false; servers: never[] };
-  onlyTools: never[];
-  claudeAccount?: unknown;
-};
+/** The executor's turn (executor/turn.rs `Turn`): its reply, or a thrown Error saying why there is none. */
+export type { Turn };
 
-/** One turn on a fresh session (executor/turn.rs `Turn`): its reply, or a thrown Error saying why there is none. */
-export type Turn = { run(r: ProjectRef, person: PersonId | undefined, input: LaunchInput, options: TurnOptions): Promise<string> };
-
-export const TURN_NOT_PORTED = "the Bun hub can't run its session yet (src/hub/executor: turn)";
-
-/** `importPorts(hub).turn = …` from the area that runs turns (executor `Owner::MemoryImport`). */
-export const importPorts = (hub: Hub): { turn: Turn } =>
-  hub.area("memory_import", () => ({
-    turn: {
-      run: async () => {
-        throw new Error(TURN_NOT_PORTED);
-      },
-    },
-  }));
+/** `importPorts(hub).turn`: the executor's memory-import turn; tests set their own. */
+export const importPorts = (hub: Hub): { turn: Turn } => hub.area("memory_import", (h) => ({ turn: turn(h, Owner.MemoryImport) }));
 
 /** The export prompt every app shows, as the hub's prompts say it now. */
 export const exportPrompt = (hub: Hub) => prompts(hub.db).current().render("memory.export", {});
@@ -171,7 +155,7 @@ export function importPrompts(hub: Hub, memory: string, text: string): [string, 
 }
 
 /** The person's import of `text`: the turn, then its entries written to their memory. */
-export async function importMemory(hub: Hub, you: You, by: string, text: string, turn: Turn = importPorts(hub).turn): Promise<MemoryImportOutput> {
+export async function importMemory(hub: Hub, you: You, by: string, text: string, using: Turn = importPorts(hub).turn): Promise<MemoryImportOutput> {
   const memory = Memory.of(hub);
   const t = youTarget(you);
   if (!t) {
@@ -200,11 +184,11 @@ export async function importMemory(hub: Hub, you: You, by: string, text: string,
     systemPrompt,
     profile,
     // Its node asks for any tool, and refuses it: it has none.
-    runtimeMode: "approval_required",
+    runtimeMode: "approval-required",
     title: "fleetd memory import",
     clientRequestId: `fleetd-memory-import:${person ?? "shared"}:${fenceNonce()}`,
   };
-  const options: TurnOptions = {
+  const options: LaunchOptions = {
     role: "plain",
     mcp: { userServers: false, servers: [] },
     onlyTools: [],
@@ -212,7 +196,7 @@ export async function importMemory(hub: Hub, you: You, by: string, text: string,
   };
   let reply: string;
   try {
-    reply = await turn.run(r, person, input, options);
+    reply = await using.run(r, person, input, options);
   } catch (error) {
     throw new ToolError("failed", `The import didn't finish: ${(error as Error).message}.`, "Try again; nothing was added.");
   }

@@ -10,7 +10,10 @@ import { decisions } from "../src/hub/ledger/decisions.ts";
 import { answer } from "../src/hub/memory/calls.ts";
 import { clean, importPorts, parse, registerImportAndRefresh, type Turn } from "../src/hub/memory/import.ts";
 import { Memory, projectTarget, userTarget } from "../src/hub/memory/index.ts";
-import { job, type LaunchInput, type LaunchOptions, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
+import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts";
+import { ExecutorTurn } from "../src/hub/executor/turn.ts";
+import { register as registerAutomationTools } from "../src/hub/automations/tools.ts";
+import { job, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
 import { put as putNavi } from "../src/hub/navi/store.ts";
 import { projectSettings } from "../src/hub/projects/settings.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
@@ -151,7 +154,7 @@ test("an active project gets one session that reads its chat, memory and decisio
   expect(node.launches.length).toBe(1);
   const input = node.launches[0]!;
   expect(input.title).toBe("fleetd memory refresh: Shop");
-  expect(input.runtimeMode).toBe("approval_required");
+  expect(input.runtimeMode).toBe("approval-required");
   expect(input.clientRequestId).toBe(`fleetd-memory:${PROJECT.machineId}/${PROJECT.projectId}:${Date.parse("2026-10-27T04:00:00Z")}`);
   for (const needle of [
     "tonight's memory refresh",
@@ -355,4 +358,29 @@ test("clean and parse read what other assistants write", () => {
   expect(clean("[note] keep")).toBe("[note] keep");
   expect(parse('x {"entries":[{"text":"a","kind":"preference"}]} y')).toEqual([{ text: "a", kind: "preference" }]);
   expect(parse('{"entries":[{"kind":"x"}]}')).toBeUndefined();
+});
+
+test("by default the refresh launches through the executor, and the import runs the executor's turn", async () => {
+  const t = testHub(NIGHT_MS);
+  cleanup = t.done;
+  const hub = t.hub;
+  global(hub, "policy.tz", "UTC");
+  Object.assign(refreshPorts(hub), { can: () => true, lacks: () => false });
+  expect(importPorts(hub).turn).toBeInstanceOf(ExecutorTurn);
+  say(hub, "human", "Short answers.");
+  // No node is linked: the executor's launch refuses, and the row says so.
+  await tick(hub);
+  const last = job(hub, PROJECT).lastRun!;
+  expect(last.state).toBe("failed");
+  expect(last.why).toStartWith("It didn't start: ");
+  expect(last.why).not.toContain("not ported");
+});
+
+test("automation_list carries the refresh's row for a project the hub knows", async () => {
+  const { hub } = setup();
+  const tools = new Map<string, (hub: Hub, c: unknown, input: unknown) => unknown>();
+  registerAutomationTools({ add: (n: string, h: never) => tools.set(n, h) } as unknown as Registry);
+  const listed = (r: typeof PROJECT) => tools.get("automation_list")!(hub, caller("read", true), { projectRef: r }) as Record<string, unknown>;
+  expect(listed(PROJECT).memoryRefresh).toMatchObject({ on: true, at: "04:00", tz: "UTC", nextRunAt: "2026-10-28T04:00:00.000Z" });
+  expect(listed({ ...PROJECT, projectId: "gone" }).memoryRefresh).toBeUndefined();
 });
