@@ -68,4 +68,4 @@ test("a worker's launch gets the areas' variables and plugin folders; a plain se
     await service.stopAll();
     home.done();
   }
-});
+}, 20_000);

@@ -369,6 +369,17 @@ export class SessionService {
       if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
     }
     await sweep(hosts, adopted);
+    // A killed node's scratch dirs: each session's own TMPDIR stays while its worktree or its process does.
+    const keep = new Set([...service.store.sessions().filter((r) => r.local.baseRef && r.summary.worktreePath).map((r) => r.summary.sessionId), ...adopted].map(scratchName));
+    let swept = 0;
+    for (const name of existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : []) {
+      if (keep.has(name)) continue;
+      try {
+        rmSync(join(config.home, "tmp", name), { recursive: true, force: true });
+        swept++;
+      } catch {}
+    }
+    if (swept) console.log(`${nowIso()} INFO removed scratch dirs a previous node left {"swept":${swept}}`);
     service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
     // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
     service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
