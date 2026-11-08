@@ -1,6 +1,7 @@
 // The hub's answers turned into what the Add project screen lists and says. Pure, so its behaviour is pinned by tests.
 
 import type { CloneProgressData, CloneTarget, ProjectDiscoverOutput, ProjectInspect, ProjectProblem } from "./contracts";
+import { sentence } from "../onboarding/form";
 import { addSource, baseName, folderName, otherHost, tilde } from "./source";
 
 export interface ProjectKey {
@@ -46,7 +47,8 @@ export interface Discovery {
   readonly problems: ReadonlyArray<Problem>;
 }
 
-const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: p.message, fix: p.fix } : { message: p.message });
+/** The hub's words end without a stop, and the screen says the fix right after the problem: each as a sentence. */
+const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: sentence(p.message), fix: sentence(p.fix) } : { message: sentence(p.message) });
 
 /** Each machine's checkouts, then GitHub. Machine ids read as names. */
 export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) => string): Discovery => {
