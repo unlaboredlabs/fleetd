@@ -25,6 +25,9 @@ pub struct HubHost {
     policy_unread: Unread,
 }
 
+/// The most open orders, and tasks of each, `writers` reads: far past any project's real count.
+const WRITERS_MAX: usize = 1_000;
+
 /// The projects whose policy the train couldn't read, each with the error last warned about. The train asks every
 /// pass, so each project gets one warning per error until a read succeeds, not one a pass.
 #[derive(Default)]
@@ -160,34 +163,56 @@ impl TrainHost for HubHost {
         }
     }
 
+    /// Read per open order of the project, never from its newest tasks: a writer that runs for hours falls behind a
+    /// hundred newer tasks (reviewers among them), and its later PRs then sat off the train. A closed order's writers
+    /// are none: nothing of a closed order is enqueued. A failed writer's ready PR goes on as its result's would; a
+    /// cancelled one's is the lead's to enqueue or drop.
     fn writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)> {
+        use fleetd_contracts::ledger::WorkstreamState;
         use fleetd_contracts::tasks::{TaskKind, TaskState};
         let Some(hub) = self.hub() else {
             return Vec::new();
         };
-        let filter = crate::hub::tasks::TaskFilter {
+        let orders = crate::hub::leads::records::WorkstreamFilter {
             project_ref: Some(project_ref.clone()),
-            state: None,
-            workstream_id: None,
-            limit: 100,
+            state: Some(WorkstreamState::Open),
+            limit: WRITERS_MAX,
         };
-        match hub.tasks.list(&filter) {
-            Ok(tasks) => tasks
-                .into_iter()
-                .filter(|t| t.kind == TaskKind::Write)
-                .filter(|t| {
-                    matches!(
-                        t.state,
-                        TaskState::Running | TaskState::Idle | TaskState::Done
-                    )
-                })
-                .filter_map(|t| Some((t.task_id, t.branch?.to_string())))
-                .collect(),
+        let orders = match hub.leads.records.workstreams_list(&orders) {
+            Ok(orders) => orders,
             Err(error) => {
-                tracing::warn!(%error, "train: writers not read");
-                Vec::new()
+                tracing::warn!(%error, "train: open orders not read");
+                return Vec::new();
+            }
+        };
+        let mut writers = Vec::new();
+        for order in orders {
+            let filter = crate::hub::tasks::TaskFilter {
+                project_ref: Some(project_ref.clone()),
+                state: None,
+                workstream_id: Some(order.workstream_id),
+                limit: WRITERS_MAX,
+            };
+            match hub.tasks.list(&filter) {
+                Ok(tasks) => writers.extend(
+                    tasks
+                        .into_iter()
+                        .filter(|t| t.kind == TaskKind::Write)
+                        .filter(|t| {
+                            matches!(
+                                t.state,
+                                TaskState::Running
+                                    | TaskState::Idle
+                                    | TaskState::Done
+                                    | TaskState::Failed
+                            )
+                        })
+                        .filter_map(|t| Some((t.task_id, t.branch?.to_string()))),
+                ),
+                Err(error) => tracing::warn!(%error, "train: writers not read"),
             }
         }
+        writers
     }
 
     fn message_task<'a>(
