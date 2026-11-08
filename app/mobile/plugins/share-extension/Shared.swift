@@ -62,14 +62,21 @@ extension HubCalls {
   }
 
   /// Stores one file in pieces (attachment_part, then the last with attachment_put), telling `sent` the bytes of each
-  /// piece as it goes: its attachmentId.
-  func upload(_ file: Upload, sent: (Int) -> Void = { _ in }) async throws -> String {
-    var uploadId: String?
-    var offset = 0
+  /// piece as it goes: its attachmentId. `from` goes on with an upload a dropped link cut off, from the bytes the hub
+  /// took; `took` hears the upload's id and those bytes after each piece, for the next try to go on from.
+  func upload(
+    _ file: Upload,
+    from: (uploadId: String, offset: Int)? = nil,
+    took: (String, Int) -> Void = { _, _ in },
+    sent: (Int) -> Void = { _ in }
+  ) async throws -> String {
+    var uploadId = from?.uploadId
+    var offset = from?.offset ?? 0
     let ranges = file.pieceRanges
-    for range in ranges.dropLast() {
+    for range in ranges.dropLast() where range.lowerBound >= offset {
       uploadId = try await call("attachment_part", Calls.part(file.data.subdata(in: range), uploadId: uploadId, offset: offset))["uploadId"] as? String
       offset += range.count
+      if let uploadId { took(uploadId, offset) }
       sent(range.count)
     }
     let last = ranges.last.map { file.data.subdata(in: $0) } ?? Data()

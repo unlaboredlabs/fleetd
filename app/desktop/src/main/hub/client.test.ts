@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../shared/hub";
-import { HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, PONG_WAIT_MS, READY_TIMEOUT_MS, RESUME_MAX_EVENTS, STABLE_MS } from "./client";
+import { DEFLATE_UP_BYTES, HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, PONG_WAIT_MS, READY_TIMEOUT_MS, RESUME_MAX_EVENTS, STABLE_MS } from "./client";
 import type { ConnectionEvents, Transport } from "./transport";
 
 /** A hub on the other end of a fake transport: records what the client sends, lets the test answer. */
@@ -8,6 +8,8 @@ class FakeHub {
   readonly urls: Array<string> = [];
   readonly headers: Array<Readonly<Record<string, string>> | undefined> = [];
   sent: Array<Record<string, unknown>> = [];
+  /** The tools of the frames sent compressed. */
+  compressed: Array<unknown> = [];
   events: ConnectionEvents | null = null;
   closedByClient = 0;
   pings = 0;
@@ -18,7 +20,11 @@ class FakeHub {
     this.events = events;
     this.sent = [];
     return {
-      send: (text) => this.sent.push(JSON.parse(text) as Record<string, unknown>),
+      send: (text, compress) => {
+        const frame = JSON.parse(text) as Record<string, unknown>;
+        this.sent.push(frame);
+        if (compress === true) this.compressed.push(frame["tool"]);
+      },
       ping: () => {
         this.pings++;
       },
@@ -91,6 +97,23 @@ describe("HubClient", () => {
       { t: "snapshot", snapshot: { cursor: 41, machines: [] } },
       { t: "event", event: { seq: 42, type: "task.started" } },
     ]);
+  });
+
+  it("sends an upload's piece compressed, only to a hub whose ready said it reads them", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    const piece = { dataB64: "QUJD".repeat(DEFLATE_UP_BYTES) };
+    void client.call({ tool: "attachment_part", input: piece });
+    void client.call({ tool: "hub_info", input: {} });
+    expect(hub.compressed).toEqual([]);
+    const reads = setup();
+    reads.client.start();
+    reads.hub.open();
+    reads.hub.frame({ t: "ready", protocol: 1, features: ["deflate"] });
+    void reads.client.call({ tool: "attachment_part", input: piece });
+    void reads.client.call({ tool: "hub_info", input: {} });
+    expect(reads.hub.compressed).toEqual(["attachment_part"]);
   });
 
   it("resumes a reconnect after the last event the old link applied, when it missed few enough", () => {

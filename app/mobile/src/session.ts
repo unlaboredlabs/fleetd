@@ -4,7 +4,7 @@
 // person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -32,6 +32,13 @@ export interface SessionOptions {
   readonly pins?: PinStore;
   /** Where the chats as last seen and the messages on their way are kept between launches (cacheStore.ts); none without one. */
   readonly cache?: CacheStore;
+  /** Where the pictures' previews are kept between launches (cacheStore.ts); in memory without one. */
+  readonly previews?: PreviewStore;
+}
+
+export interface PreviewStore {
+  load(hub: string, attachmentId: string): AttachmentGetOutput | null;
+  save(hub: string, attachmentId: string, preview: AttachmentGetOutput): void;
 }
 
 export interface CacheStore {
@@ -43,6 +50,8 @@ export interface CacheStore {
 /** How long after a change what the cache keeps is written: a burst of events writes once. */
 const CACHE_SAVE_MS = 1000;
 
+/** A transfer's read as the call outcome the screens take: the file, or the hub's or the link's error. */
+const typed = (r: Read): Typed<"attachment_get"> => (r.ok ? { ok: true, output: r.file } : { ok: false, error: { code: r.code, message: r.message } });
 const randomId = (): string => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
 export class Session {
@@ -64,6 +73,7 @@ export class Session {
   readonly #pins: Pins;
   readonly #hub: string;
   readonly #cache: CacheStore | undefined;
+  readonly #previewStore: PreviewStore | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The open chat, when the link dropped with its latest page shown: a replay after the drop keeps it going. */
   #resumable: Key | null = null;
@@ -75,6 +85,7 @@ export class Session {
     this.#push = options.push;
     this.#hub = options.hub;
     this.#cache = options.cache;
+    this.#previewStore = options.previews;
     const empty = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     const cached = options.cache === undefined ? null : parseCached(options.cache.load(), options.hub);
     this.#state = cached === null ? empty : withCached(empty, cached);
@@ -223,17 +234,47 @@ export class Session {
 
   readonly #files = new Map<string, Promise<Typed<"attachment_get">>>();
 
+  /** The hub's calls a file's transfer makes (desktop.ts readFile, readPreview). */
+  readonly #transfer: TransferCall = (tool, input, ms) => this.#client.call(tool, input as never, ms);
+
   /**
-   * A message's file, read once (attachment_get) and kept while the app runs; the hub's or the link's error when it
-   * can't be had, which isn't kept: the next ask reads it again.
+   * A message's file, whole: read once, when it is opened or shared, in pieces that go on from where a drop stopped
+   * them (readFile), and kept while the app runs; the hub's or the link's error when it can't be had, which isn't
+   * kept: the next ask reads it again.
    */
   attachment(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
     const known = this.#files.get(attachmentId);
     if (known !== undefined) return known;
-    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000);
+    const read = readFile(this.#transfer, { projectRef: refOf(key), attachmentId }).then(typed);
     this.#files.set(attachmentId, read);
     void read.then((r) => {
       if (!r.ok) this.#files.delete(attachmentId);
+    });
+    return read;
+  }
+
+  readonly #previews = new Map<string, Promise<Typed<"attachment_get">>>();
+
+  /**
+   * A picture as its bubble shows it: its preview, at most PREVIEW_SIDE.phone pixels a side, read once and kept on
+   * disk between launches; the error when it can't be had, which isn't kept. A hub that sent the picture itself (it
+   * was small, or the hub reads no maxSide) gave the file too, which opening it then uses.
+   */
+  preview(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
+    const known = this.#previews.get(attachmentId);
+    if (known !== undefined) return known;
+    const kept = this.#previewStore?.load(this.#hub, attachmentId) ?? null;
+    const read: Promise<Typed<"attachment_get">> =
+      kept !== null
+        ? Promise.resolve({ ok: true, output: kept })
+        : readPreview(this.#transfer, { projectRef: refOf(key), attachmentId }, PREVIEW_SIDE.phone).then((r) => {
+            if (r.ok) this.#previewStore?.save(this.#hub, attachmentId, r.file);
+            return typed(r);
+          });
+    this.#previews.set(attachmentId, read);
+    void read.then((r) => {
+      if (!r.ok) this.#previews.delete(attachmentId);
+      else if (r.output.preview !== true && !this.#files.has(attachmentId)) this.#files.set(attachmentId, Promise.resolve(r));
     });
     return read;
   }

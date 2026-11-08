@@ -689,4 +689,43 @@ describe("a tap on a screen just taken over", () => {
       { t: "browser_input", session: id, input: { kind: "mouse", action: "released", x: 40, y: 80, button: "left", clickCount: 1 } },
     ]);
   });
+
+  describe("a chat's pictures and files", () => {
+    const file = { attachmentId: "F3", name: "shot.png", bytes: 900_000 };
+    const gets = (hub: ReturnType<typeof setup>["hub"]) => hub.sentOf("call").filter((c) => c.tool === "attachment_get").map((c) => c.input);
+
+    it("shows a picture's preview, kept on disk, so the next launch reads nothing", async () => {
+      const kept = new Map<string, unknown>();
+      const previews = { load: (h: string, id: string) => (kept.get(`${h} ${id}`) ?? null) as never, save: (h: string, id: string, p: unknown) => void kept.set(`${h} ${id}`, p) };
+      const { hub, session } = setup({ previews });
+      const shown = session.preview(KEY, "F3");
+      expect(gets(hub)).toEqual([{ projectRef: REF, attachmentId: "F3", maxSide: 1024 }]);
+      hub.answer("attachment_get", { ...file, mime: "image/jpeg", dataB64: "c21hbGw=", preview: true });
+      await expect(shown).resolves.toMatchObject({ ok: true, output: { preview: true, dataB64: "c21hbGw=" } });
+      const again = setup({ previews });
+      await expect(again.session.preview(KEY, "F3")).resolves.toMatchObject({ ok: true, output: { preview: true } });
+      expect(gets(again.hub)).toEqual([]);
+    });
+
+    it("reads the picture itself, in pieces from the start, only when it is opened", async () => {
+      const { hub, session } = setup();
+      void session.preview(KEY, "F3");
+      hub.answer("attachment_get", { ...file, mime: "image/jpeg", dataB64: "c21hbGw=", preview: true });
+      await flush();
+      const whole = session.attachment(KEY, "F3");
+      await flush();
+      expect(gets(hub).at(-1)).toEqual({ projectRef: REF, attachmentId: "F3", offset: 0, length: 524_286 });
+      hub.answer("attachment_get", { ...file, bytes: 3, mime: "image/png", dataB64: "AAEC", offset: 0 });
+      await expect(whole).resolves.toMatchObject({ ok: true, output: { dataB64: "AAEC", mime: "image/png" } });
+    });
+
+    it("takes the file an older hub sent for a preview as the file, which opening then uses", async () => {
+      const { hub, session } = setup();
+      const shown = session.preview(KEY, "F3");
+      hub.answer("attachment_get", { ...file, mime: "image/png", dataB64: "AAEC" });
+      await shown;
+      await expect(session.attachment(KEY, "F3")).resolves.toMatchObject({ ok: true, output: { dataB64: "AAEC" } });
+      expect(gets(hub)).toHaveLength(1);
+    });
+  });
 });

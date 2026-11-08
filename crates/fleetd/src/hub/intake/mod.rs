@@ -3,3 +3,4 @@
 pub mod attachments;
 pub mod chat_image;
 pub mod office;
+pub mod preview;

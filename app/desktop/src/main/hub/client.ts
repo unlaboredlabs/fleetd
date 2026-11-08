@@ -34,6 +34,8 @@ export const upgradeHeaders = (key: string): Record<string, string> => ({
   authorization: `Bearer ${key}`,
   "x-fleetd-features": CLIENT_FEATURES.join(","),
 });
+/** A frame this long or longer goes compressed to a hub that reads `deflate`: an upload's piece, not the chatter. */
+export const DEFLATE_UP_BYTES = 16 * 1024;
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
 /** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
@@ -92,6 +94,8 @@ export class HubClient implements HubSource {
   #watch: string | null = null;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
   #thumbsServed = false;
+  /** This connection's hub reads compressed frames from the app: its `ready` listed `deflate`. */
+  #deflateUp = false;
   /** A window shows the Screens page; sent again on each connection. */
   #thumbs = false;
   #nextPresenceId = 0;
@@ -149,7 +153,7 @@ export class HubClient implements HubSource {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
       this.#pending.set(id, { resolve, timer });
-      this.#connection?.send(text);
+      this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
     });
   }
 
@@ -224,6 +228,7 @@ export class HubClient implements HubSource {
       onOpen: () => {
         if (this.#connection !== connection) return;
         opened = true;
+        this.#deflateUp = false;
         this.#heardAt = Date.now();
         // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
         // than a round trip after `ready`; refused, the hub closes before it reads them. A hub that took the auth on
@@ -245,6 +250,7 @@ export class HubClient implements HubSource {
       onClose: (code, reason, error) => {
         if (this.#connection !== connection) return;
         this.#connection = null;
+        this.#deflateUp = false;
         this.#onClose(code, reason, error, opened);
       },
     }, upgradeHeaders(this.#options.key));
@@ -286,6 +292,7 @@ export class HubClient implements HubSource {
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
         this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
+        this.#deflateUp = frame.features?.includes("deflate") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
@@ -463,7 +470,8 @@ export class HubClient implements HubSource {
   }
 
   #send(message: ClientMessage): void {
-    this.#connection?.send(JSON.stringify(message));
+    const text = JSON.stringify(message);
+    this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
   }
 
   #setState(state: HubState): void {

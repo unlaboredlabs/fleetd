@@ -2,9 +2,12 @@
 //! with a row; placing the order (or sending the note) writes them into the project's `.fleetd/attachments/<W>/` on
 //! its machine and lists them in the lead's wake, an Office file with its text beside it ([`super::office`]). Rows
 //! never used are deleted after 24 h. A file too large for one call comes in pieces first (`attachment_part`),
-//! appended under `<home>/attachments/uploads/<id>`. Every file's bytes must fit its type
+//! appended under `<home>/attachments/uploads/<id>`. A link that drops mid-upload loses at most one answer, so a piece
+//! sent again that the upload already ends with is answered as taken, and the upload's row remembers the file it
+//! became (`stored_n`), so attachment_put sent again answers with it. Every file's bytes must fit its type
 //! ([`AttachmentMime::fits`]), its name carries an extension of that type, and text is kept as UTF-8 (a bank's
-//! Windows-1252 CSV, Excel's UTF-16 text).
+//! Windows-1252 CSV, Excel's UTF-16 text). attachment_get reads a file whole, a piece of it from an offset, or an
+//! image's preview ([`super::preview`]).
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -15,9 +18,9 @@ use fleetd_contracts::chat::{CHAT_PARTS_MAX, ChatPart};
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::{
-    ATTACHMENT_MAX_BYTES, AttachmentGetInput, AttachmentGetOutput, AttachmentId, AttachmentMime,
-    AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput, AttachmentPutOutput, ErrorCode,
-    UploadId,
+    ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, AttachmentGetInput, AttachmentGetOutput,
+    AttachmentId, AttachmentMime, AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput,
+    AttachmentPutOutput, ErrorCode, UploadId,
 };
 use fleetd_contracts::node_link::CAP_HAS_FILE;
 use fleetd_contracts::prim::{Count, List, Text};
@@ -174,20 +177,38 @@ pub async fn run_sweep(hub: std::sync::Arc<Hub>) {
     }
 }
 
-/// The bytes upload `id` of `caller` holds so far.
-fn upload_bytes(hub: &Hub, caller: &Caller, id: &UploadId) -> Result<usize, ToolError> {
-    let row: Option<(String, i64)> = hub.db.with(|c| {
+/// One piece or one put at a time: a piece sent again while its first copy is still being written must find it
+/// written, never be appended beside it.
+static PIECES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Upload `id` of `caller`: the bytes it holds so far, and the attachment it became once attachment_put stored it.
+fn upload_of(hub: &Hub, caller: &Caller, id: &UploadId) -> Result<(usize, Option<i64>), ToolError> {
+    let row: Option<(String, i64, Option<i64>)> = hub.db.with(|c| {
         Ok(c.query_row(
-            "SELECT by, bytes FROM attachment_uploads WHERE id = ?1",
+            "SELECT by, bytes, stored_n FROM attachment_uploads WHERE id = ?1",
             [id.as_str()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?)
     })?;
     match row {
-        Some((by, bytes)) if by == caller.key_id.as_str() => Ok(bytes as usize),
+        Some((by, bytes, stored)) if by == caller.key_id.as_str() => Ok((bytes as usize, stored)),
         _ => Err(no_upload(id)),
     }
+}
+
+/// Whether the pieces file at `path` holds `piece` from `at` on.
+async fn holds(path: PathBuf, at: usize, piece: Vec<u8>) -> bool {
+    tokio::task::spawn_blocking(move || -> std::io::Result<bool> {
+        use std::io::{Read, Seek};
+        let mut file = std::fs::File::open(&path)?;
+        file.seek(std::io::SeekFrom::Start(at as u64))?;
+        let mut had = vec![0; piece.len()];
+        file.read_exact(&mut had)?;
+        Ok(had == piece)
+    })
+    .await
+    .is_ok_and(|same| same.unwrap_or(false))
 }
 
 /// `attachment_part`: one piece of a file, appended to its upload (a new one without an id).
@@ -201,14 +222,41 @@ pub async fn part(
     if input.upload_id.is_none() {
         sweep_uploads(hub)?;
     }
+    let _one = PIECES.lock().await;
     let offset = input.offset.map_or(0, |o| o.get() as usize);
     let (id, had) = match &input.upload_id {
-        Some(id) => (id.clone(), upload_bytes(hub, caller, id)?),
+        Some(id) => match upload_of(hub, caller, id)? {
+            (_, Some(n)) => {
+                return Err(ToolError::new(
+                    ErrorCode::Invalid,
+                    format!("Upload {id} is already stored, as F{n}."),
+                )
+                .with_fix("Send attachment_put with this uploadId for its attachmentId, or start a new upload."));
+            }
+            (had, None) => (id.clone(), had),
+        },
         None => {
             let n: [u8; 16] = rand::random();
             (UploadId::unchecked(format!("U{}", hex(&n))), 0)
         }
     };
+    let root = uploads_dir(hub);
+    let path = root.join(id.as_str());
+    let answer = |bytes: usize| AttachmentPartOutput {
+        upload_id: id.clone(),
+        bytes: Count::unchecked(bytes as i64),
+        next: Some(
+            "Send the next piece, or the last one with attachment_put and this uploadId.".into(),
+        ),
+        truncated: None,
+    };
+    // The piece the upload ends with, sent again because its answer never came: taken already.
+    if offset + piece.len() == had
+        && offset < had
+        && holds(path.clone(), offset, piece.clone()).await
+    {
+        return Ok(answer(had));
+    }
     if offset != had {
         return Err(ToolError::new(
             ErrorCode::Invalid,
@@ -233,8 +281,6 @@ pub async fn part(
     if input.upload_id.is_none() {
         upsert(0)?;
     }
-    let root = uploads_dir(hub);
-    let path = root.join(id.as_str());
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&root)?;
         let mut file = std::fs::OpenOptions::new()
@@ -250,14 +296,17 @@ pub async fn part(
         crate::hub::api::internal_error()
     })?;
     upsert(len)?;
-    Ok(AttachmentPartOutput {
-        upload_id: id,
+    Ok(answer(len))
+}
+
+fn put_answer(attachment_id: AttachmentId, len: usize, sha: String) -> AttachmentPutOutput {
+    AttachmentPutOutput {
+        attachment_id,
         bytes: Count::unchecked(len as i64),
-        next: Some(
-            "Send the next piece, or the last one with attachment_put and this uploadId.".into(),
-        ),
+        sha256: Text::unchecked(sha),
+        next: Some("Pass attachmentId in chat_send or steer_send attachments.".into()),
         truncated: None,
-    })
+    }
 }
 
 pub async fn put(
@@ -267,10 +316,34 @@ pub async fn put(
 ) -> Result<AttachmentPutOutput, ToolError> {
     may_attach(caller)?;
     let last = decode(&input.data_b64)?;
+    let _one = if input.upload_id.is_some() {
+        Some(PIECES.lock().await)
+    } else {
+        None
+    };
     let bytes = match &input.upload_id {
         None => last,
         Some(id) => {
-            let had = upload_bytes(hub, caller, id)?;
+            let (had, stored) = upload_of(hub, caller, id)?;
+            // Stored already: this is the same put again, after its answer was lost.
+            if let Some(n) = stored {
+                let row: Option<(String, i64)> = hub.db.with(|c| {
+                    Ok(c.query_row(
+                        "SELECT sha256, bytes FROM attachments WHERE n = ?1",
+                        [n],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()?)
+                })?;
+                let Some((sha, len)) = row else {
+                    return Err(no_upload(id));
+                };
+                return Ok(put_answer(
+                    AttachmentId::unchecked(format!("F{n}")),
+                    len as usize,
+                    sha,
+                ));
+            }
             too_big(had + last.len())?;
             let path = uploads_dir(hub).join(id.as_str());
             let mut bytes = tokio::fs::read(&path).await.map_err(|_| no_upload(id))?;
@@ -286,17 +359,41 @@ pub async fn put(
                 .with_fix("Send the file again from its first piece."));
             }
             bytes.extend_from_slice(&last);
-            hub.db.with(|c| {
-                c.execute(
-                    "DELETE FROM attachment_uploads WHERE id = ?1",
-                    [id.as_str()],
-                )?;
-                Ok(())
-            })?;
             let _ = tokio::fs::remove_file(&path).await;
             bytes
         }
     };
+    let stored = keep(hub, caller, bytes, &input).await;
+    if let Some(id) = &input.upload_id {
+        // The row stays, naming the file, until the sweep: the same put again gets the same answer.
+        hub.db.with(|c| {
+            match &stored {
+                Ok(out) => c.execute(
+                    "UPDATE attachment_uploads SET stored_n = ?2, touched_ms = ?3 WHERE id = ?1",
+                    params![
+                        id.as_str(),
+                        out.attachment_id.as_str()[1..].parse::<i64>().unwrap_or(0),
+                        now_ms(hub.clock.as_ref())
+                    ],
+                )?,
+                Err(_) => c.execute(
+                    "DELETE FROM attachment_uploads WHERE id = ?1",
+                    [id.as_str()],
+                )?,
+            };
+            Ok(())
+        })?;
+    }
+    stored
+}
+
+/// The file put together, checked against its type and stored.
+async fn keep(
+    hub: &Hub,
+    caller: &Caller,
+    bytes: Vec<u8>,
+    input: &AttachmentPutInput,
+) -> Result<AttachmentPutOutput, ToolError> {
     if !input.mime.fits(&bytes) {
         return Err(ToolError::new(
             ErrorCode::Invalid,
@@ -321,13 +418,7 @@ pub async fn put(
     let name = safe_name(&input.name);
     let (attachment_id, len, sha) =
         store(hub, bytes, &name, input.mime, caller.key_id.as_str()).await?;
-    Ok(AttachmentPutOutput {
-        attachment_id,
-        bytes: Count::unchecked(len as i64),
-        sha256: Text::unchecked(sha),
-        next: Some("Pass attachmentId in chat_send or steer_send attachments.".into()),
-        truncated: None,
-    })
+    Ok(put_answer(attachment_id, len, sha))
 }
 
 /// Stores a file's bytes under their sha256 and gives it a row `by` its uploader (a key, or `lead:<project>` for an
@@ -444,16 +535,61 @@ pub async fn get(
     if r.by != caller.key_id.as_str() && !in_project(hub, n, project)? {
         return Err(gone());
     }
-    let path = dir(hub).join(&r.sha256);
-    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
-        .await
-        .map_err(|_| crate::hub::api::internal_error())?
-        .map_err(|_| gone())?;
-    if bytes.len() > ATTACHMENT_MAX_BYTES {
-        return Err(gone());
-    }
     let mime = serde_json::from_value::<AttachmentMime>(serde_json::Value::String(r.mime))
         .map_err(|_| crate::hub::api::internal_error())?;
+    let path = dir(hub).join(&r.sha256);
+    // A piece: from offset, at most length bytes, read alone.
+    let piece = match (input.max_side, input.offset) {
+        (None, Some(offset)) => Some((
+            offset.get() as u64,
+            input
+                .length
+                .map_or(ATTACHMENT_PART_BYTES, |l| l.get() as usize),
+        )),
+        _ => None,
+    };
+    let (bytes, offset, mime, preview) = match piece {
+        Some((at, len)) => {
+            let total = r.bytes as u64;
+            if at > total {
+                return Err(ToolError::new(
+                    ErrorCode::Invalid,
+                    format!("{id} has {total} bytes; offset {at} is past its end."),
+                )
+                .with_fix("Ask for an offset within the file's bytes."));
+            }
+            let bytes = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+                use std::io::{Read, Seek};
+                let mut file = std::fs::File::open(&path)?;
+                file.seek(std::io::SeekFrom::Start(at))?;
+                let mut out = Vec::with_capacity(len);
+                file.take(len as u64).read_to_end(&mut out)?;
+                Ok(out)
+            })
+            .await
+            .map_err(|_| crate::hub::api::internal_error())?
+            .map_err(|_| gone())?;
+            (bytes, Some(Count::unchecked(at as i64)), mime, None)
+        }
+        None => {
+            let side = input.max_side.map(|s| s.get() as u32);
+            let (bytes, shrunk) = tokio::task::spawn_blocking(move || {
+                let bytes = std::fs::read(path)?;
+                let shrunk = side.and_then(|side| super::preview::shrink(&bytes, mime, side));
+                Ok::<_, std::io::Error>((bytes, shrunk))
+            })
+            .await
+            .map_err(|_| crate::hub::api::internal_error())?
+            .map_err(|_| gone())?;
+            if bytes.len() > ATTACHMENT_MAX_BYTES {
+                return Err(gone());
+            }
+            match shrunk {
+                Some((small, as_mime)) => (small, None, as_mime, Some(true)),
+                None => (bytes, None, mime, None),
+            }
+        }
+    };
     Ok(AttachmentGetOutput {
         attachment_id: id.clone(),
         name: fleetd_contracts::prim::Line::new(r.name.as_str())
@@ -461,6 +597,8 @@ pub async fn get(
         mime,
         bytes: Count::unchecked(r.bytes),
         data_b64: B64.encode(bytes),
+        offset,
+        preview,
         next: None,
         truncated: None,
     })
@@ -990,6 +1128,9 @@ mod tests {
         let get_input = |p: &str| AttachmentGetInput {
             project_ref: project(p),
             attachment_id: id.clone(),
+            max_side: None,
+            offset: None,
+            length: None,
         };
         let got = get(&hub, &me, get_input("app")).await.unwrap();
         assert_eq!(
@@ -1018,6 +1159,9 @@ mod tests {
             )
             .unwrap(),
             attachment_id: id.clone(),
+            max_side: None,
+            offset: None,
+            length: None,
         };
         assert_eq!(
             get(&hub, &me, elsewhere).await.unwrap_err().code,
@@ -1109,5 +1253,219 @@ mod tests {
             .unwrap()
             .attachment_id;
         assert_eq!(row(&hub, &script).unwrap().unwrap().name, "run.command.txt");
+    }
+
+    fn lab_hub() -> (std::sync::Arc<Hub>, tempfile::TempDir) {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        (hub, home)
+    }
+
+    /// The link drops after a piece reached the hub but before its answer came back: the app sends it again, which is
+    /// taken as the piece it already has; the put sent again, after its own answer was lost, names the same file. A
+    /// different piece at an old offset is still refused, and a stored upload takes no more pieces.
+    #[tokio::test]
+    async fn an_upload_cut_off_mid_way_resumes_with_the_piece_it_had_no_answer_for() {
+        let (hub, _home) = lab_hub();
+        let me = caller("k1", true, "operate");
+        let piece =
+            |upload: Option<&UploadId>, offset: usize, data: &[u8]| -> AttachmentPartInput {
+                serde_json::from_value(
+                    json!({ "uploadId": upload, "offset": offset, "dataB64": B64.encode(data) }),
+                )
+                .unwrap()
+            };
+        let id = part(&hub, &me, piece(None, 0, b"one-"))
+            .await
+            .unwrap()
+            .upload_id;
+        assert_eq!(
+            part(&hub, &me, piece(Some(&id), 4, b"two-"))
+                .await
+                .unwrap()
+                .bytes
+                .get(),
+            8
+        );
+        // Its answer was lost: the same piece again.
+        assert_eq!(
+            part(&hub, &me, piece(Some(&id), 4, b"two-"))
+                .await
+                .unwrap()
+                .bytes
+                .get(),
+            8
+        );
+        let other = part(&hub, &me, piece(Some(&id), 4, b"TWO-"))
+            .await
+            .unwrap_err();
+        assert_eq!(other.message, format!("Upload {id} holds 8 bytes, not 4."));
+        let put_input: AttachmentPutInput = serde_json::from_value(json!({
+            "name": "a.txt", "mime": "text/plain", "dataB64": B64.encode(b"three"), "uploadId": id,
+        }))
+        .unwrap();
+        let stored = put(&hub, &me, put_input.clone()).await.unwrap();
+        assert_eq!(stored.bytes.get(), 13);
+        let again = put(&hub, &me, put_input).await.unwrap();
+        assert_eq!(
+            (again.attachment_id, again.bytes, again.sha256),
+            (stored.attachment_id.clone(), stored.bytes, stored.sha256)
+        );
+        let kept = row(&hub, &stored.attachment_id).unwrap().unwrap();
+        assert_eq!(
+            std::fs::read(dir(&hub).join(&kept.sha256)).unwrap(),
+            b"one-two-three"
+        );
+        let late = part(&hub, &me, piece(Some(&id), 13, b"four"))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            late.message,
+            format!(
+                "Upload {id} is already stored, as {}.",
+                stored.attachment_id
+            )
+        );
+        // Another key can't learn the file through the upload's id.
+        let them = caller("k2", true, "operate");
+        let theirs: AttachmentPutInput = serde_json::from_value(json!({
+            "name": "a.txt", "mime": "text/plain", "dataB64": B64.encode(b"x"), "uploadId": id,
+        }))
+        .unwrap();
+        assert_eq!(
+            put(&hub, &them, theirs).await.unwrap_err().message,
+            format!("No upload {id}.")
+        );
+    }
+
+    /// A large file read in pieces, as the apps read one on a weak link: each from its offset, together the file; an
+    /// offset past its end is refused. The whole file still comes in one call without an offset.
+    #[tokio::test]
+    async fn a_file_reads_in_pieces_from_any_offset() {
+        let (hub, _home) = lab_hub();
+        let me = caller("k1", true, "operate");
+        let file: Vec<u8> = (0..ATTACHMENT_PART_BYTES * 2 + 1000)
+            .map(|i| (i % 251) as u8)
+            .collect();
+        let mut zip = b"PK\x03\x04".to_vec();
+        zip.extend_from_slice(&file);
+        let mut at = 0;
+        let mut upload = None;
+        while at + ATTACHMENT_PART_BYTES < zip.len() {
+            let input: AttachmentPartInput = serde_json::from_value(json!({
+                "uploadId": upload, "offset": at, "dataB64": B64.encode(&zip[at..at + ATTACHMENT_PART_BYTES]),
+            }))
+            .unwrap();
+            upload = Some(part(&hub, &me, input).await.unwrap().upload_id);
+            at += ATTACHMENT_PART_BYTES;
+        }
+        let put_input: AttachmentPutInput = serde_json::from_value(json!({
+            "name": "big.zip", "mime": "application/zip", "dataB64": B64.encode(&zip[at..]), "uploadId": upload,
+        }))
+        .unwrap();
+        let id = put(&hub, &me, put_input).await.unwrap().attachment_id;
+        let read = |offset: Option<usize>, length: Option<usize>| {
+            let input: AttachmentGetInput = serde_json::from_value(json!({
+                "projectRef": { "machineId": "devbox", "projectId": "app" }, "attachmentId": id,
+                "offset": offset, "length": length,
+            }))
+            .unwrap();
+            let hub = hub.clone();
+            let me = me.clone();
+            async move { get(&hub, &me, input).await }
+        };
+        let mut got = Vec::new();
+        while got.len() < zip.len() {
+            let piece = read(Some(got.len()), None).await.unwrap();
+            assert_eq!(piece.offset.map(|o| o.get() as usize), Some(got.len()));
+            assert_eq!(piece.bytes.get() as usize, zip.len());
+            got.extend(B64.decode(piece.data_b64).unwrap());
+        }
+        assert_eq!(got, zip);
+        let short = read(Some(10), Some(5)).await.unwrap();
+        assert_eq!(B64.decode(short.data_b64).unwrap(), zip[10..15]);
+        assert!(
+            read(Some(zip.len()), None)
+                .await
+                .unwrap()
+                .data_b64
+                .is_empty()
+        );
+        let past = read(Some(zip.len() + 1), None).await.unwrap_err();
+        assert_eq!(past.code, ErrorCode::Invalid);
+        let whole = read(None, None).await.unwrap();
+        assert_eq!(
+            (whole.offset, B64.decode(whole.data_b64).unwrap()),
+            (None, zip)
+        );
+    }
+
+    /// A screenshot in a bubble: with maxSide it comes as a preview that fits, marked so; a small one, a PDF and a
+    /// read without maxSide come as the file.
+    #[tokio::test]
+    async fn an_image_comes_as_its_preview_when_asked() {
+        use image::{DynamicImage, GenericImageView, ImageFormat, Rgb, RgbImage};
+        let (hub, _home) = lab_hub();
+        let me = caller("k1", true, "operate");
+        let png = |w: u32, h: u32| {
+            let picture = RgbImage::from_fn(w, h, |x, y| {
+                let n = x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503);
+                Rgb([n as u8, (n >> 8) as u8, (x + y) as u8])
+            });
+            let mut out = Vec::new();
+            DynamicImage::ImageRgb8(picture)
+                .write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)
+                .unwrap();
+            out
+        };
+        let upload = |bytes: Vec<u8>, name: &str, mime: &str| {
+            let input: AttachmentPutInput = serde_json::from_value(
+                json!({ "name": name, "mime": mime, "dataB64": B64.encode(bytes) }),
+            )
+            .unwrap();
+            let (hub, me) = (hub.clone(), me.clone());
+            async move { put(&hub, &me, input).await.unwrap().attachment_id }
+        };
+        let read = |id: &AttachmentId, side: Option<u32>| {
+            let input: AttachmentGetInput = serde_json::from_value(json!({
+                "projectRef": { "machineId": "devbox", "projectId": "app" }, "attachmentId": id, "maxSide": side,
+            }))
+            .unwrap();
+            let (hub, me) = (hub.clone(), me.clone());
+            async move { get(&hub, &me, input).await.unwrap() }
+        };
+        let big = png(1600, 1000);
+        let shot = upload(big.clone(), "shot.png", "image/png").await;
+        let preview = read(&shot, Some(800)).await;
+        assert_eq!(
+            (preview.preview, preview.mime, preview.bytes.get() as usize),
+            (Some(true), AttachmentMime::Jpeg, big.len())
+        );
+        let small = B64.decode(&preview.data_b64).unwrap();
+        assert!(small.len() < big.len());
+        assert_eq!(
+            image::load_from_memory(&small).unwrap().dimensions(),
+            (800, 500)
+        );
+        let whole = read(&shot, None).await;
+        assert_eq!(
+            (whole.preview, B64.decode(whole.data_b64).unwrap()),
+            (None, big)
+        );
+        let tiny = upload(png(300, 200), "tiny.png", "image/png").await;
+        assert_eq!(read(&tiny, Some(800)).await.preview, None);
+        let pdf = upload(b"%PDF-1.7 a page".to_vec(), "doc.pdf", "application/pdf").await;
+        let got = read(&pdf, Some(800)).await;
+        assert_eq!((got.preview, got.mime), (None, AttachmentMime::Pdf));
     }
 }

@@ -969,6 +969,23 @@
         "attachmentId": {
           "$ref": "#/$defs/AttachmentId"
         },
+        "length": {
+          "maximum": 524288,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxSide": {
+          "description": "A png, jpeg or webp image larger than this many pixels a side comes shrunk to fit, as a JPEG (a PNG where it is\nclear), when that is smaller than the file: `preview` says so. Anything else comes as itself.",
+          "maximum": 4096,
+          "minimum": 64,
+          "type": "integer"
+        },
+        "offset": {
+          "description": "The piece of the file from this byte, at most `length` (absent: ATTACHMENT_PART_BYTES); ignored with maxSide.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         }
@@ -985,12 +1002,13 @@
           "$ref": "#/$defs/AttachmentId"
         },
         "bytes": {
+          "description": "The file's size, whatever dataB64 holds.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "dataB64": {
-          "description": "Standard base64.",
+          "description": "Standard base64: the file, its piece from `offset`, or its preview.",
           "type": "string"
         },
         "mime": {
@@ -1004,6 +1022,16 @@
         },
         "next": {
           "type": "string"
+        },
+        "offset": {
+          "description": "Where dataB64 starts in the file, when it is a piece: the input's offset, echoed.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preview": {
+          "description": "True when dataB64 is the image shrunk to maxSide, in `mime`'s type rather than the file's.",
+          "type": "boolean"
         },
         "truncated": {
           "type": "boolean"

@@ -241,6 +241,9 @@ async fn app_reads(hub: &Hub, p: &str, id: &str) -> Result<Vec<u8>, ErrorCode> {
     let input = AttachmentGetInput {
         project_ref: project(p),
         attachment_id: serde_json::from_value(json!(id)).unwrap(),
+        max_side: None,
+        offset: None,
+        length: None,
     };
     attachments::get(hub, &person(), input)
         .await

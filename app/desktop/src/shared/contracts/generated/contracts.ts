@@ -459,17 +459,30 @@ export type AttachmentBlock = {
 
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
+  length?: number;
+  /**
+   * A png, jpeg or webp image larger than this many pixels a side comes shrunk to fit, as a JPEG (a PNG where it is
+   * clear), when that is smaller than the file: `preview` says so. Anything else comes as itself.
+   */
+  maxSide?: number;
+  /** The piece of the file from this byte, at most `length` (absent: ATTACHMENT_PART_BYTES); ignored with maxSide. */
+  offset?: number;
   projectRef: ProjectRef;
 };
 
 export type AttachmentGetOutput = {
   attachmentId: AttachmentId;
+  /** The file's size, whatever dataB64 holds. */
   bytes: number;
-  /** Standard base64. */
+  /** Standard base64: the file, its piece from `offset`, or its preview. */
   dataB64: string;
   mime: AttachmentMime;
   name: string;
   next?: string;
+  /** Where dataB64 starts in the file, when it is a piece: the input's offset, echoed. */
+  offset?: number;
+  /** True when dataB64 is the image shrunk to maxSide, in `mime`'s type rather than the file's. */
+  preview?: boolean;
   truncated?: boolean;
 };
 
