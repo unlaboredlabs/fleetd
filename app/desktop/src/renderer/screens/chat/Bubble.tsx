@@ -9,6 +9,7 @@ import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
+import { useSeen } from "../live";
 import {
   Button,
   ContextMenu,
@@ -47,9 +48,9 @@ import s from "./view.module.css";
  * An attachment as a chip. A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to
  * fit.
  */
-function FileChip({ file }: { file: AttachmentRef }) {
+function FileChip({ file, box }: { file: AttachmentRef; box?: (el: Element | null) => void }) {
   return (
-    <span className={s.attachment}>
+    <span ref={box} className={s.attachment}>
       <Paperclip className={s.attachmentIcon} aria-hidden />
       <span className={s.attachmentName} data-text="code">
         <Truncate size="sm" mono>
@@ -63,17 +64,19 @@ function FileChip({ file }: { file: AttachmentRef }) {
   );
 }
 
-// An image shows itself, fetched once its row is on screen (the list only mounts visible rows), and opens large when
-// clicked. Until then, and if it can't be read, it is a file like any other.
+// An image shows itself, fetched once its chip has been on screen (the list mounts rows it drops again at once while
+// it measures, and those never read), and opens large when clicked. Until then, and if it can't be read, it is a file
+// like any other.
 // It shows at its size in points (a Retina screenshot at half its pixels) within IMAGE_MAX, whatever its pixels, so it
 // sits in its side's corner like the bubble above it.
 function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
-  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
+  const [seen, box] = useSeen();
+  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId }, { enabled: seen });
   const open = useOpenImage();
   const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
   const dataB64 = got.data?.dataB64;
   const density = useMemo(() => (dataB64 !== undefined && got.data?.mime === "image/png" ? pngDensity(dataB64) : 1), [dataB64, got.data?.mime]);
-  if (got.data === undefined) return <FileChip file={file} />;
+  if (got.data === undefined) return <FileChip file={file} box={box} />;
   const img = (
     <img
       className={s.attachmentImage}

@@ -1,9 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { app, protocol, session, shell, type WebContents } from "electron";
 import { DEV_BUILD } from "./build";
 import { externalUrl } from "./external";
 import { ARTIFACT_SCHEME, artifactFrames } from "./artifactFrames";
-import { APP_INDEX, APP_ORIGIN, APP_SCHEME, assetPath, originOf } from "./origin";
+import { APP_INDEX, APP_ORIGIN, APP_SCHEME, assetPath, assetType, originOf } from "./origin";
 
 /** The dev server under `electron-vite dev`; a built app never loads one, however it's launched. */
 const devUrl = (): string | null => {
@@ -35,7 +36,8 @@ const isDevSocket = (url: string): boolean => {
  */
 export const harden = (): void => {
   protocol.registerSchemesAsPrivileged([
-    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    // codeCache: V8 keeps the compiled scripts in the profile, so a launch after the first two compiles none of the page.
+    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } },
     // An HTML artifact's frame (artifactFrames.ts): its own origin, with no fetch or CORS.
     { scheme: ARTIFACT_SCHEME, privileges: { standard: true, secure: true } },
   ]);
@@ -66,13 +68,24 @@ export const harden = (): void => {
   });
 };
 
+const notFound = () => new Response("Not found", { status: 404 });
+
 /**
- * The built file under `rendererDir` that an app://fleetd/ request names. Main reads it through a session of its own,
- * so the page sessions can refuse file:// outright. Run once the app is ready (sessions exist then).
+ * The built file under `rendererDir` that an app://fleetd/ request names, read by main itself, so the page sessions
+ * can refuse file:// outright. The kinds the build makes are read straight from disk: through a session's fetch, each
+ * of the ~40 files the window loads at launch cost main a network-service round trip. Any other kind still goes
+ * through a session of main's own, for its type. Run once the app is ready (sessions exist then).
  */
-export const appFile = (url: string, rendererDir: string): Promise<Response> | Response => {
+export const appFile = async (url: string, rendererDir: string): Promise<Response> => {
   const file = assetPath(url, rendererDir);
-  return file === null ? new Response("Not found", { status: 404 }) : session.fromPartition("fleetd-main-files").fetch(pathToFileURL(file).href);
+  if (file === null) return notFound();
+  const type = assetType(file);
+  if (type === undefined) return session.fromPartition("fleetd-main-files").fetch(pathToFileURL(file).href);
+  try {
+    return new Response(await readFile(file), { headers: { "content-type": type } });
+  } catch {
+    return notFound();
+  }
 };
 
 /** Run once the app is ready (sessions exist then). `rendererDir` holds the built index.html. */

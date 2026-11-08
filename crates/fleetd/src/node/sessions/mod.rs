@@ -744,6 +744,10 @@ struct State {
     /// Per session: when its summary last went on the machine stream, and whether progress since waits for
     /// [`PROGRESS_EVERY`] to pass.
     announced: HashMap<String, (Instant, bool)>,
+    /// A live session's runs as stored, oldest first: [`SessionService::update`] is their only writer, and reads them
+    /// here instead of decoding every run from the store on each event (a lead's 800 runs, 280 kB of JSON, per tool
+    /// call). Dropped as the process exits.
+    runs: HashMap<String, Vec<RunInfo>>,
 }
 
 impl State {
@@ -1229,7 +1233,7 @@ impl SessionService {
         }
     }
 
-    /// Which session a process calling the node's socket runs in (blocking: it reads the process table).
+    /// Which session a process calling the node's socket runs in (blocking: it reads its ancestors in `/proc`).
     pub fn peer_session(&self, pid: i32) -> super::runner::process::PeerSession {
         let roots = self
             .st()
@@ -1237,7 +1241,7 @@ impl SessionService {
             .iter()
             .map(|(id, live)| (live.pid as i32, id.clone()))
             .collect();
-        super::runner::process::peer_session(&super::runner::process::table(), pid, &roots)
+        super::runner::process::peer_session(pid, &roots, super::runner::process::parents())
     }
 
     fn st(&self) -> MutexGuard<'_, State> {
@@ -1943,7 +1947,10 @@ impl SessionService {
     fn update<R>(&self, id: &str, f: impl FnOnce(&mut Change) -> R) -> Result<R, SessionError> {
         let mut st = self.st();
         let row = self.session(id)?;
-        let runs = self.store().runs(id)?;
+        let runs = match st.runs.remove(id) {
+            Some(runs) => runs,
+            None => self.store().runs(id)?,
+        };
         let before = (row.summary.clone(), runs.clone());
         let mut change = Change {
             row,
@@ -1967,7 +1974,13 @@ impl SessionService {
         if row.summary.pending_permission.is_none() {
             row.local.queued_prompts.clear();
         }
-        let changed: Vec<&RunInfo> = runs.iter().filter(|r| !before.1.contains(r)).collect();
+        // Runs are only ever appended or changed in place, so each compares with the one at its place before.
+        let changed: Vec<&RunInfo> = runs
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| before.1.get(*i) != Some(*r))
+            .map(|(_, r)| r)
+            .collect();
         let same_summary = {
             let mut s = row.summary.clone();
             s.updated_at = before.0.updated_at.clone();
@@ -1997,6 +2010,9 @@ impl SessionService {
         }
         if let Some(frame) = frame {
             st.machine(frame);
+        }
+        if st.live.contains_key(id) {
+            st.runs.insert(id.to_owned(), runs);
         }
         if row.summary.active_run_id.is_some() {
             st.active.insert(id.to_owned());
@@ -3447,10 +3463,7 @@ impl SessionService {
                         usage = None;
                     }
                     self.run_ended(&id, &ended, outcome.clone(), usage_of_run);
-                    let retrying = self.store().runs(&id).is_ok_and(|runs| {
-                        runs.iter()
-                            .any(|r| r.id.as_str() == ended && r.status.is_active())
-                    });
+                    let retrying = self.run_active(&id, &ended);
                     if !retrying {
                         self.steer_ended(&ended, &outcome);
                     }
@@ -4124,6 +4137,7 @@ impl SessionService {
             let Some(live) = st.live.remove(id) else {
                 return;
             };
+            st.runs.remove(id);
             if live.generation != generation {
                 st.live.insert(id.to_owned(), live);
                 return;
@@ -4554,6 +4568,7 @@ impl SessionService {
         let transcripts: Vec<(String, PathBuf, PathBuf)> = if erase {
             let sessions = self.store().sessions()?;
             self.store().forget_sessions(project_id.as_str())?;
+            self.st().runs.clear();
             sessions
                 .into_iter()
                 .filter(|r| &r.summary.project_id == project_id)

@@ -234,14 +234,7 @@ impl EventLog {
     ) -> Result<(Vec<HubEvent>, bool), StoreError> {
         let types = types.map(serde_json::to_string).transpose()?;
         self.db.with(|conn| {
-            let mut stmt = conn.prepare_cached(
-                "SELECT seq, data FROM events
-       WHERE ($before IS NULL OR seq < $before)
-         AND ($types IS NULL OR type IN (SELECT value FROM json_each($types)))
-         AND ((machine_id = $machine AND json_extract(data, '$.projectId') = $project)
-           OR ($hub_wide AND machine_id IS NULL AND json_extract(data, '$.projectId') IS NULL))
-       ORDER BY seq DESC LIMIT $limit",
-            )?;
+            let mut stmt = conn.prepare_cached(PROJECT_PAGE)?;
             let rows = stmt.query_map(
                 named_params! {
                     "$before": before,
@@ -287,6 +280,23 @@ impl EventLog {
         }
     }
 }
+
+/// `EventLog::project_page`'s query. Each half walks `events_by_project` newest first and stops at the limit; one OR
+/// over both read every matching row (or, without the index, the whole log) before sorting.
+pub(super) const PROJECT_PAGE: &str = "SELECT seq, data FROM (
+         SELECT seq, data FROM events
+          WHERE machine_id = $machine AND json_extract(data, '$.projectId') = $project
+            AND seq < COALESCE($before, 9223372036854775807)
+            AND ($types IS NULL OR type IN (SELECT value FROM json_each($types)))
+          ORDER BY seq DESC LIMIT $limit)
+       UNION ALL
+       SELECT seq, data FROM (
+         SELECT seq, data FROM events
+          WHERE $hub_wide AND machine_id IS NULL AND json_extract(data, '$.projectId') IS NULL
+            AND seq < COALESCE($before, 9223372036854775807)
+            AND ($types IS NULL OR type IN (SELECT value FROM json_each($types)))
+          ORDER BY seq DESC LIMIT $limit)
+       ORDER BY seq DESC LIMIT $limit";
 
 /// The `type` column: the event type's wire name.
 fn type_name(t: HubEventType) -> Result<String, StoreError> {

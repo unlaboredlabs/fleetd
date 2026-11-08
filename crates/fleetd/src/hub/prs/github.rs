@@ -29,23 +29,26 @@ const MAX_LISTS: usize = 128;
 const MAX_DETAILS: usize = 64;
 const MAX_FILE_PAGES: usize = 16;
 
-/// A page of a repo's PRs, as `gh pr list --json` would give them; `$after` is the last page's end cursor.
+/// A page of a repo's PRs, as `gh pr list --json` would give them; `$after` is the last page's end cursor. CHECKS is
+/// [`LIST_CHECKS`] for open PRs and nothing for closed ones, whose checks no list shows (a PR's own view reads them in
+/// its detail): a closed page's checks made it ~10x larger and ~6x slower (5 s for 50 PRs on GitHub).
 const LIST_QUERY: &str = "query($owner: String!, $name: String!, $first: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: STATES, first: $first, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number title state isDraft author { login } headRefName headRefOid createdAt updatedAt mergedAt closedAt
-        reviewDecision url
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-          __typename
-          ... on CheckRun { name status conclusion detailsUrl startedAt completedAt }
-          ... on StatusContext { context state targetUrl }
-        } } } } } }
+        reviewDecision url CHECKS
       }
     }
   }
 }";
+const LIST_CHECKS: &str = "
+        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+          __typename
+          ... on CheckRun { name status conclusion detailsUrl startedAt completedAt }
+          ... on StatusContext { context state targetUrl }
+        } } } } } }";
 const DETAIL_FIELDS: &str = "number,title,state,isDraft,author,headRefName,headRefOid,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,url,body,baseRefName,additions,deletions,changedFiles,mergeCommit,reviews";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -432,12 +435,21 @@ impl PrsGitHub {
             return hit;
         }
         let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
-        let states = if closed { "[CLOSED, MERGED]" } else { "[OPEN]" };
+        let (states, checks) = if closed {
+            ("[CLOSED, MERGED]", "")
+        } else {
+            ("[OPEN]", LIST_CHECKS)
+        };
         let mut args: Vec<String> = vec![
             "api".into(),
             "graphql".into(),
             "-f".into(),
-            format!("query={}", LIST_QUERY.replace("STATES", states)),
+            format!(
+                "query={}",
+                LIST_QUERY
+                    .replace("STATES", states)
+                    .replace("CHECKS", checks)
+            ),
             "-f".into(),
             format!("owner={owner}"),
             "-f".into(),

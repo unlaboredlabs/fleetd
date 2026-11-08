@@ -14,6 +14,7 @@ import type { KeyStore } from "../shared/pairing";
 import { Hubs, type HubsMode } from "./hub/hubs";
 import { webSocketTransport } from "./hub/transport";
 import { instrument } from "./instrument";
+import { timedTransport } from "./instrument/perf";
 import { registerIpc } from "./ipc";
 import { fixturePairingDeps } from "./pairing/fixture";
 import { PairingService, realPairingDeps } from "./pairing/service";
@@ -121,7 +122,7 @@ const hubMode = (): { mode: HubsMode; fixtureFile: string | null; keyStore: KeyS
         dir: FLEETD_DIR,
         credentials,
         vars: process.env,
-        transport: webSocketTransport,
+        transport: process.env["FLEETD_PERF"] === undefined ? webSocketTransport : timedTransport(webSocketTransport),
         cacheDir: app.getPath("userData"),
       },
       fixtureFile: null,
