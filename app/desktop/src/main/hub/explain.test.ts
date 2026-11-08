@@ -31,6 +31,9 @@ describe("explainLoss", () => {
   it("reads the hub's own close reason and codes, with no doubled period", () => {
     expect(explainLoss(lan, 1000, "shutting down.", undefined, true).reason).toBe("The hub closed the connection: shutting down");
     expect(explainLoss(lan, 1001, "", undefined, true).reason).toBe("The hub is restarting or shutting down");
+    // A restart says so whatever its words; an update's build reads as a version, not a raw build string.
+    expect(explainLoss(lan, 1012, "hub restarting", undefined, true).reason).toBe("The hub is restarting or shutting down");
+    expect(explainLoss(lan, 1001, "updating to 0.0.0-edge.202611082014+90e7a07", undefined, true).reason).toBe("The hub is restarting into Edge · Nov 8, 20:14 UTC · 90e7a07");
     expect(explainLoss(lan, 1006, "", undefined, true).reason).toBe("The connection to devbox:4790 dropped");
   });
 });
