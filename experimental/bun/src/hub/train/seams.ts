@@ -1,0 +1,304 @@
+// What the train, reviews, PRs and the GitHub App take from other areas, in one place: the shared seams (D346) by
+// their area names, each with a stand-in until its owner's module serves it, and reads of other areas' tables with the
+// Rust hub's own SQL (people, workstreams, tasks, Navis, repos, machines, order variables). When an owner's module
+// lands, its area replaces the stand-in here by name: `hub.area(name, …)` keeps whichever was made first, and each
+// stand-in has the owner's shape.
+import type { Database } from "bun:sqlite";
+import type {
+  HubEvent,
+  HubEventType,
+  Machine,
+  MachineId,
+  Person,
+  PersonId,
+  ProjectRef,
+  ProjectRepo,
+  Workstream,
+  WorkstreamId,
+} from "../../shared/contracts.ts";
+import type { Hub } from "../api/hub.ts";
+import { events, type NewEvent } from "../store/events.ts";
+import { isoMs } from "../store/time.ts";
+import { link } from "../link/index.ts";
+import * as repoStore from "../repos/store.ts";
+
+// --- time ---
+
+export { isoMs, parseMs } from "../store/time.ts";
+
+/** The first `max` UTF-16 units of `text`, never splitting a surrogate pair (api/grants.rs `clip`). */
+export function clip(text: string, max: number): string {
+  let units = 0;
+  let out = "";
+  for (const c of text) {
+    units += c.length;
+    if (units > max) return out;
+    out += c;
+  }
+  return text;
+}
+
+/** `cap`: at most `max` items, and `truncated` when some were cut. */
+export function cap<T>(items: T[], max: number): { items: T[]; truncated?: true } {
+  return items.length > max ? { items: items.slice(0, max), truncated: true } : { items };
+}
+
+export const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(done, Math.max(0, ms));
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
+
+// --- the event log (src/hub/store/events.ts) ---
+
+export { events, type NewEvent } from "../store/events.ts";
+
+/** EventLog.append at now, on a project: the Rust hosts' `append_event`. */
+export function emit(hub: Hub, r: ProjectRef | undefined, type: string, summary: string, data?: unknown, threadId?: string): void {
+  const event: Record<string, unknown> = { at: isoMs(hub.clock.now()), type };
+  if (r) {
+    event.machineId = r.machineId;
+    event.projectId = r.projectId;
+  }
+  if (threadId !== undefined) event.threadId = threadId;
+  event.summary = summary;
+  if (data !== undefined && data !== null) event.data = data;
+  events(hub).append(event as NewEvent);
+}
+
+// --- lead wakes (src/hub/api/leads.ts, D348) ---
+
+export { leadWakes, type LineKind, type Trigger } from "../api/leads.ts";
+
+// --- the node link (src/hub/link) ---
+
+export { link } from "../link/index.ts";
+
+export const nodeCan = (hub: Hub, m: MachineId, capName: string) => link(hub).can(m, capName);
+/** Linked, and its hello says it lacks `cap`: too old. Never for a node not linked, which said nothing. */
+export const nodeLacks = (hub: Hub, m: MachineId, capName: string) => link(hub).lacks(m, capName);
+
+// --- the sweep (src/hub/sweep: every 5 minutes, each check registered by its area) ---
+
+export type SweepCheck = { name: string; run: () => Promise<void> };
+export interface SweepLike {
+  register(check: SweepCheck): void;
+}
+
+export const SWEEP_EVERY_MS = 5 * 60_000;
+
+/** The stand-in runs each check every 5 minutes, one after another, until the hub stops. */
+function sweepStandIn(hub: Hub): SweepLike {
+  const checks: SweepCheck[] = [];
+  let started = false;
+  return {
+    register(check) {
+      checks.push(check);
+      if (started) return;
+      started = true;
+      const timer = setInterval(async () => {
+        for (const c of checks) {
+          try {
+            await c.run();
+          } catch (error) {
+            console.warn(`sweep: ${c.name} failed:`, error);
+          }
+        }
+      }, SWEEP_EVERY_MS);
+      timer.unref?.();
+      hub.shutdown.signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+    },
+  };
+}
+
+export const sweep = (hub: Hub): SweepLike => hub.area<SweepLike>("sweep", sweepStandIn);
+
+// --- other areas' tables, read with the Rust SQL ---
+
+type PersonRow = { person_id: string; name: string; role: string; created_ms: number; removed_ms: number | null };
+const PERSON_COLUMNS = "person_id, name, role, created_ms, removed_ms";
+
+function person(row: PersonRow): Person {
+  const name = row.name.trim() || "Owner";
+  const out = { personId: row.person_id, name, role: row.role, createdAt: isoMs(row.created_ms) } as Person;
+  if (row.removed_ms !== null) out.removedAt = isoMs(row.removed_ms);
+  return out;
+}
+
+export const people = {
+  get(db: Database, id: PersonId): Person | undefined {
+    const row = db.query<PersonRow, [string]>(`SELECT ${PERSON_COLUMNS} FROM people WHERE person_id = ?`).get(id);
+    return row ? person(row) : undefined;
+  },
+  /** On the hub, oldest first. */
+  active(db: Database): Person[] {
+    return db
+      .query<PersonRow, []>(`SELECT ${PERSON_COLUMNS} FROM people WHERE removed_ms IS NULL ORDER BY created_ms, rowid`)
+      .all()
+      .map(person);
+  },
+  /** The first owner still on the hub. */
+  owner(db: Database): Person | undefined {
+    const row = db
+      .query<PersonRow, []>(
+        `SELECT ${PERSON_COLUMNS} FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1`,
+      )
+      .get();
+    return row ? person(row) : undefined;
+  },
+};
+
+/** `W12` → 12, as leads/records.rs numbers workstreams; tasks are `T<n>`, changes `X<n>`. */
+export const numberOf = (id: string) => Number.parseInt(id.slice(1), 10) || 0;
+
+export function workstream(db: Database, id: WorkstreamId): Workstream | undefined {
+  const row = db.query<{ data: string }, [number]>("SELECT data FROM workstreams WHERE n = ?").get(numberOf(id));
+  return row ? (JSON.parse(row.data) as Workstream) : undefined;
+}
+
+/** A Navi (an Only me project) and its owner. */
+export function navi(db: Database, r: ProjectRef): { owner?: PersonId } | undefined {
+  const row = db
+    .query<{ owner_person: string | null }, [string, string]>(
+      "SELECT owner_person FROM project_settings WHERE machine_id = ? AND project_id = ? AND only_me = 1",
+    )
+    .get(r.machineId, r.projectId);
+  if (!row) return undefined;
+  return row.owner_person === null ? {} : { owner: row.owner_person };
+}
+
+/** The Navis `person` may not see or use: every one with an owner other than them (navi/store.rs `others`). */
+export function otherNavis(db: Database, me: PersonId | undefined): ProjectRef[] {
+  return db
+    .query<{ machine_id: string; project_id: string }, [string | null]>(
+      `SELECT machine_id, project_id FROM project_settings
+         WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
+    )
+    .all(me ?? null)
+    .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
+}
+
+/** The project's repos, oldest first, its own made first when it has none (repos/mod.rs `repos_of`). */
+export function reposOf(db: Database, project: ProjectRef): ProjectRepo[] {
+  return db.transaction(() => {
+    repoStore.ensureOwn(db, project);
+    return repoStore.of(db, project);
+  })();
+}
+
+/** The projects with a repo whose key is `repoKey` (`github.com/owner/name`), and each repo. */
+export function reposWithKey(db: Database, repoKey: string): { project: ProjectRef; repo: ProjectRepo }[] {
+  return repoStore
+    .withKey(db, repoKey)
+    .flatMap((project) => repoStore.of(db, project).filter((r) => r.repoKey?.toLowerCase() === repoKey.toLowerCase()).map((repo) => ({ project, repo })));
+}
+
+export function machine(db: Database, m: MachineId): Machine | undefined {
+  const row = db.query<{ data: string }, [string]>("SELECT data FROM machines WHERE machine_id = ?").get(m);
+  return row ? (JSON.parse(row.data) as Machine) : undefined;
+}
+
+/** A project's node report (`projects.data`), as `ProjectSummary`. */
+export function project<T = Record<string, unknown>>(db: Database, r: ProjectRef): T | undefined {
+  const row = db
+    .query<{ data: string }, [string, string]>("SELECT data FROM projects WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return row ? (JSON.parse(row.data) as T) : undefined;
+}
+
+export const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
+export const refKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
+
+// --- an order's variables (projects/order_env.rs over `order_env`) ---
+
+export type OrderEnvRow = { name: string; fingerprint: string; bytes: number; requestId: string; updatedAt: string };
+
+export const orderEnv = {
+  list(db: Database, r: ProjectRef, order: string): OrderEnvRow[] {
+    return db
+      .query<
+        { name: string; fingerprint: string; bytes: number; request_id: string; updated_at: string },
+        [string, string, string]
+      >(
+        `SELECT name, fingerprint, bytes, request_id, updated_at FROM order_env
+           WHERE machine_id = ? AND project_id = ? AND workstream_id = ? ORDER BY name`,
+      )
+      .all(r.machineId, r.projectId, order)
+      .map((x) => ({ name: x.name, fingerprint: x.fingerprint, bytes: x.bytes, requestId: x.request_id, updatedAt: x.updated_at }));
+  },
+  save(db: Database, r: ProjectRef, order: string, row: OrderEnvRow): void {
+    db.query(
+      `INSERT INTO order_env (machine_id, project_id, workstream_id, name, fingerprint, bytes, request_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (machine_id, project_id, workstream_id, name) DO UPDATE SET fingerprint = excluded.fingerprint,
+           bytes = excluded.bytes, request_id = excluded.request_id, updated_at = excluded.updated_at`,
+    ).run(r.machineId, r.projectId, order, row.name, row.fingerprint, row.bytes, row.requestId, row.updatedAt);
+  },
+  forgetOne(db: Database, r: ProjectRef, order: string, name: string): void {
+    db.query("DELETE FROM order_env WHERE machine_id = ? AND project_id = ? AND workstream_id = ? AND name = ?").run(
+      r.machineId,
+      r.projectId,
+      order,
+      name,
+    );
+  },
+};
+
+// --- the status view's freshness registry (src/hub/status, the Rust `hub/status/fresh.rs`) ---
+
+export interface FreshLike {
+  expect(source: string, staleAfterMs: number, nowMs: number): void;
+  forget(source: string): void;
+  touch(source: string, atMs: number): void;
+  fail(source: string, reason: string): void;
+}
+
+/** GitHub answers for a repo, from any `gh api` call. */
+export const GITHUB_STALE_MS = 180_000;
+/** The end of a train pass for a repo. */
+export const TRAIN_STALE_MS = 120_000;
+export const freshGithub = (repo: string) => `github:${repo}`;
+export const freshTrain = (repo: string) => `train:${repo}`;
+
+/** Until the status area serves it, freshness goes nowhere. */
+export const fresh = (hub: Hub): FreshLike =>
+  hub.area<FreshLike>("status_fresh", () => ({ expect() {}, forget() {}, touch() {}, fail() {} }));
+
+// --- tasks (tasks/records.rs over `tasks`) ---
+
+export type TaskFilter = { projectRef?: ProjectRef; state?: string; workstreamId?: WorkstreamId; limit: number };
+
+/** Newest first, as `TaskRecords::list`. */
+export function tasks<T = import("../../shared/contracts.ts").Task>(db: Database, filter: TaskFilter): T[] {
+  let sql = "SELECT data FROM tasks WHERE 1";
+  const args: (string | number)[] = [];
+  if (filter.projectRef) {
+    sql += " AND machine_id = ? AND project_id = ?";
+    args.push(filter.projectRef.machineId, filter.projectRef.projectId);
+  }
+  if (filter.state !== undefined) {
+    sql += " AND state = ?";
+    args.push(filter.state);
+  }
+  if (filter.workstreamId !== undefined) {
+    sql += " AND workstream_id = ?";
+    args.push(filter.workstreamId);
+  }
+  sql += " ORDER BY n DESC LIMIT ?";
+  args.push(filter.limit);
+  return db
+    .query<{ data: string }, (string | number)[]>(sql)
+    .all(...args)
+    .map((r) => JSON.parse(r.data) as T);
+}
+
+export function task<T = import("../../shared/contracts.ts").Task>(db: Database, taskId: string): T | undefined {
+  const row = db.query<{ data: string }, [number]>("SELECT data FROM tasks WHERE n = ?").get(numberOf(taskId));
+  return row ? (JSON.parse(row.data) as T) : undefined;
+}

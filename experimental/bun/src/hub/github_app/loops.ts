@@ -1,4 +1,7 @@
 import type { Hub } from "../api/hub.ts";
+import { run } from "./sessions.ts";
 
-/** Starts this module's loops (Rust: github_app::sessions::run); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/** Starts this module's loops (Rust: github_app::sessions::run): the orders' tokens renew on every sweep. */
+export function start(hub: Hub): void {
+  run(hub);
+}
