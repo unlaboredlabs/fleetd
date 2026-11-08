@@ -340,41 +340,41 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 
 ### Node link messages
 
-- [ ] node→hub `hello` send → `src/node/link` <!-- link:node→hub `hello` send -->
-- [ ] node→hub `hb` send → `src/node/link` <!-- link:node→hub `hb` send -->
-- [ ] node→hub `lead_call` send → `src/node/lead` <!-- link:node→hub `lead_call` send -->
-- [ ] node→hub `cmd_result` send → `src/node/cmd` <!-- link:node→hub `cmd_result` send -->
-- [ ] node→hub `secret_result` send → `src/node/secrets` <!-- link:node→hub `secret_result` send -->
-- [ ] node→hub `gated_result` send → `src/node/gated` <!-- link:node→hub `gated_result` send -->
-- [ ] node→hub `node_action_result` send → `src/node/actions` <!-- link:node→hub `node_action_result` send -->
-- [ ] node→hub `session_reply` send → `src/node/sessions` <!-- link:node→hub `session_reply` send -->
-- [ ] node→hub `machine_event` send → `src/node/sessions` <!-- link:node→hub `machine_event` send -->
-- [ ] node→hub `thread_event` send → `src/node/sessions` <!-- link:node→hub `thread_event` send -->
-- [ ] node→hub `slept` send → `src/node/power` <!-- link:node→hub `slept` send -->
-- [ ] node→hub `spans` send → `src/node/sessions` <!-- link:node→hub `spans` send -->
+- [x] node→hub `hello` send → `src/node/link` <!-- link:node→hub `hello` send -->
+- [x] node→hub `hb` send → `src/node/link` <!-- link:node→hub `hb` send -->
+- [x] node→hub `lead_call` send → `src/node/lead` <!-- link:node→hub `lead_call` send -->
+- [x] node→hub `cmd_result` send → `src/node/cmd` <!-- link:node→hub `cmd_result` send -->
+- [x] node→hub `secret_result` send → `src/node/secrets` <!-- link:node→hub `secret_result` send -->
+- [x] node→hub `gated_result` send → `src/node/gated` <!-- link:node→hub `gated_result` send -->
+- [x] node→hub `node_action_result` send → `src/node/actions` <!-- link:node→hub `node_action_result` send -->
+- [x] node→hub `session_reply` send → `src/node/sessions` <!-- link:node→hub `session_reply` send -->
+- [x] node→hub `machine_event` send → `src/node/sessions` <!-- link:node→hub `machine_event` send -->
+- [x] node→hub `thread_event` send → `src/node/sessions` <!-- link:node→hub `thread_event` send -->
+- [x] node→hub `slept` send → `src/node/power` <!-- link:node→hub `slept` send -->
+- [x] node→hub `spans` send → `src/node/sessions` <!-- link:node→hub `spans` send -->
 - [ ] node→hub `clone_progress` send → `src/node/sessions` <!-- link:node→hub `clone_progress` send -->
-- [ ] hub→node `challenge` handle → `src/node/link` <!-- link:hub→node `challenge` handle -->
-- [ ] hub→node `welcome` handle → `src/node/link` <!-- link:hub→node `welcome` handle -->
-- [ ] hub→node `hb` handle → `src/node/link` <!-- link:hub→node `hb` handle -->
-- [ ] hub→node `lead_result` handle → `src/node/lead` <!-- link:hub→node `lead_result` handle -->
-- [ ] hub→node `cmd_check` handle → `src/node/cmd` <!-- link:hub→node `cmd_check` handle -->
-- [ ] hub→node `secret_deliver` handle → `src/node/secrets` <!-- link:hub→node `secret_deliver` handle -->
-- [ ] hub→node `gated_run` handle → `src/node/gated` <!-- link:hub→node `gated_run` handle -->
-- [ ] hub→node `gated_resume` handle → `src/node/gated` <!-- link:hub→node `gated_resume` handle -->
-- [ ] hub→node `node_action` handle → `src/node/actions` <!-- link:hub→node `node_action` handle -->
-- [ ] hub→node `session_call` handle → `src/node/sessions` <!-- link:hub→node `session_call` handle -->
-- [ ] hub→node `spans_ack` handle → `src/node/sessions` <!-- link:hub→node `spans_ack` handle -->
+- [x] hub→node `challenge` handle → `src/node/link` <!-- link:hub→node `challenge` handle -->
+- [x] hub→node `welcome` handle → `src/node/link` <!-- link:hub→node `welcome` handle -->
+- [x] hub→node `hb` handle → `src/node/link` <!-- link:hub→node `hb` handle -->
+- [x] hub→node `lead_result` handle → `src/node/lead` <!-- link:hub→node `lead_result` handle -->
+- [x] hub→node `cmd_check` handle → `src/node/cmd` <!-- link:hub→node `cmd_check` handle -->
+- [x] hub→node `secret_deliver` handle → `src/node/secrets` <!-- link:hub→node `secret_deliver` handle -->
+- [x] hub→node `gated_run` handle → `src/node/gated` <!-- link:hub→node `gated_run` handle -->
+- [x] hub→node `gated_resume` handle → `src/node/gated` <!-- link:hub→node `gated_resume` handle -->
+- [x] hub→node `node_action` handle → `src/node/actions` <!-- link:hub→node `node_action` handle -->
+- [x] hub→node `session_call` handle → `src/node/sessions` <!-- link:hub→node `session_call` handle -->
+- [x] hub→node `spans_ack` handle → `src/node/sessions` <!-- link:hub→node `spans_ack` handle -->
 
 ### Session calls (hub → node `session_call`)
 
-- [ ] session call `project_upsert` → `src/node/sessions` <!-- session:session call `project_upsert` -->
-- [ ] session call `project_remove` → `src/node/sessions` <!-- session:session call `project_remove` -->
-- [ ] session call `project_env` → `src/node/sessions` <!-- session:session call `project_env` -->
-- [ ] session call `project_env_copy` → `src/node/sessions` <!-- session:session call `project_env_copy` -->
+- [x] session call `project_upsert` → `src/node/sessions` <!-- session:session call `project_upsert` -->
+- [x] session call `project_remove` → `src/node/sessions` <!-- session:session call `project_remove` -->
+- [x] session call `project_env` → `src/node/sessions` <!-- session:session call `project_env` -->
+- [x] session call `project_env_copy` → `src/node/sessions` <!-- session:session call `project_env_copy` -->
 - [ ] session call `mcp_secrets` → `src/node/sessions` <!-- session:session call `mcp_secrets` -->
 - [ ] session call `mcp_test` → `src/node/sessions` <!-- session:session call `mcp_test` -->
 - [ ] session call `navi_signins_forget` → `src/node/sessions` <!-- session:session call `navi_signins_forget` -->
-- [ ] session call `order_env_drop` → `src/node/sessions` <!-- session:session call `order_env_drop` -->
+- [x] session call `order_env_drop` → `src/node/sessions` <!-- session:session call `order_env_drop` -->
 - [ ] session call `claude_account_secret` → `src/node/sessions` <!-- session:session call `claude_account_secret` -->
 - [ ] session call `claude_account_reseal` → `src/node/sessions` <!-- session:session call `claude_account_reseal` -->
 - [ ] session call `claude_account_test` → `src/node/sessions` <!-- session:session call `claude_account_test` -->
@@ -382,43 +382,43 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [ ] session call `one_password_test` → `src/node/sessions` <!-- session:session call `one_password_test` -->
 - [ ] session call `one_password_cards` → `src/node/sessions` <!-- session:session call `one_password_cards` -->
 - [ ] session call `claude_models` → `src/node/sessions` <!-- session:session call `claude_models` -->
-- [ ] session call `project_worktrees` → `src/node/sessions` <!-- session:session call `project_worktrees` -->
-- [ ] session call `launch` → `src/node/sessions` <!-- session:session call `launch` -->
-- [ ] session call `send` → `src/node/sessions` <!-- session:session call `send` -->
-- [ ] session call `withdraw` → `src/node/sessions` <!-- session:session call `withdraw` -->
-- [ ] session call `interrupt` → `src/node/sessions` <!-- session:session call `interrupt` -->
-- [ ] session call `stop` → `src/node/sessions` <!-- session:session call `stop` -->
-- [ ] session call `answer` → `src/node/sessions` <!-- session:session call `answer` -->
-- [ ] session call `subscribe` → `src/node/sessions` <!-- session:session call `subscribe` -->
-- [ ] session call `follow` → `src/node/sessions` <!-- session:session call `follow` -->
-- [ ] session call `release` → `src/node/sessions` <!-- session:session call `release` -->
-- [ ] session call `window` → `src/node/sessions` <!-- session:session call `window` -->
-- [ ] session call `read_item` → `src/node/sessions` <!-- session:session call `read_item` -->
-- [ ] session call `read_file` → `src/node/sessions` <!-- session:session call `read_file` -->
-- [ ] session call `default_branch` → `src/node/sessions` <!-- session:session call `default_branch` -->
-- [ ] session call `changes` → `src/node/sessions` <!-- session:session call `changes` -->
-- [ ] session call `runner_info` → `src/node/sessions` <!-- session:session call `runner_info` -->
-- [ ] session call `list_files` → `src/node/sessions` <!-- session:session call `list_files` -->
-- [ ] session call `repo_scan` → `src/node/sessions` <!-- session:session call `repo_scan` -->
-- [ ] session call `repo_inspect` → `src/node/sessions` <!-- session:session call `repo_inspect` -->
+- [x] session call `project_worktrees` → `src/node/sessions` <!-- session:session call `project_worktrees` -->
+- [x] session call `launch` → `src/node/sessions` <!-- session:session call `launch` -->
+- [x] session call `send` → `src/node/sessions` <!-- session:session call `send` -->
+- [x] session call `withdraw` → `src/node/sessions` <!-- session:session call `withdraw` -->
+- [x] session call `interrupt` → `src/node/sessions` <!-- session:session call `interrupt` -->
+- [x] session call `stop` → `src/node/sessions` <!-- session:session call `stop` -->
+- [x] session call `answer` → `src/node/sessions` <!-- session:session call `answer` -->
+- [x] session call `subscribe` → `src/node/sessions` <!-- session:session call `subscribe` -->
+- [x] session call `follow` → `src/node/sessions` <!-- session:session call `follow` -->
+- [x] session call `release` → `src/node/sessions` <!-- session:session call `release` -->
+- [x] session call `window` → `src/node/sessions` <!-- session:session call `window` -->
+- [x] session call `read_item` → `src/node/sessions` <!-- session:session call `read_item` -->
+- [x] session call `read_file` → `src/node/sessions` <!-- session:session call `read_file` -->
+- [x] session call `default_branch` → `src/node/sessions` <!-- session:session call `default_branch` -->
+- [x] session call `changes` → `src/node/sessions` <!-- session:session call `changes` -->
+- [x] session call `runner_info` → `src/node/sessions` <!-- session:session call `runner_info` -->
+- [x] session call `list_files` → `src/node/sessions` <!-- session:session call `list_files` -->
+- [x] session call `repo_scan` → `src/node/sessions` <!-- session:session call `repo_scan` -->
+- [x] session call `repo_inspect` → `src/node/sessions` <!-- session:session call `repo_inspect` -->
 - [ ] session call `repo_clone` → `src/node/sessions` <!-- session:session call `repo_clone` -->
-- [ ] session call `folder_make` → `src/node/sessions` <!-- session:session call `folder_make` -->
+- [x] session call `folder_make` → `src/node/sessions` <!-- session:session call `folder_make` -->
 - [ ] session call `gh_repo_list` → `src/node/sessions` <!-- session:session call `gh_repo_list` -->
 - [ ] session call `landed_log` → `src/node/sessions` <!-- session:session call `landed_log` -->
 - [ ] session call `skills_list` → `src/node/sessions` <!-- session:session call `skills_list` -->
-- [ ] session call `put_file` → `src/node/sessions` <!-- session:session call `put_file` -->
-- [ ] session call `has_file` → `src/node/sessions` <!-- session:session call `has_file` -->
+- [x] session call `put_file` → `src/node/sessions` <!-- session:session call `put_file` -->
+- [x] session call `has_file` → `src/node/sessions` <!-- session:session call `has_file` -->
 - [ ] session call `read_image` → `src/node/sessions` <!-- session:session call `read_image` -->
 
 ### CLI commands
 
-- [ ] `fleetd session-host` → `src/node/runner` (reuse the Rust binary's: PTY holder) <!-- cli:`fleetd session-host` -->
+- [x] `fleetd session-host` → `src/node/runner` (reuse the Rust binary's: PTY holder) <!-- cli:`fleetd session-host` -->
 
 ### Background loops
 
-- [ ] node loop `link::run_node` → `src/node/link` <!-- loop:node loop `link::run_node` -->
-- [ ] node loop `power::run` → `src/node/power` <!-- loop:node loop `power::run` -->
-- [ ] node loop `sessions::SessionService::start` → `src/node/sessions` <!-- loop:node loop `sessions::SessionService::start` -->
+- [x] node loop `link::run_node` → `src/node/link` <!-- loop:node loop `link::run_node` -->
+- [x] node loop `power::run` → `src/node/power` <!-- loop:node loop `power::run` -->
+- [x] node loop `sessions::SessionService::start` → `src/node/sessions` <!-- loop:node loop `sessions::SessionService::start` -->
 
 ## node-browser+screens
 

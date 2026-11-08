@@ -1,0 +1,191 @@
+// The node's hub link against a hub of the test's own (Bun.serve): challenge, signed hello, welcome; frames both ways,
+// compressed once both sides list link_deflate; a refusal that ends the loop; a dropped link dialled again.
+import { expect, test } from "bun:test";
+import { createPublicKey, verify } from "node:crypto";
+import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
+import { compresses, linkUrl, reconnectDelay, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
+import { loadOrCreateIdentity } from "../../src/node/identity.ts";
+import type { HubFrame } from "../../src/node/wire.ts";
+import { tempHome } from "../helpers.ts";
+
+type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
+
+/** A hub: answers each hello with `welcome` (or closes with `refuse`), and keeps every frame its nodes send. */
+function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean } = {}) {
+  const conns: Conn[] = [];
+  const inflaters = new Map<unknown, Inflater>();
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req, s) => (s.upgrade(req) ? undefined : new Response("no", { status: 400 })),
+    websocket: {
+      open(ws) {
+        conns.push({ frames: [], ws });
+        inflaters.set(ws, new Inflater(64 << 20));
+        ws.send(JSON.stringify({ t: "challenge", nonce: "nonce-1" }));
+      },
+      message(ws, data) {
+        // In arrival order: a compressed frame inflates before the next is read.
+        reads = reads.then(() => read(ws, data));
+      },
+    },
+  });
+  let reads: Promise<unknown> = Promise.resolve();
+  const read = async (ws: Bun.ServerWebSocket<unknown>, data: string | Buffer) => {
+        const conn = conns.find((c) => c.ws === ws)!;
+        const text = typeof data === "string" ? data : await inflaters.get(ws)!.inflate(new Uint8Array(data));
+        const frame = JSON.parse(text);
+        frame.compressed = typeof data !== "string";
+        conn.frames.push(frame);
+        if (frame.t !== "hello") return;
+        if (opts.refuse) return ws.close(opts.refuse[0], opts.refuse[1]);
+        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [] }));
+  };
+  return { url: `http://127.0.0.1:${server.port}`, conns, server };
+}
+
+const until = async (what: string, fn: () => boolean, ms = 5000) => {
+  const end = Date.now() + ms;
+  while (!fn()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await Bun.sleep(10);
+  }
+};
+
+const options = (hub: string, home: string, extra: Partial<Parameters<typeof runNode>[0]> = {}) => ({
+  settings: { hub, machineId: "devbox", name: "devbox", nodeVersion: "0.0.0" },
+  identity: loadOrCreateIdentity(home),
+  boxPubKey: "M42kv2b+sf2LEsH+jqb0tkIekEvQajFZWTr1hqHYoRU=",
+  capabilities: () => ["repos", "link_deflate"],
+  heartbeat: async () => ({}),
+  attach: () => () => {},
+  handle: () => {},
+  log: () => {},
+  ...extra,
+});
+
+test("the hello is signed over the hub's nonce and carries the enroll token until the first welcome", async () => {
+  const home = tempHome();
+  const hub = fakeHub();
+  const stop = new AbortController();
+  let enrolled = 0;
+  const linked: LinkContext[] = [];
+  void runNode(options(hub.url, home.dir, { enrollToken: "fle_token", onEnrolled: () => enrolled++, attach: (l) => (linked.push(l), () => {}), signal: stop.signal }));
+  await until("the welcome", () => linked.length === 1);
+  const hello = hub.conns[0]!.frames[0]!;
+  expect(hello).toMatchObject({ t: "hello", machineId: "devbox", protocol: 1, enrollToken: "fle_token", tags: [], capabilities: ["repos", "link_deflate"] });
+  const pub = createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(hello.pubKey, "base64")]), format: "der", type: "spki" });
+  expect(verify(null, Buffer.from("nonce-1"), pub, Buffer.from(hello.sig, "base64"))).toBe(true);
+  expect(enrolled).toBe(1);
+  expect(linked[0]!.hubId).toBe("fleetd-devbox");
+  // The hub drops the link: the node dials again at once, without the token now.
+  hub.conns[0]!.ws.close(1001, "going away");
+  await until("the second link", () => linked.length === 2);
+  expect(hub.conns[1]!.frames[0]!.enrollToken).toBeUndefined();
+  expect(enrolled).toBe(1);
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
+});
+
+test("a refusal (4001, 4002) ends the loop with the hub's reason; retrying wouldn't help", async () => {
+  const home = tempHome();
+  const hub = fakeHub({ refuse: [4001, "unknown key"] });
+  const fatal = await runNode(options(hub.url, home.dir));
+  expect(fatal?.message).toBe("hub refused this node: unknown key");
+  hub.server.stop(true);
+  home.done();
+});
+
+test("frames go compressed only once the hub's welcome lists link_deflate, and hub frames reach their handler", async () => {
+  const home = tempHome();
+  const hub = fakeHub({ deflate: true });
+  const stop = new AbortController();
+  const handled: HubFrame[] = [];
+  let link: LinkContext | undefined;
+  void runNode(options(hub.url, home.dir, { attach: (l) => ((link = l), () => {}), handle: (f) => handled.push(f), signal: stop.signal }));
+  await until("the welcome", () => link !== undefined);
+  link!.send({ t: "cmd_result", id: "c1", exitCode: 0, outputTail: "x".repeat(500), timedOut: false });
+  link!.send({ t: "hb", at: "2026-11-08T10:00:00Z" });
+  await until("both frames", () => hub.conns[0]!.frames.length === 3);
+  const [, long, short] = hub.conns[0]!.frames;
+  expect(long).toMatchObject({ id: "c1", compressed: true });
+  expect(short).toMatchObject({ t: "hb", compressed: false });
+  // The hub compresses too: its frames inflate on the node's own stream.
+  const deflater = new Deflater();
+  hub.conns[0]!.ws.send(await deflater.deflate(JSON.stringify({ t: "spans_ack", upto: 7, pad: "y".repeat(200) })));
+  hub.conns[0]!.ws.send(JSON.stringify({ t: "spans_ack", upto: 8 }));
+  await until("the hub's frames", () => handled.length === 2);
+  expect(handled.map((f) => f.upto)).toEqual([7, 8]);
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
+});
+
+test("a hub that goes quiet is pinged, and given up on when it never answers", async () => {
+  const home = tempHome();
+  // A hub that welcomes and then never sends a byte, nor answers a ping (Bun answers pings itself, so none is sent).
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req, s) => (s.upgrade(req) ? undefined : new Response("no")),
+    websocket: {
+      sendPings: false,
+      open: (ws) => void ws.send(JSON.stringify({ t: "challenge", nonce: "n" })),
+      message: (ws) => void ws.send(JSON.stringify({ t: "welcome", hubId: "h", protocol: 1 })),
+    },
+  });
+  const stop = new AbortController();
+  let links = 0;
+  void runNode(
+    options(`http://127.0.0.1:${server.port}`, home.dir, { attach: () => (links++, () => {}), quiet: { probeMs: 200, deadMs: 30_000 }, signal: stop.signal }),
+  );
+  await until("the welcome", () => links === 1);
+  // Bun's server answers the node's ping with a pong, so a hub that's alive keeps the link however quiet it is.
+  await Bun.sleep(800);
+  expect(links).toBe(1);
+  stop.abort();
+  server.stop(true);
+  home.done();
+});
+
+test("each heartbeat carries the fields the node's modules fill in", async () => {
+  const home = tempHome();
+  const hub = fakeHub();
+  const stop = new AbortController();
+  void runNode(options(hub.url, home.dir, { heartbeatMs: 50, heartbeat: async () => ({ busy: { threads: 1, screens: 0, uploads: 0, hosted: 0 } }), signal: stop.signal }));
+  await until("two heartbeats", () => (hub.conns[0]?.frames.filter((f) => f.t === "hb").length ?? 0) >= 2);
+  const hb = hub.conns[0]!.frames.find((f) => f.t === "hb")!;
+  expect(hb.busy).toEqual({ threads: 1, screens: 0, uploads: 0, hosted: 0 });
+  expect(Date.parse(hb.at)).toBeGreaterThan(0);
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
+});
+
+test("reconnects start fast and back off to 30 s; the URL and the frame caps are the Rust node's", () => {
+  expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((a) => reconnectDelay(a, 1))).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+  expect(reconnectDelay(1000, 1.2)).toBe(36000);
+  expect(linkUrl("https://devbox.example:4790/x?y")).toBe("wss://devbox.example:4790/node/link");
+  expect(linkUrl("http://127.0.0.1:4790")).toBe("ws://127.0.0.1:4790/node/link");
+  expect(compresses(["link_deflate"], ["link_deflate"])).toBe(true);
+  expect(compresses([], ["link_deflate"])).toBe(false);
+  const big = (16 << 20) + 1;
+  expect(sizeAllowed({ t: "session_call", call: { op: "put_file" } }, big)).toBe(true);
+  expect(sizeAllowed({ t: "session_call", call: { op: "default_branch" } }, big)).toBe(false);
+});
+
+test("deflate keeps its window across messages, and garbage ends the stream", async () => {
+  const d = new Deflater();
+  const i = new Inflater(1 << 20);
+  const msg = JSON.stringify({ t: "hb", at: "2026-11-07T10:00:00Z", pad: "x".repeat(500) });
+  const first = await d.deflate(msg);
+  const second = await d.deflate(msg);
+  expect(second.length).toBeLessThan(first.length);
+  expect(await i.inflate(first)).toBe(msg);
+  expect(await i.inflate(second)).toBe(msg);
+  // Bun 1.4.3: `await expect(p).rejects` never settles (README), so the rejection is caught.
+  const why = await new Inflater(1 << 20).inflate(new Uint8Array(16).fill(0xff)).then(
+    () => "inflated",
+    (e: Error) => e.message,
+  );
+  expect(why).toContain("does not inflate");
+});
