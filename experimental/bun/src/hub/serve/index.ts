@@ -1,0 +1,103 @@
+// `fleetd hub start` (crates/fleetd/src/hub/serve/mod.rs): parses its flags, opens the database in `--home`, starts
+// every module's loops and serves HTTP until SIGTERM/SIGINT.
+import { join } from "node:path";
+import { startAll } from "../../gen/loops.ts";
+import { registerAll } from "../../gen/areas.ts";
+import { systemClock } from "../../shared/clock.ts";
+import { expandHome, fleetdDir } from "../../shared/home.ts";
+import { Hub, type Listen } from "../api/hub.ts";
+import { Registry } from "../api/registry.ts";
+import { serve, stop } from "../http/index.ts";
+import { HubDb } from "../store/db.ts";
+
+export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
+             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
+             writes to an offline machine wait 24 h)
+`;
+
+export const DEFAULT_LISTEN: Listen = { host: "127.0.0.1", port: 4790 };
+
+/** `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`. */
+export function parseListen(value: string): Listen | undefined {
+  const colon = value.lastIndexOf(":");
+  const [rawHost, rawPort] = colon < 0 ? ["", value] : [value.slice(0, colon), value.slice(colon + 1)];
+  if (!/^\d+$/.test(rawPort)) return undefined;
+  const port = Number(rawPort);
+  if (port < 1 || port > 65535) return undefined;
+  const host = rawHost.startsWith("[") && rawHost.endsWith("]") ? rawHost.slice(1, -1) : rawHost;
+  return { host: host || DEFAULT_LISTEN.host, port };
+}
+
+export type HubOptions = { home?: string; listen: Listen };
+
+/** The flags of `hub start`, with node:util parseArgs's strict rules and messages: the last one wins, no positionals. */
+export function parseHubArgs(argv: string[]): HubOptions | string {
+  const values: { home?: string; listen?: string } = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] ?? "";
+    const positional = `Unexpected argument '${arg}'. This command does not take positional arguments`;
+    if (arg === "--") {
+      const next = argv[i + 1];
+      return next === undefined ? parsed(values) : `Unexpected argument '${next}'. This command does not take positional arguments`;
+    }
+    const body = arg.startsWith("--") ? arg.slice(2) : "";
+    if (!body) return arg.length > 1 && arg.startsWith("-") ? `Unknown option '${arg}'` : positional;
+    const eq = body.indexOf("=");
+    const name = eq < 0 ? body : body.slice(0, eq);
+    if (name !== "home" && name !== "listen") return `Unknown option '--${name}'`;
+    let value = eq < 0 ? undefined : body.slice(eq + 1);
+    if (value === undefined) {
+      value = argv[++i];
+      if (value === undefined) return `Option '--${name} <value>' argument missing`;
+    }
+    values[name] = value;
+  }
+  return parsed(values);
+}
+
+function parsed(values: { home?: string; listen?: string }): HubOptions | string {
+  if (values.listen === undefined) return { ...(values.home === undefined ? {} : { home: values.home }), listen: DEFAULT_LISTEN };
+  const listen = parseListen(values.listen);
+  if (!listen) return `--listen must be host:port, got '${values.listen}'`;
+  return { ...(values.home === undefined ? {} : { home: values.home }), listen };
+}
+
+/** Builds the hub over `<home>/hub.sqlite` and its tool registry, every module's tools registered. */
+export function build(home: string, listen: Listen): { hub: Hub; tools: Registry } {
+  const db = HubDb.open(home);
+  for (const d of db.drift) {
+    console.warn(
+      d.kind === "changed"
+        ? `hub db: migration ${d.name} changed after it ran; it doesn't run again`
+        : `hub db: migration ${d.name} was run by a newer fleetd`,
+    );
+  }
+  const hub = new Hub({ home, listen }, db, systemClock);
+  const tools = new Registry();
+  registerAll(tools);
+  return { hub, tools };
+}
+
+/** `fleetd hub start <argv>`: 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure. */
+export async function hubStart(argv: string[]): Promise<number> {
+  const options = parseHubArgs(argv);
+  if (typeof options === "string") {
+    process.stderr.write(`fleetd: ${options}\n\nusage:\n${HUB_START_USAGE}`);
+    return 2;
+  }
+  const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
+  const { hub, tools } = build(home, options.listen);
+  const server = serve(hub, tools);
+  console.error(`fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
+  startAll(hub);
+  // The read worker is a separate entry point of the compiled binary: a build that left it out says so at start,
+  // not at the first long read.
+  hub.db.read("SELECT 1").catch((error: Error) => console.error(`fleetd hub: ${error.message}`));
+  await new Promise<void>((resolve) => {
+    for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => resolve());
+  });
+  hub.shutdown.abort();
+  await stop(server);
+  hub.db.close();
+  return 0;
+}
