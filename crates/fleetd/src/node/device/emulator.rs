@@ -93,7 +93,7 @@ pub fn args(port: u16, read_only: bool) -> Vec<String> {
 /// user has joined since (sdk::Kvm::Sg). sg execs the shell, which execs the emulator: one process, its pid the
 /// child's, so its process group is killed as ever.
 fn command(sdk: &Sdk, args: Vec<String>, kvm: Option<super::sdk::Kvm>) -> Command {
-    match kvm {
+    let mut command = match kvm {
         Some(super::sdk::Kvm::Sg) => {
             let line = std::iter::once(sdk.emulator.to_string_lossy().into_owned())
                 .chain(args)
@@ -109,7 +109,9 @@ fn command(sdk: &Sdk, args: Vec<String>, kvm: Option<super::sdk::Kvm>) -> Comman
             command.args(args);
             command
         }
-    }
+    };
+    crate::oom::agent(command.as_std_mut());
+    command
 }
 
 pub fn spawn(sdk: &Sdk, port: u16, read_only: bool) -> Result<Emulator, String> {

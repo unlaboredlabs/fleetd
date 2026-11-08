@@ -13,6 +13,8 @@ pub mod cmd;
 pub mod config;
 pub mod desktop;
 pub mod device;
+#[cfg(test)]
+mod enrolled_tests;
 pub mod flush;
 pub mod gated;
 pub mod hold;
@@ -174,16 +176,41 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
 /// Keeps the link up for a node that has joined.
 pub async fn run(args: RunArgs) -> Result<(), NodeError> {
     let home = args.home.unwrap_or_else(default_node_home);
-    let config = read_config(&home).map_err(|_| {
-        NodeError::Setup(format!("node config in {} is unreadable", home.display()))
-    })?;
-    match config {
-        Some(config) if config.enrolled => run_node(&home, config, None, false).await,
-        _ => Err(NodeError::Setup(format!(
-            "this node has not joined a hub (no enrolled config in {}): run fleetd node join first",
-            home.display()
-        ))),
+    // Run by hand, it says what's wrong at once; as a service it waits.
+    let retry = !std::io::IsTerminal::is_terminal(&std::io::stderr());
+    let config = tokio::select! {
+        config = enrolled(&home, retry) => config?,
+        () = shutdown_signal() => return Ok(()),
+    };
+    run_node(&home, config, None, false).await
+}
+
+/// The node's enrolled config. A service that finds none (a boot that reads the home before it is all there, a join
+/// still writing it) tries again after [`enrolled_retry`]'s wait rather than exiting: systemd gives up on a unit
+/// that exits five times in five minutes, and the node then stayed down until someone started it.
+async fn enrolled(home: &Path, retry: bool) -> Result<NodeConfig, NodeError> {
+    for attempt in 0.. {
+        let error = match read_config(home) {
+            Ok(Some(config)) if config.enrolled => return Ok(config),
+            Ok(_) => format!(
+                "this node has not joined a hub (no enrolled config in {}): run fleetd node join first",
+                home.display()
+            ),
+            Err(_) => format!("node config in {} is unreadable", home.display()),
+        };
+        if !retry {
+            return Err(NodeError::Setup(error));
+        }
+        let wait = enrolled_retry(attempt);
+        eprintln!("fleetd: {error}; trying again in {} s", wait.as_secs());
+        tokio::time::sleep(wait).await;
     }
+    unreachable!("the attempts never run out")
+}
+
+/// The wait before attempt `attempt + 1` of reading the config: 5 s, doubling up to 5 minutes.
+fn enrolled_retry(attempt: u32) -> std::time::Duration {
+    std::time::Duration::from_secs(5u64.saturating_mul(1 << attempt.min(6)).min(300))
 }
 
 /// Resolves on SIGINT or SIGTERM.
@@ -213,6 +240,8 @@ async fn run_node(
         .with_writer(std::io::stdout)
         .with_ansi(false)
         .try_init();
+    crate::oom::protect("node");
+    crate::update::service::refresh_own_unit();
     let shown = home.display();
     let identity = identity::load_or_create_identity(home)
         .map_err(|_| NodeError::Setup(format!("cannot read or create the node key in {shown}")))?;
