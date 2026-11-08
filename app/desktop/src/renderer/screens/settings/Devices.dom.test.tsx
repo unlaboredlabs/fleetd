@@ -2,6 +2,7 @@
 // Settings › You › Your devices: only your own devices; Pair a phone mints a code with the address this app reaches the
 // hub at, shows its link as a QR with the address and code as text and how long it lasts, and notices the phone once
 // it has paired (key.paired); a hub only on loopback is refused with its fix, and an expired code offers a new one.
+// Each device but this one signs out once confirmed (device_revoke), and leaves the list.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -70,6 +71,13 @@ const render = async (appUrl = "http://devbox.tail1234.ts.net:4790") => {
       calls.push({ tool, input });
       if (tool === "people_list") return Promise.resolve({ ok: true, output: people });
       if (tool === "pair_code_create") return Promise.resolve(pairCode());
+      if (tool === "device_revoke") {
+        const keyId = (input as { keyId: string }).keyId;
+        const gone = people.devices.find((d) => d.keyId === keyId);
+        if (gone === undefined) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No device ${keyId}.` } });
+        people = { ...people, devices: people.devices.filter((d) => d !== gone) };
+        return Promise.resolve({ ok: true, output: { device: { ...gone, revokedAt: AT } } });
+      }
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], me: sam, admin: true } });
       return Promise.resolve({ ok: true, output: {} });
     },
@@ -96,8 +104,8 @@ const render = async (appUrl = "http://devbox.tail1234.ts.net:4790") => {
   for (let i = 0; i < 3; i++) await settle();
 };
 
-const button = (text: string) => {
-  const b = [...host.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+const button = (text: string, within: ParentNode = host) => {
+  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };
@@ -109,6 +117,11 @@ const click = async (el: HTMLElement) => {
   await settle();
 };
 const rows = () => [...host.querySelectorAll("[role='list'][aria-label='Your devices'] [role='listitem']")].map((r) => r.getAttribute("aria-label"));
+const row = (name: string) => {
+  const el = host.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}']`);
+  if (el === null) throw new Error(`no row ${name}`);
+  return el;
+};
 const panel = () => host.querySelector<HTMLElement>("section[aria-label='Pair a phone']");
 const qr = () => panel()?.querySelector("svg[aria-label='Pairing QR code']") ?? null;
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
@@ -176,4 +189,32 @@ it("offers a new code once the code has expired, and shows no QR for it", async 
   await click(button("New code"));
   expect(sent("pair_code_create")).toHaveLength(2);
   expect(qr()?.getAttribute("data-link")).toBe(LINK);
+});
+
+it("signs out another device once confirmed, never this one", async () => {
+  people = { ...people, devices: [...people.devices, device("k3", "iPhone", sam)], thisDevice: "k1" };
+  await render();
+  expect(rows()).toEqual(["MacBook", "iPhone"]);
+  expect(row("MacBook").textContent).toContain("this computer");
+  expect(() => button("Sign out", row("MacBook"))).toThrow();
+
+  // Cancel sends nothing.
+  await click(button("Sign out", row("iPhone")));
+  expect(document.body.textContent).toContain("It stops working on this hub at once.");
+  await click(button("Cancel", document));
+  expect(sent("device_revoke")).toEqual([]);
+  expect(rows()).toEqual(["MacBook", "iPhone"]);
+
+  await click(button("Sign out", row("iPhone")));
+  await click(button("Sign out iPhone", document));
+  expect(sent("device_revoke")).toEqual([{ keyId: "k3" }]);
+  for (let i = 0; i < 3; i++) await settle();
+  expect(rows()).toEqual(["MacBook"]);
+});
+
+it("offers no sign-out on a hub that doesn't say which device this is", async () => {
+  people = { ...people, devices: [...people.devices, device("k3", "iPhone", sam)] };
+  await render();
+  expect(rows()).toEqual(["MacBook", "iPhone"]);
+  expect(() => button("Sign out", row("iPhone"))).toThrow();
 });

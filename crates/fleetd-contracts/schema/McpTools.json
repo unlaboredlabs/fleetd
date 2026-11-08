@@ -15020,6 +15020,11 @@
           "maxItems": 500,
           "type": "array"
         },
+        "thisDevice": {
+          "description": "The device this call came from: the caller's own key. Absent for an agent key, and from older hubs.",
+          "minLength": 1,
+          "type": "string"
+        },
         "truncated": {
           "type": "boolean"
         }

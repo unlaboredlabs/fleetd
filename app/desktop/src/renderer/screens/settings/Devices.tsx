@@ -1,17 +1,19 @@
 // Settings › You › Your devices: the devices signed in as you on each hub, and Pair a phone. Pair a phone mints a
 // one-time code (pair_code_create, 15 minutes, as `fleetd pair` does) and shows its fleetd://pair link as a QR for the
 // phone app or the Camera to scan, with the hub address and code under it for typing. When the phone has paired (its
-// key.paired event refetches people_list), the QR gives way to the new phone, which also joins the list.
+// key.paired event refetches people_list), the QR gives way to the new phone, which also joins the list. Each other
+// device has Sign out (device_revoke, once confirmed): its key stops working at once. The hub says which device this
+// app is (people_list's thisDevice), and that one has none: signing it out would cut this app off.
 import { Check, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentKeyInfo, PairCodeCreateOutput } from "../../../shared/contracts";
-import { Button, Text } from "../../ui";
+import { Button, Dialog, Text } from "../../ui";
 import { HubScope, useData, useHubs } from "../../src/data/react";
 import { usePeople } from "../admin/usePeople";
 import { Prose } from "../onboarding/Prose";
 import { when } from "../status/view";
 import { codeLife, deviceLine, pairedSince, qrPath, yourDevices } from "./devicesModel";
-import { errorText, useHubCall, useLive } from "./hub";
+import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart } from "./parts";
 import a from "../admin/admin.module.css";
 import s from "./settings.module.css";
@@ -42,9 +44,11 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
   // Where this app reaches the hub: the hub puts it in the link unless it is loopback.
   const appUrl = useData((st) => (st.hub.phase === "unpaired" ? undefined : st.hub.hub));
   const [pairing, setPairing] = useState<Pairing | null>(null);
+  const [signingOut, setSigningOut] = useState<AgentKeyInfo | null>(null);
   // Day-grained, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
   const devices = yourDevices(read.data);
+  const here = read.data?.thisDevice;
   const paired = pairing?.phase === "shown" ? pairedSince(devices, pairing.before) : undefined;
   const pair = () => {
     const before = new Set(devices.map((d) => d.keyId));
@@ -76,15 +80,36 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
       ) : (
         <div className={a.list} role="list" aria-label="Your devices">
           {devices.map((d) => (
-            <DeviceRow key={d.keyId} device={d} just={d.keyId === paired?.keyId} now={now} />
+            <DeviceRow
+              key={d.keyId}
+              device={d}
+              just={d.keyId === paired?.keyId}
+              here={d.keyId === here}
+              now={now}
+              onSignOut={here === undefined || d.keyId === here ? undefined : () => setSigningOut(d)}
+            />
           ))}
         </div>
       )}
+      <SignOutDialog device={signingOut} onClose={() => setSigningOut(null)} />
     </PagePart>
   );
 }
 
-function DeviceRow({ device: d, just, now }: { device: AgentKeyInfo; just: boolean; now: number }) {
+function DeviceRow({
+  device: d,
+  just,
+  here,
+  now,
+  onSignOut,
+}: {
+  device: AgentKeyInfo;
+  just: boolean;
+  here: boolean;
+  now: number;
+  onSignOut: (() => void) | undefined;
+}) {
+  const live = useLive();
   return (
     <div className={a.row} role="listitem" aria-label={d.name}>
       <div className={a.who}>
@@ -95,12 +120,72 @@ function DeviceRow({ device: d, just, now }: { device: AgentKeyInfo; just: boole
               just paired
             </Text>
           ) : null}
+          {here ? (
+            <Text size="xs" tone="quiet">
+              this computer
+            </Text>
+          ) : null}
         </div>
         <Text size="xs" tone="quiet">
           {deviceLine(d, (iso) => when(iso, now))}
         </Text>
       </div>
+      {onSignOut === undefined ? null : (
+        <div className={a.controls}>
+          <Button size="sm" variant="ghost" disabled={!live} onClick={onSignOut}>
+            Sign out
+          </Button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Asks before signing a device out: it stops working on this hub at once, until it is paired again. */
+function SignOutDialog({ device, onClose }: { device: AgentKeyInfo | null; onClose: () => void }) {
+  const call = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const name = device?.name ?? "";
+  const close = () => {
+    setError(undefined);
+    onClose();
+  };
+  const signOut = () => {
+    if (device === null) return;
+    setBusy(true);
+    setError(undefined);
+    call("device_revoke", { keyId: device.keyId })
+      .then(() => {
+        refetch(["people_list"]);
+        close();
+      })
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Dialog
+      open={device !== null}
+      onOpenChange={(open) => !open && close()}
+      title={`Sign out ${name}?`}
+      description="It stops working on this hub at once. To use it again, pair it again."
+      footer={
+        <>
+          {error === undefined ? null : (
+            <p role="alert" className={s.alertLine}>
+              <Text size="xs" tone="danger">
+                {error}
+              </Text>
+            </p>
+          )}
+          <Button onClick={close}>Cancel</Button>
+          <Button variant="danger" disabled={busy} onClick={signOut}>
+            {`Sign out ${name}`}
+          </Button>
+        </>
+      }
+    />
   );
 }
 
