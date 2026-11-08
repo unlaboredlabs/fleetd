@@ -2,7 +2,7 @@
 // run with no frame for longer than its threshold is stalled. The hub emits thread.failed{reason:"stalled"} and
 // interrupts the run, once. Deterministic, no LLM.
 import type { Hub } from "../api/hub.ts";
-import { executorsOf } from "../link/executor.ts";
+import { executors } from "../executor/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -158,7 +158,8 @@ type ExecutorWatch = {
 
 /** The watch over the hub's own executor, store and event log (`HubWatch`). */
 export function hubWatch(hub: Hub): WatchPort {
-  const ex = () => executorsOf(hub) as unknown as ExecutorWatch | undefined;
+  // A static import (D355): a variable-path import() finds nothing in the compiled binary.
+  const ex = () => executors(hub) as unknown as ExecutorWatch;
   const ref = (k: Key) => {
     const [machineId, threadId] = parts(k);
     return { machineId, threadId };
