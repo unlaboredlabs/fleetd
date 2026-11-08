@@ -127,7 +127,8 @@ const driver = async (url: string) => {
   await new Promise((r) => (ws.onopen = r));
   const call = async (id: number, method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
     ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    for (let i = 0; i < 200; i++) {
+    // A real Chrome on a loaded machine can take seconds to answer a navigate.
+    for (const end = Date.now() + 10_000; Date.now() < end; ) {
       const answer = got.find((m) => m.id === id);
       if (answer) return answer;
       await Bun.sleep(5);

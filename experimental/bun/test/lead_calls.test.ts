@@ -4,9 +4,9 @@ import { LeadCalls, leadCalls, onLeadCallFrame, type LeadCaller, type LeadResult
 import { check, checkCall, checkFanOut, NODE_OPS, WORKER_OPS } from "../src/hub/lead_calls/policy.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { NotImplemented, ToolError } from "../src/shared/errors.ts";
-import { tempHome } from "./helpers.ts";
+import { hubHome } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub } = build(home.dir, { host: "127.0.0.1", port: 0 });
 afterAll(() => {
   hub.db.close();

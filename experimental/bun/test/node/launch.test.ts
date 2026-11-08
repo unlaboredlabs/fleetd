@@ -68,4 +68,5 @@ test("a worker's launch gets the areas' variables and plugin folders; a plain se
     await service.stopAll();
     home.done();
   }
-});
+  // Each launch starts a host process (sh, then bun): a loaded machine takes longer than bun's 5 s default.
+}, 30_000);

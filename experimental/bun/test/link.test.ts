@@ -6,9 +6,9 @@ import { build } from "../src/hub/serve/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { FakeNode, nodeKey } from "./fake-node.ts";
-import { tempHome } from "./helpers.ts";
+import { hubHome } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 const server = serve(hub, tools, 0);
 const url = `ws://127.0.0.1:${server.port}/node/link`;
@@ -266,7 +266,7 @@ test("secret, gated and resumed runs get their own replies; spans and clone prog
 
 test("start() makes the activity tracker, so the executor's first thread events have somewhere to go", async () => {
   const { start } = await import("../src/hub/link/loops.ts");
-  const fresh = tempHome();
+  const fresh = hubHome();
   const built = build(fresh.dir, { host: "127.0.0.1", port: 0 });
   expect((built.hub as unknown as { areas: Map<string, unknown> }).areas.has("activity")).toBe(false);
   start(built.hub);

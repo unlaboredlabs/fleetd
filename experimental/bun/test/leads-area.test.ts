@@ -167,7 +167,8 @@ test("lead_start launches once with the lead prompt and digest; a wake reaches i
   const woken = events(hub).page(0).events.find((e) => e.type === "lead.woken");
   expect(woken).toMatchObject({ summary: "Lead of p1 woken with 1 trigger", data: { triggers: ["task_result"] } });
   done();
-}, 15_000);
+  // 10 s of it is the wake's own wait, in real time: a loaded machine needs room for the rest.
+}, 30_000);
 
 test("brief_create opens or edits an order; close refuses a closed one", async () => {
   const { hub, done } = withLead();

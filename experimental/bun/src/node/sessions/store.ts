@@ -69,7 +69,8 @@ export class NodeStore {
     readonly eventsKept = EVENTS_KEPT,
   ) {
     this.db = new Database(path, { create: true, strict: true });
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+    // As the Rust store: WAL with NORMAL syncs at checkpoints, not on every commit.
+    this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
     this.db.exec(SCHEMA);
   }
 
