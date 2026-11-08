@@ -62,12 +62,12 @@ export async function repoChecks(t: Train, repo: string, base: string): Promise<
       try {
         settings = parse(text);
       } catch (why) {
-        console.warn(`train: ${PATH} is not used on ${repo} ${base}; every check counts: ${(why as Error).message}`);
+        t.warnHourly([`train: ${PATH} is not used on ${repo} ${base}; every check counts`], (why as Error).message, `train: ${PATH} is not used on ${repo} ${base}; every check counts: ${(why as Error).message}`);
         settings = undefined;
       }
     }
   } catch (error) {
-    console.warn(`train: ${PATH} not read on ${repo} ${base}: ${(error as Error).message}`);
+    t.warnHourly([`train: ${PATH} not read on ${repo} ${base}`], (error as Error).message, `train: ${PATH} not read on ${repo} ${base}: ${(error as Error).message}`);
     return undefined;
   }
   t.repoChecks.set(key, [now, settings]);

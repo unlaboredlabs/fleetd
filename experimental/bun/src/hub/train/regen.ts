@@ -9,7 +9,7 @@
 import type { Change } from "../../shared/contracts.ts";
 import type { Pull } from "./github.ts";
 import type { NodeRun } from "./host.ts";
-import { errorText } from "./records.ts";
+import { errorText, WAIT_REGEN } from "./records.ts";
 import { short } from "./rules.ts";
 import { TRAIN_BY, type Train } from "./service.ts";
 
@@ -223,7 +223,13 @@ say "done $(git rev-parse HEAD)"
 `;
 
 /** Where a regeneration of a Change at one head stands. */
+/**
+ * Where a regeneration of a Change at one head stands, kept in `train_waits` so a restart doesn't try a failed one
+ * again. One running when the hub stopped is tried again: the hub runs each of its steps, so none goes on without it.
+ */
 export type Regen = "running" | "pushed" | "failed";
+export const REGEN_RUNNING: Regen = "running";
+const REGENS: Regen[] = ["running", "pushed", "failed"];
 
 export const regenKey = (c: Change) => `${c.repo}\u0000${c.changeId}\u0000${c.headSha}`;
 
@@ -254,11 +260,11 @@ export async function regenerateConfig(t: Train, repo: string, base: string): Pr
       try {
         config = parseRegenerate(text);
       } catch (why) {
-        console.warn(`train: the regenerate config of ${repo} ${base} is not used: ${(why as Error).message}`);
+        t.warnHourly([`train: the regenerate config of ${repo} ${base} is not used`], (why as Error).message, `train: the regenerate config of ${repo} ${base} is not used: ${(why as Error).message}`);
       }
     }
   } catch (error) {
-    console.warn(`train: the regenerate config of ${repo} ${base} not read: ${(error as Error).message}`);
+    t.warnHourly([`train: the regenerate config of ${repo} ${base} not read`], (error as Error).message, `train: the regenerate config of ${repo} ${base} not read: ${(error as Error).message}`);
     return undefined;
   }
   t.regenConfigs.set(key, [now, config]);
@@ -266,7 +272,12 @@ export async function regenerateConfig(t: Train, repo: string, base: string): Pr
 }
 
 /** Where the regeneration of the Change at its current head stands, if one began. */
-export const regen = (t: Train, c: Change) => t.regens.get(regenKey(c));
+export function regen(t: Train, c: Change): Regen | undefined {
+  const w = t.records.wait(c.changeId, WAIT_REGEN);
+  return w && w.head === c.headSha ? REGENS.find((r) => r === w.state) : undefined;
+}
+
+const setRegen = (t: Train, c: Change, r: Regen) => t.records.setWait(c.changeId, WAIT_REGEN, c.headSha, r);
 
 /** Drops what the train remembers of regenerations of `repo`'s Changes no longer in `live`. */
 export function forgetRegens(t: Train, repo: string, live: string[]): void {
@@ -274,7 +285,7 @@ export function forgetRegens(t: Train, repo: string, live: string[]): void {
     const [r, id] = k.split("\u0000") as [string, string];
     return r === repo && !live.includes(id);
   };
-  for (const k of [...t.regens.keys()]) if (gone(k)) t.regens.delete(k);
+  t.records.keepWaits(repo, [WAIT_REGEN], live);
   for (const k of [...t.migrationsRead]) if (gone(k)) t.migrationsRead.delete(k);
 }
 
@@ -303,7 +314,7 @@ export async function earlyMigration(t: Train, change: Change, pull: Pull): Prom
   try {
     added = await t.github.addedFiles(repo, change.prNumber);
   } catch (error) {
-    console.warn(`train: the PR's files not read for ${change.changeId}: ${(error as Error).message}`);
+    t.warnHourly([`train: the PR's files not read for ${change.changeId}`], (error as Error).message, `train: the PR's files not read for ${change.changeId}: ${(error as Error).message}`);
     return false;
   }
   const prefix = `${dir.replace(/\/+$/, "")}/`;
@@ -312,7 +323,7 @@ export async function earlyMigration(t: Train, change: Change, pull: Pull): Prom
     try {
       early = earlyMigrations(config, added, await t.github.fileNames(repo, dir, base));
     } catch (error) {
-      console.warn(`train: the base's migrations not read for ${change.changeId}: ${(error as Error).message}`);
+      t.warnHourly([`train: the base's migrations not read for ${change.changeId}`], (error as Error).message, `train: the base's migrations not read for ${change.changeId}: ${(error as Error).message}`);
       return false;
     }
   }
@@ -328,9 +339,7 @@ async function startRegen(t: Train, change: Change, pull: Pull, why: string, bou
   if (!sameRepo || pull.head.sha.toLowerCase() !== change.headSha) return false;
   const config = await regenerateConfig(t, repo, pull.base.ref);
   if (!config) return false;
-  const key = regenKey(change);
-  if (t.regens.has(key)) return true;
-  t.regens.set(key, "running");
+  if (!t.records.startWait(change, WAIT_REGEN, change.headSha, t.nowMs(), REGEN_RUNNING)) return true;
   console.info(`train: regenerating ${change.changeId} instead of sending it back: ${why}`);
   t.update(change.changeId, undefined, (c) => ({ ...c, lastError: errorText(`it ${why}; ${REGENERATING}`) }));
   const checkout = t.trainCheckout(change.repo, change.projectRef);
@@ -392,10 +401,9 @@ async function regenerated(
   bounce: boolean,
   outcome: { ok: true; sha: string } | { ok: false; why: string },
 ): Promise<void> {
-  const key = regenKey(change);
   const ours = (c: Change) => c.headSha === change.headSha && ["queued", "reviewing", "ready", "rebasing"].includes(c.state);
   if (outcome.ok) {
-    t.regens.set(key, "pushed");
+    setRegen(t, change, "pushed");
     console.info(`train: ${change.changeId} regenerated and pushed ${outcome.sha}`);
     const note =
       `it ${why}; the train rebased it onto ${pull.base.ref}, regenerated its generated files and pushed ${short(outcome.sha)}, which goes ` +
@@ -403,7 +411,7 @@ async function regenerated(
     t.update(change.changeId, undefined, (c) => (ours(c) ? { ...c, lastError: errorText(note) } : c));
     await tellPushed(t, change, pull, outcome.sha);
   } else {
-    t.regens.set(key, "failed");
+    setRegen(t, change, "failed");
     console.info(`train: could not regenerate ${change.changeId}: ${outcome.why}`);
     const current = t.records.get(change.changeId);
     let moved = false;
@@ -437,6 +445,6 @@ async function tellPushed(t: Train, change: Change, pull: Pull, sha: string): Pr
   try {
     await t.host.messageTask(change.projectRef, TRAIN_BY, change.taskId, text);
   } catch (error) {
-    console.warn(`train: author ${change.taskId} not told of the push to ${change.changeId}: ${(error as Error).message}`);
+    t.warnHourly([`train: author ${change.taskId} not told of the push to ${change.changeId}`], (error as Error).message, `train: author ${change.taskId} not told of the push to ${change.changeId}: ${(error as Error).message}`);
   }
 }

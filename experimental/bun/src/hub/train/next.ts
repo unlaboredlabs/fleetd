@@ -340,7 +340,7 @@ export async function workflows(t: Train, repo: string, base: string): Promise<W
     t.nextLabels.gated.set(key, [now, w]);
     return w;
   } catch (error) {
-    console.warn(`train: workflows of ${repo} not read: ${(error as Error).message}`);
+    t.warnHourly([`train: workflows of ${repo} not read`], (error as Error).message, `train: workflows of ${repo} not read: ${(error as Error).message}`);
     if (known) return known[1];
     let last: [number, Workflows] | undefined;
     for (const [k, v] of t.nextLabels.gated) if (k.startsWith(`${repo}\u0000`) && (!last || v[0] > last[0])) last = v;
@@ -364,7 +364,7 @@ export async function undefinedAt(t: Train, repo: string, base: string, sha: str
       h.jobs = jobs;
       t.nextLabels.heads.set(key, h);
     } catch (error) {
-      console.warn(`train: the tree's workflows not read at ${repo}@${sha}: ${(error as Error).message}`);
+      t.warnHourly([`train: the tree's workflows not read at ${repo}@${sha}`], (error as Error).message, `train: the tree's workflows not read at ${repo}@${sha}: ${(error as Error).message}`);
       return [];
     }
   }
@@ -411,7 +411,7 @@ export async function rerunJobs(t: Train, repo: string, cancelled: CheckRun[], r
       } catch (error) {
         rerun.refused += 1;
         rerun.at = now + RERUN_BACKOFF_MS * 2 ** (rerun.refused - 1);
-        console.warn(`train: cancelled job not re-run (${repo} job ${job}, try ${rerun.refused}): ${(error as Error).message}`);
+        t.warnHourly([`train: cancelled job not re-run (${repo} job ${job}, try ${rerun.refused})`], (error as Error).message, `train: cancelled job not re-run (${repo} job ${job}, try ${rerun.refused}): ${(error as Error).message}`);
         if (rerun.refused >= RERUN_TRIES) out.gaveUp = true;
         else out.refused = true;
       }
@@ -530,7 +530,7 @@ export function seesPr(t: Train, projectRef: ProjectRef, url: string): boolean {
 }
 
 /** Where the upstream PR stands: undefined once it merged. Its Change on the train says, else GitHub. */
-async function upstream(t: Train, url: string): Promise<Waiting | undefined> {
+export async function upstream(t: Train, url: string): Promise<Waiting | undefined> {
   const p = parsePrUrl(url);
   if (!p) return undefined;
   const repo = p.repo.toLowerCase();
