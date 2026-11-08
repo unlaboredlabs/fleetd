@@ -3,7 +3,8 @@
 //! recorded user turn with its uuid swapped for the run id. The fake answers the mapper's stdin lines as claude
 //! does: a permission prompt waits for its answer, an interrupt or a `now` message cuts the turn, a withdraw cancels
 //! a queued message, and `Shutdown` ends the process. [`FakeRunner::notice`] fires a background task's notice (a
-//! Monitor's event): an idle process then runs a turn of its own for it, as claude does.
+//! Monitor's event): an idle process then runs a turn of its own for it, as claude does. [`FakeRunner::kill`] kills an
+//! idle process, as the OOM killer does.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -48,6 +49,8 @@ pub struct FakeRunner {
     pub hosted: bool,
     /// Wakes the idle process with a background task's notice ([`FakeRunner::notice`]).
     notices: Arc<tokio::sync::Notify>,
+    /// Kills the idle process ([`FakeRunner::kill`]).
+    kills: Arc<tokio::sync::Notify>,
 }
 
 impl FakeRunner {
@@ -94,6 +97,7 @@ impl FakeRunner {
             commands: Arc::new(Mutex::new(Vec::new())),
             hosted: false,
             notices: Arc::new(tokio::sync::Notify::new()),
+            kills: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -101,6 +105,11 @@ impl FakeRunner {
     /// started, ending in a `result` with an `origin` and no `user_message_uuid`.
     pub fn notice(&self) {
         self.notices.notify_one();
+    }
+
+    /// The idle claude is killed (SIGKILL) with nobody asking, and its Monitors with it.
+    pub fn kill(&self) {
+        self.kills.notify_one();
     }
 
     pub fn spawned(&self) -> Vec<SessionSpec> {
@@ -176,6 +185,7 @@ impl Runner for FakeRunner {
             honour_interrupt: self.honour_interrupt,
             commands: self.commands.clone(),
             notices: self.notices.clone(),
+            kills: self.kills.clone(),
             rx: cmd_rx,
             tx: ev_tx,
             mapper,
@@ -229,6 +239,7 @@ struct Process {
     honour_interrupt: bool,
     commands: Arc<Mutex<Vec<(usize, SessionCommand)>>>,
     notices: Arc<tokio::sync::Notify>,
+    kills: Arc<tokio::sync::Notify>,
     rx: mpsc::Receiver<SessionCommand>,
     tx: mpsc::Sender<RunnerEvent>,
     mapper: StreamMapper,
@@ -241,6 +252,7 @@ struct Process {
     cut: bool,
     /// Permission prompts waiting for their answers.
     asking: usize,
+    /// Its exit code; none when it was killed.
     exit: Option<i32>,
     /// Mapped events not yet sent.
     out: Vec<RunnerEvent>,
@@ -287,17 +299,18 @@ impl Process {
                 Some(_) if self.refusal.is_some() => self.exit = Some(1),
                 Some(uuid) => self.play(&uuid).await,
                 None => {
-                    let notices = self.notices.clone();
+                    let (notices, kills) = (self.notices.clone(), self.kills.clone());
                     tokio::select! {
                         command = self.rx.recv() => self.handle(command).await,
                         () = notices.notified() => self.notice_turn().await,
+                        () = kills.notified() => break,
                     }
                 }
             }
         }
         let exit = ExitInfo {
             code: self.exit,
-            signal: None,
+            signal: self.exit.is_none().then_some(9),
             stderr_tail: self.refusal.take().unwrap_or_default(),
         };
         self.out.extend(self.mapper.exited(exit, &Now::system()));

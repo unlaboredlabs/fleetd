@@ -129,6 +129,23 @@ pub struct SessionLocal {
     /// withdrawn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queued_prompts: Vec<PendingPermission>,
+    /// Monitors its claude armed that may still fire. A claude lost before one does (it exited, or the node restarted
+    /// without it) wakes the session once to say so.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monitors: Vec<ArmedMonitor>,
+}
+
+/// A Monitor a session's claude armed, kept until its notice comes or its claude is gone.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArmedMonitor {
+    /// Its tool_use id.
+    pub id: String,
+    /// The call's own words for what it watches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// When it can no longer fire (epoch ms): claude has killed it by then, and its notice's turn has started.
+    pub until_ms: i64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
