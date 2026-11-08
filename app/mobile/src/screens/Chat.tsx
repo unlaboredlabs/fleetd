@@ -29,6 +29,7 @@ import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTim
 import { chatItems, emptyChat, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
+import { useHubWord } from "./linkHeader";
 import { useCanStop } from "../stopProbe";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { DraftReply } from "../drafts";
@@ -164,9 +165,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   }, [gone, navigation]);
 
   const link = linkStatus(state.hub);
+  // "Connecting…", or "Updating…" while the hub restarts for an update (hubWord.ts).
+  const linkWord = useHubWord().word;
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
-  const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
+  const status = link?.busy === true ? (linkWord?.text ?? link.text) : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // Android's stack draws the bar.
   useEffect(() => {

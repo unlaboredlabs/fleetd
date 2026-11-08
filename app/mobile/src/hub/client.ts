@@ -46,6 +46,17 @@ const STABLE_MS = 30_000;
 export const REPLAY_MAX = 200;
 /** The hub's close code for a refused key. */
 const CLOSE_UNAUTHORIZED = 4401;
+/**
+ * The hub's close codes when it stops to restart, back in seconds: 1012 (service restart) from a hub that says so, 1001
+ * (going away) from one before it, which closes that way for an update or a restart by hand.
+ */
+const CLOSE_RESTART = new Set([1012, 1001]);
+/**
+ * After the hub closed the link to restart, it is dialled every RESTART_RETRY_MS for this long rather than backing
+ * off, so the phone is back as soon as the hub is; then the usual backoff.
+ */
+export const RESTART_FAST_MS = 60_000;
+export const RESTART_RETRY_MS = 250;
 /** Probe calls' ids: `h1`, `h2`… (calls' are `c1`, `c2`…); their answers are only proof of life. */
 const PROBE_ID = "h";
 
@@ -83,7 +94,12 @@ export type HubFrame =
   | { readonly t: "browser_frame"; readonly frame: BrowserFrame }
   /** The hub refused a touch, a key or a page move just sent (browser_input, which it answers only to refuse). */
   | { readonly t: "browser_error"; readonly error: HubError }
-  | { readonly t: "error"; readonly error: HubError };
+  | { readonly t: "error"; readonly error: HubError }
+  /**
+   * The hub closed the link to restart (close 1012, or 1001 from an older hub), before the `state` that says the
+   * link is down: a planned restart, not an outage. `reason` is the hub's own words for it.
+   */
+  | { readonly t: "restart"; readonly code: number; readonly reason: string };
 
 export interface HubClientOptions {
   /** The hub's HTTP origin, as paired: `http://devbox:4790`. */
@@ -156,6 +172,8 @@ export class HubClient {
   #ready = false;
   #stopped = true;
   #attempt = 0;
+  /** Until when (epoch ms) a lost link is dialled again fast: the hub said it was restarting. */
+  #restartUntil = 0;
   #readyAt = 0;
   #heardAt = 0;
   /** When the probe's timer last ran: a tick far later than that means the app slept. */
@@ -380,7 +398,11 @@ export class HubClient {
         if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
         // The old link ended while a fresh one was on its way: that one is the link now.
         else if (this.#spare !== null) this.#adoptSpare();
-        else this.#lost(opened ? "The connection to the hub dropped" : `Can't reach ${this.#options.hub}`);
+        else if (CLOSE_RESTART.has(code) && this.#ready) {
+          this.#restartUntil = Date.now() + RESTART_FAST_MS;
+          this.#options.emit({ t: "restart", code, reason });
+          this.#lost(`${this.#options.hub} is restarting`);
+        } else this.#lost(opened ? "The connection to the hub dropped" : `Can't reach ${this.#options.hub}`);
       },
     }, headers);
     return connection;
@@ -481,6 +503,7 @@ export class HubClient {
       case "ready": {
         this.#ready = true;
         this.#readyAt = Date.now();
+        this.#restartUntil = 0;
         this.#cursor = null;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
@@ -573,9 +596,11 @@ export class HubClient {
     this.#clearTimers();
     if (this.#stopped) return;
     if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
-    // ±25 %, so many phones behind one restarting hub don't come back in lockstep.
-    const wait = this.#front ? Math.min(backoff(this.#attempt++), FRONT_BACKOFF_CAP_MS) : backoff(this.#attempt++);
-    const retryIn = Math.round(wait * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+    // A restarting hub is back in seconds: dialled every RESTART_RETRY_MS till it is, the backoff kept for after.
+    const fast = Date.now() < this.#restartUntil;
+    const wait = fast ? RESTART_RETRY_MS : this.#front ? Math.min(backoff(this.#attempt++), FRONT_BACKOFF_CAP_MS) : backoff(this.#attempt++);
+    // Else ±25 %, so many phones behind one restarting hub don't come back in lockstep.
+    const retryIn = fast ? wait : Math.round(wait * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
     this.#setState({ phase: "retrying", hub: this.#options.hub, reason, retryAt: Date.now() + retryIn });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;

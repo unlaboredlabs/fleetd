@@ -26,6 +26,7 @@ import { matchesName, queryOf, searchMessages, type MessageHit } from "../search
 import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
+import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
@@ -39,7 +40,7 @@ import { Badge, EmptyState } from "../ui/States";
 import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
 import { unreachable } from "../link";
-import { useLinkDown, useLinkHeader } from "./linkHeader";
+import { useHubWord, useLinkDown } from "./linkHeader";
 import { newChatItem } from "./manage";
 import { PinnedGrid } from "./Pinned";
 import { useRefreshing } from "./refresh";
@@ -94,11 +95,18 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   // The list's stack holds the open row (App.tsx ChatsHome), so a touch on its bars closes it too. Leaving the list
   // (Settings, a chat opened from a notification) closes it as well.
   const swiped = useSwipes();
-  // No title: the bar says "Connecting…" while the link is down, and the avatar's dot says it the rest of the time.
-  useLinkHeader(navigation, "", { spinner: false });
   useEffect(() => navigation.addListener("blur", swiped.close), [navigation, swiped]);
+  // No title: the bar says what the hub is doing only while there is something to say (hubWord.ts), "Connecting…" or
+  // "Updating…" while the link is down, "Updated" or "Put back" after an update, and the avatar's dot says the rest.
   const link = useLinkDown();
-  const me = meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase);
+  const hubSays = useHubWord();
+  // VoiceOver hears the long restart's line as it comes, as a live region says it on Android.
+  useAnnounce(hubSays.line?.text);
+  const word = state.hub.phase === "live" ? hubSays.word : link;
+  const me = meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase, link?.restart === true ? link.text : undefined);
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: word?.text ?? "", headerTitleStyle: { fontSize: type.subhead.fontSize, fontWeight: "600", color: word?.tone === "danger" ? t.danger : t.secondary } });
+  }, [navigation, word?.text, word?.tone, t.danger, t.secondary]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -177,7 +185,8 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   }, [navigation, root, swiped, me.initial, me.tone, me.label, state.me, state.meAvatar, filter, choicesKey]);
 
   const empty =
-    shown === undefined && unreachable(state.hub) ? (
+    // A planned restart's first seconds hold off can't-reach: the hub is back in a moment.
+    shown === undefined && unreachable(state.hub) && !hubSays.hold ? (
       <EmptyState
         icon="offline"
         title="Can't Reach the Hub"
@@ -232,6 +241,11 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
         }
         ListHeaderComponent={
           <>
+            {hubSays.line === undefined ? null : (
+              <Text style={[type.footnote, styles.slow, { color: hubSays.line.tone === "warning" ? t.warning : t.secondary }]} accessibilityLiveRegion="polite">
+                {hubSays.line.text}
+              </Text>
+            )}
             {Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : null}
             {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
           </>
@@ -281,7 +295,7 @@ const filterMenu = (choices: readonly FilterChoice[], filter: Filter, onPick: (f
   },
 });
 
-const DOT: Record<LinkTone, "success" | "warning" | "tertiary"> = { live: "success", busy: "warning", down: "tertiary" };
+const DOT: Record<LinkTone, "success" | "warning" | "tertiary" | "secondary"> = { live: "success", busy: "warning", down: "tertiary", restarting: "secondary" };
 
 /**
  * The person's avatar at the top left, as the account button of iOS 26's apps: their photo, else their initial on a
@@ -293,7 +307,8 @@ function MeButton({ initial, tone, label, picture, onPress }: { initial: string;
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6} style={styles.me}>
       <View style={styles.meFace}>
         <Avatar person name={initial} size={ME} picture={picture} />
-        <View style={[styles.meDot, { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
+        {/* A planned restart opens the dot to a ring; it fills again when the hub answers. */}
+        <View style={[styles.meDot, tone === "restarting" ? { backgroundColor: t.bg, borderColor: t[DOT[tone]], borderWidth: 2.5 } : { backgroundColor: t[DOT[tone]], borderColor: t.bg }]} />
       </View>
     </Pressable>
   );
@@ -494,6 +509,7 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
 const ROW_RADIUS = 16;
 
 const styles = StyleSheet.create({
+  slow: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, textAlign: "center" },
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },
   filters: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.md },
   filterGroup: { flexDirection: "row", gap: space.sm },

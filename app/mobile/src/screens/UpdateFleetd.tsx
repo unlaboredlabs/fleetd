@@ -1,7 +1,8 @@
 // Settings' Update section, for admins (updates.ts): "Update fleetd" when the hub has a newer build, which asks
 // first, then the run as it goes, the hub and each machine on a row of its own, to its outcome: Update now while
 // machines wait for their agents, Retry on a machine that failed or was put back, Start over on a run that stopped
-// moving.
+// moving. It is where the chats list's word for the hub leads (hubWord.ts): after the hub came back on a new build,
+// everyone, members too, reads what it runs now and how long it was away, without buttons.
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from "react-native";
 import { retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Line } from "../desktop";
 import { useHub } from "../hubContext";
@@ -11,7 +12,9 @@ import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { ListRow, ListSection } from "../ui/List";
-import { UPDATE_NOTE, updateSection } from "../updates";
+import { UPDATED_FOR_MS } from "../hubWord";
+import type { Restart } from "../store";
+import { UPDATE_NOTE, shortVersion, updateSection } from "../updates";
 
 const ink = (t: Palette, tone: Line["tone"]): string => (tone === "danger" ? t.danger : tone === "warning" ? t.warning : tone === "accent" ? t.accent : t.secondary);
 
@@ -23,7 +26,7 @@ export function UpdateFleetd() {
   const ready = useReady();
   const section = updateSection({ admin: state.admin, hub: state.hub, machines: state.machines, run, flow, ready });
   useAnnounce(section?.progress?.text);
-  if (section === null) return null;
+  if (section === null || (section.offer === null && section.progress === null)) return <Updated restart={state.restart} />;
 
   const confirm = () => {
     const title = section.offer?.title ?? "Update fleetd";
@@ -47,6 +50,7 @@ export function UpdateFleetd() {
 
   return (
     <ListSection header="Update" {...(section.offer === null ? {} : { footer: UPDATE_NOTE })}>
+      {/* TODO(T2570): t.accentDeep once the neutral accent lands: a white glyph vanishes on dark mode's near-white accentFill. */}
       {section.offer === null ? null : <ListRow icon="update" tint={t.accentFill} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
       {section.progress === null ? null : (
         <View style={styles.progress} accessibilityLiveRegion="polite">
@@ -88,6 +92,27 @@ export function UpdateFleetd() {
         />
       )}
       {section.startOver === null ? null : <ListRow title="Start Over" detail={section.startOver.note} onPress={() => void startOver(session.updates)} />}
+    </ListSection>
+  );
+}
+
+/** "Updated to 0.9.2", when and how long the hub was away: for a while after it came back on a new build. */
+function Updated({ restart }: { restart: Restart | null }) {
+  const t = useTheme();
+  if (restart?.t !== "updated" || Date.now() - restart.at >= UPDATED_FOR_MS) return null;
+  const when = new Date(restart.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const away = Math.max(1, Math.round(restart.took / 1000));
+  return (
+    <ListSection header="Update">
+      <View style={styles.progress} accessible accessibilityLabel={`Updated to ${shortVersion(restart.to)}, at ${when}, back in ${String(away)} seconds`}>
+        <Icon name="check" size={20} color={t.success} />
+        <View style={styles.grow}>
+          <Text style={[type.subhead, { color: t.label }]}>Updated to {shortVersion(restart.to)}</Text>
+          <Text style={[type.footnote, { color: t.secondary }]}>
+            {when} · back in {String(away)} s
+          </Text>
+        </View>
+      </View>
     </ListSection>
   );
 }
