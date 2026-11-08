@@ -111,5 +111,7 @@ describe("an admin's run, while the hub is live", () => {
     expect(hubWord(at(s, endMs + 1000, back))).toEqual({ text: "Put back", tone: "danger", busy: false });
     expect(hubWord(at(s, endMs + 1000, run({ finishedAt: ended, parts: [part("failed")] as UpdateRun["parts"] })))?.text).toBe("Not Updated");
     expect(hubWord(at(s, endMs + FAILED_FOR_MS, back))).toBeUndefined();
+    expect(nextChange(at(s, endMs + 1000, back))).toBe(endMs + UPDATED_FOR_MS);
+    expect(nextChange(at(s, endMs + UPDATED_FOR_MS, back))).toBe(endMs + FAILED_FOR_MS);
   });
 });

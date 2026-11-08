@@ -104,7 +104,11 @@ export const slowLine = (input: WordInput & { readonly hubName: string }): SlowL
 
 /** When the bar's word next changes by itself (epoch ms), so a screen wakes for it; undefined when nothing will. */
 export const nextChange = ({ hub, restart, run, now }: WordInput): number | undefined => {
-  if (restart?.t === "updated") return restart.at + UPDATED_FOR_MS > now ? restart.at + UPDATED_FOR_MS : undefined;
-  if (restart?.t !== "down" || hub.phase === "live" || (!restart.planned && !going(run))) return undefined;
-  return [RESTART_HOLD_MS, SLOW_RESTART_MS, LONG_RESTART_MS].map((ms) => restart.since + ms).find((at) => at > now);
+  const ended = run?.finishedAt === undefined ? undefined : Date.parse(run.finishedAt);
+  const times = [
+    ...(restart?.t === "updated" ? [restart.at + UPDATED_FOR_MS] : []),
+    ...(restart?.t === "down" && hub.phase !== "live" && (restart.planned || going(run)) ? [RESTART_HOLD_MS, SLOW_RESTART_MS, LONG_RESTART_MS].map((ms) => restart.since + ms) : []),
+    ...(ended === undefined ? [] : [ended + UPDATED_FOR_MS, ended + FAILED_FOR_MS]),
+  ].filter((at) => at > now);
+  return times.length === 0 ? undefined : Math.min(...times);
 };
