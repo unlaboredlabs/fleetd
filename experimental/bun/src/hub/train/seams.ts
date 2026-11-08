@@ -1,8 +1,7 @@
 // What the train, reviews, PRs and the GitHub App take from other areas, in one place: the shared seams (D346), each
-// re-exported from its owner's module once it lands (a stand-in under the area's name until then), and reads of other
-// areas' tables with the Rust hub's own SQL (people, workstreams, tasks, Navis, repos, machines, order variables).
-// When an owner lands, drop its stand-in: `hub.area(name, …)` keeps whichever was made first, so a stand-in made before
-// the owner's area hides it, and test/areas.test.ts fails on an area name with two makers.
+// re-exported from its owner's module once it lands, `hub.peek(name)` of an owner's area until then (never a stand-in
+// made under its name, D355), and reads of other areas' tables with the Rust hub's own SQL (people, workstreams, tasks,
+// Navis, repos, machines, order variables).
 import type { Database } from "bun:sqlite";
 import type {
   HubEvent,
@@ -235,9 +234,21 @@ export const TRAIN_STALE_MS = 120_000;
 export const freshGithub = (repo: string) => `github:${repo}`;
 export const freshTrain = (repo: string) => `train:${repo}`;
 
-/** Until the status area serves it, freshness goes nowhere. */
-export const fresh = (hub: Hub): FreshLike =>
-  hub.area<FreshLike>("status_fresh", () => ({ expect() {}, forget() {}, touch() {}, fail() {} }));
+const NO_FRESH: FreshLike = { expect() {}, forget() {}, touch() {}, fail() {} };
+
+/**
+ * The status area's freshness registry, which it makes as `hub.area("status_fresh", …)`: peeked at each call, never
+ * made here (D355), so a call before the status area exists goes nowhere and every call after reaches it.
+ */
+export function fresh(hub: Hub): FreshLike {
+  const now = () => hub.peek<FreshLike>("status_fresh") ?? NO_FRESH;
+  return {
+    expect: (source, staleAfterMs, nowMs) => now().expect(source, staleAfterMs, nowMs),
+    forget: (source) => now().forget(source),
+    touch: (source, atMs) => now().touch(source, atMs),
+    fail: (source, reason) => now().fail(source, reason),
+  };
+}
 
 // --- tasks (tasks/records.rs over `tasks`) ---
 
