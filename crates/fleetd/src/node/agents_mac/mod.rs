@@ -189,10 +189,6 @@ impl AgentsMac {
                     tracing::warn!("the agents' Mac can't hold its keep-awake assertion: {e}");
                     e
                 });
-            {
-                let h = home.clone();
-                let _ = tokio::task::spawn_blocking(move || grants::ask_lost(&h)).await;
-            }
             // A new grant is taken up within seconds while the person is at System Settings (grants.rs).
             if cfg!(target_os = "macos") {
                 let (home, running) = (home.clone(), running.clone());

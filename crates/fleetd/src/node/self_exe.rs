@@ -6,6 +6,11 @@
 //! the running binary's file, whatever the update does to the installed path, for as long as this node runs; the next
 //! node start removes the links of nodes that are gone, but not one a session's host still runs from
 //! (`runner::host`): the sessions it re-adopts keep starting their fleetd tools from it.
+//!
+//! On macOS the pin is a copy (an APFS clone, as cheap as a link), never a hard link: macOS names a process by the
+//! path its file was last opened through, and its privacy grants (Accessibility, Screen Recording) are keyed by that
+//! path. A second name made the node read as a new, ungranted `fleetd-agent-<pid>` after each start, so macOS asked
+//! the person again and again.
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -39,7 +44,7 @@ pub fn pinned() -> Option<&'static Path> {
     PINNED.get().map(PathBuf::as_path).filter(|p| p.exists())
 }
 
-/// Links (else copies) `exe` to `<home>/bin/fleetd-agent-<pid>`, and removes those of processes that are gone.
+/// Links (else, and on macOS, copies) `exe` to `<home>/bin/fleetd-agent-<pid>`, and removes those of processes that are gone.
 pub fn pin_from(exe: &Path, home: &Path, pid: u32) -> std::io::Result<PathBuf> {
     let dir = home.join(DIR);
     super::config::mkdir_private(&dir)?;
@@ -49,7 +54,7 @@ pub fn pin_from(exe: &Path, home: &Path, pid: u32) -> std::io::Result<PathBuf> {
     let target = dir.join(format!("{PREFIX}{pid}"));
     let tmp = dir.join(format!(".{PREFIX}{pid}.tmp"));
     let _ = std::fs::remove_file(&tmp);
-    if std::fs::hard_link(&source, &tmp).is_err() {
+    if cfg!(target_os = "macos") || std::fs::hard_link(&source, &tmp).is_err() {
         std::fs::copy(&source, &tmp)?;
     }
     std::fs::rename(&tmp, &target)?;
@@ -124,13 +129,15 @@ mod tests {
         let pinned = pin_from(&shim, &home, 4242).unwrap();
         assert_eq!(pinned, home.join("bin").join("fleetd-agent-4242"));
         let inode = |p: &Path| std::fs::metadata(p).unwrap().ino();
-        assert_eq!(inode(&pinned), inode(&exe));
+        let pin = inode(&pinned);
+        // On macOS a copy: a second name for the running file would cost it its privacy grants.
+        assert_eq!(pin == inode(&exe), !cfg!(target_os = "macos"));
 
         let new = dir.path().join("fleetd.new");
         std::fs::write(&new, "#!/bin/sh\nexit 3\n").unwrap();
         std::fs::rename(&new, &installed).unwrap();
         assert_ne!(inode(&installed), inode(&exe));
-        assert_eq!(inode(&pinned), inode(&exe), "the update left the pin alone");
+        assert_eq!(inode(&pinned), pin, "the update left the pin alone");
         let listed = std::process::Command::new(&pinned)
             .args(["--list"])
             .output()

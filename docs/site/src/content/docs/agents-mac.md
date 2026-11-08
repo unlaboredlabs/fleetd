@@ -277,8 +277,9 @@ Release builds are signed with fleetd's Developer ID as `sh.fleetd.cli`, and an 
 same path, so the requirement and the path stay the same and grants outlive updates. A binary signed otherwise (one you
 built yourself, which is signed ad hoc by its exact contents) loses both grants with each update: the switch still
 reads on, but macOS no longer counts it. The node notices at its start (it notes the grants it saw and the version it
-ran then, so only a grant on before the update counts), asks macOS again, and the grant's check, and the setup
-window's row, say that the update took it: turn fleetd off and on again in that pane.
+ran then, so only a grant on before the update counts), and the grant's check, and the setup window's row, say that the
+update took it: run the check's command, then turn fleetd off and on again in that pane. The node never asks macOS by
+itself, so a lost grant is one setup step, not a prompt at each restart.
 
 ### A user of its own, optional {#own-user}
 
