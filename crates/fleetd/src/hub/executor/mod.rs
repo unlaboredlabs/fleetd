@@ -88,6 +88,9 @@ const SIGNINS_TIMEOUT: Duration = Duration::from_secs(30);
 /// The node first stops the project's claude processes and waits up to 12 s for them to exit, then removes its
 /// worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(70);
+/// How long a launch or a send waits on a node that is up but busy (swapping, loaded) before it fails:
+/// [`Executors::call_patient`].
+const PATIENCE: Duration = Duration::from_secs(120);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
 const STOP_TIMEOUT: Duration = Duration::from_secs(40);
 /// The node keeps the last 2000 characters of the assistant's text on the summary; a shorter tail is the whole text.
@@ -1141,6 +1144,33 @@ impl Executors {
         call: SessionCall,
         wait: Duration,
     ) -> Result<SessionOutput, ExecutorError> {
+        self.ask(machine_id, operation, call, wait, wait).await
+    }
+
+    /// `call` for a launch or a send, which a busy node can take long to answer: one with no answer in `wait` goes
+    /// again under the same frame id, at doubling gaps, until [`PATIENCE`] has passed, and the first answer to any
+    /// copy is the answer. The node dedupes the copies (a launch on its session id, a send on its run id), so a slow
+    /// node starts or sends once. Only the node's refusal, a link that drops (the machine went offline) or that much
+    /// silence fails it.
+    async fn call_patient(
+        &self,
+        machine_id: &MachineId,
+        operation: NodeOperation,
+        call: SessionCall,
+        wait: Duration,
+    ) -> Result<SessionOutput, ExecutorError> {
+        self.ask(machine_id, operation, call, wait, PATIENCE.max(wait))
+            .await
+    }
+
+    async fn ask(
+        &self,
+        machine_id: &MachineId,
+        operation: NodeOperation,
+        call: SessionCall,
+        wait: Duration,
+        patience: Duration,
+    ) -> Result<SessionOutput, ExecutorError> {
         let session = match &call {
             SessionCall::Send { session_id, .. }
             | SessionCall::Interrupt { session_id, .. }
@@ -1152,7 +1182,7 @@ impl Executors {
             _ => None,
         };
         let id = new_uuid();
-        let (tx, rx) = oneshot::channel();
+        let (tx, mut rx) = oneshot::channel();
         let send = {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines
@@ -1173,33 +1203,62 @@ impl Executors {
                 s.pending.remove(&id);
             }
         };
-        if send.send(frame).is_err() {
+        let gone = || ExecutorError::MachineNotConnected {
+            machine_id: machine_id.clone(),
+        };
+        if send.send(frame.clone()).is_err() {
             forget();
-            return Err(ExecutorError::MachineNotConnected {
-                machine_id: machine_id.clone(),
-            });
+            return Err(gone());
         }
-        match tokio::time::timeout(wait, rx).await {
-            Err(_) => {
-                forget();
-                Err(failed(
-                    machine_id,
-                    operation,
-                    format!("no answer within {} s", wait.as_secs()),
-                ))
+        let started = tokio::time::Instant::now();
+        let until = started + patience;
+        let (mut gap, mut copies) = (wait, 1);
+        let mut next = started + wait;
+        loop {
+            match tokio::time::timeout_at(next.min(until), &mut rx).await {
+                Err(_) if tokio::time::Instant::now() >= until => {
+                    forget();
+                    return Err(failed(
+                        machine_id,
+                        operation,
+                        format!("no answer within {} s", patience.as_secs()),
+                    ));
+                }
+                Err(_) => {
+                    tracing::info!(
+                        machine = %machine_id,
+                        operation = operation.as_str(),
+                        waited_s = started.elapsed().as_secs(),
+                        copies,
+                        "executor: a busy node hasn't answered yet; the request goes again"
+                    );
+                    if send.send(frame.clone()).is_err() {
+                        forget();
+                        return Err(gone());
+                    }
+                    copies += 1;
+                    gap *= 2;
+                    next = tokio::time::Instant::now() + gap;
+                }
+                // A patient call's link dropped: the machine is offline, and its caller waits for it as for any.
+                Ok(Err(_)) if patience > wait => return Err(gone()),
+                Ok(Err(_)) => {
+                    return Err(failed(
+                        machine_id,
+                        operation,
+                        "the node link dropped before the node answered",
+                    ));
+                }
+                Ok(Ok(SessionResult::Ok(output))) => return Ok(output),
+                Ok(Ok(SessionResult::Err(e))) => {
+                    return Err(from_session_error(
+                        machine_id,
+                        operation,
+                        session.as_ref(),
+                        e,
+                    ));
+                }
             }
-            Ok(Err(_)) => Err(failed(
-                machine_id,
-                operation,
-                "the node link dropped before the node answered",
-            )),
-            Ok(Ok(SessionResult::Ok(output))) => Ok(output),
-            Ok(Ok(SessionResult::Err(e))) => Err(from_session_error(
-                machine_id,
-                operation,
-                session.as_ref(),
-                e,
-            )),
         }
     }
 
@@ -1885,7 +1944,7 @@ impl Executors {
                 })?;
         }
         let base = match self
-            .call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
+            .call_patient(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?
         {
             SessionOutput::Launched { base, .. } => base,
@@ -1941,12 +2000,37 @@ impl Executors {
         ))
     }
 
+    /// A plain send that waits at most [`READ_TIMEOUT`] for the node, never [`PATIENCE`]: for a caller that holds a
+    /// lock others wait on.
+    pub async fn send_brief(
+        &self,
+        r: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+    ) -> Result<SendOutcome, ExecutorError> {
+        let opts = crate::hub::queue::ports::SendOpts::default();
+        self.send_within(r, message, client_request_id, &opts, false)
+            .await
+    }
+
     pub async fn send_with(
         &self,
         r: &ThreadRef,
         message: &str,
         client_request_id: &str,
         opts: &crate::hub::queue::ports::SendOpts,
+    ) -> Result<SendOutcome, ExecutorError> {
+        self.send_within(r, message, client_request_id, opts, true)
+            .await
+    }
+
+    async fn send_within(
+        &self,
+        r: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+        opts: &crate::hub::queue::ports::SendOpts,
+        patient: bool,
     ) -> Result<SendOutcome, ExecutorError> {
         let op = NodeOperation::Send;
         // Every turn of every lead goes through here: an archived project's lead takes none (W79), whichever path
@@ -1981,7 +2065,13 @@ impl Executors {
             mcp,
             skills,
         };
-        let out = self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
+        let out = match patient {
+            true => {
+                self.call_patient(&r.machine_id, op, call, READ_TIMEOUT)
+                    .await?
+            }
+            false => self.call(&r.machine_id, op, call, READ_TIMEOUT).await?,
+        };
         if let Some(sent) = mcp_sent {
             self.mcp_sent
                 .lock()
