@@ -76,8 +76,8 @@ TLS uses webpki roots.
 
 ## The merge train's checks
 
-The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s and `mac.yml`'s
-comments say which run where.
+The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s, `bun.yml`'s and
+`mac.yml`'s comments say which run where.
 
 ## Hub migrations
 

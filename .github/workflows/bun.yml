@@ -1,85 +1,113 @@
 # The Bun/TypeScript fleetd experiment (experimental/bun, D342/D343): its generated files, its type check with tsc-rs,
 # its tests, and the `bun build --compile` binary, run end to end; then the binary against the Rust one's black-box
 # tests (experimental/compare's cargo:session_host, the lab's lead-wake scenario, and its self-healing one on a Rust
-# hub). Only when the experiment changes; not a required check, and nothing else in CI reads it. Pull requests only, so
-# a red run never counts as main's.
+# hub). Not a required check, but one of .fleetd/train.json's fastChecks, so the train waits for it on each PR and batch: a batch whose
+# combined tree breaks the experiment never merges. Only when the experiment changed (.github/bun-scope.sh), so Rust PRs
+# never wait on it; otherwise it reports success at once, so it reports on every PR and a check that never comes never
+# holds one. Main always runs it in full: a Rust change that breaks it reads red there, and the train re-runs a fast
+# check red on main after a merge once, then opens one fix order for it (T2437, once that lands; until then the red run
+# is only Status's "no fix under way" note).
 name: Bun experiment
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - experimental/bun/**
-      - .github/workflows/bun.yml
+  push:
+    branches: [main]
   workflow_dispatch:
 
+# A newer push to a PR cancels its running run. Runs on main and on the merge train's batch PR (<prefix>train/batch) are
+# never cancelled: each gets a group of its own.
 concurrency:
-  group: bun-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
+    && format('{0}-{1}', github.workflow, github.run_id)
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
 permissions:
   contents: read
 
 jobs:
   bun:
+    # Its name is a fast check in .fleetd/train.json: rename both in one PR.
     name: bun (experimental)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       # As ci.yml's, so the Rust cache restored below is the `rust` job's and its builds match.
       CARGO_PROFILE_DEV_DEBUG: "0"
-      # The Rust session-host helper beside the Bun binary, where the Bun node looks for it (#1269; `bun run helper`).
+      # The Rust session-host helper beside the Bun binary, where the Bun node looks for it (`bun run helper`).
       NATIVE_HELPER: fleetd-session-host
     defaults:
       run:
         working-directory: experimental/bun
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: ${{ github.workspace }}
+        run: .github/bun-scope.sh
       - uses: oven-sh/setup-bun@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           bun-version: 1.4.3
       # tsc-rs comes from npm, pinned in bun.lock (its native binary is the @tsc-rs/<platform> package).
       - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.run == 'true'
       - name: Generated files are current (tools, migrations, wire tags, PORT_MAP.md)
+        if: steps.scope.outputs.run == 'true'
         run: bun run gen:check
       - name: Type check (tsc-rs)
+        if: steps.scope.outputs.run == 'true'
         run: bun run typecheck
       - run: bun test
+        if: steps.scope.outputs.run == 'true'
       - run: bun run compile
+        if: steps.scope.outputs.run == 'true'
       - name: The binary end to end
+        if: steps.scope.outputs.run == 'true'
         run: bun run smoke
       - name: Binary size
+        if: steps.scope.outputs.run == 'true'
         run: ls -l dist/fleetd
       # The Bun node hosts sessions under the Rust binary's `fleetd session-host` (D343: native pieces stay Rust).
       # The `rust` job's cache (ci.yml), restored only: its dependencies are built for these tests already.
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.run == 'true'
       - uses: Swatinem/rust-cache@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           shared-key: rust
           save-if: false
       - name: The Rust fleetd and its session_host test
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}
         run: |
           cargo test --locked -p fleetd --test session_host --no-run
           cp target/debug/fleetd "experimental/bun/dist/$NATIVE_HELPER"
-      # TODO(T2248): both steps below fail on main until T2248's fixes land (the Bun node finding the Rust session-host
-      # helper beside it, restore_worktree after a crash). Once they have, drop their continue-on-error so a red one
-      # fails the job. This job stays a non-required check either way.
-      - name: cargo:session_host on the Bun binary (non-blocking until T2248)
-        continue-on-error: true
+      # The Bun CLI's own `fleetd session-host`, which hands off to the Rust helper beside it.
+      - name: cargo:session_host on the Bun binary
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}
         run: cargo test --locked -q -p fleetd --test session_host
         env:
           FLEETD_BIN: ${{ github.workspace }}/experimental/bun/dist/fleetd
       - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
       - run: npm ci --prefix tests/lab --no-audit --no-fund
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}
       - name: Lead-wake lab scenario, all Bun
         id: lead-wake
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}
         # Hub, node, CLI and the agents' `fleetd` are the Bun binary: a writer's ask_lead wakes the lead through the
         # hub's write queue (the executor's sendWith, #1278).
@@ -94,9 +122,9 @@ jobs:
           path: ${{ runner.temp }}/factory-lead-wake/*/logs/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Self-healing lab scenario, a Rust hub with the Bun node (non-blocking until T2248)
+      - name: Self-healing lab scenario, a Rust hub with the Bun node
         id: self-healing
-        continue-on-error: true
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}
         # A Bun-only machine: the node, the CLI and the agents' `fleetd` are the Bun binary; only the hub is Rust.
         run: node tests/lab/factory/run.ts self-healing
@@ -104,7 +132,7 @@ jobs:
           FLEETD_BIN: ${{ github.workspace }}/experimental/bun/dist/fleetd
           FLEETD_HUB_BIN: ${{ github.workspace }}/target/debug/fleetd
           FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory
-      - if: steps.self-healing.outcome == 'failure'
+      - if: failure() && steps.self-healing.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: bun-self-healing-logs
