@@ -1,6 +1,6 @@
 // `fleetd node join|run|grants|restart|flush` (crates/fleetd/src/cli/node.rs): the CLI parses the flags and refuses a
-// usage mistake in the Rust CLI's words; the node itself (src/node) runs join, run and flush, and `restart` is the
-// update service's (src/update).
+// usage mistake in the Rust CLI's words; the node itself (src/node) runs join and run; flush and grants are its to
+// port, and `restart` is the update service's (src/update).
 import { NotImplemented } from "../shared/errors.ts";
 import { ArgError, parse } from "./args.ts";
 import { ioMessage } from "./common.ts";
@@ -57,14 +57,25 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       for (const [name, value] of [["hub", v.str("hub")], ["token", token], ["machine", v.str("machine")]] as const) {
         if (!value) return usage(`--${name} is required`);
       }
-      return (await node()).nodeCommand(argv);
+      const home = v.str("home");
+      const dir = v.str("claude-config-dir");
+      return (await node()).join_({
+        hub: v.str("hub")!,
+        token: token!,
+        machine: v.str("machine")!,
+        ...(home === undefined ? {} : { home }),
+        enrollOnly: v.flag("enroll-only"),
+        ...(dir ? { claudeConfigDir: dir } : {}),
+      });
     }
-    case "run":
-      return (await node()).nodeCommand(argv);
+    case "run": {
+      const home = v.str("home");
+      return (await node()).run(home === undefined ? {} : { home });
+    }
     case "flush": {
       const wait = v.str("wait");
       if (wait !== undefined && !SECONDS.test(wait)) return usage("--wait takes a number of seconds");
-      return (await node()).nodeCommand(argv);
+      throw new NotImplemented("src/node/flush: fleetd node flush");
     }
     case "grants": {
       const ask = v.str("ask");
