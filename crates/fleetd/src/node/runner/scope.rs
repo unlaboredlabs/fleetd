@@ -100,6 +100,12 @@ fn spawn_within(
     build: impl Fn(PathBuf, Vec<String>, Option<&Scope>) -> tokio::process::Command,
     timeout: Duration,
 ) -> std::io::Result<(tokio::process::Child, Option<String>)> {
+    // A session's whole tree goes before the node and the hub when memory runs out.
+    let build = |program, argv, scope: Option<&Scope>| {
+        let mut cmd = build(program, argv, scope);
+        crate::oom::agent(cmd.as_std_mut());
+        cmd
+    };
     let failed = match scope {
         None => None,
         Some(scope) => {
@@ -538,6 +544,36 @@ mod tests {
         assert_eq!(
             run(&scope, &claude, START_TIMEOUT).await,
             ("scoped=yes -p".to_owned(), None)
+        );
+    }
+
+    /// A session's process, and so everything it starts, goes before the node and the hub when memory runs out: in a
+    /// scope and without one.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_sessions_process_starts_at_the_agent_oom_score() {
+        let build = |program: PathBuf, args: Vec<String>, _: Option<&Scope>| {
+            let mut cmd = tokio::process::Command::new(program);
+            cmd.args(args).stdout(Stdio::piped()).kill_on_drop(true);
+            cmd
+        };
+        let score = || vec!["-c".to_owned(), "cat /proc/self/oom_score_adj".into()];
+        let sh = Path::new("/bin/sh");
+        let (child, _) = spawn_within(None, sh, score(), "s1", build, START_TIMEOUT).unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            crate::oom::AGENT.to_string()
+        );
+        let exec = "while [ \"$1\" != -- ]; do shift; done; shift; exec \"$@\"";
+        let (_dir, scope, _) = fakes(exec);
+        let (child, failed) =
+            spawn_within(Some(&scope), sh, score(), "s1", build, START_TIMEOUT).unwrap();
+        assert_eq!(failed, None);
+        let out = child.wait_with_output().await.unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            crate::oom::AGENT.to_string()
         );
     }
 

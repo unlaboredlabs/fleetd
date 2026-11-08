@@ -22,6 +22,7 @@ impl Role {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServiceSpec {
     pub role: Role,
     pub description: String,
@@ -98,6 +99,115 @@ fn systemd_value(value: &str, exec: bool) -> String {
     }
 }
 
+/// Under memory pressure the kernel kills an agent's processes before the hub or the node (`crate::oom`). A user
+/// manager can't set a score below its own, so systemd leaves the service at that, 100 under `user@.service`, rather
+/// than the 200 it gives its services by default. systemd-oomd, where it runs, picks other cgroups first.
+const OOM_LINES: [&str; 2] = ["OOMScoreAdjust=-900", "ManagedOOMPreference=avoid"];
+
+/// Every key [`render_systemd_unit`] writes, or has written. A unit with any other was edited by hand, and is left
+/// alone.
+const UNIT_KEYS: [&str; 18] = [
+    "Description",
+    "StartLimitIntervalSec",
+    "StartLimitBurst",
+    "Type",
+    "WorkingDirectory",
+    "Environment",
+    "EnvironmentFile",
+    "ExecStart",
+    "KillMode",
+    "OOMPolicy",
+    "OOMScoreAdjust",
+    "ManagedOOMPreference",
+    "Restart",
+    "RestartSec",
+    "StandardOutput",
+    "StandardError",
+    "WantedBy",
+    "",
+];
+
+/// A unit fleetd wrote, from any version, rewritten from today's template with the same command, environment and
+/// paths, so a service gets settings added since (its OOM lines, `OOMPolicy=continue`) without `fleetd machine add`.
+/// None when it reads as today's already, or isn't one fleetd wrote.
+pub fn refresh_systemd_unit(text: &str, role: Role) -> Option<String> {
+    let fresh = render_systemd_unit(&parse_systemd_unit(text, role)?);
+    (fresh != text).then_some(fresh)
+}
+
+/// The spec [`render_systemd_unit`] wrote `text` from.
+pub fn parse_systemd_unit(text: &str, role: Role) -> Option<ServiceSpec> {
+    let mut spec = ServiceSpec {
+        role,
+        description: String::new(),
+        program: Vec::new(),
+        env: Vec::new(),
+        env_file: None,
+        working_directory: String::new(),
+        log_path: String::new(),
+    };
+    for line in text.lines() {
+        if line.starts_with('[') {
+            continue;
+        }
+        let (key, value) = line.split_once('=').unwrap_or((line, ""));
+        if !UNIT_KEYS.contains(&key) {
+            return None;
+        }
+        match key {
+            "Description" => spec.description = value.to_owned(),
+            "WorkingDirectory" => spec.working_directory = unquote(value)?,
+            "Environment" => {
+                let pair = unquote(value)?;
+                let (k, v) = pair.split_once('=')?;
+                spec.env.push((k.to_owned(), v.to_owned()));
+            }
+            "EnvironmentFile" => spec.env_file = Some(unquote(value.strip_prefix('-')?)?),
+            "ExecStart" => spec.program = words(value, true)?,
+            "StandardOutput" => spec.log_path = value.strip_prefix("append:")?.replace("%%", "%"),
+            _ => {}
+        }
+    }
+    (!spec.program.is_empty() && !spec.log_path.is_empty()).then_some(spec)
+}
+
+/// One value as [`systemd_value`] wrote it.
+fn unquote(value: &str) -> Option<String> {
+    match words(value, false)?.as_slice() {
+        [one] => Some(one.clone()),
+        _ => None,
+    }
+}
+
+/// A line's words as [`systemd_value`] wrote them: bare, or in double quotes with `\\` and `\"` escaped, and `%`
+/// doubled, and `$` too in an `ExecStart=` (`exec`).
+fn words(line: &str, exec: bool) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut chars = line.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let Some(first) = chars.next() else { break };
+        let mut word = String::new();
+        if first == '"' {
+            loop {
+                match chars.next()? {
+                    '"' => break,
+                    '\\' => word.push(chars.next()?),
+                    c => word.push(c),
+                }
+            }
+        } else {
+            word.push(first);
+            while let Some(c) = chars.next_if(|c| !c.is_whitespace()) {
+                word.push(c);
+            }
+        }
+        let word = word.replace("%%", "%");
+        words.push(if exec { word.replace("$$", "$") } else { word });
+    }
+    Some(words)
+}
+
 pub fn render_systemd_unit(spec: &ServiceSpec) -> String {
     let mut lines = vec![
         "[Unit]".to_owned(),
@@ -137,6 +247,7 @@ pub fn render_systemd_unit(spec: &ServiceSpec) -> String {
         lines.push("KillMode=mixed".into());
         lines.push("OOMPolicy=continue".into());
     }
+    lines.extend(OOM_LINES.map(str::to_owned));
     lines.extend([
         "Restart=always".to_owned(),
         "RestartSec=5".into(),
@@ -387,6 +498,53 @@ mod tests {
         assert_eq!(
             render_launchd_plist(&spec()),
             include_str!("snapshots/node.plist")
+        );
+    }
+
+    /// A unit from any version is read back into the spec it was written from, and rewritten from today's template:
+    /// an install from before the OOM lines and `OOMPolicy=continue` gets them on its service's next start.
+    #[test]
+    fn an_older_unit_is_rewritten_from_todays_template() {
+        let fresh = include_str!("snapshots/node.service");
+        assert_eq!(parse_systemd_unit(fresh, Role::Node), Some(spec()));
+        assert_eq!(refresh_systemd_unit(fresh, Role::Node), None);
+        let older = fresh.replace(
+            "OOMPolicy=continue\nOOMScoreAdjust=-900\nManagedOOMPreference=avoid\n",
+            "",
+        );
+        assert_eq!(
+            refresh_systemd_unit(&older, Role::Node).as_deref(),
+            Some(fresh)
+        );
+        let hub = render_systemd_unit(&ServiceSpec {
+            role: Role::Hub,
+            env_file: None,
+            ..spec()
+        });
+        assert!(
+            hub.contains("\nOOMScoreAdjust=-900\nManagedOOMPreference=avoid\nRestart=always\n")
+        );
+        assert!(!hub.contains("OOMPolicy"));
+        let older_hub = hub.replace("OOMScoreAdjust=-900\nManagedOOMPreference=avoid\n", "");
+        assert_eq!(
+            refresh_systemd_unit(&older_hub, Role::Hub).as_deref(),
+            Some(hub.as_str())
+        );
+        // A value with `$$` keeps it outside ExecStart, where systemd reads it as is.
+        let dollars = ServiceSpec {
+            env: vec![("A".into(), "x$$y \"q\" \\".into())],
+            ..spec()
+        };
+        assert_eq!(
+            parse_systemd_unit(&render_systemd_unit(&dollars), Role::Node),
+            Some(dollars)
+        );
+        // Hand-edited, or not fleetd's: left alone.
+        let edited = fresh.replace("RestartSec=5\n", "RestartSec=5\nMemoryMax=4G\n");
+        assert_eq!(refresh_systemd_unit(&edited, Role::Node), None);
+        assert_eq!(
+            refresh_systemd_unit("[Service]\nType=simple\n", Role::Node),
+            None
         );
     }
 
