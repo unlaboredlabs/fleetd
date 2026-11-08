@@ -2210,6 +2210,9 @@ export const screens: readonly Screen[] = [
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
+  // Settings › Projects: the list of projects, each row opening its pages under tabs; none yet says how to make one, and
+  // no hub says it isn't connected.
+  { id: "settings.projects", variant: "list", route: "#/settings/projects", fixtures: ["admin-owner", "admin-member", "empty", "hub-unreachable"] },
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
   // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the

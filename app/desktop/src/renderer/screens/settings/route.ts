@@ -2,7 +2,7 @@
 // &view=compare|update], and the Hub group's #/settings/hub/<page>. They make a prompt, a project's texts and a
 // prompt's update linkable, from the palette, a "default changed" notice or the screenshot suite.
 import { useRoute } from "../shell/navigation";
-import { isHubTab, parseHash, toHash, type Screen, type SettingsTab, type SettingsView } from "../shell/routes";
+import { isHubTab, parseHash, toHash, type HubTab, type Screen, type SettingsTab, type SettingsView } from "../shell/routes";
 
 export { isHubTab };
 export type Tab = SettingsTab;
@@ -31,9 +31,16 @@ type RouteParts = { tab: Tab; prompt?: string | null; for?: string | null; view?
 export const formatRoute = (r: RouteParts): string =>
   toHash({ id: "settings", tab: r.tab, ...(r.prompt ? { prompt: r.prompt } : {}), ...(r.for ? { for: r.for } : {}), ...(r.view ? { view: r.view } : {}) });
 
-/** A project's pages, under Projects in the sidebar: all of the one project picked there (`for`). */
+/**
+ * A project's pages, under tabs once a project is opened from Settings › Projects: all of that one project (`for`).
+ * Projects without `for` is the list of projects.
+ */
 export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations", "prompts"];
 export const isProjectTab = (tab: Tab): boolean => PROJECT_TABS.includes(tab);
+
+/** Hub › Every project's pages, under tabs as a project's are. */
+export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.tools", "hub.instructions", "hub.prompts"];
+export const isEveryProject = (tab: Tab): tab is HubTab => EVERY_PROJECT.some((t) => t === tab);
 
 const last = new Map<Tab, string>();
 /** The project the project pages last showed: each of them opens on it. */

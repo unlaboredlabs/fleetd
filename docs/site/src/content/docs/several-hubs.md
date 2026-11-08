@@ -58,7 +58,7 @@ Every hub counts toward what needs you:
 
 Settings' Hub group manages one hub at a time. With several hubs, it names that hub, with its colour, above every page:
 "Managing Acme". The button to make an invite names it too: **Create invite link to Acme**. To manage another hub,
-pick it at the top of the Hub group in Settings' sidebar. The page you're on stays open. Only the hubs where you're an
+pick it beside "Managing" at the top of the page. The page you're on stays open. Only the hubs where you're an
 owner or admin are listed.
 
 ## When a hub is out of reach {#offline}

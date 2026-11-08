@@ -9,9 +9,9 @@
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
 // and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Separator, SidebarItem, Text, cx } from "../../ui";
+import { Button, Separator, Text, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
-import { useHub, useSeveralHubs } from "../../src/data/react";
+import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { FleetCapNote } from "../settings/Agents";
@@ -19,10 +19,11 @@ import { Recordings } from "../settings/Screens";
 import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
+import { EveryProjectFrame } from "../settings/Frames";
 import { PagePart, PageHead } from "../settings/parts";
 import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
-import type { SettingsRoute } from "../settings/route";
+import { isEveryProject, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
 import { AdminGithub } from "../github/AdminGithub";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
@@ -44,10 +45,15 @@ export const HubMark = ({ hub }: { hub: HubView }) =>
   hub.color === undefined ? null : <span className={a.hubMark} style={{ background: HUB_COLOR[hub.color] }} aria-hidden />;
 
 /** A hub to manage: listed when this person administers it there (and the one managed now, whatever its answer). */
-export function HubChoice({ hub, current, onPick }: { hub: HubView; current: boolean; onPick: () => void }) {
+function HubChoice({ hub, current, onPick }: { hub: HubView; current: boolean; onPick: () => void }) {
   const administers = useAdministers();
   if (!administers && !current) return null;
-  return <SidebarItem label={hub.label} icon={<HubMark hub={hub} />} current={current} data-admin-hub={hub.id} onClick={onPick} />;
+  return (
+    <button type="button" className={a.hubChoice} aria-current={current ? "page" : undefined} data-admin-hub={hub.id} onClick={onPick}>
+      <HubMark hub={hub} />
+      {hub.label}
+    </button>
+  );
 }
 
 /** The Hub page the route names, for an owner or admin; anyone else who follows a link here is told why not. */
@@ -57,28 +63,36 @@ export function HubPage({ tab, route }: { tab: HubTab; route: SettingsRoute }) {
   // stays as the last answer had it meanwhile, so what is open on it (a machine's line, waiting) isn't lost.
   const [settled, setSettled] = useState<HubRoleView>();
   if (!role.pending && (settled?.administers !== role.administers || settled.me !== role.me || settled.offline !== role.offline)) setSettled(role);
+  const view = role.pending && settled !== undefined ? settled : role;
   return (
     <>
-      <Managing />
-      {page(tab, route, role.pending && settled !== undefined ? settled : role)}
+      <Managing tab={tab} />
+      {view.administers && isEveryProject(tab) ? <EveryProjectFrame tab={tab}>{page(tab, route, view)}</EveryProjectFrame> : page(tab, route, view)}
     </>
   );
 }
 
-/** With several hubs, the one every page here acts on, by its name and colour, above the page. */
-function Managing() {
+/**
+ * With several hubs, the one every page here acts on, by its name and colour, above the page, and the others this
+ * person administers beside it to switch to, keeping the page.
+ */
+function Managing({ tab }: { tab: HubTab }) {
   const several = useSeveralHubs();
   const hub = useHub();
+  const hubs = useHubs();
   if (!several) return null;
   return (
     <div className={a.managing} role="note" aria-label={`Managing ${hub.label}`} data-managing={hub.id}>
       <Text size="sm" tone="quiet">
         Managing
       </Text>
-      <HubMark hub={hub} />
-      <Text size="sm" strong>
-        {hub.label}
-      </Text>
+      <div className={a.hubChoices} role="group" aria-label="Hub to manage">
+        {hubs.map((h) => (
+          <HubScope key={h.id} hub={h}>
+            <HubChoice hub={h} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
+          </HubScope>
+        ))}
+      </div>
     </div>
   );
 }
