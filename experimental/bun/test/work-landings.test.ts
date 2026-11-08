@@ -445,7 +445,7 @@ test("agents hear once when their machine can't reach GitHub, and once when it c
   project(hub, "devbox", "shop", repo.checkout("shop"));
   const git = new LocalGit();
   const told: [string, boolean][] = [];
-  work(hub).onGithubReach = (m, reached) => void told.push([m, reached]);
+  work(hub).onGithubReach = async (m, reached) => void told.push([m, reached]);
   await scan(hub, git);
   git.noNetwork.add("devbox");
   await scan(hub, git);

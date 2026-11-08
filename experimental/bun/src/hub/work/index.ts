@@ -116,10 +116,9 @@ function ended(claim: Claim, state: ClaimState, now: number, reason: string, lan
 export class Work {
   /**
    * Told once per flip when git on a machine stops reaching GitHub, or reaches it again (the landing scanner's poll).
-   * The tasks area sets it to tell the agents running there (tasks/mod.rs `github_reach`); until then it logs.
+   * The tasks area sets it to tell the agents running there (tasks/mod.rs `github_reach`); until then it does nothing.
    */
-  onGithubReach: (machine: MachineId, reached: boolean) => Promise<void> | void = (machine, reached) =>
-    console.info(`work: git on ${machine} ${reached ? "reaches GitHub again" : "can't reach GitHub"}`);
+  onGithubReach: (machineId: MachineId, reached: boolean) => Promise<void> = async () => {};
   /** The matcher, with a spawn's intent as it reads one, for the tasks area's duplicate check. */
   readonly matcher = { ...matcher, intent };
   private ports: WorkPorts;
