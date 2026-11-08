@@ -40,6 +40,7 @@ import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
+import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
 import { NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
@@ -304,6 +305,7 @@ export class SessionService {
   #spans = { enabled: false, sent: 0 };
   #onRunning: ((n: number) => void)[] = [];
   #reaper: ReturnType<typeof setInterval> | undefined;
+  #warmPruner: ReturnType<typeof setInterval> | undefined;
   /** Called for each step stored as completed or failed (node.area("items")). */
   onItemEnded: ((sessionId: string, item: ThreadItem) => void) | undefined;
   /** Sessions whose worktree setup still runs: a send waits for it; true once the brief went to claude. */
@@ -360,6 +362,8 @@ export class SessionService {
     }
     await sweep(hosts, adopted);
     service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
+    // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
+    service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
     return service;
   }
 
@@ -779,6 +783,7 @@ export class SessionService {
         worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
       } catch {}
       rmSync(this.#worktreesDir(projectId), { recursive: true, force: true });
+      warm.dropPool(this.home, project.workspaceRoot);
     }
     if (erase) {
       this.store.forgetSessions(projectId);
@@ -856,6 +861,8 @@ export class SessionService {
     const raced = this.store.session(id);
     if (raced) return { kind: "launched", summary: raced.summary };
     const path = join(this.#worktreesDir(launch.projectId), id);
+    let prompt = launch.prompt;
+    let readerPlan: WorktreeSetup | undefined;
     let cwd = root;
     let addDirs: string[] = [];
     let baseRef: string | undefined;
@@ -867,6 +874,9 @@ export class SessionService {
       const sha = (ws.head && worktree.knownCommit(root, ws.head)) || base.sha;
       worktree.ensureDetached(root, path, sha);
       [cwd, addDirs, baseRef] = [path, [root], sha];
+      // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
+      readerPlan = warm.readerSetup(launch.setup, path, base.sha);
+      if (warm.take(this.home, root, path)) prompt = `${prompt.trimEnd()}\n\n${warm.WARM_NOTE}`;
     } else if (launch.isolated) {
       cwd = join(this.home, "isolated");
       mkdirPrivate(cwd);
@@ -913,7 +923,8 @@ export class SessionService {
       },
     };
     // Setup applies to a session in a worktree of its own.
-    const plan = launch.setup && (launch.setup.commands ?? []).length && baseRef ? launch.setup : undefined;
+    const chosen = readerPlan ?? launch.setup;
+    const plan = chosen && (chosen.commands ?? []).length && baseRef ? chosen : undefined;
     if (plan) {
       row.local.setup = plan;
       row.local.setupPending = true;
@@ -928,8 +939,8 @@ export class SessionService {
     }
     // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
     if (plan) {
-      if (this.#recordRun(id, launch.runId, launch.prompt)) this.#setUpThenSend(id, launch.runId, launch.prompt, "plain", plan);
-    } else await this.#beginRun(id, launch.runId, launch.prompt, "plain");
+      if (this.#recordRun(id, launch.runId, prompt)) this.#setUpThenSend(id, launch.runId, prompt, "plain", plan);
+    } else await this.#beginRun(id, launch.runId, prompt, "plain");
     const reported = base && { ref: base.baseRef, sha: base.sha, ...(base.fetchedAt ? { fetchedAt: base.fetchedAt } : {}), ...(base.error ? { error: base.error } : {}) };
     return { kind: "launched", summary: this.#session(id).summary, ...(reported ? { base: reported } : {}) };
   }
@@ -1772,7 +1783,10 @@ export class SessionService {
     if (removeWorktree && row.local.baseRef) {
       const deleted = row.local.branch
         ? worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef)
-        : (worktree.removeDetached(row.local.workspaceRoot, row.local.cwd), false);
+        : // Its build goes on to the next reader of the checkout.
+          (warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home)),
+          worktree.removeDetached(row.local.workspaceRoot, row.local.cwd),
+          false);
       this.update(id, (c) => {
         delete c.row.summary.worktreePath;
         if (deleted) delete c.row.summary.branch;
@@ -1894,6 +1908,7 @@ export class SessionService {
   async shutdown(): Promise<void> {
     this.#stopping = true;
     clearInterval(this.#reaper);
+    clearInterval(this.#warmPruner);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
@@ -1903,6 +1918,7 @@ export class SessionService {
   async stopAll(): Promise<void> {
     this.#stopping = true;
     clearInterval(this.#reaper);
+    clearInterval(this.#warmPruner);
     for (const id of [...this.#live.keys()]) await stopHost(join(this.home, "hosts", id));
   }
 }
