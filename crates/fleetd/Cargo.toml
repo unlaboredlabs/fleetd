@@ -78,6 +78,8 @@ jpeg-encoder = "=0.7.1"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 # chat files: an Office file's text, inflated from its zip
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# updates: a build downloaded packed (`<asset>.lzma`, a third of its size), unpacked as it streams in
+lzma-rs = { version = "0.3", default-features = false, features = ["stream"] }
 
 # node power: macOS sleep assertions through IOKit, loaded at run time (the darwin build links no framework)
 [target.'cfg(target_os = "macos")'.dependencies]

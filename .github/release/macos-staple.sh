@@ -2,7 +2,7 @@
 # Staples a release's already-published fleetd.app once Apple accepts its notarization, without rebuilding: the
 # release job ships the app signed but unstapled when Apple's queue outlasts its wait (see macos-sign.sh). The app is
 # fleetd-desktop-macos-universal.zip, notarized as fleetd-desktop-notarize.zip; its latest-mac.yml is rewritten for
-# the new zip.
+# the new zip, with its blockmap.
 #
 #   TAG=edge [SUBMISSION=<id>] .github/release/macos-staple.sh
 #
@@ -118,14 +118,22 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   mkdir -p "$work/out"
   # --norsrc, as the release job zips it (see build-release.yml): no `._*` entries for a plain unzip to break the seal.
   ditto -c -k --keepParent --norsrc "$app" "$work/out/$asset"
-  (cd "$work/out" && shasum -a 256 "$asset") > "$work/new"
-  awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
-  cat "$work/out/SHA256SUMS"
+  local maps=()
   if [ -n "$feed" ]; then
-    # Same version, new bytes: an app reading the old feed would reject the new zip's sha512.
+    # Same version, new bytes: an app reading the old feed would reject the new zip's sha512, and the old blockmap
+    # would make its differential download fall back to the whole zip. update-yml.sh writes both, the blockmap with
+    # app/desktop's electron-builder, installed here only now (no app scripts run).
+    if [ ! -d "$here/../../app/desktop/node_modules/electron-builder" ]; then
+      (cd "$here/../../app/desktop" &&
+        npx --yes "$(node -p 'require("./package.json").packageManager')" install --frozen-lockfile --ignore-scripts)
+    fi
     "$here/update-yml.sh" "$work/out/$asset" "$(awk '$1 == "version:" { print $2 }' "$work/$feed")" > "$work/out/$feed"
     cat "$work/out/$feed"
+    maps=("$asset.blockmap")
   fi
+  (cd "$work/out" && shasum -a 256 "$asset" ${maps[@]+"${maps[@]}"}) > "$work/new"
+  awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
+  cat "$work/out/SHA256SUMS"
   local now
   gh release download "$TAG" -p SHA256SUMS -O "$work/now" --clobber
   now="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/now")"
@@ -134,7 +142,7 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
     return 0
   fi
   gh release upload "$TAG" "$work/out/$asset" --clobber
-  [ -z "$feed" ] || gh release upload "$TAG" "$work/out/$feed" --clobber
+  [ -z "$feed" ] || gh release upload "$TAG" "$work/out/$asset.blockmap" "$work/out/$feed" --clobber
   gh release upload "$TAG" "$work/out/SHA256SUMS" --clobber
   echo "stapled and replaced $asset on $TAG"
 }
@@ -153,7 +161,7 @@ mirror() {
     echo "nightly has edge's $asset"
     return 0
   fi
-  gh release download edge -p "$asset" -p "$feed" -D "$work/edge"
+  gh release download edge -p "$asset" -p "$asset.blockmap" -p "$feed" -D "$work/edge"
   [ "$(shasum -a 256 "$work/edge/$asset" | cut -d' ' -f1)" = "$want" ] || {
     echo "the edge $asset changed while copying; leaving it to the next run"
     return 0
@@ -163,7 +171,10 @@ mirror() {
     echo "an edge build started while copying; leaving it to the next run"
     return 0
   fi
-  gh release upload nightly "$work/edge/$asset" --clobber
+  local copy=("$work/edge/$asset")
+  # Edge's blockmap, once its builds publish one.
+  [ ! -f "$work/edge/$asset.blockmap" ] || copy+=("$work/edge/$asset.blockmap")
+  gh release upload nightly "${copy[@]}" --clobber
   gh release upload nightly "$work/nightly/$feed" --clobber
   gh release upload nightly "$work/edge/SHA256SUMS" --clobber
   echo "copied edge's $asset to nightly"

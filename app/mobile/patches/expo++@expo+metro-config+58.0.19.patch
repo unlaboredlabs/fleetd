@@ -1,0 +1,15 @@
+diff --git a/node_modules/expo/node_modules/@expo/metro-config/build/serializer/exportHermes.js b/node_modules/expo/node_modules/@expo/metro-config/build/serializer/exportHermes.js
+index 0a9316a..5f554ea 100644
+--- a/node_modules/expo/node_modules/@expo/metro-config/build/serializer/exportHermes.js
++++ b/node_modules/expo/node_modules/@expo/metro-config/build/serializer/exportHermes.js
+@@ -109,7 +109,9 @@ async function buildHermesBundleAsync(options) {
+     return await currentHermesBuild;
+ }
+ async function directlyBuildHermesBundleAsync({ projectRoot, code, map, minify = false, filename }) {
+-    const tempDir = _path().default.join(_os().default.tmpdir(), `expo-bundler-${Math.random()}-${Date.now()}`);
++    // fleetd: hermesc writes the source's path into the bytecode, so a random directory made every export a new update
++    // for every phone. Named by the code instead: the same JavaScript compiles to the same bytes.
++    const tempDir = _path().default.join(_os().default.tmpdir(), `expo-bundler-${require('crypto').createHash('sha256').update(code).digest('hex').slice(0, 16)}`);
+     await _fs().default.promises.mkdir(tempDir, {
+         recursive: true
+     });
