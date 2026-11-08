@@ -2443,7 +2443,7 @@ export const screens: readonly Screen[] = [
     variant: "skills-installed",
     open: async (page) => {
       await page.getByRole("button", { name: /^pr-review/u }).click();
-      await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Update", exact: true })).toBeVisible();
     },
   },
   {
