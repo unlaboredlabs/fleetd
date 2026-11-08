@@ -553,7 +553,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               </Glass>
               {cameSince > 0 ? (
                 <View style={[styles.downCount, { backgroundColor: t.accentFill }]}>
-                  <Text style={[type.caption, styles.downCountText]} maxFontSizeMultiplier={1.3}>
+                  <Text style={[type.caption, styles.downCountText, { color: t.onAccent }]} maxFontSizeMultiplier={1.3}>
                     {cameSince > 99 ? "99+" : String(cameSince)}
                   </Text>
                 </View>
@@ -839,7 +839,7 @@ function ItemView({
                   ) : (
                     <Bubble side="me" tail={tail && last && files.length === 0}>
                       {replied === undefined ? null : <Quote who={quotedWho} quote={replied.quote} onAccent onPress={quotedId === undefined ? undefined : () => actions.jumpTo(quotedId)} />}
-                      <Markdown text={words} ink={t.onAccent} onAccent fit holdsBlocks={false} />
+                      <Markdown text={words} ink={t.onAccentDeep} onAccent fit holdsBlocks={false} />
                     </Bubble>
                   )
                 }
@@ -954,7 +954,7 @@ function NotSent({ chatKey, id, note }: { chatKey: Key; id: string; note: string
 /** What a reply quotes, inside its bubble: whose and their first line, as chat apps show it; tapping goes to it. */
 function Quote({ who, quote, onAccent, onPress }: { who: string; quote: string; onAccent: boolean; onPress: (() => void) | undefined }) {
   const t = useTheme();
-  const ink = onAccent ? t.onAccent : t.accent;
+  const ink = onAccent ? t.onAccentDeep : t.accent;
   return (
     <Pressable disabled={onPress === undefined} onPress={onPress} accessibilityRole="button" accessibilityLabel={`Reply to ${who}: ${quote}`} style={[styles.quote, { backgroundColor: onAccent ? "rgba(255,255,255,0.18)" : t.accentSoft }]}>
       <View style={[styles.quoteRule, { backgroundColor: ink }]} />
@@ -962,7 +962,7 @@ function Quote({ who, quote, onAccent, onPress }: { who: string; quote: string; 
         <Text style={[type.footnote, styles.strong, { color: ink }]} numberOfLines={1}>
           {who}
         </Text>
-        <Text style={[type.footnote, { color: onAccent ? t.onAccent : t.label }]} numberOfLines={1}>
+        <Text style={[type.footnote, { color: onAccent ? t.onAccentDeep : t.label }]} numberOfLines={1}>
           {quote}
         </Text>
       </View>
@@ -1244,7 +1244,7 @@ function SkillLine({ saved, onPress }: { saved: SkillSaved; onPress: () => void 
     <Pressable accessibilityRole="link" accessibilityLabel={`${what}: ${saved.name}. ${saved.why}`} accessibilityHint="Opens the skill" onPress={onPress} hitSlop={6} style={({ pressed }) => [styles.event, pressed && { opacity: PRESSED_OPACITY }]}>
       <Icon name="sparkles" size={13} color={t.secondary} />
       <Text style={[type.footnote, styles.eventText, styles.shrink, { color: t.secondary }]} numberOfLines={1}>
-        {what}: <Text style={[styles.skillName, { color: t.accent }]}>{saved.name}</Text>
+        {what}: <Text style={[styles.skillName, { color: t.link }]}>{saved.name}</Text>
       </Text>
     </Pressable>
   );
@@ -1263,6 +1263,7 @@ function SelectText({ text, onClose }: { text: string | null; onClose: () => voi
         </View>
         <TextInput
           value={text}
+          selectionColor={t.accent}
           editable={false}
           multiline
           scrollEnabled
@@ -1337,7 +1338,7 @@ const styles = StyleSheet.create({
   downButton: { width: 44, height: 44, borderRadius: 22 },
   downHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   downCount: { position: "absolute", top: -6, alignSelf: "center", minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  downCountText: { color: "#FFFFFF", fontWeight: "700" },
+  downCountText: { fontWeight: "700" },
   sheetHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: space.sm },
   selectable: { flex: 1, paddingHorizontal: space.lg, paddingTop: space.sm },
 });

@@ -44,9 +44,9 @@
   accent-color: var(--accent-fill);
 }
 .root a {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
   text-underline-offset: 2px;
   cursor: pointer;
 }

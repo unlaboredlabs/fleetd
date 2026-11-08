@@ -197,7 +197,7 @@
 .last.mineBubble::before {
   right: -6px;
   width: 18px;
-  background: var(--accent-fill);
+  background: var(--accent-deep);
   border-bottom-left-radius: 14px;
 }
 .last.mineBubble::after {
@@ -207,26 +207,27 @@
   border-bottom-left-radius: 9px;
 }
 /*
- * Yours, in the accent. The prose inside reads its colours from the tokens, so they are set again for the fill:
+ * Yours, in the deep accent. The prose inside reads its colours from the tokens, so they are set again for the fill:
  * text, links and code in white.
  */
 .mineBubble {
-  --text: var(--on-accent);
-  --quiet: color-mix(in srgb, var(--on-accent) 82%, transparent);
-  --accent: var(--on-accent);
-  --hairline: color-mix(in srgb, var(--on-accent) 35%, transparent);
-  --sidebar: color-mix(in srgb, #000 16%, var(--accent-fill));
-  --shiki-foreground: var(--on-accent);
-  --shiki-token-comment: var(--on-accent);
-  --shiki-token-keyword: var(--on-accent);
-  --shiki-token-string: var(--on-accent);
-  --shiki-token-string-expression: var(--on-accent);
-  --shiki-token-constant: var(--on-accent);
-  --shiki-token-function: var(--on-accent);
-  --shiki-token-parameter: var(--on-accent);
-  --shiki-token-punctuation: var(--on-accent);
-  background: var(--accent-fill);
-  color: var(--on-accent);
+  --text: var(--on-accent-deep);
+  --quiet: color-mix(in srgb, var(--on-accent-deep) 82%, transparent);
+  --accent: var(--on-accent-deep);
+  --link: var(--on-accent-deep);
+  --hairline: color-mix(in srgb, var(--on-accent-deep) 35%, transparent);
+  --sidebar: color-mix(in srgb, #000 16%, var(--accent-deep));
+  --shiki-foreground: var(--on-accent-deep);
+  --shiki-token-comment: var(--on-accent-deep);
+  --shiki-token-keyword: var(--on-accent-deep);
+  --shiki-token-string: var(--on-accent-deep);
+  --shiki-token-string-expression: var(--on-accent-deep);
+  --shiki-token-constant: var(--on-accent-deep);
+  --shiki-token-function: var(--on-accent-deep);
+  --shiki-token-parameter: var(--on-accent-deep);
+  --shiki-token-punctuation: var(--on-accent-deep);
+  background: var(--accent-deep);
+  color: var(--on-accent-deep);
 }
 /*
  * What Show went to: a ring in the accent, held a moment and faded (--dur-shown); with motion it opens out first,
@@ -762,9 +763,9 @@ span.changeUndo {
 
 /* A PR link in a one-line event, drawn as the messages' links are (ui/markdown Markdown.module.css). */
 .link {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
   text-underline-offset: 2px;
 }
 

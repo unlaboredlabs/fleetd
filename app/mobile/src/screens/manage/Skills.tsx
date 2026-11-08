@@ -99,7 +99,7 @@ export function SkillTile({ kind, size = 29 }: { kind: Kind; size?: number }) {
   );
 }
 
-const tileColor = (t: Palette, kind: Kind): string => (kind === "own" ? t.accentFill : kind === "installed" ? (t.tints[6] ?? t.indigo) : (t.tints[7] ?? t.secondary));
+const tileColor = (t: Palette, kind: Kind): string => (kind === "own" ? t.accentDeep : kind === "installed" ? (t.tints[6] ?? t.indigo) : (t.tints[7] ?? t.secondary));
 
 /** `icon` is ListSection's sign to inset the separator past the tile. */
 function SkillRow({ skill: s, line, onPress }: { skill: Skill; line: string | undefined; icon: true; onPress: () => void }) {
