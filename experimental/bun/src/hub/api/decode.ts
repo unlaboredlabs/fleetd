@@ -5,7 +5,9 @@
 // ("missing field `projectRef`", "expected at most 200 characters"), which the transports word as `invalid`. What the
 // schema can't say stays the handler's to check: a brand's own check beyond its pattern (`brand!(…, check = …)`, an
 // artifact name's 64 bytes) and a struct's `checked!` rules.
-import schemaFile from "../../../../../crates/fleetd-contracts/schema/McpTools.json" with { type: "json" };
+// Read as text, as src/hub/mcp/endpoint.ts reads it: the bundler keeps one module per file, so a second loader for the
+// same file makes the binary's copy a string or an object depending on which import it resolves first.
+import schemaText from "../../../../../crates/fleetd-contracts/schema/McpTools.json" with { type: "text" };
 
 type Schema = {
   $ref?: string;
@@ -32,7 +34,7 @@ type Schema = {
   "x-open"?: boolean;
 };
 
-const DEFS = (schemaFile as unknown as { $defs: Record<string, Schema> }).$defs;
+const DEFS = (JSON.parse(schemaText) as { $defs: Record<string, Schema> }).$defs;
 const TOOLS = (DEFS.McpTools?.properties ?? {}) as Record<string, Schema>;
 /** Rust's `Line`: a Text that refuses `\r` and `\n`. */
 const SINGLE_LINE = "^[^\\r\\n]*$";
