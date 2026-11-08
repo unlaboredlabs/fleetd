@@ -19,7 +19,7 @@ export type WorkstreamFilter = { projectRef?: ProjectRef; state?: WorkstreamStat
 /** Newest first. */
 export function workstreamsList(c: Database, filter: WorkstreamFilter): Workstream[] {
   return c
-    .query<{ data: string }, never>(
+    .query<{ data: string }, Record<string, string | number | null>>(
       `SELECT data FROM workstreams
                  WHERE ($machine IS NULL OR machine_id = $machine) AND ($project IS NULL OR project_id = $project)
                    AND ($state IS NULL OR state = $state)
@@ -30,7 +30,7 @@ export function workstreamsList(c: Database, filter: WorkstreamFilter): Workstre
       project: filter.projectRef?.projectId ?? null,
       state: filter.state ?? null,
       limit: filter.limit,
-    } as never)
+    })
     .map((r) => JSON.parse(r.data) as Workstream);
 }
 
