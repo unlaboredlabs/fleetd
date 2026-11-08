@@ -1,5 +1,6 @@
 // `fleetd hub start` (crates/fleetd/src/hub/serve/mod.rs): parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
+import { refreshOwnUnit } from "../../cli/setup/units.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { startAll } from "../../gen/loops.ts";
@@ -111,6 +112,7 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
+  refreshOwnUnit();
   const { hub, tools } = build(home, options.listen);
   const server = serve(hub, tools);
   console.error(`fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);

@@ -1,6 +1,10 @@
 // systemd user units and launchd agents for the hub and the node, and the shell commands that drive them
 // (crates/fleetd/src/cli/setup/units.rs).
+import { spawnSync } from "node:child_process";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { relocated } from "../../shared/home.ts";
+import { isHubService, services, unitDir, userManagerEnv } from "../../update/service.ts";
 import { q } from "../pair.ts";
 import type { Platform } from "./shared.ts";
 
@@ -35,6 +39,178 @@ function systemdValue(value: string, exec: boolean): string {
   return /[\s"'\;]/.test(escaped) ? `"${escaped.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : escaped;
 }
 
+/** Under memory pressure the kernel kills an agent's processes before the hub or the node. A user manager can't set a
+ * score below its own, so systemd leaves the service at that, 100 under `user@.service`, rather than the 200 it gives
+ * its services by default. systemd-oomd, where it runs, picks other cgroups first. */
+const OOM_LINES = ["OOMScoreAdjust=-900", "ManagedOOMPreference=avoid"];
+
+/** Every key renderSystemdUnit writes, or has written. A unit with any other was edited by hand, and is left alone. */
+const UNIT_KEYS = new Set([
+  "Description",
+  "StartLimitIntervalSec",
+  "StartLimitBurst",
+  "Type",
+  "WorkingDirectory",
+  "Environment",
+  "EnvironmentFile",
+  "ExecStart",
+  "KillMode",
+  "OOMPolicy",
+  "OOMScoreAdjust",
+  "ManagedOOMPreference",
+  "Restart",
+  "RestartSec",
+  "StandardOutput",
+  "StandardError",
+  "WantedBy",
+  "",
+]);
+
+/** A unit fleetd wrote, from any version, rewritten from today's template with the same command, environment and
+ * paths, so a service gets settings added since (its OOM lines, `OOMPolicy=continue`) without `fleetd machine add`.
+ * Undefined when it reads as today's already, or isn't one fleetd wrote. */
+export function refreshSystemdUnit(text: string, role: Role): string | undefined {
+  const spec = parseSystemdUnit(text, role);
+  if (spec === undefined) return undefined;
+  const fresh = renderSystemdUnit(spec);
+  return fresh === text ? undefined : fresh;
+}
+
+/** The spec renderSystemdUnit wrote `text` from. */
+export function parseSystemdUnit(text: string, role: Role): ServiceSpec | undefined {
+  const spec: ServiceSpec = { role, description: "", program: [], env: [], workingDirectory: "", logPath: "" };
+  // As Rust's str::lines: a last empty line isn't one.
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  for (const line of lines) {
+    if (line.startsWith("[")) continue;
+    const eq = line.indexOf("=");
+    const [key, value] = eq < 0 ? [line, ""] : [line.slice(0, eq), line.slice(eq + 1)];
+    if (!UNIT_KEYS.has(key)) return undefined;
+    if (key === "Description") spec.description = value;
+    else if (key === "WorkingDirectory") {
+      const v = unquote(value);
+      if (v === undefined) return undefined;
+      spec.workingDirectory = v;
+    } else if (key === "Environment") {
+      const pair = unquote(value);
+      const at = pair?.indexOf("=") ?? -1;
+      if (pair === undefined || at < 0) return undefined;
+      spec.env.push([pair.slice(0, at), pair.slice(at + 1)]);
+    } else if (key === "EnvironmentFile") {
+      const v = value.startsWith("-") ? unquote(value.slice(1)) : undefined;
+      if (v === undefined) return undefined;
+      spec.envFile = v;
+    } else if (key === "ExecStart") {
+      const w = words(value, true);
+      if (w === undefined) return undefined;
+      spec.program = w;
+    } else if (key === "StandardOutput") {
+      if (!value.startsWith("append:")) return undefined;
+      spec.logPath = value.slice("append:".length).replaceAll("%%", "%");
+    }
+  }
+  return spec.program.length > 0 && spec.logPath !== "" ? spec : undefined;
+}
+
+/** One value as systemdValue wrote it. */
+function unquote(value: string): string | undefined {
+  const w = words(value, false);
+  return w?.length === 1 ? w[0] : undefined;
+}
+
+/** A line's words as systemdValue wrote them: bare, or in double quotes with `\\` and `\"` escaped, and `%` doubled,
+ * and `$` too in an `ExecStart=` (`exec`). */
+function words(line: string, exec: boolean): string[] | undefined {
+  const out: string[] = [];
+  const chars = [...line];
+  let i = 0;
+  const space = (c: string | undefined) => c !== undefined && /\s/.test(c);
+  for (;;) {
+    while (space(chars[i])) i++;
+    const first = chars[i++];
+    if (first === undefined) break;
+    let word = "";
+    if (first === '"') {
+      for (;;) {
+        const c = chars[i++];
+        if (c === undefined) return undefined;
+        if (c === '"') break;
+        if (c === "\\") {
+          const next = chars[i++];
+          if (next === undefined) return undefined;
+          word += next;
+        } else word += c;
+      }
+    } else {
+      word = first;
+      while (chars[i] !== undefined && !space(chars[i])) word += chars[i++];
+    }
+    word = word.replaceAll("%%", "%");
+    out.push(exec ? word.replaceAll("$$", "$") : word);
+  }
+  return out;
+}
+
+/** The unit this process runs as: the last part of its cgroup path under the user's manager (`user@1000.service`),
+ * when that's a service (`fleetd-node.service`, not an agent's `run-….scope`). */
+export function ownUnit(cgroup: string): string | undefined {
+  const path = cgroup
+    .split("\n")
+    .find((l) => l.startsWith("0::"))
+    ?.slice(3);
+  if (path === undefined) return undefined;
+  const parts = path.split("/");
+  const manager = parts.findIndex((p) => p.startsWith("user@") && p.endsWith(".service"));
+  if (manager < 0 || manager === parts.length - 1) return undefined;
+  const last = parts.at(-1)!;
+  return last.endsWith(".service") ? last : undefined;
+}
+
+const info = (unit: string, message: string) => console.log(`${new Date().toISOString()} INFO ${message} {"unit":${JSON.stringify(unit)}}`);
+const warn = (unit: string, message: string) => console.warn(`${new Date().toISOString()} WARN ${message} {"unit":${JSON.stringify(unit)}}`);
+
+/** `systemctl --user args`: whether it ran and succeeded, or why not. */
+function systemctl(args: string[]): string | undefined {
+  const r = spawnSync("systemctl", ["--user", ...args], { stdio: "ignore", env: userManagerEnv() });
+  if (r.error) return `couldn't run systemctl: ${r.error.message}`;
+  return r.status === 0 ? undefined : `systemctl --user ${args.join(" ")} exited with ${r.signal ? `signal: ${r.signal}` : `exit status: ${r.status}`}`;
+}
+
+/** At a hub's or node's start under its systemd user unit (crates/fleetd/src/update/service.rs `refresh_own_unit`):
+ * the unit rewritten from today's template when an older fleetd wrote it (an update swaps only the binary, so the
+ * settings added since never reached it), and enabled when it isn't, so the service starts at the next boot. Run by
+ * the new binary after an update's restart, so the update applies it; a rewritten unit takes effect at the next
+ * restart. Off Linux, outside such a unit, or with a unit edited by hand, nothing changes. */
+export function refreshOwnUnit(): void {
+  if (process.platform !== "linux") return;
+  let name: string | undefined;
+  try {
+    name = ownUnit(readFileSync("/proc/self/cgroup", "utf8"));
+  } catch {}
+  if (name === undefined) return;
+  const service = services(process.execPath).find((s) => s.name === name);
+  if (service === undefined) return;
+  const path = join(unitDir(), service.name);
+  try {
+    const fresh = refreshSystemdUnit(readFileSync(path, "utf8"), isHubService(service) ? "hub" : "node");
+    if (fresh !== undefined) {
+      const staged = `${path.replace(/\.service$/, "")}.service.new`;
+      writeFileSync(staged, fresh);
+      renameSync(staged, path);
+      const why = systemctl(["daemon-reload"]);
+      if (why === undefined) info(name, "rewrote the unit from today's template");
+      else warn(name, `rewrote the unit from today's template, but ${why}`);
+    }
+  } catch (error) {
+    warn(name, `couldn't rewrite the unit: ${(error as Error).message}`);
+  }
+  if (systemctl(["is-enabled", "--quiet", name]) === undefined) return;
+  const why = systemctl(["enable", name]);
+  if (why === undefined) info(name, "enabled the unit, which wasn't, so it starts at boot");
+  else warn(name, `it may not start at the next boot: ${why}`);
+}
+
 export function renderSystemdUnit(spec: ServiceSpec): string {
   const lines = [
     "[Unit]",
@@ -50,6 +226,7 @@ export function renderSystemdUnit(spec: ServiceSpec): string {
   if (spec.envFile !== undefined) lines.push(`EnvironmentFile=-${systemdValue(spec.envFile, false)}`);
   lines.push(`ExecStart=${spec.program.map((a) => systemdValue(a, true)).join(" ")}`);
   if (spec.role === "node") lines.push("KillMode=mixed", "OOMPolicy=continue");
+  lines.push(...OOM_LINES);
   const log = spec.logPath.replaceAll("%", "%%");
   lines.push("Restart=always", "RestartSec=5", `StandardOutput=append:${log}`, `StandardError=append:${log}`, "", "[Install]", "WantedBy=default.target", "");
   return lines.join("\n");
