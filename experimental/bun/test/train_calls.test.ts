@@ -2,6 +2,7 @@
 // `CheckCalls`): `change_enqueue`, `review_verdict` and `review_read`, and the train's project_get field.
 import { afterEach, expect, test } from "bun:test";
 import { Hub } from "../src/hub/api/hub.ts";
+import { stopHooks } from "../src/hub/chat/stop.ts";
 import { executorHooks } from "../src/hub/executor/hooks.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { withReviews } from "../src/hub/reviews/service.ts";
@@ -138,12 +139,11 @@ test("the lead digest's merge train lines", async () => {
 
 test("a stopped order's PRs leave the train through the chat area's stop hooks", async () => {
   const { k, hub } = lab();
-  const stops: { takeLeftovers?: (r: typeof PROJECT, w: string, why: string) => number[] } = {};
-  hub.area("chat_stop_hooks", () => stops);
+  // The train starts before any stop has made the chat area's holder.
   start(hub);
   k.train.stop();
   k.pr(11, "fleetd/T11-a", { "a.md": "a\n" }, { labels: ["hold"] });
   await k.enqueue(11);
-  expect(stops.takeLeftovers!(PROJECT, "W1", "its order was stopped")).toEqual([11]);
+  expect(stopHooks(hub).takeLeftovers!(PROJECT, "W1", "its order was stopped")).toEqual([11]);
   expect(k.change(11)).toMatchObject({ state: "abandoned", lastError: "its order was stopped" });
 });
