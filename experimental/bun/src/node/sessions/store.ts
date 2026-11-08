@@ -2,6 +2,7 @@
 // and machine event log, with the same schema the Rust node keeps, so either opens the other's. Contract types are
 // stored as JSON next to the few columns queries need.
 import { Database } from "bun:sqlite";
+import type { WorktreeSetup } from "../../shared/contracts.ts";
 import type { MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, SessionRole, SessionSummary, ThreadItem, ThreadMessage, WindowEntry, PendingPermission } from "./types.ts";
 
 /** How many machine events are kept for `subscribe{after}`; an older cursor gets a snapshot. */
@@ -45,7 +46,7 @@ export type SessionLocal = {
   allowedOnly?: boolean;
   role?: SessionRole;
   orderId?: string;
-  setup?: import("../../shared/contracts.ts").WorktreeSetup;
+  setup?: WorktreeSetup;
   setupPending?: boolean;
   profile?: string;
   fast?: boolean;
