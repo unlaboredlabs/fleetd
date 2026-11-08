@@ -36,7 +36,7 @@ const ROW = 46;
 const GAP = 8;
 
 /** Where the lifted view and the menu go: the view stays where it was when it can, moved up or cut short when the menu wouldn't fit. */
-export const placeMenu = (at: Rect, rows: number, screen: { width: number; height: number }, insets: { top: number; bottom: number }, align: "left" | "right") => {
+const placeMenu = (at: Rect, rows: number, screen: { width: number; height: number }, insets: { top: number; bottom: number }, align: "left" | "right") => {
   const menuH = rows * ROW;
   const top = insets.top + GAP;
   const bottom = screen.height - insets.bottom - GAP;

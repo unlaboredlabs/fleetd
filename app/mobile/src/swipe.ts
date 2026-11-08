@@ -9,7 +9,7 @@
 
 /** A circle's size, and its gap to the screen's edge and to the next one. */
 export const BUTTON = 50;
-export const GAP = 10;
+const GAP = 10;
 /** The lifted row's corner: Messages', which is Telegram's. */
 export const CARD_RADIUS = 26;
 /** Points sideways before a drag is a swipe; a mostly vertical one before that stays the list's scroll. */

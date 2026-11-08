@@ -27,7 +27,7 @@ export interface ArtifactRead {
 }
 
 /** "Markdown", "HTML"; a format a newer hub adds, as it names it. */
-export const formatWord = (f: ArtifactFormat): string => (f === "md" ? "Markdown" : f === "html" ? "HTML" : String(f).toUpperCase());
+const formatWord = (f: ArtifactFormat): string => (f === "md" ? "Markdown" : f === "html" ? "HTML" : String(f).toUpperCase());
 
 /** A row's line: its format, who published it, when, and its version once there is more than one. */
 export const rowLine = (v: ArtifactVersion, when: string): string =>

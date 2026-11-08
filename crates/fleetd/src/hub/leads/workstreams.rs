@@ -28,7 +28,6 @@ pub struct IntakeInput {
 #[derive(Debug, Clone)]
 pub struct IntakeOutcome {
     pub workstream_id: WorkstreamId,
-    pub next: String,
 }
 
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
@@ -159,17 +158,7 @@ impl Workstreams {
                 },
             );
         }
-        let next = if self.records.lead_get(&input.project_ref)?.is_none() {
-            format!(
-                "{id} is a draft. The project has no lead yet; call lead_start and it will pick this up."
-            )
-        } else {
-            format!("{id} is a draft; the lead registers its brief. Watch it with order_get.")
-        };
-        Ok(IntakeOutcome {
-            workstream_id: id,
-            next,
-        })
+        Ok(IntakeOutcome { workstream_id: id })
     }
 
     /// An order the lead opens was asked for at the earliest human message of the run that opens it, else when it

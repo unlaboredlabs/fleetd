@@ -19,7 +19,7 @@ export interface MessageHit {
 
 /** Words before the match a snippet keeps, so the match shows near the start of a one-line preview. */
 const LEAD = 24;
-export const MAX_HITS = 60;
+const MAX_HITS = 60;
 
 const fold = (s: string): string => s.toLocaleLowerCase();
 

@@ -4,7 +4,7 @@
 // sheet doesn't swipe away while there are any.
 import { usePreventRemove } from "@react-navigation/native";
 import { useEffect, useLayoutEffect, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, TextInput, View } from "react-native";
+import { ActivityIndicator, StyleSheet, TextInput, View } from "react-native";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

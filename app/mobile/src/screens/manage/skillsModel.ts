@@ -43,7 +43,7 @@ export const kindOf = (s: Pick<Skill, "origin" | "install">): Kind =>
   s.origin === "project" ? (s.install === undefined ? "own" : "installed") : s.origin === "global" ? "installed" : "folder";
 
 /** Kept by the hub, so it has versions; a repo skill is the repo's. */
-export const hubKept = (origin: SkillOrigin): origin is "project" | "global" => origin === "project" || origin === "global";
+const hubKept = (origin: SkillOrigin): origin is "project" | "global" => origin === "project" || origin === "global";
 
 export interface SkillGroup {
   readonly kind: Kind;
@@ -148,7 +148,7 @@ export const sourceLine = (s: Skill, title: string, versions: number): string =>
 export type DiffChunk = { readonly t: "line"; readonly line: DiffLine; readonly ix: number } | { readonly t: "fold"; readonly from: number; readonly count: number };
 
 /** Unchanged lines kept around a change; a longer unchanged run folds to one row that opens it. */
-export const DIFF_CONTEXT = 2;
+const DIFF_CONTEXT = 2;
 
 /** A version's change from the one before: the changed lines, a little around them, the rest folded. */
 export const diffChunks = (before: string, after: string, open: ReadonlySet<number>): DiffChunk[] => {

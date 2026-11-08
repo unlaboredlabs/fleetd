@@ -6,7 +6,7 @@ import { hubOrigin, normalizeCode, type PairFailure } from "../desktop";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-export const PAIR_TIMEOUT_MS = 15_000;
+const PAIR_TIMEOUT_MS = 15_000;
 
 export interface Paired {
   /** The hub's origin as typed, which the app connects to (the hub's own idea of its URL may not be reachable here). */

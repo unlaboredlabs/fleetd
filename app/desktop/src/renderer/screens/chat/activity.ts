@@ -87,12 +87,3 @@ export const leadDoing = (s: DataState, key: ProjectKey): string | undefined => 
 
 /** What the running turn did so far, joined ("planned a piece of work · started 2 agents"); "" for nothing yet. */
 export const leadDid = (s: DataState, key: ProjectKey): string => (selectLeadWorking(key)(s) === true ? turnTally(s.events, refOf(key)).join(" · ") : "");
-
-/** The line while the project's lead works ("planning · started 3 agents"), else undefined. */
-export const leadActivity = (s: DataState, key: ProjectKey): string | undefined => {
-  if (selectLeadWorking(key)(s) !== true) return undefined;
-  const ref = refOf(key);
-  const now = s.live.lanes[leadLaneId(ref)]?.activity?.activity;
-  const parts = [...(now === undefined ? [] : [doingWords(now)]), ...turnTally(s.events, ref)];
-  return parts.length === 0 ? "working" : parts.join(" · ");
-};

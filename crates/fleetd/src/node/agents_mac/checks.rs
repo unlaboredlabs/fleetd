@@ -2,7 +2,6 @@
 //! process of that user can do. Each is a pure verdict on what a [`Probe`] read; [`Live`] reads the Mac, tests fake it.
 //! A failing check says exactly what the person does, and where: in an admin's Terminal, or at the Mac in the account
 //! the node runs in (yours, an admin's, or a user of its own for agents: D309).
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use fleetd_contracts::node_link::{MacCheck, MacCheckId, MacCheckState, MacHealth};
@@ -504,7 +503,6 @@ fn ran(command: &mut Command) -> Ran {
 
 /// The Mac itself.
 pub struct Live {
-    pub home: PathBuf,
     pub awake: Result<(), String>,
     pub tools: ToolsState,
 }

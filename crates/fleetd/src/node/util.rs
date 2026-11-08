@@ -129,12 +129,9 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// What Node's `execFile` callback sees: stdout, stderr, the exit code when there is one, and an error message for
-/// anything but a clean exit 0.
+/// What Node's `execFile` callback sees: stdout, and an error message (with stderr) for anything but a clean exit 0.
 pub struct Exec {
     pub stdout: String,
-    pub stderr: String,
-    pub exit_code: Option<i32>,
     pub error: Option<String>,
 }
 
@@ -157,8 +154,6 @@ pub async fn exec(argv: &[String], timeout: Duration) -> Exec {
             let code = errno_name(&error).unwrap_or_else(|| error.to_string());
             return Exec {
                 stdout: String::new(),
-                stderr: String::new(),
-                exit_code: None,
                 error: Some(format!("spawn {command} {code}")),
             };
         }
@@ -168,22 +163,14 @@ pub async fn exec(argv: &[String], timeout: Duration) -> Exec {
     let Ok(Ok(output)) = output else {
         return Exec {
             stdout: String::new(),
-            stderr: String::new(),
-            exit_code: None,
             error: Some(format!("Command failed: {}", argv.join(" "))),
         };
     };
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    let exit_code = output.status.code();
     let error =
         (!output.status.success()).then(|| format!("Command failed: {}\n{stderr}", argv.join(" ")));
-    Exec {
-        stdout,
-        stderr,
-        exit_code,
-        error,
-    }
+    Exec { stdout, error }
 }
 
 #[cfg(test)]

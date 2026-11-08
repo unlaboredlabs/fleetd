@@ -267,7 +267,7 @@ export const ready = (project: ProjectKey, title: string, machine: string, path:
   };
 };
 
-export type FailAction =
+type FailAction =
   /** The clone's folder already holds this repo (a dry-run project_add said so): add it as it is. */
   | { readonly kind: "use_existing"; readonly request: Request }
   /** The folder is already this project. */

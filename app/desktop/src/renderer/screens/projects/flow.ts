@@ -114,7 +114,7 @@ const waiting = (s: AddState, why: string): AddState =>
     return { ...rest, detail: why };
   });
 
-export const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo : r.kind === "new" ? r.name : baseName(r.path));
+const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo : r.kind === "new" ? r.name : baseName(r.path));
 
 const failure = (message: string, fix: string | undefined): Failure => (fix?.trim() ? { message, fix } : { message });
 

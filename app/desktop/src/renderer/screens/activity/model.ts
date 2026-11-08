@@ -336,7 +336,3 @@ export function layout(
   }
   return rows;
 }
-
-/** How many lines are newer than `seenSeq`; none before the person has ever looked. */
-export const unreadCount = (lines: readonly Line[], seenSeq: number | undefined): number =>
-  seenSeq === undefined ? 0 : lines.filter((l) => l.seq > seenSeq).length;

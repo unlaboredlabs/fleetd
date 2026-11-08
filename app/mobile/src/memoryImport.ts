@@ -4,7 +4,7 @@
 // without a phone.
 import type { HubError } from "./desktop";
 
-export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError };
+type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError };
 
 /** What an import wrote, and what it left out because it looked like a secret or the memory was full. */
 export interface Imported {
@@ -73,10 +73,10 @@ export const importClient = (hub: { readonly call: unknown }): ImportClient => {
   };
 };
 
-export type PromptState = { readonly t: "loading" } | { readonly t: "ready"; readonly text: string } | { readonly t: "failed"; readonly error: HubError };
+type PromptState = { readonly t: "loading" } | { readonly t: "ready"; readonly text: string } | { readonly t: "failed"; readonly error: HubError };
 
 /** The paste and what became of it: being written, sent and distilling, added (how many), or refused. */
-export type Phase = { readonly t: "editing" } | { readonly t: "working" } | { readonly t: "done"; readonly imported: Imported } | { readonly t: "failed"; readonly error: HubError };
+type Phase = { readonly t: "editing" } | { readonly t: "working" } | { readonly t: "done"; readonly imported: Imported } | { readonly t: "failed"; readonly error: HubError };
 
 export interface ImportState {
   readonly prompt: PromptState;

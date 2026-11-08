@@ -54,9 +54,6 @@ export type HubEventOf<K extends HubEventType> = Omit<HubEvent, "type" | "data">
   data?: EventData<K> | TruncatedData;
 };
 
-/** Every event type this build knows, as a union to switch on; anything else is a generic `HubEvent`. */
-export type TypedHubEvent = { [K in KnownHubEventType]: HubEventOf<K> }[KnownHubEventType];
-
 /** Narrows `event` to one of `types`. */
 export const isEvent = <K extends KnownHubEventType>(
   event: HubEvent,

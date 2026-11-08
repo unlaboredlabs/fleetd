@@ -49,11 +49,9 @@ export {
   AppFrame,
   TopBar,
   FrameTitle,
-  Breadcrumb,
   Sidebar,
   SidebarSection,
   SidebarItem,
   EmptyState,
-  type Crumb,
   type SidebarItemProps,
 } from "./layout/Layout";

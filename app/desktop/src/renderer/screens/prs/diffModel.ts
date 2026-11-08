@@ -124,12 +124,6 @@ export const fileRowIndex = (rows: readonly DiffRow[]): Map<number, number> => {
   return out;
 };
 
-/** The file whose rows the view is in, for marking it in the list of files. */
-export const fileAt = (rows: readonly DiffRow[], index: number): number | undefined => {
-  const r = rows[Math.max(0, Math.min(index, rows.length - 1))];
-  return r === undefined || r.kind === "more" ? undefined : r.file;
-};
-
 /** Each side of a page as one text, so the highlighter reads whole runs of code; and each line's place in it. */
 export interface Sides {
   readonly oldText: string;
