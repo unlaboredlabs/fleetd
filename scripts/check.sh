@@ -26,7 +26,8 @@
 #   fails there when one of its fixtures has no answer for it.
 #
 # The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, and so do the tests picked: a run of them
-# all waits for a build slot 3 times: clippy, that build, the tests.
+# all waits for a build slot 3 times: clippy, that build, the tests. The tests' build takes two slots when it builds
+# fleetd's lib tests beside its integration tests or another crate's (node/build_slots.rs: two of its biggest rustc).
 #
 # It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
@@ -266,8 +267,9 @@ if $tests_wanted; then
   mapfile -t mods < <(printf '%s\n' "${mods[@]}" | sort -u | sed '/^$/d')
   mapfile -t itests < <(printf '%s\n' "${itests[@]}" | sort -u | sed '/^$/d')
   mapfile -t crates < <(printf '%s\n' "${crates[@]}" | sort -u | sed '/^$/d')
-  # The tests picked build in one cargo, so they wait for one build slot. Without other crates, only the lib and the
-  # integration tests picked build (a target flag would apply to every package).
+  # The tests picked build in one cargo, so they wait for a build slot once (two slots for the lib's tests beside other
+  # targets). Without other crates, only the lib and the integration tests picked build (a target flag would apply to
+  # every package).
   packages=() targets=()
   { [ ${#mods[@]} -gt 0 ] || [ ${#itests[@]} -gt 0 ]; } && packages+=(-p fleetd)
   for c in "${crates[@]}"; do packages+=(-p "$c"); done
