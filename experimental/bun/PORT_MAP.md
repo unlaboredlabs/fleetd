@@ -100,7 +100,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
-- [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
+- [x] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
 - [ ] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
