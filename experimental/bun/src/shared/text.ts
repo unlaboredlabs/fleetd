@@ -18,3 +18,33 @@ export const oneLine = (text: string, max: number) => ellipsize(text.split(/\s+/
 
 /** `"text"`, on one line and at most 300 units, as lead event lines quote it. */
 export const quote = (text: string) => `"${oneLine(text, 300)}"`;
+
+/** The first `max` UTF-16 units of `s`, never splitting a character (JS `slice(0, max)` that keeps pairs whole). */
+export function jsPrefix(s: string, max: number): string {
+  if (s.length <= max) return s;
+  let units = 0;
+  let out = "";
+  for (const c of s) {
+    units += c.length;
+    if (units > max) return out;
+    out += c;
+  }
+  return s;
+}
+
+/** The longest suffix of `s` with at most `max` UTF-16 units. */
+export function jsSuffix(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const chars = [...s];
+  let units = 0;
+  let i = chars.length;
+  while (i > 0) {
+    units += (chars[i - 1] as string).length;
+    if (units > max) break;
+    i--;
+  }
+  return chars.slice(i).join("");
+}
+
+/** `text` if it fits in `max` UTF-16 units, else "…" and its last `max - 1`. */
+export const keepTail = (text: string, max: number) => (text.length <= max ? text : `…${jsSuffix(text, max - 1)}`);
