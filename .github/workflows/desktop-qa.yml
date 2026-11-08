@@ -111,12 +111,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
       - if: steps.scope.outputs.run == 'true'
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/electron
-            ~/Library/Caches/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('app/desktop/pnpm-lock.yaml') }}
+        uses: ./.github/actions/electron-cache
       - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: steps.scope.outputs.run == 'true'

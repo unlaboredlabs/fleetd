@@ -1,0 +1,32 @@
+# Electron's zips (@electron/get's cache) and electron-builder's tools (AppImage, fpm, 7-Zip, the icon bundle), kept
+# between runs so a job that has them makes no request to GitHub's release downloads: on Nov 8 those answered 504 for
+# hours and failed every desktop job that fetched one. A cached zip is still checked, against the sums Electron's npm
+# package ships (app/desktop/electron-builder.yml's electronDownload). Keyed on the versions, so a bump fetches anew.
+# The jobs that only run Electron for Linux share one key; a job that packs names what it packs (`packs`), since the
+# first job to save a key fixes what it holds.
+name: Electron downloads
+description: Restores and saves Electron's and electron-builder's downloads, keyed on their versions.
+inputs:
+  packs:
+    description: What the job packs (edge-macos, edge-linux, mac-arm64, mac-layout), for its own key; empty to run Electron only.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - id: versions
+      shell: bash
+      run: |
+        node -e '
+          const { devDependencies: d } = require("./app/desktop/package.json");
+          const packs = process.argv[1];
+          const key = packs ? `${packs}-${d.electron}-builder-${d["electron-builder"]}` : d.electron;
+          console.log(`key=${key}`);
+        ' "${{ inputs.packs }}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/electron
+          ~/.cache/electron-builder
+          ~/Library/Caches/electron
+          ~/Library/Caches/electron-builder
+        key: electron-${{ runner.os }}-${{ steps.versions.outputs.key }}

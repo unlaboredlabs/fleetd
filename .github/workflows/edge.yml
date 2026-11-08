@@ -16,6 +16,7 @@ on:
       - .github/workflows/edge.yml
       - .github/workflows/build-release.yml
       - .github/release/**
+      - .github/actions/electron-cache/**
       - app/desktop/electron-builder.yml
       - app/desktop/build/**
   workflow_dispatch:
