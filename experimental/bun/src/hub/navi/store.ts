@@ -36,3 +36,14 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.archived_ms !== null) out.archivedAt = isoMs(row.archived_ms);
   return out;
 }
+
+/** The Only me projects with an owner other than `person` (every one with an owner, for undefined). */
+export function others(db: Database, person: PersonId | undefined): ProjectRef[] {
+  return db
+    .query<{ machine_id: string; project_id: string }, [string | null]>(
+      `SELECT machine_id, project_id FROM project_settings
+         WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
+    )
+    .all(person ?? null)
+    .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
+}
