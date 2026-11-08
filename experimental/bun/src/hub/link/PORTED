@@ -7,6 +7,7 @@ link:hub→node `hb` send
 link:hub→node `node_action` send
 link:hub→node `secret_deliver` send
 link:hub→node `session_call` send
+link:hub→node `spans_ack` send
 link:hub→node `welcome` send
 link:node→hub `clone_progress` handle
 link:node→hub `cmd_result` handle
