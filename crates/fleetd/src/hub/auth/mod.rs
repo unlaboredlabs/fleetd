@@ -449,15 +449,22 @@ impl Auth {
         Ok(row.info()?)
     }
 
-    /// Idempotent: revoking a revoked key keeps its first `revokedAt`.
-    pub fn revoke(&self, key_id: &str) -> Result<(), AuthError> {
+    /// Idempotent: revoking a revoked key keeps its first `revokedAt`. The hub links minted from it go with it, in
+    /// the same transaction (D337); returns how many of those were still live.
+    pub fn revoke(&self, key_id: &str) -> Result<usize, AuthError> {
         let now = self.now();
-        let changed = self.db.with(|conn| {
-            Ok(conn
+        let (changed, links) = self.db.transaction(|conn| {
+            let changed = conn
                 .prepare_cached(
                     "UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?",
                 )?
-                .execute(params![now, key_id])?)
+                .execute(params![now, key_id])?;
+            let links = conn
+                .prepare_cached(
+                    "UPDATE hub_links_issued SET revoked_ms = ? WHERE key_id = ? AND revoked_ms IS NULL",
+                )?
+                .execute(params![now, key_id])?;
+            Ok((changed, links))
         })?;
         if changed == 0 {
             return Err(AuthError::KeyNotFound {
@@ -465,7 +472,7 @@ impl Auth {
             });
         }
         self.revoked_some();
-        Ok(())
+        Ok(links)
     }
 
     /// Retires the owner key pre-release CLIs minted on first use: a human key named "owner", admin on every machine,

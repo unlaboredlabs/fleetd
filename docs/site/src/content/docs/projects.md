@@ -628,6 +628,7 @@ to* that hub), and click **Make a link key**:
    at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
 
 The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
+Signing out the device you made a link on revokes the link too.
 An admin sees everyone's on **Settings › Hub › People**, under **Hub links**, each with the person it acts as.
 
 **On the project's hub.** Open the project's settings, **Linked hubs**, and click **Link a hub**. Paste what you
@@ -643,7 +644,7 @@ project of theirs*), and one word for its state:
 |---|---|
 | Working | Its last call went through. |
 | Can't reach | This hub can't reach the other one. The row gives the address and the reason, such as *connection refused*. A link needs the other hub reachable from this one over a tailnet or HTTPS. |
-| Revoked | The other hub refused the key: it was revoked there, or you left that hub. Remove it, or make a new key there and add it. |
+| Revoked | The other hub refused the key: it was revoked there, the device it was made on was signed out, or you left that hub. Remove it, or make a new key there and add it. |
 
 **Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
 notice says so: its link stays listed there until someone revokes it, but nothing can use it.

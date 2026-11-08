@@ -91,7 +91,7 @@ vaults fleetd's service account doesn't read.
 Every human key belongs to a [person](/docs/people) with a hub role: owner, admin or member. A device never holds
 more than its person's role allows: a member's device operates, even one paired with `admin`. Only owners and admins
 invite people, change roles and change hub-wide settings, and the hub always keeps an owner. Removing a person
-revokes all their devices at once.
+revokes all their devices at once, and with them the [hub links](#hub-links) they made.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
 before. A shared project is open to everyone on the hub, so give a hub only to people you trust with every shared project
@@ -180,7 +180,7 @@ hub into a team hub. You make it on the hub it reaches and add it to the project
 | Rule | Detail |
 |---|---|
 | It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
-| Revoking a device leaves its links | By design, revoking a lost device doesn't stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, in **Settings › Hubs**, **Hub links**, on that hub. |
+| It goes with its device | Revoking a device (signing it out, or `fleetd hub key revoke`) revokes every link made on it in the same step, so a lost device leaves no link working behind it. The sign-out confirm says how many go. Links made on your other devices keep working. |
 | It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
 | Its messages are never your answer | They go into the project's chat as "*you* via *label*", an agent's input, like any message from another project's lead. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the project that asks, its chat or its title. |

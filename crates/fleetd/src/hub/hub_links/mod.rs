@@ -274,17 +274,16 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
             row.prefix
         )));
     }
+    let device = hub.auth.get(&row.key_id).map_err(failed)?;
     // The person who made it: as stored at minting, or its device's for a link minted before people.
     let person_id = match row.person().map_err(failed)? {
         Some(p) => Some(p.person_id),
-        None => hub
-            .auth
-            .get(&row.key_id)
-            .map_err(failed)?
-            .and_then(|d| d.person)
-            .map(|p| p.person_id),
+        None => device
+            .as_ref()
+            .and_then(|d| d.person.as_ref())
+            .map(|p| p.person_id.clone()),
     };
-    let (person, grants, who) = match person_id {
+    let someone = match person_id {
         Some(id) => {
             let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
             let Some(someone) = people
@@ -297,15 +296,24 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
                     row.prefix
                 )));
             };
+            Some(someone)
+        }
+        None => None,
+    };
+    // It dies with the device that made it (D337): revoking a device revokes its links too, and this refuses one
+    // whose device was revoked before that.
+    let Some(device) = device.filter(|d| d.revoked_at.is_none()) else {
+        return Err(dead(format!(
+            "The device that made link {} was revoked on this hub, and the link with it.",
+            row.prefix
+        )));
+    };
+    let (person, grants, who) = match someone {
+        Some(someone) => {
             // The device's grants at minting; a link from before they were kept reads its device's now.
             let minted: Vec<Grant> = match &row.grants {
                 Some(json) => serde_json::from_str(json).map_err(|e| failed(e.into()))?,
-                None => hub
-                    .auth
-                    .get(&row.key_id)
-                    .map_err(failed)?
-                    .map(|d| d.grants)
-                    .unwrap_or_default(),
+                None => device.grants,
             };
             let cap = crate::hub::people::role_cap(someone.role);
             (
@@ -314,21 +322,12 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
                 someone.name.to_string(),
             )
         }
-        // No person behind it: its device's grants, and it dies with its device.
-        None => {
-            let device = hub.auth.get(&row.key_id).map_err(failed)?;
-            let Some(device) = device.filter(|d| d.revoked_at.is_none()) else {
-                return Err(dead(format!(
-                    "The device that made link {} was revoked on this hub, and the link with it.",
-                    row.prefix
-                )));
-            };
-            (
-                None,
-                link_grants(&device.grants, Role::Operate),
-                device.name,
-            )
-        }
+        // No person behind it: its device's grants.
+        None => (
+            None,
+            link_grants(&device.grants, Role::Operate),
+            device.name,
+        ),
     };
     if row
         .last_used_ms

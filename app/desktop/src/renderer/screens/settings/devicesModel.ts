@@ -2,7 +2,7 @@
 // pairing code has left, and the QR of its link. The hub decides who sees which devices (people_list) and what the link
 // carries (pair_code_create: a one-time code and an address a phone reaches, never loopback); these only present it.
 import { encode } from "uqr";
-import type { AgentKeyInfo, PeopleListOutput } from "../../../shared/contracts";
+import type { AgentKeyInfo, IssuedLink, PeopleListOutput } from "../../../shared/contracts";
 
 /** Your own devices, oldest first; none for a key with no person. */
 export const yourDevices = (read: PeopleListOutput | undefined): AgentKeyInfo[] =>
@@ -42,3 +42,11 @@ export function qrPath(text: string): { size: number; path: string } {
 /** "Paired today 10:02 · last used yesterday 16:40". */
 export const deviceLine = (d: AgentKeyInfo, when: (iso: string) => string): string =>
   d.lastUsedAt === undefined ? `Paired ${when(d.createdAt)}` : `Paired ${when(d.createdAt)} · last used ${when(d.lastUsedAt)}`;
+
+/** How many live hub links `keyId` made: signing it out revokes them with it (D337). */
+export const linksMadeOn = (issued: ReadonlyArray<IssuedLink> | undefined, keyId: string): number =>
+  (issued ?? []).filter((l) => l.keyId === keyId && l.revokedAt === undefined).length;
+
+/** The sign-out confirm's line: it stops at once, with the hub links made on it. */
+export const signOutLine = (links: number): string =>
+  `It stops working on this hub at once.${links === 0 ? "" : ` It also removes the ${links === 1 ? "hub link" : `${String(links)} hub links`} made on it.`} To use it again, pair it again.`;

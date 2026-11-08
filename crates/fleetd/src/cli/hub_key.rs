@@ -27,7 +27,8 @@ pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|o
              human's; role defaults to operate on every machine
   hub key list
   hub key revoke <keyId>
-             takes effect at once, also on a running hub
+             takes effect at once, also on a running hub; the hub links made on that device
+             are revoked with it
 "#;
 
 /// The hub home's database, opened beside a running hub.
@@ -325,22 +326,30 @@ fn hub_key_at(argv: &[String], home: Option<&str>) -> CliResult {
                 return key_usage("revoke needs a key id (see `fleetd hub key list`)");
             };
             with_hub(home, |hub| match hub.auth.revoke(key_id) {
-                Ok(()) => match hub.release_claims(key_id) {
-                    Ok(released) if released.is_empty() => CliResult {
-                        code: 0,
-                        stdout: format!("revoked {key_id}\n"),
-                        stderr: String::new(),
-                    },
-                    Ok(released) => CliResult {
-                        code: 0,
-                        stdout: format!("revoked {key_id}; released {}\n", released.join(", ")),
-                        stderr: String::new(),
-                    },
-                    Err(error) => fail(
-                        1,
-                        &format!("revoked {key_id}, but its claims were not released: {error}"),
-                    ),
-                },
+                Ok(links) => {
+                    // The hub links minted from it went with it.
+                    let revoked = match links {
+                        0 => format!("revoked {key_id}"),
+                        1 => format!("revoked {key_id} and its hub link"),
+                        n => format!("revoked {key_id} and its {n} hub links"),
+                    };
+                    match hub.release_claims(key_id) {
+                        Ok(released) if released.is_empty() => CliResult {
+                            code: 0,
+                            stdout: format!("{revoked}\n"),
+                            stderr: String::new(),
+                        },
+                        Ok(released) => CliResult {
+                            code: 0,
+                            stdout: format!("{revoked}; released {}\n", released.join(", ")),
+                            stderr: String::new(),
+                        },
+                        Err(error) => fail(
+                            1,
+                            &format!("{revoked}, but its claims were not released: {error}"),
+                        ),
+                    }
+                }
                 Err(error @ AuthError::KeyNotFound { .. }) => fail(1, &error.to_string()),
                 Err(error) => fail(1, &error.to_string()),
             })
@@ -515,5 +524,46 @@ mod tests {
         let released = work.get(&claim.claim_id).unwrap().unwrap();
         assert_eq!(released.state, ClaimState::Released);
         assert_eq!(released.end.unwrap().reason.as_str(), "its key was revoked");
+    }
+
+    /// Revoking a device revokes the hub links minted from it (D337), and says how many.
+    #[test]
+    fn revoking_a_key_revokes_its_hub_links() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        assert_eq!(create(h, &["--human", "--name", "laptop"]).code, 0);
+        let hub = open_hub(home.path()).unwrap();
+        let key_id = hub.auth.list().unwrap()[0].key_id.to_string();
+        hub.db
+            .with(|c| {
+                for (link, revoked) in [("l1", None), ("l2", None), ("l3", Some(1))] {
+                    c.execute(
+                        "INSERT INTO hub_links_issued (link_id, hash, prefix, label, key_id, device, created_ms, \
+                         revoked_ms) VALUES (?1, ?1, 'flk_abcdef', 'home', ?2, 'laptop', 0, ?3)",
+                        rusqlite::params![link, key_id, revoked],
+                    )?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        let revoked = hub_key_at(&["revoke".to_owned(), key_id.clone()], Some(h));
+        assert_eq!(
+            (revoked.code, revoked.stdout.as_str()),
+            (
+                0,
+                format!("revoked {key_id} and its 2 hub links\n").as_str()
+            )
+        );
+        let live: i64 = hub
+            .db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM hub_links_issued WHERE revoked_ms IS NULL",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(live, 0);
     }
 }

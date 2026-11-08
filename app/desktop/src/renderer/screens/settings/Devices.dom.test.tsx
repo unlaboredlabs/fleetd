@@ -2,11 +2,12 @@
 // Settings › You › Your devices: only your own devices; Pair a phone mints a code with the address this app reaches the
 // hub at, shows its link as a QR with the address and code as text and how long it lasts, and notices the phone once
 // it has paired (key.paired); a hub only on loopback is refused with its fix, and an expired code offers a new one.
-// Each device but this one signs out once confirmed (device_revoke), and leaves the list.
+// Each device but this one signs out once confirmed (device_revoke), and leaves the list; the confirm says how many hub
+// links made on it go with it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentKeyInfo, PeopleListOutput, Person } from "../../../shared/contracts";
+import type { AgentKeyInfo, IssuedLink, PeopleListOutput, Person } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -31,17 +32,28 @@ const device = (keyId: string, name: string, p: Person): AgentKeyInfo => ({
   createdAt: AT,
   person: { personId: p.personId, name: p.name },
 });
+const link = (linkId: string, keyId: string, revoked = false): IssuedLink => ({
+  linkId,
+  keyId,
+  device: keyId,
+  label: "home",
+  prefix: "flk_abcdef",
+  createdAt: AT,
+  ...(revoked ? { revokedAt: AT } : {}),
+});
 const LINK = "fleetd://pair?hub=http%3A%2F%2Fdevbox.tail1234.ts.net%3A4790&code=ABCD-2345";
 
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let people: PeopleListOutput;
+let issued: IssuedLink[];
 let pairCode: () => CallOutcome;
 let send: (frame: HubFrame) => void;
 
 beforeEach(() => {
   calls = [];
+  issued = [];
   people = { people: [sam, alice], devices: [device("k1", "MacBook", sam), device("k2", "ThinkPad", alice)], invites: [], me: sam.personId };
   pairCode = () => ({
     ok: true,
@@ -71,6 +83,7 @@ const render = async (appUrl = "http://devbox.tail1234.ts.net:4790") => {
       calls.push({ tool, input });
       if (tool === "people_list") return Promise.resolve({ ok: true, output: people });
       if (tool === "pair_code_create") return Promise.resolve(pairCode());
+      if (tool === "hub_links_get") return Promise.resolve({ ok: true, output: { links: [], issued, boxPubKey: "box" } });
       if (tool === "device_revoke") {
         const keyId = (input as { keyId: string }).keyId;
         const gone = people.devices.find((d) => d.keyId === keyId);
@@ -200,7 +213,7 @@ it("signs out another device once confirmed, never this one", async () => {
 
   // Cancel sends nothing.
   await click(button("Sign out", row("iPhone")));
-  expect(document.body.textContent).toContain("It stops working on this hub at once.");
+  expect(document.body.textContent).toContain("It stops working on this hub at once. To use it again, pair it again.");
   await click(button("Cancel", document));
   expect(sent("device_revoke")).toEqual([]);
   expect(rows()).toEqual(["MacBook", "iPhone"]);
@@ -210,6 +223,15 @@ it("signs out another device once confirmed, never this one", async () => {
   expect(sent("device_revoke")).toEqual([{ keyId: "k3" }]);
   for (let i = 0; i < 3; i++) await settle();
   expect(rows()).toEqual(["MacBook"]);
+});
+
+it("says the hub links made on a device go with it", async () => {
+  people = { ...people, devices: [...people.devices, device("k3", "iPhone", sam)], thisDevice: "k1" };
+  issued = [link("l1", "k3"), link("l2", "k3"), link("l3", "k3", true), link("l4", "k1")];
+  await render();
+  await click(button("Sign out", row("iPhone")));
+  for (let i = 0; i < 3; i++) await settle();
+  expect(document.body.textContent).toContain("It also removes the 2 hub links made on it.");
 });
 
 it("offers no sign-out on a hub that doesn't say which device this is", async () => {
