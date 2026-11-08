@@ -1,7 +1,7 @@
 // The M1 MCP tools over the executor and the caches it fills: fleetd_status, project_get, thread_tail and
 // actions_list (crates/fleetd/src/hub/executor/tools.rs). Later areas add to fleetd_status and project_get through
 // `executorHooks` (slots, lead, workstreams, tasks, trains).
-import type { HubEvent, Machine, MachineId, ProjectRef, ProjectSummary, ThreadRef } from "../../shared/contracts.ts";
+import type { HubEvent, Machine, MachineId, ProjectChatState, ProjectRef, ProjectSummary, SlotState, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
@@ -12,6 +12,9 @@ import { about, among, others } from "../navi/owner.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { chat } from "../chat/index.ts";
+import { leadWorking } from "../chat/flow.ts";
+import { slots } from "../slots/index.ts";
 import { executorHooks } from "./hooks.ts";
 import { ExecutorError, executors } from "./index.ts";
 import { toThread } from "./shell_mapper.ts";
@@ -67,6 +70,31 @@ function attention(hub: Hub, caller: Caller, head: number): HubEvent[] {
   }
 }
 
+/** The slot board, its rows kept to the machines the caller reads (serve/wire.rs `extend_tools`). */
+function slotBoard(hub: Hub, caller: Caller): SlotState {
+  const board = slots(hub).state();
+  return {
+    ...board,
+    perProject: board.perProject.filter((row) => readable(caller, row.projectRef.machineId)),
+    ...(board.perMachine ? { perMachine: board.perMachine.filter((row) => readable(caller, row.machineId)) } : {}),
+  };
+}
+
+/** Each readable project's chat state, the first 50 projects shown (chat/flow.rs `states`, chat/tools.rs). */
+function chatStates(hub: Hub, caller: Caller, navis: ReturnType<typeof others>): ProjectChatState[] {
+  const out: ProjectChatState[] = [];
+  for (const p of store(hub).projectsShown().slice(0, 50)) {
+    const r = { machineId: p.machineId, projectId: p.projectId };
+    if (!readable(caller, r.machineId) || navis.has(r)) continue;
+    try {
+      out.push(chat(hub).state(r, leadWorking(hub, r)));
+    } catch (error) {
+      console.warn(`chat state of ${r.projectId} not read: ${(error as Error).message}`);
+    }
+  }
+  return out;
+}
+
 async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, unknown>> {
   const cursor = events(hub).head();
   const machines = store(hub)
@@ -85,6 +113,9 @@ async function fleetdStatus(hub: Hub, caller: Caller): Promise<Record<string, un
     cursor,
     notify: notifyPolicy(hub),
     next: `Call events_wait with cursor ${cursor} to wait for changes, or project_get for one project's outcome.`,
+    // Rust's two status hooks (serve/wire.rs `extend_tools`, chat/tools.rs `extend_status`): always present.
+    slots: slotBoard(hub, caller),
+    chats: chatStates(hub, caller, navis),
   };
   for (const hook of executorHooks(hub).status) Object.assign(out, await hook(hub, caller));
   if (shown.truncated) out.truncated = true;
