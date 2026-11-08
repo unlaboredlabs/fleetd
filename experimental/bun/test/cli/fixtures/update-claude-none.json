@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "Claude Code is not installed here: install 2.1.314 with `curl -fsSL https://claude.ai/install.sh | bash -s 2.1.314`\n",
+  "stderr": ""
+}

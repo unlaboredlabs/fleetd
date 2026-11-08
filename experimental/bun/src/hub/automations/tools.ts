@@ -7,6 +7,8 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { job } from "../memory/refresh.ts";
+import { store } from "../store/hub_store.ts";
 import { automations, type Edit, RUNS_KEPT, webhookUrl } from "./index.ts";
 
 /** Who a call is by, as the automation and its runs record it. */
@@ -37,7 +39,13 @@ export function register(tools: Registry): void {
   tools.add("automation_list", (hub, caller, input) => {
     requireRole(caller, "read", input.projectRef.machineId);
     const list = automations(hub).list(input.projectRef);
-    return { automations: list, ...(list.length === 0 ? { next: "No automations yet; automation_create makes one." } : {}) };
+    // A project the hub doesn't know has no refresh to list.
+    const refresh = store(hub).projectGet(input.projectRef) ? job(hub, input.projectRef) : undefined;
+    return {
+      automations: list,
+      ...(refresh === undefined ? {} : { memoryRefresh: refresh }),
+      ...(list.length === 0 ? { next: "No automations yet; automation_create makes one." } : {}),
+    };
   });
 
   tools.add("automation_create", (hub, caller, input) => {

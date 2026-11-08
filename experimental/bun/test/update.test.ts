@@ -66,7 +66,7 @@ test("a build lands only when it matches its SHA256SUMS line, resuming a cut-off
   const feed = new HttpFeed(`${base}/rel`);
   const path = join(home.dir, "fleetd.next");
   await verifiedTo(feed, "fleetd-linux-x64", path);
-  expect(new Uint8Array(readFileSync(path))).toEqual(build);
+  expect(Buffer.compare(readFileSync(path), Buffer.from(build))).toBe(0);
   expect(downloads).toBe(2);
   const bad = join(home.dir, "bad");
   const failed = await verifiedTo(feed, "fleetd-bad", bad).catch((e) => e as Failure);

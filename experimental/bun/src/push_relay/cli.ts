@@ -1,15 +1,40 @@
 // `fleetd push-relay` (crates/fleetd/src/cli/push_relay.rs): `set <url|off>` points the hub's phone notifications at
 // a relay (push_relay_set), the relay's key sealed here to the hub's box key; with no argument it runs a relay.
 import { readFileSync } from "node:fs";
-import { NotImplemented } from "../shared/errors.ts";
+import { isIP } from "node:net";
 import { seal } from "../shared/sealed_box.ts";
 import { ArgError, parse, type Parsed } from "../cli/args.ts";
 import { eprintln, ioMessage, println } from "../cli/common.ts";
 import { Exit, Hub } from "../cli/time.ts";
 import { PUSH_RELAY_USAGE } from "../cli/usages.ts";
-export { PUSH_RELAY_USAGE };
+export { PUSH_RELAY_USAGE, DEFAULT_LISTEN };
 
-export const DEFAULT_LISTEN = "127.0.0.1:4795";
+import { DEFAULT_LISTEN, Relay, serve } from "./index.ts";
+
+/** `<ip>:<port>`, as Rust's SocketAddr parses it: an IPv4 address, or an IPv6 one in brackets. */
+export function parseSocketAddr(text: string): [string, number] | undefined {
+  const m = /^(?:\[([0-9a-fA-F:.]+)\]|(\d{1,3}(?:\.\d{1,3}){3})):(\d{1,5})$/.exec(text);
+  if (!m) return undefined;
+  const host = m[1] ?? m[2]!;
+  const port = Number(m[3]);
+  if (port > 65535 || isIP(host) === 0) return undefined;
+  return [host, port];
+}
+
+async function serveCommand(listen: string): Promise<number> {
+  const addr = parseSocketAddr(listen);
+  if (!addr) {
+    eprintln(`fleetd push-relay: --listen must be <ip>:<port>, got '${listen}'`);
+    return 2;
+  }
+  try {
+    await serve(addr[0], addr[1], Relay.fromEnv());
+    return 0;
+  } catch (error) {
+    eprintln(`fleetd push-relay: ${(error as Error).message}`);
+    return 1;
+  }
+}
 
 export async function pushRelayCommand(argv: string[]): Promise<number> {
   const v = parse(argv, {
@@ -21,7 +46,7 @@ export async function pushRelayCommand(argv: string[]): Promise<number> {
     return 2;
   }
   const p = v.positionals;
-  if (p.length === 0) throw new NotImplemented("src/push_relay: fleetd push-relay (the relay server)");
+  if (p.length === 0) return serveCommand(v.str("listen") ?? DEFAULT_LISTEN);
   if (p.length === 2 && p[0] === "set") return set(v, p[1]!);
   process.stderr.write(`fleetd: push-relay takes \`set <url|off>\` or nothing\n\nusage:\n${PUSH_RELAY_USAGE}`);
   return 2;

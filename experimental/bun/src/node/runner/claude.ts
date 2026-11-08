@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { homeDir, type Env } from "../util.ts";
 import type { Effort } from "../../shared/contracts.ts";
+import { autoupdaterOff } from "./install.ts";
+import { accountOverrides, loginLabel, proxyOf } from "./claude/setup.ts";
 import type { RunnerInfo, RuntimeMode, SessionRole } from "../sessions/types.ts";
 
 /** Every profile's own model (guide.rs MODEL). */
@@ -226,7 +228,17 @@ const probeEnv = (env: Env): Env => {
 
 /** The zero-cost probe: `claude --version`, then one stream-json `initialize`, stdin closed after the answer. */
 export async function probe(binary: string, env: Env): Promise<RunnerInfo> {
-  const info: RunnerInfo = { runner: "claude", supported: SUPPORTED, versionOk: false, login: "unknown", configDir: configDir(env), accountOverrides: [] };
+  const info: RunnerInfo = {
+    runner: "claude",
+    supported: SUPPORTED,
+    versionOk: false,
+    login: "unknown",
+    configDir: configDir(env),
+    selfUpdate: !autoupdaterOff(join(configDir(env), "settings.json")),
+    accountOverrides: accountOverrides(env),
+  };
+  const proxy = proxyOf(env);
+  if (proxy) [info.proxy, info.proxySource] = [proxy.url, proxy.source];
   let version: string;
   try {
     const proc = Bun.spawn([binary, "--version"], { env: probeEnv(env), cwd: tmpdir(), stdin: "ignore", stdout: "pipe", stderr: "pipe" });
@@ -253,10 +265,14 @@ export async function probe(binary: string, env: Env): Promise<RunnerInfo> {
       info.conformanceOk = false;
       problems.push(`\`claude --version\` and the running claude disagree (${version} vs ${reported}): two installs on PATH? Fix: ${INSTALL_FIX}`);
     }
-    const [login, kind] = loginOf((answer.account ?? {}) as Account);
+    const account = (answer.account ?? {}) as Account;
+    const [login, kind] = loginOf(account);
     info.login = login;
     info.loginKind = kind;
-    if (login === "logged_out") problems.push("claude is not logged in. Fix: run `claude` on this machine and log in");
+    const label = loginLabel(account);
+    if (label) info.loginLabel = label;
+    if (login === "logged_out")
+      problems.push(`claude is not logged in. Fix: ${info.proxy ? "log in with your proxy as you normally do" : "run `claude` on this machine and log in"}`);
   } catch (error) {
     info.conformanceOk = false;
     problems.push(`${(error as Error).message} This claude's stream-json differs from the one fleetd was tested with. Fix: claude install ${TESTED}`);

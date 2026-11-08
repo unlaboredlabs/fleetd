@@ -8,8 +8,8 @@
 // Undo; a night that changed nothing posts nothing. A session that fails, or still runs after RUN_LIMIT_MS, is
 // stopped. The Automations page lists it as a built-in row (`job`), whose Run now starts one at once (`runNow`).
 //
-// Sessions start and stop through a `Launcher`, as in Rust: `refreshPorts(hub).launcher`, which the executor's
-// launch and stop fill once they are ported; tests set their own.
+// Sessions start and stop through a `Launcher`, as in Rust: `refreshPorts(hub).launcher`, the executor's launch and stop
+// by default; tests set their own.
 import type {
   AutomationRunState,
   AutomationTrigger,
@@ -31,6 +31,8 @@ import { isPool } from "../cloud/outbox.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { leads } from "../leads/index.ts";
 import { clip } from "../leads/text.ts";
+import { launch, type LaunchInput, type LaunchOptions } from "../executor/sessions.ts";
+import { stop } from "../executor/stop.ts";
 import { link } from "../link/index.ts";
 import { profiles } from "../projects/profiles.ts";
 import { projectSettings } from "../projects/settings.ts";
@@ -64,26 +66,6 @@ const MEMORY_REFRESH_OPS = ["memory_read", "remember", "forget"];
 /** The tools a refresh session may use, and nothing else: fleetd's memory calls. */
 export const allowedTools = () => MEMORY_REFRESH_OPS.map((op) => `mcp__fleetd__${op}`);
 
-/** A session's launch (executor `LaunchInput`), as the executor's launch takes it. */
-export type LaunchInput = {
-  projectId: string;
-  prompt: string;
-  systemPrompt?: string;
-  profile: string;
-  runtimeMode: "approval_required" | "full_access";
-  title?: string;
-  clientRequestId: string;
-};
-
-/** How it starts (executor `LaunchOptions`, the parts a refresh and an import set). */
-export type LaunchOptions = {
-  role: "lead" | "plain";
-  mcpRole?: "lead";
-  mcp: { userServers: boolean; servers: never[] };
-  onlyTools: string[];
-  claudeAccount?: unknown;
-};
-
 /** How a refresh session starts: the lead's fleetd tools, only `allowedTools` usable, and fleetd's MCP server alone. */
 export const launchOptions = (): LaunchOptions => ({
   role: "lead",
@@ -100,8 +82,6 @@ export type Launcher = {
   stop(thread: ThreadRef): Promise<void>;
 };
 
-export const LAUNCH_NOT_PORTED = "the Bun hub can't start sessions for it yet (src/hub/executor: launch)";
-
 /** What the refresh reaches in other areas: the launcher, and the node's capabilities (link `node_can`/`node_lacks`). */
 export type RefreshPorts = {
   launcher: Launcher;
@@ -109,14 +89,12 @@ export type RefreshPorts = {
   lacks(machineId: string, cap: string): boolean;
 };
 
-/** `refreshPorts(hub).launcher = …` from the area that launches sessions; tests set the whole port. */
+/** The hub's executors, which start refresh sessions on the project's machine; tests set the whole port. */
 export const refreshPorts = (hub: Hub): RefreshPorts =>
   hub.area<RefreshPorts>("memory_refresh", (h) => ({
     launcher: {
-      launch: async () => {
-        throw new Error(LAUNCH_NOT_PORTED);
-      },
-      stop: async () => {},
+      launch: async (machineId, input, options) => (await launch(h, machineId, input, options)).threadId,
+      stop: (thread) => stop(h, thread),
     },
     can: (m, cap) => link(h).can(m, cap),
     lacks: (m, cap) => link(h).lacks(m, cap),
@@ -409,7 +387,7 @@ async function start(hub: Hub, launcher: Launcher, r: ProjectRef, title: string,
     prompt: message,
     profile,
     // Its node asks for any tool not allowed, and refuses it.
-    runtimeMode: "approval_required",
+    runtimeMode: "approval-required",
     title: [...`fleetd memory refresh: ${title}`].slice(0, 80).join(""),
     clientRequestId: `fleetd-memory:${r.machineId}/${r.projectId}:${night}`,
   };

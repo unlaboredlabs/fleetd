@@ -53,7 +53,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
-- [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
+- [x] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
 - [x] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
 - [x] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
 - [x] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
@@ -116,8 +116,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### /app websocket messages
 
-- [ ] /app client `chat` → `src/hub/chat` <!-- app:/app client `chat` -->
-- [ ] /app server `chat_delta` → `src/hub/chat` <!-- app:/app server `chat_delta` -->
+- [x] /app client `chat` → `src/hub/chat` <!-- app:/app client `chat` -->
+- [x] /app server `chat_delta` → `src/hub/chat` <!-- app:/app server `chat_delta` -->
 
 ### MCP tools (/mcp and /app `call`)
 
@@ -159,13 +159,13 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
 - [x] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
 - [x] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
-- [ ] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
-- [ ] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
+- [x] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
+- [x] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
 - [x] `profiles_list` → `src/hub/projects` (read) <!-- tool:`profiles_list` -->
 - [x] `profile_create` → `src/hub/projects` (admin) <!-- tool:`profile_create` -->
 - [x] `profile_update` → `src/hub/projects` (admin) <!-- tool:`profile_update` -->
 - [x] `profile_delete` → `src/hub/projects` (admin) <!-- tool:`profile_delete` -->
-- [ ] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
+- [x] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
 - [x] `decisions_search` → `src/hub/ledger` (read) <!-- tool:`decisions_search` -->
 - [x] `decisions_record` → `src/hub/ledger` (operate) <!-- tool:`decisions_record` -->
 - [x] `decisions_list` → `src/hub/ledger` (read) <!-- tool:`decisions_list` -->
@@ -217,8 +217,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `time_breakdown` → `src/hub/time` (read) <!-- tool:`time_breakdown` -->
 - [x] `time_insights` → `src/hub/time` (read) <!-- tool:`time_insights` -->
 - [ ] `thread_window` → `src/hub/time` (read) <!-- tool:`thread_window` -->
-- [ ] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
-- [ ] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
+- [x] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
+- [x] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
 - [ ] `chat_send` → `src/hub/chat` (operate) <!-- tool:`chat_send` -->
 - [ ] `chat_history` → `src/hub/chat` (read) <!-- tool:`chat_history` -->
 - [ ] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
@@ -235,20 +235,20 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
-- [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
+- [x] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
 - [x] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [x] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
-- [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
+- [x] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
 - [ ] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
 - [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
 - [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
 - [x] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
-- [ ] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
+- [x] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
 
 ## hub-train+github
 
@@ -291,14 +291,14 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] `mcp_settings_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_settings_set` -->
 - [x] `mcp_server_test` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_test` -->
 - [x] `mcp_oauth_start` → `src/hub/mcp_oauth` (operate) <!-- tool:`mcp_oauth_start` -->
-- [ ] `cloud_stop` → `src/hub/pool` (admin) <!-- tool:`cloud_stop` -->
-- [ ] `cloud_get` → `src/hub/pool` (read) <!-- tool:`cloud_get` -->
-- [ ] `cloud_set` → `src/hub/pool` (admin) <!-- tool:`cloud_set` -->
-- [ ] `cloud_key_set` → `src/hub/pool` (admin) <!-- tool:`cloud_key_set` -->
-- [ ] `cloud_test` → `src/hub/pool` (admin) <!-- tool:`cloud_test` -->
-- [ ] `cloud_create` → `src/hub/pool` (admin) <!-- tool:`cloud_create` -->
-- [ ] `cloud_reset` → `src/hub/pool` (admin) <!-- tool:`cloud_reset` -->
-- [ ] `cloud_resume` → `src/hub/pool` (admin) <!-- tool:`cloud_resume` -->
+- [x] `cloud_stop` → `src/hub/pool` (admin) <!-- tool:`cloud_stop` -->
+- [x] `cloud_get` → `src/hub/pool` (read) <!-- tool:`cloud_get` -->
+- [x] `cloud_set` → `src/hub/pool` (admin) <!-- tool:`cloud_set` -->
+- [x] `cloud_key_set` → `src/hub/pool` (admin) <!-- tool:`cloud_key_set` -->
+- [x] `cloud_test` → `src/hub/pool` (admin) <!-- tool:`cloud_test` -->
+- [x] `cloud_create` → `src/hub/pool` (admin) <!-- tool:`cloud_create` -->
+- [x] `cloud_reset` → `src/hub/pool` (admin) <!-- tool:`cloud_reset` -->
+- [x] `cloud_resume` → `src/hub/pool` (admin) <!-- tool:`cloud_resume` -->
 - [x] `claude_accounts_get` → `src/hub/claude_accounts` (read) <!-- tool:`claude_accounts_get` -->
 - [x] `claude_hub_api_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_set` -->
 - [x] `claude_hub_api_remove` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_remove` -->
@@ -328,10 +328,10 @@ approvals, secrets, integrations, updates, cloud machines.
 
 ### Background loops
 
-- [ ] hub loop `cloud::catch_up::run` → `src/hub/cloud` <!-- loop:hub loop `cloud::catch_up::run` -->
+- [x] hub loop `cloud::catch_up::run` → `src/hub/cloud` <!-- loop:hub loop `cloud::catch_up::run` -->
 - [x] hub loop `mcp_oauth::run_renew` → `src/hub/mcp_oauth` <!-- loop:hub loop `mcp_oauth::run_renew` -->
 - [x] hub loop `mcp_servers::tools::run_forget` → `src/hub/mcp_servers` <!-- loop:hub loop `mcp_servers::tools::run_forget` -->
-- [ ] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
+- [x] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
 - [x] hub loop `updates.prefetch_loop` → `src/hub/update` <!-- loop:hub loop `updates.prefetch_loop` -->
 - [x] hub loop `updates.resume` → `src/hub/update` <!-- loop:hub loop `updates.resume` -->
 
@@ -503,23 +503,23 @@ every `fleetd` command.
 - [x] `fleetd chat history` → `src/cli/chat` <!-- cli:`fleetd chat history` -->
 - [x] `fleetd cloud stop` → `src/cli/cloud` <!-- cli:`fleetd cloud stop` -->
 - [x] `fleetd doctor` → `src/cli/setup` <!-- cli:`fleetd doctor` -->
-- [ ] `fleetd github-app` → `src/cli/github_app` <!-- cli:`fleetd github-app` -->
-- [ ] `fleetd github-app create` → `src/cli/github_app` <!-- cli:`fleetd github-app create` -->
-- [ ] `fleetd github-app remove` → `src/cli/github_app` <!-- cli:`fleetd github-app remove` -->
-- [ ] `fleetd github-app test` → `src/cli/github_app` <!-- cli:`fleetd github-app test` -->
+- [x] `fleetd github-app` → `src/cli/github_app` <!-- cli:`fleetd github-app` -->
+- [x] `fleetd github-app create` → `src/cli/github_app` <!-- cli:`fleetd github-app create` -->
+- [x] `fleetd github-app remove` → `src/cli/github_app` <!-- cli:`fleetd github-app remove` -->
+- [x] `fleetd github-app test` → `src/cli/github_app` <!-- cli:`fleetd github-app test` -->
 - [x] `fleetd help` → `src/cli` <!-- cli:`fleetd help` -->
 - [x] `fleetd hub key create` → `src/cli/hub_key` <!-- cli:`fleetd hub key create` -->
 - [x] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
 - [x] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
 - [ ] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
 - [ ] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
-- [ ] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
+- [x] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
 - [x] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
 - [x] `fleetd invite list` → `src/cli/people` <!-- cli:`fleetd invite list` -->
 - [x] `fleetd invite revoke` → `src/cli/people` <!-- cli:`fleetd invite revoke` -->
 - [x] `fleetd mac` → `src/cli/mac_tool` <!-- cli:`fleetd mac` -->
-- [ ] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
-- [ ] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
+- [x] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
+- [x] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
 - [x] `fleetd machine set` → `src/cli/setup` <!-- cli:`fleetd machine set` -->
 - [x] `fleetd metrics` → `src/cli/metrics` <!-- cli:`fleetd metrics` -->
 - [x] `fleetd navi` → `src/cli/navi` <!-- cli:`fleetd navi` -->
@@ -531,7 +531,7 @@ every `fleetd` command.
 - [ ] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
 - [ ] `fleetd node grants` → `src/cli/node` <!-- cli:`fleetd node grants` -->
 - [x] `fleetd node join` → `src/cli/node` <!-- cli:`fleetd node join` -->
-- [ ] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
+- [x] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
 - [x] `fleetd node run` → `src/cli/node` <!-- cli:`fleetd node run` -->
 - [x] `fleetd pair` → `src/cli/pair` <!-- cli:`fleetd pair` -->
 - [x] `fleetd people` → `src/cli/people` <!-- cli:`fleetd people` -->
@@ -549,12 +549,12 @@ every `fleetd` command.
 - [x] `fleetd project set` → `src/cli/project` <!-- cli:`fleetd project set` -->
 - [x] `fleetd project stop` → `src/cli/project` <!-- cli:`fleetd project stop` -->
 - [x] `fleetd project unarchive` → `src/cli/project` <!-- cli:`fleetd project unarchive` -->
-- [ ] `fleetd prompts diff` → `src/cli/prompts` <!-- cli:`fleetd prompts diff` -->
-- [ ] `fleetd prompts edit` → `src/cli/prompts` <!-- cli:`fleetd prompts edit` -->
-- [ ] `fleetd prompts list` → `src/cli/prompts` <!-- cli:`fleetd prompts list` -->
-- [ ] `fleetd prompts reset` → `src/cli/prompts` <!-- cli:`fleetd prompts reset` -->
-- [ ] `fleetd prompts show` → `src/cli/prompts` <!-- cli:`fleetd prompts show` -->
-- [ ] `fleetd push-relay` → `src/push_relay` <!-- cli:`fleetd push-relay` -->
+- [x] `fleetd prompts diff` → `src/cli/prompts` <!-- cli:`fleetd prompts diff` -->
+- [x] `fleetd prompts edit` → `src/cli/prompts` <!-- cli:`fleetd prompts edit` -->
+- [x] `fleetd prompts list` → `src/cli/prompts` <!-- cli:`fleetd prompts list` -->
+- [x] `fleetd prompts reset` → `src/cli/prompts` <!-- cli:`fleetd prompts reset` -->
+- [x] `fleetd prompts show` → `src/cli/prompts` <!-- cli:`fleetd prompts show` -->
+- [x] `fleetd push-relay` → `src/push_relay` <!-- cli:`fleetd push-relay` -->
 - [x] `fleetd push-relay set` → `src/push_relay` <!-- cli:`fleetd push-relay set` -->
 - [x] `fleetd status` → `src/cli/status` <!-- cli:`fleetd status` -->
 - [x] `fleetd steer` → `src/cli/steer` <!-- cli:`fleetd steer` -->
@@ -562,8 +562,8 @@ every `fleetd` command.
 - [x] `fleetd steers` → `src/cli/steer` <!-- cli:`fleetd steers` -->
 - [x] `fleetd time` → `src/cli/time` <!-- cli:`fleetd time` -->
 - [x] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
-- [ ] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
-- [ ] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
+- [x] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
+- [x] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
 - [x] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
 - [x] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->
 - [x] `fleetd usage` → `src/cli/usage` <!-- cli:`fleetd usage` -->
@@ -589,16 +589,16 @@ every `fleetd` command.
 
 ### Lead calls (agent-mcp → node → hub)
 
-- [ ] lead call `brief_create` → `src/hub/lead_calls` <!-- lead:lead call `brief_create` -->
+- [x] lead call `brief_create` → `src/hub/lead_calls` <!-- lead:lead call `brief_create` -->
 - [x] lead call `request_secret` → `src/hub/lead_calls` <!-- lead:lead call `request_secret` -->
 - [x] lead call `request_withdraw` → `src/hub/lead_calls` <!-- lead:lead call `request_withdraw` -->
 - [x] lead call `decide` → `src/hub/lead_calls` <!-- lead:lead call `decide` -->
 - [x] lead call `decisions_search` → `src/hub/lead_calls` <!-- lead:lead call `decisions_search` -->
 - [ ] lead call `task_spawn` → `src/hub/lead_calls` <!-- lead:lead call `task_spawn` -->
 - [ ] lead call `task_list` → `src/hub/lead_calls` <!-- lead:lead call `task_list` -->
-- [ ] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
+- [x] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
 - [ ] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
-- [ ] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
+- [x] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
 - [ ] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
 - [ ] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
 - [x] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->

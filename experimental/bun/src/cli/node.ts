@@ -4,6 +4,7 @@
 import { NotImplemented } from "../shared/errors.ts";
 import { ArgError, parse } from "./args.ts";
 import { ioMessage } from "./common.ts";
+import { currentExe } from "./setup/shared.ts";
 import { NODE_USAGE } from "./usages.ts";
 import { readFileSync } from "node:fs";
 
@@ -22,6 +23,21 @@ async function readTokenFile(file: string): Promise<string> {
 }
 
 const SECONDS = /^\+?[0-9]+$/;
+
+/** Waits until process `pid` has ended (an hour at most), then long enough for the node to keep and send its result. */
+async function restartAfter(pid: number, answerWaitMs: number) {
+  const started = Date.now();
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "EPERM";
+    }
+  };
+  while (alive() && Date.now() - started < 3_600_000) await Bun.sleep(100);
+  await Bun.sleep(answerWaitMs);
+}
 
 export async function nodeCommand(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -89,7 +105,28 @@ export async function nodeCommand(argv: string[]): Promise<number> {
     case "restart": {
       const after = v.str("after");
       if (after !== undefined && !/^[+-]?[0-9]+$/.test(after)) return usage("--after takes a process id");
-      throw new NotImplemented("src/update/service: fleetd node restart");
+      const { restart, services, isHubService } = await import("../update/service.ts");
+      const { ANSWER_WAIT_MS } = await import("../update/finish.ts");
+      let exe: string | undefined;
+      try {
+        exe = currentExe();
+      } catch {}
+      const service = exe === undefined ? undefined : services(exe).find((s) => !isHubService(s));
+      if (service === undefined) {
+        process.stderr.write("fleetd: no node service of this fleetd here. Fix: fleetd init --join sets one up\n");
+        return 1;
+      }
+      if (after !== undefined) await restartAfter(Number(after), ANSWER_WAIT_MS);
+      try {
+        restart(service);
+      } catch (error) {
+        process.stderr.write(
+          `fleetd: ${(error as Error).message}. Fix: log in as this user at the machine's screen, then run fleetd node restart again\n`,
+        );
+        return 1;
+      }
+      process.stdout.write(`restarted ${service.name}\n`);
+      return 0;
     }
     case undefined:
       return usage("missing node command");

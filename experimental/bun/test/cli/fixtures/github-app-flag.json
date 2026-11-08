@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: Unknown option '--frob'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"--frob\"\n\nusage:\n  github-app\n             the hub's own GitHub App: where it is installed and its last test\n  github-app create [--org <org>] [--name <name>] [--port <port>]\n             make it on GitHub with nothing to paste: opens a page on this machine\n             (127.0.0.1) that sends GitHub the App's manifest; press Create on GitHub and\n             the hub keeps its keys, sealed. From another computer, forward the port first:\n             ssh -L <port>:127.0.0.1:<port> <this machine>\n  github-app test\n             mint a token for each installation and say where the App reaches\n  github-app remove\n             forget it; the hub's gh goes back to this machine's own login\n"
+}

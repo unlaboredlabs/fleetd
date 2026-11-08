@@ -8,6 +8,7 @@ import { fleetdDir } from "../../shared/home.ts";
 import { ArgError, parse } from "../args.ts";
 import { type Failure, type GitIdentity, ioMessage, isNoreply, mkdirPrivate, parseGitIdentity, readSetup, resolveHome, type SetupState, writeSetup } from "../common.ts";
 import { currentExe, DEFAULT_LISTEN, localDirs, localPlatform, localUid, parseListen, type Probe, probeListen, processesHolding, say, SETUP_USAGE } from "./shared.ts";
+import { type InitOptions, joinedHere, openStep, run } from "./wizard.ts";
 import { foreignUnit, renderUnit, ServiceManager, type ServiceSpec, systemdName, unitPath } from "./units.ts";
 
 const STEPS = ["address", "machines", "claude", "github", "onepassword", "people", "mac", "cloud"];
@@ -169,17 +170,6 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
   return `runs as a service and answers at ${plan.listen}`;
 }
 
-type InitOptions = {
-  home: string;
-  previous?: SetupState;
-  listen?: string;
-  url?: string;
-  identity?: GitIdentity;
-  withService: boolean;
-  yes: boolean;
-  join?: [string, string];
-  step?: string;
-};
 
 function initOptions(argv: string[]): InitOptions | number {
   const v = parse(argv, {
@@ -237,6 +227,10 @@ function initOptions(argv: string[]): InitOptions | number {
     yes: v.flag("yes"),
     ...(joinHub !== undefined ? { join: [joinHub, code!] as [string, string] } : {}),
     ...(step !== undefined ? { step } : {}),
+    ...(v.str("machine-id") === undefined ? {} : { machineId: v.str("machine-id")! }),
+    rejoin: v.flag("rejoin"),
+    mac: v.flag("mac"),
+    ...(v.str("claude-config-dir") === undefined ? {} : { claudeConfigDir: v.str("claude-config-dir")! }),
   };
 }
 
@@ -263,24 +257,15 @@ async function initPlain(opts: InitOptions): Promise<number> {
   return 0;
 }
 
-/** An enrolled node here, from its node.json. */
-function joinedHere(): boolean {
-  try {
-    return JSON.parse(readFileSync(join(fleetdDir(), "node", "node.json"), "utf8"))?.enrolled === true;
-  } catch {
-    return false;
-  }
-}
 
 export async function initCommand(argv: string[]): Promise<number> {
   const opts = initOptions(argv);
   if (typeof opts === "number") return opts;
   const terminal = process.stdin.isTTY === true && process.stderr.isTTY === true;
-  if (opts.step !== undefined) throw new NotImplemented("src/cli/setup: fleetd init --step (the wizard's steps)");
-  const joinedWorker = opts.previous === undefined && joinedHere();
-  if (opts.yes || terminal || opts.join !== undefined || joinedWorker) {
-    throw new NotImplemented("src/cli/setup: fleetd init's wizard (a terminal, --yes or --join)");
-  }
+  if (opts.step !== undefined) return openStep(opts, opts.step, terminal && !opts.yes);
+  // A worker that joined by itself is repaired, even from a script; only a fresh machine gets the plain hub setup.
+  const joinedWorker = opts.previous === undefined && joinedHere() !== undefined;
+  if (opts.yes || terminal || opts.join !== undefined || joinedWorker) return run(opts, terminal && !opts.yes);
   return initPlain(opts);
 }
 
