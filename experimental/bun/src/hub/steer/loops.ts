@@ -1,16 +1,24 @@
 // The steer area's start (crates/fleetd/src/hub/steer/mod.rs `wire`, `run_sweep`): node receipts and the offline
-// queue's expiries reach the steers, the lead's `task message` goes through them, and once a minute the sweep closes
-// steers whose receipt can't come.
+// queue's expiries reach the steers, the lead's `task message` goes through them, tasks reach the steers held for
+// their next run (`taskHooks(hub).steer`), and once a minute the sweep closes steers whose receipt can't come.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
 import { leadCalls } from "../lead_calls/index.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { taskHooks } from "../tasks/ports.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { writeQueue } from "../queue/index.ts";
-import { expired, onReceipt, send, sweep } from "./index.ts";
+import { expired, holdUnrun, onReceipt, rehold, send, sweep, takeHeld } from "./index.ts";
 
 export function start(hub: Hub): void {
   executors(hub).sinks.steer = (machineId, receipt) => onReceipt(hub, machineId, receipt);
+  // A task's next run takes the steers held for it; one that never went out, or a cut run's unrun ones, are held again.
+  // Set here, whichever area starts first: tasks read the hook at each call.
+  taskHooks(hub).steer = {
+    takeHeld: (taskId, thread, clientRequestId) => takeHeld(hub, taskId, thread, clientRequestId),
+    rehold: (id) => rehold(hub, id),
+    holdUnrun: (taskId, runId) => holdUnrun(hub, taskId, runId),
+  };
   // Steers the offline queue gave up on are closed.
   writeQueue(hub).onSteerExpired((id, reason) => expired(hub, id, reason));
   // `fleetd task message T88 "<text>" [--now]`: the lead steers its own task, with the same modes and receipts.
