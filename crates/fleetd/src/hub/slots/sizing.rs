@@ -1,14 +1,14 @@
 //! What one machine fits, from the facts its node reports with each heartbeat. Without I/O.
 //!
 //! - CPU: one agent per logical CPU less a reserve of one in eight (at least one). Most of an agent's time is spent
-//!   waiting on the model, and the guard's load clause catches the builds that do line up.
+//!   waiting on the model, and the node's build slots take the builds that do line up in turns.
 //! - Memory: 2 GB per agent (the node's `memPerAgentGb`) after a quarter of it, 4 to 16 GB, is left to the OS and the
 //!   human's own apps. Too many agents on memory fail rather than slow down, so this is usually the term that binds.
 //! - At most [`HARD_TOP`] without a person's setting: past that the login's rate limit binds anyway.
 //!
 //! This is only the default cap, for a machine no person set a number for: a setting replaces it outright, and no
-//! agent ever waits for memory it is estimated to take. What does hold new agents back is memory really in use, the
-//! guard's pause (`hub::link::guard`).
+//! agent ever waits for memory it is estimated to take, nor for memory or CPU really in use: builds wait for the node's
+//! build slots instead.
 //!
 //! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each (`diskPerAgentGb`).
 use fleetd_contracts::node_link::NodeLoad;

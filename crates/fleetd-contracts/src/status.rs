@@ -43,7 +43,7 @@ pub enum ProjectRowState {
     Working,
     /// The lead is waiting for your reply.
     WaitingOnYou,
-    /// Something outside the work stops it: its machine is offline, or at its usage limit or short of disk or CPU for
+    /// Something outside the work stops it: its machine is offline, or at its usage limit or short of disk for
     /// new agents. A red main is not one: the train keeps merging (`warning`).
     Blocked,
     /// Nothing running and nothing waiting.

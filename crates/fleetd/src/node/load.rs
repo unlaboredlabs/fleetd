@@ -1,7 +1,7 @@
 //! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in all and in use,
 //! swap in use and memory pressure (Linux), free disk where its worktrees live, the memory and disk to allow per agent, and the claude.ai usage windows its
-//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk,
-//! load or memory is past its limit.
+//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk is
+//! below its floor.
 use std::path::Path;
 use std::sync::OnceLock;
 

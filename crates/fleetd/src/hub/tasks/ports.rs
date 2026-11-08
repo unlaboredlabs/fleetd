@@ -192,7 +192,7 @@ pub trait TaskPorts: Send + Sync {
     /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it. `Ok` too
     /// when the node has no such session, so nothing of it to remove.
     fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
-    /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
+    /// NodeLinkServer.paused: why the disk guard or the usage brake holds new agents on the machine.
     fn paused(&self, machine_id: &MachineId) -> Option<String>;
     /// NodeLinkServer.node_can(CAP_DETACHED): the machine's node runs read and review tasks in worktrees of their own.
     fn detached_worktrees(&self, machine_id: &MachineId) -> bool;

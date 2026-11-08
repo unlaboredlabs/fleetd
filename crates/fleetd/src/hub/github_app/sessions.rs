@@ -353,8 +353,46 @@ pub async fn deliver_on(
     writer: bool,
     on: Option<&ProjectRef>,
 ) -> Result<(), String> {
+    hand(hub, r, order, repo_id, writer, on, false)
+        .await
+        .map(|_| ())
+}
+
+/// What a task launched while GitHub gave no token for its order is told, after its prompt: it starts anyway.
+pub const TOKEN_PENDING: &str = "GitHub gave fleetd no token for this order when you started (GitHub may be \
+    unreachable from the hub), so GH_TOKEN doesn't work yet and gh and git push fail. fleetd tries again every 5 \
+    minutes, and the token reaches your next command once GitHub answers: go on with what doesn't need GitHub, keep \
+    your work committed, and push once gh works.";
+
+/// [`deliver_on`] at a task's launch on `on`: GitHub giving no token now (it can't be reached) doesn't stop it. Its
+/// agents hold [`UNRENEWED_TOKEN`] meanwhile, never the machine's own login, under a record the sweep renews ([`renew`]),
+/// so the token comes at the first sweep GitHub answers; `Ok(Some(TOKEN_PENDING))` is what the task is told. `Err` is a
+/// refusal, as [`deliver_on`]'s.
+pub async fn deliver_at_launch(
+    hub: &Hub,
+    r: &ProjectRef,
+    order: &WorkstreamId,
+    repo_id: Option<&RepoId>,
+    writer: bool,
+    on: &ProjectRef,
+) -> Result<Option<&'static str>, String> {
+    let handed = hand(hub, r, order, repo_id, writer, Some(on), true).await?;
+    Ok((!handed).then_some(TOKEN_PENDING))
+}
+
+/// [`deliver_on`]; with `wait`, GitHub giving no token now holds [`UNRENEWED_TOKEN`] for the sweep to replace, and
+/// says so (false).
+async fn hand(
+    hub: &Hub,
+    r: &ProjectRef,
+    order: &WorkstreamId,
+    repo_id: Option<&RepoId>,
+    writer: bool,
+    on: Option<&ProjectRef>,
+    wait: bool,
+) -> Result<bool, String> {
     let Some((repo, home)) = repo_at(hub, r, repo_id) else {
-        return Ok(());
+        return Ok(true);
     };
     let checkout = match on {
         Some(on) if on.machine_id != home.machine_id => on.clone(),
@@ -362,11 +400,21 @@ pub async fn deliver_on(
     };
     let Some(github) = github_as(hub, r, Some(order), &repo) else {
         withdraw_at(hub, &checkout, order).await;
-        return Ok(());
+        return Ok(true);
     };
     let (person, margin_ms) = match &github {
         GithubAs::Person(p) => (Some(p.clone()), SESSION_MARGIN_MS),
         GithubAs::App => (None, APP_MARGIN_MS),
+    };
+    let pending = Kept {
+        r: r.clone(),
+        order: order.clone(),
+        checkout: checkout.clone(),
+        repo_id: repo_id.cloned(),
+        person: person.clone(),
+        expires_ms: now_ms(hub.clock.as_ref()),
+        margin_ms,
+        blocked: true,
     };
     let (token, expires_ms) = match &github {
         GithubAs::Person(person) => {
@@ -376,6 +424,7 @@ pub async fn deliver_on(
                 matches!(hub.github_app.account(person), Ok(Some(a)) if a.lapsed == Some(true));
             match token {
                 Ok(Some(t)) => t,
+                Err(e) if !lapsed && wait => return wait_for_token(hub, &pending, &e).await,
                 Err(e) if !lapsed => return Err(e),
                 _ if writer => {
                     return Err(format!(
@@ -387,15 +436,24 @@ pub async fn deliver_on(
                     if let Some(k) = kept_at(hub, &checkout, order) {
                         block_at(hub, &k, Block::Disconnected).await;
                     }
-                    return Ok(());
+                    return Ok(true);
                 }
             }
         }
-        GithubAs::App => hub
+        GithubAs::App => match hub
             .github_app
             .installation_token(&repo, APP_MARGIN_MS)
             .await
-            .ok_or_else(|| format!("GitHub gave the hub's App no token for {repo}"))?,
+        {
+            Some(t) => t,
+            None => {
+                let e = format!("GitHub gave the hub's App no token for {repo}");
+                if wait {
+                    return wait_for_token(hub, &pending, &e).await;
+                }
+                return Err(e);
+            }
+        },
     };
     put(hub, &checkout, order, &token).await?;
     keep(
@@ -414,7 +472,27 @@ pub async fn deliver_on(
     if let Some(person) = &person {
         spread(hub, person, &token, expires_ms).await;
     }
-    Ok(())
+    Ok(true)
+}
+
+/// A launch GitHub gave no token for (`e`): its agents hold [`UNRENEWED_TOKEN`] under a blocked record, which the
+/// sweep delivers again as soon as GitHub answers. Its lead isn't woken: the agent is told, and the sweep logs it.
+async fn wait_for_token(hub: &Hub, pending: &Kept, e: &str) -> Result<bool, String> {
+    match kept_at(hub, &pending.checkout, &pending.order) {
+        // The order's agents there hold one that still works: this one reads it too.
+        Some(k) if !k.blocked && k.expires_ms > now_ms(hub.clock.as_ref()) => return Ok(true),
+        // They already wait for one.
+        Some(k) if k.blocked => return Ok(false),
+        _ => {}
+    }
+    tracing::warn!(
+        order = pending.order.as_str(),
+        "github: no token for the order's launch yet, the sweep delivers it: {e}"
+    );
+    let placeholder = Zeroizing::new(UNRENEWED_TOKEN.to_owned());
+    put(hub, &pending.checkout, &pending.order, &placeholder).await?;
+    keep(hub, pending)?;
+    Ok(false)
 }
 
 /// Hands a person's token, refreshed for one of their orders, to every other of their orders that holds the one

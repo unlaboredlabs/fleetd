@@ -116,7 +116,7 @@ const THREAD_EVENTS: [HubEventType; 10] = [
     HubEventType::ThreadUsageLimited,
     // M4 usage: a lifted pause lets queued tasks start.
     HubEventType::UsageResumed,
-    // The disk and load guard: the same, for a machine with room again.
+    // The disk guard: the same, for a machine with room again.
     HubEventType::MachineGuard,
     // A merged writer's worktree goes.
     HubEventType::PrMerged,
@@ -1030,7 +1030,7 @@ impl Tasks {
                 )
                 .map(Reserved::Now);
         }
-        // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
+        // The disk guard holds new agents only; machine.guard runs the queue again. One with a thread
         // continues in the worktree it has, a fresh restart too.
         if !continuing
             && !fresh
@@ -3462,6 +3462,31 @@ impl Tasks {
                 self.d
                     .ports
                     .wake(&task.project_ref, WakeKind::Recovery, line);
+            }
+        }
+        Ok(())
+    }
+
+    /// Tells each agent running on `machine` that git there can't reach GitHub now, or (`reached`) that it can again:
+    /// the landing scanner found it flip (`work::Work::github_reached`), so each hears it once per flip, never per
+    /// poll. A task launched on another machine (a cloud one) isn't told. A send that fails is only logged.
+    pub async fn github_reach(&self, machine: &MachineId, reached: bool) -> Result<(), StoreError> {
+        let (text, part) = match reached {
+            false => (render::GITHUB_DOWN, "github-down"),
+            true => (render::GITHUB_BACK, "github-back"),
+        };
+        let at = now_ms(self.d.clock.as_ref()).to_string();
+        for task in self.db(|c| TaskRecords::running_on(c, machine.as_str()))? {
+            let Some(thread) = task
+                .thread_ref
+                .as_ref()
+                .filter(|t| &t.machine_id == machine)
+            else {
+                continue;
+            };
+            let id = request_id(&task, &[part, &at]);
+            if let Err(error) = self.d.ports.send(thread, text, &id).await {
+                tracing::warn!(task_id = %task.task_id, ?error, "the GitHub notice not delivered");
             }
         }
         Ok(())

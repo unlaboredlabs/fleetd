@@ -336,6 +336,26 @@ async fn an_added_folders_title_is_trimmed_as_a_new_ones_is() {
     assert_eq!(titles, ["Project 01"]);
 }
 
+/// A title of only spaces is no title: the project takes its folder's name, as with none. Trimmed, it was kept empty.
+#[tokio::test]
+async fn an_added_folder_with_a_blank_title_takes_its_folders_name() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS]).await;
+    ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "path": "/home/me/notes", "title": "   " }),
+    )
+    .await;
+    let mut titles = vec![];
+    while let Ok(c) = calls.try_recv() {
+        if let SessionCall::ProjectUpsert { title, .. } = c {
+            titles.push(title.to_string());
+        }
+    }
+    assert_eq!(titles, ["notes"]);
+}
+
 #[tokio::test]
 async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
     let (hub, _home) = hub();
