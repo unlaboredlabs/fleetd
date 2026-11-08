@@ -8,15 +8,18 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::mcp::{
-    HubChannel, HubUpdateOutput, UpdatePart, UpdatePartKind, UpdateRun, UpdateStage, UpdateState,
+    HUB_UPDATE_MACHINES_MAX, HubChannel, HubUpdateData, HubUpdateOutput, HubUpdatePhase,
+    UpdatePart, UpdatePartKind, UpdateRun, UpdateStage, UpdateState,
 };
 use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
-use fleetd_contracts::prim::Text;
+use fleetd_contracts::prim::{List, Text};
 use serde_json::json;
 
-use super::{NodeAnswer, NodeFacts, Refusal, Timing, UpdatePorts, Updates, by_machine};
+use super::{
+    NodeAnswer, NodeFacts, Refusal, Timing, UpdatePorts, Updates, by_machine, part, signal,
+};
 use crate::clock::SystemClock;
 use crate::hub::store::test_clock::ManualClock;
 use crate::update::finish::{Plan, Verdict};
@@ -69,6 +72,8 @@ struct Fake {
     steps: Mutex<HashMap<String, u32>>,
     /// The machines asked to hold their agents, once per ask.
     held: Mutex<Vec<String>>,
+    /// What the apps were told (`hub.update`), in order.
+    announced: Mutex<Vec<HubUpdateData>>,
 }
 
 impl Fake {
@@ -98,6 +103,7 @@ impl Fake {
             claude_asked: Mutex::default(),
             steps: Mutex::default(),
             held: Mutex::default(),
+            announced: Mutex::default(),
         }
     }
 
@@ -249,6 +255,9 @@ impl UpdatePorts for Fake {
         }
         .map(|(r, said)| (r, Box::new(said) as Box<dyn Refusal>));
         Box::pin(async move { result })
+    }
+    fn announce(&self, update: &HubUpdateData) {
+        self.announced.lock().unwrap().push(update.clone());
     }
 }
 
@@ -545,6 +554,192 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         asked,
         ["builder", "laptop", "mac", "quiet"],
         "only online nodes that can, and need to"
+    );
+}
+
+/// The apps hear the update as the hub row shows it: updating while the hub restarts (and its sockets close saying so),
+/// then each machine restarting and coming back, then updated from the old build to the new, once per change.
+#[tokio::test]
+async fn the_apps_hear_updating_each_machine_coming_back_and_updated() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("nas", OLD, false, true, None),
+    );
+    let updates = area(home.path(), &fake);
+    assert_eq!(updates.restart_reason(), None);
+    updates.start(None, false).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(
+        updates.restart_reason().as_deref(),
+        Some(format!("updating to {NEW}").as_str()),
+        "the sockets close saying an update restarts the hub"
+    );
+    let before = fake.announced.lock().unwrap().clone();
+    let last = before.last().unwrap();
+    assert_eq!(
+        (last.state, last.hub, last.from.as_str()),
+        (HubUpdatePhase::Updating, UpdateState::Restarting, OLD)
+    );
+    assert_eq!(last.to.as_ref().map(|t| t.as_str()), Some(NEW));
+
+    // The hub that comes up tells the apps again: its own state isn't the old process's.
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    let heard = fake.announced.lock().unwrap().clone();
+    let states: Vec<(HubUpdatePhase, UpdateState, Vec<UpdateState>)> = heard
+        .iter()
+        .map(|d| (d.state, d.hub, d.machines.iter().map(|m| m.state).collect()))
+        .collect();
+    assert!(
+        heard.windows(2).all(|w| w[0] != w[1]),
+        "only changes are told: {states:?}"
+    );
+    let done = heard.last().unwrap();
+    assert_eq!(*done, signal(&run));
+    assert_eq!(
+        (
+            done.state,
+            done.from.as_str(),
+            done.to.as_ref().map(|t| t.as_str())
+        ),
+        (HubUpdatePhase::Updated, OLD, Some(NEW))
+    );
+    assert!(done.finished_at.is_some());
+    let machines: Vec<(&str, UpdateState)> = done
+        .machines
+        .iter()
+        .map(|m| (m.name.as_str(), m.state))
+        .collect();
+    assert_eq!(
+        machines,
+        [
+            ("builder", UpdateState::Done),
+            ("nas", UpdateState::Skipped)
+        ]
+    );
+    assert!(
+        states
+            .iter()
+            .any(|(phase, hub, machines)| *phase == HubUpdatePhase::Updating
+                && *hub == UpdateState::Done
+                && machines.first() == Some(&UpdateState::Restarting)),
+        "the machine is heard restarting once the hub is back: {states:?}"
+    );
+    assert_eq!(after.restart_reason(), None);
+    assert_eq!(
+        after.signal(),
+        Some(signal(&run)),
+        "the snapshot reads the same"
+    );
+}
+
+/// The hub row's word for a finished run: put back and failed by the hub's part, with its message; updated when the
+/// hub or a machine moved; current when nothing did. Past ten machines, the rest are only counted.
+#[test]
+fn a_finished_run_reads_put_back_failed_updated_or_current() {
+    let node = |name: &str, state: UpdateState| {
+        let mut p = part(
+            UpdatePartKind::Node,
+            Some(MachineId::unchecked(name)),
+            name,
+            OLD,
+            state,
+        );
+        p.message = Some(Text::unchecked("said".to_owned()));
+        p
+    };
+    let run = |hub: UpdateState, nodes: Vec<UpdatePart>| {
+        let mut h = part(UpdatePartKind::Hub, None, "the hub", OLD, hub);
+        h.message = Some(Text::unchecked(
+            "the new build didn't answer /healthz".to_owned(),
+        ));
+        let mut parts = vec![h];
+        parts.extend(nodes);
+        UpdateRun {
+            id: Text::unchecked("U1".to_owned()),
+            channel: HubChannel::Edge,
+            to: Some(Text::unchecked(NEW.to_owned())),
+            started_at: Timestamp::from("2026-11-08T10:00:00.000Z".to_owned()),
+            finished_at: Some(Timestamp::from("2026-11-08T10:00:05.000Z".to_owned())),
+            parts: List::new(parts).unwrap(),
+            now: None,
+            auto: Some(true),
+        }
+    };
+    let put_back = signal(&run(UpdateState::RolledBack, vec![]));
+    assert_eq!(put_back.state, HubUpdatePhase::PutBack);
+    assert_eq!(
+        put_back.message.as_ref().map(|m| m.as_str()),
+        Some("the new build didn't answer /healthz")
+    );
+    assert_eq!(
+        signal(&run(UpdateState::Failed, vec![])).state,
+        HubUpdatePhase::Failed
+    );
+    let updated = signal(&run(
+        UpdateState::Done,
+        vec![node("a", UpdateState::Failed)],
+    ));
+    assert_eq!(
+        (updated.state, updated.message),
+        (HubUpdatePhase::Updated, None)
+    );
+    assert_eq!(
+        signal(&run(
+            UpdateState::Current,
+            vec![node("a", UpdateState::Done)]
+        ))
+        .state,
+        HubUpdatePhase::Updated
+    );
+    let mut offline = node("b", UpdateState::Skipped);
+    offline.message = Some(Text::unchecked(super::OFFLINE.to_owned()));
+    assert_eq!(
+        signal(&run(
+            UpdateState::Current,
+            vec![node("a", UpdateState::Current), offline.clone()]
+        ))
+        .state,
+        HubUpdatePhase::Current
+    );
+    // An update that brought nothing to a machine left behind isn't "already runs it": the hub row says what failed.
+    for missed in [
+        UpdateState::Failed,
+        UpdateState::RolledBack,
+        UpdateState::Skipped,
+    ] {
+        let behind = signal(&run(
+            UpdateState::Current,
+            vec![node("a", missed), offline.clone()],
+        ));
+        assert_eq!(behind.state, HubUpdatePhase::Failed, "{missed:?}");
+        assert_eq!(behind.message.as_ref().map(|m| m.as_str()), Some("a: said"));
+    }
+    assert_eq!(
+        signal(&run(
+            UpdateState::Current,
+            vec![node("a", UpdateState::Done), node("b", UpdateState::Failed)]
+        ))
+        .state,
+        HubUpdatePhase::Updated
+    );
+    let mut going = run(UpdateState::Restarting, vec![]);
+    going.finished_at = None;
+    assert_eq!(signal(&going).state, HubUpdatePhase::Updating);
+
+    let many: Vec<UpdatePart> = (0..13)
+        .map(|i| node(&format!("m{i:02}"), UpdateState::Restarting))
+        .collect();
+    let crowd = signal(&run(UpdateState::Done, many));
+    assert_eq!(crowd.machines.len(), HUB_UPDATE_MACHINES_MAX);
+    assert_eq!(crowd.more_machines, Some(3));
+    let event = serde_json::to_string(&crowd).unwrap();
+    assert!(
+        event.len() < 2048,
+        "fits an event's data: {} bytes",
+        event.len()
     );
 }
 

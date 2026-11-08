@@ -66,6 +66,9 @@ pub struct FleetStatus {
     pub chats: Option<List<crate::chat::ProjectChatState, 0, 50>>,
     /// When to notify the human; absent from older hubs.
     pub notify: Option<NotifyPolicy>,
+    /// The app snapshot only: the update going on, or the last one (`hub.update`'s data). Absent when the hub never
+    /// updated itself, and from fleetd_status.
+    pub update: Option<Box<HubUpdateData>>,
 }
 
 /// Declares an output struct with the fields every tool result carries: `next`, a hint for the next call, and
@@ -3159,6 +3162,70 @@ pub enum UpdateStage {
     /// The restarted service didn't come up healthy on the new build.
     Health,
     /// A stage this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// Machines `hub.update` names one by one; past these, `moreMachines` counts the rest (hub_update_status has them all).
+pub const HUB_UPDATE_MACHINES_MAX: usize = 10;
+
+/// What an update looks like from the hub row: the `hub.update` event's data, sent whenever its state or a machine's
+/// changes, and the app snapshot's `update`, so an app that reconnects after the hub's restart reads it at once. The
+/// update going on, or the last one; hub_update_status reads it in full.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HubUpdateData {
+    /// The run's id, as hub_update_status names it.
+    pub run_id: Text<1, 64>,
+    pub state: HubUpdatePhase,
+    /// The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with
+    /// `APP_CLOSE_RESTART`, 1001), `done` once it runs it.
+    pub hub: UpdateState,
+    /// The build the hub ran when the update started.
+    pub from: Text<0, 200>,
+    /// The build it updates to; absent until the hub read the channel.
+    pub to: Option<Text<1, 200>>,
+    pub started_at: Timestamp,
+    /// When every part had its result; absent while `updating`.
+    pub finished_at: Option<Timestamp>,
+    /// Started by itself (automatic updates). Absent otherwise.
+    pub auto: Option<bool>,
+    /// Each machine's node, by name: `restarting` while it restarts, `done` once it is back on the new build.
+    pub machines: List<HubUpdateMachine, 0, HUB_UPDATE_MACHINES_MAX>,
+    /// Machines past `machines`, not named here.
+    pub more_machines: Option<u32>,
+    /// With `failed` or `put_back`: what happened, in one sentence (the hub's, or the machine's that missed the build).
+    pub message: Option<Text<0, 200>>,
+}
+
+/// One machine's node in [`HubUpdateData`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HubUpdateMachine {
+    pub machine_id: MachineId,
+    pub name: Text<1, 64>,
+    pub state: UpdateState,
+}
+
+/// An update as the hub row says it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum HubUpdatePhase {
+    /// Going on: the hub or its machines download, restart or come back. "Updating…"
+    Updating,
+    /// Finished, and the hub or a machine moved to `to` ("Updated"); a machine that didn't says so in `machines`.
+    Updated,
+    /// The hub didn't come up healthy on `to`, so its previous build was put back. "Put back"
+    PutBack,
+    /// Nothing changed: the hub didn't update (the download, the checksum or the install failed), or it already ran
+    /// `to` and a machine behind it didn't get it. `message` says why.
+    Failed,
+    /// Finished with nothing to do: the hub and every machine online already ran `to`.
+    Current,
+    /// A state this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
     #[schemars(skip)]
     Unknown,
