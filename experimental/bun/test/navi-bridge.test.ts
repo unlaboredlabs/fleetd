@@ -71,7 +71,7 @@ test("the asker hears when its order opens, its PRs merge or fail, and it closes
   append("workstream.created", shop, { workstreamId: w.workstreamId, asked: "N1" });
   s = step(hub, s.cursor);
   expect(s.woken).toEqual([[navi, `- N1 to Storefront: its lead opened order ${w.workstreamId} "Gift cards"`]]);
-  expect(woken.at(-1)?.[1]).toEqual({ kind: "line", line: "factory", text: s.woken[0]?.[1] });
+  expect(woken.at(-1)?.[1]).toEqual({ kind: "line", line: "factory", text: s.woken[0]?.[1] ?? "" });
   const change = (to: string, pr: number) =>
     append("change.state", shop, { changeId: "X4", workstreamId: w.workstreamId, repo: "acme/storefront", prNumber: pr, from: "ci", to });
   change("reviewing", 41);
