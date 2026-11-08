@@ -53,7 +53,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
-- [ ] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
+- [x] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
 - [x] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
 - [x] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
 - [x] `invite_create` → `src/hub/people` (admin) <!-- tool:`invite_create` -->
@@ -101,7 +101,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
 - [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
-- [ ] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
+- [x] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
 
