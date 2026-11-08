@@ -2481,6 +2481,7 @@ impl SessionService {
             },
         };
         self.store().commit(&row, &[], false)?;
+        stages.done("store");
         if let (Some(role), Some(config)) = (launch.mcp_role, launch.mcp.clone()) {
             self.keep_mcp(&id, super::mcp_servers::Kept { role, config })
                 .await;
@@ -2740,6 +2741,7 @@ impl SessionService {
         };
         if let Some(mut exited) = closing {
             let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+            stages.done("exit wait");
         }
         if self.st().stopping {
             return Err(error(
@@ -2752,6 +2754,7 @@ impl SessionService {
         let resume = state::start_mode(&row.local, &setup::config_dir(&config.runner_env()), id)
             .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
         let (recreated, note) = self.restore_worktree(id, &mut row, found).await?;
+        stages.done("worktree");
         if !row.local.cwd.is_dir() {
             return Err(invalid(format!(
                 "the session's workspace {} is missing",
@@ -2762,13 +2765,18 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
+        // Its files and a writer's git hooks (a dozen git commands): on a blocking thread, so a loaded machine's slow
+        // disk and forks never hold up the node's async workers, which answer the hub.
+        let (service, at) = (self.clone(), row.clone());
         let (mut spec, secrets, order_digest) =
-            self.spec(&row, resume, must_resume).map_err(|e| {
-                error(
-                    SessionErrorCode::Internal,
-                    format!("cannot prepare the session's files: {e}"),
-                )
-            })?;
+            blocking(move || service.spec(&at, resume, must_resume))
+                .await
+                .map_err(|e| {
+                    error(
+                        SessionErrorCode::Internal,
+                        format!("cannot prepare the session's files: {e}"),
+                    )
+                })?;
         // A claude without `--append-system-prompt-file` gets the rules with the message this start sends, as before
         // the flag: a compaction can summarize them then, but the session runs.
         let note = match row.local.system_prompt.as_deref() {
