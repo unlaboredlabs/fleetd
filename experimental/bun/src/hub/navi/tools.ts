@@ -1,4 +1,204 @@
+// navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name (D310) and its
+// old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). navi_create and the asks come
+// with the projects and bridge ports.
+import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
+import { ToolError } from "../../shared/errors.ts";
+import { CAP_NAVI_SIGNINS } from "../../shared/node_link.ts";
+import { isHuman, requireRole } from "../api/grants.ts";
+import type { Hub } from "../api/hub.ts";
+import { offline, unknownProject } from "../api/refusals.ts";
 import type { Registry } from "../api/registry.ts";
+import { allows } from "../auth/index.ts";
+import { executors } from "../executor/index.ts";
+import { interruptNow, naviSigninsForget, projectUpsert, stop } from "../executor/projects.ts";
+import { fromExecutor } from "../executor/tools.ts";
+import { link } from "../link/server.ts";
+import { events } from "../store/events.ts";
+import { store } from "../store/hub_store.ts";
+import { isoMs } from "../store/time.ts";
+import * as checker from "./checker.ts";
+import { others } from "./owner.ts";
+import { pasted, siteOf } from "./sites.ts";
+import * as navis from "./store.ts";
 
-/** Replaces the registry's NotImplemented stubs for this module's tools (src/gen/tools.ts lists them). */
-export function register(_tools: Registry): void {}
+/** The project's summary as the hub serves it: any project (D310). Another person's never gets here (the guard). */
+function naviOf(hub: Hub, r: ProjectRef): ProjectSummary {
+  const p = store(hub).projectGet(r);
+  if (!p) throw unknownProject(r);
+  return p;
+}
+
+function changed(hub: Hub, navi: ProjectSummary, summary: string): void {
+  events(hub).append({
+    at: isoMs(hub.clock.now()),
+    type: "project.settings",
+    machineId: navi.machineId,
+    projectId: navi.projectId,
+    summary,
+    data: { kind: navi.kind ?? null, title: navi.title, archivedAt: navi.archivedAt ?? null },
+  });
+}
+
+/** Ends the lead's process, its turn first. Best effort: a lead on an offline machine stays stopped there. */
+async function stopLead(hub: Hub, r: ProjectRef): Promise<void> {
+  const lead = hub.db.conn
+    .query<{ thread_id: string }, [string, string]>("SELECT thread_id FROM leads WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  if (!lead) return;
+  const thread = { machineId: r.machineId, threadId: lead.thread_id };
+  try {
+    await interruptNow(hub, thread);
+  } catch {}
+  try {
+    await stop(hub, thread, false);
+  } catch (error) {
+    console.info(`an archived Navi's lead was not stopped now: ${(error as Error).message}`);
+  }
+}
+
+/** Ends the leads of `person`'s Only-me projects, archived as they were removed from the hub. */
+export async function stopLeft(hub: Hub, person: string): Promise<void> {
+  for (const [r, owner] of navis.left(hub.db.conn)) if (owner === person) await stopLead(hub, r);
+}
+
+/** A person's own chat message to a Navi allows the site of each link in it (D208). */
+export function allowPasted(hub: Hub, r: ProjectRef, text: string, by: string): void {
+  const sites = pasted(text);
+  if (sites.length === 0 || !navis.of(hub.db.conn, r)) return;
+  const at = hub.clock.now();
+  for (const site of sites) navis.allowSite(hub.db.conn, r, site, by, at);
+}
+
+const refOf = (input: { machineId: string; projectId: string }): ProjectRef => ({ machineId: input.machineId, projectId: input.projectId });
+
+export function register(tools: Registry): void {
+  tools.add("navi_list", (hub, caller, input) => {
+    const archived = input.archived === true;
+    const hidden = others(hub.db, caller);
+    const list: ProjectSummary[] = [];
+    for (const r of navis.all(hub.db.conn)) {
+      if ((input.machineId !== undefined && input.machineId !== r.machineId) || !allows(caller, "read", r.machineId) || hidden.has(r)) continue;
+      const navi = store(hub).projectGet(r);
+      if (navi && (archived || navi.archivedAt === undefined)) list.push(navi);
+    }
+    return { navis: list, ...(list.length === 0 ? { next: "No Only me projects yet: project_add with onlyMe makes one." } : {}) };
+  });
+
+  tools.add("navi_rename", async (hub, caller, input) => {
+    const r = refOf(input);
+    requireRole(caller, "operate", r.machineId);
+    const navi = naviOf(hub, r);
+    if (!executors(hub).isConnected(r.machineId)) throw offline(r.machineId);
+    const name = input.name.trim();
+    try {
+      await projectUpsert(hub, r.machineId, r.projectId, name, navi.workspaceRoot);
+    } catch (error) {
+      throw fromExecutor(error);
+    }
+    store(hub).projectsUpsertMany(r.machineId, [{ ...navi, title: name }]);
+    const renamed = naviOf(hub, r);
+    changed(hub, renamed, `${r.projectId} renamed ${name}`);
+    return { navi: renamed };
+  });
+
+  for (const name of ["project_archive", "navi_archive"] as const) {
+    tools.add(name, async (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "operate", r.machineId);
+      // Any project archives (D310), a Navi as before.
+      const before = naviOf(hub, r);
+      const archive = input.archived !== false;
+      if (archive === (before.archivedAt !== undefined)) return { navi: before };
+      navis.setArchived(hub.db.conn, r, archive ? hub.clock.now() : undefined);
+      if (archive) await stopLead(hub, r);
+      const navi = naviOf(hub, r);
+      changed(hub, navi, `${navi.title} ${archive ? "archived" : "back"}`);
+      return {
+        navi,
+        next: archive
+          ? "Its chat, memory and folder stay; navi_archive with archived false brings it back."
+          : "Its lead starts with the next chat message.",
+      };
+    });
+  }
+
+  for (const name of ["project_sites", "navi_sites"] as const) {
+    tools.add(name, (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "read", r.machineId);
+      naviOf(hub, r);
+      const sites = navis.sites(hub.db.conn, r);
+      return {
+        sites,
+        ...(sites.length === 0
+          ? { next: "None yet: its first fetch or visit to a site asks the person, and approving it adds the site." }
+          : {}),
+      };
+    });
+  }
+
+  for (const name of ["project_site_revoke", "navi_site_revoke"] as const) {
+    tools.add(name, (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "operate", r.machineId);
+      naviOf(hub, r);
+      const site = siteOf(input.site) ?? input.site;
+      navis.revokeSite(hub.db.conn, r, site);
+      return { sites: navis.sites(hub.db.conn, r), next: `Its next fetch or visit to ${site} asks again.` };
+    });
+  }
+
+  for (const name of ["project_approvals", "navi_approvals"] as const) {
+    tools.add(name, (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "read", r.machineId);
+      naviOf(hub, r);
+      return { approvals: checker.approvals(hub.db.conn, r), log: checker.log(hub.db.conn, r) };
+    });
+  }
+
+  // A person sets how their Navi's risky actions are approved: only a person, never an agent, not even the Navi.
+  for (const name of ["project_approvals_set", "navi_approvals_set"] as const) {
+    tools.add(name, (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "operate", r.machineId);
+      if (!isHuman(caller)) {
+        throw new ToolError(
+          "forbidden",
+          "Only a person decides what their project does without asking.",
+          "Change it in the desktop app: the project's settings, Approvals.",
+        );
+      }
+      const navi = naviOf(hub, r);
+      // An older app's model and effort are taken and ignored: the checker runs on the hub's (W467).
+      checker.setApprovals(hub.db.conn, r, input.mode);
+      const approvals = checker.approvals(hub.db.conn, r);
+      changed(hub, navi, `${navi.title}'s approvals: ${approvals.mode}`);
+      return { approvals };
+    });
+  }
+
+  for (const name of ["project_signins_forget", "navi_signins_forget"] as const) {
+    tools.add(name, async (hub, caller, input) => {
+      const r = refOf(input);
+      requireRole(caller, "operate", r.machineId);
+      // Any project keeps its sign-ins (D310), a Navi as before.
+      const navi = naviOf(hub, r);
+      if (!executors(hub).isConnected(r.machineId)) throw offline(r.machineId);
+      if (!link(hub).can(r.machineId, CAP_NAVI_SIGNINS)) {
+        throw new ToolError(
+          "invalid",
+          `${r.machineId}'s node is too old to keep a project's sign-ins`,
+          `Run fleetd update on ${r.machineId}: until then its browser starts signed out every session`,
+        );
+      }
+      try {
+        await naviSigninsForget(hub, r.machineId, r.projectId);
+      } catch (error) {
+        throw fromExecutor(error);
+      }
+      changed(hub, navi, `${navi.title}'s sign-ins forgotten`);
+      return { ok: true, next: "Its next browser session starts signed out of every site." };
+    });
+  }
+}

@@ -3,7 +3,7 @@
 import type { EnvVarName, EnvVarSet, MachineId, ProjectId, ProjectWorktrees, SecretFingerprint, WorkstreamId } from "../../shared/contracts.ts";
 import type { EnvSecretSaved } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
-import { ExecutorError, executors, READ_TIMEOUT_MS, REMOVE_TIMEOUT_MS } from "./index.ts";
+import { ExecutorError, executors, READ_TIMEOUT_MS, REMOVE_TIMEOUT_MS, STOP_TIMEOUT_MS } from "./index.ts";
 
 /** Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close. */
 export const SIGNINS_TIMEOUT_MS = 30_000;
@@ -92,4 +92,14 @@ export async function projectWorktrees(hub: Hub, m: MachineId, projectId: Projec
   if (out.kind !== "project_worktrees") throw ExecutorError.failed(m, "read", "the node sent no worktrees");
   const { kind: _kind, ...worktrees } = out;
   return worktrees as ProjectWorktrees;
+}
+
+/** A person's Stop: interrupts whatever run the thread has now. */
+export async function interruptNow(hub: Hub, r: { machineId: MachineId; threadId: string }): Promise<void> {
+  await executors(hub).call(r.machineId, "interrupt", { op: "interrupt", sessionId: r.threadId, reason: "stopped by the person" }, READ_TIMEOUT_MS);
+}
+
+/** Ends the thread's claude process; `removeWorktree` then deletes its worktree. */
+export async function stop(hub: Hub, r: { machineId: MachineId; threadId: string }, removeWorktree: boolean): Promise<void> {
+  await executors(hub).call(r.machineId, "stop", { op: "stop", sessionId: r.threadId, removeWorktree }, STOP_TIMEOUT_MS);
 }

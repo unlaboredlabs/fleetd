@@ -131,21 +131,21 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
 - [ ] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
 - [ ] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
-- [ ] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
-- [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
-- [ ] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
-- [ ] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
+- [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
+- [x] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
+- [x] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
+- [x] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
 - [ ] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
 - [x] `project_avatar_get` → `src/hub/projects` (read) <!-- tool:`project_avatar_get` -->
 - [x] `project_icon_set` → `src/hub/projects` (operate) <!-- tool:`project_icon_set` -->
-- [ ] `navi_sites` → `src/hub/navi` (read) <!-- tool:`navi_sites` -->
-- [ ] `project_sites` → `src/hub/navi` (read) <!-- tool:`project_sites` -->
-- [ ] `navi_site_revoke` → `src/hub/navi` (operate) <!-- tool:`navi_site_revoke` -->
-- [ ] `project_site_revoke` → `src/hub/navi` (operate) <!-- tool:`project_site_revoke` -->
-- [ ] `navi_approvals` → `src/hub/navi` (read) <!-- tool:`navi_approvals` -->
-- [ ] `project_approvals` → `src/hub/navi` (read) <!-- tool:`project_approvals` -->
-- [ ] `navi_approvals_set` → `src/hub/navi` (operate) <!-- tool:`navi_approvals_set` -->
-- [ ] `project_approvals_set` → `src/hub/navi` (operate) <!-- tool:`project_approvals_set` -->
+- [x] `navi_sites` → `src/hub/navi` (read) <!-- tool:`navi_sites` -->
+- [x] `project_sites` → `src/hub/navi` (read) <!-- tool:`project_sites` -->
+- [x] `navi_site_revoke` → `src/hub/navi` (operate) <!-- tool:`navi_site_revoke` -->
+- [x] `project_site_revoke` → `src/hub/navi` (operate) <!-- tool:`project_site_revoke` -->
+- [x] `navi_approvals` → `src/hub/navi` (read) <!-- tool:`navi_approvals` -->
+- [x] `project_approvals` → `src/hub/navi` (read) <!-- tool:`project_approvals` -->
+- [x] `navi_approvals_set` → `src/hub/navi` (operate) <!-- tool:`navi_approvals_set` -->
+- [x] `project_approvals_set` → `src/hub/navi` (operate) <!-- tool:`project_approvals_set` -->
 - [ ] `navi_signins_forget` → `src/hub/navi` (operate) <!-- tool:`navi_signins_forget` -->
 - [ ] `project_signins_forget` → `src/hub/navi` (operate) <!-- tool:`project_signins_forget` -->
 - [ ] `navi_purchases` → `src/hub/navi` (read) <!-- tool:`navi_purchases` -->
