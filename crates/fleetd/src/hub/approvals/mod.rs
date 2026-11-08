@@ -492,6 +492,30 @@ impl Approvals {
         self.deps.requests.get(id).ok().flatten()
     }
 
+    /// The approved commands running on the machine, as the hub's database records them: approved and sent to its node,
+    /// with no result yet. Kept across a hub restart, as each one's run goes on (node/gated.rs), so an update of the
+    /// machine waits for them before restarting its node, which would cut them off.
+    pub fn running_on(&self, machine_id: &fleetd_contracts::ids::MachineId) -> usize {
+        self.deps
+            .requests
+            .list(&RequestFilter {
+                states: Some(vec![RequestState::Approved]),
+                kind: Some(RequestKind::Approval),
+                limit: i64::MAX,
+                ..Default::default()
+            })
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| {
+                r.gated.is_some()
+                    && &r.project_ref.machine_id == machine_id
+                    && r.evidence
+                        .as_ref()
+                        .is_some_and(|e| e.as_str().starts_with(RUNNING))
+            })
+            .count()
+    }
+
     pub fn list(&self, filter: &RequestFilter) -> Result<Vec<HumanRequest>, ApprovalRefused> {
         self.deps
             .requests

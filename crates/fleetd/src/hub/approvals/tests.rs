@@ -849,6 +849,16 @@ async fn an_approved_command_whose_run_spans_a_hub_restart_reports_its_real_resu
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert_eq!(fake.request("Q1").state, RequestState::Approved);
     assert!(fake.resumes.lock().unwrap().is_empty());
+    // It still counts as running there, from the database, though this hub process never sent it: an update of lab-a
+    // waits for it.
+    assert_eq!(
+        a.running_on(&fleetd_contracts::ids::MachineId::unchecked("lab-a")),
+        1
+    );
+    assert_eq!(
+        a.running_on(&fleetd_contracts::ids::MachineId::unchecked("lab-b")),
+        0
+    );
     *fake.linked.lock().unwrap() = true;
     fake.woken_times(1).await;
     let done = fake.request("Q1");
@@ -857,6 +867,11 @@ async fn an_approved_command_whose_run_spans_a_hub_restart_reports_its_real_resu
     assert_eq!(
         done.output_tail.as_ref().map(|t| t.as_str()),
         Some("restarted fleetd-hub\nfleetd-node restarts once this command ends")
+    );
+    assert_eq!(
+        a.running_on(&fleetd_contracts::ids::MachineId::unchecked("lab-a")),
+        0,
+        "its result came"
     );
     assert_eq!(
         done.evidence.as_ref().map(|e| e.as_str()),

@@ -189,21 +189,20 @@ impl NodeCommands {
             .map(|l| l.id)
     }
 
-    /// Whether the machine's node is linked now.
-    /// What the hub waits on the machine's node for now: its `cmd_check`s (the train's checks and regenerations) and
-    /// its approved commands (`gated_run`, `gated_resume`). A node restart cuts both off.
-    pub fn running(&self, machine_id: &MachineId) -> (usize, usize) {
-        let state = self.state.lock().unwrap();
-        let on = |reply: &str| {
-            state
-                .pending
-                .values()
-                .filter(|p| &p.machine_id == machine_id && p.reply == reply)
-                .count()
-        };
-        (on("cmd_result"), on("gated_result"))
+    /// The `cmd_check`s this hub process runs on the machine's node now (the train's checks and regenerations): its
+    /// node's restart cuts them off. One that ran across the hub's own restart has no waiter left, and its asker runs it
+    /// again.
+    pub fn checks_running(&self, machine_id: &MachineId) -> usize {
+        self.state
+            .lock()
+            .unwrap()
+            .pending
+            .values()
+            .filter(|p| &p.machine_id == machine_id && p.reply == "cmd_result")
+            .count()
     }
 
+    /// Whether the machine's node is linked now.
     pub fn linked(&self, machine_id: &MachineId) -> bool {
         self.state.lock().unwrap().links.contains_key(machine_id)
     }

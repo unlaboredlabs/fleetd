@@ -225,7 +225,8 @@ impl UpdatePorts for HubPorts {
 }
 
 /// What runs on the machine that its node's restart would end: live sessions (a browser, a device, a desktop), the
-/// approved commands running there, and the checks and regenerations the hub runs there (the train's `cmd_check`s).
+/// approved commands running there (from the database, so one that ran across the hub's own restart counts at once,
+/// before its node links again), and the checks and regenerations the hub runs there (the train's `cmd_check`s).
 /// Agents' runs carry on by themselves, so they aren't in it.
 fn busy(hub: &Hub, machine_id: &MachineId) -> Option<String> {
     let now = crate::hub::store::now_ms(hub.clock.as_ref());
@@ -233,7 +234,8 @@ fn busy(hub: &Hub, machine_id: &MachineId) -> Option<String> {
         .db
         .with(|c| crate::hub::machine_roles::live_on(c, machine_id, now))
         .unwrap_or(0);
-    let (checks, approved) = hub.node_commands.running(machine_id);
+    let approved = hub.approvals.running_on(machine_id);
+    let checks = hub.node_commands.checks_running(machine_id);
     busy_words(usize::try_from(sessions).unwrap_or(0), approved, checks)
 }
 
