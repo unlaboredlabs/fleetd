@@ -23,6 +23,7 @@ import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
 import { administers, type CallOutcome } from "../shared/hub";
 import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
+import type { MacActivity, MacBehind, MacDisk, MacMenuBarRead } from "../shared/macMenuBar";
 import { compareVersions, isEdge } from "../shared/pairing";
 import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
 import { probe, type Fetch } from "./pairing/hubHttp";
@@ -55,6 +56,8 @@ export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "fle
   hubRole(hubUrl: string): Promise<HubBehind["who"]>;
   /** Starts the hub's own update (hub_update) with this app's key for it: an admin's only. */
   updateHub(hubUrl: string): Promise<MacHubUpdateOutcome>;
+  /** The free and whole space of the disk `dir` is on; undefined when it can't be read. */
+  disk(dir: string): Promise<MacDisk | undefined>;
 }
 
 const TRADE_ANSWER = z.object({
@@ -320,8 +323,11 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
   const answers = hub?.answers === true;
   const macVersion = up?.text.trim() ?? "";
   let hubBehind: HubBehind | null = null;
-  if (hub?.answers === true && hubUrl !== undefined && compareVersions(macVersion, "0.0.0") !== 0 && compareVersions(macVersion, hub.version) === 1) {
-    hubBehind = { hubVersion: hub.version, macVersion, who: await role(hubUrl) };
+  let macBehind: MacBehind | null = null;
+  if (hub?.answers === true && hubUrl !== undefined && compareVersions(macVersion, "0.0.0") !== 0) {
+    const order = compareVersions(macVersion, hub.version);
+    if (order === 1) hubBehind = { hubVersion: hub.version, macVersion, who: await role(hubUrl) };
+    if (order === -1) macBehind = { hubVersion: hub.version, macVersion, who: await role(hubUrl) };
   }
   let health: MacHealth | null = null;
   if (file !== undefined) {
@@ -332,8 +338,24 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
       // Half-written: the next read has it.
     }
   }
-  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind };
+  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind, macBehind };
 }
+
+const SIM = z.object({ agent: z.string(), projectId: z.string(), device: z.string(), sinceMs: z.number() });
+const JOB = z.object({ agent: z.string(), projectId: z.string(), job: z.number(), command: z.string(), startedMs: z.number() });
+const ACTIVITY = z.object({ simulators: z.array(SIM), jobs: z.array(JOB) });
+
+/** The node's mac-activity.json (node/mac_tool/activity.rs), or null when it isn't there or can't be read. */
+export const parseActivity = (text: string | undefined): MacActivity | null => {
+  if (text === undefined) return null;
+  try {
+    const parsed = ACTIVITY.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    // Half-written: the next read has it.
+    return null;
+  }
+};
 
 /** How long the CLI waits for the node to take the ask: it reads it every 2 s while a grant is off. */
 export const ASK_WAIT_S = 5;
@@ -471,6 +493,21 @@ export class MacSetup {
     });
   }
 
+  /**
+   * What the menu bar's popover shows: this Mac's checks, what agents do on it and its disk, once it is joined as the
+   * agents' Mac; null before. `hubIdFor` names the hub this app is signed in to at the Mac's hub's address.
+   */
+  async menuBar(hubIdFor: (hubUrl: string) => string | null): Promise<MacMenuBarRead | null> {
+    const found = await joinedHere(this.#ports);
+    if (found === undefined) return null;
+    const [health, activity, disk] = await Promise.all([
+      this.health(found.hubUrl),
+      this.#ports.readFile(path.join(this.#ports.fleetdDir, "node", "mac-activity.json")),
+      this.#ports.disk(this.#ports.fleetdDir).catch(() => undefined),
+    ]);
+    return { found, hubId: hubIdFor(found.hubUrl), health, activity: parseActivity(activity?.text), disk: disk ?? null, macBehind: health.macBehind ?? null };
+  }
+
   /** The hub's Update, from this Mac: with the key of an admin this app is signed in as. */
   updateHub(hubUrl: string): Promise<MacHubUpdateOutcome> {
     return this.#ports.updateHub(hubUrl);
@@ -526,6 +563,10 @@ export const realMacPorts = (
   extra: Pick<MacSetupPorts, "knownHubs" | "openPane" | "hubRole" | "updateHub">,
 ): MacSetupPorts => ({
   ...join,
+  disk: async (dir) => {
+    const s = await fs.statfs(dir);
+    return { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize };
+  },
   fetch: (url, init) => fetch(url, init),
   knownHubs: extra.knownHubs,
   openPane: extra.openPane,

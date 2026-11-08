@@ -79,6 +79,14 @@ export const IPC = {
   /** invoke() → void. The person declined to replace a node after the hub took the code: it is spent, nothing joins. */
   macSetupCancel: "mac-setup:cancel",
   macSetupUpdateHub: "mac-setup:update-hub",
+  /** invoke() → MacMenuBarRead | null. The menu bar popover's read of this Mac (src/main/menuBar.ts); null until joined. */
+  menuBarRead: "menu-bar:read",
+  /** invoke(height) → void. The popover's page laid out at this height: the popover takes it. */
+  menuBarFit: "menu-bar:fit",
+  /** invoke() → void. Closes the popover. */
+  menuBarHide: "menu-bar:hide",
+  /** invoke() → void. The menu bar icon's menu (Open fleetd, Open at Login, Quit), from the popover's More. */
+  menuBarMenu: "menu-bar:menu",
   /** invoke() → string | null. A native folder picker; null when cancelled. */
   projectsPickFolder: "projects:pick-folder",
   /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */

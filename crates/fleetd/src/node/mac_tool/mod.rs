@@ -6,6 +6,7 @@
 //! Each step is a sealed box to the Mac's key holding the step, when it was made, a nonce the Mac takes only once, and
 //! a fresh key for the answer, so only the agent's node opens what comes back.
 
+pub mod activity;
 pub mod client;
 pub mod host;
 pub mod jobs;

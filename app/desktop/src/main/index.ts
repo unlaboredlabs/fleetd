@@ -3,7 +3,7 @@ import "./debug-guard";
 import { existsSync } from "node:fs";
 import { homedir, release } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, powerMonitor, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, powerMonitor, screen, session, shell, Tray } from "electron";
 import { asError } from "../shared/scrub";
 import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
@@ -19,6 +19,9 @@ import { fixturePairingDeps } from "./pairing/fixture";
 import { PairingService, realPairingDeps } from "./pairing/service";
 import { editMenuTemplate } from "./editMenu";
 import { installMenu } from "./menu";
+import type { MacSetup } from "./macSetup";
+import { MenuBar, menuTemplate, POPOVER_WIDTH } from "./menuBar";
+import { trayIcon } from "./trayIcon";
 import { Notifier } from "./notify";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
@@ -291,7 +294,53 @@ void app.whenReady().then(() => {
       macWindow = win;
     },
   };
-  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows, macSetupWindow }, pairing);
+  // The agents' Mac's menu bar: an icon once this Mac is joined as the agents' Mac, on macOS; under a fixture with
+  // FLEETD_FIXTURE_MAC, on any computer, for QA (macSetupFixture.ts).
+  // Set once registerIpc made it, below; the icon looks only after that.
+  const macSetup: { current?: MacSetup } = {};
+  const dark = () => nativeTheme.shouldUseDarkColors;
+  const menuBar = new MenuBar({
+    joined: async () => (await macSetup.current?.status())?.kind === "joined",
+    tray: () => new Tray(trayIcon()),
+    popover: () => {
+      const mac = process.platform === "darwin";
+      const win = new BrowserWindow({
+        width: POPOVER_WIDTH,
+        height: 420,
+        show: false,
+        frame: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        title: "fleetd",
+        // On macOS a menu's own material, which the page leaves clear; elsewhere the theme's surface.
+        backgroundColor: mac ? "#00000000" : dark() ? "#1c1c1f" : "#ffffff",
+        ...(mac ? { type: "panel" as const, vibrancy: "menu" as const, visualEffectState: "active" as const, roundedCorners: true } : {}),
+        webPreferences: pagePreferences(mode),
+      });
+      if (mac) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      void win.loadURL(`${pageUrl()}#/menubar`);
+      return win;
+    },
+    area: (at) => screen.getDisplayNearestPoint(at).workArea,
+    menu: (items) => Menu.buildFromTemplate(menuTemplate(items)),
+    openApp: () => void opener.focus(),
+    quit: () => app.quit(),
+    openAtLogin: () => app.getLoginItemSettings().openAtLogin,
+    // Never under a fixture: QA leaves the machine it runs on as it was.
+    setOpenAtLogin: (on) => {
+      if (mode.kind !== "fixture") app.setLoginItemSettings({ openAtLogin: on });
+    },
+    marker: join(app.getPath("userData"), "menu-bar-login"),
+  });
+  macSetup.current = registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows, macSetupWindow, menuBar }, pairing);
+  if (process.platform === "darwin" || (mode.kind === "fixture" && process.env["FLEETD_FIXTURE_MAC"] !== undefined)) menuBar.start();
+  // QA opens the popover at once, under a fixture only: it has no menu bar to click.
+  if (mode.kind === "fixture" && process.env["FLEETD_FIXTURE_MAC_OPEN"] === "1") void menuBar.look().then(() => menuBar.show({ pinned: true }));
   installMenu(opener, help, process.platform === "darwin" ? macSetupWindow.show : undefined);
   claimOnFirstRun();
   // The hubs' live feeds only fill what windows show: paused while every window is hidden or minimized (or, on macOS,

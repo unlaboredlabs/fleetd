@@ -1522,6 +1522,9 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
+  // The agents' Mac's menu bar popover, on a computer that isn't the agents' Mac: it says so, with Set up. Its states on
+  // a Mac joined already (FLEETD_FIXTURE_MAC, macSetupFixture.ts) are main's to open, so its DOM test covers them.
+  { id: "menu-bar", route: "#/menubar", fixtures: ["typical"], sizes: ["narrow"], realClock: true },
   // Set up this Mac for agents (D309), its own window: a Mac under the fixture (src/main/macSetupFixture.ts), on the
   // real clock, as main's steps take their time. Each step the window goes through, as a variant.
   { id: "mac-setup", route: "#/mac-setup", fixtures: ["typical"], sizes: ["narrow"], realClock: true },

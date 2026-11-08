@@ -22,7 +22,8 @@ import { RELEASE_BUILD } from "./build";
 import { fixtureRequest } from "./hub/fixture";
 import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
 import type { JoinHere } from "../shared/joinHere";
-import { MacSetup, realMacPorts, signedInPorts } from "./macSetup";
+import { hubOrigin, MacSetup, realMacPorts, signedInPorts } from "./macSetup";
+import type { MenuBar } from "./menuBar";
 import { fixtureMacPorts } from "./macSetupFixture";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
@@ -57,9 +58,11 @@ export const registerIpc = (
     sessionWindows: SessionWindows;
     /** Set up this Mac for agents' own window. */
     macSetupWindow: { show(): void };
+    /** The agents' Mac's menu bar icon and its popover. */
+    menuBar: Pick<MenuBar, "look" | "fit" | "hide" | "showMenu">;
   },
   pairing: PairingService,
-): void => {
+): MacSetup => {
   // A hub removed while a call was on its way answers as an unpaired one would.
   const gone = { ok: false, error: { code: "offline", message: "That hub was removed from this app." } } as const;
   const call = (id: string) => (tool: string, input: unknown) => hubs.get(id)?.call({ tool, input: input as CallRequest["input"] }) ?? Promise.resolve(gone);
@@ -154,8 +157,19 @@ export const registerIpc = (
         }),
     (join) => {
       for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.macSetupJoinChanged, join);
+      // Joined: the menu bar's icon comes now.
+      if (join.state === "done") void frame.menuBar.look();
     },
   );
+  /** The hub this app is signed in to at the Mac's hub's address; under a fixture, the fixture's. */
+  const hubIdFor = (hubUrl: string): string | null => {
+    if (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture") return hubs.list()[0]?.id ?? null;
+    const origin = hubOrigin(hubUrl);
+    return hubs.list().find((h) => {
+      const url = hubs.get(h.id)?.url();
+      return url !== null && url !== undefined && hubOrigin(url) === origin;
+    })?.id ?? null;
+  };
   handle(IPC.macSetupOpen, () => {
     if (process.platform === "darwin") frame.macSetupWindow.show();
   });
@@ -167,6 +181,10 @@ export const registerIpc = (
   handle(IPC.macSetupStatus, () => macSetup.status());
   handle(IPC.macSetupCancel, () => macSetup.cancel());
   handle(IPC.macSetupUpdateHub, (_event, hub) => macSetup.updateHub(hub));
+  handle(IPC.menuBarRead, () => macSetup.menuBar(hubIdFor));
+  handle(IPC.menuBarFit, (_event, height) => frame.menuBar.fit(height));
+  handle(IPC.menuBarHide, () => frame.menuBar.hide());
+  handle(IPC.menuBarMenu, () => frame.menuBar.showMenu());
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
@@ -210,4 +228,5 @@ export const registerIpc = (
   frame.updates.onChange((state) => {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.updatesChanged, state);
   });
+  return macSetup;
 };

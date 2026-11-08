@@ -7,27 +7,39 @@ import { HubScope, useHubs } from "./data/react";
 const SessionWindow = lazy(() => import("../screens/sessions/SessionWindow").then((m) => ({ default: m.SessionWindow })));
 // Set up this Mac for agents has a window of its own too (main opens it on `#/mac-setup`), with no hub in it.
 const MacSetup = lazy(() => import("../screens/macSetup/MacSetup").then((m) => ({ default: m.MacSetup })));
-// Once on it, the window stays on it, whatever the shell then makes of the route. Heard before the shell's own
+// The agents' Mac's menu bar popover too (main opens it on `#/menubar`): it picks its own hub.
+const MenuBarWindow = lazy(() => import("../screens/menuBar/MenuBar").then((m) => ({ default: m.MenuBarWindow })));
+type OwnWindow = "mac-setup" | "menubar";
+const ownWindowOf = (hash: string): OwnWindow | null => (hash.startsWith("#/mac-setup") ? "mac-setup" : hash.startsWith("#/menubar") ? "menubar" : null);
+// Once on one, the window stays on it, whatever the shell then makes of the route. Heard before the shell's own
 // listener is (it registers as it mounts), so its redirect of a route it doesn't know never wins.
-let onMacSetup = window.location.hash.startsWith("#/mac-setup");
-const macSetupListeners = new Set<() => void>();
+let ownWindow = ownWindowOf(window.location.hash);
+const ownWindowListeners = new Set<() => void>();
 window.addEventListener("hashchange", () => {
-  if (onMacSetup || !window.location.hash.startsWith("#/mac-setup")) return;
-  onMacSetup = true;
-  for (const listener of macSetupListeners) listener();
+  const next = ownWindowOf(window.location.hash);
+  if (ownWindow !== null || next === null) return;
+  ownWindow = next;
+  for (const listener of ownWindowListeners) listener();
 });
-const onMacSetupChange = (changed: () => void) => {
-  macSetupListeners.add(changed);
-  return () => macSetupListeners.delete(changed);
+const onOwnWindowChange = (changed: () => void) => {
+  ownWindowListeners.add(changed);
+  return () => ownWindowListeners.delete(changed);
 };
-const useMacSetup = () => useSyncExternalStore(onMacSetupChange, () => onMacSetup);
+const useOwnWindow = () => useSyncExternalStore(onOwnWindowChange, () => ownWindow);
 const opened = parseHash(window.location.hash);
 
 // main.tsx wraps this in the hubs' data layers and the design system's providers.
 export const App = () => {
   const hubs = useHubs();
-  const macSetup = useMacSetup();
-  if (macSetup) {
+  const own = useOwnWindow();
+  if (own === "menubar") {
+    return (
+      <Suspense fallback={<div aria-busy="true" />}>
+        <MenuBarWindow />
+      </Suspense>
+    );
+  }
+  if (own === "mac-setup") {
     return (
       <Suspense fallback={<div aria-busy="true" />}>
         <MacSetup />

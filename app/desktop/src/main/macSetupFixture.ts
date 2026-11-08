@@ -5,10 +5,16 @@
 // release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
 // 222222, a hub newer than this app, whose answer it can't read. 333333 joins a Mac with no Xcode yet, 444444 one whose
 // Xcode-beta.app isn't selected.
+//
+// FLEETD_FIXTURE_MAC opens on a Mac joined already, for the menu bar's popover (menuBar.ts): `busy`, every check green
+// and agents at work on storefront (two simulators and a build, beside the sessions-page fixture's Mac screen); or
+// `attention`, Screen Recording lost with an update, no Xcode, no CocoaPods, a nearly full disk and a node behind the
+// hub, with nothing running.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { MacActivity } from "../shared/macMenuBar";
 import type { MacPane } from "../shared/macSetup";
 import type { MacSetupPorts } from "./macSetup";
 
@@ -62,19 +68,57 @@ const XCODE_WAITS: Readonly<Record<string, ReadonlyArray<object>>> = {
   ],
 };
 
-export const fixtureMacPorts = (): MacSetupPorts => {
+/** The sessions-page fixture's storefront, whose agents T3, T10 and T12 use the Mac. */
+const STOREFRONT = "dcffccea-c5a7-40a6-940d-7f70239ffa22";
+const GB = 1_000_000_000;
+
+/** What agents do on a `busy` Mac, `at` its start. */
+const busyActivity = (at: number): MacActivity => ({
+  simulators: [
+    { agent: "T12", projectId: STOREFRONT, device: "iPhone 17 Pro", sinceMs: at - 6 * 60_000 },
+    { agent: "T3", projectId: STOREFRONT, device: "iPhone 17", sinceMs: at - 19 * 60_000 },
+  ],
+  jobs: [{ agent: "T10", projectId: STOREFRONT, job: 3, command: "xcodebuild test -workspace ios/Storefront.xcworkspace -scheme Storefront -destination 'platform=iOS Simulator,name=iPhone 17'", startedMs: at - 2 * 60_000 - 40_000 }],
+});
+
+/** An `attention` Mac's checks that aren't green, as agents_mac/checks.rs words them. */
+const ATTENTION: ReadonlyArray<object> = [
+  ...(XCODE_WAITS["333333"] ?? []),
+  {
+    id: "screen_recording",
+    state: "fail",
+    message: "macOS stopped counting fleetd's Screen Recording with the update to 0.9.2, so you and agents can't see the Mac's screen.",
+    fix: "In Terminal at the Mac, then turn fleetd off and on again in System Settings › Privacy & Security › Screen Recording, which this opens once macOS has asked",
+    command: "fleetd node grants --ask screen_recording",
+  },
+  {
+    id: "tools",
+    state: "warn",
+    message: "Node.js 22.12.0, agent-device 0.11.2 and agent-desktop 0.4.0 are in. CocoaPods isn't installed, so pod install and expo prebuild --platform ios don't run; everything else works.",
+    fix: "In your own (admin) account's Terminal",
+    command: "/opt/homebrew/bin/brew install cocoapods",
+  },
+];
+
+export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FIXTURE_MAC"]): MacSetupPorts => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-mac-fixture-"));
-  let joinedAt: number | undefined;
+  const opened = mac === "busy" || mac === "attention" ? mac : undefined;
+  const started = Date.now();
+  // A Mac joined a while ago, with both grants given (the attention one's Screen Recording lost since).
+  let joinedAt: number | undefined = opened === undefined ? undefined : started - 3_600_000;
   /** The hub runs an older edge build than the Mac: 111111, until Update. */
   let behind = false;
   let hubVersion = "0.9.0";
+  /** The node's own build: behind the hub's on an `attention` Mac. */
+  let macVersion = "0.9.0";
   let xcodeWaits: ReadonlyArray<object> | undefined;
-  const asked = new Map<MacPane, number>();
+  const asked = new Map<MacPane, number>(opened === undefined ? [] : [["accessibility", started - 3_600_000], ...(opened === "busy" ? [["screen_recording", started - 3_600_000] as const] : [])]);
+  if (opened === "attention") hubVersion = "0.9.2";
   const granted = (pane: MacPane) => {
     const at = asked.get(pane);
     return at !== undefined && Date.now() - at > GRANT_MS;
   };
-  const health = () => ({
+  const health = () => opened === "attention" ? attentionHealth() : ({
     user: "ada",
     checks: [
       ...CHECKS.slice(0, 4).map(([id, message]) => ({ id, state: "ok", message })),
@@ -85,9 +129,20 @@ export const fixtureMacPorts = (): MacSetupPorts => {
       granted("screen_recording")
         ? { id: "screen_recording", state: "ok", message: "fleetd may record the screen." }
         : { id: "screen_recording", state: "fail", message: "fleetd may not record the screen yet.", fix: "Turn on fleetd in Privacy & Security › Screen Recording." },
-      ...CHECKS.slice(6).map(([id, message]) => ({ id, state: id === "tools" ? "unknown" : "ok", message })),
+      ...CHECKS.slice(6).map(([id, message]) =>
+        id === "tools" && opened === "busy"
+          ? { id, state: "ok", message: "Node.js 22.12.0, agent-device 0.11.2 and agent-desktop 0.4.0 are in. CocoaPods 1.16.2." }
+          : { id, state: id === "tools" ? "unknown" : "ok", message },
+      ),
     ],
   });
+  const attentionHealth = () => {
+    const off = new Set(ATTENTION.map((c) => (c as { id: string }).id));
+    const green = [...CHECKS.slice(0, 6), ["accessibility", "fleetd may control this Mac."], ...CHECKS.slice(6)].filter(([id]) => !off.has(id)).map(([id, message]) => ({ id, state: "ok", message }));
+    // Granted again once the node asked and the person turned it on.
+    const recording = granted("screen_recording") ? [{ id: "screen_recording", state: "ok", message: "fleetd may record the screen." }] : [];
+    return { user: "ada", checks: [...green, ...ATTENTION.filter((c) => recording.length === 0 || (c as { id: string }).id !== "screen_recording"), ...recording] };
+  };
   return {
     fetch: (url, init) => {
       if (!url.startsWith(HUB)) return Promise.reject(new TypeError("fetch failed"));
@@ -137,23 +192,32 @@ export const fixtureMacPorts = (): MacSetupPorts => {
     // The node writes its first checks a moment after joining; it runs them all again a moment after both grants.
     readFile: (file) => {
       if (joinedAt === undefined || Date.now() - joinedAt < 1500) return Promise.resolve(undefined);
+      if (file.endsWith("node.json")) {
+        return Promise.resolve({ text: JSON.stringify({ enrolled: true, agentsMac: true, machineId: "mac", hub: HUB }), writtenAt: joinedAt });
+      }
+      if (file.endsWith("mac-activity.json")) {
+        return Promise.resolve({ text: JSON.stringify(opened === "busy" ? busyActivity(started) : { simulators: [], jobs: [] }), writtenAt: Date.now() });
+      }
       const both = granted("accessibility") && granted("screen_recording");
       const lastGrant = Math.max(...[...asked.values()].map((at) => at + GRANT_MS));
-      const checkedAt = both && Date.now() - lastGrant > 1000 ? Date.now() : joinedAt + 1500;
+      // A Mac joined already runs its checks as it should.
+      const checkedAt = opened !== undefined || (both && Date.now() - lastGrant > 1000) ? Date.now() : joinedAt + 1500;
       if (file.endsWith("mac-health.checked")) return Promise.resolve({ text: "", writtenAt: checkedAt });
-      if (file.endsWith(path.join("update", "up"))) return Promise.resolve({ text: behind ? NEW_EDGE : "0.9.0", writtenAt: joinedAt + 1500 });
+      if (file.endsWith(path.join("update", "up"))) return Promise.resolve({ text: behind ? NEW_EDGE : macVersion, writtenAt: joinedAt + 1500 });
       return Promise.resolve(file.endsWith("mac-health.json") ? { text: JSON.stringify(health()), writtenAt: Date.now() } : undefined);
     },
     // The grants come through the CLI's ask (run, above); the App Store installs nothing here.
     openPane: () => Promise.resolve(),
     now: () => Date.now(),
     hubRole: () => Promise.resolve("admin"),
-    // The hub restarts on the newer build a few seconds later.
+    // The hub restarts on the newer build a few seconds later; a Mac behind the hub takes its build a little after.
     updateHub: () => {
       setTimeout(() => {
-        hubVersion = NEW_EDGE;
+        if (macVersion !== hubVersion) macVersion = hubVersion;
+        else hubVersion = NEW_EDGE;
       }, 4000);
       return later(400, { ok: true as const });
     },
+    disk: () => Promise.resolve(opened === "attention" ? { freeBytes: 9.4 * GB, totalBytes: 494 * GB } : { freeBytes: 182 * GB, totalBytes: 994 * GB }),
   };
 };
