@@ -131,11 +131,39 @@ fn wait_x(
     }
 }
 
-/// A display number free on the host: no lock file and no socket.
+fn lock_file(number: u32) -> PathBuf {
+    PathBuf::from(format!("/tmp/.X{number}-lock"))
+}
+
+/// The pid an X server's lock file names; None when there is no lock or it can't be read.
+fn lock_pid(number: u32) -> Option<i32> {
+    std::fs::read_to_string(lock_file(number))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// An Xvfb killed leaves its lock and socket, which kept its number taken for good: one a session each, till none of
+/// 100 to 599 was left. Once it is reaped they go, while the lock is still its own.
+fn forget_killed(number: u32, pid: i32) {
+    if lock_pid(number) == Some(pid) {
+        let _ = std::fs::remove_file(Path::new(X11_UNIX).join(format!("X{number}")));
+        let _ = std::fs::remove_file(lock_file(number));
+    }
+}
+
+/// A display number free on the host: no lock file and no socket, or a lock left by an X server that is gone (one
+/// killed leaves both behind, and Xvfb takes such a number over).
 fn free_number() -> Option<u32> {
     (100..600).find(|n| {
-        !Path::new(&format!("/tmp/.X{n}-lock")).exists()
-            && !Path::new(X11_UNIX).join(format!("X{n}")).exists()
+        if !lock_file(*n).exists() {
+            return !Path::new(X11_UNIX).join(format!("X{n}")).exists();
+        }
+        lock_pid(*n).is_some_and(|pid| {
+            pid > 0
+                && nix::sys::signal::kill(Pid::from_raw(pid), None) == Err(nix::errno::Errno::ESRCH)
+        })
     })
 }
 
@@ -223,8 +251,9 @@ impl Display {
                     return Ok(display);
                 }
                 Err(why) => {
-                    let _ = killpg(Pid::from_raw(child.id() as i32), Signal::SIGKILL);
+                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
                     let _ = child.wait();
+                    forget_killed(number, pid);
                     last = why;
                 }
             }
@@ -386,8 +415,12 @@ impl Drop for Display {
             let _ = app.wait();
         }
         if let Some(mut xvfb) = lock(&self.xvfb).take() {
-            let _ = killpg(Pid::from_raw(xvfb.id() as i32), Signal::SIGKILL);
+            let pid = xvfb.id() as i32;
+            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
             let _ = xvfb.wait();
+            if let Some(number) = self.name.strip_prefix(':').and_then(|n| n.parse().ok()) {
+                forget_killed(number, pid);
+            }
         }
         if let Some((runtime, name)) = &self.container {
             runtime.remove(name);

@@ -203,6 +203,25 @@ fn cleanup_never_kills_a_process_that_took_a_dead_xvfbs_pid() {
     let _ = other.wait();
 }
 
+/// An Xvfb killed leaves its lock and socket in /tmp, which kept its display number taken: the devbox ran out of
+/// numbers from 100 to 599, and every desktop start failed. A display thrown away leaves its number free.
+#[test]
+fn a_display_thrown_away_frees_its_number() {
+    let Some(config) = test_config() else { return };
+    let home = tempfile::tempdir().unwrap();
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    if settings.backend != DesktopBackend::Xvfb {
+        return;
+    }
+    let display = super::display::Display::start(&settings, None).unwrap();
+    let lock = PathBuf::from(format!("/tmp/.X{}-lock", &display.name[1..]));
+    let socket = display.socket.clone();
+    assert!(lock.exists() && socket.exists(), "{}", display.name);
+    drop(display);
+    assert!(!lock.exists(), "{} is left", lock.display());
+    assert!(!socket.exists(), "{} is left", socket.display());
+}
+
 #[test]
 fn an_image_that_doesnt_build_falls_back_to_xvfb() {
     let home = tempfile::tempdir().unwrap();
