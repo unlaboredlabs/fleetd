@@ -280,16 +280,16 @@ approvals, secrets, integrations, updates, cloud machines.
 
 ### HTTP routes
 
-- [ ] GET `/oauth/callback` → `src/hub/mcp_oauth` (oauth_callback) <!-- http:GET `/oauth/callback` -->
+- [x] GET `/oauth/callback` → `src/hub/mcp_oauth` (oauth_callback) <!-- http:GET `/oauth/callback` -->
 
 ### MCP tools (/mcp and /app `call`)
 
-- [ ] `mcp_servers_get` → `src/hub/mcp_servers` (read) <!-- tool:`mcp_servers_get` -->
-- [ ] `mcp_server_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_set` -->
-- [ ] `mcp_server_remove` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_remove` -->
-- [ ] `mcp_settings_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_settings_set` -->
-- [ ] `mcp_server_test` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_test` -->
-- [ ] `mcp_oauth_start` → `src/hub/mcp_oauth` (operate) <!-- tool:`mcp_oauth_start` -->
+- [x] `mcp_servers_get` → `src/hub/mcp_servers` (read) <!-- tool:`mcp_servers_get` -->
+- [x] `mcp_server_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_set` -->
+- [x] `mcp_server_remove` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_remove` -->
+- [x] `mcp_settings_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_settings_set` -->
+- [x] `mcp_server_test` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_test` -->
+- [x] `mcp_oauth_start` → `src/hub/mcp_oauth` (operate) <!-- tool:`mcp_oauth_start` -->
 - [ ] `cloud_stop` → `src/hub/pool` (admin) <!-- tool:`cloud_stop` -->
 - [ ] `cloud_get` → `src/hub/pool` (read) <!-- tool:`cloud_get` -->
 - [ ] `cloud_set` → `src/hub/pool` (admin) <!-- tool:`cloud_set` -->
@@ -298,22 +298,22 @@ approvals, secrets, integrations, updates, cloud machines.
 - [ ] `cloud_create` → `src/hub/pool` (admin) <!-- tool:`cloud_create` -->
 - [ ] `cloud_reset` → `src/hub/pool` (admin) <!-- tool:`cloud_reset` -->
 - [ ] `cloud_resume` → `src/hub/pool` (admin) <!-- tool:`cloud_resume` -->
-- [ ] `claude_accounts_get` → `src/hub/claude_accounts` (read) <!-- tool:`claude_accounts_get` -->
-- [ ] `claude_hub_api_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_set` -->
-- [ ] `claude_hub_api_remove` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_remove` -->
-- [ ] `claude_settings_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_settings_set` -->
-- [ ] `claude_subscription_set` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_subscription_set` -->
-- [ ] `claude_subscription_remove` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_subscription_remove` -->
-- [ ] `claude_choice_set` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_choice_set` -->
-- [ ] `claude_account_test` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_account_test` -->
-- [ ] `onepassword_get` → `src/hub/onepassword` (read) <!-- tool:`onepassword_get` -->
-- [ ] `onepassword_set` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_set` -->
-- [ ] `onepassword_remove` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_remove` -->
-- [ ] `onepassword_test` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_test` -->
-- [ ] `onepassword_cards` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_cards` -->
-- [ ] `requests_list` → `src/hub/approvals` (read) <!-- tool:`requests_list` -->
-- [ ] `secret_submit` → `src/hub/approvals` (operate) <!-- tool:`secret_submit` -->
-- [ ] `approval_answer` → `src/hub/approvals` (operate) <!-- tool:`approval_answer` -->
+- [x] `claude_accounts_get` → `src/hub/claude_accounts` (read) <!-- tool:`claude_accounts_get` -->
+- [x] `claude_hub_api_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_set` -->
+- [x] `claude_hub_api_remove` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_remove` -->
+- [x] `claude_settings_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_settings_set` -->
+- [x] `claude_subscription_set` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_subscription_set` -->
+- [x] `claude_subscription_remove` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_subscription_remove` -->
+- [x] `claude_choice_set` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_choice_set` -->
+- [x] `claude_account_test` → `src/hub/claude_accounts` (operate) <!-- tool:`claude_account_test` -->
+- [x] `onepassword_get` → `src/hub/onepassword` (read) <!-- tool:`onepassword_get` -->
+- [x] `onepassword_set` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_set` -->
+- [x] `onepassword_remove` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_remove` -->
+- [x] `onepassword_test` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_test` -->
+- [x] `onepassword_cards` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_cards` -->
+- [x] `requests_list` → `src/hub/approvals` (read) <!-- tool:`requests_list` -->
+- [x] `secret_submit` → `src/hub/approvals` (operate) <!-- tool:`secret_submit` -->
+- [x] `approval_answer` → `src/hub/approvals` (operate) <!-- tool:`approval_answer` -->
 - [ ] `machine_add_plan` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_plan` -->
 - [ ] `machine_add` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add` -->
 - [ ] `machine_add_status` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_status` -->
@@ -328,8 +328,8 @@ approvals, secrets, integrations, updates, cloud machines.
 ### Background loops
 
 - [ ] hub loop `cloud::catch_up::run` → `src/hub/cloud` <!-- loop:hub loop `cloud::catch_up::run` -->
-- [ ] hub loop `mcp_oauth::run_renew` → `src/hub/mcp_oauth` <!-- loop:hub loop `mcp_oauth::run_renew` -->
-- [ ] hub loop `mcp_servers::tools::run_forget` → `src/hub/mcp_servers` <!-- loop:hub loop `mcp_servers::tools::run_forget` -->
+- [x] hub loop `mcp_oauth::run_renew` → `src/hub/mcp_oauth` <!-- loop:hub loop `mcp_oauth::run_renew` -->
+- [x] hub loop `mcp_servers::tools::run_forget` → `src/hub/mcp_servers` <!-- loop:hub loop `mcp_servers::tools::run_forget` -->
 - [ ] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
 - [ ] hub loop `updates.prefetch_loop` → `src/hub/update` <!-- loop:hub loop `updates.prefetch_loop` -->
 - [ ] hub loop `updates.resume` → `src/hub/update` <!-- loop:hub loop `updates.resume` -->
@@ -563,7 +563,7 @@ every `fleetd` command.
 - [ ] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
 - [ ] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
 - [ ] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
-- [ ] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
+- [x] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
 - [ ] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->
 - [ ] `fleetd usage` → `src/cli/usage` <!-- cli:`fleetd usage` -->
 - [ ] `fleetd usage resume` → `src/cli/usage` <!-- cli:`fleetd usage resume` -->
@@ -589,8 +589,8 @@ every `fleetd` command.
 ### Lead calls (agent-mcp → node → hub)
 
 - [ ] lead call `brief_create` → `src/hub/lead_calls` <!-- lead:lead call `brief_create` -->
-- [ ] lead call `request_secret` → `src/hub/lead_calls` <!-- lead:lead call `request_secret` -->
-- [ ] lead call `request_withdraw` → `src/hub/lead_calls` <!-- lead:lead call `request_withdraw` -->
+- [x] lead call `request_secret` → `src/hub/lead_calls` <!-- lead:lead call `request_secret` -->
+- [x] lead call `request_withdraw` → `src/hub/lead_calls` <!-- lead:lead call `request_withdraw` -->
 - [ ] lead call `decide` → `src/hub/lead_calls` <!-- lead:lead call `decide` -->
 - [ ] lead call `decisions_search` → `src/hub/lead_calls` <!-- lead:lead call `decisions_search` -->
 - [ ] lead call `task_spawn` → `src/hub/lead_calls` <!-- lead:lead call `task_spawn` -->
@@ -600,7 +600,7 @@ every `fleetd` command.
 - [ ] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
 - [ ] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
 - [ ] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
-- [ ] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->
+- [x] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->
 - [ ] lead call `ask_lead` → `src/hub/lead_calls` <!-- lead:lead call `ask_lead` -->
 - [ ] lead call `brief_read` → `src/hub/lead_calls` <!-- lead:lead call `brief_read` -->
 - [ ] lead call `review_read` → `src/hub/lead_calls` <!-- lead:lead call `review_read` -->

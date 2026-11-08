@@ -4,6 +4,7 @@ import { NotImplemented } from "../shared/errors.ts";
 import { VERSION } from "../shared/version.ts";
 import { hubStart, HUB_START_USAGE } from "../hub/serve/index.ts";
 import { nodeCommand } from "../node/index.ts";
+import { run as updateFinish } from "../update/finish.ts";
 
 export const versionLine = () => `fleetd ${VERSION} (protocol ${PROTOCOL_VERSION})\n`;
 
@@ -39,6 +40,8 @@ export async function main(argv: string[]): Promise<number> {
         return await nodeCommand(argv.slice(1));
       case "agent-mcp":
         return await (await import("./agent_mcp/index.ts")).agentMcp(argv.slice(1));
+      case "update-finish":
+        return await updateFinish(argv[1]);
       default:
         throw new NotImplemented(`src/cli: fleetd ${command}`);
     }

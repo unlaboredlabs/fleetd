@@ -1,0 +1,178 @@
+// What approvals reaches outside its own table (crates/fleetd/src/hub/approvals/mod.rs `ApprovalNodes`,
+// `ApprovalHub`; the real hub's side is usage/wire_approvals.rs). Nodes go over the node link; the rest is the hub's
+// store, or a hook (D348) the area that owns it sets: navi, orders and intake are T2246's, automations T2255's.
+import type {
+  Automation,
+  CheckerNote,
+  HubEvent,
+  HumanRequest,
+  McpServer,
+  NaviApprovals,
+  ProjectRef,
+  ToolPreview,
+} from "../../shared/contracts.ts";
+
+/** A node command's failure: "offline", "lost", "no_reply", "invalid", "not_found", "old" or "failed". */
+export class NodeCommandError extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "NodeCommandError";
+  }
+}
+
+export type SecretOutcome = { fingerprint?: string; error?: string };
+
+export type GatedOutcome = {
+  exitCode?: number;
+  outputTail: string;
+  timedOut: boolean;
+  error?: string;
+  /** Only from `resumeGated`: why the node has no result for it either. The command may have run. */
+  unknown?: string;
+};
+
+/** A session's answer to a tool prompt (fleetd-contracts sessions.rs `PermissionDecision`, tagged by `behavior`). */
+export type PermissionDecision = { behavior: "allow"; updatedInput?: unknown } | { behavior: "deny"; message: string };
+export type DecidedBy = "lead" | "human" | "policy" | "hub_rule";
+
+/** The prompt a thread's run waits on (sessions.rs `PendingPermission`); `input` absent when over 64 KiB. */
+export type PendingPermission = { requestId: string; toolName: string; summary: string; input?: unknown };
+
+/** The node link's request/reply commands approvals sends. Every failure is a `NodeCommandError`. */
+export interface ApprovalNodes {
+  /** `secret_deliver`: `{ sink, sealed, secretKey, envName?, projectId?, requestId? }`. */
+  deliverSecret(machineId: string, input: Record<string, unknown>): Promise<SecretOutcome>;
+  /** `gated_run`: `{ argv, cwd, timeoutSec, secretEnv?, requestId }`. */
+  runGated(machineId: string, input: Record<string, unknown>): Promise<GatedOutcome>;
+  /** `gated_resume`: the result of the approved command the node ran, whose `gated_run` answer was lost. */
+  resumeGated(machineId: string, requestId: string, timeoutSec: number): Promise<GatedOutcome>;
+  /** The machine's node is linked and its session stream subscribed. */
+  isLinked(machineId: string): Promise<boolean>;
+  /** `session_call answer`: the decision for the prompt `requestId` the thread's run waits on. */
+  answerPermission(
+    machineId: string,
+    threadId: string,
+    requestId: string,
+    decision: PermissionDecision,
+    by?: DecidedBy,
+  ): Promise<void>;
+  /** The prompt the thread's run waits on now, with its input. */
+  pendingPermission(machineId: string, threadId: string): Promise<PendingPermission | undefined>;
+}
+
+/** A variable a node saved for one order's agents. */
+export type OrderEnvSaved = {
+  project: ProjectRef;
+  orderId: string;
+  name: string;
+  fingerprint: string;
+  bytes: number;
+  requestId: string;
+};
+
+/** One of a lead's actions the approval step judges (hub/navi/checker.rs `Action`). */
+export type Action = { tool: string; summary: string; input: unknown; preview?: ToolPreview; site?: string };
+
+/** The checker's answer: a plain public read passes on its rule; anything else is its note. */
+export type Checked = { publicRead: true } | { note: CheckerNote };
+
+/** The hub policy's first word on a prompt (integrations policy, a Navi's confirm step, its bridge, automation confirm). */
+export type PromptVerdict = { allow: true } | { deny: string } | { ask: ToolPreview };
+
+/**
+ * The hooks other areas fill (D348), each with a safe default until they do: order checks refuse, and every
+ * prompt files a card for the person.
+ */
+export type ApprovalHooks = {
+  /** Why the project's order can't take a variable now; undefined when it can (projects/order_env.rs `refusal`). */
+  orderRefusal(project: ProjectRef, orderId: string): Promise<string | undefined>;
+  /** Records a variable a node saved for an order; a string is why it could not (order_env.rs `saved`). */
+  orderEnvSaved(saved: OrderEnvSaved, at: string): Promise<string | undefined>;
+  /** Whether the thread is the project's lead, the one session the tool prompt relay answers. */
+  naviLead(project: ProjectRef, threadId: string): Promise<boolean>;
+  /** Whether the project's lead may open `site` without asking (false with no site); undefined when unread. */
+  naviSite(project: ProjectRef, site: string | undefined): Promise<boolean | undefined>;
+  /** A person approved a first visit to `site`: from now on it opens without asking. */
+  naviSiteAllow(project: ProjectRef, site: string, by: string): Promise<void>;
+  /** The project's own automation `id`, for `automation_confirm`'s card. */
+  naviAutomation(project: ProjectRef, id: string): Promise<Automation | undefined>;
+  /** The person approved `automation_confirm`'s card showing `shown`: whether the automation is marked confirmed. */
+  naviAutomationConfirm(project: ProjectRef, shown: unknown, by: string): Promise<boolean>;
+  /** Whether `id` is an image of the Navi's own (`chat_image`); if so it becomes the project's, for its card. */
+  naviImage(project: ProjectRef, id: string): Promise<boolean>;
+  /** How the project's risky actions are approved; undefined when unread. */
+  naviApprovals(project: ProjectRef): Promise<NaviApprovals | undefined>;
+  /** The checker's verdict on one of the lead's actions (navi/checker.rs `judge`). */
+  naviCheck(project: ProjectRef, threadId: string, action: Action, settings: NaviApprovals): Promise<Checked>;
+  /** An action ran without asking: an entry in the Navi's auto-approved log (checker.rs `auto_approved`). */
+  naviAutoApproved(project: ProjectRef, action: Action, by: "checker" | "yolo", reason?: string): Promise<void>;
+  /**
+   * The Navi's rules on a prompt the integrations policy had no word on (navi confirm.rs `refused`/`preview`,
+   * automations calls.rs `confirm_preview`, navi bridge.rs `preview`); undefined: no rule, so the approval mode decides.
+   */
+  promptVerdict(
+    project: ProjectRef,
+    tool: string,
+    input: unknown,
+    servers: McpServer[],
+    automation: Automation | undefined,
+  ): PromptVerdict | undefined;
+  /** A fetch or browser visit (navi/sites.rs `visit`): its host, `null` for one it can't tell; undefined: no visit. */
+  siteVisit(tool: string, input: unknown): string | null | undefined;
+  /** The floors every mode keeps (navi/review.rs `floor`): why `shown` (the input with its `tool`) is refused. */
+  floor(shown: Record<string, unknown>): string | undefined;
+  /** A visit whose link carries data (navi/review.rs `visit_url` + `carries_data`). */
+  visitCarriesData(input: unknown): boolean;
+  /** A shell command YOLO still refuses (navi/shell_guard.rs `refused`). */
+  shellRefused(command: string): string | undefined;
+  /** An action the checker never judges (navi/checker.rs `always_asks`). */
+  alwaysAsks(action: Action): boolean;
+};
+
+export const NOT_PORTED_ORDERS = "The Bun hub can't set an order's variable yet (src/hub/projects: order_env).";
+
+/** The hooks before their areas set them: order variables refused, Navi reads unknown, every prompt asks. */
+export const defaultHooks = (): ApprovalHooks => ({
+  orderRefusal: async () => NOT_PORTED_ORDERS,
+  orderEnvSaved: async () => NOT_PORTED_ORDERS,
+  naviLead: async () => false,
+  naviSite: async () => undefined,
+  naviSiteAllow: async () => {},
+  naviAutomation: async () => undefined,
+  naviAutomationConfirm: async () => false,
+  naviImage: async () => false,
+  naviApprovals: async () => undefined,
+  naviCheck: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun hub yet" } }),
+  naviAutoApproved: async () => {},
+  promptVerdict: () => undefined,
+  siteVisit: () => undefined,
+  floor: () => undefined,
+  visitCarriesData: () => false,
+  shellRefused: () => undefined,
+  alwaysAsks: () => false,
+});
+
+/** The rest of the hub approvals reads or wakes, over the hub's own store. */
+export interface ApprovalHub {
+  /** The machine's `boxPubKey`: undefined for no machine, null for one that takes no secrets. */
+  boxKey(machineId: string): Promise<string | null | undefined>;
+  /** The project's workspace root; undefined when the hub has no record of it. */
+  workspaceRoot(project: ProjectRef): Promise<string | undefined>;
+  /** Wakes the project's lead with a request's outcome (one event line). */
+  wakeRequest(request: HumanRequest): Promise<void>;
+  /** The MCP servers the project's sessions are configured from, for the integrations policy. */
+  mcpServers(project: ProjectRef): Promise<McpServer[]>;
+}
+
+/** The event log approvals appends to and follows (src/hub/store/events.ts). */
+export interface ApprovalEvents {
+  append(event: Omit<HubEvent, "seq">): unknown;
+  head(): number;
+  wait(
+    input: { cursor?: number; types?: string[]; timeoutSec: number },
+    signal?: AbortSignal,
+  ): Promise<{ events: HubEvent[]; cursor: number }>;
+}
