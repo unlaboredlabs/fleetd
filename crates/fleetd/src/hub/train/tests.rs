@@ -4382,6 +4382,102 @@ async fn a_failed_job_failing_again_on_its_re_run_goes_back_to_its_author() {
     );
 }
 
+/// #1304: `bun (experimental)`, outside the fast set, fails on the PR's own head while the required `build` passes. The
+/// train re-runs it, and its re-run stays queued, then runs, for a few reads before it is done with `conclusion`.
+/// Answers the checks for that, and returns how often the re-run was read done.
+fn non_fast_re_run(kit: &Kit, conclusion: &'static str) -> Arc<std::sync::atomic::AtomicU32> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let reruns = kit.gh.reruns.clone();
+    let (reads, done) = (Arc::new(AtomicU32::new(0)), Arc::new(AtomicU32::new(0)));
+    let read_done = done.clone();
+    answer_checks(kit, move || {
+        let mut runs = vec![
+            job(5, 1, "build", "success"),
+            job(10, 2, "bun (experimental)", "failure"),
+        ];
+        if !reruns.lock().unwrap().is_empty() {
+            let mut rerun = job(11, 2, "bun (experimental)", conclusion);
+            match reads.fetch_add(1, Ordering::SeqCst) {
+                0 => rerun["status"] = json!("queued"),
+                1..=3 => rerun["status"] = json!("in_progress"),
+                _ => {
+                    done.fetch_add(1, Ordering::SeqCst);
+                    runs.push(rerun);
+                    return runs;
+                }
+            }
+            rerun["conclusion"] = Value::Null;
+            runs.push(rerun);
+        }
+        runs
+    });
+    read_done
+}
+
+/// #1304: a check outside the fast set that fails on the PR's own head is re-run, and the train waits on that re-run
+/// rather than merging while it is queued or running. It fails again: the PR goes back to its author, and nothing was
+/// called flaky.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_check_outside_the_fast_set_is_waited_for_on_its_re_run() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let done = non_fast_re_run(&kit, "failure");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(
+        done.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the train read the re-run once it was done"
+    );
+    let failed = kit.get(&change_id);
+    assert_eq!(failed.state, ChangeState::CiFailed);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10], "the failed job, once");
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(!sends.iter().any(|(_, m)| m.contains("flaky")), "{sends:?}");
+    assert!(
+        sends
+            .last()
+            .unwrap()
+            .1
+            .contains("bun (experimental) (failure)"),
+        "{sends:?}"
+    );
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert!(
+        !wakes.iter().any(|w| w.contains("flaky CI on")),
+        "{wakes:?}"
+    );
+}
+
+/// The same check passing on its re-run: the PR merges once the re-run is done, and is called flaky then.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_check_outside_the_fast_set_merges_once_its_re_run_passed() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let done = non_fast_re_run(&kit, "success");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(
+        done.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the train read the re-run once it was done"
+    );
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10], "the failed job, once");
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert_eq!(
+        sends
+            .iter()
+            .filter(|(_, m)| m.contains("bun (experimental) failed, then passed"))
+            .count(),
+        1,
+        "{sends:?}"
+    );
+}
+
 /// A required check that reads cancelled however often it is re-run is no failure, but the train never asks GitHub to
 /// merge: it waits until CI times out, which the lead hears of, not the author (D191).
 #[tokio::test(flavor = "multi_thread")]
