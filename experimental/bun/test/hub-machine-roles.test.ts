@@ -322,3 +322,149 @@ test("hub.area(\"machine_roles\") says whether a machine runs agents, for the tr
   await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "box2", roles: ["sessions"] });
   expect(roles.agents("box2")).toBe(false);
 });
+
+
+test("a person's Android screen with a PR: its CI build found, the screen started, the build sent sealed and installed, then theirs", async () => {
+  setup();
+  const { openSealed, publicKeyOf, secretbox, secretboxOpen } = await import("../src/shared/sealed_box.ts");
+  const { builds } = await import("../src/hub/machine_roles/builds.ts");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  t.hub.db.conn
+    .query("UPDATE machines SET data = json_set(data, '$.boxPubKey', ?) WHERE machine_id = 'box2'")
+    .run(Buffer.from(publicKeyOf(secret)).toString("base64"));
+  t.link.deliver("box2", load([{ host: "android", ready: true, detail: "SDK" }]));
+  t.hub.db.conn
+    .query(
+      `INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key)
+       VALUES ('devbox', 'p1', 'app', 'devbox', 'p1', 'github.com/acme/app')`,
+    )
+    .run();
+  const apk = new Uint8Array(5 << 20).fill(9);
+  // The hub's gh: the PR's head, its one finished run, and its Android artifact.
+  builds(t.hub).gh = {
+    async run(args) {
+      const path = args[1] ?? "";
+      const json = (v: unknown) => ({ exitCode: 0, stdout: JSON.stringify(v), stderr: "" });
+      if (args[0] === "api" && path === "repos/acme/app/pulls/12") return json({ head: { sha: "a".repeat(40) } });
+      if (args[0] === "api" && path.startsWith("repos/acme/app/actions/runs?")) return json({ workflow_runs: [{ id: 5, status: "completed" }] });
+      if (args[0] === "api" && path === "repos/acme/app/actions/runs/5/artifacts?per_page=100") return json({ artifacts: [{ name: "app-android-debug" }] });
+      if (args[0] === "run" && args[1] === "download") {
+        const dir = args[args.indexOf("-D") + 1]!;
+        mkdirSync(join(dir, "outputs"), { recursive: true });
+        writeFileSync(join(dir, "outputs", "app-debug.apk"), apk);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      return { exitCode: 1, stdout: "", stderr: `no ${args.join(" ")}` };
+    },
+  };
+  const person = caller("operate", { kind: "human", name: "laptop" });
+  const r = { projectRef: { machineId: "devbox", projectId: "p1" }, machineId: "box2", kind: "android" as const };
+  // Refused before anything starts: another repo's PR, or one with no build.
+  expect(await t.tools.call(t.hub, person, "screen_open", { ...r, pr: { repo: "acme/other", number: 12 } })).toMatchObject({
+    error: { error: { code: "invalid", message: "acme/other isn't a repository of this project." } },
+  });
+  // The runner: opens the hub's seal for the relay key, then takes the sealed pieces and the install.
+  let relayKey: Uint8Array | undefined;
+  let held = 0;
+  let installed: string[] | undefined;
+  const way = (label: string) => new Uint8Array(new Bun.CryptoHasher("sha256").update(label).update(relayKey!).digest());
+  const nonce = (n: number) => {
+    const b = new Uint8Array(24);
+    new DataView(b.buffer).setBigUint64(0, BigInt(n), true);
+    return b;
+  };
+  t.link.answer = async (_machine: string, frame: Record<string, unknown>) => {
+    const f = frame as { id: string; sealed?: string; frame: { id: string; call: Record<string, unknown> } };
+    const call = f.frame.call;
+    if (call.op === "session_start") {
+      relayKey = Buffer.from(JSON.parse(new TextDecoder().decode(openSealed(secret, Buffer.from(f.sealed!, "base64"))!)).relayKey, "base64");
+      const thread = t.hub.db.all<{ origin_thread: string }>("SELECT origin_thread FROM session_places")[0]!.origin_thread;
+      await t.calls.call({ ...agent("devbox", "p1"), threadId: thread }, {
+        op: "browser_session",
+        sessionId: S5,
+        kind: "android",
+        threadId: thread,
+        purpose: "Android emulator opened by laptop",
+        state: "live",
+        startedAt: "2026-11-08T12:00:00.000Z",
+      });
+      return { id: f.id, frame: { id: f.frame.id, result: { op: "session_start", sessionId: S5 } } };
+    }
+    if (call.op === "device") {
+      const count = Number(call.count);
+      const step = JSON.parse(new TextDecoder().decode(secretboxOpen(way("fleetd device 1: agent to runner"), nonce(count), Buffer.from(String(call.dataB64), "base64"))!));
+      let done: Record<string, unknown>;
+      if (step.step === "put") {
+        held += Buffer.from(step.dataB64, "base64").length;
+        done = { step: "put", bytes: held };
+      } else {
+        installed = step.args;
+        done = { step: "run", stdout: "Success\n", stderr: "", exitCode: 0, files: [] };
+      }
+      const sealed = secretbox(way("fleetd device 1: runner to agent"), nonce(count), new TextEncoder().encode(JSON.stringify(done)));
+      return { id: f.id, frame: { id: f.frame.id, result: { op: "device", step: "sealed", dataB64: Buffer.from(sealed).toString("base64") } } };
+    }
+    return { id: f.id, frame: { id: f.frame.id, result: { op: String(call.op) } } };
+  };
+  const opened = (await t.tools.call(t.hub, person, "screen_open", { ...r, pr: { repo: "acme/app", number: 12 } })) as {
+    output: { waiting: { waitId: string; stage: string; pr: unknown } };
+  };
+  expect(opened.output.waiting).toMatchObject({ stage: "starting", pr: { repo: "acme/app", number: 12 } });
+  for (let i = 0; i < 200 && !t.link.sent("box2").some((f: { t: string }) => f.t === "browser_control"); i++) await Bun.sleep(10);
+  // The whole build went, in pieces, and was installed before the screen became the person's.
+  expect(held).toBe(apk.length);
+  expect(installed).toEqual(["install", "in/pr-12.apk"]);
+  expect(t.link.sent("box2").at(-1)).toMatchObject({ t: "browser_control", sessionId: S5, control: "human", by: "human:laptop" });
+  // The runner says the person drives it now: the wait is over.
+  const thread = t.hub.db.all<{ origin_thread: string }>("SELECT origin_thread FROM session_places")[0]!.origin_thread;
+  await t.calls.call({ ...agent("devbox", "p1"), threadId: thread }, {
+    op: "browser_session",
+    sessionId: S5,
+    kind: "android",
+    threadId: thread,
+    purpose: "Android emulator opened by laptop",
+    state: "live",
+    control: "human",
+    startedAt: "2026-11-08T12:00:00.000Z",
+  });
+  for (let i = 0; i < 200 && t.hub.db.all("SELECT 1 FROM screen_waits").length > 0; i++) await Bun.sleep(10);
+  const stages = t.events.appended.filter((e) => e.type === "screen.wait").map((e) => (e.data as { stage?: string }).stage ?? "gone");
+  expect(stages).toEqual(["installing", "gone"]);
+}, 30_000);
+
+test("a PR with no build there is refused before anything starts, in plain words", async () => {
+  setup();
+  const { builds } = await import("../src/hub/machine_roles/builds.ts");
+  t.link.deliver("box2", load([{ host: "android", ready: true, detail: "SDK" }, { host: "browser", ready: true, detail: "Chrome" }]));
+  t.hub.db.conn
+    .query(`INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key) VALUES ('devbox', 'p1', 'app', 'devbox', 'p1', 'github.com/acme/app')`)
+    .run();
+  const json = (v: unknown) => ({ exitCode: 0, stdout: JSON.stringify(v), stderr: "" });
+  builds(t.hub).gh = {
+    async run(args) {
+      if (args[1] === "repos/acme/app/pulls/3") return json({ head: { sha: "b".repeat(40) } });
+      if (args[1]?.startsWith("repos/acme/app/actions/runs?")) return json({ workflow_runs: [{ id: 6, status: "in_progress" }] });
+      return json({ artifacts: [] });
+    },
+  };
+  const r = { projectRef: { machineId: "devbox", projectId: "p1" }, machineId: "box2", kind: "android" as const, pr: { repo: "acme/app", number: 3 } };
+  expect(await t.tools.call(t.hub, caller("operate", { kind: "human" }), "screen_open", r)).toMatchObject({
+    error: { error: { code: "failed", message: "PR #3's CI is still running on its head (bbbbbbb): its Android build isn't there yet. Try again once it's done." } },
+  });
+  expect(t.hub.db.all("SELECT 1 FROM session_places")).toHaveLength(0);
+  expect(await t.tools.call(t.hub, caller("operate", { kind: "human" }), "screen_open", { ...r, kind: "browser" })).toMatchObject({
+    error: { error: { code: "invalid", message: "A PR's build goes into an Android screen." } },
+  });
+});
+
+test("a PR's build is read with the hub's App-aware gh, as pr_list's PRs are", async () => {
+  setup();
+  const { builds } = await import("../src/hub/machine_roles/builds.ts");
+  const { AppGh, repoOf } = await import("../src/hub/github_app/gh.ts");
+  expect(builds(t.hub).gh).toBeInstanceOf(AppGh);
+  // Each of its calls names its repo, so the App's token goes with every one.
+  expect(repoOf(["api", "repos/acme/app/pulls/12"])).toBe("acme/app");
+  expect(repoOf(["run", "download", "5", "-n", "app-android", "-D", "/tmp/x", "-R", "acme/app"])).toBe("acme/app");
+});
