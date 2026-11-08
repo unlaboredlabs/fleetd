@@ -40,6 +40,7 @@ import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
+import type { LaunchArea } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
@@ -308,6 +309,8 @@ export class SessionService {
   #warmPruner: ReturnType<typeof setInterval> | undefined;
   /** Called for each step stored as completed or failed (node.area("items")). */
   onItemEnded: ((sessionId: string, item: ThreadItem) => void) | undefined;
+  /** What the node's areas add to a lead's or a worker's launch (node.area("launch")). */
+  launch: Pick<LaunchArea, "env" | "pluginDirs"> | undefined;
   /** Sessions whose worktree setup still runs: a send waits for it; true once the brief went to claude. */
   #settingUp = new Map<string, Promise<boolean>>();
   /** Ends a session's running setup (its command killed), and the run it is for: only that run's interrupt ends it. */
@@ -1162,6 +1165,12 @@ export class SessionService {
     const scratch = join(this.home, "tmp", scratchName(id));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
+    // The screens' areas: an agent's session gets their tools' variables and skills (Rust's browser SessionHooks).
+    const pluginDirs = prepared.pluginDir ? [prepared.pluginDir] : [];
+    if (this.launch && role !== "plain") {
+      for (const [k, v] of this.launch.env(id, env.PATH)) env[k] = v;
+      for (const d of this.launch.pluginDirs()) if (!pluginDirs.includes(d)) pluginDirs.push(d);
+    }
     const allowed = [...(row.local.allowedTools ?? [])];
     for (const t of claude.roleAllowed(role, row.summary.runtimeMode)) if (!allowed.includes(t)) allowed.push(t);
     return {
@@ -1181,7 +1190,7 @@ export class SessionService {
       mcpConfig,
       strictMcp: sessionMcp.strict,
       settings,
-      pluginDirs: prepared.pluginDir ? [prepared.pluginDir] : [],
+      pluginDirs,
       env,
       hostDir: join(this.home, "hosts", id),
       isolated: row.local.cwd === join(this.home, "isolated"),
