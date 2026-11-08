@@ -42,14 +42,25 @@ function scrubValue(mask: Masker, v: unknown): unknown {
   return v;
 }
 
-export type Opened = { id: string; thread: string; cwd: string; purpose: string; mask: Masker; kind: "linux_desktop" };
+export type Opened = {
+  id: string;
+  thread: string;
+  cwd: string;
+  purpose: string;
+  mask: Masker;
+  kind: "linux_desktop" | "mac";
+  /** A Mac screen session that starts without the lease. */
+  observing?: boolean;
+};
 
 export class Session {
   readonly id: string;
   readonly thread: string;
   readonly cwd: string;
   readonly purpose: string;
-  readonly kind: "linux_desktop";
+  readonly kind: "linux_desktop" | "mac";
+  /** A Mac screen session without the lease: it only observes, and reads the screen only for a person watching it. */
+  private observingNow: boolean;
   readonly startedAt = new Date().toISOString();
   private readonly start = performance.now();
   private lent: Lent | undefined;
@@ -82,6 +93,7 @@ export class Session {
     this.cwd = opened.cwd;
     this.purpose = opened.purpose;
     this.kind = opened.kind;
+    this.observingNow = opened.observing ?? false;
     this.scrub = opened.mask;
   }
 
@@ -112,6 +124,17 @@ export class Session {
 
   control(): BrowserControl {
     return this.controlNow;
+  }
+
+  observing(): boolean {
+    return this.observingNow;
+  }
+
+  /** Takes the Mac's lease (false) or gives it up (true), logged as a step. */
+  setObserving(observing: boolean): void {
+    if (this.observingNow === observing) return;
+    this.observingNow = observing;
+    this.logStep(observing ? "lease_lost" : "lease_taken", {}, true);
   }
 
   watched(): boolean {
@@ -173,6 +196,11 @@ export class Session {
     let lastHash: bigint | undefined;
     let lastFull = performance.now() - FULL_EVERY;
     while (!this.closed) {
+      // An observer reads the screen only for a person watching it.
+      if (this.observingNow && !this.watched()) {
+        await Bun.sleep(FRAME_EVERY);
+        continue;
+      }
       const full = performance.now() - lastFull >= FULL_EVERY;
       try {
         if (this.screen.changed() || full) {
@@ -226,7 +254,12 @@ export class Session {
     const started = performance.now();
     let done: DesktopDone;
     try {
-      done = call.action === "launch" ? await this.launchApp(call) : await this.screen.serial(() => act(this.screen, call));
+      done =
+        call.action === "launch"
+          ? await this.launchApp(call)
+          : call.action === "agent_desktop"
+            ? await this.agentDesktop(call)
+            : await this.screen.serial(() => act(this.screen, call));
     } catch (e) {
       const why = (e as Error).message;
       this.logStep("desktop", call, false, why, Math.round(performance.now() - started));
@@ -244,6 +277,16 @@ export class Session {
     if (!launched.exited) return { message: `Started \`${command}\` (pid ${launched.pid}). Take a screenshot to see its window.` };
     const { code, output } = launched.exited;
     return { message: `\`${command}\` exited at once${code === null ? "" : ` with code ${code}`}: ${output || "it printed nothing"}` };
+  }
+
+  /** `agent_desktop`: one agent-desktop command on the Mac's screen. */
+  private async agentDesktop(call: DesktopCall): Promise<DesktopDone> {
+    if (!call.text) throw new Error("agent_desktop needs text: its arguments, the command first");
+    if (!this.lent) throw new Error("the session has ended");
+    if (!this.lent.agentDesktop) {
+      throw new Error("agent_desktop drives the agents' Mac's screen (session_start kind mac); on a Linux desktop use the other actions");
+    }
+    return { message: await this.lent.agentDesktop(call.text) };
   }
 
   /** Starts an app on the display. */

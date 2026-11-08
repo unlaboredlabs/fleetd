@@ -80,11 +80,13 @@ export interface Screen {
 /** What `launch` saw of an app in its first moments: exited already, its code and the end of what it printed. */
 export type Launched = { pid: number; exited?: { code: number | null; output: string } };
 
-/** What a session was lent to put its screen on: a display of its own, thrown away by `drop`. */
+/** What a session was lent to put its screen on: a display of its own, thrown away by `drop`, or the Mac's lease. */
 export interface Lent {
   /** Starts an app on the screen with `sh -c`, in `cwd` where the screen's apps can see it, and looks at it a moment
    * later. */
   launch(command: string, cwd: string): Promise<Launched>;
+  /** One agent-desktop command (its arguments, the command first), and what it printed: the agents' Mac's only. */
+  agentDesktop?(args: string): Promise<string>;
   /** Throws it away with everything on it. */
   drop(): Promise<void>;
 }
