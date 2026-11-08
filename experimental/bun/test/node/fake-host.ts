@@ -31,6 +31,7 @@ const exit = () => {
 const sock = join(dir, "sock");
 rmSync(sock, { force: true });
 let buf = "";
+const decoder = new TextDecoder();
 Bun.listen({
   unix: sock,
   socket: {
@@ -39,7 +40,7 @@ Bun.listen({
       for (const [, line] of kept) s.write(`${line}\n`);
     },
     data(_s, chunk) {
-      buf += new TextDecoder().decode(chunk);
+      buf += decoder.decode(chunk, { stream: true });
       let nl: number;
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = JSON.parse(buf.slice(0, nl));

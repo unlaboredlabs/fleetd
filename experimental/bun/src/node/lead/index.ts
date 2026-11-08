@@ -212,17 +212,18 @@ export async function serveLeadSocket(path: string, hooks: LeadSocketHooks): Pro
     if (live) throw new Error(`another fleetd node is already serving ${path}; stop it first`);
     rmSync(path, { force: true });
   }
-  type Conn = { buf: string; done: boolean; pid: number | undefined };
+  /** One decoder per connection, streaming: a character split across two reads comes out whole. */
+  type Conn = { buf: string; done: boolean; pid: number | undefined; decoder: TextDecoder };
   const server = Bun.listen<Conn>({
     unix: path,
     socket: {
       open(socket) {
-        socket.data = { buf: "", done: false, pid: peerPid((socket as unknown as { fd?: number }).fd) };
+        socket.data = { buf: "", done: false, pid: peerPid((socket as unknown as { fd?: number }).fd), decoder: new TextDecoder() };
       },
       data(socket, chunk) {
         const conn = socket.data;
         if (conn.done) return;
-        conn.buf += new TextDecoder().decode(chunk);
+        conn.buf += conn.decoder.decode(chunk, { stream: true });
         const nl = conn.buf.indexOf("\n");
         if (nl < 0) {
           if (conn.buf.length > MAX_BROWSER_FRAME_BYTES) {
@@ -237,6 +238,7 @@ export async function serveLeadSocket(path: string, hooks: LeadSocketHooks): Pro
       // Half-open: a caller that ends its side after writing still gets the answer.
       end(socket) {
         const conn = socket.data;
+        conn.buf += conn.decoder.decode();
         if (!conn.done && conn.buf.trim()) {
           conn.done = true;
           respond(socket, conn.buf);

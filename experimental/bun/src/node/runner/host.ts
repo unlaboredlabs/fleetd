@@ -111,8 +111,10 @@ export class HostLink {
     if (registration.protocol !== PROTOCOL) throw new Error(`it speaks protocol ${registration.protocol}, this node ${PROTOCOL}`);
     if (registration.refused) throw new Error(registration.refused.message);
     const link = new HostLink(registration);
+    // One decoder for the connection, streaming: a character split across two reads comes out whole.
+    const decoder = new TextDecoder();
     link.#socket = await dialSocket(dir, {
-      data: (_s, chunk) => link.#data(new TextDecoder().decode(chunk)),
+      data: (_s, chunk) => link.#data(decoder.decode(chunk, { stream: true })),
       close: () => link.#gone(),
       error: () => link.#gone(),
     });
