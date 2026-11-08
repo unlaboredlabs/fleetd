@@ -573,7 +573,7 @@ impl SessionService {
         env.extend(vars);
         let n = blocking(super::super::load::build_jobs_here).await;
         env.extend(share::jobs_env(&env, n));
-        let scratch = share::scratch_dir(&home, row.summary.session_id.as_str());
+        let scratch = share::scratch_dir(&home, share::scratch_owner(row));
         if super::super::config::mkdir_private(&scratch).is_ok() {
             let scratch = share::scratch_env(&scratch);
             env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));

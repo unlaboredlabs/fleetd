@@ -54,6 +54,9 @@ export type SessionLocal = {
   systemPrompt?: string;
   queuedPrompts?: PendingPermission[];
   monitors?: { id: string; description?: string; untilMs: number }[];
+  /** The session whose scratch dir ($TMPDIR) it uses: the earliest of the sessions it took over (a task restarted
+   * fresh), so the task goes on with the files it kept there. Absent: its own. */
+  scratchOf?: string;
   [more: string]: unknown;
 };
 

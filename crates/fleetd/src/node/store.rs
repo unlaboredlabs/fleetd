@@ -133,6 +133,10 @@ pub struct SessionLocal {
     /// without it) wakes the session once to say so.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub monitors: Vec<ArmedMonitor>,
+    /// The session whose scratch dir ($TMPDIR) it uses: the earliest of the sessions it took over (a task restarted
+    /// fresh), so the task goes on with the files it kept there. Absent: its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch_of: Option<String>,
 }
 
 /// A Monitor a session's claude armed, kept until its notice comes or its claude is gone.
