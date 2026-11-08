@@ -239,7 +239,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [ ] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
-- [ ] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
+- [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
 - [ ] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
