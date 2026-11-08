@@ -869,3 +869,11 @@ export class Chat {
     this.put(message);
   }
 }
+
+/** The chat's needs-you, for areas that badge or notify on it (push): `hub.area("chat_state")`. */
+export type ChatState = { needsYou(r: ProjectRef): boolean };
+
+export const chatState = (hub: Hub) =>
+  hub.area<ChatState>("chat_state", (h) => ({ needsYou: (r) => chat(h).state(r, false).needsYou }));
+
+export { sendAsAgent } from "./flow.ts";
