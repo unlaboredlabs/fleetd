@@ -27,9 +27,8 @@ import { homeDir } from "../util.ts";
 import { image as pinnedImage, Runtime } from "./container.ts";
 import { type Backend, clearLeftovers, Pool, type Settings } from "./display.ts";
 import { onPath } from "./paths.ts";
-import { install as installAgentDesktop } from "./mac/agent_desktop.ts";
+import { install as installAgentDesktop, macDir } from "./mac/agent_desktop.ts";
 import { type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE_MINUTES, MacLent, type MacConfig, macEnabled, observes } from "./mac/index.ts";
-import { macDir } from "./mac/agent_desktop.ts";
 import { MacScreen } from "./mac/screen.ts";
 import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
@@ -762,7 +761,6 @@ export async function prepare(home: string, config: DesktopConfig, state: (h: De
   throw new Error("this machine has neither docker or podman nor Xvfb");
 }
 
-/** The node's desktops: `given` (a test's) when it is the first to ask, else the node's own. */
 /** The agents' Mac's screen as the heartbeat's host line reads it (hosts.rs `mac_screen`): on in node.json on a Mac,
  * what stands in the way of it now, and who holds it. */
 export function macScreen(node: Node): { enabled: boolean; blocked(): Blocked | undefined; heldBy(): string | undefined } {
@@ -770,6 +768,7 @@ export function macScreen(node: Node): { enabled: boolean; blocked(): Blocked | 
   return { enabled: macEnabled(d.mac), blocked: () => d.macGate(), heldBy: () => d.heldBy() };
 }
 
+/** The node's desktops: `given` (a test's) when it is the first to ask, else the node's own. */
 export const desktops = (node: Node, given?: Desktops) => node.area("desktop", (n) => given ?? new Desktops(n));
 
 /**

@@ -6,7 +6,7 @@
 // Where the Rust node captures with ScreenCaptureKit (Objective-C blocks, which bun:ffi can't make), this reads the
 // screen with macOS's own `screencapture` (cursor shown) and scales it to the screen's points with Bun.Image: a few
 // frames a second rather than ten. The pointer's place comes from HIToolbox's HIGetMousePosition, which writes it to
-// memory, since CGEventGetLocation returns a struct.
+// memory and returns that memory's address (not a status), since CGEventGetLocation returns a struct.
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -48,10 +48,11 @@ function load() {
     CGEventPost: { args: [FFIType.u32, FFIType.ptr], returns: FFIType.void },
   });
   const cf = dlopen(CF, { CFRelease: { args: [FFIType.ptr], returns: FFIType.void } });
-  type Hi = { HIGetMousePosition: (space: number, object: null, out: unknown) => number };
+  // `HIPoint *HIGetMousePosition(HICoordinateSpace, void *, HIPoint *)`: returns the point it was given, filled in.
+  type Hi = { HIGetMousePosition: (space: number, object: null, out: unknown) => unknown };
   let hi: Hi | undefined;
   try {
-    hi = dlopen(HI, { HIGetMousePosition: { args: [FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 } }).symbols as unknown as Hi;
+    hi = dlopen(HI, { HIGetMousePosition: { args: [FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.ptr } }).symbols as unknown as Hi;
   } catch {
     hi = undefined;
   }
@@ -221,8 +222,9 @@ export class MacScreen implements Screen {
 
   async pointer(): Promise<[number, number]> {
     if (this.api.hi) {
-      const at = new Float64Array(2);
-      if (this.api.hi.HIGetMousePosition(GLOBAL_POINTS, null, ptr(at)) === 0) return [Math.round(at[0]!), Math.round(at[1]!)];
+      const at = new Float64Array([Number.NaN, Number.NaN]);
+      const filled = this.api.hi.HIGetMousePosition(GLOBAL_POINTS, null, ptr(at));
+      if (filled && Number.isFinite(at[0]) && Number.isFinite(at[1])) return [Math.round(at[0]!), Math.round(at[1]!)];
     }
     return this.last;
   }
