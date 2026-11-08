@@ -275,3 +275,29 @@ test("start() makes the activity tracker, so the executor's first thread events 
   built.hub.db.close();
   fresh.done();
 });
+
+test("the usage soft brake pauses new agents at its figure, holds above the lift, and resumes below it", async () => {
+  const node = await linked("worker-13");
+  const resets = new Date(Date.now() + 3_600_000).toISOString();
+  const beat = (utilization: number) =>
+    node.send({
+      t: "hb",
+      at: new Date().toISOString(),
+      load: { cpus: 8, load1: 1, limits: [{ limitType: "five_hour", utilization, resetsAt: resets, status: "allowed" }] },
+    });
+  beat(0.95);
+  await until(() => links.paused("worker-13") !== undefined);
+  expect(links.paused("worker-13")).toStartWith("Paused new agents: 5-hour limit 95% on worker-13");
+  beat(0.87);
+  await Bun.sleep(30);
+  expect(links.paused("worker-13")).toStartWith("Paused new agents: 5-hour limit 87% on worker-13");
+  beat(0.5);
+  await until(() => links.paused("worker-13") === undefined);
+  const guard = events(hub)
+    .page(0)
+    .events.filter((e) => e.type === "machine.guard" && e.machineId === "worker-13")
+    .map((e) => e.data);
+  expect(guard).toEqual([{ paused: true }, { paused: false }]);
+  node.close();
+  await node.closed;
+});

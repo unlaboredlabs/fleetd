@@ -195,6 +195,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   relay.hold = () => sessions.hold();
   const node = new Node(home, config, relay);
   sessions.onItemEnded = (session, item) => node.area("items").ended(session, item);
+  node.area("sessions", () => ({ maskFor: (thread: string) => sessions.maskFor(thread), sessionCwd: (thread: string) => sessions.sessionCwd(thread) }));
   registerAreas(node);
   const link = node.area("link");
   const local = node.area("local");
@@ -296,6 +297,13 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   };
 
   const hb = node.area("hb");
+  // What the last hello listed: an area's capabilities that changed since go to the hub in a new hello.
+  let hello: string[] = [];
+  node.area("caps").onChanged(() => {
+    const now = [...CAPABILITIES, ...node.area("caps").list().filter((c) => !CAPABILITIES.includes(c as never))];
+    const current = link.current;
+    if (current && JSON.stringify(now) !== JSON.stringify(hello)) current.relink("this machine's capabilities changed");
+  });
   const fatal = runNode({
     settings: { hub: config.hub, machineId: config.machineId, name: config.name, nodeVersion: VERSION },
     identity,
@@ -303,7 +311,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     machineFingerprint: machineFingerprint(),
     ...(enrollToken ? { enrollToken } : {}),
     ...(enrolled ? { onEnrolled: enrolled } : {}),
-    capabilities: () => CAPABILITIES,
+    capabilities: () => (hello = [...CAPABILITIES, ...node.area("caps").list().filter((c) => !CAPABILITIES.includes(c as never))]),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: 0, hosted: 0 } };
       await hb.fill(parts);

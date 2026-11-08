@@ -5,6 +5,7 @@ import { createPublicKey, verify } from "node:crypto";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
 import { compresses, linkUrl, reconnectDelay, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
+import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -156,6 +157,35 @@ test("each heartbeat carries the fields the node's modules fill in", async () =>
   const hb = hub.conns[0]!.frames.find((f) => f.t === "hb")!;
   expect(hb.busy).toEqual({ threads: 1, screens: 0, uploads: 0, hosted: 0 });
   expect(Date.parse(hb.at)).toBeGreaterThan(0);
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
+});
+
+test("a capability an area turns on reaches the hub in a new hello; one that didn't change sends none", async () => {
+  const home = tempHome();
+  const hub = fakeHub();
+  const stop = new AbortController();
+  const caps = new CapsArea();
+  let desktop = false;
+  caps.contribute(() => ["browser", ...(desktop ? ["session_linux_desktop"] : [])]);
+  let hello: string[] = [];
+  let link: LinkContext | undefined;
+  caps.onChanged(() => {
+    const now = caps.list();
+    if (link && JSON.stringify(now) !== JSON.stringify(hello)) link.relink("this machine's capabilities changed");
+  });
+  void runNode(options(hub.url, home.dir, { capabilities: () => (hello = caps.list()), attach: (l) => ((link = l), () => {}), signal: stop.signal }));
+  await until("the first hello", () => hub.conns.length === 1 && hub.conns[0]!.frames.length >= 1);
+  expect(hub.conns[0]!.frames[0]!.capabilities).toEqual(["browser"]);
+  caps.changed();
+  await Bun.sleep(100);
+  expect(hub.conns).toHaveLength(1);
+  // The desktop's health came ready: the node links again with it listed.
+  desktop = true;
+  caps.changed();
+  await until("the second hello", () => hub.conns.length === 2 && hub.conns[1]!.frames.length >= 1);
+  expect(hub.conns[1]!.frames[0]!.capabilities).toEqual(["browser", "session_linux_desktop"]);
   stop.abort();
   hub.server.stop(true);
   home.done();
