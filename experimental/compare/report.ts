@@ -46,17 +46,21 @@ out();
 
 out("## Build and check");
 out();
-out(`| step | ${a} clean (s) | ${b} clean (s) | ${a} one-file edit (s) | ${b} one-file edit (s) |`);
-out("|---|---|---|---|---|");
-const steps = new Set([...Object.keys(A.build?.data.steps ?? {}), ...Object.keys(B.build?.data.steps ?? {})]);
+out(`| step | CPUs (N) | ${a} clean (s) | ${b} clean (s) | ${a} one-file edit (s) | ${b} one-file edit (s) |`);
+out("|---|---|---|---|---|---|");
+// One build-j<N>.json per CPU count measured: each runs on N pinned CPUs with every tool's parallelism set to N.
+const builds = [...new Set([...Object.keys(A), ...Object.keys(B)].filter((k) => /^build-j\d+$/u.test(k)))].sort((x, y) => Number(x.slice(7)) - Number(y.slice(7)));
 const time = (r: Json | undefined) => seconds(r?.runMs ?? r?.toolMs ?? r?.wallMs);
-for (const s of steps) {
-  const x = A.build?.data.steps?.[s] as Json | undefined;
-  const y = B.build?.data.steps?.[s] as Json | undefined;
-  out(`| ${s} | ${fmt(time(x?.clean ?? x?.warm))} | ${fmt(time(y?.clean ?? y?.warm))} | ${fmt(time(x?.incremental))} | ${fmt(time(y?.incremental))} |`);
+for (const file of builds) {
+  const steps = new Set([...Object.keys(A[file]?.data.steps ?? {}), ...Object.keys(B[file]?.data.steps ?? {})]);
+  for (const s of steps) {
+    const x = A[file]?.data.steps?.[s] as Json | undefined;
+    const y = B[file]?.data.steps?.[s] as Json | undefined;
+    out(`| ${s} | ${file.slice(7)} | ${fmt(time(x?.clean ?? x?.warm))} | ${fmt(time(y?.clean ?? y?.warm))} | ${fmt(time(x?.incremental))} | ${fmt(time(y?.incremental))} |`);
+  }
 }
 out();
-out("Rust's times are cargo's own (\"Finished … in\"), which leave out any wait for one of the machine's build slots; `test` is the suite's run on its finished build (its wall time less cargo's build check).");
+out("Each side runs on the same N CPUs (taskset), with cargo's, make's and the Rust test harness's parallelism set to N. Rust's times are cargo's own (\"Finished … in\"), which leave out any wait for one of the machine's build slots; `test` is the suite's run on its finished build (its wall time less cargo's build check).");
 out();
 
 out("## Behaviour");

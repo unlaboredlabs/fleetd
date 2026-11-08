@@ -176,12 +176,13 @@ export const sampler = (groups: Record<string, () => ReadonlyArray<number>>, eve
   };
 };
 
-/** Runs a shell command, inheriting output into `logFile`; resolves with its exit code and wall time. */
-export const timed = (command: string, opts: { cwd: string; env?: Record<string, string>; logFile: string }) => {
+/** Runs a shell command, its output into `logFile` (on the CPUs `cpus` names, with taskset); its exit code and wall time. */
+export const timed = (command: string, opts: { cwd: string; env?: Record<string, string>; logFile: string; cpus?: string }) => {
   const out = fs.openSync(opts.logFile, "a");
   fs.writeSync(out, `\n$ ${command}\n`);
+  const argv = opts.cpus === undefined ? ["bash", "-c", command] : ["taskset", "-c", opts.cpus, "bash", "-c", command];
   const t0 = performance.now();
-  const r = spawnSync("bash", ["-c", command], { cwd: opts.cwd, env: { ...process.env, ...opts.env }, stdio: ["ignore", out, out] });
+  const r = spawnSync(argv[0]!, argv.slice(1), { cwd: opts.cwd, env: { ...process.env, ...opts.env }, stdio: ["ignore", out, out] });
   const wallMs = performance.now() - t0;
   fs.closeSync(out);
   return { code: r.status ?? -1, wallMs: round(wallMs, 0) };

@@ -1,70 +1,85 @@
 {
   "impl": "rust",
-  "bench": "build",
+  "bench": "build-j2",
   "machine": {
     "cpus": 32,
     "cpuModel": "AMD Ryzen 9 9955HX 16-Core Processor",
     "memGb": 59,
     "kernel": "7.0.0-42-generic",
     "loadavg": [
-      4.99,
-      5.17,
-      3.83
+      2.9,
+      2.6,
+      2.33
     ],
-    "at": "2026-11-08T14:47:13.281Z"
+    "at": "2026-11-08T16:27:06.405Z"
   },
   "data": {
+    "jobs": 2,
+    "cpus": "0-1",
+    "pinnedEnv": {
+      "CARGO_BUILD_JOBS": "2",
+      "MAKEFLAGS": "-j2",
+      "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+      "RUST_TEST_THREADS": "2"
+    },
     "steps": {
       "build": {
         "clean": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 562366,
-          "toolMs": 562000,
+          "wallMs": 548354,
+          "toolMs": 548000,
           "waitedForSlot": false
         },
         "incremental": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 450969,
-          "toolMs": 450000,
+          "wallMs": 441321,
+          "toolMs": 441000,
           "waitedForSlot": false
         },
         "artifactBytes": 58549808
       },
       "check": {
         "clean": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 114075,
-          "toolMs": 114000,
+          "wallMs": 103721,
+          "toolMs": 103000,
           "waitedForSlot": false
         },
         "incremental": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 10866,
-          "toolMs": 10820,
+          "wallMs": 9660,
+          "toolMs": 9620,
           "waitedForSlot": false
         }
       },
       "testBuild": {
         "clean": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 225363,
-          "toolMs": 225000,
+          "wallMs": 201174,
+          "toolMs": 201000,
           "waitedForSlot": false
         },
         "incremental": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 20590,
-          "toolMs": 20550,
+          "wallMs": 19466,
+          "toolMs": 19420,
           "waitedForSlot": false
         }
       },
       "test": {
         "warm": {
+          "jobs": 2,
           "code": 0,
-          "wallMs": 217780,
-          "toolMs": 19250,
+          "wallMs": 275354,
+          "toolMs": 18520,
           "waitedForSlot": false,
-          "runMs": 198530
+          "runMs": 256834
         }
       }
     },
@@ -91,8 +106,7 @@
       "test": {
         "run": "cargo test -p fleetd -p fleetd-contracts",
         "env": {
-          "CARGO_TARGET_DIR": "$SCRATCH",
-          "RUST_TEST_THREADS": "4"
+          "CARGO_TARGET_DIR": "$SCRATCH"
         },
         "after": "testBuild"
       }

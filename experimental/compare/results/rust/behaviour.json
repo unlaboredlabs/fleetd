@@ -8,37 +8,37 @@
     "memGb": 59,
     "kernel": "7.0.0-42-generic",
     "loadavg": [
-      5.7,
-      4.95,
-      3.56
+      2.83,
+      2.61,
+      2.34
     ],
-    "at": "2026-11-08T14:45:13.843Z"
+    "at": "2026-11-08T16:27:45.597Z"
   },
   "data": {
     "suites": {
       "factory:throughput": {
         "ok": true,
-        "wallMs": 14197
+        "wallMs": 11182
       },
       "factory:self-healing": {
         "ok": true,
-        "wallMs": 6341
+        "wallMs": 6279
       },
       "cargo:closed_pipe": {
         "ok": true,
-        "wallMs": 212890
+        "wallMs": 431
       },
       "cargo:home_isolation": {
         "ok": true,
-        "wallMs": 567
+        "wallMs": 232
       },
       "cargo:session_host": {
         "ok": true,
-        "wallMs": 1770
+        "wallMs": 570
       },
       "contract": {
         "ok": true,
-        "wallMs": 1665
+        "wallMs": 4498
       },
       "contract: GET /healthz is 200": {
         "ok": true,

@@ -1,7 +1,8 @@
 // `node behaviour.ts --impl rust[=<bin>] --impl bun[=<bin>] [--only <suite>,…]`: the same black-box tests against each
 // implementation, pass/fail side by side. An impl's binary defaults to its impls.json `bin`. Suites:
 // - factory:<scenario>: the factory lab (tests/lab/factory, CI's), hub and node of the binary, offline claude;
-// - cargo:<test>: crates/fleetd's integration tests that run the binary (FLEETD_BIN, else the build's own);
+// - cargo:<test>: crates/fleetd's integration tests that run the binary (FLEETD_BIN, else the build's own), built once
+//   before any suite so their time is the tests' alone;
 // - contract: contract.ts, every wire shape the apps read checked against crates/fleetd-contracts/schema, one row per
 //   check, plus the surface (MCP tools, ready's features, snapshot keys) diffed between the implementations.
 // Not here: testLab.ts's `demo`, which needs the real claude, a login and GitHub (run it by hand with FLEETD_BIN).
@@ -10,13 +11,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { HERE, impls, REPO, round, scratch, timed, writeResult } from "./lib.ts";
 
+const CARGO_TESTS = ["closed_pipe", "home_isolation", "session_host"];
+
 interface Suite {
   readonly name: string;
   readonly command: (bin: string, dir: string, impl: string) => string;
 }
 const SUITES: ReadonlyArray<Suite> = [
   ...["throughput", "self-healing"].map((s) => ({ name: `factory:${s}`, command: (_: string, dir: string) => `FLEETD_FACTORY_DIR='${dir}/r' node '${REPO}/tests/lab/factory/run.ts' ${s}` })),
-  ...["closed_pipe", "home_isolation", "session_host"].map((t) => ({ name: `cargo:${t}`, command: () => `cargo test -q -p fleetd --test ${t}` })),
+  ...CARGO_TESTS.map((t) => ({ name: `cargo:${t}`, command: () => `cargo test -q -p fleetd --test ${t}` })),
   { name: "contract", command: (bin, dir, impl) => `node '${path.join(HERE, "contract.ts")}' --impl ${impl} --bin '${bin}' --json '${dir}/contract.json'` },
 ];
 
@@ -31,6 +34,15 @@ const targets = (given.length === 0 ? ["rust"] : given).map((spec) => {
 const onlyAt = process.argv.indexOf("--only");
 const only = onlyAt >= 0 ? process.argv[onlyAt + 1]!.split(",") : undefined;
 const suites = SUITES.filter((s) => only === undefined || only.some((o) => s.name === o || s.name.startsWith(`${o}:`)));
+
+// The cargo suites' test binaries are built once, here and untimed, so their rows time the tests alone: a cold build is
+// minutes, and the same row on a warm target/ would read as an implementation a hundred times faster.
+if (suites.some((s) => s.name.startsWith("cargo:"))) {
+  const logFile = path.join(scratch("b-build"), "log.txt");
+  console.log("building the cargo suites' tests …");
+  const built = timed(`cargo test -q -p fleetd --no-run ${CARGO_TESTS.map((t) => `--test ${t}`).join(" ")}`, { cwd: REPO, logFile });
+  if (built.code !== 0) throw new Error(`building the cargo suites' tests failed; log: ${logFile}`);
+}
 
 type Row = { ok: boolean; wallMs: number; log: string };
 const table = new Map<string, Map<string, Row>>();
