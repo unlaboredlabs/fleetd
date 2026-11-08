@@ -10,6 +10,7 @@ import { expandHome, fleetdDir } from "../../shared/home.ts";
 import { Hub, type Listen } from "../api/hub.ts";
 import { Registry } from "../api/registry.ts";
 import { serve, stop } from "../http/index.ts";
+import { link } from "../link/index.ts";
 import { HubDb } from "../store/db.ts";
 import { people } from "../people/store.ts";
 
@@ -104,6 +105,12 @@ export function build(home: string, listen: Listen): { hub: Hub; tools: Registry
   return { hub, tools };
 }
 
+/**
+ * How long the hub's stop waits for the lead calls it is answering: agents' fleetd tool calls in flight get their
+ * answers rather than a dropped link.
+ */
+export const LEAD_CALLS_GRACE_MS = 2000;
+
 /** `fleetd hub start <argv>`: 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure. */
 export async function hubStart(argv: string[]): Promise<number> {
   const options = parseHubArgs(argv);
@@ -127,6 +134,9 @@ export async function hubStart(argv: string[]): Promise<number> {
   await new Promise<void>((resolve) => {
     for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => resolve());
   });
+  // The lead calls being answered finish first, then every node link closes as a restart (1012), so each node redials
+  // at once; the app sockets close as going away (1001) as the shutdown fires.
+  await link(hub).stop(LEAD_CALLS_GRACE_MS);
   hub.shutdown.abort();
   await stop(server);
   hub.db.close();

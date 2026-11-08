@@ -203,8 +203,8 @@ export function onLeadCallFrame(
   machineId: MachineId,
   frame: LeadCallFrame,
   send: (frame: { t: "lead_result" } & LeadResultFrame) => void,
-): void {
-  void leadCalls(hub)
+): Promise<void> {
+  return leadCalls(hub)
     .answer(machineId, frame)
     .then((result) => send({ t: "lead_result", ...result }));
 }

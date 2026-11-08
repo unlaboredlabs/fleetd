@@ -3,9 +3,10 @@
 // for its agents first, for a while at most (`drain`), holding their tool calls that haven't started until none runs.
 // Update now doesn't wait.
 //
-// Every 10 minutes the hub downloads the channel's newest build ahead and asks its nodes to do the same (`prefetch`),
-// so pressing Update only swaps and restarts. With automatic updates on, the same look starts an update by itself, at
-// most once an hour (`autoTick`); the last one's result stays in `<hub home>/update/last-auto.json`.
+// Every 2 minutes the hub downloads the channel's newest build ahead and asks its nodes to do the same (`prefetch`),
+// so pressing Update only swaps and restarts. With automatic updates on, the same look starts an update by itself as
+// soon as a build is ready, but at most one in 10 minutes (`autoTick`), so the builds edge publishes merge after merge
+// go as one update to the newest; the last one's result stays in `<hub home>/update/last-auto.json`.
 //
 // The run lives in `<hub home>/update/run.json`, so the hub that comes up after the watcher's restart, new or put
 // back, takes it from there (`resume`): it reads the watcher's verdict, then updates the nodes, all at once, and
@@ -103,6 +104,10 @@ export type Timing = {
   prefetchEvery: number;
   drainPoll: number;
   drain: number;
+  /**
+   * Automatic updates: how long after the last update started the next may start, at the earliest: the window that
+   * gathers builds published close together into one update.
+   */
   autoGap: number;
 };
 
@@ -112,10 +117,11 @@ export const defaultTiming = (): Timing => ({
   verdict: HEALTH_WAIT_SECS * 2 * 1000,
   nodeBack: HEALTH_WAIT_SECS * 3 * 1000,
   restart: HEALTH_WAIT_SECS * 3 * 1000,
-  prefetchEvery: 600_000,
+  // Downloads from the release CDN, not GitHub's API: no rate limit to mind.
+  prefetchEvery: 120_000,
   drainPoll: 5000,
   drain: DRAIN_MINUTES * 60_000,
-  autoGap: 3_600_000,
+  autoGap: 600_000,
 });
 
 export type Refused = { kind: "not_wired" } | { kind: "nothing_to_retry" } | { kind: "hub_moved_on"; running: string };
@@ -369,7 +375,11 @@ export class Updates {
     return last === undefined ? now : Math.max(last + this.timing.autoGap, now);
   }
 
-  /** Automatic updates: downloads ahead, and starts an update when one is due. The update it started, if any. */
+  /**
+   * Automatic updates: downloads ahead, and starts an update when one is due: once the last update started 10 minutes
+   * ago or more (`Timing.autoGap`). Builds that come out within those 10 minutes aren't installed one by one: the one
+   * update that follows takes the newest. The update it started, if any.
+   */
   async autoTick(): Promise<UpdateRun | undefined> {
     await this.prefetch();
     const due = this.autoAt();
@@ -458,7 +468,7 @@ export class Updates {
     return join(this.dir, "fleetd.next");
   }
 
-  /** `autoTick` now and every `prefetchEvery`, until the hub stops. */
+  /** `autoTick` now and every `prefetchEvery`, or sooner when a build ready is due to install by itself, until the hub stops. */
   async prefetchLoop(): Promise<void> {
     while (!this.stopSignal?.aborted) {
       try {
@@ -467,8 +477,13 @@ export class Updates {
       } catch (e) {
         console.error("update: the automatic look failed:", e);
       }
-      this.nextCheck_ = this.now() + this.timing.prefetchEvery;
-      await this.sleep(this.timing.prefetchEvery, this.stopSignal);
+      const now = this.now();
+      const every = now + this.timing.prefetchEvery;
+      // A second at least: an update due that didn't start (not wired yet) mustn't spin.
+      const due = this.autoAt();
+      const next = due === undefined ? every : Math.min(Math.max(due, now + 1000), every);
+      this.nextCheck_ = next;
+      await this.sleep(next - now, this.stopSignal);
     }
   }
 
