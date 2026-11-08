@@ -26,7 +26,7 @@ export type Transport = (url: string, events: ConnectionEvents) => Connection;
 
 /** Node's built-in WebSocket can't ping, so `ws`. */
 export const webSocketTransport: Transport = (url, events) => {
-  trustSystemCAs();
+  if (url.startsWith("wss:")) trustSystemCAs();
   const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024 });
   let closed = false;
   let error: SocketError | undefined;
