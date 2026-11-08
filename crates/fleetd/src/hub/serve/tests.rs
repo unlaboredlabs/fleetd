@@ -406,11 +406,12 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
         json!({ "t": "auth", "key": reader }),
         json!({ "t": "call", "id": "c1", "tool": "project_add", "input": {} }),
         json!({ "t": "call", "id": "c2", "tool": "nope", "input": {} }),
+        json!({ "t": "call", "id": "c3", "tool": "telegram_get", "input": {} }),
     ] {
         app.send(Message::text(frame.to_string())).await.unwrap();
     }
     let mut frames = Vec::new();
-    while frames.len() < 4 {
+    while frames.len() < 5 {
         frames.push(
             serde_json::from_str::<Value>(app.next().await.unwrap().unwrap().to_text().unwrap())
                 .unwrap(),
@@ -432,6 +433,11 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     assert_eq!(
         frames[3],
         json!({ "t": "error", "id": "c2", "code": "not_found", "message": "No tool nope.", "fix": "Use a tool name from the hub's MCP tool list." })
+    );
+    // An older app's call to a removed tool is refused in plain words, not as a tool it got wrong.
+    assert_eq!(
+        frames[4],
+        json!({ "t": "error", "id": "c3", "code": "not_found", "message": "Telegram was removed from fleetd.", "fix": "Update the fleetd app: newer ones no longer offer it." })
     );
 }
 

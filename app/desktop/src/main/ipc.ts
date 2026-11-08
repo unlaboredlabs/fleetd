@@ -12,7 +12,7 @@ import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
-import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitTelegram, submitCloudKey } from "./secret";
+import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitCloudKey } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -111,7 +111,6 @@ export const registerIpc = (
   );
   handle(IPC.claudeAccountSubmit, (_event, id, request) => submitClaudeAccount(request, call(id)));
   handle(IPC.onePasswordSubmit, (_event, id, request) => submitOnePassword(request, call(id)));
-  handle(IPC.telegramSubmit, (_event, id, request) => submitTelegram(request, call(id)));
   handle(IPC.cloudKeySubmit, (_event, id, request) => submitCloudKey(request, call(id)));
   handle(IPC.systemHostName, () => hostName());
   // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a

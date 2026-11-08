@@ -191,8 +191,7 @@ opens any of them, and **Show the newest** goes back.
 
 An HTML artifact runs sandboxed: its scripts run, but it can't reach the network (WebRTC included), the app, your hub
 key or another artifact, keep cookies or storage, or open a window or frame (its own frame tags show nothing), so a
-page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one. On
-Telegram a link to an artifact shows as its title.
+page can only show what it carries. A link you click in it opens in your browser; the page itself can't open one.
 
 On the phone, a project's Info has **Artifacts**, with the files sent in the chat under the reports; a card or a link
 opens one the same way, and **Versions** at the top picks an older one. On iPhone an HTML artifact is fenced the same

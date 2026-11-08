@@ -70,8 +70,7 @@ pub enum HubEventType {
     /// A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it
     /// (`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the
     /// new one's id, null once removed; or its icon (`project_icon_set`): `data.icon`; or a linked hub was removed from it
-    /// (`hub_link_remove`): `data.hubLinkRemoved`, the link's id; or its Telegram bridge unpaired or removed
-    /// (`telegram_unpair`, `telegram_remove`): `data.telegram`.
+    /// (`hub_link_remove`): `data.hubLinkRemoved`, the link's id.
     #[serde(rename = "project.settings")]
     ProjectSettings,
     #[serde(rename = "thread.started")]

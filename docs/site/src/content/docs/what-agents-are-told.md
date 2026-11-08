@@ -61,7 +61,7 @@ each message's time too.
 Your zone is the one your app or phone sends with each message (the desktop app's, or the phone's own setting).
 Before your devices have sent one, and for a hub that has no person for you, the lead gets the global decision
 `policy.tz`, else the hub machine's zone, and the message says which ("UTC, the hub machine's zone: theirs isn't known
-yet"). A message on [Telegram](/docs/projects#telegram) uses the zone your app or phone sent last.
+yet").
 
 ### No time estimates {#no-time}
 

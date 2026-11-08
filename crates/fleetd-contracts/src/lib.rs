@@ -55,7 +55,6 @@ pub mod skills;
 pub mod status;
 pub mod steer;
 pub mod tasks;
-pub mod telegram;
 pub mod time;
 pub mod train;
 pub mod ts;

@@ -78,7 +78,6 @@ const api: FleetdApi = {
     mcpOauthClient: (hub, request) => ipcRenderer.invoke(IPC.mcpOauthClientSubmit, hub, request) as Promise<CallOutcome>,
     claudeAccount: (hub, request) => ipcRenderer.invoke(IPC.claudeAccountSubmit, hub, request) as Promise<CallOutcome>,
     onePassword: (hub, request) => ipcRenderer.invoke(IPC.onePasswordSubmit, hub, request) as Promise<CallOutcome>,
-    telegram: (hub, request) => ipcRenderer.invoke(IPC.telegramSubmit, hub, request) as Promise<CallOutcome>,
     cloudKey: (hub, request) => ipcRenderer.invoke(IPC.cloudKeySubmit, hub, request) as Promise<CallOutcome>,
   },
   github: {

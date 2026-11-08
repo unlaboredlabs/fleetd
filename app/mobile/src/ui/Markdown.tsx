@@ -112,7 +112,7 @@ function BlockView({ block, ink, onAccent, streaming = false, holdsBlocks = true
 }
 
 /**
- * Fenced code: its language and a Copy button over it, and a tap anywhere on it copies it, as Telegram's code blocks.
+ * Fenced code: its language and a Copy button over it, and a tap anywhere on it copies it, as chat apps' code blocks.
  * Wrapped, not scrolled sideways: in a sideways ScrollView, iOS lays the text out far taller than its lines.
  */
 function CodeBlock({ text, lang, ink, fill }: { text: string; lang: string | undefined; ink: string; fill: string }) {

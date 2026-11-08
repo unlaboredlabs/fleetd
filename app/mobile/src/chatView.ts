@@ -151,9 +151,9 @@ export const sendWait = (item: Pick<ChatItem, "state" | "at">, nowMs: number): {
 };
 
 /** Where a person's message came from when it wasn't typed in an app or the CLI, as the desktop says it. */
-const VIA: Partial<Record<string, string>> = { telegram: "Telegram", share: "the Share Sheet", shortcuts: "Shortcuts" };
+const VIA: Partial<Record<string, string>> = { share: "the Share Sheet", shortcuts: "Shortcuts" };
 
-/** The quiet line under a person's message sent from outside the app: "via Shortcuts", "via Telegram". */
+/** The quiet line under a person's message sent from outside the app: "via Shortcuts", "via the Share Sheet". */
 export const viaNote = (item: Pick<ChatItem, "author" | "message">): string | undefined => {
   const via = item.author === "human" && item.message?.client !== undefined ? VIA[item.message.client] : undefined;
   return via === undefined ? undefined : `via ${via}`;
@@ -224,7 +224,7 @@ export type ThreadRow =
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly last: boolean }
   /** The lead is mid-turn: the turn line (screens/TurnLine.tsx), what it does now. */
   | { readonly t: "turn"; readonly id: string }
-  /** Where what you haven't read starts, as Telegram's "Unread Messages" bar. */
+  /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
 /**
@@ -262,7 +262,7 @@ const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
 /**
  * The rows to draw, oldest first. `working`: the lead is mid-turn, so the turn line ends the thread, as on the desktop,
  * under its reply as it streams too. `readSeq`: what was read when the chat opened; the unread bar goes before the first message from
- * the other side after it. A day line goes where a new day starts, in the clock's zone, as Telegram's date chips.
+ * the other side after it. A day line goes where a new day starts, in the clock's zone, as chat apps' date chips.
  */
 export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
   const rows: ThreadRow[] = [];
@@ -344,7 +344,7 @@ export const timeLine = (at: string, clock: Clock): string => {
   return `${fmt(ms, clock, { day: "numeric", month: "short", year: "numeric" })} at ${time}`;
 };
 
-/** A day line in a thread, as Telegram's: "Today", "Yesterday", "Tuesday 27 October", with the year when it isn't this one. */
+/** A day line in a thread, as chat apps draw one: "Today", "Yesterday", "Tuesday 27 October", with the year when it isn't this one. */
 export const dayLine = (at: string, clock: Clock): string => {
   const ms = msOf(at);
   const days = daysAgo(ms, clock);
@@ -400,7 +400,7 @@ export const aimOf = (viewPosition: number, length: number | undefined, visible:
  */
 export const olderOffset = (y: number, length: number, room: number, height: number): number => Math.max(0, Math.min(y + room * 0.85, length - height));
 
-/** The newest message among the rows on screen: read once seen, as Telegram marks it. */
+/** The newest message among the rows on screen: read once seen, as chat apps mark it. */
 export const seenSeq = (rows: readonly ThreadRow[]): number | undefined => {
   let seq: number | undefined;
   for (const r of rows) {

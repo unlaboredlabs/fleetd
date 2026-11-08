@@ -2,7 +2,7 @@
 //! Markdown or HTML document under a name, in its project's chat. Publishing a name again keeps a new version, the
 //! older ones kept. The app lists them in the chat's Artifacts tab, Markdown rendered in its own style and HTML in a
 //! sandboxed frame with scripts and no network. Any chat text links to one as `[Title](artifact:<name>)`, or to one
-//! version as `artifact:<name>@<version>`: the app opens it in the tab, and Telegram shows the title alone.
+//! version as `artifact:<name>@<version>`: the app opens it in the tab.
 
 use std::sync::LazyLock;
 

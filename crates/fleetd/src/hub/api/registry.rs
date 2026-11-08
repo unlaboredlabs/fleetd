@@ -2,7 +2,7 @@ use super::Hub;
 use super::grants::{internal_error, is_human, require};
 use crate::hub::store::StoreError;
 use fleetd_contracts::auth::{AgentKeyInfo, Role};
-use fleetd_contracts::mcp::{McpToolError, McpToolName};
+use fleetd_contracts::mcp::{ErrorCode, McpToolError, McpToolName};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -44,6 +44,9 @@ impl From<StoreError> for ToolError {
         internal_error()
     }
 }
+
+/// Tools a release took out, by name prefix, with what an older app that still calls one is told.
+const REMOVED: &[(&str, &str)] = &[("telegram_", "Telegram was removed from fleetd.")];
 
 struct Tool {
     scope: Role,
@@ -152,7 +155,15 @@ impl Registry {
         input: Value,
     ) -> Result<Value, CallError> {
         let Some(entry) = self.tools.get(tool) else {
-            return Err(CallError::UnknownTool);
+            return Err(
+                match REMOVED.iter().find(|(prefix, _)| tool.starts_with(prefix)) {
+                    Some((_, gone)) => CallError::Tool(
+                        ToolError::new(ErrorCode::NotFound, *gone)
+                            .with_fix("Update the fleetd app: newer ones no longer offer it."),
+                    ),
+                    None => CallError::UnknownTool,
+                },
+            );
         };
         let input = if input.is_null() {
             Value::Object(Default::default())

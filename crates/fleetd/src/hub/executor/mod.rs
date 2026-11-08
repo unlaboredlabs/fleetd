@@ -2749,30 +2749,6 @@ impl Executors {
         }
     }
 
-    /// One call to a Navi's Telegram bridge on its node, waiting up to `wait` for the answer. Only to a node listing
-    /// `CAP_TELEGRAM`.
-    pub async fn telegram(
-        &self,
-        machine_id: &MachineId,
-        project_id: &ProjectId,
-        call: fleetd_contracts::telegram::TelegramCall,
-        wait: Duration,
-    ) -> Result<fleetd_contracts::telegram::TelegramAnswer, ExecutorError> {
-        let op = NodeOperation::Project;
-        let call = SessionCall::Telegram {
-            project_id: project_id.clone(),
-            call,
-        };
-        match self.call(machine_id, op, call, wait).await? {
-            SessionOutput::Telegram { answer } => Ok(answer),
-            _ => Err(failed(
-                machine_id,
-                op,
-                "the node sent no answer to telegram",
-            )),
-        }
-    }
-
     /// Has the node list the Credit Card items a person's 1Password token reads: references and names, else why not,
     /// the token masked. Only to a node listing `CAP_ONEPASSWORD_CARDS`.
     pub async fn onepassword_cards(

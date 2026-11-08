@@ -1,6 +1,6 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
-// project flow, a project's allowed profiles, its approvals', payments', Telegram's and linked hubs' words, the prose
+// project flow, a project's allowed profiles, its approvals', payments' and linked hubs' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
 // state glyph's frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that
 // import no packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks
@@ -47,7 +47,6 @@ export type {
   NaviApprovalsOutput as ApprovalsOutput,
   NaviPurchasesOutput as PurchasesOutput,
   OnePasswordCardsOutput,
-  TelegramBridge,
   HubLink,
   SkillOrigin,
   SkillSummary,
@@ -83,7 +82,6 @@ export { initialAdd, step as addStep, type AddMsg, type AddState, type Call as A
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { checkerLine, FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
-export { statusWords as telegramWords } from "../../desktop/src/renderer/screens/settings/telegramModel";
 export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";

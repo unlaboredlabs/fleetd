@@ -131,8 +131,7 @@ over HTTPS only.
 
 ## What is sent, and to whom {#what}
 
-- An [Only me](/docs/projects#only-me) project's messages and approvals go to its owner only. While they talk to it on [Telegram](/docs/projects#telegram)
-  (their latest message came from there), its replies reach them there, and the phone isn't notified of them too.
+- An [Only me](/docs/projects#only-me) project's messages and approvals go to its owner only.
 - A shared project's messages go to the person who last wrote in that project's chat, else the hub's owner.
 - Approvals, failed fetches, machines down under running work and usage limits: what the hub already marks as
   needing you. Money and irreversible commands are urgent.

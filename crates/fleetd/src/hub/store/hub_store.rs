@@ -71,8 +71,6 @@ pub(crate) const MACHINE_TABLES: &[&str] = &[
     "skill_versions",
     "skill_uses",
     "artifact_versions",
-    "telegram_bridges",
-    "telegram_cards",
     "browser_sessions",
     "screen_waits",
 ];
@@ -446,8 +444,6 @@ impl HubStore {
                 "skill_versions",
                 "skill_uses",
                 "artifact_versions",
-                "telegram_bridges",
-                "telegram_cards",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

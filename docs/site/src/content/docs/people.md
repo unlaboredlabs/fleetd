@@ -61,8 +61,7 @@ A person signs out one of their other devices (a lost phone, an old computer) un
 the desktop app: **Sign out** on its row, then confirm, and its key stops working at once, and so does every
 [hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out
 anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
-once: an app it has open is disconnected, its phone gets no more notifications, and a Telegram bridge of theirs takes
-and sends nothing more. What a removed person did keeps their name. Their Only me projects are archived, so nothing
+once: an app it has open is disconnected, and its phone gets no more notifications. What a removed person did keeps their name. Their Only me projects are archived, so nothing
 runs in them; **Settings › Hub › People** lists them by name under *Left by removed people*, with Delete. Nobody else
 opens them.
 

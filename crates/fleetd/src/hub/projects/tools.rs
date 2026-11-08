@@ -106,8 +106,8 @@ async fn remove(
     crate::hub::navi::erase::erase(&hub, &r)?;
     crate::hub::hub_links::client::revoke_all_there(&hub, links);
     const ERASED: &str = "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and \
-                          tasks, automations, kept browser sign-ins, Telegram link, linked hubs, transcripts, attachments and \
-                          screen recordings";
+                          tasks, automations, kept browser sign-ins, linked hubs, transcripts, attachments and screen \
+                          recordings";
     let next = if remove_folder {
         format!("{ERASED}, and its folder with everything in it.")
     } else {

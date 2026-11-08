@@ -463,7 +463,7 @@ mod tests {
         assert!(deliberate(
             "fix: x\n\nThis reverts commit 447cab29c86a982a2eed0af3a5774e433a33996c."
         ));
-        assert!(!deliberate("feat: talk to your Navi from Telegram (W237)"));
+        assert!(!deliberate("feat: talk to your Navi from the phone (W237)"));
         assert!(!deliberate("revert the sidebar change"));
         assert!(!deliberate("Closes #12\nrevert nothing"));
     }

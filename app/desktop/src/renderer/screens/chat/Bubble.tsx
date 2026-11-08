@@ -3,7 +3,7 @@
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
-import { Check, Forward, Paperclip, Reply, Send, SmilePlus } from "lucide-react";
+import { Check, Paperclip, Reply, Send, SmilePlus } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
@@ -338,14 +338,6 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             </Text>
           </div>
         ) : null}
-        {via?.forwarded === true ? (
-          <div className={cx(s.via, quote.className)} style={quote.style} data-via="forward">
-            <Forward size={12} aria-hidden />
-            <Text size="xs" tone="quiet">
-              {via.text}
-            </Text>
-          </div>
-        ) : null}
         {r.reply !== undefined ? (
           <button type="button" className={cx(s.quote, quote.className)} style={quote.style} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
             <Truncate size="xs" tone="quiet" expand="none">
@@ -390,11 +382,11 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             ))}
           </div>
         ) : null}
-        {via !== undefined && !via.forwarded ? (
+        {via !== undefined ? (
           <div className={cx(s.via, tail.className)} style={tail.style} data-via={i.message?.client}>
             <Send size={12} aria-hidden />
             <Text size="xs" tone="quiet">
-              {via.text}
+              {via}
             </Text>
           </div>
         ) : null}

@@ -874,7 +874,7 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 
 ### chat_file
 
-Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone and gets as a document on Telegram ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
+Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1268,7 +1268,7 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 
 ### chat_file (task)
 
-Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone and gets as a document on Telegram ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
+Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

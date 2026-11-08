@@ -60,15 +60,15 @@ fn a_migration_inserted_before_one_already_run_still_runs() {
 fn a_migration_replacing_one_already_run_runs_and_the_old_one_is_reported() {
     let mut conn = Connection::open_in_memory().unwrap();
     migrate(&mut conn, &[A, B]).unwrap();
-    let telegram = Migration {
-        name: "202601020001_telegram",
-        sql: "CREATE TABLE telegram (x)",
+    let shop = Migration {
+        name: "202601020001_shop",
+        sql: "CREATE TABLE shop (x)",
     };
     assert_eq!(
-        migrate(&mut conn, &[A, telegram]).unwrap(),
+        migrate(&mut conn, &[A, shop]).unwrap(),
         [Drift::Unknown(B.name.to_owned())]
     );
-    assert_eq!(tables(&conn), ["a", "b", "migrations_applied", "telegram"]);
+    assert_eq!(tables(&conn), ["a", "b", "migrations_applied", "shop"]);
 }
 
 #[test]

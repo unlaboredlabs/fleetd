@@ -1,6 +1,6 @@
 // A chat's avatar, a circle as iOS draws a contact's: its picture once a person gave it one (project_avatar_set), else
 // its built-in icon (a glass being on a field of a color: the hub's pick or one it derived), else, from an older hub,
-// its initials on a soft top-to-bottom gradient of a color picked from its name, as Telegram draws a person's. A
+// its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a person's. A
 // picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
 // the next launch; one not seen before fades in over the icon.
 import { File, Paths } from "expo-file-system";

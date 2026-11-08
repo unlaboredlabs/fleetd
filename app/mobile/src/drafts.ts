@@ -1,4 +1,4 @@
-// What you were writing in each chat, as Messages and Telegram keep it: the words, the files picked for it and the
+// What you were writing in each chat, as Messages keeps it: the words, the files picked for it and the
 // bubble it replies to, kept while you look at another chat and when the app starts again. Pure, so it is
 // unit-tested; draftsStore.ts keeps it on disk. A file still uploading, or one the hub didn't take, lives only while
 // the app runs: after a restart its upload is gone, so it would never finish. One the hub took is good until the hub

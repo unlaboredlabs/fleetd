@@ -149,7 +149,7 @@ An optional `.fleetd/policy.yaml` in a project's checkout. It sets tool rules an
 
 A chat with one lead, in a folder of its own on a worker, holding zero or more git repos. With repos, its lead
 plans the work and its agents open pull requests; with none, the lead does the work itself. Every project has the
-same abilities: memory, automations, screens, Telegram, kept sign-ins, purchases and skills. See
+same abilities: memory, automations, screens, kept sign-ins, purchases and skills. See
 [Projects](/docs/projects).
 
 ## Receipt {#receipt}

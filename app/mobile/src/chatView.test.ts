@@ -63,7 +63,7 @@ describe("bubbles", () => {
 describe("viaNote", () => {
   it("says where a person's message came from when not the app, and nothing for the lead's", () => {
     const from = (client: string | undefined, author: ChatItem["author"] = "human") => viaNote({ author, message: { client } as ChatItem["message"] });
-    expect([from("shortcuts"), from("share"), from("telegram")]).toEqual(["via Shortcuts", "via the Share Sheet", "via Telegram"]);
+    expect([from("shortcuts"), from("share")]).toEqual(["via Shortcuts", "via the Share Sheet"]);
     expect([from(undefined), from("app"), from("cli"), from("shortcuts", "lead")]).toEqual([undefined, undefined, undefined, undefined]);
   });
 });

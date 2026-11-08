@@ -114,7 +114,7 @@ check(object(Calls.send(chat, text: "hi", attachments: ["F1", "F2"], requestId: 
 check(object(Calls.send(chat, text: "hi", attachments: [], requestId: "share-1", client: .share))
   == #"{"client":"share","clientRequestId":"share-1","projectRef":{"machineId":"m1","projectId":"p2"},"text":"hi"}"#, "chat_send without files")
 // A hub from before the share sheet's client refuses it by name; any other refusal is the hub's word.
-let older = Problem.hub(code: "invalid", message: "chat_send: unknown variant `share`, expected one of `app`, `cli`, `telegram`", fix: nil)
+let older = Problem.hub(code: "invalid", message: "chat_send: unknown variant `share`, expected one of `app`, `cli`", fix: nil)
 check(Calls.olderHub(older, client: .share) && !Calls.olderHub(older, client: .shortcuts), "an older hub's refusal")
 check(!Calls.olderHub(Problem.hub(code: "forbidden", message: "`share` is archived", fix: nil), client: .share), "another refusal")
 let file = Upload(name: "a.png", mime: .png, data: Data("abc".utf8))

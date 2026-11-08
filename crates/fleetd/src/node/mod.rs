@@ -43,7 +43,6 @@ pub mod session_route;
 pub mod sessions;
 pub mod skills;
 pub mod store;
-pub mod telegram;
 pub mod update;
 pub mod util;
 pub mod warm;
@@ -401,8 +400,8 @@ async fn run_node(
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
     }
-    let telegram = telegram::Telegram::start(home, telegram::TELEGRAM, telegram::Timing::default());
-    node_sessions.set_telegram(telegram.clone());
+    // Telegram was removed from fleetd (D339): the bot tokens and journals an older node kept for it go.
+    let _ = std::fs::remove_dir_all(home.join("telegram"));
     // The hold the node before this one kept for its update ends with it: what it held goes on now.
     hold::clear(home);
     {
@@ -503,7 +502,6 @@ async fn run_node(
         () = enrolled => Ok(()),
         // A screen setting changed in Settings: the node stops as for SIGTERM, and its service manager starts it again.
         () = async { tokio::select! { () = shutdown_signal() => {}, () = screens::restart_wanted() => {} } } => {
-            telegram.shutdown();
             node_sessions.shutdown().await;
             if let Some(router) = &sessions_router {
                 router.shutdown().await;

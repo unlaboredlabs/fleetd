@@ -58,7 +58,7 @@ export const nameProblem = (name: string): string | undefined => {
  * sheet: what is erased, and the tickbox, off by default, that deletes its folder too.
  */
 export const deleteWords = (title: string, machine: string, folder: string) => ({
-  message: `${title} stops now, and everything fleetd keeps for it is erased from fleetd and ${machine}: its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link. The files in its folder stay unless you tick below. This can't be undone.`,
+  message: `${title} stops now, and everything fleetd keeps for it is erased from fleetd and ${machine}: its chat, memory, skills, approvals, purchases, automations and sign-ins. The files in its folder stay unless you tick below. This can't be undone.`,
   folder: `Also delete its folder, ${folder}`,
   folderNote: "With every file in it, a checkout and its uncommitted work included. Unticked, the folder stays as it is.",
 });

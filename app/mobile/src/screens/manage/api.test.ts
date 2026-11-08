@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, readTelegram, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setIcon, setOnlyMe, setPicture, setProfile, telegramAct, withPart } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setIcon, setOnlyMe, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -327,7 +327,7 @@ describe("Its picture", () => {
   });
 });
 
-describe("Approvals, Telegram and Linked hubs", () => {
+describe("Approvals and Linked hubs", () => {
   const approvals = { mode: "checker" as const, model: "claude-opus-5-5", effort: "high" as const, defaults: false };
 
   it("reads its approvals and the models the checker may run on", async () => {
@@ -345,22 +345,6 @@ describe("Approvals, Telegram and Linked hubs", () => {
     expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "ask", model: "claude-opus-5-5", effort: "high" });
     void setApprovalMode(session, SHOP, "yolo", { ...approvals, defaults: true });
     expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "yolo" });
-  });
-
-  it("reads its Telegram bot, and pauses, unpairs or removes it", async () => {
-    const { hub, session, calls } = setup();
-    const read = readTelegram(session, SHOP);
-    expect(calls("telegram_get").at(-1)?.input).toEqual({ navi: REF });
-    hub.answer("telegram_get", {});
-    await expect(read).resolves.toEqual({ ok: true, value: undefined });
-    void telegramAct(session, SHOP, { t: "pause", paused: true });
-    expect(calls("telegram_pause").at(-1)?.input).toEqual({ navi: REF, paused: true });
-    void telegramAct(session, SHOP, { t: "unpair" });
-    expect(calls("telegram_unpair").at(-1)?.input).toEqual({ navi: REF });
-    const removed = telegramAct(session, SHOP, { t: "remove" });
-    expect(calls("telegram_remove").at(-1)?.input).toEqual({ navi: REF });
-    hub.fail("telegram_remove", "machine_offline", "devbox is offline.");
-    await expect(removed).resolves.toMatchObject({ ok: false, error: { code: "machine_offline" } });
   });
 
   it("lists only its own hub links, and removes one", async () => {

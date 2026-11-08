@@ -311,13 +311,6 @@ pub enum SessionCall {
     OnePasswordTest {
         person_id: crate::people::PersonId,
     },
-    /// One Navi's Telegram bridge (`telegram.rs`): its token, pairing, journal and sends. Only nodes listing
-    /// [`crate::node_link::CAP_TELEGRAM`] get it.
-    #[serde(rename_all = "camelCase")]
-    Telegram {
-        project_id: ProjectId,
-        call: crate::telegram::TelegramCall,
-    },
     /// The Credit Card items a token reads, for a Navi's card picker: their references and names, never a card's
     /// details. The token is the one the Navi's fills use: its project's own `OP_SERVICE_ACCOUNT_TOKEN` (`projectId`),
     /// else the person's. Only nodes listing [`crate::node_link::CAP_ONEPASSWORD_CARDS`] get it.
@@ -861,10 +854,6 @@ pub enum SessionOutput {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         vaults: Vec<String>,
         error: Option<String>,
-    },
-    /// Answer to `telegram`.
-    Telegram {
-        answer: crate::telegram::TelegramAnswer,
     },
     /// Answer to `onepassword_cards`: the token's Credit Card items, else why not, the token masked.
     #[serde(rename = "onepassword_carded")]

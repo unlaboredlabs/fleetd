@@ -378,11 +378,8 @@ describe("what enters with motion", () => {
 describe("where a person's message came from", () => {
   const from = (client: string | undefined, over: Partial<ChatMessage> = {}) =>
     viaOf(item("m", "human", at(19, 9), { message: { client, ...over } as ChatMessage }));
-  it("says so for Telegram, Shortcuts and the Share Sheet, and nothing for the apps or the CLI", () => {
-    expect([from("telegram"), from("shortcuts"), from("share")].map((v) => v?.text)).toEqual(["via Telegram", "via Shortcuts", "via the Share Sheet"]);
+  it("says so for Shortcuts and the Share Sheet, and nothing for the apps, the CLI or a source it doesn't know", () => {
+    expect([from("shortcuts"), from("share")]).toEqual(["via Shortcuts", "via the Share Sheet"]);
     expect([from(undefined), from("app"), from("cli"), from("someday")]).toEqual([undefined, undefined, undefined, undefined]);
-  });
-  it("names who a Telegram forward came from", () => {
-    expect(from("telegram", { forwardedFrom: "Mallory" })).toEqual({ text: "Forwarded from Mallory on Telegram", forwarded: true });
   });
 });

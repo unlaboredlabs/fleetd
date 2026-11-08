@@ -97,9 +97,6 @@ pub enum ChatClient {
     App,
     /// `fleetd chat`.
     Cli,
-    /// Telegram, through the Navi's own bot (`telegram.rs`). Only the hub's Telegram path writes it: chat_send refuses
-    /// it.
-    Telegram,
     /// The phone's share sheet: what another app shared, with the person's note.
     Share,
     /// An iOS Shortcuts action (Send Message), run by the person or by one of their automations. Its text may hold
@@ -262,9 +259,6 @@ pub struct ChatMessage {
     pub client: Option<ChatClient>,
     /// A human message: the bubble it answers.
     pub reply_to: Option<ChatReplyTo>,
-    /// A human message forwarded on Telegram: who it came from. The words are theirs, not the person's, and the lead
-    /// reads them as untrusted content.
-    pub forwarded_from: Option<Line<1, 120>>,
     pub item: Option<ChatItem>,
     /// From before the chat: where this history message came from.
     pub history: Option<ChatHistorySource>,

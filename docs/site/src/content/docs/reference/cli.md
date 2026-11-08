@@ -295,7 +295,7 @@ stop its lead's turn and its agents, as you; the lead and its chat stay, and the
 fleetd project remove <machine>/<project> [--yes] [--hub <url>]
 ```
 
-stop its agents and erase it: its chat, memory, skills, approvals, orders, automations, sign-ins and Telegram link; its files, branches and worktrees stay
+stop its agents and erase it: its chat, memory, skills, approvals, orders, automations and sign-ins; its files, branches and worktrees stay
 
 ### fleetd project repo list {#project-repo-list}
 

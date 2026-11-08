@@ -244,17 +244,6 @@ export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(
 export type OnePasswordRequest = z.infer<typeof OnePasswordRequest>;
 
 /**
- * A project's Telegram bot token (its settings › Telegram): main seals it to the project's machine in `box` and calls
- * telegram_set. The hub gets the box, never the value.
- */
-export const TelegramRequest = z.strictObject({
-  project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
-  token: z.string().min(1).max(SECRET_MAX_BYTES),
-  box: z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) }),
-});
-export type TelegramRequest = z.infer<typeof TelegramRequest>;
-
-/**
  * The hub's boat.dev API key (Settings › Hub › Machines › Cloud machines): main seals it to `boxPubKey`, the hub's own
  * key from cloud_get, and calls cloud_key_set. The hub gets the box, never the key, and nothing returns it.
  */
@@ -375,7 +364,6 @@ export const REQUESTS = {
   [IPC.githubConnect]: z.tuple([HubId]),
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
-  [IPC.telegramSubmit]: z.tuple([HubId, TelegramRequest]),
   [IPC.cloudKeySubmit]: z.tuple([HubId, CloudKeyRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),

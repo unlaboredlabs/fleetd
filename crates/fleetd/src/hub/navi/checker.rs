@@ -293,13 +293,11 @@ pub fn person_messages(
     Ok((said, question))
 }
 
-/// Whether a human message is the person's own word (decision `navi.shortcuts-authority`): typed in the app, on
-/// Telegram or in `fleetd chat`. What came through the share sheet or a shortcut, and a message forwarded on Telegram,
-/// arrived without the person writing it to the Navi: no go-ahead for a send, a spend or any other risky action, as
-/// an automation the person never said yes to is none.
+/// Whether a human message is the person's own word (decision `navi.shortcuts-authority`): typed in the app or in
+/// `fleetd chat`. What came through the share sheet or a shortcut arrived without the person writing it to the Navi:
+/// no go-ahead for a send, a spend or any other risky action, as an automation the person never said yes to is none.
 fn authority(m: &fleetd_contracts::chat::ChatMessage) -> bool {
     !matches!(m.client, Some(ChatClient::Share | ChatClient::Shortcuts))
-        && m.forwarded_from.is_none()
 }
 
 /// The recent human messages that are no authority ([`authority`]), as content the Navi read: what they name is
@@ -310,9 +308,8 @@ pub fn relayed(hub: &Hub, r: &ProjectRef) -> Result<Vec<Read>, StoreError> {
         .iter()
         .filter(|m| m.author == ChatAuthor::Human && !authority(m))
         .map(|m| Read {
-            source: match (m.client, &m.forwarded_from) {
-                (_, Some(from)) => format!("a message forwarded from {from}"),
-                (Some(ChatClient::Share), _) => "a message from the share sheet".to_owned(),
+            source: match m.client {
+                Some(ChatClient::Share) => "a message from the share sheet".to_owned(),
                 _ => "a message from a shortcut".to_owned(),
             },
             text: clip(m.text.as_str(), MESSAGE_MAX),

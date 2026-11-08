@@ -151,8 +151,6 @@ pub struct Hub {
     pub github_app: Arc<crate::hub::github_app::GithubApps>,
     /// PRs' CI builds for people's screens (machine_roles/builds.rs).
     pub builds: Arc<crate::hub::machine_roles::builds::Builds>,
-    /// Navis' Telegram bridges (hub/telegram).
-    pub telegram: Arc<crate::hub::telegram::run::Bridges>,
     /// Cloud machines caught up since they linked (hub/cloud).
     pub cloud: Arc<crate::hub::cloud::Cloud>,
     /// The cloud machines on boat.dev (hub/pool).
@@ -176,7 +174,6 @@ pub fn registry() -> Registry {
     crate::hub::mcp_oauth::tools::register(&mut tools);
     crate::hub::claude_accounts::tools::register(&mut tools);
     crate::hub::onepassword::register(&mut tools);
-    crate::hub::telegram::register(&mut tools);
     crate::hub::sidebar_order::register(&mut tools);
     crate::hub::chat_pins::register(&mut tools);
     crate::hub::github_app::tools::register(&mut tools);

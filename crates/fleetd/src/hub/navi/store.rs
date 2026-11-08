@@ -73,21 +73,6 @@ pub fn set_only_me(
     Ok(())
 }
 
-/// Makes `person` the project's owner when it has none, Only me as it was: the one person a Telegram bridge answers as.
-pub fn claim(db: &Connection, r: &ProjectRef, person: &PersonId) -> rusqlite::Result<()> {
-    db.prepare_cached(
-        "INSERT INTO project_settings (machine_id, project_id, owner_person) VALUES (?1, ?2, ?3)
-         ON CONFLICT (machine_id, project_id) DO UPDATE SET
-           owner_person = COALESCE(project_settings.owner_person, excluded.owner_person)",
-    )?
-    .execute(params![
-        r.machine_id.as_str(),
-        r.project_id.as_str(),
-        person.as_str()
-    ])?;
-    Ok(())
-}
-
 pub fn of(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Navi>> {
     db.prepare_cached(
         "SELECT created_by_key, created_by_name, created_ms, archived_ms, owner_person FROM project_settings

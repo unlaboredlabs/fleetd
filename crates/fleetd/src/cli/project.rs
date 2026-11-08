@@ -40,7 +40,7 @@ pub const PROJECT_USAGE: &str =
              and the chat says what stopped
   project remove <machine>/<project> [--yes] [--hub <url>]
              stop its agents and erase it: its chat, memory, skills, approvals, orders,
-             automations, sign-ins and Telegram link; its files, branches and worktrees stay
+             automations and sign-ins; its files, branches and worktrees stay
   project repo list <machine>/<project> [--hub <url>]
   project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
          [--use-existing] [--hub <url>]

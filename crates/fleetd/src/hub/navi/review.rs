@@ -120,7 +120,6 @@ enum Kind {
     File,
     /// A file sent in the chat (`.fleetd/attachments/`): the person passed it on, but anyone may have written it.
     ChatFile,
-    Telegram,
     Other,
 }
 
@@ -155,8 +154,6 @@ fn kind(source: &str) -> Kind {
         } else {
             Kind::Mail
         }
-    } else if has(&["telegram"]) {
-        Kind::Telegram
     } else if has(&["webfetch", "websearch", "browser", "fetch", "http", "https"]) {
         Kind::Web
     } else if has(&[
@@ -522,7 +519,6 @@ fn label(k: Kind, r: &Read) -> String {
     match k {
         Kind::Mail | Kind::Sent => format!("an email{from}"),
         Kind::Calendar => format!("a calendar invite{from}"),
-        Kind::Telegram => format!("a Telegram message{from}"),
         Kind::Web => match URL
             .find(&r.source)
             .and_then(|u| crate::hub::navi::sites::site_of(u.as_str()))

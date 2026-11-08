@@ -6,8 +6,8 @@ description: "Add a project or start a new one, choose who sees it, its branch, 
 A [project](/docs/glossary#project) is a chat with a lead, in a folder of its own, holding zero or more repos. Send
 it work and follow that work to merged pull requests, or keep one with no repo as your own assistant: one for home,
 one for taxes. Every project has the same abilities: memory, [automations](/docs/automations),
-[screens](/docs/browser-sessions), [Telegram](#telegram), [kept sign-ins](#sign-ins), [purchases](#purchases),
-[skills](#skills) and [links to other hubs](#hub-links).
+[screens](/docs/browser-sessions), [kept sign-ins](#sign-ins), [purchases](#purchases), [skills](#skills) and
+[links to other hubs](#hub-links).
 
 ## Add a project {#add-a-project}
 
@@ -126,7 +126,6 @@ right-click menu. Its **Project** page has these, in order:
 | Only me | Who sees and uses it. See [Only me](#only-me). |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and its own setup if it has one. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Setup**: what runs in each new worktree (called **Default setup** once a repo has its own). See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
-| Telegram | Talk to its lead from Telegram. See [Telegram](#telegram). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
 | MCP servers | One list of the project's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
@@ -271,8 +270,7 @@ fleetd project unarchive devbox/taxes
 
 **Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
 for every project (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and
-decisions, orders and tasks, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen
-recordings go, and so do its links to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd there.
+decisions, orders and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings go, and so do its links to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd there.
 **Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a home
 folder, its own directory, or a folder holding another project. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
 those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project's
@@ -401,8 +399,8 @@ guard. It reads only:
   several mails each one's headers count, up to the first quoted or forwarded mail: nothing in or after a quote does,
   so in your sent mail only each mail's own sender is you;
 - your recent messages to the lead, and its last question to you, marked as the lead's. A message that came through
-  the phone's share sheet or a Shortcuts action, or one forwarded on Telegram, isn't your go-ahead: the checker reads it as content the lead read, so a new recipient it names asks.
-  Messages you type in the app, on Telegram or in `fleetd chat` count;
+  the phone's share sheet or a Shortcuts action isn't your go-ahead: the checker reads it as content the lead read, so a new recipient it names asks.
+  Messages you type in the app or in `fleetd chat` count;
 - the prompts of the [automations](#automations-go-ahead) whose run the lead is doing now, when you wrote or
   confirmed them.
 
@@ -511,8 +509,7 @@ why, and fleetd checks the page is on that site and the field is there.
 
 - **You type it.** The chat shows a sealed field: the site, what it is and why. What you type is sealed on your device
   to the project's machine, whose node types it straight into that field on that site (in its frames too), once. The
-  phone app shows what is asked and sends you to the desktop app to enter it, and a Telegram chat never asks for the
-  value, since a chat there isn't sealed.
+  phone app shows what is asked and sends you to the desktop app to enter it.
 - **From 1Password.** If it's in an Identity, Passport, Driver License or Social Security item, the lead names that
   field (`op://vault/item/field`), and its node fills it from 1Password, once, within 15 minutes, with the token a
   [purchase](#purchases) uses. You aren't asked (D310).
@@ -548,73 +545,6 @@ does, on a fresh profile.
 **Sign-ins** and click **Forget sign-ins…** (shown once its machine keeps sign-ins for the project). A browser session it has open now ends, and the profile is deleted. Its
 chat, memory, folder and allowed sites stay. Deleting the project deletes its sign-ins too. To sign out of one site
 only, ask the lead to sign out there.
-
-## Telegram {#telegram}
-
-Talk to a project's lead from Telegram, on your phone or anywhere else you use it. It's the same chat as in the app:
-what you send there lands in the project's chat, and its replies, photos, files and approvals come back to both places.
-The bot is yours and answers only you; nothing runs in a fleetd cloud, and your hub needs no public address. Pairing
-makes an Only me project yours when it has no owner, so what you send there is your own message. A shared project
-nobody owns becomes yours this way only when you're an admin: its owner could turn Only me on and shut everyone else
-out.
-
-### Set it up
-
-Open the project's settings (**Open settings** in its right-click menu) and find **Telegram**. It takes a few
-minutes, with no terminal:
-
-1. **Make a bot with @BotFather.** Click **Open @BotFather**, then send it `/newbot`. When it asks, send the bot's
-   name (the project's, say `Ada`) and a username ending in `bot` (the page suggests one, like `ada_fleetd_bot`; add a
-   number if it's taken). BotFather answers with the bot's token, a line like `123456789:AAH…`.
-2. **Paste the token** and click **Save and test**. The app seals it to the project's machine before it leaves your
-   computer: the hub keeps only its fingerprint, and it never appears in a chat, a log or the page again.
-3. **Test** asks Telegram which bot the token is, and shows its name, username and photo.
-4. **Pair your Telegram.** Click **Pair with Telegram**. Your bot opens in Telegram with a one-time link; press
-   **Start**. Your account is now the only one the project answers, and its chat in the app says so. The link works
-   for 15 minutes.
-
-Once paired, the setting shows the bot, the account it answers and its status: *Connected*, *Paused*, *Retrying* (with
-what went wrong and when it tries again) or *Stopped* (a revoked token: paste a new one). **Replace token** takes a new
-bot's token, and **Remove** makes the machine forget it; to pair another account, remove it and set it up again. A
-bridge paused from the CLI or an agent's `telegram_pause` shows **Resume**. To delete the bot itself, send
-`/deletebot` to @BotFather.
-
-### What goes through
-
-- **Your messages** land in the project's chat as yours, marked *via Telegram*. While the lead works on one,
-  Telegram shows *typing…*.
-- **Photos and documents** arrive as attachments of the message: images, PDFs, text and CSV, Word, Excel and
-  PowerPoint files and zips, up to Telegram's 20 MB for bots ([Files](#files)). Anything else gets a short reply
-  saying it wasn't passed on.
-- **Voice notes** aren't supported yet: you get a reply saying so.
-- **/stop** interrupts the step the lead is on now, and says so in Telegram and in its chat. Unlike **Stop** in the
-  app, it leaves the agents the lead started running. Sending it again once it has stopped does nothing more.
-- **A forwarded message** is marked *Forwarded from …*. The lead reads it as someone else's words, untrusted content,
-  never as your request or approval, and asks you before acting on anything it asks for.
-- **The lead's replies** go to the app and to Telegram, formatted for Telegram and split when long. Its images go as
-  photos, the files it made as documents under their own names. A table shows as monospace; a chart or diff says to
-  open the app. A question with choices comes with buttons, and pressing one is your reply.
-- **Quiet lines**: what the lead remembered or forgot, and a skill it saved or installed, come as one line each, as
-  in the app.
-- **A usage limit**: when the lead stops at its Claude usage limit, one line says so, and when it resets if the limit
-  said. It picks up your message then. No second line comes until it has replied.
-- **Approvals** come as a card with exactly what approving runs (the command, or the tool and its full input; in a
-  file just before the card when it's too long for one message), the checker's reason when it sent the card to you
-  (as in the app), and **Approve** and **Deny** buttons. Answer in either place: the other updates, and the card says
-  who answered and how. A secret is never entered in Telegram: the lead points you to the app.
-- **Anyone else** who finds the bot gets nothing back, not even an error. Group chats are ignored.
-
-While you talk to the project on Telegram (your latest message came from there), its replies notify you on Telegram
-only, not in the [phone app](/docs/phone-notifications) as well. Write from the app again and the app notifies you
-again.
-
-### How it works
-
-The project's machine long-polls Telegram's Bot API (`getUpdates`): no webhook, no open port. The token stays on that
-machine, in a file of fleetd's node there, out of the lead's environment. The node keeps where it read up to, so a
-restart neither loses nor repeats a message; when Telegram is down or asks it to slow down, it backs off and tries
-again. Messages that come while the machine is off wait on Telegram's side for up to a day. Replies the lead wrote more
-than an hour before the machine could send them stay in the app.
 
 ## Hub links {#hub-links}
 
@@ -663,10 +593,10 @@ for lands.
 
 ## Files {#files}
 
-Files go both ways in a project's chat, from the app, the phone and Telegram.
+Files go both ways in a project's chat, from the app and the phone.
 
 - **What you send:** images, PDFs, text and CSV (and other text: notes, JSON, calendar invites, mail), Word, Excel and
-  PowerPoint files (.docx, .xlsx, .pptx) and zips, up to 25 MB each (20 MB from Telegram). The hub keeps a file only
+  PowerPoint files (.docx, .xlsx, .pptx) and zips, up to 25 MB each. The hub keeps a file only
   when its bytes are what its type says, and gives it an extension of that type, so a text file named `run.command`
   becomes `run.command.txt`.
 - **What the lead reads:** each file lands in the project's folder under `.fleetd/attachments/chat/`. It reads images,
@@ -678,7 +608,7 @@ Files go both ways in a project's chat, from the app, the phone and Telegram.
 - **What the lead sends back:** a file it made in its folder (a trip as a PDF, receipts as a CSV, an invite as an
   `.ics`) goes up with [`chat_file`](/docs/reference/agent-tools#chat_file) and shows as a card with its name, kind
   and size. In the desktop app, **Open** opens it in your computer's app for its kind and the download button saves
-  it; on the phone, tapping it opens the share sheet. On Telegram it arrives as a document. Your files never leave
+  it; on the phone, tapping it opens the share sheet. Your files never leave
   your hub: the app reads each one from it.
 
 ## Earlier in the chat {#earlier}
@@ -738,7 +668,6 @@ crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId
 | Asked | `project_asks {project}`, with the orders opened for each, on a hub whose ready frame names the `navi_asks` feature. |
 | Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the project's machine online and on a fleetd that keeps them. |
 | Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |
-| Telegram | `telegram_get {project}`, `telegram_set {project, sealed}` (the bot token sealed to the project's machine's `boxPubKey`), `telegram_test`, `telegram_pair` (the one-time `t.me` link), `telegram_unpair`, `telegram_pause {project, paused}`, `telegram_remove`, each its owner's only on an Only me project. |
 
 A project's [skills](#skills) are `scope: "project"` skills with its `projectRef`, on a hub whose ready frame names
 the `navi_skills` feature. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,

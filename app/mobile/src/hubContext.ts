@@ -75,8 +75,6 @@ export type ChatInfoParams = {
   Approvals: { key: Key };
   /** The card it pays with and what it bought (Payments.tsx). */
   Payments: { key: Key };
-  /** Its Telegram bot: how it stands, Pause, Unpair and Remove (Telegram.tsx). */
-  Telegram: { key: Key };
   /** The other hubs it reaches (LinkedHubs.tsx). */
   LinkedHubs: { key: Key };
   /** Its skills (Skills.tsx), a skill's view, its editor, its history and one version's change. */

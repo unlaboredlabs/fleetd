@@ -194,7 +194,7 @@ check(Files.upload(name: "Q3 report.docx", data: Data([0x50, 0x4B, 0x03, 0x04]),
 // A hub from before Shortcuts' client takes it as from the app, once, with the same request id.
 hub = FakeHub([inbox])
 hub.answers["chat_send"] = { input in
-  if input["client"] != nil { throw Problem.hub(code: "invalid", message: "chat_send: unknown variant `shortcuts`, expected one of `app`, `cli`, `telegram`", fix: nil) }
+  if input["client"] != nil { throw Problem.hub(code: "invalid", message: "chat_send: unknown variant `shortcuts`, expected one of `app`, `cli`", fix: nil) }
   return ["message": ["seq": 3]]
 }
 check(try await Run.send(link, pairing: devbox, chat: "m1/p2", text: "hi", wait: nil, requestId: "s") == nil, "an older hub")
