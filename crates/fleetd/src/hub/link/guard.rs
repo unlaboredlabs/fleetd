@@ -34,8 +34,6 @@ pub(crate) mod tests {
             load1: NonNegative::new(load1).unwrap(),
             mem_used_pct: None,
             mem_total_bytes: None,
-            swap_used_pct: None,
-            mem_pressure_pct: None,
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,
             limits: List::unchecked(Vec::new()),
@@ -72,8 +70,6 @@ pub(crate) mod tests {
     fn high_load_and_full_memory_never_pause() {
         let mut busy = load(500, 70.2);
         busy.mem_used_pct = Some(Int::unchecked(97));
-        busy.swap_used_pct = Some(Int::unchecked(100));
-        busy.mem_pressure_pct = Some(NonNegative::new(40.0).unwrap());
         assert_eq!(why(&busy, false), None);
         assert_eq!(why(&busy, true), None);
     }

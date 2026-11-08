@@ -113,8 +113,6 @@ mod tests {
             cpus: Int::unchecked(cpus),
             load1: NonNegative::new(0.5).unwrap(),
             mem_used_pct: None,
-            swap_used_pct: None,
-            mem_pressure_pct: None,
             limits: List::unchecked(Vec::new()),
             hosts: None,
             disk: None,

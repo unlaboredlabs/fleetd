@@ -7397,7 +7397,7 @@
         },
         {
           "const": "machine.guard",
-          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "description": "The machine's disk ran short of its free-space floor and stopped new agents there, or no longer does;\n`data.paused`, and the summary says why. Agents already running keep going. Load and memory never do.",
           "type": "string"
         },
         {

@@ -34,8 +34,8 @@ pub enum HubEventType {
     /// changed since: the views that read machine_roles (Hub › Machines' roles and screens) read it again.
     #[serde(rename = "machine.hosts")]
     MachineHosts,
-    /// The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says
-    /// why. Agents already running keep going.
+    /// The machine's disk ran short of its free-space floor and stopped new agents there, or no longer does;
+    /// `data.paused`, and the summary says why. Agents already running keep going. Load and memory never do.
     #[serde(rename = "machine.guard")]
     MachineGuard,
     /// Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or
