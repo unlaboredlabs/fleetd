@@ -137,7 +137,7 @@ test("factory_status reads the other projects with their open orders, checklist 
   const w = workstream(hub, ref("storefront"), "Gift cards");
   hub.db.conn.query("INSERT INTO navi_ask_orders (workstream_id, n) VALUES (?, 1)").run(w.workstreamId);
   apply(hub.db, ref("storefront"), { items: [{ text: "ship gift cards" }, { text: "old", state: "done" }] }, 0);
-  const out = (await answer(hub, ref("navi"), { op: "factory_status" })) as { projects: { projectRef: ProjectRef; openOrders: unknown[]; checklist: { text: string }[]; asks: { handle: string; orders: string[] }[] }[]; next: string };
+  const out = (await answer(hub, ref("navi"), { op: "factory_status" })) as { projects: { projectRef: ProjectRef; openOrders: unknown[]; checklist: { text: string }[]; asks: { handle: string; text: string; at: string; orders: string[] }[] }[]; next: string };
   // Its own project is left out.
   expect(out.projects.map((p) => p.projectRef.projectId)).toEqual(["storefront", "checkout"]);
   const shop = out.projects[0]!;
@@ -155,7 +155,9 @@ test("navi_asks says an order merged once any PR of it did, however many others 
   hub.db.conn.query("INSERT INTO navi_ask_orders (workstream_id, n) VALUES (?, 1)").run(w.workstreamId);
   const merged = (n: number, workstreamId: string) =>
     hub.db.conn
-      .query("INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data) VALUES ('o/r', ?, 'merged', 'devbox', 'storefront', ?, ?)")
+      .query<never, [number, number, string]>(
+        "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data) VALUES ('o/r', ?, 'merged', 'devbox', 'storefront', ?, ?)",
+      )
       .run(n, n, JSON.stringify({ workstreamId, state: "merged" }));
   merged(1, w.workstreamId);
   for (let i = 2; i < 520; i++) merged(i, "W999");
