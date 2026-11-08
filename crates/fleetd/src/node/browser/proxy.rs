@@ -320,11 +320,19 @@ mod tests {
             serde_json::to_string(&kept).unwrap(),
         )
         .unwrap();
-        // Dropping its runtime closes its listener, as its exit does.
-        let before = runtime().block_on(async {
-            let proxy = Proxy::start(home.path(), Weak::new()).await.unwrap();
-            proxy.url("thread-1")
-        });
+        // In a process of its own, as a node is: its exit closes its listener. Dropping a runtime here closed only this
+        // process's copy of it, and a child another test's thread had just forked held the port until it exec'd.
+        let last_run = format!(
+            "{}::a_nodes_last_run",
+            module_path!().split_once("::").unwrap().1
+        );
+        let run = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([&last_run, "--exact", "--ignored", "--test-threads=1"])
+            .env("FLEETD_TEST_PROXY_HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(run.status.success(), "{run:?}");
+        let before = std::fs::read_to_string(home.path().join("url")).unwrap();
         runtime().block_on(async {
             let proxy = Proxy::start(home.path(), Weak::new()).await.unwrap();
             assert_eq!(proxy.url("thread-1"), before, "same port, same token");
@@ -350,6 +358,21 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    /// The node's last run in the test above: its proxy's URL, in `url`.
+    #[test]
+    #[ignore = "run by an_agents_url_still_reaches_the_proxy_after_a_node_restart"]
+    fn a_nodes_last_run() {
+        let Some(home) = std::env::var_os("FLEETD_TEST_PROXY_HOME") else {
+            return;
+        };
+        let home = Path::new(&home);
+        let url = runtime().block_on(async {
+            let proxy = Proxy::start(home, Weak::new()).await.unwrap();
+            proxy.url("thread-1")
+        });
+        std::fs::write(home.join("url"), url).unwrap();
     }
 
     #[test]
