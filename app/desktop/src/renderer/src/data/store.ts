@@ -28,6 +28,7 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubFrame, HubState, BrowserFrame } from "../../../shared/hub";
+import { compareVersions } from "../../../shared/pairing";
 import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import type { AgentRow, ScreenThumb } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
@@ -78,8 +79,15 @@ export interface DataState {
   readonly browserFrame?: BrowserFrame | undefined;
   /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
   readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
-  /** A snapshot arrived since the link last went down: what the store holds is current. */
+  /**
+   * A snapshot arrived since the link last went down: what the store holds is current. A hub that closed to restart
+   * keeps it for RESTART_HOLD_MS, so the screens keep what they show through the few hundred ms it is away.
+   */
   readonly fresh: boolean;
+  /** The fleetd the hub ran on its last live link (its ready frame), kept through drops. */
+  readonly version?: string | undefined;
+  /** The last time a link came back on a newer fleetd than the one before it, in this window: epoch ms. */
+  readonly updated?: { readonly from: string; readonly to: string; readonly at: number } | undefined;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
   readonly generation: number;
   /**
@@ -122,6 +130,10 @@ export interface OpenRequest {
   readonly kind: RequestKind;
   readonly state: "open";
 }
+
+/** How long the screens keep what they show after the hub closed to restart, before its skeletons: a hub is back
+ * within a second, a slow one past this is shown as offline. */
+export const RESTART_HOLD_MS = 10_000;
 
 const RECENT_EVENTS = 200;
 const ORDER_EVENTS = 100;
@@ -194,14 +206,21 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       // None of it may show beside, be written as, or be sent to another hub (a new generation drops calls in flight).
       if (pairingChanged(s.hub, frame.state)) return [{ ...initialState(), hub: frame.state, generation: s.generation + 1 }, {}];
       const live = frame.state.phase === "live";
-      const fresh = live && s.fresh;
+      // The hub closed to restart: what is held stays current for a while, and only then is marked as of the close.
+      const restarting = frame.state.phase === "connecting" || frame.state.phase === "retrying" ? frame.state.restarting : undefined;
+      const fresh = s.fresh && (live || (restarting !== undefined && nowMs - restarting < RESTART_HOLD_MS));
+      const version = frame.state.phase === "live" ? (frame.state.version ?? s.version) : s.version;
+      // Back on a newer build: an update went in (by this window, another, or the hub's own automatic one).
+      const updated = s.version !== undefined && version !== undefined && compareVersions(version, s.version) === 1 ? { from: s.version, to: version, at: nowMs } : s.updated;
       return [
         {
           ...s,
           hub: frame.state,
           features: frame.state.phase === "live" ? (frame.state.features ?? []) : s.features,
           fresh,
-          asOf: s.fresh && !fresh ? nowMs : s.asOf,
+          asOf: s.fresh && !fresh ? (restarting ?? nowMs) : s.asOf,
+          version,
+          updated,
           live: live ? s.live : { ...s.live, stale: true },
         },
         {},

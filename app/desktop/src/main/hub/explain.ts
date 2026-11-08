@@ -89,10 +89,16 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
         };
   }
   if (/handshake has timed out/iu.test(error?.message ?? "")) return unreachable(host, "timed out");
+  // A restart, said whatever words came with it ("updating to <build>" names a raw build, which says nothing here).
+  // No imports: the fixtures' build runs this file as it is.
+  if (code === 1001 || code === 1012) {
+    return {
+      reason: reason.startsWith("updating to ") ? "The hub is restarting into a new build" : "The hub is restarting or shutting down",
+      fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the hub.`,
+    };
+  }
   if (reason !== "") return { reason: `The hub closed the connection: ${reason.replace(/\.$/u, "")}`, fix: RECONNECTS };
   switch (code) {
-    case 1001:
-      return { reason: "The hub is restarting or shutting down", fix: `${RECONNECTS} If it doesn't come back, run \`fleetd doctor\` on the hub.` };
     case 1011:
       return { reason: "The hub hit an internal error", fix: "Run `fleetd doctor` on the hub; its log has the details." };
   }

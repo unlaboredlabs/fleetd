@@ -1,10 +1,10 @@
-// Main's update state (one subscription for the whole window) and whether the updates sheet is open: a tiny external
-// store, so the sidebar line, the sheet and the palette share it without a provider.
+// Main's update state (one subscription for the whole window): a tiny external store, so the hub row, Settings and the
+// palette share it without a provider. And where updates open.
 import { useSyncExternalStore } from "react";
 import type { UpdatesState } from "../../../shared/updates";
+import { navigate } from "../shell/navigation";
 
 let state: UpdatesState | null = null;
-let open = false;
 let started = false;
 const listeners = new Set<() => void>();
 
@@ -37,17 +37,7 @@ const subscribe = (listener: () => void) => {
 export const useAppUpdate = (): UpdatesState | null => useSyncExternalStore(subscribe, () => state);
 export const appUpdate = (): UpdatesState | null => state;
 
-export const useUpdatesOpen = (): boolean => useSyncExternalStore(subscribe, () => open);
-
-/** Which hub's sheet opens: each hub's updates are its own; null, the screen's hub. */
-let hub: string | null = null;
-
-export const useUpdatesHub = (): string | null => useSyncExternalStore(subscribe, () => hub);
-
-export const setUpdatesOpen = (next: boolean, from?: string): void => {
-  if (open === next && (from === undefined || from === hub)) return;
-  open = next;
-  if (from !== undefined) hub = from;
-  else if (!next) hub = null;
-  notify();
-};
+/** Where the hub's updates are read and run: Settings › Hub › Updates for an admin; General (this app's own) for
+ * anyone else. `at`: which hub's, with several; the screen's when absent. */
+export const openUpdates = (admin: boolean, at?: string): void =>
+  navigate(admin ? { id: "settings", tab: "hub.updates", ...(at === undefined ? {} : { at }) } : { id: "settings", tab: "general" });

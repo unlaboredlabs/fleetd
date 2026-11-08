@@ -1,4 +1,4 @@
-// What automatic updates say beside their switch, on Hub › Updates and in the updates sheet: what they do, then one
+// What automatic updates say beside their switch, on Hub › Updates: what they do, then one
 // status line each for the last one that finished, what comes next and when, and why they hold back now.
 // Pure, so every state is unit-tested.
 import type { HubUpdateOutput, LastAutoUpdate, UpdateSettings } from "../../../shared/contracts";
