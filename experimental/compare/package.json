@@ -1,0 +1,27 @@
+{
+  "name": "fleetd-compare",
+  "private": true,
+  "type": "module",
+  "description": "Side-by-side tests and benchmarks of fleetd implementations given as binaries (FLEETD_BIN): the Rust build and the Bun one.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "behaviour": "node behaviour.ts",
+    "build-bench": "node build.ts",
+    "bench": "node bench.ts",
+    "soak": "node soak.ts",
+    "desktop": "node desktop.ts",
+    "report": "node report.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "typescript": "7.0.2"
+  }
+}

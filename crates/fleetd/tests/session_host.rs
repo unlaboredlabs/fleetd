@@ -14,6 +14,12 @@ use fleetd::node::runner::{Runner, RunnerEvent, SessionCommand, SessionHandle, S
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::model::RuntimeMode;
 
+/// The fleetd under test: `FLEETD_BIN` when set (another build of it, run side by side by experimental/compare),
+/// else this build's own binary.
+fn fleetd_bin() -> std::path::PathBuf {
+    std::env::var_os("FLEETD_BIN").map_or_else(|| env!("CARGO_BIN_EXE_fleetd").into(), Into::into)
+}
+
 /// Says m1..m3, waits for a line on `$GO`, says m4..m6, then runs until its stdin closes. Whatever claude's arguments.
 const TALKING_CLAUDE: &str = r#"#!/bin/sh
 init() { echo "{\"type\":\"system\",\"subtype\":\"init\",\"claude_code_version\":\"2.1.302\",\"model\":\"m$1\",\"cwd\":\"/fake\"}"; }
@@ -90,7 +96,7 @@ async fn a_hosted_session_outlives_its_node_and_each_event_arrives_once() {
     std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
     nix::unistd::mkfifo(&dir.path().join("go"), nix::sys::stat::Mode::S_IRWXU).unwrap();
     let mut runner = ClaudeRunner::new(claude);
-    runner.host = Some(env!("CARGO_BIN_EXE_fleetd").into());
+    runner.host = Some(fleetd_bin());
 
     let mut first = runner.spawn(spec(dir.path())).unwrap();
     let host_dir = dir.path().join("hosts/s");
@@ -183,14 +189,14 @@ async fn stop_all_ends_the_sessions_a_node_left_running() {
     std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
     nix::unistd::mkfifo(&dir.path().join("go"), nix::sys::stat::Mode::S_IRWXU).unwrap();
     let mut runner = ClaudeRunner::new(claude);
-    runner.host = Some(env!("CARGO_BIN_EXE_fleetd").into());
+    runner.host = Some(fleetd_bin());
     let mut node = runner.spawn(spec(dir.path())).unwrap();
     inits(&mut node, 3).await;
     node.link.as_ref().unwrap().detach().await;
     let registration = Registration::read(&dir.path().join("hosts/s")).unwrap();
     assert!(registration.host_alive());
 
-    let stopped = tokio::process::Command::new(env!("CARGO_BIN_EXE_fleetd"))
+    let stopped = tokio::process::Command::new(fleetd_bin())
         .args(["session-host", "stop-all"])
         .arg(dir.path().join("hosts"))
         .output()
