@@ -172,7 +172,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `decisions_overturn` → `src/hub/ledger` (operate) <!-- tool:`decisions_overturn` -->
 - [x] `tasks_list` → `src/hub/tasks` (read) <!-- tool:`tasks_list` -->
 - [x] `task_get` → `src/hub/tasks` (read) <!-- tool:`task_get` -->
-- [ ] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
+- [x] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
 - [x] `usage_status` → `src/hub/usage` (read) <!-- tool:`usage_status` -->
 - [x] `usage_resume` → `src/hub/usage` (operate) <!-- tool:`usage_resume` -->
 - [x] `attachment_part` → `src/hub/orders` (operate) <!-- tool:`attachment_part` -->
@@ -242,9 +242,9 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [x] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
-- [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
-- [ ] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
-- [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
+- [x] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->
+- [x] hub loop `tasks::ci_wait::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::ci_wait::run` -->
+- [x] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
 - [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
 - [x] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
@@ -594,18 +594,18 @@ every `fleetd` command.
 - [x] lead call `request_withdraw` → `src/hub/lead_calls` <!-- lead:lead call `request_withdraw` -->
 - [x] lead call `decide` → `src/hub/lead_calls` <!-- lead:lead call `decide` -->
 - [x] lead call `decisions_search` → `src/hub/lead_calls` <!-- lead:lead call `decisions_search` -->
-- [ ] lead call `task_spawn` → `src/hub/lead_calls` <!-- lead:lead call `task_spawn` -->
-- [ ] lead call `task_list` → `src/hub/lead_calls` <!-- lead:lead call `task_list` -->
+- [x] lead call `task_spawn` → `src/hub/lead_calls` <!-- lead:lead call `task_spawn` -->
+- [x] lead call `task_list` → `src/hub/lead_calls` <!-- lead:lead call `task_list` -->
 - [x] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
-- [ ] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
+- [x] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
 - [x] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
 - [ ] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
 - [ ] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
 - [x] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->
-- [ ] lead call `ask_lead` → `src/hub/lead_calls` <!-- lead:lead call `ask_lead` -->
-- [ ] lead call `brief_read` → `src/hub/lead_calls` <!-- lead:lead call `brief_read` -->
+- [x] lead call `ask_lead` → `src/hub/lead_calls` <!-- lead:lead call `ask_lead` -->
+- [x] lead call `brief_read` → `src/hub/lead_calls` <!-- lead:lead call `brief_read` -->
 - [ ] lead call `review_read` → `src/hub/lead_calls` <!-- lead:lead call `review_read` -->
-- [ ] lead call `wait_ci` → `src/hub/lead_calls` <!-- lead:lead call `wait_ci` -->
+- [x] lead call `wait_ci` → `src/hub/lead_calls` <!-- lead:lead call `wait_ci` -->
 - [x] lead call `remember` → `src/hub/lead_calls` <!-- lead:lead call `remember` -->
 - [x] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
 - [x] lead call `memory_read` → `src/hub/lead_calls` <!-- lead:lead call `memory_read` -->
