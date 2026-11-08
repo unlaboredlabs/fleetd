@@ -16,9 +16,29 @@ export type ProjectExtra = {
 export type ProjectHook = (hub: Hub, r: ProjectRef) => Promise<ProjectExtra> | ProjectExtra;
 export type StatusHook = (hub: Hub, caller: Caller) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
+/** A session's finished command named a GitHub PR (executor/mod.rs `pr_sink`). */
+export type PrFoundHook = (thread: { machineId: string; threadId: string }) => void;
+
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
   readonly status: StatusHook[] = [];
+  readonly prFound: PrFoundHook[] = [];
+
+  /** Told when a session's finished command printed a GitHub PR URL (`gh pr create`): the train reads it at once. */
+  onPrFound(hook: PrFoundHook): void {
+    this.prFound.push(hook);
+  }
+
+  /** Each `onPrFound` hook, a throwing one logged. */
+  foundPr(thread: { machineId: string; threadId: string }): void {
+    for (const hook of this.prFound) {
+      try {
+        hook(thread);
+      } catch (error) {
+        console.warn("executor: a PR hook failed:", error);
+      }
+    }
+  }
 
   /** Adds fields to project_get (leads, workstreams, tasks, trains). */
   extendProjectGet(hook: ProjectHook): void {

@@ -33,5 +33,15 @@ export function start(hub: Hub): void {
     const trains = own.slice(0, TRAINS).map((t) => train.state(t.repo));
     return { fields: trains.length > 0 ? { trains } : {}, ...(own.length > TRAINS ? { truncated: true } : {}) };
   });
+  // A writer's `gh pr create` (any command of a write task that prints a PR URL) starts the train's ready pass at once,
+  // so the slice is queued and reviewed while the writer works on (calls.rs `watch_writer_prs`).
+  executorHooks(hub).onPrFound((thread) => {
+    const row = hub.db.conn
+      .query<{ data: string }, [string, string]>("SELECT data FROM tasks WHERE machine_id = ? AND thread_id = ?")
+      .get(thread.machineId, thread.threadId);
+    if (!row) return;
+    const task = JSON.parse(row.data) as { kind?: string; projectRef?: { machineId: string; projectId: string } };
+    if (task.kind === "write" && task.projectRef) train.writerOpenedPr(task.projectRef);
+  });
   train.start();
 }
