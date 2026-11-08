@@ -27,8 +27,22 @@ let host: HTMLDivElement;
 let root: Root;
 const actions: BubbleActions = { project: PROJECT, waitedOn: undefined, send: () => undefined, reply: () => undefined, show: () => undefined };
 
+/** Whether an observed image is on screen: an image is read only once its row has been. */
+let onScreen = true;
+class FakeIntersectionObserver {
+  constructor(private cb: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    queueMicrotask(() => this.cb([{ target, isIntersecting: onScreen } as IntersectionObserverEntry], this as unknown as IntersectionObserver));
+  }
+  unobserve() {}
+  disconnect() {}
+}
+
 beforeEach(() => {
+  onScreen = true;
+  reads.length = 0;
   vi.stubGlobal("fleetd", { platform: "linux", fixture: null });
+  vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -40,9 +54,11 @@ afterEach(() => {
 });
 
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+const reads: string[] = [];
 const HUB: HubApi = {
   call: (tool, input) => {
     const id = (input as { attachmentId?: string }).attachmentId ?? "";
+    if (tool === "attachment_get") reads.push(id);
     const file = FILES[id];
     return Promise.resolve(tool === "attachment_get" && file !== undefined ? { ok: true, output: { attachmentId: id, bytes: 68, dataB64: PNG, ...file } } : { ok: true, output: {} });
   },
@@ -205,6 +221,14 @@ it("sizes the images you sent in points within the box, on your side, whatever t
   expect([tall?.style.width, tall?.style.height]).toEqual(["93px", "280px"]);
   const small = loaded("cart.png", 64, 40);
   expect([small?.style.width, small?.style.height]).toEqual(["64px", "40px"]);
+});
+
+it("reads an image only once its row has been on screen: the chat mounts rows it drops at once", async () => {
+  onScreen = false;
+  await mount(mine);
+  expect(reads).toEqual([]);
+  expect(host.querySelector("img")).toBeNull();
+  expect(host.textContent).toContain("checkout.png");
 });
 
 it("shows a lead's block that didn't fit as a small chip, never its JSON", async () => {

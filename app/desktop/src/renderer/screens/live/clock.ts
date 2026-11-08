@@ -75,3 +75,22 @@ export const useOnScreen = (): readonly [boolean, (el: Element | null) => void] 
   }, [el]);
   return [on, setEl];
 };
+
+/**
+ * Whether the element given to the returned ref has been on screen since it mounted; once it has, it stays true. A
+ * row's read that only matters when shown (an image's bytes) waits for it: the chat mounts rows it then drops at once
+ * while it measures them, and those never read.
+ */
+export const useSeen = (): readonly [boolean, (el: Element | null) => void] => {
+  const [el, setEl] = useState<Element | null>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (!el || seen) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setSeen(true);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [el, seen]);
+  return [seen, setEl];
+};
