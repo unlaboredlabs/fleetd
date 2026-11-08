@@ -197,25 +197,35 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// The daemons, which serve until stopped: a closed connection is an error each of them handles, so SIGPIPE stays
-/// ignored for them, as Rust sets it up.
+/// The daemons, which serve until stopped (`node join` without `--enroll-only` goes on to run the node): their output
+/// failing stays what it was.
 fn is_daemon(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some("hub") => argv.get(1).map(String::as_str) == Some("start"),
-        Some("node") => argv.get(1).map(String::as_str) == Some("run"),
+        Some("node") => match argv.get(1).map(String::as_str) {
+            Some("run") => true,
+            Some("join") => !argv.iter().any(|a| a == "--enroll-only"),
+            _ => false,
+        },
         Some("push-relay") => !argv.iter().any(|a| a == "set"),
         Some("agent-mcp" | "update-finish") => true,
         _ => false,
     }
 }
 
-/// A one-shot command whose reader goes away (`fleetd status | head -1`) ends quietly, as Unix tools do, instead of
-/// panicking in `print!` with exit 101: the default SIGPIPE ends it on its next write to the closed pipe. Sockets
-/// never raise it (Rust sends with MSG_NOSIGNAL or sets SO_NOSIGPIPE), and children get the default anyway.
-fn quiet_on_closed_stdout() {
-    use nix::sys::signal::{SigHandler, Signal, signal};
-    // SAFETY: SIG_DFL installs no handler, so no code of ours runs in signal context.
-    let _ = unsafe { signal(Signal::SIGPIPE, SigHandler::SigDfl) };
+/// A one-shot command whose reader goes away (`fleetd project list | head -1`) ends quietly with 0, instead of std's
+/// "failed printing to stdout: Broken pipe" panic and exit 101. SIGPIPE stays ignored, so a write to a child (the
+/// binary streamed into ssh) or a socket still reports its error.
+fn quiet_on_closed_output() {
+    let report = std::panic::take_hook();
+    let broken_pipe = format!("(os error {})", nix::errno::Errno::EPIPE as i32);
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info.payload_as_str().unwrap_or_default();
+        if message.starts_with("failed printing to std") && message.ends_with(&broken_pipe) {
+            std::process::exit(0);
+        }
+        report(info);
+    }));
 }
 
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`, `chat --follow`) or wait on other processes
@@ -326,7 +336,7 @@ pub fn main() -> ExitCode {
     crate::home::init_from_argv(&argv);
     let help = help_for(&argv);
     if help.is_some() || !is_daemon(&argv) {
-        quiet_on_closed_stdout();
+        quiet_on_closed_output();
     }
     if let Some(text) = help {
         print!("{text}");
@@ -433,10 +443,18 @@ mod tests {
     }
 
     #[test]
-    fn only_daemons_keep_sigpipe_ignored() {
+    fn only_one_shot_commands_end_quietly_on_a_closed_pipe() {
         for daemon in [
             &["hub", "start", "--listen", "127.0.0.1:4790"][..],
             &["node", "run"],
+            &[
+                "node",
+                "join",
+                "--hub",
+                "http://devbox:4790",
+                "--token-file",
+                "t",
+            ],
             &["push-relay"],
             &["push-relay", "--listen", "127.0.0.1:4791"],
             &["agent-mcp"],
@@ -448,6 +466,7 @@ mod tests {
             &["status"][..],
             &["hub", "key", "list"],
             &["node", "restart"],
+            &["node", "join", "--enroll-only", "--token-file", "t"],
             &["push-relay", "set", "off"],
             &["project", "set", "P1"],
             &["chat", "--follow"],
