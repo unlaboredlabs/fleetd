@@ -1,7 +1,7 @@
 // What an update says at the top of the hub row's popover (quiet.ts Note): a title with its time, a sentence or two,
 // what's new in a few lines, then its one action and, for an admin, Details (Settings › Hub › Updates).
 import { Button, Text } from "../../ui";
-import { retryMachine, startUpdate, updateNow } from "./flow";
+import { retryMachines, startUpdate, updateNow } from "./flow";
 import { useFlowDeps, useUpdatesView } from "./hooks";
 import type { Note, NoteAction } from "./quiet";
 import { Line } from "./UpdatesSheet";
@@ -16,10 +16,11 @@ export function UpdateNote({ note, onDetails }: { note: Note; onDetails: () => v
     else if (action === "updateNow") void updateNow(deps);
     else if (action === "restartApp") runApp("install");
     else {
-      // Each machine that didn't come through, again; with none to retry on its own (the hub's), the whole update.
+      // Each machine that didn't come through, again, one after another; with none to retry on its own (the hub's),
+      // the whole update.
       const machines = lines.flatMap((l) => (l.retry?.kind === "machine" ? [l.retry.machineId] : []));
       if (machines.length === 0) void startUpdate(deps);
-      else for (const id of machines) void retryMachine(deps, id);
+      else void retryMachines(deps, machines);
     }
   };
   return (

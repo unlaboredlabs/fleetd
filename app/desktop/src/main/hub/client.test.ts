@@ -275,12 +275,17 @@ describe("HubClient", () => {
     expect(client.state).not.toHaveProperty("restarting");
   });
 
-  it("takes a hub's going-away close as a restart too, but not a close before the link opened", () => {
+  it("takes a hub's going-away close as a restart too, saying the build only when it updates, but not a close before the link opened", () => {
     const { hub, client } = setup();
     client.start();
     hub.ready();
-    hub.close(1001);
+    hub.close(1001, "hub restarting");
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 250, restarting: Date.now() });
+    expect(client.state).not.toHaveProperty("updatingTo");
+    vi.advanceTimersByTime(250);
+    hub.ready();
+    hub.close(1001, "updating to 0.0.0-edge.202611082014+90e7a07");
+    expect(client.state).toMatchObject({ phase: "retrying", restarting: Date.now(), updatingTo: "0.0.0-edge.202611082014+90e7a07" });
     client.stop();
     client.start();
     hub.close(1012);

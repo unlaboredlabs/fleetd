@@ -17,6 +17,7 @@ import {
   parseServerFrame,
   RESTART_REDIAL_EVERY_MS,
   RESTART_REDIAL_MS,
+  updatingTo,
   type ClientMessage,
   type ServerFrame,
 } from "./protocol";
@@ -75,8 +76,10 @@ export class HubClient implements HubSource {
   #connection: Connection | null = null;
   #ready = false;
   #attempt = 0;
-  /** When the hub closed the link to restart, epoch ms, until a link is ready again: it redials quickly meanwhile. */
+  /** When the hub closed the link to restart or stop, epoch ms, until a link is ready again: it redials quickly meanwhile. */
   #restarting: number | null = null;
+  /** The build it restarts into, when the close said it updates. */
+  #updatingTo: string | null = null;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #stopped = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
@@ -134,6 +137,7 @@ export class HubClient implements HubSource {
   stop(): void {
     this.#stopped = true;
     this.#restarting = null;
+    this.#updatingTo = null;
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -305,6 +309,7 @@ export class HubClient implements HubSource {
         this.#ready = true;
         this.#readyAt = Date.now();
         this.#restarting = null;
+        this.#updatingTo = null;
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
@@ -412,7 +417,10 @@ export class HubClient implements HubSource {
       this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
       return;
     }
-    if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) this.#restarting ??= Date.now();
+    if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) {
+      this.#restarting ??= Date.now();
+      this.#updatingTo ??= updatingTo(reason);
+    }
     this.#lost(explainLoss(this.#options.hub, code, reason, error, opened));
   }
 
@@ -499,8 +507,11 @@ export class HubClient implements HubSource {
     this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
   }
 
-  #restartingField(): { restarting?: number } {
-    return this.#restarting === null ? {} : { restarting: this.#restarting };
+  #restartingField(): { restarting?: number; updatingTo?: string } {
+    return {
+      ...(this.#restarting === null ? {} : { restarting: this.#restarting }),
+      ...(this.#updatingTo === null ? {} : { updatingTo: this.#updatingTo }),
+    };
   }
 
   #setState(state: HubState): void {
