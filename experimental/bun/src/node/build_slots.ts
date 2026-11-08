@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { lock, tryLock } from "./flock.ts";
 
 export const COMMAND = "build-slot";
-export const MEM_PER_BUILD_GB = 11;
+export const MEM_PER_SLOT_GB = 16;
 const HEAVY = ["build", "b", "check", "c", "clippy", "test", "t", "bench", "doc", "d", "rustc", "rustdoc", "install", "fix", "nextest", "llvm-cov", "miri"];
 const TESTS = ["test", "t", "bench", "nextest", "llvm-cov"];
 const HELD = "FLEETD_BUILD_SLOT";
@@ -18,12 +18,10 @@ const RUN_VALUES = ["-p", "--package", "--bin", "--example", "-F", "--features",
 export const dir = (home: string) => join(home, "build-slots");
 export const binDir = (home: string) => join(dir(home), "bin");
 
-/** The slots `memTotal` bytes fit: a quarter (4 to 16 GB) kept back, then one per 11 GB, at least one; unknown: 2. */
+/** The slots `memTotal` bytes fit: one per 16 GB (as sold), at least one; unknown: 2. */
 export function slotsFit(memTotal: number | undefined): number {
   if (memTotal === undefined) return 2;
-  const total = Math.ceil(memTotal / 2 ** 30);
-  const reserve = Math.min(16, Math.max(4, Math.floor(total / 4)));
-  return Math.max(1, Math.floor(Math.max(0, total - reserve) / MEM_PER_BUILD_GB));
+  return Math.max(1, Math.floor(Math.ceil(memTotal / 2 ** 30) / MEM_PER_SLOT_GB));
 }
 
 /** This machine's memory: /proc/meminfo's MemTotal, or macOS's hw.memsize. */
