@@ -373,3 +373,17 @@ test("the projects loops answer the approvals area's order checks, and a closing
   expect(orderEnvStore.held(k.hub.db.conn)).toEqual([]);
   expect(n.calls.filter((c) => c.op === "order_env_drop")).toHaveLength(1);
 });
+
+test("removing a repo names the tasks the leads area's removals cancelled", async () => {
+  const k = kit();
+  const r = { machineId: "devbox", projectId: "notes" };
+  const api = { kind: "repo_facts" as const, exists: true, isGit: true, workflowFiles: [] };
+  const n = await node(k, ["repos"], (call) => (call.op === "repo_inspect" ? { ok: api } : undefined));
+  n.event({ type: "project_upserted", projectId: "notes", title: "Notes", workspaceRoot: "/home/me/notes", updatedAt: AT });
+  gh(k, {});
+  await settle();
+  await k.ok(operate, "project_repo_add", { ...r, path: "/home/me/src/api", name: "api" });
+  // The leads area makes it at its start; here, the area as its owner would.
+  k.hub.area("lead_removals", () => ({ reconcile: async () => {}, endRemovedRepos: async () => ["T7"] }));
+  expect((await k.ok(operate, "project_repo_remove", { ...r, name: "api" })).cancelled).toEqual(["T7"]);
+});

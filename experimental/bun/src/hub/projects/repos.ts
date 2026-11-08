@@ -250,10 +250,11 @@ function list(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId
 }
 
 /**
- * The leads area's removals (leads/removals.rs `end_removed_repos`): the live tasks whose repo is gone, cancelled.
- * Until the leads area makes it, a removal cancels none here, and the tasks end at their next start.
+ * The leads area's removals, `hub.area("lead_removals")` (Rust's `leads.removals`), made at the leads area's start:
+ * `endRemovedRepos` cancels the live tasks whose repo is gone and names them. Until it is made, a removal cancels none
+ * here, and the tasks end at their next start.
  */
-type Removals = { endRemovedRepos(): Promise<TaskId[]> };
+type Removals = { reconcile(r: ProjectRef): Promise<void>; endRemovedRepos(): Promise<string[]> };
 
 async function remove(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId: ProjectId; name: RepoName }): Promise<ProjectRepoRemoveOutput> {
   const [r] = target(hub, caller, "operate", input.machineId, input.projectId);
@@ -263,7 +264,7 @@ async function remove(hub: Hub, caller: Caller, input: { machineId: MachineId; p
   }
   repos.detach(hub.db.conn, r, repo.name);
   // Keyed on `repos`: a stop before this ends them at the next start.
-  const cancelled = (await hub.peek<Removals>("lead_removals")?.endRemovedRepos()) ?? [];
+  const cancelled: TaskId[] = (await hub.peek<Removals>("lead_removals")?.endRemovedRepos()) ?? [];
   // Every client lists the project's repos and its projects again.
   events(hub).append({
     at: now(hub),
