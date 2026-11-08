@@ -148,10 +148,10 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_approvals_set` → `src/hub/navi` (operate) <!-- tool:`project_approvals_set` -->
 - [ ] `navi_signins_forget` → `src/hub/navi` (operate) <!-- tool:`navi_signins_forget` -->
 - [ ] `project_signins_forget` → `src/hub/navi` (operate) <!-- tool:`project_signins_forget` -->
-- [ ] `navi_purchases` → `src/hub/navi` (read) <!-- tool:`navi_purchases` -->
-- [ ] `project_purchases` → `src/hub/navi` (read) <!-- tool:`project_purchases` -->
-- [ ] `navi_card_set` → `src/hub/navi` (operate) <!-- tool:`navi_card_set` -->
-- [ ] `project_card_set` → `src/hub/navi` (operate) <!-- tool:`project_card_set` -->
+- [x] `navi_purchases` → `src/hub/navi` (read) <!-- tool:`navi_purchases` -->
+- [x] `project_purchases` → `src/hub/navi` (read) <!-- tool:`project_purchases` -->
+- [x] `navi_card_set` → `src/hub/navi` (operate) <!-- tool:`navi_card_set` -->
+- [x] `project_card_set` → `src/hub/navi` (operate) <!-- tool:`project_card_set` -->
 - [x] `project_settings_get` → `src/hub/projects` (read) <!-- tool:`project_settings_get` -->
 - [x] `project_settings_set` → `src/hub/projects` (operate) <!-- tool:`project_settings_set` -->
 - [ ] `project_env_set` → `src/hub/projects` (operate) <!-- tool:`project_env_set` -->
@@ -237,7 +237,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
 - [ ] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
-- [ ] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
+- [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
@@ -626,12 +626,12 @@ every `fleetd` command.
 - [x] lead call `browser_session` → `src/hub/lead_calls` <!-- lead:lead call `browser_session` -->
 - [x] lead call `browser_recording_part` → `src/hub/lead_calls` <!-- lead:lead call `browser_recording_part` -->
 - [x] lead call `browser_takeover` → `src/hub/lead_calls` <!-- lead:lead call `browser_takeover` -->
-- [ ] lead call `purchase_open` → `src/hub/lead_calls` <!-- lead:lead call `purchase_open` -->
-- [ ] lead call `purchase_claim` → `src/hub/lead_calls` <!-- lead:lead call `purchase_claim` -->
-- [ ] lead call `purchase_filled` → `src/hub/lead_calls` <!-- lead:lead call `purchase_filled` -->
-- [ ] lead call `secure_input_open` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_open` -->
-- [ ] lead call `secure_input_claim` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_claim` -->
-- [ ] lead call `secure_input_filled` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_filled` -->
+- [x] lead call `purchase_open` → `src/hub/lead_calls` <!-- lead:lead call `purchase_open` -->
+- [x] lead call `purchase_claim` → `src/hub/lead_calls` <!-- lead:lead call `purchase_claim` -->
+- [x] lead call `purchase_filled` → `src/hub/lead_calls` <!-- lead:lead call `purchase_filled` -->
+- [x] lead call `secure_input_open` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_open` -->
+- [x] lead call `secure_input_claim` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_claim` -->
+- [x] lead call `secure_input_filled` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_filled` -->
 - [x] lead call `session_route` → `src/hub/lead_calls` <!-- lead:lead call `session_route` -->
 - [x] lead call `session_step` → `src/hub/lead_calls` <!-- lead:lead call `session_step` -->
 - [ ] lead call `mac` → `src/hub/lead_calls` <!-- lead:lead call `mac` -->
@@ -639,10 +639,10 @@ every `fleetd` command.
 - [x] lead call `mac_send` → `src/hub/lead_calls` <!-- lead:lead call `mac_send` -->
 - [ ] lead call `project_message` → `src/hub/lead_calls` <!-- lead:lead call `project_message` -->
 - [ ] lead call `factory_status` → `src/hub/lead_calls` <!-- lead:lead call `factory_status` -->
-- [ ] lead call `chat_search` → `src/hub/lead_calls` <!-- lead:lead call `chat_search` -->
-- [ ] lead call `chat_read` → `src/hub/lead_calls` <!-- lead:lead call `chat_read` -->
+- [x] lead call `chat_search` → `src/hub/lead_calls` <!-- lead:lead call `chat_search` -->
+- [x] lead call `chat_read` → `src/hub/lead_calls` <!-- lead:lead call `chat_read` -->
 - [x] lead call `skill_save` → `src/hub/lead_calls` <!-- lead:lead call `skill_save` -->
-- [ ] lead call `confirm_step` → `src/hub/lead_calls` <!-- lead:lead call `confirm_step` -->
+- [x] lead call `confirm_step` → `src/hub/lead_calls` <!-- lead:lead call `confirm_step` -->
 
 ### agent-mcp tools
 
