@@ -978,7 +978,8 @@ async fn a_navi_removed_without_its_answer_is_still_erased_once_the_hub_sees_it_
 
 /// The erase runs right after the node's `project.removed` lands, and keeps that event: the apps' sidebars, the merge
 /// train, approvals, automations and Status all wait on it, and missed it while the erase took it with the rest.
-/// Only the removal stays, without the project's name.
+/// Only the removal stays, and without the project's name (its title was in the summary and `data`), as nothing else
+/// of it does (D310).
 #[tokio::test]
 async fn erasing_a_project_keeps_its_removal_for_whoever_waits_on_it() {
     use crate::hub::store::NewEvent;

@@ -272,8 +272,7 @@ fn rows(c: &Connection, r: &ProjectRef) -> Result<(Vec<String>, BTreeSet<String>
         params![m, p],
     )?;
     // The event log: its chat's messages ride in their events, under `data.projectRef`; the rest name it at the top.
-    // Its removal stays, without its name: the apps, the merge train, approvals and automations wait on it, and the
-    // erase runs right after it lands.
+    // Its project.removed stays: open apps read the log after it to drop the project (W465).
     c.execute(
         "DELETE FROM events WHERE type != 'project.removed'
            AND ((machine_id = ?1 AND json_extract(data, '$.projectId') = ?2)
@@ -281,6 +280,7 @@ fn rows(c: &Connection, r: &ProjectRef) -> Result<(Vec<String>, BTreeSet<String>
                  AND json_extract(data, '$.data.projectRef.projectId') = ?2))",
         params![m, p],
     )?;
+    // Without its name, as nothing else of it stays: the removal says only which id went from which machine.
     c.execute(
         "UPDATE events SET data = json_set(json_remove(data, '$.data'), '$.summary', ?3)
          WHERE type = 'project.removed' AND machine_id = ?1 AND json_extract(data, '$.projectId') = ?2",
