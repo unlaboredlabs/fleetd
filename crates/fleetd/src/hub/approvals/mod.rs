@@ -144,6 +144,9 @@ pub fn shown_argv(argv: &[String]) -> String {
 const RELINK_WAIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 /// How often it looks whether the node is back meanwhile.
 const RELINK_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+/// How long an approval given while its node is offline waits for it to link again before it goes back to the person:
+/// a node restarting for an update is back well within it.
+const OFFLINE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Why an approved command whose result neither the hub nor its node has goes back to the person: it may have run, so
 /// what to check comes before approving it again.
@@ -1195,7 +1198,20 @@ impl Approvals {
                 if let Some(env) = &spec.secret_env {
                     input["secretEnv"] = json!(env);
                 }
-                self.deps.nodes.run_gated(&machine, input).await
+                // Offline, nothing was sent: a node restarting (an update) gets [`OFFLINE_WAIT`] to link again.
+                let deadline = self.deps.clock.now() + OFFLINE_WAIT;
+                loop {
+                    let ran = self.deps.nodes.run_gated(&machine, input.clone()).await;
+                    if !matches!(&ran, Err(e) if e.reason == "offline")
+                        || self.deps.clock.now() >= deadline
+                    {
+                        break ran;
+                    }
+                    self.deps.clock.sleep(RELINK_POLL).await;
+                    if !self.linked_by(&machine, deadline).await {
+                        break ran;
+                    }
+                }
             }
         };
         let done = match ran {
@@ -1230,12 +1246,8 @@ impl Approvals {
         let timeout_sec = r.gated.as_ref().map_or(0, |g| g.timeout_sec.get());
         let deadline = self.deps.clock.now() + RELINK_WAIT;
         let why = loop {
-            if !self.deps.nodes.is_linked(&machine).await {
-                if self.deps.clock.now() >= deadline {
-                    break format!("{lost}, and {machine}'s node has not linked again since");
-                }
-                self.deps.clock.sleep(RELINK_POLL).await;
-                continue;
+            if !self.linked_by(&machine, deadline).await {
+                break format!("{lost}, and {machine}'s node has not linked again since");
             }
             match self
                 .deps
@@ -1265,6 +1277,19 @@ impl Approvals {
         };
         if let Ok(done) = self.reopen(id, &may_have_run(&why, &machine)).await {
             self.deps.hub.wake_request(&done).await;
+        }
+    }
+
+    /// Whether `machine`'s node is linked, or links again before `deadline`, looking every [`RELINK_POLL`].
+    async fn linked_by(&self, machine: &str, deadline: std::time::SystemTime) -> bool {
+        loop {
+            if self.deps.nodes.is_linked(machine).await {
+                return true;
+            }
+            if self.deps.clock.now() >= deadline {
+                return false;
+            }
+            self.deps.clock.sleep(RELINK_POLL).await;
         }
     }
 

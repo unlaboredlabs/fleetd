@@ -498,7 +498,7 @@ async fn approve_runs_the_stored_command_and_wakes_the_lead_with_its_outcome() {
 }
 
 #[tokio::test]
-async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_person() {
+async fn deny_never_runs_the_command() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
     a.gated_run(&p1(), migration()).await.unwrap();
@@ -517,15 +517,80 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
         outcome,
         "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
     );
+}
 
-    a.gated_run(&p1(), migration()).await.unwrap();
-    *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
+/// Moves `clock` on a second at a time, letting the approval's task run between ticks, until `done` holds.
+async fn tick_until(
+    clock: &crate::hub::store::test_clock::ManualClock,
+    mut done: impl FnMut() -> bool,
+) {
+    for _ in 0..120 {
+        if done() {
+            return;
+        }
+        clock.advance(std::time::Duration::from_secs(1));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("never happened in two minutes of the clock");
+}
+
+fn offline() -> Result<GatedOutcome, NodeCommandError> {
+    Err(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a's node is not linked to the hub".into(),
+    })
+}
+
+/// An approval given while its node restarts (an update) waits for the node to link again, then runs, once.
+#[tokio::test]
+async fn an_approval_given_while_its_node_restarts_runs_once_the_node_links_again() {
+    let fake = Arc::new(Fake::default());
+    let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
+    let a = approvals_at(&fake, clock.clone());
+    a.gated_run(&p1(), migration()).await.unwrap();
+    *fake.gated_reply.lock().unwrap() = offline();
+    a.answer(&person(), "Q1", true, None).await.unwrap();
+    tick_until(&clock, || fake.runs.lock().unwrap().len() == 1).await;
+    for _ in 0..2 {
+        clock.advance(std::time::Duration::from_secs(1));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(fake.request("Q1").state, RequestState::Approved);
+    assert_eq!(
+        fake.runs.lock().unwrap().len(),
+        1,
+        "not sent again while unlinked"
+    );
+
+    // The node is back 2 s later.
+    *fake.gated_reply.lock().unwrap() = Ok(GatedOutcome {
+        exit_code: Some(0),
+        output_tail: "migrated 3 tables\n".into(),
+        ..Default::default()
     });
-    a.answer(&person(), "Q2", true, None).await.unwrap();
-    fake.woken_times(2).await;
-    let back = fake.request("Q2");
+    *fake.linked.lock().unwrap() = true;
+    tick_until(&clock, || !fake.woken.lock().unwrap().is_empty()).await;
+    let done = fake.request("Q1");
+    assert_eq!(done.state, RequestState::Ran);
+    assert_eq!(done.exit_code, Some(0));
+    assert_eq!(fake.runs.lock().unwrap().len(), 2);
+    assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 ran"]);
+}
+
+/// A node that doesn't link again within 30 s: nothing ran, so the approval goes back to the person.
+#[tokio::test]
+async fn an_approval_whose_node_stays_offline_goes_back_to_the_person_after_30_s() {
+    let fake = Arc::new(Fake::default());
+    let clock = crate::hub::store::test_clock::ManualClock::at(1_790_000_000_000);
+    let a = approvals_at(&fake, clock.clone());
+    a.gated_run(&p1(), migration()).await.unwrap();
+    *fake.gated_reply.lock().unwrap() = offline();
+    let approved_at = clock.now();
+    a.answer(&person(), "Q1", true, None).await.unwrap();
+    tick_until(&clock, || !fake.woken.lock().unwrap().is_empty()).await;
+    let waited = clock.now().duration_since(approved_at).unwrap();
+    assert!(waited >= std::time::Duration::from_secs(30), "{waited:?}");
+    let back = fake.request("Q1");
     assert_eq!(
         back.state,
         RequestState::Open,
@@ -541,6 +606,7 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
         "{:?}",
         back.evidence
     );
+    assert_eq!(fake.runs.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
