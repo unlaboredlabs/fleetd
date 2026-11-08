@@ -34,7 +34,7 @@ export function Button({
   // A disabled button greys out as iOS's do, rather than fading its color.
   const off = disabled && !busy;
   const fill = off && kind !== "plain" ? t.fillQuiet : kind === "filled" ? solid : kind === "tinted" ? (destructive ? t.dangerSoft : t.accentSoft) : "transparent";
-  const ink = off ? t.tertiary : kind === "filled" ? t.onAccent : hue;
+  const ink = off ? t.tertiary : kind === "filled" ? (destructive ? "#FFFFFF" : t.onAccent) : hue;
   const height = size === "large" ? 50 : size === "medium" ? TOUCH : 34;
   const radius = shape.capsule || size === "small" ? height / 2 : size === "large" ? 14 : 12;
   return (

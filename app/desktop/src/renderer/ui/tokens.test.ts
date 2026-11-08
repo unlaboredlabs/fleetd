@@ -42,7 +42,7 @@ function contrast(a: string, b: string): number {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
-const TEXT = ["text", "quiet", "accent", "danger", "success", "warning", "role-implementer", "role-reviewer", "role-verifier", "role-lead"];
+const TEXT = ["text", "quiet", "accent", "link", "danger", "success", "warning", "role-implementer", "role-reviewer", "role-verifier", "role-lead"];
 const SYNTAX = ["shiki-token-comment", "shiki-token-keyword", "shiki-token-string", "shiki-token-constant", "shiki-token-function", "shiki-token-parameter", "shiki-token-punctuation"];
 
 describe.each([
@@ -83,6 +83,10 @@ describe.each([
 
   it("the primary button label passes AA and faint stays visible", () => {
     expect(contrast(get("on-accent"), get("accent-fill"))).toBeGreaterThanOrEqual(4.5);
+    // A switch's white thumb on its track when on (WCAG 1.4.11).
+    expect(contrast("#ffffff", get("switch-on"))).toBeGreaterThanOrEqual(3);
+    // Your chat bubbles: white words on the deep accent.
+    expect(contrast(get("on-accent-deep"), get("accent-deep"))).toBeGreaterThanOrEqual(4.5);
     for (const [, bg] of bases) expect(contrast(get("faint"), bg)).toBeGreaterThanOrEqual(2.5);
   });
 

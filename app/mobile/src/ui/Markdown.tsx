@@ -1,6 +1,6 @@
 // A bubble's markdown (markdown.ts) as native text: code in monospace, links that open in the browser, lists with
 // hanging bullets, tables that scroll sideways. `ink` is the bubble's text color; on the accent, links are underlined
-// in it rather than drawn in the accent. A bubble's words aren't selectable where they stand, as in Messages: holding
+// in it rather than drawn in the link's blue. A bubble's words aren't selectable where they stand, as in Messages: holding
 // one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -212,7 +212,7 @@ function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: stri
                   if (n.url.startsWith("artifact:")) openArtifact?.(n.url);
                   else void Linking.openURL(n.url);
                 }}
-                style={onAccent ? styles.underline : [styles.underline, { color: t.accent }]}
+                style={onAccent ? styles.underline : [styles.underline, { color: t.link }]}
               >
                 <Inlines nodes={n.children} ink={ink} onAccent={onAccent} />
               </Text>
