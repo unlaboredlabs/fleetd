@@ -55,10 +55,11 @@ fleetd invite --person p_abcd2345
 | `fleetd people remove <personId>` | Removes a person and signs out every device of theirs |
 | `fleetd invite list` | Lists open invites |
 | `fleetd invite revoke <inviteId>` | Takes back an invite. A person it invited who never joined goes with it |
-| `fleetd hub key revoke <keyId>` | Signs out one device |
+| `fleetd hub key revoke <keyId>` | Signs out one device, and revokes the hub links made on it |
 
 A person signs out one of their other devices (a lost phone, an old computer) under Settings › You › Your devices in
-the desktop app: **Sign out** on its row, then confirm, and its key stops working at once. Owners and admins sign out
+the desktop app: **Sign out** on its row, then confirm, and its key stops working at once, and so does every
+[hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out
 anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
 once: an app it has open is disconnected, its phone gets no more notifications, and a Telegram bridge of theirs takes
 and sends nothing more. What a removed person did keeps their name. Their Only me projects are archived, so nothing

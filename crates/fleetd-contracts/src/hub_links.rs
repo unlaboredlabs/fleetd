@@ -51,8 +51,8 @@ pub struct IssuedLink {
     /// The projects it reaches; absent: every project its person reaches.
     pub projects: Option<Vec<ProjectRef>>,
     /// The device that minted it. The link acts as its person, at the lesser of their role and this device's grants
-    /// when it was minted, never above operate, and stops when they leave the hub; a link from before people acts at
-    /// this device's grants and dies with it.
+    /// when it was minted, never above operate, and stops when they leave the hub or this device is revoked (which
+    /// revokes it too); a link from before people acts at this device's grants.
     pub key_id: String,
     pub device: String,
     /// Its person, on a hub with people.

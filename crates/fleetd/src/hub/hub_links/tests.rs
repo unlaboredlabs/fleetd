@@ -619,13 +619,81 @@ async fn revoking_on_the_other_hub_stops_the_link_at_once() {
 }
 
 #[tokio::test]
-async fn a_link_acts_as_its_person_whatever_their_device_and_stops_when_they_leave() {
+async fn revoking_a_device_revokes_the_links_made_on_it() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    let ask =
+        json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": "Hi." });
+    lead(&l.home, &navi, ask.clone()).await.unwrap();
+    // Alex's tablet made a link of its own.
+    let tablet = person(&l.acme, "Alex", "tablet", Role::Operate);
+    let other = tool(
+        &l.acme,
+        &tablet,
+        "hub_link_mint",
+        json!({ "label": "work" }),
+    )
+    .await
+    .unwrap();
+    let other_key = other["key"].as_str().unwrap();
+    // Alex signs the laptop out from the tablet: the laptop's link goes with it, in the same step (D337).
+    tool(
+        &l.acme,
+        &tablet,
+        "device_revoke",
+        json!({ "keyId": l.you_acme.key_id.as_str() }),
+    )
+    .await
+    .unwrap();
+    let issued = super::issued_get(&l.acme.db, &l.link_there)
+        .unwrap()
+        .unwrap();
+    assert!(issued.revoked_at.is_some(), "{issued:?}");
+    let refused = super::verify(&l.acme, &l.key).unwrap_err();
+    assert!(refused.message.contains("was revoked"), "{refused:?}");
+    let (code, why) = lead(&l.home, &navi, ask).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    assert!(why.contains("revoked"), "{why}");
+    assert_eq!(agent_posts(&l.acme, &project("storefront")).len(), 1);
+    let state = super::kept_get(&l.home.db, &l.link_here)
+        .unwrap()
+        .unwrap()
+        .state;
+    assert_eq!(state, fleetd_contracts::hub_links::HubLinkState::Revoked);
+    // The tablet's link still works; `fleetd hub key revoke` counts the links it took along.
+    super::verify(&l.acme, other_key).unwrap();
+    assert_eq!(l.acme.auth.revoke(tablet.key_id.as_str()).unwrap(), 1);
+    assert!(super::verify(&l.acme, other_key).is_err());
+    assert_eq!(l.acme.auth.revoke(tablet.key_id.as_str()).unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_link_revoked_with_its_device_on_an_older_hub_is_refused_too() {
+    let l = linked(None).await;
+    // A device revoked before D337 left its links live in the table: each is refused at its next request.
+    l.acme
+        .db
+        .with(|c| {
+            c.execute(
+                "UPDATE agent_keys SET revoked_ms = 1 WHERE key_id = ?",
+                [l.you_acme.key_id.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let refused = super::verify(&l.acme, &l.key).unwrap_err();
+    assert!(
+        refused.message.contains("device that made link"),
+        "{refused:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_link_acts_as_its_person_and_stops_when_they_leave() {
     let l = linked(None).await;
     let navi = project("navi");
     let shop = project("storefront");
     let ask = |text: &str| json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": text });
-    // The device it was made on is revoked: the link still acts as Alex, at Alex's role.
-    l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
     lead(&l.home, &navi, ask("Gift cards.")).await.unwrap();
     assert_eq!(agent_posts(&l.acme, &shop)[0].0, "Alex via home");
     // A new name shows on the next ask.
@@ -687,7 +755,7 @@ async fn a_link_never_holds_more_than_the_device_that_made_it() {
             Ok(())
         })
         .unwrap();
-    let (code, why) = lead(&l.home, &navi, ask.clone()).await.unwrap_err();
+    let (code, why) = lead(&l.home, &navi, ask).await.unwrap_err();
     assert_eq!(code, ErrorCode::Forbidden, "{why}");
     assert!(agent_posts(&l.acme, &project("storefront")).is_empty());
     let status = lead(
@@ -698,10 +766,6 @@ async fn a_link_never_holds_more_than_the_device_that_made_it() {
     .await
     .unwrap();
     assert!(status.to_string().contains("Storefront"), "{status}");
-    // Its device revoked, the link still acts as Alex, and still only reads.
-    l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
-    let (code, _) = lead(&l.home, &navi, ask).await.unwrap_err();
-    assert_eq!(code, ErrorCode::Forbidden);
     // An admin's link is never more than operate.
     let got = super::verify(&l.acme, &l.key).unwrap();
     assert!(got.grants.iter().all(|g| g.role == Role::Read));
@@ -819,7 +883,7 @@ async fn a_link_from_before_people_acts_at_its_device_and_dies_with_it() {
     l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
     let (code, why) = lead(&l.home, &navi, ask).await.unwrap_err();
     assert_eq!(code, ErrorCode::Forbidden);
-    assert!(why.contains("device that made link"), "{why}");
+    assert!(why.contains("revoked"), "{why}");
 }
 
 #[tokio::test]

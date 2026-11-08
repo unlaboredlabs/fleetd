@@ -455,7 +455,7 @@ fleetd hub key list
 fleetd hub key revoke <keyId>
 ```
 
-takes effect at once, also on a running hub
+takes effect at once, also on a running hub; the hub links made on that device are revoked with it
 
 ### fleetd node join {#node-join}
 

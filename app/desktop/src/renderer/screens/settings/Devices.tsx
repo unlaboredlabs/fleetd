@@ -2,17 +2,18 @@
 // one-time code (pair_code_create, 15 minutes, as `fleetd pair` does) and shows its fleetd://pair link as a QR for the
 // phone app or the Camera to scan, with the hub address and code under it for typing. When the phone has paired (its
 // key.paired event refetches people_list), the QR gives way to the new phone, which also joins the list. Each other
-// device has Sign out (device_revoke, once confirmed): its key stops working at once. The hub says which device this
-// app is (people_list's thisDevice), and that one has none: signing it out would cut this app off.
+// device has Sign out (device_revoke, once confirmed): its key stops working at once, and the hub links made on it with
+// it, which the confirm counts (hub_links_get). The hub says which device this app is (people_list's thisDevice), and
+// that one has none: signing it out would cut this app off.
 import { Check, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AgentKeyInfo, PairCodeCreateOutput } from "../../../shared/contracts";
 import { Button, Dialog, Text } from "../../ui";
-import { HubScope, useData, useHubs } from "../../src/data/react";
+import { HubScope, useData, useHubs, useToolQuery } from "../../src/data/react";
 import { usePeople } from "../admin/usePeople";
 import { Prose } from "../onboarding/Prose";
 import { when } from "../status/view";
-import { codeLife, deviceLine, pairedSince, qrPath, yourDevices } from "./devicesModel";
+import { codeLife, deviceLine, linksMadeOn, pairedSince, qrPath, signOutLine, yourDevices } from "./devicesModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart } from "./parts";
 import a from "../admin/admin.module.css";
@@ -141,10 +142,16 @@ function DeviceRow({
   );
 }
 
-/** Asks before signing a device out: it stops working on this hub at once, until it is paired again. */
+const noInput = {};
+
+/** Asks before signing a device out: it stops working on this hub at once, until it is paired again, with its hub links. */
 function SignOutDialog({ device, onClose }: { device: AgentKeyInfo | null; onClose: () => void }) {
   const call = useHubCall();
   const refetch = useRefetch();
+  const live = useLive();
+  // A hub too old for links answers with an error: no count, as before.
+  const links = useToolQuery("hub_links_get", noInput, { enabled: live && device !== null });
+  const made = device === null ? 0 : linksMadeOn(links.data?.issued, device.keyId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const name = device?.name ?? "";
@@ -158,7 +165,7 @@ function SignOutDialog({ device, onClose }: { device: AgentKeyInfo | null; onClo
     setError(undefined);
     call("device_revoke", { keyId: device.keyId })
       .then(() => {
-        refetch(["people_list"]);
+        refetch(["people_list", "hub_links_get"]);
         close();
       })
       .catch((e: unknown) => setError(errorText(e)))
@@ -169,7 +176,7 @@ function SignOutDialog({ device, onClose }: { device: AgentKeyInfo | null; onClo
       open={device !== null}
       onOpenChange={(open) => !open && close()}
       title={`Sign out ${name}?`}
-      description="It stops working on this hub at once. To use it again, pair it again."
+      description={signOutLine(made)}
       footer={
         <>
           {error === undefined ? null : (
