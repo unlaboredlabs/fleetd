@@ -580,6 +580,7 @@ mod tests {
             onepassword: None,
             system_prompt: None,
             queued_prompts: vec![],
+            monitors: vec![],
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

@@ -53,7 +53,7 @@ use super::runner::host;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
-use super::store::{NodeStore, SessionLocal, SessionRow, StoreError};
+use super::store::{ArmedMonitor, NodeStore, SessionLocal, SessionRow, StoreError};
 use super::util::{now_iso, tail_utf16};
 use super::wire::{NodeToHub, head_text, to_json};
 use super::worktree;
@@ -643,6 +643,38 @@ fn permission_item_id(request_id: &str) -> String {
     format!("permission-{request_id}")
 }
 
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// What the agent is told when the Monitors it waited on were lost `when` its claude went.
+fn monitors_lost(lost: &[ArmedMonitor], when: &str) -> String {
+    let named: Vec<String> = lost
+        .iter()
+        .filter_map(|m| m.description.as_deref())
+        .map(|d| format!("\"{d}\""))
+        .collect();
+    let (what, were) = match lost.len() {
+        1 => ("Your Monitor", "was"),
+        _ => ("Your Monitors", "were"),
+    };
+    let what = if named.is_empty() {
+        what.to_owned()
+    } else {
+        format!("{what} {}", named.join(", "))
+    };
+    format!("{what} {were} lost when {when}. Check what you were waiting for again.")
+}
+
+/// Its claude's exit, in the agent's words.
+fn exit_words(exit: &ExitInfo) -> String {
+    match (exit.signal, exit.code) {
+        (Some(signal), _) => format!("your claude process was killed (signal {signal})"),
+        (None, Some(code)) => format!("your claude process exited (code {code})"),
+        (None, None) => "your claude process exited".to_owned(),
+    }
+}
+
 /// One live claude process.
 struct Live {
     generation: u64,
@@ -987,6 +1019,8 @@ impl SessionService {
         let mut adopted = HashSet::new();
         // The re-adopted sessions' processes, which no sweep of orphans touches.
         let mut protected = HashSet::new();
+        // Sessions whose claude went with the last node while a Monitor of theirs could still fire.
+        let mut lost = Vec::new();
         for mut row in rows {
             // A session stored before profiles, on another model or effort, resumes on its profile's own. One
             // launched on a profile keeps what its settings chose.
@@ -1037,6 +1071,18 @@ impl SessionService {
             if leftover {
                 service.settle_restarted(&id);
             }
+            // Idle, waiting on a Monitor: nothing else would wake it. A run the restart cut is the hub's to resume.
+            if !row.local.monitors.is_empty() {
+                let now = now_ms();
+                let armed: Vec<ArmedMonitor> = std::mem::take(&mut row.local.monitors)
+                    .into_iter()
+                    .filter(|m| m.until_ms > now)
+                    .collect();
+                service.log(service.update(&id, |c| c.row.local.monitors.clear()));
+                if row.summary.active_run_id.is_none() && !armed.is_empty() {
+                    lost.push((id, armed));
+                }
+            }
         }
         // Hosts no session row names any more, or that weren't re-adopted, end with their sessions.
         let stopped = host::sweep(&hosts, &adopted).await;
@@ -1067,7 +1113,30 @@ impl SessionService {
         service.spawn_reaper();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
+        for (id, armed) in lost {
+            service.wake_lost(&id, &armed, "this machine's fleetd node restarted");
+        }
         Ok(service)
+    }
+
+    /// Wakes a session whose Monitors were lost with its claude, once, with a message as a lead's goes: the agent
+    /// ended its turn waiting on them, and their notice can no longer come.
+    fn wake_lost(&self, id: &str, lost: &[ArmedMonitor], when: &str) {
+        tracing::info!(
+            session_id = id,
+            "a Monitor was lost when {when}: waking the session"
+        );
+        let text = monitors_lost(lost, when);
+        let run_id = NonEmpty::unchecked(format!("{id}-monitor-lost-{}", now_ms()));
+        let (service, id) = (self.clone(), id.to_owned());
+        tokio::spawn(async move {
+            if let Err(e) = service
+                .begin_run(&id, &run_id, &text, SendMode::Plain, None)
+                .await
+            {
+                tracing::warn!(session_id = %id, error = %e.message, "cannot wake a session whose Monitor was lost");
+            }
+        });
     }
 
     /// Runs on a session whose claude outlived the last node, through its host's `handle`: its runs stay as they are
@@ -1095,6 +1164,17 @@ impl SessionService {
         })?;
         let secrets = Arc::new(secrets);
         let (exited_tx, exited_rx) = watch::channel(false);
+        // Its Monitors run on with it, and hold it from the reaper as before.
+        let (now, at) = (Instant::now(), now_ms());
+        let watching = row
+            .local
+            .monitors
+            .iter()
+            .map(|m| {
+                let left = Duration::from_millis(m.until_ms.saturating_sub(at).max(0) as u64);
+                (m.id.clone(), now + left)
+            })
+            .collect();
         let generation = {
             let mut st = self.st();
             st.next_generation += 1;
@@ -1115,7 +1195,7 @@ impl SessionService {
                     spawned: secrets.clone(),
                     link: handle.link.clone(),
                     tools: HashSet::new(),
-                    watching: HashMap::new(),
+                    watching,
                 },
             );
             generation
@@ -2382,6 +2462,7 @@ impl SessionService {
                 onepassword: launch.onepassword.clone(),
                 system_prompt,
                 queued_prompts: Vec::new(),
+                monitors: Vec::new(),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -3393,6 +3474,9 @@ impl SessionService {
                     if let Some(live) = self.st().live.get_mut(&id) {
                         live.watching.remove(&tool_use_id);
                     }
+                    self.log(self.update(&id, |c| {
+                        c.row.local.monitors.retain(|m| m.id != tool_use_id);
+                    }));
                 }
                 RunnerEvent::Init { agent_tools, .. } => {
                     // A session started with no tools (`--tools ""`) lists none, so it offers none.
@@ -3428,7 +3512,8 @@ impl SessionService {
     }
 
     /// A Monitor the agent armed keeps its claude up until the Monitor's own deadline: its events, and the notice at
-    /// its end, start a turn of claude's own (a run of the session's), which a reaped claude never runs.
+    /// its end, start a turn of claude's own (a run of the session's), which a reaped claude never runs. It is kept on
+    /// the session's row too, so a claude lost before then (its exit, the node's restart) wakes the session to say so.
     fn watching(&self, id: &str, item: &ThreadItem) {
         let ItemKind::Tool {
             tool_name, input, ..
@@ -3447,10 +3532,20 @@ impl SessionService {
                 Duration::from_millis(ms.round() as u64)
             })
             .min(MONITOR_MAX);
-        if let Some(live) = self.st().live.get_mut(id) {
-            let until = Instant::now() + deadline + MONITOR_GRACE;
-            live.watching.insert(item.id.to_string(), until);
-        }
+        let until = Instant::now() + deadline + MONITOR_GRACE;
+        match self.st().live.get_mut(id) {
+            Some(live) => live.watching.insert(item.id.to_string(), until),
+            None => return,
+        };
+        let armed = ArmedMonitor {
+            id: item.id.to_string(),
+            description: input["description"].as_str().map(str::to_owned),
+            until_ms: now_ms() + (deadline + MONITOR_GRACE).as_millis() as i64,
+        };
+        self.log(self.update(id, |c| {
+            c.row.local.monitors.retain(|m| m.id != armed.id);
+            c.row.local.monitors.push(armed);
+        }));
     }
 
     /// Holds this node's agents between steps for the hold's lease (node/hold.rs), and answers how many sessions are
@@ -4021,9 +4116,10 @@ impl SessionService {
         });
     }
 
-    /// The process is gone: active runs close (interrupted when someone asked, else failed with claude's exit).
+    /// The process is gone: active runs close (interrupted when someone asked, else failed with claude's exit). The
+    /// Monitors it held go with it: an idle session that waited on one is woken to say so, unless someone asked.
     fn exited(&self, id: &str, generation: u64, exit: ExitInfo) {
-        let (pid, ending) = {
+        let (pid, ending, watching) = {
             let mut st = self.st();
             let Some(live) = st.live.remove(id) else {
                 return;
@@ -4035,7 +4131,7 @@ impl SessionService {
             let ending = live
                 .ending
                 .or_else(|| st.stopping.then_some(EndCause::NodeStopping));
-            (live.pid, ending)
+            (live.pid, ending, live.watching)
         };
         let cause = ending.unwrap_or(EndCause::Exited(exit));
         // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session. An interrupt,
@@ -4043,7 +4139,22 @@ impl SessionService {
         let requested = cause.asked();
         let retrying: HashSet<String> = self.st().retries.keys().cloned().collect();
         let mut closed = Vec::new();
+        let now = Instant::now();
+        let mut lost = Vec::new();
         self.log(self.update(id, |c| {
+            // The node stopping keeps them for the next node, which wakes the session if one could still fire then.
+            if !matches!(cause, EndCause::NodeStopping) {
+                let armed = std::mem::take(&mut c.row.local.monitors);
+                // A run it died in ends as any run does: its task is the hub's to resume.
+                if matches!(cause, EndCause::Exited(_))
+                    && !c.runs.iter().any(|r| r.status.is_active())
+                {
+                    lost = armed
+                        .into_iter()
+                        .filter(|m| watching.get(&m.id).is_some_and(|until| *until > now))
+                        .collect();
+                }
+            }
             let retried = |r: &RunInfo| r.status.is_active() && retrying.contains(r.id.as_str());
             if requested || !c.runs.iter().any(retried) {
                 closed = state::close_out(&mut c.runs, &cause, &c.at)
@@ -4058,10 +4169,17 @@ impl SessionService {
                 c.row.local.pid_start = None;
             }
         }));
-        let mut st = self.st();
-        for run in closed {
-            st.retries.remove(&run);
-            st.slept.remove(&run);
+        {
+            let mut st = self.st();
+            for run in closed {
+                st.retries.remove(&run);
+                st.slept.remove(&run);
+            }
+        }
+        if let EndCause::Exited(exit) = &cause
+            && !lost.is_empty()
+        {
+            self.wake_lost(id, &lost, &exit_words(exit));
         }
     }
 

@@ -5467,3 +5467,174 @@ async fn an_idle_session_whose_monitor_ended_is_reaped() {
     hub.service.reap().await;
     assert!(reaped(&hub), "kept for a Monitor that ended");
 }
+
+/// A session on `store` whose claude armed a 30-minute Monitor and ended its turn waiting on it, as T2038's did.
+async fn waiting_on_a_monitor(dir: &Path, store: NodeStore) -> Hub {
+    let mut hub = hub(
+        dir,
+        store,
+        FakeRunner::from_lines(&monitor_turn(serde_json::json!(1_800_000))),
+    )
+    .await;
+    hub.project(dir).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    hub
+}
+
+/// The session's runs once `f` holds for them, read from the store: what a node does before any hub subscribes is
+/// never on the stream.
+async fn runs_until(
+    hub: &Hub,
+    f: impl Fn(&[fleetd_contracts::sessions::RunInfo]) -> bool,
+) -> Vec<fleetd_contracts::sessions::RunInfo> {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let runs = hub.service.store().runs("s1").unwrap();
+            if f(&runs) {
+                return runs;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the runs never got there")
+}
+
+/// Every message the node sent the session's claude but the launch's.
+fn wakes(runner: &FakeRunner) -> Vec<String> {
+    runner
+        .received()
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCommand::Send { run_id, text, .. } if run_id != "r1" => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+fn lost(when: &str) -> String {
+    format!(
+        "Your Monitor \"build on the devbox\" was lost when {when}. Check what you were waiting for again."
+    )
+}
+
+/// Its second run, woken, ran to its end.
+fn woken_once(runs: &[fleetd_contracts::sessions::RunInfo]) -> bool {
+    runs.len() == 2 && !runs[1].status.is_active()
+}
+
+/// T2038 ended its turn on a Monitor, then the OOM killer took its claude and the Monitor with it: nothing was left to
+/// wake it, and it sat done for an hour. A claude that dies with a Monitor armed wakes its session once, with a
+/// message as a lead's goes, saying the Monitor was lost.
+#[tokio::test]
+async fn a_session_whose_claude_dies_waiting_on_a_monitor_is_woken_to_say_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = waiting_on_a_monitor(dir.path(), NodeStore::open_memory(10_000).unwrap()).await;
+
+    hub.runner.kill();
+    let runs = runs_until(&hub, woken_once).await;
+    assert_eq!(runs[1].status, RunStatus::Completed);
+    assert_eq!(
+        wakes(&hub.runner),
+        [lost("your claude process was killed (signal 9)")]
+    );
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2);
+    assert!(spawned[1].resume, "the woken claude resumes the session");
+}
+
+/// The node restarted while T2045 waited on a Monitor, and its claude went with the node. The next node wakes the
+/// session once, saying so.
+#[tokio::test]
+async fn a_session_waiting_on_a_monitor_through_a_node_restart_is_woken_to_say_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let before = waiting_on_a_monitor(dir.path(), NodeStore::open(&db).unwrap()).await;
+    before.service.shutdown().await;
+    drop(before);
+
+    let after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::from_lines(&monitor_turn(serde_json::json!(1_800_000))),
+    )
+    .await;
+    let runs = runs_until(&after, woken_once).await;
+    assert_eq!(runs[1].status, RunStatus::Completed);
+    assert_eq!(
+        wakes(&after.runner),
+        [lost("this machine's fleetd node restarted")]
+    );
+    assert!(after.runner.spawned()[0].resume);
+}
+
+/// What the node did about a session's Monitors has settled: its claude is gone, and anything it started has had time.
+async fn gone(hub: &Hub) {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while hub.service.st().live.contains_key("s1") {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("its claude never went");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+}
+
+/// A Monitor whose notice came, or that ran out its time, can wake nothing more: a claude gone after it, or a node
+/// restarted after it, wakes nobody.
+#[tokio::test]
+async fn a_monitor_that_fired_or_expired_wakes_nothing_when_its_claude_goes() {
+    // Fired: its notice's turn ran, then the claude dies.
+    let dir = tempfile::tempdir().unwrap();
+    let mut node = waiting_on_a_monitor(dir.path(), NodeStore::open_memory(10_000).unwrap()).await;
+    node.runner.notice();
+    let woken = node
+        .summary(|s| s.active_run_id.as_ref().is_some_and(|r| r != "r1"))
+        .await
+        .active_run_id
+        .unwrap();
+    node.settled(woken.as_str()).await;
+    node.runner.kill();
+    gone(&node).await;
+    assert_eq!(node.service.store().runs("s1").unwrap().len(), 2);
+    assert!(wakes(&node.runner).is_empty());
+
+    // Ran out its time: its claude is reaped past the deadline.
+    let dir = tempfile::tempdir().unwrap();
+    let node = waiting_on_a_monitor(dir.path(), NodeStore::open_memory(10_000).unwrap()).await;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(32 * 60)).await;
+    node.service.reap().await;
+    gone(&node).await;
+    assert_eq!(node.service.store().runs("s1").unwrap().len(), 1);
+    assert!(wakes(&node.runner).is_empty());
+    tokio::time::resume();
+
+    // Ran out its time while the node was down.
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let before = waiting_on_a_monitor(dir.path(), NodeStore::open(&db).unwrap()).await;
+    before.service.shutdown().await;
+    drop(before);
+    let store = NodeStore::open(&db).unwrap();
+    let mut row = store.session("s1").unwrap().unwrap();
+    assert_eq!(row.local.monitors.len(), 1, "the Monitor is kept");
+    row.local.monitors[0].until_ms = chrono::Utc::now().timestamp_millis() - 1;
+    store.commit(&row, &[], false).unwrap();
+    let after = hub(
+        dir.path(),
+        store,
+        FakeRunner::from_lines(&monitor_turn(serde_json::json!(1_800_000))),
+    )
+    .await;
+    gone(&after).await;
+    assert!(after.runner.spawned().is_empty(), "nothing woken");
+    let row = after.service.store().session("s1").unwrap().unwrap();
+    assert!(row.local.monitors.is_empty());
+}

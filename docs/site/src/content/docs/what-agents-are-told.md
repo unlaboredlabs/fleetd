@@ -107,7 +107,10 @@ and every failure. Each line the Monitor prints starts a new turn for the agent.
 its lead gets the result when that turn ends, as after a message.
 
 A Monitor stops at its timeout (30 minutes at most) and sends one last notice. Until then, the node keeps the idle
-agent's claude running instead of closing it after 10 idle minutes, so the notice still has an agent to wake. A review
+agent's claude running instead of closing it after 10 idle minutes, so the notice still has an agent to wake. If that
+claude dies first, or the node restarts without it, the Monitor goes with it. The node then wakes the agent once with a
+message: "Your Monitor "…" was lost when … Check what you were waiting for again." A Monitor that already fired or
+timed out wakes nobody. A review
 ends with its turn, so a reviewer waits for its builds and tests to finish before it reports.
 
 ### Claude's auto memory is off {#auto-memory}
