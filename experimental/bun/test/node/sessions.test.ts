@@ -3,7 +3,7 @@
 // a stop that removes its worktree, and a session re-adopted from its host after the node restarted.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import { scan } from "../../src/node/repos/index.ts";
@@ -21,6 +21,8 @@ const config = (): SessionConfig => ({
   baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
   claudeBin: "/bin/true",
   nativeBin: join(import.meta.dir, "fake-host.sh"),
+  retryScheduleMs: [50, 50, 50],
+  idleReapMs: 60_000,
 });
 
 const git = (...args: string[]) => spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
@@ -141,6 +143,32 @@ test("a writer works in a worktree of its own, and its stop removes it once noth
   expect(summary("s2")?.worktreePath).toBeUndefined();
 });
 
+test("a worktree's setup runs before its agent starts, and the brief says what it did", async () => {
+  const launch = (sessionId: string, runId: string, branch: string, plan: Record<string, unknown>) =>
+    ok("launch", { sessionId, projectId: "p1", runtimeMode: "full-access", workspace: { type: "worktree", baseRef: "main", branch }, prompt: "brief", runId, role: "worker", setup: plan });
+  const launched = await launch("s5", "u1", "fleetd/t5", { commands: ["echo made > made.txt", "echo second"], timeoutSec: 30 });
+  await until("the run after setup", () => summary("s5")?.latestRun?.status === "completed");
+  expect(readFileSync(join(launched.summary.worktreePath, "made.txt"), "utf8")).toBe("made\n");
+  expect(service.store.item("s5", "setup-u1-0")).toMatchObject({ status: "completed", title: "Setup: echo made > made.txt", kind: { exitCode: 0 } });
+  const brief = service.store.message("s5", "u1")!.text;
+  expect(brief).toStartWith("brief\n\n## Setup\nSetup ran in this worktree before you started: `echo made > made.txt` (exited 0 after 0 s), `echo second`");
+  expect(service.store.session("s5")?.local.setupPending).toBeUndefined();
+
+  // A setup that fails keeps the agent from starting, and says why.
+  await launch("s6", "u2", "fleetd/t6", { commands: ["echo broke; exit 3", "echo never"] });
+  await until("the failed start", () => summary("s6")?.latestRun?.status === "failed");
+  expect(summary("s6")?.latestRun?.failure?.message).toStartWith("setup failed, so the agent did not start: `echo broke; exit 3` exited 3 after 0 s; 1 not run after it.");
+  expect(service.store.session("s6")?.local.pid).toBeUndefined();
+
+  // With inputs, a worktree set up before with the same ones is not set up again.
+  const plan = { commands: ["date >> runs.txt"], inputs: ["README.md"] };
+  const first = await launch("s7", "u3", "fleetd/t7", plan);
+  await until("the first setup", () => summary("s7")?.latestRun?.status === "completed");
+  await ok("send", { sessionId: "s7", runId: "u4", text: "again" });
+  await until("the second run", () => summary("s7")?.latestRun?.id === "u4" && summary("s7")?.latestRun?.status === "completed");
+  expect(readFileSync(join(first.summary.worktreePath, "runs.txt"), "utf8").trim().split("\n")).toHaveLength(1);
+});
+
 test("files: attachments are written under .fleetd/attachments and found again by their hash", async () => {
   const rel = ".fleetd/attachments/W1/a.txt";
   await ok("put_file", { projectId: "p1", relPath: rel, dataB64: Buffer.from("hi").toString("base64") });
@@ -173,7 +201,9 @@ test("windows, items, spans and the project calls answer from the store and the 
   expect((await call("read_item", { sessionId: "s3", itemId: "nope" })).result).toMatchObject({ err: { code: "not_found" } });
   await ok("release", { sessionId: "s1" });
   expect((await ok("default_branch", { projectId: "p1" })).branch).toBe("main");
-  expect((await ok("project_worktrees", { projectId: "p1" })).worktrees).toEqual([]);
+  const worktrees = (await ok("project_worktrees", { projectId: "p1" })).worktrees as { sessionId: string; branch: string; uncommitted: boolean }[];
+  // s5's setup left made.txt, which git doesn't track: it holds work.
+  expect(worktrees.find((w) => w.sessionId === "s5")).toMatchObject({ branch: "fleetd/t5", uncommitted: true });
   const made = join(home.dir, "made");
   expect(await ok("folder_make", { path: made, gitInit: true })).toEqual({ kind: "folder", path: made });
   expect(existsSync(join(made, ".git"))).toBe(true);
@@ -188,6 +218,65 @@ test("windows, items, spans and the project calls answer from the store and the 
   await ok("project_upsert", { projectId: "p9", title: "copy", workspaceRoot: made });
   await ok("project_env_copy", { from: "p1", to: "p9" });
   expect(await ok("order_env_drop", { projectId: "p1", orderId: "W1" })).toEqual({ kind: "done" });
+});
+
+test("a run that failed on the network is retried by the node under a fresh uuid, and completes as the same run", async () => {
+  await ok("send", { sessionId: "s1", runId: "r6", text: "flaky: once" });
+  await until("the retried run", () => summary("s1")?.latestRun?.id === "r6" && summary("s1")?.latestRun?.status === "completed");
+  expect(service.store.item("s1", "node-retry-r6-1")).toMatchObject({ kind: { type: "node_retry", attempt: 1, of: 3, reason: { class: "network" } } });
+  expect(service.store.runs("s1").filter((r) => r.id === "r6")).toHaveLength(1);
+});
+
+test("a model claude refuses falls back to the profile's own, once, and the session says so", async () => {
+  await ok("launch", {
+    sessionId: "s4",
+    projectId: "p1",
+    runtimeMode: "full-access",
+    workspace: { type: "root" },
+    prompt: "refuse-model: hi",
+    runId: "m1",
+    profile: "high",
+    model: "claude-nonesuch-1",
+    effort: "high",
+  });
+  await until("the run on the fallback model", () => summary("s4")?.latestRun?.status === "completed", 10_000);
+  expect(summary("s4")).toMatchObject({ model: "claude-opus-5-5", modelRefused: "claude-nonesuch-1" });
+});
+
+test("a tagged send's receipts follow claude's frames: delivered as a turn, then acknowledged by its reply", async () => {
+  frames.length = 0;
+  await ok("subscribe", { after: service.store.latestSeq() });
+  await ok("send", { sessionId: "s1", runId: "r7", text: "steer me", steer: { id: "S1", riders: ["S0"] } });
+  await until("both acknowledgements", () => frames.filter((f) => (f.event as { stage?: string })?.stage === "acknowledged").length === 2);
+  const receipts = frames.filter((f) => (f.event as { type?: string })?.type === "steer").map((f) => f.event as Record<string, unknown>);
+  expect(receipts.filter((r) => r.steerId === "S1").map((r) => r.stage)).toEqual(["delivered", "acknowledged"]);
+  expect(receipts.find((r) => r.steerId === "S1" && r.stage === "delivered")).toMatchObject({ how: "turn", runId: "r7", sessionId: "s1" });
+  expect(receipts.find((r) => r.steerId === "S1" && r.stage === "acknowledged")).toMatchObject({ excerpt: "ok: steer me", messageId: "msg-r7" });
+});
+
+test("a run whose stream went quiet across a sleep is interrupted after the wake and resumed by the node's retry", async () => {
+  await ok("send", { sessionId: "s1", runId: "r8", text: "hang: until woken" });
+  await until("the run to start", () => summary("s1")?.latestRun?.status === "running");
+  await Bun.sleep(20);
+  service.woke(0);
+  await until("the run resumed after the wake", () => summary("s1")?.latestRun?.id === "r8" && summary("s1")?.latestRun?.status === "completed");
+  expect(service.store.item("s1", "node-retry-r8-1")).toMatchObject({ kind: { reason: { class: "network" } } });
+});
+
+test("a Monitor that dies with its claude wakes the session once to say so", async () => {
+  await ok("send", { sessionId: "s1", runId: "r9", text: "monitor: wait for ci" });
+  const ended: string[] = [];
+  service.onItemEnded = (session, item) => ended.push(`${session}/${item.id}`);
+  await until("the armed Monitor", () => service.store.session("s1")?.local.monitors?.length === 1);
+  expect(ended).toEqual(["s1/mon-r9"]);
+  await until("the run", () => summary("s1")?.latestRun?.id === "r9" && summary("s1")?.latestRun?.status === "completed");
+  // Its claude dies while it waits.
+  process.kill(service.store.session("s1")!.local.pid!, "SIGKILL");
+  const woken = await until("the wake", () => service.store.runs("s1").find((r) => r.id.startsWith("s1-monitor-lost-") && r.status === "completed"));
+  expect(service.store.message("s1", woken.id)?.text).toBe(
+    'Your Monitor "ci" was lost when your claude process exited. Check what you were waiting for again.',
+  );
+  expect(service.store.session("s1")?.local.monitors).toBeUndefined();
 });
 
 test("a session whose host ran on through a node restart is re-adopted and keeps going", async () => {

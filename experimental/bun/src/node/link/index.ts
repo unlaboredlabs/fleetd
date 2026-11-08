@@ -107,7 +107,7 @@ export type RunNodeOptions = {
   /** Every hub frame after the welcome. */
   handle: (frame: HubFrame, link: LinkContext) => void;
   /** Resolves when the machine woke from sleep: the link ends at once, and the next one reports the sleep. */
-  woke?: () => Promise<void>;
+  woke?: (signal: AbortSignal) => Promise<void>;
   log?: (level: "info" | "warn" | "debug", message: string, fields?: Record<string, unknown>) => void;
   /** Bounds, for tests. */
   quiet?: { probeMs: number; deadMs: number };
@@ -303,7 +303,7 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
           detach = options.attach(live);
           heartbeat();
           watchQuiet();
-          options.woke?.().then(() => finish({ kind: "woke" }));
+          options.woke?.(linkAbort.signal).then(() => finish({ kind: "woke" }));
           return;
         }
         case "live":

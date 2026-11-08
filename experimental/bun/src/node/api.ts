@@ -6,8 +6,11 @@
 //   (`browser_call` frames, by their call's `op`: session_start, session_end, …), answered for the session the
 //   calling process runs in;
 // - `node.area("hb")`: `contribute(fn)`, each heartbeat's fields added to (`steps`, `load.hosts`, `busy.screens`);
+// - `node.area("items")`: `on(fn)`, each step a session stores as completed or failed (Rust's browser
+//   `SessionHooks::item`), for the screens' step lines;
 // - `node.config`: node.json, its screens' sections typed by their areas.
 import type { NodeLoad } from "../shared/contracts.ts";
+import type { ThreadItem } from "./sessions/types.ts";
 import type { NodeConfig } from "./config.ts";
 import type { LeadRelay, LeadResultFrame } from "./lead/index.ts";
 import type { LinkContext } from "./link/index.ts";
@@ -97,7 +100,25 @@ export class HbArea {
   }
 }
 
-type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea };
+/** Each step a session stores as completed or failed. */
+export class ItemsArea {
+  readonly #handlers: ((sessionId: string, item: ThreadItem) => void)[] = [];
+  on(fn: (sessionId: string, item: ThreadItem) => void): void {
+    this.#handlers.push(fn);
+  }
+  /** The node core's: a step ended. */
+  ended(sessionId: string, item: ThreadItem): void {
+    for (const fn of this.#handlers) {
+      try {
+        fn(sessionId, item);
+      } catch (error) {
+        console.warn(`${new Date().toISOString()} WARN an items handler failed {"error":${JSON.stringify(String(error))}}`);
+      }
+    }
+  }
+}
+
+type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea };
 
 export class Node {
   readonly #areas = new Map<string, unknown>();
@@ -109,6 +130,7 @@ export class Node {
     this.#areas.set("link", new LinkArea(relay));
     this.#areas.set("local", new LocalArea());
     this.#areas.set("hb", new HbArea());
+    this.#areas.set("items", new ItemsArea());
   }
 
   /** The node core's areas by name, or any other area's service, made on first use: `node.area("browser", make)`. */
