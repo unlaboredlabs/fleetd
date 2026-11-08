@@ -1,5 +1,7 @@
-// Status's cloud line (D306): what cloud machines cost today against the day budget and how many are awake, why starts
+// The cloud line (D306): what cloud machines cost today against the day budget and how many are awake, why starts
 // wait when they do, and for a member who to ask about them. Nothing on a hub without cloud machines set up.
+// Self-contained (it asks the hub itself and sets no outer spacing), for the sidebar's hub status; admins have the
+// whole view in Settings › Hub › Machines (Cloud.tsx).
 import { useToolQuery } from "../../src/data/react";
 import { HubText } from "../projects/HubText";
 import { adminNames, adminWho } from "../sessions/pickScreen";
@@ -11,7 +13,7 @@ import a from "./admin.module.css";
 
 const noInput = {};
 
-/** For Status: the day's cloud line, and for a member who to ask about it. */
+/** The day's cloud line, and for a member who to ask about it; inside the hub's HubScope. */
 export function CloudStatus() {
   const cloud = useCloud();
   const role = useHubRole();

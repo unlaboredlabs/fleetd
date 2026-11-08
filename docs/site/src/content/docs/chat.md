@@ -169,7 +169,7 @@ Everything shows up in the chat, quietly:
 | Three dots | The lead is writing; its message shows when it's done. |
 | A report's card | The lead or an agent published a report. Click it to read it in the panel's [Artifacts](#artifacts). |
 
-For a project's work at a glance, see [Status](/docs/status). For where the time went, see
+For a project's work in the terminal, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
 ## Reports in Artifacts {#artifacts}

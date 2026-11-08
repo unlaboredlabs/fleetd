@@ -79,7 +79,7 @@ function Entry() {
   const admin = useAdministers();
   return (
     <TooltipProvider>
-      <Sidebar projects={[]} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={() => undefined} />
+      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={() => undefined} />
     </TooltipProvider>
   );
 }
@@ -231,7 +231,7 @@ it("counts the required setup steps left on Settings' entry, opening it on Hub â
     const admin = useAdministers();
     return (
       <TooltipProvider>
-        <Sidebar projects={[]} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={go} />
+        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={go} />
       </TooltipProvider>
     );
   }

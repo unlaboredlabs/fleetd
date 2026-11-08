@@ -9,7 +9,7 @@ import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { cardLabel, NO_CARD, cardOptions, PAYMENTS_HELP, purchaseLine, purchaseState } from "../projects/payments";
 import { PROJECT_TOOLS } from "../projects/model";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Setting } from "./parts";
 import s from "./settings.module.css";

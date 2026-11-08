@@ -13,6 +13,7 @@ import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { runCommand } from "../palette/registry";
 import { onItsHub } from "./effects";
+import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -135,7 +136,7 @@ const hubRows = () => [...host.querySelectorAll<HTMLElement>("[data-hub-status]"
 const rowNamed = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("nav button, aside button, button")].find((b) => b.textContent.startsWith(name));
 
 beforeEach(() => {
-  window.location.hash = "#/status";
+  window.location.hash = "#/";
   window.localStorage.clear();
   fake.hubs.clear();
   fake.badge.length = 0;
@@ -211,10 +212,10 @@ it("opens a project on its own hub, and that hub alone gets its calls", async ()
   expect(fleetReads(hub("a1b2").calls.slice(acmeBefore))).toBeGreaterThan(0);
   // A link the screen builds without a hub stays on the hub it is on.
   act(() => {
-    window.location.hash = "#/status";
+    window.location.hash = "#/factory";
   });
   await settle();
-  expect(host.querySelector('[data-screen="status.fleet"]')?.getAttribute("data-hubs")).toBe("2");
+  expect(currentRoute()).toMatchObject({ id: "factory", at: "a1b2" });
 });
 
 it("opens a first-hub notification on the first hub, even while another hub is on screen", async () => {
@@ -240,12 +241,13 @@ it("opens a first-hub notification on the first hub, even while another hub is o
   });
   await settle();
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
-  // One posted before there were several hubs names none: it is the first's.
+  // One posted before there were several hubs names none: it is the first's. The removed Status page's opens home.
   act(() => rowNamed("billing")?.click());
   act(() => {
     for (const open of fake.opened) open({ kind: "status" });
   });
-  expect(window.location.hash).toBe("#/status?at=hub");
+  await settle();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
 });
 
 it("⌘1–9 open the rows on show, as the sidebar numbers them, a collapsed hub's left out", async () => {

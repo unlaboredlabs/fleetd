@@ -9,7 +9,7 @@ import { CallError } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { Button, Field, InlineCode, Input, Text } from "../../ui";
 import { sealedLine } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, useMachines } from "./claudeParts";

@@ -1,6 +1,6 @@
 ---
 title: The desktop app
-description: Pair the app with your hub, chat with each project's lead, see status, and the keyboard shortcuts.
+description: Pair the app with your hub, chat with each project's lead, and the keyboard shortcuts.
 ---
 
 You'll pair the desktop app with your [hub](/docs/glossary#hub) and use it to chat with each project's
@@ -48,7 +48,7 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Drag a project to move it, or press ⌥↑ / ⌥↓ on one you've tabbed to. The hub keeps your order, so it's the same after a restart and on your other computers, and only your sidebar changes. Your own Only me projects come first, and new projects go at the end. Below them: Status, [Screens](/docs/browser-sessions#page) ("needs you" when a screen asks for you, else how many are live), Factory and Settings, which for an admin says how many setup steps are left, then any update to make. The hub's row at the bottom says how many machines are down and, for owners and admins, opens Machines. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Drag a project to move it, or press ⌥↑ / ⌥↓ on one you've tabbed to. The hub keeps your order, so it's the same after a restart and on your other computers, and only your sidebar changes. Your own Only me projects come first, and new projects go at the end. Below them: [Screens](/docs/browser-sessions#page) ("needs you" when a screen asks for you, else how many are live), Factory and Settings, which for an admin says how many setup steps are left, then any update to make. The hub's row at the bottom says how many machines are down and, for owners and admins, opens Machines. |
 | The top row | The page's title and its controls, then the command palette (⌘K) and the panel's toggle. In a chat: the project's name, then only [what needs you](#chat), if anything. The panel starts at the window's top, so its tabs share this row. |
 | The chat | The selected project's conversation with its lead. |
 | The panel | Beside a chat, on the right, four tabs, each with a line saying what it is and, where it has two views, a row to switch them: **Agents** (the project's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs) and its [merge line](#train)), **Plan** (its [to-do](#checklist) and the work it asked other projects for) and **History** ([what happened](#activity) in it, and its [decisions](#decisions)). **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them, before History, once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the toggle at the top right or ⌥⌘B. |
@@ -70,7 +70,7 @@ In a narrow panel the tabs show only their icons and counts (point at one for wh
 too: `#/project/<machine>/<project>/checklist` opens Plan's To-do, as the palette's **Checklist** does, and `/agents`,
 `/sessions`, `/prs`, `/train`, `/asked`, `/artifacts`, `/activity` and `/decisions` open theirs the same way.
 
-Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click **New** next to Projects (one more per hub with
+Click a project to open its chat. ⌘. jumps to the next project that wants you. To add a project, click **New** next to Projects (one more per hub with
 [several hubs](/docs/several-hubs)), then paste a GitHub URL or `owner/repo`, type a folder's path, or type a name to
 start a new, empty project. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See [Add a project](/docs/projects#add-a-project) and [Start a new project](/docs/projects#start-a-new-project).
@@ -158,16 +158,6 @@ force first. What it replaced, or that you revoked it, folds under it. Search, o
 where it applies; open a row for its why and history, and change or revoke the decision there. Its count is the
 decisions in force.
 
-## Status {#status}
-
-![Status with one row per project: billing waiting on you, storefront working, and checkout idle with a CI red tag, each with its work in groups and its last merge.](/docs/img/status.png)
-
-Status shows one row per project: a state word (waiting on you, blocked, working or idle), its work in groups (waiting
-on you, in review, working, landing, idle, done), the agents running, and when the last pull request merged. Under it,
-each item opens its agent or pull request in the panel. Click a row to open that project's chat, or PRs for its pull
-requests.
-See [Status](/docs/status).
-
 ## Where time went {#time}
 
 Open Factory › Agent time from the sidebar or the command palette (Agent time). It has three tabs:
@@ -236,8 +226,7 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌥↑ / ⌥↓ | Move the focused project up or down the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
-| ⌥⌘A | Next project that wants you |
-| ⌘. | Status |
+| ⌘. | Next project that wants you |
 | ⌘; | Factory |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |

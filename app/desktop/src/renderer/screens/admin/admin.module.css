@@ -270,11 +270,10 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-/* Status's cloud line, under the projects. */
+/* The cloud line (CloudStatus.tsx): no outer spacing, its host places it. */
 .cloudStatus {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-3);
-  padding-top: var(--space-3);
 }

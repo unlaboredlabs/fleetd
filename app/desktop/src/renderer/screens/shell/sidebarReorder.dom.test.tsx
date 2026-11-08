@@ -61,7 +61,7 @@ const mount = (rows: SidebarProject[] = ROWS) => {
         <DataProvider layer={layer}>
           <Sidebar
             projects={rows.map((p) => ({ ...p, hub: "hub" }))}
-            screen={{ id: "status", at: "hub" }}
+            screen={{ id: "home", at: "hub" }}
             jumpHints={false}
             collapsed={new Set()}
             onToggleHub={() => undefined}

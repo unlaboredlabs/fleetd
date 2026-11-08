@@ -12,7 +12,7 @@ import { Button, Dialog, Text } from "../../ui";
 import { HubScope, useData, useHubs, useToolQuery } from "../../src/data/react";
 import { usePeople } from "../admin/usePeople";
 import { Prose } from "../onboarding/Prose";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { codeLife, deviceLine, linksMadeOn, pairedSince, qrPath, signOutLine, yourDevices } from "./devicesModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart } from "./parts";
