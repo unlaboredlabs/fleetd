@@ -16,7 +16,8 @@ test("the manifest page and its landing", async () => {
   });
   try {
     let page = "";
-    for (let i = 0; i < 100 && page === ""; i++) {
+    // A fresh process on a loaded machine (CI) may take a while to listen.
+    for (const until = Date.now() + 20_000; Date.now() < until && page === ""; ) {
       page = await fetch(`http://127.0.0.1:${port}/`).then((r) => r.text(), () => "");
       if (page === "") await Bun.sleep(50);
     }
@@ -32,4 +33,4 @@ test("the manifest page and its landing", async () => {
     await proc.exited;
     rmSync(home, { recursive: true, force: true });
   }
-});
+}, 30_000);

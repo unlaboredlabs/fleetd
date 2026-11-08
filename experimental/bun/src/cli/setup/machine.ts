@@ -9,6 +9,9 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { NotImplemented } from "../../shared/errors.ts";
 import { relocated } from "../../shared/home.ts";
+import { VERSION } from "../../shared/version.ts";
+import { type Feed, HttpFeed, release, REPO, sums, verified } from "../../update/index.ts";
+import { edgeStamp } from "../../update/version.ts";
 import type { HubDb } from "../../hub/store/db.ts";
 import { eraseIn } from "../../hub/navi/erase.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
@@ -122,11 +125,58 @@ export interface Builds {
   build(version: string, asset: string): Promise<Uint8Array>;
 }
 
-/** The release feed is src/update's: until machine add uses it, another OS or CPU isn't set up from here. */
+/** The real one: the release of `version` (`v<version>`, or for an edge build the edge release while it is still that
+ * build), or the directory FLEETD_BASE_URL names. */
 export const releases: Builds = {
-  digest: () => Promise.reject(new NotImplemented("src/update: the release build machine add copies to another OS or CPU")),
-  build: () => Promise.reject(new NotImplemented("src/update: the release build machine add copies to another OS or CPU")),
+  async digest(version, asset) {
+    const [feed, edge] = feedOf(version);
+    await stillHolds(feed, edge, version, asset);
+    let listed: Map<string, string>;
+    try {
+      listed = await sums(feed);
+    } catch (error) {
+      throw new Error(missing(asset, version, (error as Error).message));
+    }
+    const digest = listed.get(asset);
+    if (digest === undefined) throw new Error(missing(asset, version, "its release has none"));
+    return digest;
+  },
+  async build(version, asset) {
+    const [feed, edge] = feedOf(version);
+    await stillHolds(feed, edge, version, asset);
+    try {
+      return await verified(feed, asset);
+    } catch (error) {
+      throw new Error(missing(asset, version, (error as Error).message));
+    }
+  },
 };
+
+const feedOf = (version: string): [HttpFeed, boolean] => {
+  const [base, edge] = releaseOf(version, process.env.FLEETD_BASE_URL);
+  return [new HttpFeed(base), edge];
+};
+
+/** Where fleetd `version`'s release assets are, and whether that is the rolling edge release (which holds it only
+ * while its release.json still names it): `override` (FLEETD_BASE_URL) when set, else its own `v<version>` release. */
+export function releaseOf(version: string, override?: string): [string, boolean] {
+  if (override !== undefined && override !== "") return [override, false];
+  if (edgeStamp(version) !== undefined) return [`https://github.com/${REPO}/releases/download/edge`, true];
+  return [`https://github.com/${REPO}/releases/download/v${version}`, false];
+}
+
+/** The edge release holds `version` only until the next edge build: its release.json says which it is now. */
+async function stillHolds(feed: Feed, edge: boolean, version: string, asset: string) {
+  if (!edge) return;
+  const now = (await release(feed)).cliVersion;
+  if (now === version) return;
+  throw new Error(
+    `this hub runs fleetd ${version}, and the edge release is now ${now ?? "another build"}, so it has no ${asset} of this hub's build. Fix: update the hub (fleetd update)`,
+  );
+}
+
+const missing = (asset: string, version: string, why: string) =>
+  `no ${asset} of fleetd ${version} to copy to the machine: ${why.replace(/\.+$/, "")}. Fix: run a released fleetd on the hub`;
 
 /** Where a step stands in a run, as the CLI labels it. */
 export type Stage = { kind: "probe" } | { kind: "step"; index: number; total: number } | { kind: "hub" };
@@ -278,7 +328,7 @@ export type Prepared = {
 
 /** The fleetd the machine gets, named, and its bytes. */
 const binaryOf = (r: Resolved, p: Prepared): [string, Uint8Array] =>
-  p.fetched === undefined ? [r.exe, r.binary] : [`${p.fetched[0]} ${r.input.version}`, p.fetched[1]];
+  p.fetched === undefined ? [r.exe, r.binary] : [`${p.fetched[0]} ${VERSION}`, p.fetched[1]];
 
 /** The plan's steps as they will begin, numbered. */
 export function preparedSteps(r: Resolved, p: Prepared): Begin[] {
@@ -451,21 +501,18 @@ export async function prepare(
     (target[0] === "linux" && target[1] === "x64") || (target[0] === "darwin" && (target[1] === "x64" || target[1] === "arm64"));
   if ((target[0] !== input.binaryTarget[0] || target[1] !== input.binaryTarget[1]) && buildable) {
     const asset = `fleetd-${target[0]}-${target[1]}`;
-    const again = (e: unknown) => {
-      if (e instanceof NotImplemented) return e;
-      return Stop.fail(`${e instanceof Error ? e.message : String(e)}, then run ${r.again}`);
-    };
-    const wanted = await builds.digest(input.version, asset).catch((e: unknown) => {
+    const again = (e: unknown) => Stop.fail(`${e instanceof Error ? e.message : String(e)}, then run ${r.again}`);
+    const wanted = await builds.digest(VERSION, asset).catch((e: unknown) => {
       throw again(e);
     });
     const has = facts.digests.get(factsLayout(facts).bin) === wanted;
     const step: Begin = {
       stage: { kind: "hub" },
-      title: `download fleetd ${input.version} for ${target[0]}-${target[1]} (this hub's is a ${input.binaryTarget[0]}-${input.binaryTarget[1]} build), checked against its release's SHA256SUMS`,
+      title: `download fleetd ${VERSION} for ${target[0]}-${target[1]} (this hub's is a ${input.binaryTarget[0]}-${input.binaryTarget[1]} build), checked against its release's SHA256SUMS`,
     };
     if (!has && fetch) {
       progress.begin(step);
-      const bytes = await builds.build(input.version, asset).catch((e: unknown) => {
+      const bytes = await builds.build(VERSION, asset).catch((e: unknown) => {
         throw again(e);
       });
       if (new Bun.CryptoHasher("sha256").update(bytes).digest("hex") !== wanted) {

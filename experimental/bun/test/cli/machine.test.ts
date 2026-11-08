@@ -12,6 +12,7 @@ import {
   leadsOn,
   prepare,
   type Progress,
+  releaseOf,
   releases,
   remove,
   resolve,
@@ -58,12 +59,12 @@ const freshProbe = [
 
 type Ran = { command: string; stdin?: string };
 
-/** Answers the probe with `freshProbe`, `claude auth status` as logged in, and every other step with exit 0. */
-function fake(ran: Ran[]): Runner {
+/** Answers the probe with `probe`, `claude auth status` as logged in, and every other step with exit 0. */
+function fake(ran: Ran[], probe = freshProbe): Runner {
   return {
     async run(_target, command, stdin) {
       ran.push({ command, ...(stdin === undefined ? {} : { stdin: new TextDecoder().decode(stdin).slice(0, 80) }) });
-      if (command.startsWith("H=$HOME")) return { code: 0, stdout: freshProbe, stderr: "" };
+      if (command.startsWith("H=$HOME")) return { code: 0, stdout: probe, stderr: "" };
       if (command.includes("auth status --json")) return { code: 0, stdout: '{"loggedIn":true}', stderr: "" };
       return { code: 0, stdout: "", stderr: "" };
     },
@@ -107,6 +108,67 @@ test("add plans from the probe, mints the enroll code, records the machine and c
   expect(ran.find((x) => x.command.includes("node join"))?.stdin).toMatch(/^fle_[a-z2-7]{52}\n$/);
   const setup = JSON.parse(readFileSync(join(hubHome, "setup.json"), "utf8"));
   expect(setup.machines["builder-1"]).toEqual({ sshHost: "dev@builder-1", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 });
+});
+
+/** The same machine as a Mac on Apple silicon, which a Linux hub's own build doesn't run on. */
+const macProbe = freshProbe
+  .replaceAll("/home/dev", "/Users/dev")
+  .replace("os Linux", "os Darwin")
+  .replace(/arch .*/, "arch arm64")
+  .replace("config /Users/dev/.config", "config /Users/dev/Library/Application Support")
+  .replace("linger yes", "linger no")
+  .replace("gui unknown", "gui yes");
+
+/** A release directory (FLEETD_BASE_URL) holding `files`. */
+function feed(files: Record<string, string>) {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (req) => {
+      const body = files[new URL(req.url).pathname.slice(1)];
+      return body === undefined ? new Response("Not Found", { status: 404 }) : new Response(body);
+    },
+  });
+  process.env.FLEETD_BASE_URL = `http://127.0.0.1:${server.port}`;
+  return server;
+}
+const sha = (t: string) => new Bun.CryptoHasher("sha256").update(t).digest("hex");
+
+test.skipIf(process.platform !== "linux")("add copies a Mac this version's release build for it, checked against SHA256SUMS", async () => {
+  const build = "the darwin-arm64 build";
+  const server = feed({ SHA256SUMS: `${sha(build)}  fleetd-darwin-arm64\n`, "fleetd-darwin-arm64": build });
+  try {
+    const r = resolve({ host: "dev@mac-1", dryRun: false, enroll: { kind: "hub" }, noService: true, mac: false }, process.execPath);
+    const ran: Ran[] = [];
+    const progress = collect();
+    const prepared = await prepare(r, { db, home: hubHome, by: "a test" }, fake(ran, macProbe), releases, true, progress);
+    expect(prepared.fetched?.[0]).toBe("fleetd-darwin-arm64");
+    expect(new TextDecoder().decode(prepared.fetched?.[1])).toBe(build);
+    expect(progress.lines).toContain(
+      `begin download fleetd 0.0.0 for darwin-arm64 (this hub's is a linux-${process.arch} build), checked against its release's SHA256SUMS`,
+    );
+    expect(prepared.input.binaryDigest).toBe(sha(build));
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a release without the machine's build says so, and how to fix it", async () => {
+  const server = feed({ SHA256SUMS: `${sha("x")}  fleetd-linux-x64\n` });
+  try {
+    await expect(releases.digest("0.0.0", "fleetd-darwin-arm64")).rejects.toThrow(
+      "no fleetd-darwin-arm64 of fleetd 0.0.0 to copy to the machine: its release has none. Fix: run a released fleetd on the hub",
+    );
+    await expect(releases.build("0.0.0", "fleetd-darwin-arm64")).rejects.toThrow(/^no fleetd-darwin-arm64 of fleetd 0\.0\.0 to copy to the machine: .*\. Fix: run a released fleetd on the hub$/);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("releaseOf: FLEETD_BASE_URL, else the edge release for an edge build, else the version's own", () => {
+  expect(releaseOf("0.0.0-edge.202611080000+abcdef1", "http://127.0.0.1:1")).toEqual(["http://127.0.0.1:1", false]);
+  expect(releaseOf("0.0.0-edge.202611080000+abcdef1")).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/edge", true]);
+  expect(releaseOf("1.2.3", "")).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/v1.2.3", false]);
 });
 
 test("remove runs the undo steps, erases each project through the erase it is given, and forgets the machine", async () => {

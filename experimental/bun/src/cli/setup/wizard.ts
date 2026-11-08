@@ -328,7 +328,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
   nodeLine(list, machineId, added, `joined ${hub.trim()}`);
   notes(list, said);
   if (opts.mac) {
-    if (ui.interactive) throw new NotImplemented("src/cli/setup: the agents' Mac's grants at its screen (mac_finish)");
+    // At a terminal too, until the grants' own prompts (src/node/agents_mac) are here to walk through: the same note.
     list.note(
       "This is the agents' Mac now. Last, at this Mac: run fleetd node grants --ask accessibility, then fleetd node grants --ask screen_recording, and turn on fleetd in each pane they open; the node restarts itself to take up each. Settings › Hub › Setup › A Mac for agents in the app shows each check.",
     );

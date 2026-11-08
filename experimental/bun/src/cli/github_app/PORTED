@@ -1,0 +1,4 @@
+cli:`fleetd github-app create`
+cli:`fleetd github-app remove`
+cli:`fleetd github-app test`
+cli:`fleetd github-app`

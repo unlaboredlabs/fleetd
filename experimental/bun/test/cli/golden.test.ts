@@ -387,6 +387,9 @@ const KEYED: Case[] = [
   { name: "status-remote-bad-key", argv: ["status", "--hub", "HUBURL", "--key-file", "bad.key"] },
 ];
 
+/** A case spawns a fresh process or two: a loaded machine (CI, or a busy devbox) takes longer than bun's 5 s default. */
+const CASE_MS = 30_000;
+
 describe("offline", () => {
   for (const c of OFFLINE) {
     test(c.name, async () => {
@@ -407,7 +410,7 @@ describe("offline", () => {
       } finally {
         for (const f of fleets) await f.stop();
       }
-    });
+    }, CASE_MS);
   }
 });
 
@@ -441,6 +444,6 @@ describe.skipIf(!RUST)("against a Rust hub", () => {
       const rust = fleets.rust.normalize(await fleets.rust.run("rust", argv(fleets.rust), c));
       const bun = fleets.bun.normalize(await fleets.bun.run("bun", argv(fleets.bun), c));
       expect(bun).toEqual(rust);
-    });
+    }, CASE_MS);
   }
 });
