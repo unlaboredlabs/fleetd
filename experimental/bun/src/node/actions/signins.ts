@@ -1,0 +1,31 @@
+// A Navi's kept browser sign-ins (crates/fleetd/src/node/browser/chrome.rs `kept_dir`, sessions/mod.rs
+// `forget_signins`, D221): the profile its browser sessions keep, under `<node home>/browser/navis/<navi>` (or
+// `browser/kept/<navi>` for one from before), deleted when the person forgets them or the project goes. The Bun node
+// runs no browser sessions yet, so forgetting is deleting that folder; none to forget is fine.
+import { existsSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+/** The folder a project's kept profile lives in; none for an id a path can't hold. */
+export function keptDir(home: string, navi: string): string | undefined {
+  const plain = !!navi && navi.length <= 128 && !navi.startsWith(".") && /^[A-Za-z0-9._-]+$/.test(navi);
+  if (!plain) return undefined;
+  const naviDir = join(home, "browser", "navis", navi);
+  return existsSync(naviDir) && statSync(naviDir).isDirectory() ? naviDir : join(home, "browser", "kept", navi);
+}
+
+/** Whether a project keeps sign-ins on this machine (`project_worktrees`' `signinsKept`). */
+export function signinsKept(home: string, projectId: string): boolean {
+  const dir = keptDir(home, projectId);
+  return !!dir && existsSync(dir) && statSync(dir).isDirectory();
+}
+
+/** Forgets a project's kept sign-ins; throws why they stay. */
+export function forgetSignins(home: string, projectId: string): void {
+  const dir = keptDir(home, projectId);
+  if (!dir) return;
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    throw new Error(`project ${projectId}'s browser sign-ins were not forgotten: cannot delete ${dir}: ${(error as Error).message}`);
+  }
+}

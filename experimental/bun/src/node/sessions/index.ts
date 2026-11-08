@@ -6,13 +6,16 @@
 //
 // Ported: projects, launch (root, worktree, detached and isolated workspaces), send, interrupt, stop, answer,
 // withdraw, the streams, windows and item reads, files and attachments, default branch, changes and the runner probe;
-// a session that ran on through a node restart is re-adopted from its host. Not ported (each answers with a plain
-// refusal, PORT_MAP.md): MCP servers and their secrets, skills, Claude accounts, 1Password, worktree setup commands,
-// warm builds, steer receipts, the node's own run retries and model fallback, repo scans and clones, landed logs.
+// a session that ran on through a node restart is re-adopted from its host; a session's MCP servers, skills, Claude
+// account and 1Password token (../actions/). The calls outside sessions are ../actions/calls.ts's. Not ported (each
+// answers with a plain refusal, PORT_MAP.md): worktree setup commands, warm builds, steer receipts, the node's own run
+// retries and model fallback.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { mkdirPrivate, readConfig } from "../config.ts";
+import type { ClaudeAccount } from "../../shared/contracts.ts";
+import type { McpSessionConfig, SkillBundle } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
@@ -25,7 +28,14 @@ import { headUtf16, homeDir, nowIso, tailUtf16, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
-import { ghRepoList, inspect, projectsRoot, scan } from "../repos/index.ts";
+import { inspect, projectsRoot, scan } from "../repos/index.ts";
+import { accountSecrets, envFor, putOn } from "../actions/accounts.ts";
+import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
+import * as mcp from "../actions/mcp.ts";
+import { fallback as onepasswordFallback } from "../actions/onepassword.ts";
+import { CallRefusal } from "../actions/refusal.ts";
+import { forgetSignins, signinsKept } from "../actions/signins.ts";
+import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
 import { NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
 import {
@@ -156,7 +166,15 @@ export function runnerEnv(config: SessionConfig): Env {
 }
 
 /** fleetd's settings overlay (`--settings`), which claude ranks above the user's own settings. */
-export function settingsOverlay(extraEnv: Env, helperModel: string, ask: string[], fast: boolean, heavyLsp: boolean, holdHook: string): string {
+export function settingsOverlay(
+  extraEnv: Env,
+  skillOverrides: Record<string, string>,
+  helperModel: string,
+  ask: string[],
+  fast: boolean,
+  heavyLsp: boolean,
+  holdHook: string,
+): string {
   const env: Record<string, string> = { ...claude.subagentsOffSettingsEnv(), ...extraEnv };
   env.DISABLE_AUTOUPDATER = "1";
   env[claude.HELPER_MODEL_ENV] = helperModel;
@@ -167,6 +185,7 @@ export function settingsOverlay(extraEnv: Env, helperModel: string, ask: string[
     autoMemoryEnabled: false,
     hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: holdHook, timeout: 6 * 3600 }] }] },
   };
+  if (Object.keys(skillOverrides).length) overlay.skillOverrides = skillOverrides;
   if (fast) overlay.fastMode = true;
   if (!heavyLsp) overlay.enabledPlugins = Object.fromEntries(claude.HEAVY_LSP_PLUGINS.map((p) => [p, false]));
   return `${JSON.stringify(overlay)}\n`;
@@ -294,6 +313,19 @@ export class SessionService {
     return this.config.home;
   }
 
+  /** What the calls outside sessions (../actions/calls.ts) need of the service. */
+  get #calls(): CallContext {
+    return {
+      home: this.home,
+      ...(this.config.boxKey ? { boxKey: this.config.boxKey } : {}),
+      claudeBin: this.config.claudeBin,
+      projectRoot: (projectId) => this.#projectRoot(projectId),
+      sessionCwd: (sessionId) => this.sessionCwd(sessionId),
+      runnerEnv: () => runnerEnv(this.config),
+      send: (frame) => this.#outlet?.(frame),
+    };
+  }
+
   /** How many sessions have an active run (the sleep inhibitor, the heartbeat's busy). */
   running(): number {
     return this.#active.size;
@@ -327,6 +359,16 @@ export class SessionService {
     const secretValues = new Set(projectSecrets(this.home, row.summary.projectId));
     const out: [string, string][] = project.filter(([, v]) => secretValues.has(v));
     if (row.local.orderId) out.push(...orderVarsForSpawn(this.home, row.summary.projectId, row.local.orderId).vars);
+    out.push(...mcp.sessionSecrets(this.home, join(this.home, "sessions", row.summary.sessionId)));
+    const account = row.local.claudeAccount as ClaudeAccount | undefined;
+    if (account) {
+      try {
+        out.push(...accountSecrets(this.home, account));
+      } catch {}
+    }
+    try {
+      out.push(...onepasswordFallback(this.home, row.local.onepassword as string | undefined, out));
+    } catch {}
     return out;
   }
 
@@ -438,7 +480,9 @@ export class SessionService {
       const refusal =
         error instanceof Refusal
           ? error
-          : error instanceof worktree.GitError
+          : error instanceof CallRefusal
+            ? new Refusal(error.code, error.message, error.fix)
+            : error instanceof worktree.GitError
             ? new Refusal("git", error.message)
             : new Refusal("internal", (error as Error).message ?? String(error));
       return { id: frame.id, result: { err: refusal.toError() } };
@@ -481,6 +525,8 @@ export class SessionService {
       case "launch":
         return this.#launch(c as unknown as SessionLaunch);
       case "send": {
+        if (c.mcp) this.#refreshMcp(c.sessionId, c.mcp);
+        if (c.skills) this.#refreshSkills(c.sessionId, c.skills);
         const queued = await this.#beginRun(c.sessionId, c.runId, c.text, c.mode ?? "plain");
         return { kind: "sent", runId: c.runId, queued };
       }
@@ -566,12 +612,8 @@ export class SessionService {
         const { cloneRoot, repos } = scan(homeDir());
         return { kind: "repos", cloneRoot, repos, projectsRoot: projectsRoot(homeDir()) };
       }
-      case "gh_repo_list":
-        return { kind: "gh_repos", ...(await ghRepoList()) } as SessionOutput;
-      case "skills_list":
-        this.#projectRoot(c.projectId);
-        return { kind: "skills", skills: [] };
       default:
+        if (handles(call.op)) return nodeCall(this.#calls, call as Parameters<typeof nodeCall>[1]);
         throw notPorted(call.op);
     }
   }
@@ -630,7 +672,7 @@ export class SessionService {
         return { sessionId: r.summary.sessionId, path: r.local.cwd, ...(r.local.branch ? { branch: r.local.branch } : {}), uncommitted: dirty };
       });
     const baseBranch = worktree.hasCommit(root) ? (await worktree.defaultBranch(root)) : undefined;
-    return { kind: "project_worktrees", dir: this.#worktreesDir(projectId), ...(baseBranch ? { baseBranch } : {}), worktrees, signinsKept: false };
+    return { kind: "project_worktrees", dir: this.#worktreesDir(projectId), ...(baseBranch ? { baseBranch } : {}), worktrees, signinsKept: signinsKept(this.home, projectId) };
   }
 
   async #projectRemove(projectId: string, removeWorktrees: boolean, erase: boolean, removeFolder: boolean): Promise<SessionOutput> {
@@ -647,7 +689,14 @@ export class SessionService {
       this.store.forgetSessions(projectId);
       if (removeFolder && project) rmSync(project.workspaceRoot, { recursive: true, force: true });
     }
+    // A Navi's kept browser profile goes with it, before the project does.
+    try {
+      forgetSignins(this.home, projectId);
+    } catch (error) {
+      throw invalid((error as Error).message);
+    }
     forgetProjectEnv(this.home, projectId);
+    mcp.forgetSecrets(this.home, projectId);
     const frame = this.store.removeProject(projectId);
     if (frame) this.#machine(frame);
     return { kind: "done" };
@@ -665,6 +714,38 @@ export class SessionService {
       if (gitInit) worktree.git(dir, ["init"]);
     }
     return { kind: "folder", path: dir };
+  }
+
+  /** Keeps a session's MCP servers in its directory for its next start. */
+  #keepMcp(id: string, kept: mcp.Kept): void {
+    try {
+      mcp.keep(join(this.home, "sessions", id), kept);
+    } catch (error) {
+      console.log(`${nowIso()} WARN the session's MCP servers were not kept: ${(error as Error).message} {"session":"${id}"}`);
+    }
+  }
+
+  /** The hub's MCP servers for a session changed: kept for its next start (a running claude keeps the servers it
+   * started with). A session from before MCP servers takes its role from what it is; a plain thread gets none. */
+  #refreshMcp(id: string, config: McpSessionConfig): void {
+    const row = this.store.session(id);
+    if (!row) return;
+    const role = mcp.kept(join(this.home, "sessions", id))?.role ?? mcp.roleOf(row.local.role, row.local.branch);
+    if (role) this.#keepMcp(id, { role, config });
+  }
+
+  /** The hub's skills for a session changed: kept for its next start, and its skills folder written again now, so a
+   * running session reads a new one there (FLEETD_SKILLS_DIR) before its next start lists it. */
+  #refreshSkills(id: string, bundles: SkillBundle[]): void {
+    const row = this.store.session(id);
+    if (!row) return;
+    const dir = join(this.home, "sessions", id);
+    try {
+      skills.keepSkills(dir, bundles);
+      skills.prepare(dir, row.local.cwd);
+    } catch (error) {
+      console.log(`${nowIso()} WARN the session's skills were not refreshed: ${(error as Error).message} {"session":"${id}"}`);
+    }
   }
 
   async #launch(launch: SessionLaunch): Promise<SessionOutput> {
@@ -732,9 +813,18 @@ export class SessionService {
         ...(launch.fast ? { fast: true } : {}),
         ...(launch.helperModel ? { helperModel: launch.helperModel } : {}),
         ...(launch.systemPrompt ? { systemPrompt: launch.systemPrompt } : {}),
+        ...(launch.claudeAccount ? { claudeAccount: launch.claudeAccount } : {}),
+        ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
       },
     };
     this.store.commit(row, [], false);
+    const dir = join(this.home, "sessions", id);
+    if (launch.mcpRole && launch.mcp) this.#keepMcp(id, { role: launch.mcpRole, config: launch.mcp });
+    try {
+      skills.keepSkills(dir, launch.skills ?? []);
+    } catch (error) {
+      throw new Refusal("internal", `cannot keep the session's skills: ${(error as Error).message}`);
+    }
     await this.#beginRun(id, launch.runId, launch.prompt, "plain");
     const reported = base && { ref: base.baseRef, sha: base.sha, ...(base.fetchedAt ? { fetchedAt: base.fetchedAt } : {}), ...(base.error ? { error: base.error } : {}) };
     return { kind: "launched", summary: this.#session(id).summary, ...(reported ? { base: reported } : {}) };
@@ -843,15 +933,27 @@ export class SessionService {
     mkdirPrivate(dir);
     const sock = leadSocketPath(this.home);
     const role = row.local.role ?? "plain";
-    const fleetd = fleetdServer(this.config.nativeBin, role, sock, id);
-    const mcp = join(dir, "mcp.json");
-    writeAtomic(mcp, `${JSON.stringify({ mcpServers: fleetd ? { fleetd } : {} })}\n`);
+    // The configured servers of the session's role, their secrets resolved here, then fleetd's own. The file holds
+    // secrets, so it is written as the node's secret files are (0600).
+    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.nativeBin, role, sock, id), id);
+    const mcpConfig = join(dir, "mcp.json");
+    writeAtomic(mcpConfig, sessionMcp.json);
     const env: Env = { ...base };
+    // The session's Claude account in place of the machine's own login and gateway, read at each start. One the node
+    // no longer holds fails the start: it never runs on the machine's login instead.
+    const account = row.local.claudeAccount as ClaudeAccount | undefined;
+    if (account) {
+      try {
+        putOn(env, envFor(this.home, account).vars);
+      } catch (error) {
+        throw new Refusal("runner_unavailable", (error as Error).message);
+      }
+    }
     // The project's own variables, then its order's in place of the project's of the same name. What the node already
     // gives claude keeps the node's value; the 1Password token is the node's alone.
     const order = row.local.orderId ? orderVarsForSpawn(this.home, row.summary.projectId, row.local.orderId).vars : [];
     const project = projectVars(this.home, row.summary.projectId).filter(([n]) => !order.some(([o]) => o === n));
-    for (const [k, v] of [...project, ...order]) if (!(k in base) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
+    for (const [k, v] of [...project, ...order]) if (!(k in env) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
     const roleVars: Env = {};
     for (const v of claude.PROMPT_CACHE_TTL_VARS) roleVars[v] = env[v] ?? claude.defaultCacheTtl(role);
     Object.assign(roleVars, claude.roleEnv(role, env));
@@ -861,10 +963,12 @@ export class SessionService {
       systemPrompt = join(dir, "system-prompt.md");
       writeAtomic(systemPrompt, row.local.systemPrompt);
     }
+    const prepared = skills.prepare(dir, row.local.cwd);
+    env[skills.DIR_ENV] = skills.skillsDir(dir);
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    Bun.write(settings, settingsOverlay(roleVars, helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin, this.home)));
+    Bun.write(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin, this.home)));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
@@ -895,10 +999,10 @@ export class SessionService {
       allowedOnly: !!row.local.allowedOnly,
       ...(systemPrompt ? { systemPrompt } : {}),
       disallowedTools: [...claude.ALWAYS_DISALLOWED, ...claude.roleDisallowed(role), ...(row.local.disallowedTools ?? [])],
-      mcpConfig: mcp,
-      strictMcp: false,
+      mcpConfig,
+      strictMcp: sessionMcp.strict,
       settings,
-      pluginDirs: [],
+      pluginDirs: prepared.pluginDir ? [prepared.pluginDir] : [],
       env,
       hostDir: join(this.home, "hosts", id),
       isolated: row.local.cwd === join(this.home, "isolated"),

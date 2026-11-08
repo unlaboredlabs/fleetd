@@ -1,10 +1,9 @@
 // Adding a project, the machine's half (crates/fleetd/src/node/repos.rs, cli/setup/detect.rs): find checkouts, look
-// at one, and `gh repo list` when gh is logged in here. Clones (`repo_clone`) aren't ported.
+// at one. Clones and `gh repo list` are ../actions/clone.ts's.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { defaultBranch } from "../worktree/index.ts";
-import { exec } from "../util.ts";
 
 const MAX_REPOS = 200;
 export const PARTIAL = ".fleetd-partial-";
@@ -98,21 +97,4 @@ export async function inspect(path: string): Promise<RepoFacts> {
   } catch {}
   const branch = await defaultBranch(path);
   return { exists: true, isGit: true, ...(remote ? { remote } : {}), ...(branch ? { defaultBranch: branch } : {}), workflowFiles };
-}
-
-/** `gh repo list` for the logged-in user and their orgs, run here. */
-export async function ghRepoList(): Promise<{ owners: string[]; repos: Record<string, unknown>[]; problem?: string }> {
-  const user = await exec(["gh", "api", "user", "--jq", ".login"], 20_000);
-  if (user.error) return { owners: [], repos: [], problem: "gh is not installed or not logged in on this machine: run gh auth login there" };
-  const orgs = await exec(["gh", "api", "user/orgs", "--jq", ".[].login"], 20_000);
-  const owners = [user.stdout.trim(), ...orgs.stdout.split("\n").map((l) => l.trim())].filter(Boolean);
-  const repos: Record<string, unknown>[] = [];
-  for (const owner of owners) {
-    const listed = await exec(["gh", "repo", "list", owner, "--limit", "100", "--json", "nameWithOwner,url,isPrivate,description,pushedAt"], 30_000);
-    if (listed.error) continue;
-    try {
-      repos.push(...(JSON.parse(listed.stdout) as Record<string, unknown>[]));
-    } catch {}
-  }
-  return { owners, repos };
 }
