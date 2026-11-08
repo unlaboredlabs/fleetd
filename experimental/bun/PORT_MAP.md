@@ -424,17 +424,17 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 
 ### Heartbeat fields (node → hub `hb`)
 
-- [ ] heartbeat `at` → `src/node/load` <!-- hb:heartbeat `at` -->
-- [ ] heartbeat `busy` → `src/node/load` <!-- hb:heartbeat `busy` -->
-- [ ] heartbeat `load.cpus` → `src/node/load` <!-- hb:heartbeat `load.cpus` -->
-- [ ] heartbeat `load.load1` → `src/node/load` <!-- hb:heartbeat `load.load1` -->
-- [ ] heartbeat `load.memUsedPct` → `src/node/load` <!-- hb:heartbeat `load.memUsedPct` -->
-- [ ] heartbeat `load.memTotalBytes` → `src/node/load` <!-- hb:heartbeat `load.memTotalBytes` -->
-- [ ] heartbeat `load.memPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.memPerAgentBytes` -->
-- [ ] heartbeat `load.diskPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.diskPerAgentBytes` -->
-- [ ] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
-- [ ] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
-- [ ] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
+- [x] heartbeat `at` → `src/node/load` <!-- hb:heartbeat `at` -->
+- [x] heartbeat `busy` → `src/node/load` <!-- hb:heartbeat `busy` -->
+- [x] heartbeat `load.cpus` → `src/node/load` <!-- hb:heartbeat `load.cpus` -->
+- [x] heartbeat `load.load1` → `src/node/load` <!-- hb:heartbeat `load.load1` -->
+- [x] heartbeat `load.memUsedPct` → `src/node/load` <!-- hb:heartbeat `load.memUsedPct` -->
+- [x] heartbeat `load.memTotalBytes` → `src/node/load` <!-- hb:heartbeat `load.memTotalBytes` -->
+- [x] heartbeat `load.memPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.memPerAgentBytes` -->
+- [x] heartbeat `load.diskPerAgentBytes` → `src/node/load` <!-- hb:heartbeat `load.diskPerAgentBytes` -->
+- [x] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
+- [x] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
+- [x] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
 
 ## node-browser+screens
 
