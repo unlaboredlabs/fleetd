@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  prompts list [--project <machine>/<project>]\n             every prompt fleetd sends a model, which text is in effect, and\n             \"update\" where a release changed the default you edited\n  prompts show <id> [--project <machine>/<project>] [--default]\n  prompts show --session <machine>/<thread>\n             the text in effect (or the shipped one), or exactly what a session was told\n  prompts edit <id> [--project <machine>/<project>]\n             edit it in $VISUAL or $EDITOR; warns when a placeholder or a safety rule is gone\n  prompts reset <id> [--project <machine>/<project>]\n  prompts diff <id> [--project <machine>/<project>]\n             shipped vs yours; after a release changed it, what changed in each\n  instructions show|edit [--project <machine>/<project>]\n             your custom instructions, appended to every lead and task\n",
+  "stderr": ""
+}

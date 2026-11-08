@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: 'xyz' is not a worker code id (12 hex digits); `fleetd pair --worker-codes` lists them\n"
+}

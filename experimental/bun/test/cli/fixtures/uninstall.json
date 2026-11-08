@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "no hub service at $HOME/.config/systemd/user/fleetd-hub.service\nkept the hub's data in $HOME/hub; fleetd init starts it again, --purge deletes it\n"
+}

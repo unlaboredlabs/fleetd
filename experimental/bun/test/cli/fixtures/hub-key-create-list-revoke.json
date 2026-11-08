@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "key\tprefix\tname\tgrants\tcreated\tlast used\tstatus\nkey_ID\tfld_PFX\tci\tread:a,b\tTIME\t-\tactive\n",
+  "stderr": ""
+}

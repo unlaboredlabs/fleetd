@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: build-slot needs the node home, then cargo's arguments\n"
+}

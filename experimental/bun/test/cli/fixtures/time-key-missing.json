@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd time: cannot read --key-file: No such file or directory (os error 2)\n"
+}

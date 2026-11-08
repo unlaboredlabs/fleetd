@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "Pairing code: CODE  (single use, valid until TIME)\nGrants:       operate on every machine\nHub address:  http://127.0.0.1:4790\nPairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4790&code=CODE\n\nThe fleetd app on this machine pairs by itself when it opens. On a phone or another device,\nenter the code and hub address above in the app, or open the link there.\n",
+  "stderr": ""
+}

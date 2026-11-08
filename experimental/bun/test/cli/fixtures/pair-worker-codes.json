@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "CODEID  builder-1  made TIME  until TIME\nTake one back with `fleetd pair --worker-revoke <id>`.\n",
+  "stderr": ""
+}

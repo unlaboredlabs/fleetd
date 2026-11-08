@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "On builder-1, run:\n\n  curl -fsSL https://fleetd.sh | sh -s -- --join http://127.0.0.1:4790 --code fle_CODE --machine-id builder-1\n\nThe code works once, until HH:MM UTC. builder-1 needs claude installed and must reach the hub at that address.\n\nThe hub is only at http://127.0.0.1:4790, which no other machine reaches, so only a node on the hub's own computer can join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port> (Settings › Hub › Setup › Where the hub listens), then try again.\n",
+  "stderr": ""
+}

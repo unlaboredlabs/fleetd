@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd work: $HOME/cwd is not in a git checkout\n"
+}
