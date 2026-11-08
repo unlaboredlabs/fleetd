@@ -12,6 +12,7 @@ import { wakeLine } from "./outcome.ts";
 import {
   type ApprovalHub,
   type ApprovalNodes,
+  type ApprovalHooks,
   defaultHooks,
   type GatedOutcome,
   NodeCommandError,
@@ -104,6 +105,31 @@ export function storeHub(hub: Hub, mcpServers: (project: ProjectRef) => Promise<
   };
 }
 
+/**
+ * The hooks as T2285's navi port fills them: each call looks up `hub.area("navi_hooks")` (its `naviHooks(hub)`) at
+ * runtime, so this builds before that lands and whichever starts first; a hook it doesn't fill keeps the default. An
+ * area that sets `approvals(hub).deps.hooks.<name>` itself replaces the lookup for that hook.
+ */
+export function naviFilled(hub: Hub, base: ApprovalHooks): ApprovalHooks {
+  const navi = (): Partial<ApprovalHooks> | undefined => {
+    try {
+      return hub.area<Partial<ApprovalHooks>>("navi_hooks", () => {
+        throw new Error("navi_hooks not set");
+      });
+    } catch {
+      return undefined;
+    }
+  };
+  const out = {} as Record<keyof ApprovalHooks, unknown>;
+  for (const name of Object.keys(base) as (keyof ApprovalHooks)[]) {
+    out[name] = (...args: unknown[]) => {
+      const fill = navi()?.[name] as ((...a: unknown[]) => unknown) | undefined;
+      return (fill ?? (base[name] as (...a: unknown[]) => unknown))(...args);
+    };
+  }
+  return out as ApprovalHooks;
+}
+
 /** The real hub's approvals deps; other areas set `approvals(hub).deps.hooks` fields to theirs (D348). */
 export function hubDeps(hub: Hub): ApprovalsDeps {
   const deps: ApprovalsDeps = {
@@ -117,7 +143,7 @@ export function hubDeps(hub: Hub): ApprovalsDeps {
         return [];
       }
     }),
-    hooks: defaultHooks(),
+    hooks: naviFilled(hub, defaultHooks()),
     events: events(hub),
     clock: hub.clock,
     signal: hub.shutdown.signal,

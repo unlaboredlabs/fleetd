@@ -561,3 +561,14 @@ test("openRequests lists the open ones, newest first", async () => {
   expect(openRequests(hub, 1).length).toBe(1);
   expect(openRequests(hub, 10, { machineId: "lab-a", projectId: "p2" })).toEqual([]);
 });
+
+test("the navi port's hooks are looked up at each call, the defaults kept for the rest", async () => {
+  const { Hub } = await import("../src/hub/api/hub.ts");
+  const { naviFilled } = await import("../src/hub/approvals/wire.ts");
+  const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => 0 });
+  const hooks = naviFilled(hub, defaultHooks());
+  expect(await hooks.naviLead(p1, "T1")).toBe(false);
+  hub.area("navi_hooks", () => ({ naviLead: async () => true }));
+  expect(await hooks.naviLead(p1, "T1")).toBe(true);
+  expect(await hooks.naviSite(p1, "x.example")).toBeUndefined();
+});
