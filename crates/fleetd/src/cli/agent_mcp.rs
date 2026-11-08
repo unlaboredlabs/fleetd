@@ -22,10 +22,10 @@ use fleetd_contracts::browser::{
 use fleetd_contracts::chat::{ChatFileCall, NudgeCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
-    AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
-    DecisionsSearchCall, GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall,
-    RequestWithdrawCall, ReviewReadCall, TaskCancelCall, TaskListCall, TaskMessageCall,
-    TaskSpawnCall, UsageResumeCall, WaitCiCall,
+    AgentMessageCall, AgentMessagesCall, AskLeadCall, BriefCreateCall, BriefReadCall,
+    ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall, GatedRunCall, LeadCall,
+    LeadSocketFrame, RequestSecretCall, RequestWithdrawCall, ReviewReadCall, TaskCancelCall,
+    TaskListCall, TaskMessageCall, TaskSpawnCall, UsageResumeCall, WaitCiCall,
 };
 use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{
@@ -128,13 +128,25 @@ static TOOLS: &[Tool] = &[
          first), a waiting one gets it as its answer, and an ended one continues in its own thread.",
         inline_schema::<TaskMessageCall>,
     ),
+    Tool {
+        worker: true,
+        ..lead(
+            "agents",
+            "task_list",
+            "The project's agents (tasks) as stored, newest first: each one's title, state, branch, the files it \
+             said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or \
+             workstream. A result's tail keeps its head and end around a \"…\" line; with taskId, fullResult holds \
+             the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far.",
+            inline_schema::<TaskListCall>,
+        )
+    },
     lead(
-        "agents",
-        "task_list",
-        "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or \
-         filtered by state or workstream. A result's tail keeps its head and end around a \"…\" line; with taskId, \
-         fullResult holds the whole final result (up to 32 KB) when that tail is cut.",
-        inline_schema::<TaskListCall>,
+        "agent_messages",
+        "agent_messages",
+        "What your agents wrote to each other (agent_message), newest first, each with where it stands for every \
+         recipient (delivered, held, woke, not_woken, refused). With taskId, only those that agent sent or got; \
+         before (the id of the oldest shown) reads the next page. You also get a quiet line for each in your wakes.",
+        inline_schema::<AgentMessagesCall>,
     ),
     lead(
         "stop_agent",
@@ -420,6 +432,21 @@ static TOOLS: &[Tool] = &[
         human: None,
     },
     Tool {
+        name: "agent_message",
+        op: "agent_message",
+        worker: true,
+        lead: false,
+        browser: false,
+        description: "Write to one to five other agents of your project by id (to: [T<n>]; `agents` lists them): an \
+                      overlap, your PR's number, a finding they need. A running agent takes it at its next tool \
+                      boundary. One that has finished isn't restarted (not_woken): it gets it only if a Monitor or \
+                      wait_ci of its own wakes it, or its lead continues it; unless it waits for an answer, which this \
+                      continues (woke). Product questions and scope go to your lead (ask_lead). Your lead and the \
+                      person see every message.",
+        schema: inline_schema::<AgentMessageCall>,
+        human: None,
+    },
+    Tool {
         name: "wait_ci",
         op: "wait_ci",
         worker: true,
@@ -430,7 +457,7 @@ static TOOLS: &[Tool] = &[
                       -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, \
                       the outcome and the failing jobs. With merged: true on a PR's URL, be woken when that PR merges \
                       instead, or if it fails on the merge train or is closed unmerged: one call per PR your next step \
-                      builds on (a stacked PR, another writer's seam). Never end a turn saying you'll wait for a run \
+                      builds on (a stacked PR, another writer's seam; `agents` gives its PR). Never end a turn saying you'll wait for a run \
                       or a merge without it, or ask your lead to ping you: nothing else wakes you.",
         schema: inline_schema::<WaitCiCall>,
         human: None,
@@ -1235,15 +1262,17 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_images_artifacts_and_browser()
+    fn a_worker_sees_only_report_ask_lead_its_brief_agents_ci_decisions_reviews_images_artifacts_and_browser()
      {
         assert_eq!(
             names(Role::Worker),
             [
+                "agents",
                 "decisions_search",
                 "report",
                 "ask_lead",
                 "brief_read",
+                "agent_message",
                 "wait_ci",
                 "review_read",
                 "chat_file",
@@ -1261,6 +1290,7 @@ mod tests {
             "spawn_agent",
             "message_agent",
             "agents",
+            "agent_messages",
             "stop_agent",
             "request_secret",
             "decide",

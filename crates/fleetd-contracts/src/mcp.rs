@@ -845,6 +845,22 @@ output!(SteerSendOutput {
     steer: Steer,
 });
 
+// agent_messages: a project's agent messages (one agent's `agent_message` to others), newest first, each with where it
+// stands for every recipient: the person's audit of what its agents told each other. With taskId, only those that
+// agent sent or got. A page ends at limit; `before` (the id of the oldest shown) reads the next one.
+input!(AgentMessagesInput {
+    project_ref: ProjectRef,
+    task_id: Option<TaskId>,
+    before: Option<crate::steer::AgentMessageId>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(AgentMessagesOutput {
+    messages: Vec<crate::steer::AgentMessage>,
+    more: bool,
+    total: Count,
+});
+
 // steer_withdraw: drop a steer that is still queued. Refused once it was delivered.
 input!(SteerWithdrawInput { steer_id: SteerId });
 output!(SteerWithdrawOutput {
@@ -4021,6 +4037,7 @@ tools! {
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
+    agent_messages => AgentMessages, Read, AgentMessagesInput, AgentMessagesOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
     // Human keys only (the handlers check).

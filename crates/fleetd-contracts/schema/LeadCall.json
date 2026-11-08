@@ -1,5 +1,52 @@
 {
   "$defs": {
+    "AgentMessageCall": {
+      "description": "`agent_message`: a task's agent writes to another agent of its project. A running one takes it at its next tool\nboundary; one that isn't running gets it with its next run (held until then), which a message from an agent never\nstarts, except as the answer to a question the recipient is waiting on (`ask_lead`).",
+      "properties": {
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "to": {
+          "description": "The agents it is for (T<n>), 1 to 5, in the same project; `agents` lists them.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "to",
+        "text"
+      ],
+      "type": "object"
+    },
+    "AgentMessageId": {
+      "pattern": "^M[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AgentMessagesCall": {
+      "description": "`agent_messages` for a lead: its project's agent messages, newest first, as the person reads them.",
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/AgentMessageId",
+          "description": "Older than this one: the id of the oldest shown."
+        },
+        "limit": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "Only those this agent sent or got."
+        }
+      },
+      "type": "object"
+    },
     "Amount": {
       "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
       "type": "string"
@@ -1649,6 +1696,32 @@
           "properties": {
             "op": {
               "const": "task_cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentMessageCall",
+          "properties": {
+            "op": {
+              "const": "agent_message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentMessagesCall",
+          "properties": {
+            "op": {
+              "const": "agent_messages",
               "type": "string"
             }
           },

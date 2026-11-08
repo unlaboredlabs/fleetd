@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents wait for 5 GB of disk each above the free-space floor; load and memory never hold them back. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `decisions_search`, `report`, `ask_lead`, `brief_read`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`. Every other call is refused. |
+| Calls a task's agent may make | `agents`, `decisions_search`, `report`, `ask_lead`, `brief_read`, `agent_message`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -45,7 +45,8 @@ Every lead gets these.
 |---|---|---|
 | [`spawn_agent`](#spawn_agent) | Start a fleetd agent (a task) with its own session, slot and lane. | No |
 | [`message_agent`](#message_agent) | Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread. | No |
-| [`agents`](#agents) | The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream. | No |
+| [`agents`](#agents) | The project's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. | No |
+| [`agent_messages`](#agent_messages) | What your agents wrote to each other (agent_message), newest first, each with where it stands for every recipient (delivered, held, woke, not_woken, refused). | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
 | [`brief`](#brief) | Open and start work. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
@@ -145,7 +146,7 @@ Steer a task: a running one takes the message at its next tool boundary (now: tr
 
 ### agents
 
-The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut.
+The project's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -153,13 +154,34 @@ The project's tasks as stored (state, queued reason, thread, result), newest fir
 | `taskId` | string | no | Just this task. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
 
 ```json
 {
   "name": "agents",
   "arguments": {
     "state": "running"
+  }
+}
+```
+
+### agent_messages
+
+What your agents wrote to each other (agent_message), newest first, each with where it stands for every recipient (delivered, held, woke, not_woken, refused). With taskId, only those that agent sent or got; before (the id of the oldest shown) reads the next page. You also get a quiet line for each in your wakes.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `before` | string | no | Older than this one: the id of the oldest shown. |
+| `limit` | integer | no | 1 to 100. |
+| `taskId` | string | no | Only those this agent sent or got. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "agent_messages",
+  "arguments": {
+    "taskId": "T9"
   }
 }
 ```
@@ -1160,10 +1182,12 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
+| [`agents`](#agents-task) | The project's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. | No |
 | [`decisions_search`](#decisions_search-task) | Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
 | [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
+| [`agent_message`](#agent_message) | Write to one to five other agents of your project by id (to: [T&lt;n>]; `agents` lists them): an overlap, your PR's number, a finding they need. | No |
 | [`wait_ci`](#wait_ci) | Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`chat_file`](#chat_file-task) | Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
@@ -1174,6 +1198,27 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
+
+### agents (task)
+
+The project's agents (tasks) as stored, newest first: each one's title, state, branch, the files it said it changes (paths), its PR (result.prUrl) and result. One by taskId, or filtered by state or workstream. A result's tail keeps its head and end around a "…" line; with taskId, fullResult holds the whole final result (up to 32 KB) when that tail is cut, and a writer's files changed so far.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `state` | string | no | One of `queued`, `running`, `idle`, `done`, `failed`, `cancelled`. |
+| `taskId` | string | no | Just this task. |
+| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "agents",
+  "arguments": {
+    "state": "running"
+  }
+}
+```
 
 ### decisions_search (task)
 
@@ -1251,9 +1296,32 @@ No parameters.
 }
 ```
 
+### agent_message
+
+Write to one to five other agents of your project by id (to: [T&lt;n>]; `agents` lists them): an overlap, your PR's number, a finding they need. A running agent takes it at its next tool boundary. One that has finished isn't restarted (not_woken): it gets it only if a Monitor or wait_ci of its own wakes it, or its lead continues it; unless it waits for an answer, which this continues (woke). Product questions and scope go to your lead (ask_lead). Your lead and the person see every message.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | yes | At most 4000 characters. |
+| `to` | string[] | yes | The agents it is for (T&lt;n>), 1 to 5, in the same project; `agents` lists them. At most 5 items. |
+
+**Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "agent_message",
+  "arguments": {
+    "text": "My PR #42 renames upload_limit to upload_quota in api/limits.rs; rebase on it once it merges.",
+    "to": [
+      "T9"
+    ]
+  }
+}
+```
+
 ### wait_ci
 
-Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (`https://github.com/<owner>/<repo>/actions/runs/<id>`; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. With merged: true on a PR's URL, be woken when that PR merges instead, or if it fails on the merge train or is closed unmerged: one call per PR your next step builds on (a stacked PR, another writer's seam). Never end a turn saying you'll wait for a run or a merge without it, or ask your lead to ping you: nothing else wakes you.
+Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (`https://github.com/<owner>/<repo>/actions/runs/<id>`; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. With merged: true on a PR's URL, be woken when that PR merges instead, or if it fails on the merge train or is closed unmerged: one call per PR your next step builds on (a stacked PR, another writer's seam; `agents` gives its PR). Never end a turn saying you'll wait for a run or a merge without it, or ask your lead to ping you: nothing else wakes you.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
