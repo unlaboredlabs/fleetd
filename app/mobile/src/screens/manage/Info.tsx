@@ -7,7 +7,7 @@
 // Archive. Delete last, red, in a sheet that erases everything fleetd keeps for it, with a tickbox for its folder,
 // once its name is typed (TypedDelete). What the person may not do isn't offered.
 import { StackActions, useFocusEffect } from "@react-navigation/native";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { listTime } from "../../chatView";
 import { isArchived, isOnlyMe, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
@@ -20,12 +20,53 @@ import { Icon } from "../../ui/Icon";
 import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
-import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, setOnlyMe } from "./api";
+import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, setOnlyMe, withPart, type Info as InfoRead } from "./api";
 import { agentLines, checklist, deleteBlocked, deleteWords, machineName, manages, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
-import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
+import { confirmDestructive, errorWords, Problem } from "./parts";
 import { skillsShown } from "./skillsModel";
 import { artifactsShown } from "../artifacts/model";
 import { TypedDelete } from "./TypedDelete";
+
+/** Each project's screen as last read this launch: it opens on that at once, as Telegram's profiles do, while its reads go again. */
+const lastRead = new Map<string, InfoRead>();
+
+/**
+ * The screen's reads, each section shown as its own read lands, over what was last read; `reading` until all have.
+ * A failure said by the last read goes until one of these fails again.
+ */
+const useInfo = (key: string, read: (part: (got: InfoRead) => void) => Promise<InfoRead>, deps: readonly unknown[]): { value: InfoRead | undefined; reading: boolean; reload: () => void } => {
+  const shown = useRef(lastRead.get(key));
+  const [value, setValue] = useState(shown.current);
+  const [reading, setReading] = useState(true);
+  const gen = useRef(0);
+  // `read` is new on each render; what it reads is in `deps`.
+  const run = useCallback(read, deps);
+  const reload = useCallback(() => {
+    const mine = ++gen.current;
+    const put = (v: InfoRead) => {
+      shown.current = v;
+      lastRead.set(key, v);
+      setValue(v);
+    };
+    if (shown.current?.error !== undefined) {
+      const { error: _error, ...rest } = shown.current;
+      put(rest);
+    }
+    setReading(true);
+    void run((got) => {
+      if (mine === gen.current) put(withPart(shown.current ?? {}, got));
+    }).then(() => {
+      if (mine === gen.current) setReading(false);
+    });
+  }, [run, key]);
+  useEffect(() => {
+    reload();
+    return () => {
+      gen.current++;
+    };
+  }, [reload]);
+  return { value, reading, reload };
+};
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
 
@@ -52,7 +93,10 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const can = manages(p, state.me);
   const archived = isArchived(p);
   const skills = skillsShown(state.hub);
-  const info = useRead(() => readInfo(session, p, Date.now(), skills), [session, p.machineId, p.projectId, skills]);
+  const live = state.hub.phase === "live";
+  const key = `${p.machineId}/${p.projectId}`;
+  // Read again once the link is live: one read before it (a launch opening on the cached chats) answers offline.
+  const info = useInfo(key, (part) => readInfo(session, p, Date.now(), skills, part), [session, key, skills, live]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);
@@ -65,13 +109,11 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const [busy, setBusy] = useState<"delete" | "forget" | "onlyMe" | "archive" | null>(null);
   const [forgot, setForgot] = useState(false);
   const [typing, setTyping] = useState<DeleteWords | null>(null);
-  const key = `${p.machineId}/${p.projectId}`;
   const v = info.value;
   const agents = agentLines(v?.agents ?? []);
   const orders = orderLines(v?.orders ?? []);
   const list = checklist(v?.checklist ?? []);
   const merged = merges(v?.prs ?? []);
-  const live = state.hub.phase === "live";
 
   const remove = async () => {
     setBusy("delete");
@@ -168,7 +210,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       </View>
 
       <ListSection header="Agents">
-        {v === undefined ? (
+        {v?.agents === undefined && info.reading ? (
           <ListRow title="Reading…" accessory={spinner} />
         ) : agents.length === 0 ? (
           <ListRow title="Nothing running" valueColor={t.secondary} />

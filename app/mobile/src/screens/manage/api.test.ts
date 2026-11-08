@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, readTelegram, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setIcon, setOnlyMe, setPicture, setProfile, telegramAct } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, readTelegram, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setIcon, setOnlyMe, setPicture, setProfile, telegramAct, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -93,6 +93,31 @@ describe("A project's screen", () => {
     expect(got.prs).toBeUndefined();
     expect(got.skills).toMatchObject([{ name: "weekly-invoices" }]);
     expect(got.error).toMatchObject({ message: "GitHub didn't answer." });
+  });
+
+  it("hands each read over as it lands, so what runs shows while pr_list still waits on GitHub", async () => {
+    const { hub, session } = setup();
+    const parts: object[] = [];
+    let done = false;
+    void readInfo(session, SHOP, NOW, false, (got) => parts.push(got)).then(() => (done = true));
+    hub.answer("agents_list", { agents: [{ laneId: "T1", role: "implementer", status: "working", title: "Fix it", projectRef: REF, projectTitle: "storefront" }], at: AT });
+    await flush();
+    expect(parts).toEqual([{ agents: [expect.objectContaining({ laneId: "T1" })] }]);
+    hub.fail("orders_board", "failed", "The board didn't read.");
+    hub.fail("checklist_get", "failed", "The checklist didn't read.");
+    await flush();
+    expect(parts.slice(1)).toEqual([{ error: expect.objectContaining({ message: "The board didn't read." }) }, { error: expect.objectContaining({ message: "The checklist didn't read." }) }]);
+    expect(done).toBe(false);
+    hub.answer("profiles_list", { profiles: [], models: [], efforts: [], modelsFrom: "builtin" });
+    hub.answer("pr_list", { prs: [] });
+    await flush();
+    expect(done).toBe(true);
+  });
+
+  it("keeps the first failure, and each section the read that brought it", () => {
+    const first = { message: "first" } as never;
+    expect(withPart({ agents: [], error: first }, { orders: [], error: { message: "second" } as never })).toEqual({ agents: [], orders: [], error: first });
+    expect(withPart({ agents: [], checklist: [] }, { agents: [], error: first })).toEqual({ agents: [], checklist: [], error: first });
   });
 
   it("leaves its skills out on a hub that doesn't keep them", () => {

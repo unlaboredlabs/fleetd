@@ -89,28 +89,34 @@ export interface Info {
   readonly error?: HubError;
 }
 
-/** Its screen's reads, side by side; its skills only from a hub that keeps them (`skills`). */
-export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: boolean): Promise<Info> => {
+/** One read landed over what is shown: its section replaced, the first failure kept. */
+export const withPart = (shown: Info, got: Info): Info => ({ ...shown, ...got, ...(shown.error === undefined ? {} : { error: shown.error }) });
+
+/**
+ * Its screen's reads, side by side; its skills only from a hub that keeps them (`skills`). Each read is handed to
+ * `part` as it lands, so a slow one (pr_list waits on GitHub, seconds on a cold cache) holds up none of the others;
+ * the promise answers them all, with the first that failed.
+ */
+export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: boolean, part?: (got: Info) => void): Promise<Info> => {
   const projectRef = ref(p);
   const since = new Date(nowMs - MERGES_DAYS * 86_400_000).toISOString();
-  const [agents, checklist, orders, prs, profiles, kept] = await Promise.all([
-    hub.call("agents_list", { projectRef }),
-    hub.call("checklist_get", { projectRef }),
-    hub.call("orders_board", { projectRef }),
-    hub.call("pr_list", { projectRef, closedSince: since }),
-    hub.call("profiles_list", { projectRef }),
-    skills ? hub.call("skills_list", { projectRef }) : null,
+  let all: Info = {};
+  const land = <T,>(read: Promise<T>, piece: (r: T) => Info): Promise<void> =>
+    read.then((r) => {
+      const got = piece(r);
+      all = withPart(all, got);
+      part?.(got);
+    });
+  const failed = (r: { ok: false; error: HubError }): Info => ({ error: r.error });
+  await Promise.all([
+    land(hub.call("agents_list", { projectRef }), (r) => (r.ok ? { agents: r.output.agents } : failed(r))),
+    land(hub.call("checklist_get", { projectRef }), (r) => (r.ok ? { checklist: r.output.items } : failed(r))),
+    land(hub.call("orders_board", { projectRef }), (r) => (r.ok ? { orders: r.output.orders } : failed(r))),
+    land(hub.call("pr_list", { projectRef, closedSince: since }), (r) => (r.ok ? { prs: r.output.prs } : failed(r))),
+    land(hub.call("profiles_list", { projectRef }), (r) => (r.ok ? { profiles: r.output } : failed(r))),
+    ...(skills ? [land(hub.call("skills_list", { projectRef }), (r) => (r.ok ? { skills: r.output.skills } : failed(r)))] : []),
   ]);
-  const error = [agents, checklist, orders, prs, profiles, kept].find((r) => r !== null && !r.ok);
-  return {
-    ...(agents.ok ? { agents: agents.output.agents } : {}),
-    ...(checklist.ok ? { checklist: checklist.output.items } : {}),
-    ...(orders.ok ? { orders: orders.output.orders } : {}),
-    ...(prs.ok ? { prs: prs.output.prs } : {}),
-    ...(profiles.ok ? { profiles: profiles.output } : {}),
-    ...(kept?.ok === true ? { skills: kept.output.skills } : {}),
-    ...(error === undefined || error === null || error.ok ? {} : { error: error.error }),
-  };
+  return all;
 };
 
 /** Checks or unchecks one profile for its agents; the hub's default stays allowed. Answers the allowed ones now. */
