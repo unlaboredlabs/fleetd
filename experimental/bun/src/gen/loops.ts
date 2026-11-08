@@ -15,23 +15,24 @@ import { start as s11 } from "../hub/mcp_servers/loops.ts";
 import { start as s12 } from "../hub/memory/loops.ts";
 import { start as s13 } from "../hub/metrics/loops.ts";
 import { start as s14 } from "../hub/navi/loops.ts";
-import { start as s15 } from "../hub/pair/loops.ts";
-import { start as s16 } from "../hub/pool/loops.ts";
-import { start as s17 } from "../hub/projects/loops.ts";
-import { start as s18 } from "../hub/push/loops.ts";
-import { start as s19 } from "../hub/queue/loops.ts";
-import { start as s20 } from "../hub/reviews/loops.ts";
-import { start as s21 } from "../hub/slots/loops.ts";
-import { start as s22 } from "../hub/status/loops.ts";
-import { start as s23 } from "../hub/steer/loops.ts";
-import { start as s24 } from "../hub/sweep/loops.ts";
-import { start as s25 } from "../hub/tasks/loops.ts";
-import { start as s26 } from "../hub/time/loops.ts";
-import { start as s27 } from "../hub/train/loops.ts";
-import { start as s28 } from "../hub/update/loops.ts";
-import { start as s29 } from "../hub/usage/loops.ts";
-import { start as s30 } from "../hub/watchdog/loops.ts";
-import { start as s31 } from "../hub/work/loops.ts";
+import { start as s15 } from "../hub/outage/loops.ts";
+import { start as s16 } from "../hub/pair/loops.ts";
+import { start as s17 } from "../hub/pool/loops.ts";
+import { start as s18 } from "../hub/projects/loops.ts";
+import { start as s19 } from "../hub/push/loops.ts";
+import { start as s20 } from "../hub/queue/loops.ts";
+import { start as s21 } from "../hub/reviews/loops.ts";
+import { start as s22 } from "../hub/slots/loops.ts";
+import { start as s23 } from "../hub/status/loops.ts";
+import { start as s24 } from "../hub/steer/loops.ts";
+import { start as s25 } from "../hub/sweep/loops.ts";
+import { start as s26 } from "../hub/tasks/loops.ts";
+import { start as s27 } from "../hub/time/loops.ts";
+import { start as s28 } from "../hub/train/loops.ts";
+import { start as s29 } from "../hub/update/loops.ts";
+import { start as s30 } from "../hub/usage/loops.ts";
+import { start as s31 } from "../hub/watchdog/loops.ts";
+import { start as s32 } from "../hub/work/loops.ts";
 
 /** Every module's background loops (the Rust hub's start_loops); each stops on `hub.shutdown`. */
 export function startAll(hub: Hub): void {
@@ -50,21 +51,22 @@ export function startAll(hub: Hub): void {
   s12(hub); // hub/memory
   s13(hub); // hub/metrics
   s14(hub); // hub/navi
-  s15(hub); // hub/pair
-  s16(hub); // hub/pool
-  s17(hub); // hub/projects
-  s18(hub); // hub/push
-  s19(hub); // hub/queue
-  s20(hub); // hub/reviews
-  s21(hub); // hub/slots
-  s22(hub); // hub/status
-  s23(hub); // hub/steer
-  s24(hub); // hub/sweep
-  s25(hub); // hub/tasks
-  s26(hub); // hub/time
-  s27(hub); // hub/train
-  s28(hub); // hub/update
-  s29(hub); // hub/usage
-  s30(hub); // hub/watchdog
-  s31(hub); // hub/work
+  s15(hub); // hub/outage
+  s16(hub); // hub/pair
+  s17(hub); // hub/pool
+  s18(hub); // hub/projects
+  s19(hub); // hub/push
+  s20(hub); // hub/queue
+  s21(hub); // hub/reviews
+  s22(hub); // hub/slots
+  s23(hub); // hub/status
+  s24(hub); // hub/steer
+  s25(hub); // hub/sweep
+  s26(hub); // hub/tasks
+  s27(hub); // hub/time
+  s28(hub); // hub/train
+  s29(hub); // hub/update
+  s30(hub); // hub/usage
+  s31(hub); // hub/watchdog
+  s32(hub); // hub/work
 }
