@@ -1,6 +1,6 @@
-// iOS Settings' grouped inset lists: a section is a rounded group of rows with hairlines inset to the text, an
-// uppercase header above and a footnote below. A row has an optional colored icon tile, a title, a value on the right
-// and a chevron when it opens something.
+// iOS Settings' grouped inset lists: a section is a rounded group of rows with hairlines inset to the text, a quiet
+// label above and a footnote below. A row has an optional colored icon tile, a title and a line under it, a value on
+// the right (with a status dot before it) and a chevron when it opens something.
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { shape, space, type, useTheme } from "../theme";
@@ -13,7 +13,7 @@ export function ListSection({ header, footer, children }: { header?: string; foo
     <View style={styles.section}>
       {header === undefined ? null : (
         <Text style={[type.footnote, styles.header, { color: t.secondary }]} accessibilityRole="header">
-          {header.toUpperCase()}
+          {header}
         </Text>
       )}
       <View style={[styles.group, { backgroundColor: t.cell }]}>
@@ -34,6 +34,7 @@ export function ListRow({
   detail,
   value,
   valueColor,
+  valueDot,
   icon,
   tint,
   onPress,
@@ -47,6 +48,8 @@ export function ListRow({
   detail?: string | undefined;
   value?: string | undefined;
   valueColor?: string | undefined;
+  /** A status dot's color, before the value: how a link is. */
+  valueDot?: string | undefined;
   icon?: IconName;
   /** The icon tile's color; the accent when unset. */
   tint?: string | undefined;
@@ -86,8 +89,9 @@ export function ListRow({
           <Text style={[type.footnote, { color: t.secondary }]}>{detail}</Text>
         </View>
       )}
+      {valueDot === undefined || value === undefined || stacked ? null : <View style={[styles.dot, { backgroundColor: valueDot }]} />}
       {value === undefined || stacked ? null : (
-        <Text style={[type.body, detail === undefined ? styles.value : null, { color: valueColor ?? t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
+        <Text style={[type.body, detail === undefined && valueDot === undefined ? styles.value : null, { color: valueColor ?? t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
           {value}
         </Text>
       )}
@@ -114,4 +118,5 @@ const styles = StyleSheet.create({
   title: { flexShrink: 0, maxWidth: "60%" },
   grow: { flex: 1 },
   value: { flex: 1, textAlign: "right" },
+  dot: { width: 7, height: 7, borderRadius: 3.5, marginLeft: "auto", marginRight: -space.xs },
 });

@@ -38,6 +38,8 @@ server, auth, keys, people, devices, links, settings, store.
 
 - [x] `events_wait` → `src/hub/api` (read) <!-- tool:`events_wait` -->
 - [x] `events_list` → `src/hub/api` (read) <!-- tool:`events_list` -->
+- [ ] `person_avatar_set` → `src/hub/people` (read) <!-- tool:`person_avatar_set` -->
+- [ ] `person_avatar_get` → `src/hub/people` (read) <!-- tool:`person_avatar_get` -->
 - [x] `sidebar_order_get` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_get` -->
 - [x] `sidebar_order_set` → `src/hub/sidebar_order` (read) <!-- tool:`sidebar_order_set` -->
 - [x] `chat_pins_get` → `src/hub/chat_pins` (read) <!-- tool:`chat_pins_get` -->

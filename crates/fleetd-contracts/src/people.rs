@@ -74,6 +74,8 @@ pub struct Person {
     pub created_at: Timestamp,
     /// Removed people keep their id and name, so what they did still names them; their devices are revoked.
     pub removed_at: Option<Timestamp>,
+    /// Their picture's id (person_avatar_get), which changes with each new picture; absent while their initials show.
+    pub avatar: Option<String>,
 }
 
 impl Person {
@@ -144,6 +146,8 @@ pub enum PeopleChange {
     AccountRemoved,
     /// A hub link minted as them was revoked.
     LinkRevoked,
+    /// They set or removed their own picture (person_avatar_set).
+    PictureChanged,
 }
 
 /// `people.changed`.

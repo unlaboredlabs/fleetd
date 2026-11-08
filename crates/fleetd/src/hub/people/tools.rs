@@ -27,6 +27,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("person_set", person_set);
     tools.add("person_remove", person_remove);
     tools.add("device_revoke", device_revoke);
+    super::avatar::register(tools);
 }
 
 fn people(hub: &Hub) -> People {

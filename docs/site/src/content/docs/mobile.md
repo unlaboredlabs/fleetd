@@ -43,7 +43,10 @@ pair again. A phone paired from the desktop app is yours and gets your device's 
 phone paired with `fleetd pair` gets that code's `--role`.
 
 The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). Settings, behind your
-avatar at the top of Chats, shows the hub, its address and version, and this phone. **Disconnect**, at its end, asks
+avatar at the top of Chats, shows you, the hub, its address and version, and this phone. Tap your name at its top to
+choose a photo of yourself from Photos, moved and scaled in a circle, or remove it: it shows in place of your initial at
+the top of Chats, on every phone of yours (`person_avatar_set`; the hub keeps a small JPEG of the circle, without the
+photo's metadata, and `person_avatar_get` reads it). **Disconnect**, at its end, asks
 first, then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If
 the hub can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under
 Settings › You › Your devices in the desktop app.

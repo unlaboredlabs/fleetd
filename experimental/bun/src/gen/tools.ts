@@ -22,6 +22,8 @@ export const TOOLS = {
   project_archive: { scope: "operate", module: "src/hub/navi" },
   project_avatar_set: { scope: "operate", module: "src/hub/projects" },
   project_avatar_get: { scope: "read", module: "src/hub/projects" },
+  person_avatar_set: { scope: "read", module: "src/hub/people" },
+  person_avatar_get: { scope: "read", module: "src/hub/people" },
   project_icon_set: { scope: "operate", module: "src/hub/projects" },
   navi_sites: { scope: "read", module: "src/hub/navi" },
   project_sites: { scope: "read", module: "src/hub/navi" },

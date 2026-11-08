@@ -11539,6 +11539,18 @@
         "people_list.output": {
           "$ref": "#/$defs/PeopleListOutput"
         },
+        "person_avatar_get.input": {
+          "$ref": "#/$defs/PersonAvatarGetInput"
+        },
+        "person_avatar_get.output": {
+          "$ref": "#/$defs/ProjectAvatarGetOutput"
+        },
+        "person_avatar_set.input": {
+          "$ref": "#/$defs/PersonAvatarSetInput"
+        },
+        "person_avatar_set.output": {
+          "$ref": "#/$defs/PersonAvatarSetOutput"
+        },
         "person_remove.input": {
           "$ref": "#/$defs/PersonRemoveInput"
         },
@@ -12261,6 +12273,10 @@
         "pair_code_create.output",
         "people_list.input",
         "people_list.output",
+        "person_avatar_get.input",
+        "person_avatar_get.output",
+        "person_avatar_set.input",
+        "person_avatar_set.output",
         "person_remove.input",
         "person_remove.output",
         "person_set.input",
@@ -15063,6 +15079,10 @@
     },
     "Person": {
       "properties": {
+        "avatar": {
+          "description": "Their picture's id (person_avatar_get), which changes with each new picture; absent while their initials show.",
+          "type": "string"
+        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -15088,6 +15108,47 @@
         "name",
         "role",
         "createdAt"
+      ],
+      "type": "object"
+    },
+    "PersonAvatarGetInput": {
+      "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
+    },
+    "PersonAvatarSetInput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the initials again."
+        },
+        "crop": {
+          "$ref": "#/$defs/AvatarCrop",
+          "description": "The square of it to keep; absent: the largest square in its middle. Clamped to the picture."
+        }
+      },
+      "type": "object"
+    },
+    "PersonAvatarSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/Person"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person"
       ],
       "type": "object"
     },

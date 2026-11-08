@@ -2,7 +2,7 @@
 // other chat apps do, rather than on skeleton rows: the projects and their chat states, each chat's newest few messages (the
 // list's previews), who the person is, and the messages on their way, which an app iOS kills must not lose. The
 // snapshot and pages replace it all once the link is live. Pure, so it is unit-tested; cacheStore.ts keeps it on disk.
-import type { ChatMessage, ChatSend, ProjectChatState, ProjectSummary } from "./desktop";
+import type { ChatMessage, ChatSend, HubRole, ProjectChatState, ProjectSummary } from "./desktop";
 import type { Key, State } from "./store";
 
 export interface Cached {
@@ -14,6 +14,8 @@ export interface Cached {
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
   readonly me: string | undefined;
   readonly meName: string | undefined;
+  readonly meAvatar?: string | undefined;
+  readonly meRole?: HubRole | undefined;
 }
 
 /** Where a send stands in the cache: one on its way when the app went may have reached the hub, so it goes again. */
@@ -27,6 +29,8 @@ export const cachedOf = (hub: string, s: State): Cached => ({
   sends: Object.fromEntries(Object.entries(s.sends).flatMap(([key, rows]) => (rows.length === 0 ? [] : [[key, rows.map(keptSend)]]))),
   me: s.me,
   meName: s.meName,
+  meAvatar: s.meAvatar,
+  meRole: s.meRole,
 });
 
 /**
@@ -41,6 +45,8 @@ export const withCached = (s: State, c: Cached): State => ({
   sends: c.sends,
   me: c.me,
   meName: c.meName,
+  meAvatar: c.meAvatar,
+  meRole: c.meRole,
 });
 
 const record = (v: unknown): Record<string, unknown> | undefined => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
@@ -63,5 +69,7 @@ export const parseCached = (raw: unknown, hub: string): Cached | null => {
     sends: lists<ChatSend>(sends),
     me: typeof o.me === "string" ? o.me : undefined,
     meName: typeof o.meName === "string" ? o.meName : undefined,
+    meAvatar: typeof o.meAvatar === "string" ? o.meAvatar : undefined,
+    meRole: o.meRole === "owner" || o.meRole === "admin" || o.meRole === "member" ? o.meRole : undefined,
   };
 };

@@ -26,6 +26,7 @@ export type {
   ChatMessageEventData,
   CommandApprovalItem,
   FleetStatus,
+  HubRole,
   HubEvent,
   HumanRequest,
   ProjectChatState,
