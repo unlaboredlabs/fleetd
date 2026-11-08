@@ -271,8 +271,8 @@ merge train, reviews, PRs, checks, GitHub App.
 ### Background loops
 
 - [x] hub loop `github_app::sessions::run` → `src/hub/github_app` <!-- loop:hub loop `github_app::sessions::run` -->
-- [ ] hub loop `reviews.start` → `src/hub/reviews` <!-- loop:hub loop `reviews.start` -->
-- [ ] hub loop `train.start` → `src/hub/train` <!-- loop:hub loop `train.start` -->
+- [x] hub loop `reviews.start` → `src/hub/reviews` <!-- loop:hub loop `reviews.start` -->
+- [x] hub loop `train.start` → `src/hub/train` <!-- loop:hub loop `train.start` -->
 
 ## hub-approvals+secrets+updates+cloud
 
@@ -598,12 +598,12 @@ every `fleetd` command.
 - [ ] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
 - [ ] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
 - [ ] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
-- [ ] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
-- [ ] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
+- [x] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
+- [x] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
 - [x] lead call `gated_run` → `src/hub/lead_calls` <!-- lead:lead call `gated_run` -->
 - [ ] lead call `ask_lead` → `src/hub/lead_calls` <!-- lead:lead call `ask_lead` -->
 - [ ] lead call `brief_read` → `src/hub/lead_calls` <!-- lead:lead call `brief_read` -->
-- [ ] lead call `review_read` → `src/hub/lead_calls` <!-- lead:lead call `review_read` -->
+- [x] lead call `review_read` → `src/hub/lead_calls` <!-- lead:lead call `review_read` -->
 - [ ] lead call `wait_ci` → `src/hub/lead_calls` <!-- lead:lead call `wait_ci` -->
 - [x] lead call `remember` → `src/hub/lead_calls` <!-- lead:lead call `remember` -->
 - [x] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
