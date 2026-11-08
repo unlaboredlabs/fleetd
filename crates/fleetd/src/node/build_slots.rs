@@ -10,7 +10,9 @@
 //! running is ever stopped: a build only ever waits before it starts.
 //!
 //! How many slots: node.json's `buildSlots`, else one per [`MEM_PER_BUILD_GB`] of memory left once a quarter of it (4
-//! to 16 GB) is kept back, at least one. `buildSlots: 0` turns the turns off.
+//! to 16 GB) is kept back, at least one. `buildSlots: 0` turns the turns off. A slot is sized for one of the
+//! workspace's biggest rustc at a time; a test build that may compile a lib's tests beside its lib takes two
+//! ([`slots_taken`]), so every slot busy still fits.
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,14 +21,18 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// The hidden subcommand the wrapper runs: `fleetd build-slot <node home> <cargo's arguments>`.
 pub const COMMAND: &str = "build-slot";
 
-/// Memory to allow per agent build when node.json sets no `buildSlots`: two rustc jobs at 2 to 6 GB each.
-pub const MEM_PER_BUILD_GB: u64 = 8;
+/// Memory to allow per build slot when node.json sets no `buildSlots`: the peak of one build of the workspace's
+/// biggest crate, fleetd's lib tests (10.6 GB at most on the devbox), with a little to spare.
+pub const MEM_PER_BUILD_GB: u64 = 11;
 
 /// The cargo commands that wait for a slot: those that compile. `run` builds first ([`build_first`]).
 const HEAVY: &[&str] = &[
     "build", "b", "check", "c", "clippy", "test", "t", "bench", "doc", "d", "rustc", "rustdoc",
     "install", "fix", "nextest", "llvm-cov", "miri",
 ];
+
+/// The commands that build a package's lib tests unless their targets leave them out.
+const TESTS: &[&str] = &["test", "t", "bench", "nextest", "llvm-cov"];
 
 /// Set on a build that holds a slot: a cargo it runs in turn (a test that builds a fixture) runs at once, since
 /// waiting there for a slot of its own could wait forever on its parent's.
@@ -88,6 +94,38 @@ fn command_at(args: &[String]) -> Option<usize> {
 /// Whether cargo's `args` name a [`HEAVY`] command that compiles: not one that only prints ([`compiles_nothing`]).
 pub fn heavy(args: &[String]) -> bool {
     command_at(args).is_some_and(|at| HEAVY.contains(&args[at].as_str())) && !compiles_nothing(args)
+}
+
+/// How many slots a build of cargo's `args` takes: two when it may compile a lib's tests and the lib itself at once,
+/// the two biggest rustc of a package (fleetd's lib tests and lib together peaked at 13.1 GB), else one. A test
+/// command builds both unless its targets are only `--lib` of one package, or leave the lib's tests out (`--test x`,
+/// `--doc`: those wait for the lib, so build after it); a `build` with `--all-targets` or `--tests` builds both too.
+pub fn slots_taken(args: &[String]) -> u64 {
+    let Some(at) = command_at(args) else {
+        return 1;
+    };
+    let (mut lib, mut others, mut both, mut packages) = (false, false, false, 0);
+    for arg in args[at + 1..].iter().take_while(|a| *a != "--") {
+        match arg.split_once('=').map_or(arg.as_str(), |(flag, _)| flag) {
+            "--lib" => lib = true,
+            "-p" | "--package" => packages += 1,
+            "--workspace" | "--all" => packages += 2,
+            "--all-targets" | "--tests" => both = true,
+            "--bin" | "--bins" | "--test" | "--bench" | "--benches" | "--example"
+            | "--examples" | "--doc" => {
+                others = true;
+            }
+            _ => {}
+        }
+    }
+    let command = args[at].as_str();
+    let two = if TESTS.contains(&command) {
+        both || lib == others || (lib && packages > 1)
+    } else {
+        // A check or clippy only type-checks: its lib and lib tests together peaked at 6.3 GB.
+        both && ["build", "b"].contains(&command)
+    };
+    if two { 2 } else { 1 }
 }
 
 /// Flags that make a command print and exit: `cargo nextest --version`, `cargo build --help`.
@@ -208,9 +246,11 @@ pub fn add_to_path(home: &Path, exe: &str, env: &mut Vec<(String, String)>) {
 /// What a worker's standing rules say about build turns.
 pub fn brief_line(slots: u64) -> String {
     format!(
-        "- Cargo builds, tests, checks and clippy runs take turns: {slots} at once on this machine. One past that \
-         prints that it is queued for a build slot and starts by itself once one frees, within the same command: \
-         give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.\n"
+        "- Cargo builds, tests, checks and clippy runs take turns for this machine's {slots} build slots, one each; \
+         a `cargo test` takes two (a lib's tests beside the lib) unless it builds only `--lib` of one package or \
+         only named targets (`--test <name>`), so pick one of those when you can. One with too few free prints that \
+         it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's \
+         longest timeout, since one stopped and started again goes to the back of the queue.\n"
     )
 }
 
@@ -226,9 +266,9 @@ pub fn real_cargo(path: &std::ffi::OsStr, skip: &Path) -> Option<PathBuf> {
         })
 }
 
-/// A slot taken: its lock goes when this drops, or when the process ends however it ends.
+/// The slots taken: their locks go when this drops, or when the process ends however it ends.
 pub struct Slot {
-    _lock: File,
+    _locks: Vec<File>,
 }
 
 /// A place in the queue: a lock on `<dir>/queue/<ticket>`, which sorts by when it was taken. Removed on drop; one
@@ -293,8 +333,9 @@ fn ahead(queue: &Path, mine: &Path) -> std::io::Result<usize> {
     Ok(count)
 }
 
-/// A free one of `slots` slots in `dir`, if any.
-fn free_slot(dir: &Path, slots: u64) -> std::io::Result<Option<Slot>> {
+/// `need` free ones of `slots` slots in `dir` (all of them if it needs more), if there are that many free.
+fn free_slot(dir: &Path, slots: u64, need: u64) -> std::io::Result<Option<Slot>> {
+    let mut locks = Vec::new();
     for i in 0..slots {
         let file = OpenOptions::new()
             .write(true)
@@ -302,19 +343,24 @@ fn free_slot(dir: &Path, slots: u64) -> std::io::Result<Option<Slot>> {
             .truncate(false)
             .open(dir.join(format!("slot-{i}")))?;
         match file.try_lock() {
-            Ok(()) => return Ok(Some(Slot { _lock: file })),
+            Ok(()) => locks.push(file),
             Err(std::fs::TryLockError::WouldBlock) => {}
             Err(std::fs::TryLockError::Error(e)) => return Err(e),
         }
+        if locks.len() as u64 == need.min(slots) {
+            return Ok(Some(Slot { _locks: locks }));
+        }
     }
+    // Too few free: those locked free again as they drop.
     Ok(None)
 }
 
-/// Takes one of `slots` slots in `dir`, after every build queued before this one. While it waits, `queued` hears once
-/// how many are ahead of it.
+/// Takes `need` of `slots` slots in `dir` ([`slots_taken`]), after every build queued before this one. While it
+/// waits, `queued` hears once how many are ahead of it.
 pub fn take(
     dir: &Path,
     slots: u64,
+    need: u64,
     poll: Duration,
     mut queued: impl FnMut(usize),
 ) -> std::io::Result<Slot> {
@@ -325,7 +371,7 @@ pub fn take(
     loop {
         let ahead = ahead(&queue, &mine.path)?;
         if ahead == 0
-            && let Some(slot) = free_slot(dir, slots)?
+            && let Some(slot) = free_slot(dir, slots, need)?
         {
             return Ok(slot);
         }
@@ -375,7 +421,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let Some(slots) = slots else {
         return exec(command, &cargo);
     };
-    let slot = take(&dir(home), slots, POLL, |ahead| {
+    let slot = take(&dir(home), slots, slots_taken(args), POLL, |ahead| {
         eprintln!("{}", queued_line(slots, ahead));
     });
     if let Err(e) = &slot {
@@ -437,13 +483,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let slots = 3;
         let running: Vec<Slot> = (0..slots)
-            .map(|_| take(dir.path(), slots, FAST, |_| panic!("a free slot was there")).unwrap())
+            .map(|_| {
+                take(dir.path(), slots, 1, FAST, |_| {
+                    panic!("a free slot was there")
+                })
+                .unwrap()
+            })
             .collect();
         let (said, heard) = mpsc::channel();
         let (started, start) = mpsc::channel();
         let at = dir.path().to_owned();
         let last = std::thread::spawn(move || {
-            let slot = take(&at, slots, FAST, |ahead| said.send(ahead).unwrap()).unwrap();
+            let slot = take(&at, slots, 1, FAST, |ahead| said.send(ahead).unwrap()).unwrap();
             started.send(()).unwrap();
             slot
         });
@@ -463,21 +514,111 @@ mod tests {
             "said it was queued more than once"
         );
         // Every slot is taken again: a new build waits.
-        assert!(free_slot(dir.path(), slots).unwrap().is_none());
+        assert!(free_slot(dir.path(), slots, 1).unwrap().is_none());
+    }
+
+    /// A build that takes two slots waits until two are free, and holds both: with one left, a one-slot build runs.
+    #[test]
+    fn a_two_slot_build_waits_for_two_and_holds_both() {
+        let dir = tempfile::tempdir().unwrap();
+        let slots = 3;
+        let first = take(dir.path(), slots, 1, FAST, |_| unreachable!()).unwrap();
+        let second = take(dir.path(), slots, 1, FAST, |_| unreachable!()).unwrap();
+        let (said, heard) = mpsc::channel();
+        let (started, start) = mpsc::channel();
+        let at = dir.path().to_owned();
+        let both = std::thread::spawn(move || {
+            let slot = take(&at, slots, 2, FAST, |ahead| said.send(ahead).unwrap()).unwrap();
+            started.send(()).unwrap();
+            slot
+        });
+        assert_eq!(heard.recv_timeout(Duration::from_secs(10)), Ok(0));
+        assert!(
+            start.recv_timeout(Duration::from_millis(200)).is_err(),
+            "ran with one slot free"
+        );
+        drop(first);
+        start
+            .recv_timeout(Duration::from_secs(10))
+            .expect("never ran once two slots were free");
+        let both = both.join().unwrap();
+        assert!(free_slot(dir.path(), slots, 1).unwrap().is_none());
+        // The one left frees with the last one-slot build. Waited for: a child another test forks meanwhile holds
+        // the lock until it execs.
+        drop(second);
+        let one = (0..1000).find_map(|_| {
+            let slot = free_slot(dir.path(), slots, 1).unwrap();
+            if slot.is_none() {
+                std::thread::sleep(FAST);
+            }
+            slot
+        });
+        assert!(one.is_some(), "the slot left never freed");
+        drop(both);
+        // On a one-slot machine it takes the one.
+        let small = tempfile::tempdir().unwrap();
+        take(small.path(), 1, 2, FAST, |_| {
+            panic!("waited for a second slot of one")
+        })
+        .unwrap();
+    }
+
+    /// Two slots for a test build that may compile a lib's tests beside the lib; one for a single kind of target.
+    #[test]
+    fn a_build_of_lib_tests_beside_other_targets_takes_two_slots() {
+        for two in [
+            &["test"][..],
+            &["test", "-p", "fleetd", "slots"],
+            &["t", "--workspace"],
+            &[
+                "test", "--no-run", "-p", "fleetd", "--lib", "--test", "check_sh",
+            ],
+            &["test", "--lib", "--test=check_sh"],
+            &["nextest", "run", "-p", "fleetd", "-E", "test(/^node::/)"],
+            &["+nightly", "llvm-cov", "--", "--lib"],
+            &["test", "--tests"],
+            &["test", "--lib", "--tests"],
+            &["test", "-p", "fleetd", "-p", "fleetd-contracts", "--lib"],
+            &["test", "--workspace", "--lib"],
+            &["build", "--all-targets"],
+        ] {
+            assert_eq!(slots_taken(&args(two)), 2, "{two:?}");
+        }
+        for one in [
+            &["test", "-p", "fleetd", "--lib", "node::build_slots::"][..],
+            &["test", "-p", "fleetd", "--test", "check_sh"],
+            &["test", "--doc"],
+            &["nextest", "run", "--lib"],
+            &["build", "-p", "fleetd", "-p", "docsgen"],
+            &[
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ],
+            &["check", "--tests"],
+            &["check"],
+            &["run", "-p", "docsgen", "--", "--check"],
+            &[],
+        ] {
+            assert_eq!(slots_taken(&args(one)), 1, "{one:?}");
+        }
     }
 
     /// Queued builds go first come first served, and each hears how many are ahead of it.
     #[test]
     fn queued_builds_go_in_turn_and_hear_how_many_are_ahead() {
         let dir = tempfile::tempdir().unwrap();
-        let held = take(dir.path(), 1, FAST, |_| unreachable!()).unwrap();
+        let held = take(dir.path(), 1, 1, FAST, |_| unreachable!()).unwrap();
         let (done, order) = mpsc::channel();
         let mut waiting = Vec::new();
         for who in 0..2 {
             let (said, heard) = mpsc::channel();
             let (at, done) = (dir.path().to_owned(), done.clone());
             waiting.push(std::thread::spawn(move || {
-                let slot = take(&at, 1, FAST, |ahead| said.send(ahead).unwrap()).unwrap();
+                let slot = take(&at, 1, 1, FAST, |ahead| said.send(ahead).unwrap()).unwrap();
                 done.send(who).unwrap();
                 std::thread::sleep(Duration::from_millis(50));
                 drop(slot);
@@ -505,7 +646,7 @@ mod tests {
         std::fs::create_dir_all(&queue).unwrap();
         let dead = queue.join("00000000000000000001-1-0");
         std::fs::write(&dead, "").unwrap();
-        let _slot = take(dir.path(), 1, FAST, |_| panic!("waited on a dead build")).unwrap();
+        let _slot = take(dir.path(), 1, 1, FAST, |_| panic!("waited on a dead build")).unwrap();
         assert!(!dead.exists());
     }
 
@@ -638,15 +779,41 @@ mod tests {
     }
 
     #[test]
-    fn the_default_is_one_slot_per_8_gb_left_after_the_reserve() {
+    fn the_default_is_one_slot_per_11_gb_left_after_the_reserve() {
         const GIB: u64 = 1 << 30;
         // The devbox: 60 GB, 15 kept back, 45 left.
-        assert_eq!(slots_fit(Some(59 * GIB + GIB / 2)), 5);
-        assert_eq!(slots_fit(Some(32 * GIB)), 3);
+        assert_eq!(slots_fit(Some(59 * GIB + GIB / 2)), 4);
+        assert_eq!(slots_fit(Some(32 * GIB)), 2);
         assert_eq!(slots_fit(Some(16 * GIB)), 1);
         assert_eq!(slots_fit(Some(8 * GIB)), 1);
-        assert_eq!(slots_fit(Some(256 * GIB)), 30);
+        assert_eq!(slots_fit(Some(256 * GIB)), 21);
         assert_eq!(slots_fit(None), 2);
+    }
+
+    /// The most rustc memory at once a build used on the devbox (Nov 2026, 2 jobs, line-tables-only debug info), in
+    /// one slot: fleetd's lib tests, the biggest rustc seen there (another agent's build, by its high-water mark). In
+    /// two: check.sh's tests of lib modules and an integration test, fleetd's lib tests beside its lib, as #1117 builds
+    /// them. Each slot busy at its peak still leaves the machine its reserve.
+    const ONE_SLOT_PEAK_GB: f64 = 10.6;
+    const TWO_SLOT_PEAK_GB: f64 = 13.1;
+
+    #[test]
+    fn every_slot_busy_at_its_measured_peak_fits_the_machine() {
+        const GIB: u64 = 1 << 30;
+        let budget = MEM_PER_BUILD_GB as f64;
+        assert!(ONE_SLOT_PEAK_GB <= budget && TWO_SLOT_PEAK_GB <= 2.0 * budget);
+        for total in [16, 24, 32, 48, 60, 64, 96, 128, 256] {
+            let slots = slots_fit(Some(total * GIB));
+            let left = (total - (total / 4).clamp(4, 16)) as f64;
+            assert!(
+                slots as f64 * ONE_SLOT_PEAK_GB <= left,
+                "{total} GB: {slots} slots at {ONE_SLOT_PEAK_GB} GB is over the {left} GB left"
+            );
+        }
+        // The devbox's 59.5 GB: 4 slots, at worst 4 builds at their one-slot peak in the 45 GB left.
+        let devbox = slots_fit(Some(59 * GIB + GIB / 2));
+        assert_eq!(devbox, 4);
+        assert!(devbox as f64 * ONE_SLOT_PEAK_GB <= 45.0);
     }
 
     #[test]

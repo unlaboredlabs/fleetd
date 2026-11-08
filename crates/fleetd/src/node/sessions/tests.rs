@@ -1973,7 +1973,8 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         "{system}"
     );
     assert!(
-        system.contains("take turns: ") && system.contains("queued for a build slot"),
+        system.contains("take turns for this machine's ")
+            && system.contains("queued for a build slot"),
         "{system}"
     );
     assert_eq!(
