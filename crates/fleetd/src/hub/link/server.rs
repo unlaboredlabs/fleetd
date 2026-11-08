@@ -148,7 +148,9 @@ impl NodeLinkServer {
 
     /// Keeps a heartbeat's load, hands its facts to the slot board, and runs the guard and the usage soft brake over
     /// it. `machine.guard` marks each pause and resume, which starts waiting agents again and refreshes the project
-    /// rows; the line's figure updates with every heartbeat.
+    /// rows; the line's figure updates with every heartbeat. `machine.hosts` marks what the node can host when it
+    /// first says it, or says something else: machine.online comes before the first heartbeat, so without it the app
+    /// kept saying the node hadn't said.
     /// `node_at` is the heartbeat's time on the node's clock: the soft brake ages a usage reading by it.
     pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>, node_at: &str) {
         let now = now_ms(self.deps.clock.as_ref());
@@ -162,9 +164,15 @@ impl NodeLinkServer {
                 tracing::warn!(error = %e, "node link: machine facts not applied to the slot board");
             }
         }
-        let (was, why, brake) = {
+        let (was, why, brake, hosts_changed) = {
             let mut state = self.state.lock().unwrap();
             let was = state.paused.get(machine_id).cloned();
+            let hosts_changed = load
+                .as_ref()
+                .and_then(|l| l.hosts.as_ref())
+                .is_some_and(|hosts| {
+                    state.loads.get(machine_id).and_then(|l| l.hosts.as_ref()) != Some(hosts)
+                });
             let why = load
                 .as_ref()
                 .and_then(|l| super::guard::why(l, was.as_ref().is_some_and(|p| p.guard)));
@@ -180,8 +188,17 @@ impl NodeLinkServer {
                 Some(load) => state.loads.insert(machine_id.clone(), load),
                 None => state.loads.remove(machine_id),
             };
-            (was.is_some(), why, brake)
+            (was.is_some(), why, brake, hosts_changed)
         };
+        if hosts_changed {
+            self.append(event(
+                &self.now_iso(),
+                "machine.hosts",
+                machine_id,
+                format!("{machine_id} said what it can host"),
+                None,
+            ));
+        }
         if why.is_none() && brake.is_none() && !was {
             return;
         }

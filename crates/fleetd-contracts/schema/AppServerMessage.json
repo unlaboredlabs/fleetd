@@ -884,6 +884,11 @@
           "type": "string"
         },
         {
+          "const": "machine.hosts",
+          "description": "What the machine's node can host (each screen kind's check) came with its first heartbeat after it linked, or\nchanged since: the views that read machine_roles (Hub › Machines' roles and screens) read it again.",
+          "type": "string"
+        },
+        {
           "const": "machine.guard",
           "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
           "type": "string"

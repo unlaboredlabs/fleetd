@@ -696,6 +696,36 @@ async fn roles_need_an_admin_and_a_known_machine() {
     assert_eq!(devbox["hostsOthers"], true);
 }
 
+/// What a node can host comes with its heartbeats, after machine.online. Its first word and each change are a
+/// machine.hosts event, which the app reads machine_roles again on: without it, Hub › Machines › Screens kept saying a
+/// machine's node hadn't said, its switches greyed out, until the page was opened again.
+#[tokio::test]
+async fn what_a_machine_can_host_is_an_event_when_it_changes() {
+    let (hub, _home) = hub();
+    let hosts_events = || {
+        hub.db
+            .with(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT machine_id FROM events WHERE type = 'machine.hosts' ORDER BY seq",
+                )?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .unwrap()
+    };
+    assert_eq!(hosts_events(), ["devbox", "mac1"], "each node's first word");
+    report_hosts(
+        &hub,
+        "devbox",
+        &[SessionHost::Browser, SessionHost::Desktop],
+    );
+    assert_eq!(hosts_events().len(), 2, "the same again is no event");
+    report_hosts(&hub, "devbox", &[SessionHost::Browser]);
+    assert_eq!(hosts_events(), ["devbox", "mac1", "devbox"]);
+}
+
 fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
     Runner {
         machine_id: mid(m),

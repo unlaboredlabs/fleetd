@@ -2814,6 +2814,7 @@ export type KnownHubEventType =
   | "steer.withdrawn"
   | "machine.slept"
   | "machine.linked"
+  | "machine.hosts"
   | "machine.guard"
   | "machine.recovery_paused"
   | "thread.orphaned"
