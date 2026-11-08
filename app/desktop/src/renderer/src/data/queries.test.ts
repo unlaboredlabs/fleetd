@@ -7,6 +7,7 @@ import type { HubFrame } from "../../../shared/hub";
 const fakeHub = () => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const answers: ((output: unknown) => void)[] = [];
+  const fails: ((code: string) => void)[] = [];
   const calls: string[] = [];
   const inputs: unknown[] = [];
   const resyncs = vi.fn(() => Promise.resolve());
@@ -14,14 +15,17 @@ const fakeHub = () => {
     call: (tool, input) => {
       calls.push(tool);
       inputs.push(input);
-      return new Promise((resolve) => answers.push((output) => resolve({ ok: true, output })));
+      return new Promise((resolve) => {
+        answers.push((output) => resolve({ ok: true, output }));
+        fails.push((code) => resolve({ ok: false, error: { code, message: code } }));
+      });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
     chat: () => Promise.resolve(),
     focus: () => Promise.resolve(),
   };
-  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs };
+  return { hub, send: (f: HubFrame) => listener(f), answers, fails, calls, inputs, resyncs };
 };
 
 const board = { at: "2026-10-19T10:00:00.000Z", orders: [card("W1")], trains: [] };
@@ -88,18 +92,55 @@ describe("data layer", () => {
     stop();
   });
 
-  it("drops every cached answer when the link goes down", async () => {
+  it("keeps every cached answer through a drop, and drops them at a reconnect that couldn't resume", async () => {
     const fake = fakeHub();
     const layer = createDataLayer(fake.hub);
     layer.start();
     fake.send(live());
     fake.send(snapshot(1));
+    const key = ["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }];
     const query = layer.queryClient.query(layer.toolQuery("status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }));
     fake.answers[0]?.({ doc: {} });
     await query;
-    expect(layer.queryClient.getQueryData(["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }])).toBeDefined();
     fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
-    expect(layer.queryClient.getQueryData(["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }])).toBeUndefined();
+    // Shown under the offline banner meanwhile, for a resumed reconnect to keep.
+    expect(layer.queryClient.getQueryData(key)).toEqual({ doc: {} });
+    fake.send(live());
+    fake.send(snapshot(500));
+    expect(layer.queryClient.getQueryData(key)).toBeUndefined();
+  });
+
+  it("keeps what it read through a resumed reconnect: the missed events refetch what they touch, and failed reads go again", async () => {
+    vi.useFakeTimers();
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const boardStop = new QueryObserver(layer.queryClient, layer.toolQuery("orders_board", {})).subscribe(() => undefined);
+    const statusInput = { projectRef: { machineId: "devbox", projectId: "p1" } };
+    const statusStop = new QueryObserver(layer.queryClient, { ...layer.toolQuery("status_get", statusInput), retry: false }).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.calls).toEqual(["orders_board", "status_get"]);
+    fake.answers[0]?.(board);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    // The status read was cut off by the drop.
+    fake.fails[1]?.("disconnected");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.send(live());
+    fake.send({ ...(snapshot(1) as Extract<HubFrame, { t: "snapshot" }>), resumed: true });
+    await vi.advanceTimersByTimeAsync(0);
+    // Nothing that landed goes out again: only the read that failed.
+    expect(fake.calls).toEqual(["orders_board", "status_get", "status_get"]);
+    expect(layer.store.getState().orders?.["W1"]).toBeDefined();
+    expect(layer.store.getState().fresh).toBe(true);
+    // An event the old link missed makes the board stale, as on a live link.
+    fake.send(event(2, "task.completed", { workstreamId: "W1" }));
+    await vi.advanceTimersByTimeAsync(150);
+    expect(fake.calls).toEqual(["orders_board", "status_get", "status_get", "orders_board"]);
+    boardStop();
+    statusStop();
   });
 
   it("coalesces a burst of events into one refetch, and refetches nothing for a repeat", async () => {

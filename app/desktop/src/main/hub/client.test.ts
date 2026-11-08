@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../shared/hub";
-import { HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, READY_TIMEOUT_MS, STABLE_MS } from "./client";
+import { HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, PONG_WAIT_MS, READY_TIMEOUT_MS, RESUME_MAX_EVENTS, STABLE_MS } from "./client";
 import type { ConnectionEvents, Transport } from "./transport";
 
 /** A hub on the other end of a fake transport: records what the client sends, lets the test answer. */
@@ -31,7 +31,7 @@ class FakeHub {
   }
 
   pong(): void {
-    this.events?.onPong();
+    this.events?.onHeard();
   }
 
   frame(frame: Record<string, unknown>): void {
@@ -49,6 +49,9 @@ class FakeHub {
     this.frame({ t: "snapshot", cursor, machines: [] });
   }
 }
+
+/** What every connection opens with: the auth, its opt-ins, and what every hub reads after it. */
+const AUTH = { t: "auth", key: "k1", features: ["deflate"] };
 
 const setup = () => {
   const hub = new FakeHub();
@@ -72,9 +75,10 @@ describe("HubClient", () => {
     client.start();
     expect(hub.urls).toEqual(["ws://devbox:4790/app"]);
     hub.open();
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
+    // The snapshot and the live feed go with the auth, not a round trip after ready.
+    expect(hub.sent).toEqual([AUTH, { t: "snapshot" }, { t: "live", board: true }]);
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent.slice(1)).toEqual([{ t: "snapshot" }, { t: "live", board: true }]);
+    expect(hub.sent).toHaveLength(3);
     hub.frame({ t: "snapshot", cursor: 41, machines: [] });
     expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 41 });
     hub.frame({ t: "event", seq: 42, type: "task.started" });
@@ -83,6 +87,58 @@ describe("HubClient", () => {
       { t: "snapshot", snapshot: { cursor: 41, machines: [] } },
       { t: "event", event: { seq: 42, type: "task.started" } },
     ]);
+  });
+
+  it("resumes a reconnect after the last event the old link applied, when it missed few enough", () => {
+    const { hub, frames, client } = setup();
+    const snapshots = () => frames.flatMap((f) => (f.t === "snapshot" ? [f] : []));
+    client.start();
+    hub.ready(10);
+    hub.frame({ t: "event", seq: 11, type: "x" });
+    hub.close(1006);
+    // A dial that fails before its snapshot keeps the point to resume from.
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready(15);
+    expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 11 });
+    expect(snapshots().at(-1)).toEqual({ t: "snapshot", snapshot: { cursor: 15, machines: [] }, resumed: true });
+    // The missed events come through; a resync on the same link is a plain snapshot again.
+    hub.frame({ t: "event", seq: 12, type: "x" });
+    expect(frames.at(-1)).toEqual({ t: "event", event: { seq: 12, type: "x" } });
+    client.resync();
+    hub.frame({ t: "snapshot", cursor: 16, machines: [] });
+    expect(snapshots().at(-1)).toEqual({ t: "snapshot", snapshot: { cursor: 16, machines: [] } });
+    expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 16 });
+  });
+
+  it("reads everything again after a reconnect that missed too many events, or whose hub went back", () => {
+    const { hub, frames, client } = setup();
+    const last = () => frames.filter((f) => f.t === "snapshot").at(-1);
+    client.start();
+    hub.ready(10);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.ready(11 + RESUME_MAX_EVENTS);
+    expect(last()).toEqual({ t: "snapshot", snapshot: { cursor: 11 + RESUME_MAX_EVENTS, machines: [] } });
+    expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 11 + RESUME_MAX_EVENTS });
+    hub.close(1006);
+    vi.advanceTimersByTime(1000);
+    // A hub whose log is behind the app's cursor (a restored database): nothing to resume from.
+    hub.ready(5);
+    expect(last()).toEqual({ t: "snapshot", snapshot: { cursor: 5, machines: [] } });
+  });
+
+  it("counts the hub's own pings as hearing from it", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(PING_EVERY_MS);
+      hub.pong();
+    }
+    expect(client.state.phase).toBe("live");
   });
 
   it("says the hub's version from each ready frame, so a restarted hub's new version shows", () => {
@@ -162,7 +218,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(1000);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
+    expect(hub.sent).toEqual([AUTH, { t: "snapshot" }, { t: "live", board: true }]);
     expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live"]);
   });
 
@@ -170,7 +226,7 @@ describe("HubClient", () => {
     const { hub, client } = setup();
     client.start();
     const delays: Array<number> = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 7; i++) {
       hub.ready();
       hub.close(1006);
       const state = client.state;
@@ -178,28 +234,37 @@ describe("HubClient", () => {
       delays.push(state.retryAt - Date.now());
       vi.advanceTimersByTime(state.retryAt - Date.now());
     }
-    expect(delays).toEqual([500, 1000, 2000, 4000]);
+    // Capped at 10 s, so a link back after a long outage is found again within that.
+    expect(delays).toEqual([500, 1000, 2000, 4000, 8000, 10_000, 10_000]);
     hub.ready();
-    vi.advanceTimersByTime(STABLE_MS);
-    hub.pong();
+    for (let t = 0; t < STABLE_MS; t += PING_EVERY_MS) {
+      vi.advanceTimersByTime(PING_EVERY_MS);
+      hub.pong();
+    }
     hub.close(1006);
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
   });
 
-  it("pings a quiet link and gives it up when nothing comes back", () => {
+  it("pings the link and gives it up when nothing at all answers a ping", () => {
     const { hub, client } = setup();
     client.start();
     hub.ready();
     vi.advanceTimersByTime(PING_EVERY_MS);
     expect(hub.pings).toBe(1);
+    // Anything heard in time keeps it: bytes of a long frame still arriving count as much as the pong.
+    vi.advanceTimersByTime(PONG_WAIT_MS - 1);
     hub.pong();
-    vi.advanceTimersByTime(PING_EVERY_MS);
+    vi.advanceTimersByTime(PING_EVERY_MS - PONG_WAIT_MS + 1);
     expect(client.state.phase).toBe("live");
     expect(hub.pings).toBe(2);
-    // No pong, no frame since: the next tick is past the deadline.
-    vi.advanceTimersByTime(PING_EVERY_MS);
+    vi.advanceTimersByTime(PONG_WAIT_MS - 1);
+    expect(client.state.phase).toBe("live");
+    // Nothing since the second ping: given up then, not a silence's 30 s later.
+    vi.advanceTimersByTime(1);
     expect(client.state).toMatchObject({ phase: "retrying", reason: expect.stringContaining("stopped answering") as string });
     expect(hub.closedByClient).toBe(1);
+    vi.advanceTimersByTime(500);
+    expect(hub.urls).toHaveLength(2);
   });
 
   it("gives up a connection that never gets ready", () => {
@@ -258,7 +323,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(500);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
+    expect(hub.sent).toEqual([AUTH, { t: "snapshot" }, { t: "live", board: true }]);
   });
 
   it("stops the live feed while no window shows, and asks for it again, focus kept, once one does", () => {
@@ -299,7 +364,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(500);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }, { t: "chat", project }]);
+    expect(hub.sent).toEqual([AUTH, { t: "snapshot" }, { t: "live", board: true }, { t: "chat", project }]);
     client.chat(null);
     expect(hub.sent.at(-1)).toEqual({ t: "chat" });
   });
@@ -312,7 +377,7 @@ describe("HubClient", () => {
     // Not ready yet: dropped, never sent late.
     client.presence({ focused: true, input: true, project });
     hub.open();
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
+    expect(hub.sent.filter((m) => m["t"] === "presence")).toEqual([]);
     // A hub that names no features is never sent presence.
     hub.frame({ t: "ready", protocol: 1 });
     client.presence({ focused: true, input: true, project });

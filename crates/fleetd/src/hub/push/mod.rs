@@ -54,6 +54,9 @@ const SENT_MEMORY: usize = 500;
 /// How long a failure logged stays quiet.
 const WARN_EVERY_MS: i64 = 60 * 60 * 1000;
 const RELAY_TIMEOUT: Duration = Duration::from_secs(15);
+/// The waits before posting a push again that never reached the relay (no connection): a blip on the hub's network,
+/// or the relay restarting, delays the push instead of losing it. One that reached it is never posted twice.
+const RECONNECT: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(3)];
 
 /// A device's id: "pd_" and 8 base32 characters.
 fn new_id() -> PushDeviceId {
@@ -657,13 +660,20 @@ pub async fn post(
     push: &RelayPush,
 ) -> Outcome {
     let url = format!("{}/v1/push", relay.trim_end_matches('/'));
-    let mut request = http.post(&url).json(push);
-    if let Some(key) = key {
-        request = request.bearer_auth(key);
-    }
-    let answer = match request.send().await {
-        Ok(answer) => answer,
-        Err(e) => return Outcome::Failed(format!("the relay can't be reached: {e}")),
+    let mut waits = RECONNECT.iter();
+    let answer = loop {
+        let mut request = http.post(&url).json(push);
+        if let Some(key) = key {
+            request = request.bearer_auth(key);
+        }
+        let e = match request.send().await {
+            Ok(answer) => break answer,
+            Err(e) => e,
+        };
+        match waits.next() {
+            Some(wait) if e.is_connect() => tokio::time::sleep(*wait).await,
+            _ => return Outcome::Failed(format!("the relay can't be reached: {e}")),
+        }
     };
     let status = answer.status();
     match answer.json::<RelayAnswer>().await {

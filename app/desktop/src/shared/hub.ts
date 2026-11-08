@@ -36,7 +36,11 @@ export type ConnectOutcome = { readonly ok: true } | { readonly ok: false; reado
 /** main → renderer, on IPC.hubFrame. After a `state` with phase `live`, a `snapshot` always precedes events. */
 export type HubFrame =
   | { readonly t: "state"; readonly state: HubState }
-  | { readonly t: "snapshot"; readonly snapshot: Snapshot }
+  /**
+   * `resumed`: a reconnect's, with the events the old link missed after it, from the last one this window applied:
+   * what the window read stays, and those events make stale what they touch.
+   */
+  | { readonly t: "snapshot"; readonly snapshot: Snapshot; readonly resumed?: true }
   | { readonly t: "event"; readonly event: HubEvent }
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** Streamed text of the subscribed chat's lead message (see hub.chat). */

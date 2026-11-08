@@ -133,7 +133,7 @@ size. **Open** opens it in your computer's app for that kind, and the download b
 phone, tapping it opens the share sheet (Save to Files, or another app). A file you attached shows as the same card.
 
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
-nothing (the panel's Activity tab shows those). It writes when you must act or decide, when something you asked about
+nothing (the panel's History › [What happened](/docs/desktop-app#activity) shows those). It writes when you must act or decide, when something you asked about
 lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short
 line. A merge partway through your request stays silent; the lead always writes when the request finishes. To change this, edit the **Lead** prompt
 (`lead.start`).
@@ -163,7 +163,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Click it to see each agent in the panel's [Agents](/docs/desktop-app#agents) tab. |
+| The agents strip, above the message box | One row: a dot per agent, how many are working or need you, and what the busiest one is doing now. Click it for a row per agent and the PRs they are on; click an agent to see its work in the panel's [Agents](/docs/desktop-app#agents). |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 | Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image, a file. Click Open on a pull request or an agent to see it in the panel. |
@@ -177,7 +177,7 @@ For a project's work at a glance, see [Status](/docs/status). For where the time
 
 A report too long for a chat message, such as a dependency sweep's findings or a chart of build times, comes as an
 **artifact**: the lead or one of its agents publishes it, the chat shows a small card for it, and the panel's
-**Artifacts** tab, there once the chat has one or a file, lists every one published in it, the newest first. Click a
+**Artifacts** section, there once the chat has one or a file, lists every one published in it, the newest first. Click a
 card or a row to read it; the panel widens while you do. A message can link to one too: the link opens it in the same
 place. Under the reports, **Files** lists every file sent in the chat, yours and the agents': click one to open it, or
 Save.
@@ -206,7 +206,7 @@ Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish
 
 ## Read a pull request {#prs}
 
-The Pull requests tab of the panel beside the chat (⌥⌘B) lists the project's PRs: open ones first, then those merged
+**Pull requests**, under Shipping in the panel beside the chat (⌥⌘B shows the panel), lists the project's PRs: open ones first, then those merged
 or closed, most recent first, each with its checks, its reviews and the agent that wrote it. **Load more** at the end
 reads older ones, back to the repo's first PR. A PR named in the chat
 ("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette

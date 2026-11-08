@@ -247,7 +247,8 @@ export const createChatActions = (
   };
 
   // Every snapshot sends the queued rows; after a real loss (a phase other than live), the cut-off ones too, all
-  // under their own ids. Every snapshot reads the opened chats again (what they hold is the last connection's).
+  // under their own ids. Every snapshot reads the opened chats again (what they hold is the last connection's), but a
+// resumed one, whose chats stay loaded.
   // Gaps and messages too big for their event are read as they show up.
   let lost = false;
   const onState = (prev: DataState, next: DataState) => {
@@ -255,7 +256,8 @@ export const createChatActions = (
     if (next.generation !== prev.generation) {
       // Forget, or another hub paired: nothing held is left, and nothing is read or sent until its snapshot.
       if (!next.fresh) return;
-      for (const key of opened) void readLatest(key);
+      // A resumed reconnect kept the chats loaded: the replayed events bring what they missed.
+      for (const key of opened) if (next.chats[key]?.loaded !== true) void readLatest(key);
       const resend = lost ? toResend : queued;
       lost = false;
       for (const [key, rows] of Object.entries(next.chatSends)) for (const row of resend(rows)) void sendRow(key, row);

@@ -60,8 +60,9 @@ The hub keeps its data in one SQLite file, `~/.fleetd/hub/hub.sqlite`. See [Conf
 
 ## How work flows {#flow}
 
-1. You open a **project** (a git repo on a worker) and write to its **lead** in the chat, such as
-   `fix the typo in the README`.
+1. You open a **project** (a folder on a worker, holding zero or more git repos) and write to its **lead** in the
+   chat, such as `fix the typo in the README`. In a project with no repo the lead does the work itself: steps 3 and 4
+   need a repo.
 2. The lead plans the work: what to build, and what done looks like.
 3. The lead starts **tasks**. Each writer gets its own git worktree and branch, and opens a pull request.
 4. Reviewers check each pull request. The **merge train** merges it once CI passes on the exact commit.

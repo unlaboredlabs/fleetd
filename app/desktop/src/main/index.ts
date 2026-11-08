@@ -3,7 +3,7 @@ import "./debug-guard";
 import { existsSync } from "node:fs";
 import { homedir, release } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, powerMonitor, screen, session, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, net, powerMonitor, screen, session, shell, Tray } from "electron";
 import { asError } from "../shared/scrub";
 import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
@@ -23,6 +23,7 @@ import type { MacSetup } from "./macSetup";
 import { MenuBar, menuTemplate, POPOVER_WIDTH } from "./menuBar";
 import { trayIcon } from "./trayIcon";
 import { Notifier } from "./notify";
+import { watchOnline } from "./online";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
@@ -356,6 +357,7 @@ void app.whenReady().then(() => {
     updater.focused();
   });
   powerMonitor.on("resume", () => hub.systemResumed());
+  const stopOnline = watchOnline(() => net.isOnline(), () => hub.systemResumed());
   const stopPresence = startPresence({
     on: () => presence.on,
     focused: () => BrowserWindow.getFocusedWindow() !== null,
@@ -366,6 +368,7 @@ void app.whenReady().then(() => {
   });
   app.on("will-quit", () => {
     stopPresence();
+    stopOnline();
     hub.stop();
   });
   opener.setHooks({
@@ -374,7 +377,14 @@ void app.whenReady().then(() => {
       if (process.platform === "darwin") app.focus({ steal: true });
     },
   });
-  createWindow(mode);
+  // The hubs dial once the window shows (or after 3 s, should it never say so): the page and its cached data paint
+  // first, and the connection's start (the OS's CAs, the sockets) is off the way to the window.
+  const first = createWindow(mode);
+  const dial = setTimeout(() => hub.start(), 3_000);
+  first.once("ready-to-show", () => {
+    clearTimeout(dial);
+    hub.start();
+  });
   updater.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);

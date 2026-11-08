@@ -11,15 +11,30 @@ A key that lets an MCP client or script call the hub, with a role (`read`, `oper
 `fld_` and is shown once, or written to a file only you can read. What it writes in a chat shows as that agent's,
 never yours. See [MCP clients](/docs/mcp-clients).
 
+## Agents' Mac {#agents-mac}
+
+A Mac that lends iOS simulators, Xcode builds and its own screen to agents on your other machines, through the hub. It
+runs no agents itself. See [The agents' Mac](/docs/agents-mac).
+
 ## Agents strip {#agents-strip}
 
-The compact line under the lead's message in a chat: how many agents are working, one line each. It expands to their
-lanes and time.
+The slim row above a chat's message box while agents work: a dot per agent, how many are working or need you, and
+what the busiest one is doing. It opens to a row per agent.
 
 ## Approval {#approval}
 
 An item in the chat that shows a [gated command](#gated-command) with Approve and Deny. See
 [Secrets & approvals](/docs/approvals-and-secrets#approve).
+
+## Artifact {#artifact}
+
+A report too long for a chat message, in Markdown or HTML, that the lead or an agent publishes in a project's chat.
+Each new version under the same name is kept. See [Reports in Artifacts](/docs/chat#artifacts).
+
+## Automation {#automation}
+
+A prompt kept for a project with what starts it: a schedule, a one-time date, a webhook or Run now. Each run opens an
+[order](#workstream) for the lead. See [Automations](/docs/automations).
 
 ## Brief {#brief}
 
@@ -29,6 +44,16 @@ The plan a lead writes for a piece of work before it starts: what to build, and 
 
 The one ongoing conversation with a project's lead. You give work and answer the lead there. See
 [Chat with the lead](/docs/chat).
+
+## Checklist {#checklist}
+
+The lead's to-do list for a project: a few items per piece of work, each to do, doing or done. You see it in the
+panel's Plan tab. See [The checklist](/docs/what-agents-are-told#checklist).
+
+## Cloud machine {#cloud-machine}
+
+A worker the hub starts on your own boat.dev account when your machines are full, and stops when idle. Only projects
+an admin opts in run there. See [Cloud machines](/docs/cloud-machines).
 
 ## Critical path {#critical-path}
 
@@ -54,6 +79,11 @@ it in the chat. See [Secrets & approvals](/docs/approvals-and-secrets).
 
 The coordinator of a fleet. It runs on one always-on machine and stores all state. See [Concepts](/docs/concepts).
 
+## Hub link {#hub-link}
+
+A key that lets a project on one hub ask for work in projects on another hub, acting as you. See
+[Hub links](/docs/projects#hub-links).
+
 ## Human key {#human-key}
 
 A key that belongs to a person's device, such as the desktop app. Only a human key writes to a lead as you, approves
@@ -68,7 +98,7 @@ A [pairing code](#pairing-code) bound to a new person, or to another device of s
 ## Lead {#lead}
 
 The long-running Claude session that plans a project's work and runs its agents. Each project has one, and one chat
-with you. It never writes code.
+with you. With repos it never writes code: its writers do. With none, it does the work itself.
 
 ## Max agents {#max-agents}
 
@@ -80,10 +110,11 @@ The cap on how many agents run at once, per project and across the fleet. Agents
 The queue that merges a repo's pull requests after CI passes on the exact commit, in batches when several are ready.
 Only the train merges. See [Merge train](/docs/merge-train).
 
-## Needs-you dot {#needs-you}
+## Needs-you word {#needs-you}
 
-The dot on a project in the sidebar: the lead's last message waits for your reply, or a secret or approval item is
-open.
+The word on a project in the sidebar when it wants you: "reply" while the lead's last message waits for your answer,
+"secret" or "approve" while such an item is open, "blocked" when something outside the work holds it up. A dot there
+means only a new message from the lead.
 
 ## Node {#node}
 
@@ -93,6 +124,11 @@ The fleetd process on a worker. It connects out to the hub and starts the Claude
 
 A project's switch that keeps it to its owner: only they see it and use it, admins included. On by default for a
 project with no repo. See [Only me](/docs/projects#only-me).
+
+## Order {#order}
+
+One piece of work you asked a lead for, with an id such as `W41`. The lead opens and closes it; you never file one.
+The tools call it a [workstream](#workstream).
 
 ## Pairing code {#pairing-code}
 
@@ -139,6 +175,11 @@ An item in the chat with a masked field. The value is sealed to one machine and 
 
 One `claude` process doing one job, such as a lead, a writer or a reviewer.
 
+## Skill {#skill}
+
+A `SKILL.md` workflow an agent follows when it fits: from the repo, installed, or saved by a project's lead as it
+learns. See [Skills](/docs/skills).
+
 ## Slot {#slot}
 
 Room for one running agent. The hub caps how many agents run at once, per project and fleet-wide.
@@ -147,6 +188,11 @@ Room for one running agent. The hub caps how many agents run at once, per projec
 
 A message to an agent that is already working, such as "skip the docs page". In a chat, typing while the lead works
 steers it. See [Steering](/docs/steering).
+
+## Task profile {#task-profile}
+
+A named model, reasoning level and fast mode that agents run on. The hub keeps them and picks the default and the
+one leads start on; each project allows some for its agents. See [Models and cost](/docs/projects#models).
 
 ## Task {#task}
 
@@ -162,8 +208,10 @@ A machine that runs agents: any machine with a node. See [Machines](/docs/machin
 
 ## Workstream {#workstream}
 
-fleetd's record of one piece of the lead's work, with an id such as `W41`. The lead keeps them; you never file one.
-Each is open until the lead closes it as done, or it is stopped.
+fleetd's record of an [order](#order), with an id such as `W41`, as the tools and the CLI name it
+(`workstreamId`, `fleetd time W41`). The lead keeps them; you never file one. Each is open until the lead closes it as
+done, or it is stopped. Its agents show under it
+in the panel's Agents.
 
 ## Writer {#writer}
 

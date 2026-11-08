@@ -30,6 +30,13 @@ const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 /// How long a closing frame may take: a socket too far behind may never take it.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// "Invalid frame payload data": a compressed frame that doesn't inflate; the stream can't go on without it.
+const CLOSE_BAD_DATA: u16 = 1007;
+/// The most one compressed frame from the app may inflate to: the socket's own message cap.
+const MAX_INFLATED: usize = 64 << 20;
+/// After this long without a frame to the app, the hub pings it: the event long-poll is silent when nothing happens,
+/// and a cellular or hotel NAT forgets an idle flow in as little as 30 s. The phone can't ping, but answers pongs.
+pub const KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(25);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -155,6 +162,8 @@ struct Session {
     input_refused: Option<String>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
+    /// The client's `auth` asked for compressed frames (`APP_DEFLATE`): they start after its `ready`.
+    deflate: bool,
 }
 
 /// What to do with the socket after a frame.
@@ -180,10 +189,14 @@ impl Session {
             self.send(error_frame(&malformed, id.as_deref()));
             return After::Continue;
         };
-        if let AppClientMessage::Auth { key } = &message {
+        if let AppClientMessage::Auth { key, features } = &message {
             return match self.hub.auth.verify(key.as_str()) {
                 Ok(info) => {
                     self.caller = Some((key.as_str().to_owned(), info));
+                    self.deflate |= features
+                        .iter()
+                        .flatten()
+                        .any(|f| f.as_str() == fleetd_contracts::app::APP_DEFLATE);
                     self.send(json!({
                         "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version(),
                         "features": fleetd_contracts::app::APP_FEATURES,
@@ -438,29 +451,40 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         input_refused: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
+        deflate: false,
     };
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
     let behind = frames.behind();
+    let mut keepalive =
+        tokio::time::interval_at(tokio::time::Instant::now() + KEEPALIVE, KEEPALIVE);
+    // Each direction's compression stream, from the `ready` of an `auth` that asked for it to the socket's end.
+    let mut wire = Wire::default();
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
             () = behind.wait() => break Some(too_far_behind(&behind)),
+            _ = keepalive.tick() => {
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    break stopped(&behind);
+                }
+                continue;
+            }
             Some(frame) = frames.recv() => {
-                if !send(&mut socket, &behind, frame).await {
+                if !wire.send(&mut socket, &behind, frame).await {
                     break stopped(&behind);
                 }
             }
             () = live_slot.notify.notified() => {
                 if let Some(frame) = live_slot.take()
-                    && !send(&mut socket, &behind, frame).await
+                    && !wire.send(&mut socket, &behind, frame).await
                 {
                     break stopped(&behind);
                 }
             }
             () = browser_slot.notify.notified() => {
                 if let Some(frame) = browser_slot.take()
-                    && !send(&mut socket, &behind, frame).await
+                    && !wire.send(&mut socket, &behind, frame).await
                 {
                     break stopped(&behind);
                 }
@@ -468,8 +492,20 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
             incoming = socket.recv() => {
                 let text = match incoming {
                     Some(Ok(Message::Text(text))) => text.to_string(),
-                    Some(Ok(Message::Binary(bytes))) => String::from_utf8_lossy(&bytes).into_owned(),
-                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+                    Some(Ok(Message::Binary(bytes))) => match wire.inflater.as_mut() {
+                        Some(inflater) => match inflater.inflate(&bytes, MAX_INFLATED) {
+                            Ok(text) => text,
+                            Err(e) => {
+                                tracing::warn!(error = %e, "an app connection sent a frame that does not inflate");
+                                break Some((CLOSE_BAD_DATA, "a compressed frame does not inflate"));
+                            }
+                        },
+                        None => String::from_utf8_lossy(&bytes).into_owned(),
+                    },
+                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => {
+                        keepalive.reset();
+                        continue;
+                    }
                     Some(Ok(Message::Close(_))) => {
                         // Complete the closing handshake so the client sees its own code, not 1006.
                         let _ = socket.send(Message::Close(None)).await;
@@ -480,14 +516,25 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 if let After::Close(code, reason) = session.on_text(&text).await {
                     // Flush what this frame produced (the refusal) before closing.
                     while let Some(frame) = frames.try_recv() {
-                        if !send(&mut socket, &behind, frame).await {
+                        if !wire.send(&mut socket, &behind, frame).await {
                             break;
                         }
                     }
                     break Some((code, reason));
                 }
+                if session.deflate && wire.deflater.is_none() {
+                    // What the auth queued (its `ready`, refusals before it) goes as Text; everything after may not.
+                    while let Some(frame) = frames.try_recv() {
+                        if !wire.send(&mut socket, &behind, frame).await {
+                            break;
+                        }
+                    }
+                    wire.start();
+                }
             }
         }
+        // Traffic either way keeps the flow alive: the ping is only for a silent link.
+        keepalive.reset();
     };
     if let Some(stream) = session.stream.take() {
         stream.abort();
@@ -514,12 +561,32 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     }
 }
 
-/// Sends one frame. False when the socket failed, or the connection fell too far behind while the frame was going
-/// out (a client that stopped reading never takes it).
-async fn send(socket: &mut WebSocket, behind: &Behind, text: String) -> bool {
-    tokio::select! {
-        sent = socket.send(Message::Text(text.into())) => sent.is_ok(),
-        () = behind.wait() => false,
+/// One connection's compression ([`fleetd_contracts::app::APP_DEFLATE`]): off until [`Wire::start`].
+#[derive(Default)]
+struct Wire {
+    deflater: Option<crate::link_deflate::Deflater>,
+    inflater: Option<crate::link_deflate::Inflater>,
+}
+
+impl Wire {
+    fn start(&mut self) {
+        self.deflater = Some(Default::default());
+        self.inflater = Some(Default::default());
+    }
+
+    /// Sends one frame, compressed once started and worth it. False when the socket failed, or the connection fell
+    /// too far behind while the frame was going out (a client that stopped reading never takes it).
+    async fn send(&mut self, socket: &mut WebSocket, behind: &Behind, text: String) -> bool {
+        let message = match self.deflater.as_mut() {
+            Some(deflater) if text.len() >= crate::link_deflate::MIN_DEFLATE_BYTES => {
+                Message::Binary(deflater.deflate(&text).into())
+            }
+            _ => Message::Text(text.into()),
+        };
+        tokio::select! {
+            sent = socket.send(message) => sent.is_ok(),
+            () = behind.wait() => false,
+        }
     }
 }
 

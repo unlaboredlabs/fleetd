@@ -52,6 +52,8 @@ export class HubService {
   #watching: string | null = null;
   /** The windows showing the Screens page: the hub sends its pictures while one does. */
   readonly #thumbs = new Set<WebContents>();
+  /** Dialling is held until `start`: the app connects once its window shows, not on the way to it. */
+  #started = false;
 
   constructor(mode: HubMode) {
     this.id = mode.id;
@@ -65,6 +67,13 @@ export class HubService {
     const { loaded } = mode;
     if (loaded.note !== undefined) this.#unpaired = { phase: "unpaired", note: loaded.note };
     if (loaded.saved !== null) this.#use(loaded.saved.url, loaded.saved.key);
+  }
+
+  /** Dials the hub, and from now on any it pairs with. */
+  start(): void {
+    if (this.#started) return;
+    this.#started = true;
+    this.#source?.start();
   }
 
   /** The address it is paired with, or null. */
@@ -232,7 +241,7 @@ export class HubService {
     client.shown(this.#shown);
     client.watch(this.#watching);
     client.thumbs(this.#thumbs.size > 0);
-    client.start();
+    if (this.#started) client.start();
   }
 
   #broadcast(frame: HubFrame): void {

@@ -142,8 +142,8 @@ the node's directory), with what it installed there first on their `PATH`; its a
 project has no repo does its own work and keeps `Edit`, `Write`, `WebFetch` and `WebSearch`; a lead with repos leaves
 those to its agents. Which one it is gets read at each lead start, so adding a repo changes it.
 
-A machine whose node is older starts leads the old way, an Only me project's in a sandbox. Its projects take no
-integration until that machine runs `fleetd update`.
+A machine whose node is older starts leads the old way: an Only me project's in a sandbox, any other's with full
+access. Those other projects take no integration until that machine runs `fleetd update`.
 
 ## The agents' Mac's screen {#mac-screen}
 
@@ -164,7 +164,7 @@ own](/docs/agents-mac#own-user), which keeps agents out of your files and logins
 
 | Rule | Detail |
 |---|---|
-| The boat.dev key stays on the hub | Sealed in the app to the hub's own key, scoped to fleetd's boat.dev environment, with no `exec`, `file` or `snapshot` actions; its `ssh` action only lets the hub's own SSH key in. No cloud machine or agent gets it. |
+| The boat.dev key stays on the hub | Sealed in the app to the hub's own key. The [setup step](/docs/cloud-machines) has you make it scoped to fleetd's boat.dev environment, with no `exec`, `file` or `snapshot` actions; the hub doesn't check a key's actions, so make it as the step says. Its `ssh` action only lets the hub's own SSH key in. No cloud machine or agent gets it. |
 | The hub stays private | The hub dials each machine it wakes over SSH, pins the host key boat.dev names, and holds one reverse forward its node reaches the hub through. The hub needs no public address, and boat.dev learns none of your network's. |
 | The hub never runs commands there | The tunnel asks for no shell or command, and refuses every channel but its own forward. The hub's SSH key is made by the hub, sealed to its box key, and never leaves it. |
 | boat.dev can see what runs there | As any host can, including the disk it keeps while a machine sleeps. Only projects an admin opts in run there; Reset deletes a machine with its disk and keys. |
@@ -193,7 +193,8 @@ hub into a team hub. You make it on the hub it reaches and add it to the project
 
 - **Installs are checksummed.** The installer and `fleetd update` refuse any file whose SHA-256 doesn't match the
   release's `SHA256SUMS`.
-- **`fleetd machine add` copies the hub's own binary** to a worker over SSH.
+- **`fleetd machine add` copies the hub's own binary** to a worker over SSH; for another OS or CPU, the same
+  version's release build, checked against its `SHA256SUMS`.
 - **Models only through the `claude` CLI**, with the machine user's own claude setup. fleetd never calls a model or
   usage API itself.
 

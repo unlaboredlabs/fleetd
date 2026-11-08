@@ -95,8 +95,8 @@ vercel-labs/agent-skills@web-design-guidelines for this project"). It installs i
 or other remote sources, and says so in its chat.
 
 Every change to a project or global skill's `SKILL.md` is kept as a version: who made it, when and why. A
-project's lead also [saves skills of its own](/docs/projects#skills), and its Skills show each version with a diff and
-Restore.
+project's lead also [saves skills of its own](/docs/projects#skills): **History, restore or turn off** on one opens it
+in the panel beside the chat, with each version, a diff against the one before, and Restore.
 
 ## Name a skill in the chat {#chat}
 

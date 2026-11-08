@@ -24,7 +24,7 @@ use fleetd_contracts::prim::NonEmpty;
 use super::jobs::Jobs;
 use super::{
     Answer, Done, Envelope, MacToolConfig, PIECE, PULL_MAX, PUSH_MAX, SKEW_MS, Step, now_ms,
-    safe_part, seal_answer,
+    safe_part, seal_answer, split_raw,
 };
 use crate::node::identity::NodeBoxKey;
 
@@ -323,8 +323,8 @@ impl Host {
             sealed: None,
             error: Some(error),
         };
-        let envelope = match self.open(&frame.caller, frame.sealed.as_str()) {
-            Ok(envelope) => envelope,
+        let (envelope, raw) = match self.open(&frame.caller, frame.sealed.as_str()) {
+            Ok(opened) => opened,
             Err(error) => return refused(error),
         };
         let Some(answer_key) = B64
@@ -335,25 +335,38 @@ impl Host {
             return refused(refuse("the step's answer key is not 32 bytes"));
         };
         let answer_key = zeroize::Zeroizing::new(answer_key);
-        let answer = match self.agent(&frame.caller) {
-            Ok(agent) => match self.touch(&agent).step(&agent, envelope.step).await {
-                Ok(done) => Answer {
-                    done: Some(done),
-                    error: None,
-                },
-                Err(error) => Answer {
+        let (answer, raw) = match self.agent(&frame.caller) {
+            Ok(agent) => match self
+                .touch(&agent)
+                .step_with(&agent, envelope.step, raw)
+                .await
+            {
+                Ok((done, raw)) => (
+                    Answer {
+                        done: Some(done),
+                        error: None,
+                    },
+                    raw,
+                ),
+                Err(error) => (
+                    Answer {
+                        done: None,
+                        error: Some(error),
+                    },
+                    Vec::new(),
+                ),
+            },
+            Err(error) => (
+                Answer {
                     done: None,
                     error: Some(error),
                 },
-            },
-            Err(error) => Answer {
-                done: None,
-                error: Some(error),
-            },
+                Vec::new(),
+            ),
         };
         MacResultFrame {
             id,
-            sealed: Some(NonEmpty::unchecked(seal_answer(&answer_key, &answer))),
+            sealed: Some(NonEmpty::unchecked(seal_answer(&answer_key, &answer, &raw))),
             error: None,
         }
     }
@@ -366,15 +379,17 @@ impl Host {
         self
     }
 
-    /// The step inside, if it was sealed to this Mac for the session the hub names, lately, and never before.
-    fn open(&self, caller: &MacCaller, sealed: &str) -> Result<Envelope, McpToolError> {
+    /// The step inside and the raw bytes after it, if it was sealed to this Mac for the session the hub names, lately,
+    /// and never before.
+    fn open(&self, caller: &MacCaller, sealed: &str) -> Result<(Envelope, Vec<u8>), McpToolError> {
         let plain = B64
             .decode(sealed)
             .ok()
             .and_then(|b| self.key.open(&b))
             .ok_or_else(|| refuse("the step was not sealed to this Mac's key"))?;
-        let envelope: Envelope = serde_json::from_slice(&plain)
+        let (envelope, raw) = split_raw::<Envelope>(&plain)
             .map_err(|e| refuse(format!("the step doesn't read: {e}")))?;
+        let raw = raw.to_vec();
         if envelope.thread != caller.thread_id.as_str() {
             return Err(refuse("the step was sealed for another agent's session"));
         }
@@ -390,7 +405,7 @@ impl Host {
         if seen.insert(envelope.nonce.clone(), now).is_some() {
             return Err(refuse("the step came a second time"));
         }
-        Ok(envelope)
+        Ok((envelope, raw))
     }
 
     /// The caller's folder, made with its `bin/` the first time: by task, else by session.
@@ -422,13 +437,28 @@ impl Host {
         self.root.join(".mirrors").join(format!("{project}.git"))
     }
 
+    /// [`Self::step_with`] with nothing after the step, and none of the answer's raw bytes.
     pub async fn step(&self, agent: &Agent, step: Step) -> Result<Done, McpToolError> {
-        match step {
+        self.step_with(agent, step, Vec::new())
+            .await
+            .map(|(done, _)| done)
+    }
+
+    /// The step, with the raw bytes that came after it (a `put`'s piece); the answer, with those that go after it (a
+    /// raw `get`'s piece).
+    pub async fn step_with(
+        &self,
+        agent: &Agent,
+        step: Step,
+        raw: Vec<u8>,
+    ) -> Result<(Done, Vec<u8>), McpToolError> {
+        let done = match step {
             Step::Have => {
                 let (mirror, name) = (self.mirror(&agent.project), agent.name.clone());
-                Ok(Done::Have {
+                Done::Have {
                     snapshots: blocking(move || Ok(haves(&mirror, &name))).await?,
-                })
+                    raw: true,
+                }
             }
             Step::Put {
                 name,
@@ -438,7 +468,13 @@ impl Host {
                 let path = agent.dir.join("in").join(
                     safe_part(&name).ok_or_else(|| refuse(format!("{name} can't name a file")))?,
                 );
-                blocking(move || put(&path, offset, &data_b64)).await
+                let data = if data_b64.is_empty() {
+                    raw
+                } else {
+                    B64.decode(data_b64)
+                        .map_err(|_| refuse("the piece is not base64"))?
+                };
+                blocking(move || put(&path, offset, &data)).await?
             }
             Step::Checkout { snapshot, pack } => {
                 let mirror = self.mirror(&agent.project);
@@ -452,7 +488,8 @@ impl Host {
                     None => None,
                 };
                 let (repo, name) = (agent.repo(), agent.name.clone());
-                blocking(move || checkout(&mirror, &repo, &name, &snapshot, pack.as_deref())).await
+                blocking(move || checkout(&mirror, &repo, &name, &snapshot, pack.as_deref()))
+                    .await?
             }
             Step::Run {
                 args,
@@ -462,26 +499,27 @@ impl Host {
                 let device = self.sim_env(&agent.name);
                 self.jobs
                     .start(agent, &args, &env, background, device)
-                    .await
+                    .await?
             }
-            Step::Logs { job, offset } => self.jobs.logs(&agent.name, job, offset).await,
-            Step::Ps => Ok(Done::Ps {
+            Step::Logs { job, offset } => self.jobs.logs(&agent.name, job, offset).await?,
+            Step::Ps => Done::Ps {
                 jobs: self.jobs.list(&agent.name),
-            }),
-            Step::Kill { job } => Ok(Done::Kill {
+            },
+            Step::Kill { job } => Done::Kill {
                 job,
                 killed: self.jobs.kill(&agent.name, job),
-            }),
-            Step::Get { path, offset } => {
+            },
+            Step::Get { path, offset, raw } => {
                 let dir = agent.dir.clone();
                 let repo = agent.repo();
-                blocking(move || get(&dir, &repo, &path, offset)).await
+                return blocking(move || get(&dir, &repo, &path, offset, raw)).await;
             }
-            Step::SimStart { device } => self.sim_start(agent, device.as_deref()).await,
-            Step::SimEnd => Ok(Done::SimEnd {
+            Step::SimStart { device } => self.sim_start(agent, device.as_deref()).await?,
+            Step::SimEnd => Done::SimEnd {
                 ended: self.sim_end(&agent.name),
-            }),
-        }
+            },
+        };
+        Ok((done, Vec::new()))
     }
 }
 
@@ -575,11 +613,9 @@ pub fn haves(mirror: &Path, agent: &str) -> Vec<String> {
     out
 }
 
-/// One piece of a file the next step reads: the first starts it again, each other follows the last.
-fn put(path: &Path, offset: u64, data_b64: &str) -> Result<Done, McpToolError> {
-    let data = B64
-        .decode(data_b64)
-        .map_err(|_| refuse("the piece is not base64"))?;
+/// One piece of a file the next step reads: the first starts it again, each other follows the last. One sent again
+/// (its answer was lost on the way) writes over what it wrote before, and what came after goes.
+fn put(path: &Path, offset: u64, data: &[u8]) -> Result<Done, McpToolError> {
     if data.len() > PIECE || offset + data.len() as u64 > PUSH_MAX {
         return Err(refuse("the push is larger than the Mac takes"));
     }
@@ -590,13 +626,14 @@ fn put(path: &Path, offset: u64, data_b64: &str) -> Result<Done, McpToolError> {
         .open(path)
         .map_err(|e| failed("the piece was not written", e))?;
     let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-    if size != offset {
+    if size < offset {
         return Err(refuse(format!(
             "the piece starts at {offset}, and the Mac has {size} bytes of it"
         )));
     }
-    file.seek(std::io::SeekFrom::Start(offset))
-        .and_then(|_| file.write_all(&data))
+    file.set_len(offset)
+        .and_then(|_| file.seek(std::io::SeekFrom::Start(offset)))
+        .and_then(|_| file.write_all(data))
         .map_err(|e| failed("the piece was not written", e))?;
     Ok(Done::Put {
         bytes: offset + data.len() as u64,
@@ -623,7 +660,11 @@ pub fn checkout(
         std::fs::create_dir_all(mirror).map_err(|e| failed("the mirror was not made", e))?;
         git(mirror, &["init", "--quiet", "--bare"])?;
     }
-    if let Some(pack) = pack {
+    let commit = format!("{snapshot}^{{commit}}");
+    // A checkout sent again after its answer was lost: its pack went into the mirror already.
+    let indexed =
+        |pack: &&Path| !pack.exists() && git(mirror, &["cat-file", "-e", &commit]).is_ok();
+    if let Some(pack) = pack.filter(|p| !indexed(p)) {
         let file =
             std::fs::File::open(pack).map_err(|e| failed("the push's pack is missing", e))?;
         let out = std::process::Command::new("git")
@@ -642,7 +683,6 @@ pub fn checkout(
             .with_fix("run mac push again"));
         }
     }
-    let commit = format!("{snapshot}^{{commit}}");
     git(mirror, &["cat-file", "-e", &commit])
         .map_err(|_| refuse("the Mac doesn't have that snapshot").with_fix("run mac push again"))?;
     git(
@@ -698,8 +738,15 @@ pub fn inside(dir: &Path, repo: &Path, path: &str) -> Result<PathBuf, McpToolErr
     Ok(real)
 }
 
-/// One piece of a file in the agent's folder, or of a folder packed as a tar.gz (the first piece packs it).
-pub fn get(dir: &Path, repo: &Path, path: &str, offset: u64) -> Result<Done, McpToolError> {
+/// One piece of a file in the agent's folder, or of a folder packed as a tar.gz (the first piece packs it): `raw`, as
+/// the bytes after the answer, else in its `data_b64`.
+pub fn get(
+    dir: &Path,
+    repo: &Path,
+    path: &str,
+    offset: u64,
+    raw: bool,
+) -> Result<(Done, Vec<u8>), McpToolError> {
     let real = inside(dir, repo, path)?;
     let folder = real.is_dir();
     let source = if folder {
@@ -751,11 +798,20 @@ pub fn get(dir: &Path, repo: &Path, path: &str, offset: u64) -> Result<Done, Mcp
     if folder && offset + data.len() as u64 >= total {
         let _ = std::fs::remove_file(&source);
     }
-    Ok(Done::Get {
+    if raw {
+        let done = Done::Get {
+            data_b64: String::new(),
+            total,
+            folder,
+        };
+        return Ok((done, data));
+    }
+    let done = Done::Get {
         data_b64: B64.encode(&data),
         total,
         folder,
-    })
+    };
+    Ok((done, Vec::new()))
 }
 
 /// Removes the agents' folders nothing touched for `days`, with their snapshots in the mirrors.

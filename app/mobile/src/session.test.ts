@@ -341,6 +341,53 @@ describe("Session", () => {
     expect(session.state.requests?.map((r) => r.requestId)).toEqual(["r1"]);
   });
 
+  it("back from a drop that missed a few events, the open chat goes on with them rather than read again", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two emails need you.")]));
+    await flush();
+    hub.link.frame({ t: "event", seq: 3, type: "x", at: AT });
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    const pages = () => hub.sentOf("call").filter((c) => c.tool === "chat_history" && (c.input as { limit: number }).limit === 50);
+    hub.link.frame({ ...snapshot, cursor: 5, chats: [{ ...snapshot.chats[0], lastSeq: 3, leadWorking: false }] });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 3 }]);
+    expect(pages()).toHaveLength(0);
+    // What it missed: its lead started and finished a turn, and wrote.
+    hub.link.frame({ t: "event", seq: 4, type: "chat.waiting", at: AT, data: { ...snapshot.chats[0], lastSeq: 2, leadWorking: true } });
+    hub.link.frame({ t: "event", seq: 5, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
+    expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Morning.", "Two emails need you.", "Sent both."]);
+    expect(session.state.chats[KEY]?.cached).toBe(false);
+    // The snapshot is newer than what the chat waited for back then.
+    expect(session.state.chatStates[KEY]?.leadWorking).toBe(false);
+    // Too many missed: everything is read again. (The second retry in a row waits up to 1.25 s.)
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1250);
+    hub.ready();
+    hub.link.frame({ ...snapshot, cursor: 500 });
+    expect(hub.sentOf("events")).toEqual([{ t: "events", cursor: 500 }]);
+    expect(pages()).toHaveLength(1);
+  });
+
+  it("checks a live link when the network changes, and dials at once one that waits out its backoff", () => {
+    const { hub, session } = setup();
+    vi.advanceTimersByTime(1000);
+    session.networkChanged();
+    expect(hub.sentOf("call").filter((c) => c.tool === "hub_info")).toHaveLength(2);
+    // Nothing back: the link was on the network left behind.
+    vi.advanceTimersByTime(2500);
+    expect(hub.links).toHaveLength(2);
+    hub.link.close(1006);
+    expect(session.state.hub.phase).toBe("retrying");
+    session.networkChanged();
+    expect(hub.links).toHaveLength(3);
+    // Still dialling on the old network: again, on the new one.
+    session.networkChanged();
+    expect(hub.links).toHaveLength(4);
+    expect(hub.links[2]?.closed).toBe(true);
+  });
+
   it("refreshes with a fresh snapshot while live", () => {
     const { hub, session } = setup();
     const before = hub.sentOf("snapshot").length;

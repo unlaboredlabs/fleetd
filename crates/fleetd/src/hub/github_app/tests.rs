@@ -48,6 +48,8 @@ struct Fake {
     down: bool,
     /// Grants revoked.
     revoked: usize,
+    /// The connections calls came over, by the hub's end of each.
+    connections: std::collections::HashSet<std::net::SocketAddr>,
 }
 
 #[derive(Clone)]
@@ -249,10 +251,21 @@ async fn fake_github(clock: Arc<ManualClock>) -> (Endpoints, Arc<Mutex<Fake>>) {
             "/applications/{client}/grant",
             axum::routing::delete(revoke),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            fake.clone(),
+            |State(fake): State<Arc<Mutex<Fake>>>,
+             axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+             request: axum::extract::Request,
+             next: axum::middleware::Next| async move {
+                fake.lock().unwrap().connections.insert(peer);
+                next.run(request).await
+            },
+        ))
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, service).await.unwrap() });
     let ep = Endpoints {
         api: base.clone(),
         web: base,
@@ -580,6 +593,9 @@ async fn test_reads_where_it_is_installed_with_a_token_for_each() {
     assert_eq!(app["installations"][1]["repositories"], json!([]));
     assert_eq!(lab.fake.lock().unwrap().bad_jwts, 0);
     assert!(!out.to_string().contains("ghs_"), "a token returned");
+    // The manifest's trade, the installations, each one's token and repositories: all over one kept connection, not
+    // a TCP and TLS handshake each.
+    assert_eq!(lab.fake.lock().unwrap().connections.len(), 1);
     // Kept: the app's page shows it without a new Test.
     let got = call(&lab.hub, &admin(&lab.hub), "github_app_get", json!({}))
         .await
