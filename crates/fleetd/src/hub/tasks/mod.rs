@@ -3493,19 +3493,21 @@ impl Tasks {
             true => (render::GITHUB_BACK, "github-back"),
         };
         let at = now_ms(self.d.clock.as_ref()).to_string();
-        for task in self.db(|c| TaskRecords::running_on(c, machine.as_str()))? {
-            let Some(thread) = task
+        let tasks = self.db(|c| TaskRecords::running_on(c, machine.as_str()))?;
+        // All at once, each waiting at most 15 s: a notice is best-effort, and the landing pass awaits them.
+        let sends = tasks.iter().filter_map(|task| {
+            let thread = task
                 .thread_ref
                 .as_ref()
-                .filter(|t| &t.machine_id == machine)
-            else {
-                continue;
-            };
-            let id = request_id(&task, &[part, &at]);
-            if let Err(error) = self.d.ports.send(thread, text, &id).await {
-                tracing::warn!(task_id = %task.task_id, ?error, "the GitHub notice not delivered");
-            }
-        }
+                .filter(|t| &t.machine_id == machine)?;
+            let id = request_id(task, &[part, &at]);
+            Some(async move {
+                if let Err(error) = self.d.ports.send_brief(thread, text, &id).await {
+                    tracing::warn!(task_id = %task.task_id, ?error, "the GitHub notice not delivered");
+                }
+            })
+        });
+        futures_util::future::join_all(sends).await;
         Ok(())
     }
 
