@@ -1241,7 +1241,8 @@ impl TrainHost for FakeHost {
             .iter()
             .filter(|(id, _)| {
                 tasks.get(*id).is_some_and(|t| {
-                    ["running", "idle", "done"].contains(&t.state.as_str()) && t.kind == "write"
+                    ["running", "idle", "done", "failed"].contains(&t.state.as_str())
+                        && t.kind == "write"
                 })
             })
             .map(|(id, b)| (TaskId::unchecked(id), b.clone()))
