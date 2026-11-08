@@ -6,6 +6,7 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
+import { appendAction, Scrub, type Steps, type VideoSink } from "./record.ts";
 
 export const WIDTH = 1280;
 export const HEIGHT = 800;
@@ -41,12 +42,61 @@ export class Session implements GuardSession {
   /** Who is told when control changes here (the agent's first command after a hand-back takes it). */
   onControl: ((control: BrowserControl) => void) | undefined;
   readonly startedAt = new Date().toISOString();
+  private readonly start0 = performance.now();
+  private steps_ = 0;
+  /** Where its recording goes, and what it masks; none for a session that records nothing (tests). */
+  recording: { dir: string; scrub: Scrub; steps: Steps; video: VideoSink | undefined } | undefined;
+  private ticker: Timer | undefined;
 
   constructor(
     readonly id: string,
     readonly threadId: string,
     readonly cdp: Cdp,
   ) {}
+
+  /** When a step, a person's input or a change of control last touched the session: what its idle end goes by. */
+  touched = Date.now();
+
+  /** Milliseconds since the session started: the recording's clock. */
+  offsetMs(): number {
+    return Math.round(performance.now() - this.start0);
+  }
+
+  /** Logs one step of the session's, a tool call of the agent's or fleetd's own, and returns its number. */
+  stepAt(tool: string, args: unknown, ok: boolean, result: string | undefined, durationMs: number): number {
+    this.touched = Date.now();
+    const seq = ++this.steps_;
+    const action: BrowserAction = {
+      seq,
+      at: new Date().toISOString(),
+      offsetMs: Math.max(this.offsetMs() - durationMs, 0),
+      tool,
+      args,
+      ok,
+      ...(result === undefined ? {} : { result: [...result].slice(0, 500).join("") }),
+      durationMs,
+    };
+    const r = this.recording;
+    if (r) {
+      try {
+        appendAction(r.dir, action, r.scrub, r.steps, this.id);
+      } catch (e) {
+        console.warn(`browser ${this.id}: action not logged: ${(e as Error).message}`);
+      }
+      this.step = r.scrub.value(action);
+    } else this.step = action;
+    return seq;
+  }
+
+  /** A finished `agent-browser` command of the agent's, logged with the ref it named an element by. */
+  agentStep(command: string, ok: boolean, output: string | undefined, durationMs: number): number {
+    return this.stepAt("agent-browser", { command }, ok, output, durationMs);
+  }
+
+  /** Keeps a still page's frame showing in the video, once a second. */
+  private tick(): void {
+    this.ticker ??= setInterval(() => this.recording?.video?.tick(this.offsetMs()), 1000);
+  }
 
   /** Follows the browser's pages and their screencast, from the page it has now. */
   async start(): Promise<void> {
@@ -65,6 +115,7 @@ export class Session implements GuardSession {
   }
 
   setControl(control: BrowserControl): void {
+    this.touched = Date.now();
     this.controlNow = control;
   }
 
@@ -133,6 +184,11 @@ export class Session implements GuardSession {
 
   /** One screencast frame of the followed page: the newest, and sent while the hub watches, as LIVE_GAP allows. */
   private liveFrame(data: string, metadata: Record<string, unknown>): void {
+    const video = this.recording?.video;
+    if (video) {
+      video.frame(Buffer.from(data, "base64"), this.offsetMs());
+      this.tick();
+    }
     const size = jpegSize(Buffer.from(data.slice(0, 4096), "base64"));
     if (!size) return;
     const [width, height] = size;
@@ -230,6 +286,7 @@ export class Session implements GuardSession {
   /** A person's input, on the followed page, while they have control. Coordinates come in the last frame's pixels. */
   async input(input: BrowserInput): Promise<void> {
     if (this.controlNow !== "human") throw new Error("the agent has control");
+    this.touched = Date.now();
     const page = this.page()?.[1];
     if (!page) throw new Error("no page");
     const [scaleX, scaleY] = this.last ? [this.pageSize[0] / this.last.width, this.pageSize[1] / this.last.height] : [1, 1];
@@ -256,6 +313,7 @@ export class Session implements GuardSession {
   end(): void {
     this.stopEvents?.();
     clearTimeout(this.flushTimer);
+    clearInterval(this.ticker);
     this.watcher = undefined;
   }
 }
@@ -350,4 +408,9 @@ export function cdpInput(input: BrowserInput, scaleX: number, scaleY: number): [
     default:
       return undefined;
   }
+}
+
+/** The ref an `agent-browser` command names an element by (`@e3`), if any. */
+export function elementRef(command: string): string | undefined {
+  return command.split(/[\s"']/).find((w) => /^@e\d+$/.test(w));
 }

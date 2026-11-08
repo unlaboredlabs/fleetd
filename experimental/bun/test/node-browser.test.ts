@@ -5,6 +5,7 @@ import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
 import { AGENT_BROWSER_METHODS, cssPlain, refusal, revealingSelector } from "../src/node/browser/guard.ts";
 import { Broker, start } from "../src/node/browser/index.ts";
+import { findFfmpeg, VideoSink } from "../src/node/browser/record.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
 import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
 import { tempHome } from "./helpers.ts";
@@ -43,8 +44,9 @@ test("a session that filled a login keeps a narrower list, and its selectors may
   expect(refusal(sealed, { method: "Page.reload", params: { scriptToEvaluateOnLoad: "x" } })).toContain("is off");
   expect(refusal(sealed, { method: "DOM.querySelectorAll", params: { selector: "input:Inv\\61 lid" } })).toContain(":invalid");
   expect(refusal(sealed, { method: "DOM.querySelectorAll", params: { selector: "#login" } })).toBeUndefined();
-  // Closed, not open, until agent-browser's script shapes are pinned here.
-  expect(refusal(sealed, { method: "Runtime.evaluate", params: { expression: "document.title" } })).toContain("refused");
+  // agent-browser's own scripts run; others don't (node-shapes.test.ts has the rest).
+  expect(refusal(sealed, { method: "Runtime.evaluate", params: { expression: "document.title" } })).toBeUndefined();
+  expect(refusal(sealed, { method: "Runtime.evaluate", params: { expression: "document.cookie" } })).toContain("not one of agent-browser");
   expect(cssPlain("A /* c */ [Val\\75 e]")).toBe("a[value]");
   expect(revealingSelector("[data-x]")).toBeUndefined();
 });
@@ -107,6 +109,9 @@ function fakeBrowser(): Transport & { got: Record<string, unknown>[] } {
 
 function nodeWith(launcher: () => Promise<{ cdp: Cdp }>) {
   const t = testNode();
+  // The hub's answer to a recording's piece: what it holds after it.
+  t.link.answer = async (op, args) =>
+    op === "browser_recording_part" ? { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length } : {};
   const broker = start(t.node, new Broker(t.node, launcher));
   cleanups.push(async () => {
     await broker.shutdown();
@@ -152,9 +157,15 @@ test("the agent's driver reaches its browser through the proxy, and waits while 
   expect(await d.call(45, "Page.reload", {}, "driver-s")).toMatchObject({ result: { echo: "Page.reload" } });
   expect(link.calls.at(-1)).toMatchObject({ args: { control: "agent" } });
   d.ws.close();
-  const ended = (await local.call("session_end", {}, "t1")) as { sessionId: string };
+  const ended = (await local.call("session_end", {}, "t1")) as { sessionId: string; files: { file: string; bytes: number }[] };
   expect(ended.sessionId).toBe(started.sessionId);
-  expect(link.calls.at(-1)).toMatchObject({ args: { state: "recorded", files: [] } });
+  // Its recording goes to the hub: uploading, its action log in pieces, then recorded with what the hub holds.
+  for (let i = 0; i < 100 && link.calls.at(-1)?.args.state !== "recorded"; i++) await Bun.sleep(10);
+  const ops = link.calls.slice(-3).map((c) => `${c.op}:${String(c.args.state ?? c.args.file)}`);
+  expect(ops).toEqual(["browser_session:uploading", "browser_recording_part:actions", "browser_session:recorded"]);
+  const log = Buffer.from(String(link.calls.at(-2)!.args.dataB64), "base64").toString().trim().split("\n").map((l) => JSON.parse(l));
+  expect(log.map((a: { tool: string }) => a.tool)).toEqual(["takeover", "handback"]);
+  expect(link.calls.at(-1)!.args.files).toEqual([{ file: "actions", bytes: ended.files[0]!.bytes }]);
 });
 
 const chrome = findChrome(join(homedir(), ".cache", "ms-playwright"));
@@ -196,7 +207,7 @@ test("the hub's session_end ends the screen of a task that ended, and a person's
   // Another screen's id ends nothing; its own does.
   link.deliver({ t: "session_end", threadId: "t3", sessionId: "B-other" });
   link.deliver({ t: "session_end", threadId: "t3", sessionId: started.sessionId });
-  await Bun.sleep(20);
+  for (let i = 0; i < 100 && link.calls.at(-1)?.args.state !== "recorded"; i++) await Bun.sleep(10);
   expect(link.calls.at(-1)).toMatchObject({ args: { sessionId: started.sessionId, state: "recorded" } });
 });
 
@@ -213,6 +224,54 @@ test("node_action screens writes node.json, and the agents' Mac takes only its o
   expect(() => apply(home.dir, { idleMinutes: 3 })).toThrow("ends after 5 idle minutes");
 });
 
+test("an agent's agent-browser command is a step of its session: in its action log and the heartbeat", async () => {
+  const browser = fakeBrowser();
+  const t = testNode();
+  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(browser) })));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    t.done();
+  });
+  await t.local.call("session_start", { purpose: "look" }, "t4");
+  const item = (command: string, status: string) => ({
+    id: "i1",
+    status,
+    title: command,
+    startedAt: "2026-11-08T12:00:00.000Z",
+    completedAt: "2026-11-08T12:00:01.500Z",
+    updatedAt: "2026-11-08T12:00:01.500Z",
+    kind: { type: "command", command, output: "clicked", exitCode: 0 },
+  });
+  const items = t.node.area("items");
+  items.ended("t4", item("agent-browser click @e3", "completed") as never);
+  items.ended("t4", item("ls -la", "completed") as never);
+  items.ended("t4", item("agent-browser snapshot", "running") as never);
+  const hb = { steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
+  await t.node.area("hb").fill(hb as never);
+  expect(hb.steps).toEqual([
+    {
+      sessionId: expect.stringMatching(/^B[0-9a-f]{32}$/),
+      step: expect.objectContaining({ seq: 1, tool: "agent-browser", args: { command: "agent-browser click @e3" }, ok: true, result: "clicked", durationMs: 1500 }),
+    },
+  ]);
+  expect(hb.busy.screens).toBe(1);
+});
+
+const ffmpeg = findFfmpeg(join(homedir(), ".cache", "ms-playwright"));
+
+test.skipIf(!ffmpeg)("the screencast's frames become the session's video, through Playwright's ffmpeg", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const jpeg = await new Bun.Image(await new Bun.Image(png).resize(320, 200).png().bytes()).jpeg({ quality: 80 }).bytes();
+  const out = join(home.dir, "video.webm");
+  const video = new VideoSink(ffmpeg!, out, [320, 200]);
+  for (let ms = 0; ms <= 400; ms += 40) video.frame(jpeg, ms);
+  video.tick(2000);
+  expect(await video.finish(2100)).toBeUndefined();
+  expect((await Bun.file(out).arrayBuffer()).byteLength).toBeGreaterThan(100);
+}, 30_000);
+
 test("stopping the node ends its live sessions: reported, their browsers closed", async () => {
   const { stopAreas } = await import("../src/node/areas.ts");
   let closed = 0;
@@ -224,4 +283,76 @@ test("stopping the node ends its live sessions: reported, their browsers closed"
   await stopAreas(t.node);
   expect(broker.count()).toBe(0);
   expect(t.link.calls.at(-1)).toMatchObject({ op: "browser_session", args: { state: "recorded" } });
+});
+
+test("the node's hello lists what its screens answer: browsers on a node, the Mac's own on the agents' Mac", async () => {
+  const { start: startMac } = await import("../src/node/mac_tool/index.ts");
+  const listed = (agentsMac: boolean) => {
+    const t = testNode("devbox", agentsMac ? { agentsMac: true } : {});
+    const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+    startMac(t.node);
+    cleanups.push(async () => {
+      await broker.shutdown();
+      t.done();
+    });
+    return t.node.area("caps").list();
+  };
+  expect(listed(false)).toEqual(["browser", "session_host", "session_seal", "session_end"]);
+  expect(listed(true)).toEqual(["agents_mac", ...(process.platform === "darwin" ? ["mac_tool"] : [])]);
+});
+
+test("one recording has one upload at a time, however often housekeeping runs while it goes", async () => {
+  const t = testNode();
+  let release!: () => void;
+  const slow = new Promise<void>((r) => (release = r));
+  let uploads = 0;
+  t.link.answer = async (op, args) => {
+    if (op === "browser_session" && args.state === "uploading") uploads += 1;
+    if (op === "browser_recording_part") {
+      await slow;
+      return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
+    }
+    return {};
+  };
+  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    t.done();
+  });
+  const started = (await t.local.call("session_start", { purpose: "look" }, "t5")) as { sessionId: string };
+  t.link.deliver({ t: "browser_control", sessionId: started.sessionId, control: "human", by: "human:phone" });
+  await t.local.call("session_end", {}, "t5");
+  // Its upload waits on the hub; housekeeping runs twice at once meanwhile.
+  await Promise.all([broker.housekeep(), broker.housekeep()]);
+  await broker.housekeep();
+  release();
+  for (let i = 0; i < 100 && t.link.calls.at(-1)?.args.state !== "recorded"; i++) await Bun.sleep(10);
+  expect(uploads).toBe(1);
+  expect(t.link.calls.at(-1)?.args.state).toBe("recorded");
+});
+
+test("a person's takeover and input keep a session from idling out", async () => {
+  const t = testNode();
+  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    t.done();
+  });
+  const started = (await t.local.call("session_start", { purpose: "look" }, "t6")) as { sessionId: string };
+  const session = broker.live("t6")!;
+  const long = Date.now() - 31 * 60_000;
+  session.touched = long;
+  t.link.deliver({ t: "browser_control", sessionId: started.sessionId, control: "human", by: "human:phone" });
+  expect(session.touched).toBeGreaterThan(long);
+  session.touched = long;
+  t.link.deliver({ t: "browser_input", sessionId: started.sessionId, input: { kind: "text", text: "hi" } });
+  await Bun.sleep(20);
+  expect(session.touched).toBeGreaterThan(long);
+  // Handed back after a long takeover: still live until the idle limit passes from the handback.
+  t.link.deliver({ t: "browser_control", sessionId: started.sessionId, control: "agent", by: "human:phone" });
+  await broker.housekeep();
+  expect(broker.live("t6")).toBeDefined();
+  session.touched = long;
+  await broker.housekeep();
+  expect(broker.live("t6")).toBeUndefined();
 });

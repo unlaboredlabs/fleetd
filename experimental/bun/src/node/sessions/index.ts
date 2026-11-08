@@ -39,6 +39,7 @@ import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
 import { tilde } from "../runner/claude/setup.ts";
+import { HELPER, NO_HELPER } from "../runner/helper.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
 import * as warm from "../worktree/warm.ts";
@@ -156,7 +157,7 @@ export type SessionConfig = {
   /** claude. */
   claudeBin: string;
   /** The Rust fleetd binary: it runs each session's host, and fleetd's MCP server and hold hook inside sessions. */
-  nativeBin: string;
+  nativeBin: string | undefined;
   boxKey?: NodeBoxKey;
   /** The node's own retries of a run that failed Overloaded or Network, after claude's: 1, 4 and 15 min, ±10%. */
   retryScheduleMs?: number[];
@@ -180,7 +181,7 @@ const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "networ
 const expandHome = (dir: string) => (dir === "~" ? homeDir() : dir.startsWith("~/") ? join(homeDir(), dir.slice(2)) : dir);
 
 /** The node's session config, as the Rust node's `SessionConfig::for_node`. */
-export function configFor(home: string, fleetdDirPath: string, nativeBin: string, boxKey?: NodeBoxKey): SessionConfig {
+export function configFor(home: string, fleetdDirPath: string, nativeBin: string | undefined, boxKey?: NodeBoxKey): SessionConfig {
   let configured: string | undefined;
   try {
     configured = readConfig(home)?.claudeConfigDir;
@@ -1045,6 +1046,7 @@ export class SessionService {
     if (current && !current.closing) return [current, undefined];
     if (current) await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
+    if (!this.config.nativeBin) throw new Refusal("runner_unavailable", NO_HELPER);
     const row = this.#session(id);
     const env = runnerEnv(this.config);
     let resume: boolean;
@@ -1053,12 +1055,20 @@ export class SessionService {
     } catch (error) {
       throw new Refusal("runner_unavailable", (error as Error).message);
     }
+    // A worktree that is gone (a crash, a stop that removed it, a person) comes back first, at the same path.
+    const [recreated, rebuilt] = await this.#restoreWorktree(id, row);
+    if (recreated) {
+      const frame = this.store.commit(row, [], true);
+      if (frame) this.#machine(frame);
+    }
     if (!existsSync(row.local.cwd)) throw invalid(`the session's workspace ${row.local.cwd} is missing`);
     const spec = this.#spec(row, resume, env);
-    let note: string | undefined;
+    // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
+    // without the system prompt file, its rules.
+    let note = rebuilt;
     if (this.#noPromptFile && row.local.systemPrompt) {
       delete spec.systemPrompt;
-      note = row.local.systemPrompt.trimEnd();
+      note = note ? `${row.local.systemPrompt.trimEnd()}\n\n${note}` : row.local.systemPrompt.trimEnd();
     }
     const file = claude.sessionFile(claude.configDir(spec.env), spec.cwd, id);
     if (file) spec.resume = existsSync(file);
@@ -1066,7 +1076,7 @@ export class SessionService {
     let link: HostLink;
     try {
       link = await launchHost({
-        exe: this.config.nativeBin,
+        exe: this.config.nativeBin!,
         dir: spec.hostDir!,
         sessionId: id,
         program: this.config.claudeBin,
@@ -1100,7 +1110,7 @@ export class SessionService {
     const role = row.local.role ?? "plain";
     // The configured servers of the session's role, their secrets resolved here, then fleetd's own. The file holds
     // secrets, so it is written as the node's secret files are (0600).
-    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.nativeBin, role, sock, id), id);
+    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.nativeBin ?? HELPER, role, sock, id), id);
     const mcpConfig = join(dir, "mcp.json");
     writeAtomic(mcpConfig, sessionMcp.json);
     const env: Env = { ...base };
@@ -1133,7 +1143,7 @@ export class SessionService {
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin, this.home)));
+    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin ?? HELPER, this.home)));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
@@ -1536,7 +1546,46 @@ export class SessionService {
   /** The setup due before the session's claude next starts: one the node stopped in the middle of, or that failed. */
   #setupDue(id: string): WorktreeSetup | undefined {
     const row = this.store.session(id);
-    return row?.local.setupPending ? row.local.setup : undefined;
+    const lost = !!row?.local.baseRef && !existsSync(row.local.cwd);
+    return row && (row.local.setupPending || lost) ? row.local.setup : undefined;
+  }
+
+  /** Where a writer's worktree that is gone comes back from; undefined while it is there, or for a session in the
+   * root. */
+  async #lostWorktree(row: SessionRow): Promise<worktree.Source | undefined> {
+    const { baseRef, branch, cwd, workspaceRoot } = row.local;
+    if (!baseRef || !branch || existsSync(cwd)) return undefined;
+    return worktree.source(workspaceRoot, branch, baseRef);
+  }
+
+  /** Brings back a session's worktree that is gone, at the same path, so the session still resumes from what is left
+   * of its branch; a reader's detached one at the same commit. Whether it did, and what the agent is told. A rebuilt
+   * worktree has none of what setup made: setup runs again before its agent goes on. */
+  async #restoreWorktree(id: string, row: SessionRow): Promise<[boolean, string | undefined]> {
+    let recreated = false;
+    let note: string | undefined;
+    const from = await this.#lostWorktree(row);
+    if (from && row.local.branch) {
+      worktree.restore(row.local.workspaceRoot, row.local.cwd, row.local.branch, from);
+      console.log(`${nowIso()} INFO recreated a lost worktree {"sessionId":"${id}","from":"${from.kind}"}`);
+      note = worktree.sourceNote(from, row.local.branch);
+      row.summary.recreatedFrom = from.kind;
+      row.summary.recreatedAt = nowIso();
+      row.summary.worktreePath = row.local.cwd;
+      row.summary.branch = row.local.branch;
+      recreated = true;
+    }
+    if (row.local.baseRef && !row.local.branch && !existsSync(row.local.cwd)) {
+      worktree.ensureDetached(row.local.workspaceRoot, row.local.cwd, row.local.baseRef);
+      if (warm.take(this.home, row.local.workspaceRoot, row.local.cwd)) note = warm.WARM_NOTE;
+      row.summary.worktreePath = row.local.cwd;
+      recreated = true;
+    }
+    if (recreated) {
+      setup.record(row.local.cwd, undefined);
+      if (row.local.setup) row.local.setupPending = true;
+    }
+    return [recreated, note];
   }
 
   /** Ends the session's running setup (only `runId`'s, when given); what to wait on for it to have ended. */
@@ -1563,6 +1612,19 @@ export class SessionService {
   async #setUp(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: WorktreeSetup, signal: AbortSignal): Promise<boolean> {
     const row = this.store.session(id);
     if (!row) return false;
+    // A worktree that is gone comes back first: setup runs in it.
+    let rebuilt: string | undefined;
+    try {
+      const [recreated, note] = await this.#restoreWorktree(id, row);
+      if (recreated) {
+        const frame = this.store.commit(row, [], true);
+        if (frame) this.#machine(frame);
+        rebuilt = note;
+      }
+    } catch (error) {
+      this.#failRun(id, runId, "other", (error as Error).message);
+      return false;
+    }
     const first = this.store.runs(id)[0]?.id === runId;
     const secrets = this.#secrets(row);
     const masker = new Masker(secrets);
@@ -1630,6 +1692,7 @@ export class SessionService {
       const stored = this.store.message(id, runId);
       if (stored) this.update(id, (c) => this.#putMessage(c, { ...stored, text: message }));
     } else if (said) message = `${masker.text(said)}\n\n${text}`;
+    if (rebuilt) message = `${rebuilt}\n\n${message}`;
     if (!this.store.runs(id).some((r) => r.id === runId && isActive(r.status))) return false;
     try {
       await this.#dispatch(id, { Send: { run_id: runId, text: message, mode } });
@@ -1870,6 +1933,13 @@ export class SessionService {
 
   async reprobe(): Promise<RunnerInfo> {
     const info = await claude.probe(this.config.claudeBin, runnerEnv(this.config));
+    // No session host: claude may be fine, but no session starts here. Both hubs read a logged-in runner as able to
+    // take sessions whatever its problem says (runner_problem), so its login goes out as unknown: the hub shows the
+    // machine degraded with this problem, and places no task here.
+    if (!this.config.nativeBin) {
+      info.problem = info.problem ? `${NO_HELPER}. ${info.problem}` : NO_HELPER;
+      info.login = "unknown";
+    }
     const changed = JSON.stringify(info) !== JSON.stringify(this.#runner);
     this.#runner = info;
     if (changed) this.#machine(this.store.appendEvent({ type: "runner_info", ...info }));

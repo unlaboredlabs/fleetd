@@ -289,3 +289,58 @@ export async function freshBase(root: string, name: string): Promise<Base> {
 
 /** A commit this checkout already has. */
 export const knownCommit = (root: string, sha: string) => refSha(root, sha);
+
+/** What is left of a lost worktree's branch, best first (worktree.rs `Source`). */
+export type Source =
+  /** The local branch. */
+  | { kind: "local" }
+  /** The local branch is gone; `<remote>/<branch>`, freshly fetched, holds what was pushed. */
+  | { kind: "remote"; remote: string }
+  /** Nothing of the branch is left, here or on a remote: a new branch at `sha`, as for a new task. */
+  | { kind: "base"; baseRef: string; sha: string };
+
+/** What the session's agent is told, ahead of its next message, once its worktree came back from `from`. */
+export function sourceNote(from: Source, branch: string): string {
+  switch (from.kind) {
+    case "local":
+      return `fleetd: your worktree was gone, so it was recreated at the same path from your local branch ${branch}. Your commits are there; uncommitted changes from before are gone.`;
+    case "remote":
+      return `fleetd: your worktree and its local branch were gone, so the worktree was recreated at the same path from ${from.remote}/${branch}, freshly fetched. What you pushed is there; unpushed commits and uncommitted changes from before are gone.`;
+    case "base":
+      return `fleetd: your worktree was gone and ${branch} was neither here nor pushed, so the worktree was recreated at the same path on a new ${branch} from ${from.baseRef}. Work that is not in ${from.baseRef} is gone.`;
+  }
+}
+
+/** The remote that holds `branch` as pushed, `origin` first, after fetching it from each. A remote that can't be
+ * reached keeps its last fetched copy, which still holds what was pushed by then. */
+async function pushed(root: string, branch: string): Promise<string | undefined> {
+  const remotes = (tryGit(root, ["remote"]) ?? "").split("\n").filter(Boolean);
+  remotes.sort((a, b) => Number(a !== "origin") - Number(b !== "origin"));
+  for (const r of remotes) {
+    try {
+      await gitRemote(root, ["fetch", "--no-tags", r, `+refs/heads/${branch}:refs/remotes/${r}/${branch}`], FETCH_TIMEOUT_MS);
+    } catch {}
+    if (refSha(root, `refs/remotes/${r}/${branch}`)) return r;
+  }
+  return undefined;
+}
+
+/** Where a lost worktree of `branch` comes back from: the local branch, else the branch as pushed, else a fresh fetch
+ * of the default branch `baseRef` names, as a new task starts. */
+export async function source(root: string, branch: string, baseRef: string): Promise<Source> {
+  if (branchExists(root, branch)) return { kind: "local" };
+  const r = await pushed(root, branch);
+  if (r) return { kind: "remote", remote: r };
+  const rem = remote(root);
+  const name = rem && baseRef.startsWith(`${rem}/`) ? baseRef.slice(rem.length + 1) : baseRef;
+  const base = await freshBase(root, name);
+  return { kind: "base", baseRef: base.baseRef, sha: base.sha };
+}
+
+/** Brings back a session's worktree that is gone, at the same path so `claude --resume` still finds its session. */
+export function restore(root: string, path: string, branch: string, from: Source): void {
+  // A worktree whose directory was deleted stays registered, holding its path and branch: only this one record goes.
+  if (!existsSync(path)) tryGit(root, ["worktree", "remove", "--force", path]);
+  const start = from.kind === "local" ? branch : from.kind === "remote" ? `refs/remotes/${from.remote}/${branch}` : from.sha;
+  ensure(root, path, branch, start);
+}

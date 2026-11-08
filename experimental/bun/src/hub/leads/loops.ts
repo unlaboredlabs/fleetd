@@ -71,13 +71,23 @@ export async function reconcile(hub: Hub, r: ProjectRef): Promise<void> {
   }
 }
 
-/** Cancels the live tasks whose repo is no longer in `repos`. */
-async function endRemovedRepos(hub: Hub): Promise<void> {
+/** Cancels the live tasks whose repo is no longer in `repos`; returns them. */
+export async function endRemovedRepos(hub: Hub): Promise<string[]> {
   const tasks = leadWiring(hub).hooks.tasks;
+  const ended: string[] = [];
   for (const t of tasks?.liveInRepos?.() ?? []) {
-    if (!repos.get(hub.db.conn, t.repoId)) await tasks?.cancel(t.projectRef, t.taskId, `Cancelled: ${REPO_REASON}.`);
+    if (repos.get(hub.db.conn, t.repoId)) continue;
+    await tasks?.cancel(t.projectRef, t.taskId, `Cancelled: ${REPO_REASON}.`);
+    ended.push(t.taskId);
   }
+  return ended;
 }
+
+/** The leads' project and repo removals (removals.rs `ProjectRemovals`), for project_repo_remove: `hub.peek("lead_removals")`. */
+export type LeadRemovals = { reconcile(r: ProjectRef): Promise<void>; endRemovedRepos(): Promise<string[]> };
+
+export const leadRemovals = (hub: Hub) =>
+  hub.area<LeadRemovals>("lead_removals", (h) => ({ reconcile: (r) => reconcile(h, r), endRemovedRepos: () => endRemovedRepos(h) }));
 
 /** Every project with live work, as the records name them. */
 function projectsWithLiveWork(hub: Hub): ProjectRef[] {
@@ -92,6 +102,7 @@ export function start(hub: Hub): void {
   const area = leads(hub);
   // The executor's launch and the write queue behind the lead's ports.
   wirePorts(hub);
+  leadRemovals(hub);
   // The real wakes behind the seam other areas trigger.
   leadWakes(hub).trigger = (r, t) => area.wakes.trigger(r, t);
   // Order intake for the areas that open orders (the train's fixes).

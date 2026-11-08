@@ -50,6 +50,12 @@ function policyOn(db: HubDb): string | undefined {
 const ownerOn = (db: HubDb) =>
   db.all<{ person_id: string }>("SELECT person_id FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1")[0]?.person_id;
 
+/** Keeps `tz` as the zone of `person` (undefined: the hub's owner), from a chat message their device sent. */
+export function setZone(db: HubDb, person: string | undefined, tz: string): void {
+  const id = person ?? ownerOn(db);
+  if (id !== undefined) db.conn.query("UPDATE people SET tz = ? WHERE person_id = ? AND tz IS NOT ?").run(tz, id, tz);
+}
+
 /** The zone of `person` (undefined: the hub's owner): their device's, else `policy.tz`, else the hub machine's. */
 export function ofPerson(db: HubDb, person: string | undefined): Zone {
   try {

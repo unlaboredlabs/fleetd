@@ -1,11 +1,12 @@
-// MCP tools `tasks_list`, `task_get` and `cap_set` (crates/fleetd/src/hub/tasks/tools.rs). The task lead calls
-// (`task_spawn|task_list|task_message|task_cancel`) come with the tasks area's spawn port.
+// MCP tools `tasks_list`, `task_get` and `cap_set` (crates/fleetd/src/hub/tasks/tools.rs); cap_set's change is the slot
+// board's (`setCaps` in src/hub/slots/cap.ts). The task lead calls are calls.ts.
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
 import { cap } from "../api/refusals.ts";
 import type { Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { others } from "../navi/owner.ts";
+import { capSet } from "../slots/cap.ts";
 import { TaskRecords } from "./records.ts";
 
 export const unknownTask = (taskId: string) => new ToolError("not_found", `No task ${taskId}.`, "Call tasks_list to see tasks.");
@@ -43,4 +44,6 @@ export function register(tools: Registry): void {
       : `${task.taskId} has not started${task.queuedReason !== undefined ? `: ${task.queuedReason}` : ""}.`;
     return { task, next };
   });
+
+  tools.add("cap_set", (hub, caller, input) => capSet(hub, caller, input));
 }

@@ -13,7 +13,11 @@ const flag = (name: string) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const model = flag("--model") ?? "";
-if (!dir || !session) process.exit(2);
+if (!dir || !session) {
+  // As the Rust binary answers it: what a node checks to know a session host (src/node/runner/helper.ts).
+  console.error("usage: fleetd session-host <dir> <session id> -- <program> <args…>");
+  process.exit(2);
+}
 // As the Rust host: its dir is the node's to make (launch makes it); one swept away is no host.
 if (!existsSync(dir)) process.exit(1);
 const kept: [number, string][] = [];

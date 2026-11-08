@@ -1,7 +1,7 @@
 // What the doctor's checks read from the hub (crates/fleetd/src/hub/usage/wire.rs, "What the doctor's checks read
 // from the hub"): each through its area's own exported reads. The few that live in memory in an area not ported yet
-// (the usage breaker, the tasks sweep's recovery breakers and unowned sessions, the cloud pool's facts) answer "all
-// clear" until that area's owner sets its own: `doctor(hub).sources.usageBreaker = …`.
+// (the tasks sweep's recovery breakers and unowned sessions, the cloud pool's facts) answer "all clear" until that
+// area's owner sets its own: `doctor(hub).sources.recoveryPaused = …`.
 import type { MachineId } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -15,6 +15,7 @@ import { active, people } from "../people/store.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { changeRecords } from "../train/index.ts";
+import { readLogin, usage } from "../usage/wire.ts";
 import type {
   ClaudeSetupView,
   CloudFacts,
@@ -90,8 +91,10 @@ export function hubSources(hub: Hub): DoctorSources {
         return undefined;
       }
     },
-    // The usage area keeps its breakers in memory (hub/usage/service.rs); until it is ported, every one is closed.
-    usageBreaker: async () => ({ state: "closed" }),
+    // The machine's usage view, with its runner's login (usage::wire `OpsPorts::usage`).
+    async usageBreaker(machineId) {
+      return (await usage(hub).status(machineId, await readLogin(hub, machineId))).breaker;
+    },
     async probe(machineId) {
       try {
         // Its `id` is set by the request.
