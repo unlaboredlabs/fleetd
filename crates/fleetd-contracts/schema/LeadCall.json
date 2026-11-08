@@ -3655,8 +3655,12 @@
       "type": "object"
     },
     "WaitCiCall": {
-      "description": "`wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)\nfinish. Its thread then continues with one line: the outcome and the failing jobs.",
+      "description": "`wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)\nfinish, or with `merged`, when the PR merges. Its thread then continues with one line: the outcome and the failing\njobs, or the merge (or why the PR won't merge).",
       "properties": {
+        "merged": {
+          "description": "A PR's only: wait for it to merge, not for its checks. Woken when it merges, when it fails on the merge train\n(CI, review, refused) and when it is closed unmerged.",
+          "type": "boolean"
+        },
         "url": {
           "description": "An Actions run's URL (`…/actions/runs/<id>`, anything after it ignored) or a PR's, in one of the project's repos.",
           "maxLength": 500,
