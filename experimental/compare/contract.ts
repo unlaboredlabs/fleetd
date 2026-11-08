@@ -45,6 +45,21 @@ const valid = (name: string, check: ReturnType<typeof validator> | undefined, va
   record(name, ok, ok ? undefined : JSON.stringify(check.errors));
 };
 
+// What failed (a failed command's message carries its stderr), so it becomes a failed row rather than ending the run
+// before any are written.
+const failure = (e: unknown) => (e instanceof Error ? e.message : String(e)).trim();
+/** A command's output judged by `pass`; a failed row when either throws, so its error text is never judged as output. */
+const commandCheck = (name: string, run: () => string, pass: (out: string) => boolean) => {
+  let out = "";
+  try {
+    out = run();
+    const ok = pass(out);
+    record(name, ok, ok ? undefined : out);
+  } catch (e) {
+    record(name, false, `${failure(e)}${out === "" ? "" : `; output: ${out}`}`);
+  }
+};
+
 const { name, bin } = target();
 const surface: Record<string, unknown> = {};
 await withFleet(path.join(scratch(`ct-${name}`), "f"), bin, async (fleet) => {
@@ -52,9 +67,8 @@ await withFleet(path.join(scratch(`ct-${name}`), "f"), bin, async (fleet) => {
   const ref = f.ref;
   const healthz = await fetch(`${f.hubUrl}/healthz`);
   record("GET /healthz is 200", healthz.ok, String(healthz.status));
-  const version = fleet.cli("--version").trim();
-  record("fleetd --version", /\d+\.\d+/u.test(version), version);
-  record("fleetd help", fleet.cli("help").includes("hub"));
+  commandCheck("fleetd --version", () => fleet.cli("--version").trim(), (out) => /\d+\.\d+/u.test(out));
+  commandCheck("fleetd help", () => fleet.cli("help"), (out) => out.includes("hub"));
 
   // Every tool the schema knows the hub answers, and a read of each below decodes as its output type.
   const listed = await fleet.toolNames();
@@ -130,9 +144,11 @@ await withFleet(path.join(scratch(`ct-${name}`), "f"), bin, async (fleet) => {
   record(`every /app frame decodes (${app.frames.length} frames)`, bad.length === 0, bad.map((x) => x.frame.t).join(", "));
   app.close();
 
-  const status = JSON.parse(f.status({ json: true })) as Record<string, unknown>;
-  record("fleetd status --json reads the hub", typeof status === "object" && status !== null, Object.keys(status).join(","));
-});
+  commandCheck("fleetd status --json reads the hub", () => f.status({ json: true }), (out) => {
+    const status = JSON.parse(out) as unknown;
+    return typeof status === "object" && status !== null;
+  });
+}).catch((e: unknown) => record("the fleet runs to the end", false, failure(e)));
 
 const failed = checks.filter((c) => !c.ok);
 const out = arg("--json");
