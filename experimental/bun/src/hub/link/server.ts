@@ -842,22 +842,9 @@ export class Link {
     this.runnerBy.delete(machineId);
     const seconds = Math.floor(this.timings.silenceMs / 1000);
     this.writeStatus(machineId, "offline");
-    // It needs the human only while runs were going there: nobody is watching them now.
-    let running = false;
-    try {
-      running = store(this.hub)
-        .threadsRunning()
-        .some((t) => t.machineId === machineId);
-    } catch (error) {
-      console.error("node link: running threads read failed:", error);
-    }
-    this.append(
-      "machine.offline",
-      machineId,
-      `${machineId} went offline: no word from its node for ${seconds} s`,
-      undefined,
-      running ? "loud" : undefined,
-    );
+    // No attention: a node back within minutes (a restart, an update) needs nobody. One still away after
+    // hub/outage's 10 minutes pages the admins then, once.
+    this.append("machine.offline", machineId, `${machineId} went offline: no word from its node for ${seconds} s`);
     if (live) {
       this.unlink(machineId, live.id, live.state);
       this.close(live.ws, live.state, CLOSE.HEARTBEAT_TIMEOUT, `no frame for ${seconds} s`);

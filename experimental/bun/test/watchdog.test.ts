@@ -67,7 +67,7 @@ test("resubscribe opens a stream for each running thread without one", async () 
   expect(await w.resubscribe()).toBe(0);
 });
 
-test("the sweep reports a machine offline with running threads once per spell, and runs registered checks", async () => {
+test("the sweep runs its registered checks, a failing one isolated, and pages nobody for an offline machine", async () => {
   const { hub } = testHub();
   const s = store(hub);
   s.machineUpsert({ machineId: "lab-a", status: "offline", lastSeenAt: "2026-11-08T10:00:00.000Z" } as never);
@@ -83,10 +83,8 @@ test("the sweep reports a machine offline with running threads once per spell, a
   await sweep(hub).runOnce();
   console.warn = warn;
   expect(ran).toBe(2);
-  const offline = eventsOf(hub, "machine.offline");
-  expect(offline.length).toBe(1);
-  expect(offline[0]?.summary).toBe("lab-a is still offline with 1 running thread; their runs are not being watched");
-  expect(offline[0]?.data).toEqual({ since: "2026-11-08T10:00:00.000Z", runningThreads: ["t1"], count: 1 });
+  // A machine offline under running threads is hub/outage's to page, once, at 10 minutes: never the sweep's.
+  expect(eventsOf(hub, "machine.offline")).toEqual([]);
 });
 
 test("the hub's watch reads the executor through a static import, so the compiled binary finds it", async () => {

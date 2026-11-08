@@ -43,7 +43,7 @@ const HUB_AREAS: Record<string, Area> = {
   api: "hub-core", app_ws: "hub-core", auth: "hub-core", http: "hub-core", serve: "hub-core", store: "hub-core",
   people: "hub-core", pair: "hub-core", push: "hub-core", hub_links: "hub-core", link: "hub-core",
   info: "hub-core", setup: "hub-core", doctor: "hub-core", sidebar_order: "hub-core", chat_pins: "hub-core",
-  status: "hub-core", metrics: "hub-core", watchdog: "hub-core", sweep: "hub-core", queue: "hub-core",
+  status: "hub-core", metrics: "hub-core", watchdog: "hub-core", sweep: "hub-core", outage: "hub-core", queue: "hub-core",
   redact: "hub-core", policy: "hub-core",
   agents: "hub-work", artifacts: "hub-work", attention: "hub-work", automations: "hub-work", chat: "hub-work",
   checklist: "hub-work", executor: "hub-work", intake: "hub-work", leads: "hub-work", ledger: "hub-work",
