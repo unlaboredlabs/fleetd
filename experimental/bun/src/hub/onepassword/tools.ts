@@ -13,6 +13,35 @@ import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS, forget, forgetPerson, putToken, token } from "./index.ts";
 
+/**
+ * `onepassword_test` (onepassword/mod.rs `test`): lists the vaults the caller's own token reads, on a machine holding
+ * it, and keeps the result as that token's last Test. setup_test's 1Password step runs it too.
+ */
+export async function test(hub: Hub, caller: Caller, input: { machineId?: string }): Promise<{ test: OnePasswordTest; next?: string }> {
+  const p = me(hub, caller);
+  const id = p.personId;
+  const held = token(hub.db, id);
+  if (!held) throw new ToolError("not_found", "You have no 1Password token saved.", "Paste a service account token, then test it.");
+  const machineId = holding(hub, held.sealedOn, input.machineId);
+  const out = await sessionCall(hub, machineId, { op: "onepassword_test", personId: id });
+  const error = typeof out.error === "string" ? out.error : undefined;
+  const vaults = Array.isArray(out.vaults) ? (out.vaults as string[]) : [];
+  const tried: OnePasswordTest = {
+    at: isoMs(hub.clock.now()),
+    machineId,
+    ok: error === undefined,
+    ...(error !== undefined ? { error } : {}),
+    ...(error === undefined && vaults.length > 0 ? { vaults } : {}),
+  };
+  // Recorded on the token as it is now; one replaced or removed meanwhile keeps its own.
+  const saved = token(hub.db, id);
+  if (saved) putToken(hub.db, id, { ...saved, lastTest: tried });
+  return {
+    test: tried,
+    ...(!tried.ok ? { next: "Check the token in 1Password (Developer › Service accounts), then paste it again." } : {}),
+  };
+}
+
 export function register(tools: Registry): void {
   tools.add("onepassword_get", (hub, caller) => {
     requireRole(caller, "read");
@@ -72,30 +101,7 @@ export function register(tools: Registry): void {
     };
   });
 
-  tools.add("onepassword_test", async (hub, caller, input) => {
-    const p = me(hub, caller);
-    const id = p.personId;
-    const held = token(hub.db, id);
-    if (!held) throw new ToolError("not_found", "You have no 1Password token saved.", "Paste a service account token, then test it.");
-    const machineId = holding(hub, held.sealedOn, input.machineId);
-    const out = await sessionCall(hub, machineId, { op: "onepassword_test", personId: id });
-    const error = typeof out.error === "string" ? out.error : undefined;
-    const vaults = Array.isArray(out.vaults) ? (out.vaults as string[]) : [];
-    const tried: OnePasswordTest = {
-      at: isoMs(hub.clock.now()),
-      machineId,
-      ok: error === undefined,
-      ...(error !== undefined ? { error } : {}),
-      ...(error === undefined && vaults.length > 0 ? { vaults } : {}),
-    };
-    // Recorded on the token as it is now; one replaced or removed meanwhile keeps its own.
-    const saved = token(hub.db, id);
-    if (saved) putToken(hub.db, id, { ...saved, lastTest: tried });
-    return {
-      test: tried,
-      ...(!tried.ok ? { next: "Check the token in 1Password (Developer › Service accounts), then paste it again." } : {}),
-    };
-  });
+  tools.add("onepassword_test", (hub, caller, input) => test(hub, caller, input));
 
   tools.add("onepassword_cards", async (hub, caller, input) => {
     const p = me(hub, caller);

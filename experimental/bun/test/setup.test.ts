@@ -87,3 +87,49 @@ test("the setup tools are an admin's: admin on every machine", async () => {
     });
   }
 });
+
+test("the 1Password step's Test tests the caller's own token and keeps it as its last Test", async () => {
+  const { Hub } = await import("../src/hub/api/hub.ts");
+  const { Registry } = await import("../src/hub/api/registry.ts");
+  const { registerAll } = await import("../src/gen/areas.ts");
+  const { HubDb } = await import("../src/hub/store/db.ts");
+  const { fakeNodePort } = await import("../src/hub/cloud/node.ts");
+  const { store } = await import("../src/hub/store/hub_store.ts");
+  const { token } = await import("../src/hub/onepassword/index.ts");
+  const at = "2026-11-08T10:00:00.000Z";
+  const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 4790 } }, HubDb.memory(), { now: () => Date.parse(at) });
+  const calls: Record<string, unknown>[] = [];
+  // A node on lab that holds the token and answers its Test, as a node does.
+  hub.area("node_port", () =>
+    fakeNodePort({
+      async request(_m: string, frame: Record<string, unknown>) {
+        const call = frame.call as Record<string, unknown>;
+        calls.push(call);
+        return { id: "1", result: { ok: call.op === "onepassword_test" ? { kind: "onepassword_tested", vaults: ["fleetd"] } : { kind: "saved", fingerprint: "ab12cd34" } } };
+      },
+      can: () => true,
+      linkId: (m: string) => `L-${m}`,
+    } as never),
+  );
+  store(hub).machineUpsert({ machineId: "lab", name: "lab", nodeVersion: "1", status: "online", lastSeenAt: at } as never);
+  hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_aaaaaaaa', 'Ann', 'owner', 0)");
+  const tools = new Registry();
+  registerAll(tools);
+  const ann = {
+    keyId: "k_ann", name: "ann-desk", prefix: "fld_x", grants: [{ role: "admin" as const, machines: "*" as const }], createdAt: at,
+    kind: "human" as const, person: { personId: "p_aaaaaaaa", name: "Ann" },
+  };
+  const ok = async (tool: string, input: unknown) => {
+    const r = await tools.call(hub, ann, tool, input);
+    if ("error" in r) throw new Error(JSON.stringify(r.error));
+    return r.output as Record<string, unknown>;
+  };
+  await ok("onepassword_set", { sealed: [{ machineId: "lab", sealed: Buffer.alloc(60, 1).toString("base64") }] });
+  expect(token(hub.db, "p_aaaaaaaa")?.lastTest).toBeUndefined();
+  const out = await ok("setup_test", { step: "onepassword" });
+  expect(calls.some((c) => c.op === "onepassword_test" && c.personId === "p_aaaaaaaa")).toBe(true);
+  expect(token(hub.db, "p_aaaaaaaa")?.lastTest).toEqual({ at, machineId: "lab", ok: true, vaults: ["fleetd"] });
+  expect((out.step as { id: string }).id).toBe("onepassword");
+  // The step reads that Test at once: not "saved but not tested yet".
+  expect(out.step).toMatchObject({ status: "done", said: "Ann's 1Password token reads one vault, fleetd." });
+});

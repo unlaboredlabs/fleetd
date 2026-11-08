@@ -7,6 +7,7 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { readHubSetup } from "../doctor/config.ts";
 import { doctor } from "../doctor/index.ts";
 import { githubApps } from "../github_app/index.ts";
+import { test as testOnePassword } from "../onepassword/tools.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { store } from "../store/hub_store.ts";
 import { beforeFirstUse, guides, read as readSteps, requiredLeft } from "./index.ts";
@@ -60,8 +61,17 @@ export function register(tools: Registry): void {
         console.warn("setup: the GitHub App's test didn't run:", error);
       }
     }
-    // TODO(hub-work): the cloud step's Test (pool `test` and `test_path`) and 1Password's (`onepassword::test` of the
-    // caller's own token) run here once those areas export them; until then the step reads their last checks.
+    // TODO(hub-work): the cloud step's Test (pool `test` and `test_path`) runs here once the pool is ported; until then
+    // the step reads its last checks.
+    // 1Password's Test lists the vaults the caller's own token reads, on a machine holding it, and keeps it as that
+    // token's last Test, which hub/onepassword_vault reads with everyone else's.
+    if (input.step === "onepassword") {
+      try {
+        await testOnePassword(hub, caller, {});
+      } catch (error) {
+        console.info(`setup: no 1Password token of the caller's own tested: ${(error as Error).message ?? error}`);
+      }
+    }
     // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.
     const results = input.step === "machines" || input.step === "claude" || input.step === "mac" ? await doctor(hub).list(true) : await doctor(hub).rerunHub();
     const step = read(hub, withFresh(hub, results.checks)).find((s) => s.id === input.step);
