@@ -71,6 +71,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "fleetd-test", privileges: { standard: true, secure: true } },
 ]);
 app.whenReady().then(() => {
+  process.stdout.write("ready\\n");
   protocol.handle("fleetd-artifact", (req) => req.url === spec.url ? new Response(spec.body, { headers: spec.headers }) : new Response("", { status: 404 }));
   protocol.handle("fleetd-test", () => new Response('<iframe ' + spec.sandbox + ' referrerpolicy="no-referrer" src="' + spec.url + '"></iframe><script>addEventListener("message", (e) => { if (e.data && e.data.R) console.log("R" + JSON.stringify(e.data.R)); });</script>', { headers: { "content-type": "text/html" } }));
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
@@ -99,14 +100,21 @@ const run = async (html: string, settleMs: number, sandboxed = true): Promise<Re
     env: { ...process.env, FENCE_SPEC: join(dir, "spec.json"), ELECTRON_ENABLE_LOGGING: "" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const started = Date.now();
+  // When Electron reached app ready, so a late answer says whether the start or the page took the time.
+  let ready: number | undefined;
   let out = "";
   let err = "";
   child.stderr.on("data", (d: Buffer) => (err += d.toString()));
   try {
     return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`no answer from the page\n${err}`)), 20_000);
+      const timer = setTimeout(() => {
+        const start = ready === undefined ? "Electron never reached app ready" : `Electron was ready after ${String(ready)} ms`;
+        reject(new Error(`no answer from the page in 20 s (${start})\n${err}`));
+      }, 20_000);
       child.stdout.on("data", (d: Buffer) => {
         out += d.toString();
+        if (ready === undefined && out.startsWith("ready\n")) ready = Date.now() - started;
         const line = out.split("\n").find((l) => l.startsWith("{"));
         if (line === undefined) return;
         clearTimeout(timer);

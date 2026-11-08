@@ -294,10 +294,33 @@ mod tests {
         }
     }
 
+    /// A free port below every system's ephemeral range (Linux hands out 32768 and up, macOS 49152 and up): no other
+    /// socket's bind to port 0 can take it while a test's proxy is closed. A random start keeps two suites running at
+    /// once off the same one.
+    fn port_no_bind_takes() -> u16 {
+        let start = 10_000 + (rand::rngs::OsRng.next_u32() % 20_000) as u16;
+        (start..32_000)
+            .chain(10_000..start)
+            .find(|p| std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok())
+            .expect("a free port")
+    }
+
     #[test]
     fn an_agents_url_still_reaches_the_proxy_after_a_node_restart() {
         let home = tempfile::tempdir().unwrap();
-        // The node's last run: dropping its runtime closes its listener, as its exit does.
+        // The node's last run listened on a port only it asks for by number: one the system handed out went, now and
+        // then, to another test's bind to port 0 while it was closed. A taken port is a_taken_port_gives_a_new_one's.
+        let kept = Kept {
+            port: port_no_bind_takes(),
+            key: hex(&[7; 32]),
+        };
+        crate::node::config::mkdir_private(kept_path(home.path()).parent().unwrap()).unwrap();
+        std::fs::write(
+            kept_path(home.path()),
+            serde_json::to_string(&kept).unwrap(),
+        )
+        .unwrap();
+        // Dropping its runtime closes its listener, as its exit does.
         let before = runtime().block_on(async {
             let proxy = Proxy::start(home.path(), Weak::new()).await.unwrap();
             proxy.url("thread-1")

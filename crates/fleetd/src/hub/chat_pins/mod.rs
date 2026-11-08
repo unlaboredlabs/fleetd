@@ -1,8 +1,8 @@
 //! Each person's own pinned chats (W232), kept on the hub so they are the same on each of their phones and survive a
 //! restart: `chat_pins_get` and `chat_pins_set`, from their own devices, at most `CHAT_PINS_MAX`, in their order. A
 //! set announces `chat.pins`, which only that person's devices see (`sidebar_order::someone_elses`), so one person's
-//! pins never move a teammate's list. A ref to a project that is gone stays until they set the pins again; the app
-//! shows only the chats it has.
+//! pins never move a teammate's list. A removed project leaves everyone's pins ([`forget`]); the app shows only the
+//! chats it has.
 #[cfg(test)]
 mod tests;
 
@@ -14,7 +14,7 @@ use fleetd_contracts::mcp::{
     ChatPinsGetInput, ChatPinsGetOutput, ChatPinsSetInput, ChatPinsSetOutput, ErrorCode,
 };
 use fleetd_contracts::people::{ChatPinsData, PersonId};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error};
 use crate::hub::sidebar_order::me;
@@ -48,6 +48,24 @@ fn put_pins(db: &HubDb, person: &PersonId, pins: &[ProjectRef]) -> Result<(), St
         )?;
         Ok(())
     })
+}
+
+/// Drops `project` from every person's pins, as it is removed: a gone chat never holds one of their nine.
+pub fn forget(c: &Connection, project: &ProjectRef) -> Result<(), StoreError> {
+    let rows: Vec<(String, String)> = c
+        .prepare_cached("SELECT person_id, refs FROM chat_pins")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (person, refs) in rows {
+        let pins: Vec<ProjectRef> = serde_json::from_str(&refs).unwrap_or_default();
+        if !pins.contains(project) {
+            continue;
+        }
+        let kept: Vec<&ProjectRef> = pins.iter().filter(|p| *p != project).collect();
+        c.prepare_cached("UPDATE chat_pins SET refs = ? WHERE person_id = ?")?
+            .execute(params![serde_json::to_string(&kept)?, person])?;
+    }
+    Ok(())
 }
 
 async fn get(

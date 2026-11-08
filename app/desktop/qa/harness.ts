@@ -229,17 +229,23 @@ async function applyView(page: Page) {
 async function holdView(page: Page) {
   const view = views.get(page);
   if (!view) return;
-  const at = (timeout: number) =>
-    page
-      .waitForFunction(
-        (v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale,
-        { ...view, scale },
-        { timeout },
-      )
-      .then(
-        () => true,
-        () => false,
-      );
+  // The page itself waits, and looks before it checks the time: a renderer that stalls (a busy runner) looks again when
+  // it wakes, before any deadline counts. waitForFunction's deadline ran in the test process, so a page stalled past it
+  // failed while it was already at the size ("the page is 1024×700 @1, not the 1024×700 @1 it was set to").
+  const at = (ms: number) =>
+    page.evaluate(
+      ({ v, ms }) =>
+        new Promise<boolean>((done) => {
+          const until = performance.now() + ms;
+          const look = () => {
+            if (window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale) done(true);
+            else if (performance.now() > until) done(false);
+            else setTimeout(look, 50);
+          };
+          look();
+        }),
+      { v: { ...view, scale }, ms },
+    );
   if (await at(2_000)) {
     if (!(await resizedSinceSettle(page))) return;
   } else {

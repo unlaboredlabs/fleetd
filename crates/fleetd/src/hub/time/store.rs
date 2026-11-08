@@ -422,6 +422,15 @@ pub struct Meta {
     pub open: bool,
 }
 
+/// An order's own spans and its share of lead turns (runs whose wake served it), as two indexed branches; `?3` is the
+/// order. The `+` keeps the lead branch on the run index: on the thread's, each run walked every span the lead ever
+/// had.
+const ORDER_SPANS: &str = "(SELECT * FROM time_spans WHERE workstream_id = ?3
+          UNION ALL
+          SELECT t.* FROM time_lead_runs lr JOIN time_spans t ON t.run_id = lr.run_id
+            AND +t.machine_id = lr.machine_id AND +t.thread_id = lr.thread_id
+          WHERE lr.workstream_id = ?3 AND t.role = 'lead' AND t.workstream_id IS NOT ?3)";
+
 pub fn read(conn: &Connection, f: &Filter, limit: usize) -> Result<Vec<Row>, StoreError> {
     Ok(read_meta(conn, f, limit)?
         .into_iter()
@@ -437,15 +446,10 @@ pub fn read_meta(
     limit: usize,
 ) -> Result<Vec<(Row, Meta)>, StoreError> {
     let mut args: Vec<rusqlite::types::Value> = vec![f.until_ms.into(), f.since_ms.into()];
-    // An order's own spans and its share of lead turns (runs whose wake served it), as two indexed branches.
     let from = match &f.workstream_id {
         Some(w) => {
             args.push(w.clone().into());
-            "(SELECT * FROM time_spans WHERE workstream_id = ?3
-              UNION ALL
-              SELECT t.* FROM time_lead_runs lr JOIN time_spans t ON t.run_id = lr.run_id
-                AND t.machine_id = lr.machine_id AND t.thread_id = lr.thread_id
-              WHERE lr.workstream_id = ?3 AND t.role = 'lead' AND t.workstream_id IS NOT ?3)"
+            ORDER_SPANS
         }
         None => "time_spans",
     };
@@ -612,6 +616,27 @@ pub const DAY: i64 = DAY_MS;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_order_s_lead_turns_are_found_by_run_not_by_walking_the_lead_s_thread() {
+        let db = crate::hub::store::HubDb::open_memory().unwrap();
+        let plan: Vec<String> = db
+            .with(|c| {
+                let rows = c
+                    .prepare(&format!(
+                        "EXPLAIN QUERY PLAN SELECT s.id FROM {ORDER_SPANS} s WHERE s.start_ms < ?1 AND s.end_ms >= ?2"
+                    ))?
+                    .query_map(params![100, 0, "W1"], |r| r.get(3))?
+                    .collect::<Result<_, _>>()?;
+                Ok(rows)
+            })
+            .unwrap();
+        assert!(
+            plan.iter()
+                .any(|d| d == "SEARCH t USING INDEX time_spans_by_run (run_id=?)"),
+            "{plan:#?}"
+        );
+    }
 
     #[test]
     fn a_read_binds_every_filter_and_includes_an_order_s_share_of_lead_turns() {

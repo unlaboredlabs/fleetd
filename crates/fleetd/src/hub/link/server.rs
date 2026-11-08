@@ -688,6 +688,11 @@ impl NodeLinkServer {
         }
         self.deps.executors.detach_link(machine_id, link).await;
         if matches!(self.deps.store.machine_get(machine_id), Ok(None)) {
+            // `fleetd machine remove` ran outside this hub, so no open app has heard yet.
+            self.append(Some(crate::hub::machine_setup::removed_event(
+                machine_id,
+                self.now_iso(),
+            )));
             match self.deps.store.machine_remove(machine_id) {
                 Ok(0) => {}
                 Ok(rows) => {
@@ -1519,6 +1524,18 @@ mod tests {
         assert_eq!(projects(&worker), 0);
         assert_eq!(projects(&devbox), 1);
         assert!(hub.executors.live_since(&worker).is_none());
+        // The CLI's remove ran outside this hub, so it tells the open apps now: they drop the machine and its projects.
+        let removed = |id: &MachineId| {
+            hub.events
+                .page(0, None, None)
+                .unwrap()
+                .events
+                .iter()
+                .map(|e| serde_json::to_value(e).unwrap())
+                .filter(|e| e["type"] == "machine.removed" && e["machineId"] == id.as_str())
+                .count()
+        };
+        assert_eq!(removed(&worker), 1);
 
         // Revoked, but the hub still has the machine (its remove hasn't forgotten it yet): its rows are left alone.
         assert!(hub.auth.revoke_node(&devbox).unwrap());
@@ -1526,6 +1543,7 @@ mod tests {
         let devbox_link = hub.link.link_id(&devbox).unwrap();
         assert!(hub.link.forget_if_revoked(&devbox, devbox_link).await);
         assert_eq!(projects(&devbox), 1);
+        assert_eq!(removed(&devbox), 0);
     }
 
     /// The 2026-11-03 outage: a stalled hub ran a quiet link's silence timer out just as the node linked again. Its

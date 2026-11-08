@@ -63,6 +63,8 @@ Too long for one command: start `scripts/check.sh --background`, then wait with 
 every check its changes touch has passed on it, in one run or several, so after a failure rerun only that check
 (`scripts/check.sh rust-tests`). A check's pass holds for any tree with the same inputs for it (`scripts/check.sh
 --keys` prints each one's hash), so a desktop fix on a branch whose Rust checks passed doesn't run them again.
+Give each worktree its own Rust build folder (its `target/`; no `CARGO_TARGET_DIR` shared with another worktree): two
+checks building into one folder build the same test binary, and one can run the other's.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and

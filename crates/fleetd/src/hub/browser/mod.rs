@@ -35,7 +35,12 @@ const MAX_GB_KEY: &str = "max_gb_per_project";
 
 /// Where a session's recording lives on the hub.
 pub fn dir(hub: &Hub, session_id: &BrowserSessionId) -> PathBuf {
-    hub.config.home.join("browser").join(session_id.as_str())
+    dir_in(&hub.config.home, session_id)
+}
+
+/// [`dir`] under the hub home `home`.
+pub fn dir_in(home: &std::path::Path, session_id: &BrowserSessionId) -> PathBuf {
+    home.join("browser").join(session_id.as_str())
 }
 
 /// What a lost recording's folder is renamed to on its way out: `.{id}.lost-<ms>`, beside the recordings.

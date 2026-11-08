@@ -14,8 +14,8 @@ const devCsp = (): Plugin => ({
 });
 
 export default defineConfig({
-  // zod is bundled: loading its ESM build file by file took ~25 ms of startup.
-  main: { build: { externalizeDeps: { exclude: ["zod"] } } },
+  // zod and ws are bundled: loading zod's ESM build file by file took ~25 ms of startup, and ws's CommonJS files ~6 ms more.
+  main: { build: { externalizeDeps: { exclude: ["zod", "ws"] } } },
   // A sandboxed preload can't require anything but `electron`, so it is one self-contained CommonJS file.
   preload: {
     build: {

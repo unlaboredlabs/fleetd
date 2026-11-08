@@ -7406,6 +7406,11 @@
           "type": "string"
         },
         {
+          "const": "machine.removed",
+          "description": "The machine was removed: the hub forgot it and erased its projects, so the app drops it and them. Sent by\n`machine_remove`, and when a removed node's link ends (`fleetd machine remove` runs outside the hub), so a node\nstill linked at its removal may bring a second one.",
+          "type": "string"
+        },
+        {
           "const": "thread.orphaned",
           "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
           "type": "string"
@@ -7437,7 +7442,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed; or its icon (`project_icon_set`): `data.icon`.",
+          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed; or its icon (`project_icon_set`): `data.icon`; or a linked hub was removed from it\n(`hub_link_remove`): `data.hubLinkRemoved`, the link's id; or its Telegram bridge unpaired or removed\n(`telegram_unpair`, `telegram_remove`): `data.telegram`.",
           "type": "string"
         },
         {
@@ -7722,7 +7727,7 @@
         },
         {
           "const": "mcp.oauth",
-          "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`). mcp_servers_get reads the rest; never a token.",
+          "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`), or the server was removed (`data.removed`, no status).\nmcp_servers_get reads the rest; never a token.",
           "type": "string"
         }
       ],
@@ -9151,6 +9156,36 @@
         "stopped"
       ],
       "type": "string"
+    },
+    "LeftProject": {
+      "description": "An Only-me project its owner left behind when removed from the hub: archived then, so its lead and automations stop,\nand listed to an owner or admin by name alone, to delete it (`project_remove`). Its chat and contents stay its\nowner's.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "owner": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The removed person whose it was."
+        },
+        "path": {
+          "description": "Its folder on its machine, which a delete may remove too.",
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "path",
+        "owner"
+      ],
+      "type": "object"
     },
     "LinkProject": {
       "description": "One project a link reaches.",
@@ -15007,6 +15042,14 @@
           "description": "Open invites, newest first.",
           "items": {
             "$ref": "#/$defs/Invite"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "left": {
+          "description": "The Only-me projects of people removed from the hub, by name alone: for an owner's or admin's human key,\nabsent for anyone else's and from older hubs.",
+          "items": {
+            "$ref": "#/$defs/LeftProject"
           },
           "maxItems": 500,
           "type": "array"

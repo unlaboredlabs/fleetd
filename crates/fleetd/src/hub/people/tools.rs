@@ -9,7 +9,9 @@ use fleetd_contracts::mcp::{
     InviteRevokeInput, InviteRevokeOutput, PeopleListInput, PeopleListOutput, PersonRemoveInput,
     PersonRemoveOutput, PersonSetInput, PersonSetOutput,
 };
-use fleetd_contracts::people::{HubRole, PeopleChange, PeopleChangedData, Person, PersonRef};
+use fleetd_contracts::people::{
+    HubRole, LeftProject, PEOPLE_MAX, PeopleChange, PeopleChangedData, Person, PersonRef,
+};
 use fleetd_contracts::prim::{Count, List};
 
 use super::People;
@@ -95,6 +97,17 @@ pub fn announce(events: &EventLog, clock: &dyn Clock, data: PeopleChangedData, s
     }
 }
 
+/// `people.changed` for one of `person`'s accounts removed (`what`: "Claude subscription", "1Password token", "GitHub
+/// connection"): every open app reads the Hub's people and that person's accounts again.
+pub fn account_removed(hub: &Hub, person: &PersonRef, what: &str) {
+    announce(
+        &hub.events,
+        hub.clock.as_ref(),
+        change(PeopleChange::AccountRemoved, person, Some(person)),
+        format!("{} removed their {what}", person.name),
+    );
+}
+
 async fn people_list(
     hub: Arc<Hub>,
     caller: Caller,
@@ -121,15 +134,42 @@ async fn people_list(
     } else {
         Vec::new()
     };
+    let left = if admin {
+        Some(List::unchecked(left(&hub)?))
+    } else {
+        None
+    };
     Ok(PeopleListOutput {
         people: List::unchecked(list),
         devices: List::unchecked(devices),
         invites: List::unchecked(invites),
         me,
         this_device: is_human(&caller).then(|| caller.key_id.clone()),
+        left,
         next: None,
         truncated: None,
     })
+}
+
+/// The Only-me projects removed people left, by name alone: what an owner or admin needs to delete them.
+fn left(hub: &Hub) -> Result<Vec<LeftProject>, ToolError> {
+    let left = hub.db.with(|c| Ok(crate::hub::navi::store::left(c)?))?;
+    let store = people(hub);
+    let mut out = Vec::new();
+    for (r, owner) in left.into_iter().take(PEOPLE_MAX) {
+        let (Some(project), Some(owner)) = (hub.store.project_get(&r)?, store.person_ref(&owner)?)
+        else {
+            continue;
+        };
+        out.push(LeftProject {
+            machine_id: r.machine_id,
+            project_id: r.project_id,
+            title: project.title,
+            path: project.workspace_root,
+            owner,
+        });
+    }
+    Ok(out)
 }
 
 /// What an admin may hand out: an owner gives any role; an admin, admin or member.
@@ -371,6 +411,10 @@ async fn person_remove(
     let (person, revoked) = store
         .remove(&input.person_id)?
         .ok_or_else(|| unknown_person(id))?;
+    // Their devices' open app connections close now, not at their next call.
+    hub.auth.revoked_some();
+    // The leads of their Only-me projects, archived with them, stop now too.
+    crate::hub::navi::stop_left(&hub, &person.person_id).await;
     // Their Claude subscription goes with them: nobody's work runs on it again.
     crate::hub::claude_accounts::tools::forget_person(&hub, &person.person_id).await;
     // And their 1Password token.

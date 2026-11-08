@@ -7,7 +7,7 @@
 //! - **xvfb**: an Xvfb on the host on a free display number (`-nolisten tcp -nolisten local`, so only its socket
 //!   file), and apps launched as the node's user with a fresh home directory in the display's own folder, which goes
 //!   with them.
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -131,12 +131,62 @@ fn wait_x(
     }
 }
 
-/// A display number free on the host: no lock file and no socket.
-fn free_number() -> Option<u32> {
-    (100..600).find(|n| {
-        !Path::new(&format!("/tmp/.X{n}-lock")).exists()
-            && !Path::new(X11_UNIX).join(format!("X{n}")).exists()
+fn lock_file(number: u32) -> PathBuf {
+    PathBuf::from(format!("/tmp/.X{number}-lock"))
+}
+
+/// The pid an X server's lock file names; None when there is no lock or it can't be read.
+fn lock_pid(number: u32) -> Option<i32> {
+    std::fs::read_to_string(lock_file(number))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// An Xvfb killed leaves its lock and socket, which kept its number taken for good: one a session each, till none of
+/// 100 to 599 was left. Once it is reaped they go, while the lock is still its own.
+fn forget_killed(number: u32, pid: i32) {
+    if lock_pid(number) == Some(pid) {
+        let _ = std::fs::remove_file(Path::new(X11_UNIX).join(format!("X{number}")));
+        let _ = std::fs::remove_file(lock_file(number));
+    }
+}
+
+/// Whether display number `n` is free on the host: no lock file and no socket, or a lock left by an X server that is
+/// gone (one killed leaves both behind, and Xvfb takes such a number over).
+fn is_free(n: u32) -> bool {
+    if !lock_file(n).exists() {
+        return !Path::new(X11_UNIX).join(format!("X{n}")).exists();
+    }
+    lock_pid(n).is_some_and(|pid| {
+        pid > 0 && nix::sys::signal::kill(Pid::from_raw(pid), None) == Err(nix::errno::Errno::ESRCH)
     })
+}
+
+/// The numbers this process is starting an Xvfb on. Xvfb's lock doesn't stop servers started together: several ran on
+/// one number, and only the last one's socket answered.
+static STARTING: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
+
+/// A display number one start holds until its Xvfb has the number's lock, or gave up.
+struct Claim(u32);
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        lock(&STARTING).remove(&self.0);
+    }
+}
+
+/// A free display number no other start of this process holds, from a random one on, so another process's start
+/// rarely picks the same.
+fn claim_number() -> Option<Claim> {
+    let mut starting = lock(&STARTING);
+    let from = 100 + rand::thread_rng().next_u32() % 500;
+    let n = (from..600)
+        .chain(100..from)
+        .find(|n| !starting.contains(n) && is_free(*n))?;
+    starting.insert(n);
+    Some(Claim(n))
 }
 
 impl Display {
@@ -177,7 +227,8 @@ impl Display {
         let mut last = String::new();
         // A number another X server takes meanwhile is tried again with the next.
         for _ in 0..3 {
-            let number = free_number().ok_or("every X display number from 100 to 599 is taken")?;
+            let claim = claim_number().ok_or("every X display number from 100 to 599 is taken")?;
+            let number = claim.0;
             let log = dir.join("xvfb.log");
             let out = File::create(&log).map_err(|e| e.to_string())?;
             let (w, h) = SIZE;
@@ -223,8 +274,9 @@ impl Display {
                     return Ok(display);
                 }
                 Err(why) => {
-                    let _ = killpg(Pid::from_raw(child.id() as i32), Signal::SIGKILL);
+                    let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
                     let _ = child.wait();
+                    forget_killed(number, pid);
                     last = why;
                 }
             }
@@ -386,8 +438,12 @@ impl Drop for Display {
             let _ = app.wait();
         }
         if let Some(mut xvfb) = lock(&self.xvfb).take() {
-            let _ = killpg(Pid::from_raw(xvfb.id() as i32), Signal::SIGKILL);
+            let pid = xvfb.id() as i32;
+            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
             let _ = xvfb.wait();
+            if let Some(number) = self.name.strip_prefix(':').and_then(|n| n.parse().ok()) {
+                forget_killed(number, pid);
+            }
         }
         if let Some((runtime, name)) = &self.container {
             runtime.remove(name);

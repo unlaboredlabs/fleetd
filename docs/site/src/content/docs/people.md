@@ -59,7 +59,11 @@ fleetd invite --person p_abcd2345
 
 A person signs out one of their other devices (a lost phone, an old computer) under Settings › You › Your devices in
 the desktop app: **Sign out** on its row, then confirm, and its key stops working at once. Owners and admins sign out
-anyone's device with `fleetd hub key revoke`. What a removed person did keeps their name.
+anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
+once: an app it has open is disconnected, its phone gets no more notifications, and a Telegram bridge of theirs takes
+and sends nothing more. What a removed person did keeps their name. Their Only me projects are archived, so nothing
+runs in them; **Settings › Hub › People** lists them by name under *Left by removed people*, with Delete. Nobody else
+opens them.
 
 ## Claude accounts {#claude}
 

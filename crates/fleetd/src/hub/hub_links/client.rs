@@ -522,6 +522,19 @@ pub async fn hello(label: &str, url: &str, key: &str) -> Result<LinkHello, McpTo
         })
 }
 
+/// A deleted project's links (`project_remove`): each other hub is asked to revoke its link, the delete not waiting
+/// on it. Their keys go with the project's rows (`navi::erase`); one whose hub doesn't answer expires there unused.
+pub fn revoke_all_there(hub: &Arc<Hub>, links: Vec<Kept>) {
+    for link in links {
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            if !revoke_there(&hub, &link).await {
+                tracing::info!(link = %link.link_id, "a deleted project's link wasn't revoked there: it expires unused");
+            }
+        });
+    }
+}
+
 /// Asks the other hub to revoke a link being removed here: whether it did.
 pub async fn revoke_there(hub: &Hub, link: &Kept) -> bool {
     let Ok(key) = open_key(hub, link) else {

@@ -3,13 +3,15 @@
 //! person ticks it, `node/sessions`), then [`erase`] deletes everything of it the hub keeps: its chat and the events
 //! that carried it, its approvals and purchases (`requests`), asks and decisions, its orders and what they hold, its
 //! memory and skills, its attachments and its screen recordings, and the time inspector's record of its sessions (whose
-//! labels name its commands, searches and pages). Its settings go with the project as any project's do
+//! labels name its commands, searches and pages). Its agents' slots and its own max agents go from the slot board,
+//! and its project.removed stays in the log for the open apps. Its settings go with the project as any project's do
 //! (`HubStore::project_remove`).
 //!
 //! The delete is marked as asked for first (`navi_erases`, [`asked`]): when its node removes the Navi but its answer
 //! never reaches the hub (a timeout), [`run`] finishes the erase once the hub's cache no longer has the Navi, at the
 //! node's `project_removed` or the first snapshot after, and at the hub's start.
 use std::collections::BTreeSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,7 +25,7 @@ use rusqlite::{Connection, params};
 
 use crate::hub::api::Hub;
 use crate::hub::ledger::project_key;
-use crate::hub::store::{StoreError, now_ms};
+use crate::hub::store::{HubDb, StoreError, now_ms};
 
 /// Tables with the Navi's rows by `machine_id` and `project_id`.
 const BY_PROJECT: &[&str] = &[
@@ -49,6 +51,7 @@ const BY_PROJECT: &[&str] = &[
     "tasks",
     "slot_claims",
     "workstreams",
+    "hub_links",
 ];
 
 /// Tables with rows of the Navi's sessions, by `machine_id` and `thread_id`.
@@ -99,8 +102,105 @@ pub fn finish_pending(hub: &Hub) -> Result<usize, StoreError> {
     Ok(n)
 }
 
-/// Finishes the erases asked for at the hub's start, then at each `project.removed`, until the hub stops.
+/// Projects the hub no longer has, whose rows an older hub left behind: `projects` names their id on no machine,
+/// yet a table [`HubStore::machine_project_forget`] or [`erase`] clears still holds them, or a person's sidebar order
+/// or pins do. A delete from before every project was erased (D310) left its chat, orders, leads and settings; one
+/// since, its max agents and its place in each order. Each is erased and forgotten as a project of a removed machine
+/// is (`projects::tools::forget_gone`), which clears every one of those rows, so a second run finds none. A project
+/// any machine has under that id is never touched, nor a hub-wide row ([`hub_wide`]). Run at the hub's start; how
+/// many were pruned.
+///
+/// [`HubStore::machine_project_forget`]: crate::hub::store::HubStore::machine_project_forget
+pub fn prune_orphans(hub: &Hub) -> Result<usize, StoreError> {
+    let orphans = hub.db.with(orphans)?;
+    for (machine_id, project_id) in &orphans {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked(machine_id),
+            project_id: ProjectId::unchecked(project_id),
+        };
+        erase(hub, &r)?;
+        hub.store.machine_project_forget(&r)?;
+    }
+    Ok(orphans.len())
+}
+
+/// A hub-wide row's key, which no project has: a hub-wide MCP server's and skill's are an empty machine and project
+/// (`mcp_servers::scope_key`, `skills::versions`). Erasing it as a project's would delete every hub-wide server and
+/// skill, and, an empty project's folders being their roots, every project's memory and skills.
+pub fn hub_wide(machine_id: &str, project_id: &str) -> bool {
+    machine_id.is_empty() || project_id.is_empty()
+}
+
+/// Refuses a hub-wide key ([`hub_wide`]) where a project's is meant.
+pub fn a_project(r: &ProjectRef) -> Result<(), StoreError> {
+    if hub_wide(r.machine_id.as_str(), r.project_id.as_str()) {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "an empty machine or project id is the hub's own, not a project's: nothing was erased",
+        )));
+    }
+    Ok(())
+}
+
+/// [`prune_orphans`]' projects, as (machine, project).
+fn orphans(c: &Connection) -> Result<BTreeSet<(String, String)>, StoreError> {
+    let live: BTreeSet<String> = c
+        .prepare("SELECT project_id FROM projects")?
+        .query_map([], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut out = BTreeSet::new();
+    let tables = crate::hub::store::MACHINE_TABLES
+        .iter()
+        .chain(&["workstreams", "tasks"])
+        .filter(|t| **t != "projects");
+    for table in tables {
+        let has_project = c
+            .prepare_cached("SELECT 1 FROM pragma_table_info(?) WHERE name = 'project_id'")?
+            .exists([table])?;
+        if !has_project {
+            continue;
+        }
+        let rows = c
+            .prepare(&format!(
+                "SELECT DISTINCT machine_id, project_id FROM {table}"
+            ))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        out.extend(
+            rows.into_iter()
+                .filter(|(m, p)| !live.contains(p) && !hub_wide(m, p)),
+        );
+    }
+    for table in ["sidebar_orders", "chat_pins"] {
+        let lists = c
+            .prepare(&format!("SELECT refs FROM {table}"))?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for refs in lists {
+            let refs: Vec<ProjectRef> = serde_json::from_str(&refs).unwrap_or_default();
+            out.extend(
+                refs.into_iter()
+                    .filter(|r| {
+                        let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
+                        !live.contains(p) && !hub_wide(m, p)
+                    })
+                    .map(|r| (r.machine_id.to_string(), r.project_id.to_string())),
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// Prunes what older hubs left of deleted projects ([`prune_orphans`]), then finishes the erases asked for at the
+/// hub's start, then at each `project.removed`, until the hub stops.
 pub async fn run(hub: Arc<Hub>) {
+    match prune_orphans(&hub) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(projects = n, "erased what was left of deleted projects"),
+        Err(e) => tracing::warn!(error = %e, "what was left of deleted projects wasn't erased"),
+    }
     let mut head = hub.events.subscribe();
     let mut cursor = hub.events.head();
     let types = [HubEventType::ProjectRemoved];
@@ -138,17 +238,27 @@ pub async fn run(hub: Arc<Hub>) {
 /// Erases what the hub keeps of the Navi `r`, its rows and its files, and its mark ([`asked`]). Run once its node has
 /// forgotten it.
 pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
-    let (recordings, blobs) = hub.db.transaction(|c| rows(c, r))?;
+    a_project(r)?;
+    // Its tasks' rows go below, so their slots are given back here, while the board still knows whose they are.
+    hub.slots.forget_project(r)?;
+    erase_in(&hub.db, &hub.config.home, r)
+}
+
+/// [`erase`] in the hub database `db` whose home is `home`: `fleetd machine remove` erases a machine's projects
+/// with it, from outside the hub's process too.
+pub fn erase_in(db: &HubDb, home: &Path, r: &ProjectRef) -> Result<(), StoreError> {
+    a_project(r)?;
+    let (recordings, blobs) = db.transaction(|c| rows(c, r))?;
     for id in &recordings {
-        gone(&crate::hub::browser::dir(
-            hub,
+        gone(&crate::hub::browser::dir_in(
+            home,
             &BrowserSessionId::unchecked(id),
         ));
     }
-    let attachments = crate::hub::intake::attachments::dir(hub);
+    let attachments = crate::hub::intake::attachments::dir_in(home);
     for sha in &blobs {
         // A file another chat or order holds too stays.
-        let held = hub.db.with(|c| {
+        let held = db.with(|c| {
             Ok(
                 c.prepare_cached("SELECT 1 FROM attachments WHERE sha256 = ? LIMIT 1")?
                     .exists([sha])?,
@@ -158,13 +268,13 @@ pub fn erase(hub: &Hub, r: &ProjectRef) -> Result<(), StoreError> {
             gone(&attachments.join(sha));
         }
     }
-    if let Some(dir) = hub.db.memory().project_dir(r) {
+    if let Some(dir) = db.memory().project_dir(r) {
         gone(&dir);
     }
-    if let Some(dir) = hub.db.skills().scope_dir(SkillScope::Project, Some(r)) {
+    if let Some(dir) = db.skills().scope_dir(SkillScope::Project, Some(r)) {
         gone(&dir);
     }
-    hub.db.with(|c| {
+    db.with(|c| {
         c.execute(
             "DELETE FROM navi_erases WHERE machine_id = ? AND project_id = ?",
             params![r.machine_id.as_str(), r.project_id.as_str()],

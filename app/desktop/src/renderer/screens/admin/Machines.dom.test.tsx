@@ -85,7 +85,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
           ok: false,
           error: {
             code: "invalid",
-            message: "devbox runs the leads of 2 projects (app, site): removing it stops them, and their chats wait until it joins again.",
+            message: "devbox runs the leads of 2 projects (app, site): removing it stops them and erases its projects, with their chats and history.",
             fix: "to repair devbox instead, run fleetd pair --worker devbox on the hub and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
           },
         });
@@ -207,6 +207,8 @@ it("says a machine the hub set up loses its service as well as its key", async (
   await render(<MachineList onRepair={() => undefined} />);
   await click(rowButton("builder-1", "Remove"));
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("The hub stops and removes builder-1's node service, then revokes its key.");
+  // Its projects and their history go with it, and the confirm says so.
+  expect(document.querySelector("[role='dialog']")?.textContent).toContain("its projects are deleted from fleetd with their chats, memory, skills, files and orders");
 });
 
 const items = () => [...host.querySelectorAll("li[data-item]")].map((li) => `${li.getAttribute("data-item") ?? ""}:${li.getAttribute("data-state") ?? ""}`);

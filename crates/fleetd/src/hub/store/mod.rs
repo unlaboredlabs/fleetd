@@ -17,6 +17,7 @@ mod tests;
 
 pub use db::{HubDb, StoreError, expand_home, resolve_hub_home};
 pub use event_log::{EventLog, NewEvent, WaitInput};
+pub(crate) use hub_store::MACHINE_TABLES;
 pub use hub_store::{HubStore, StoredThread};
 
 use crate::clock::Clock;

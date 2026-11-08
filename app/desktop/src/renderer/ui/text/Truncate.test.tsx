@@ -120,6 +120,19 @@ describe("Truncate", () => {
     expect(slot()?.hasAttribute("tabindex")).toBe(false);
   });
 
+  it("mounts its tooltip only once the text is cut, so a long list of text that fits stays light", async () => {
+    cutText = false;
+    await render(<Truncate>short</Truncate>);
+    // Radix marks a tooltip's trigger with its state.
+    expect(slot()?.hasAttribute("data-state")).toBe(false);
+    act(() => root.unmount());
+    root = createRoot(host);
+    cutText = true;
+    await render(<Truncate>{LONG}</Truncate>);
+    expect(slot()?.getAttribute("data-state")).toBe("closed");
+    expect(slot()?.getAttribute("role")).toBe("button");
+  });
+
   it("expand=inline unfolds in place, keeps focus, and Escape folds it back", async () => {
     await render(<Truncate expand="inline">{LONG}</Truncate>);
     const el = slot();

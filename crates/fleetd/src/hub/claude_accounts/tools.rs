@@ -392,6 +392,7 @@ async fn subscription_remove(
         };
         let machines: Vec<MachineId> = before.sealed_on.into_iter().map(|s| s.machine_id).collect();
         forget(&hub, &account, &machines).await;
+        crate::hub::people::tools::account_removed(&hub, &person.as_ref(), "Claude subscription");
     }
     Ok(ClaudeSubscriptionRemoveOutput {
         me: person_view(&hub, &person)?,

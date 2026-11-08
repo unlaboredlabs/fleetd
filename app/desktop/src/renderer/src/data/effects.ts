@@ -90,6 +90,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     // Its picture, read again only when it has one (project_avatar_set).
     if (type === "project.settings") out.push({ tool: "project_avatar_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }
+  // A linked hub removed from a project, or its Telegram bridge unpaired or removed: its settings pages read again.
+  if (type === "project.settings") out.push({ tool: "telegram_get" }, { tool: "hub_links_get" });
   if (type === "prompt.changed" || type === "prompt.default_changed") {
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
@@ -103,7 +105,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
-  // An MCP server's sign-in started, finished, failed or ended: Integrations reads the server's sign-in again.
+  // An MCP server's sign-in started, finished, failed or ended, or the server was removed: Integrations reads again.
   if (type === "mcp.oauth") out.push({ tool: "mcp_servers_get" });
   // A name published again is a new version: the list, and the open artifact's list of versions.
   if (type === "artifacts.changed") out.push({ tool: "artifacts_list" }, { tool: "artifact_get" });
@@ -113,6 +115,11 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
   if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
+  // Someone's Claude subscription, 1Password token or GitHub connection removed, or a hub link of theirs revoked: their
+  // own pages, and People's line of each person's accounts.
+  if (type === "people.changed") {
+    out.push({ tool: "claude_accounts_get" }, { tool: "onepassword_get" }, { tool: "github_app_get" }, { tool: "hub_links_get" });
+  }
   // You moved a project on another desktop: this sidebar follows (the hub sends it to your devices only).
   if (type === "sidebar.order") out.push({ tool: "sidebar_order_get" });
   // A device paired: Your devices shows it, and Pair a phone notices it.
@@ -136,7 +143,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   // A repo removed from a project (project.settings) can bring its checkout back as a project of its own.
-  const resync = newMachine || type === "project.added" || type === "project.removed" || type === "project.settings";
+  // A removed machine goes with its projects (the hub erased them): the snapshot no longer has any of them.
+  const resync = newMachine || type === "machine.removed" || type === "project.added" || type === "project.removed" || type === "project.settings";
   // Add project's list marks which repos are already projects.
   if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };

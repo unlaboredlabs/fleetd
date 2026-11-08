@@ -152,3 +152,32 @@ async fn only_their_owners_devices_hear_of_a_change() {
     let bobs = call(&hub, &bob_phone, "events_wait", wait).await.unwrap();
     assert!(!types(bobs).contains(&"chat.pins".to_owned()));
 }
+
+/// A removed project leaves everyone's pins (HubStore::project_remove calls `forget`): never kept as a ghost that
+/// holds one of their nine.
+#[tokio::test]
+async fn a_removed_project_leaves_everyones_pins() {
+    let (hub, _home) = hub();
+    let ann = owner(&hub);
+    let bob = member(&hub, "Bob");
+    let ann_phone = device(&hub, &ann, "operate");
+    let bob_phone = device(&hub, &bob, "operate");
+    for phone in [&ann_phone, &bob_phone] {
+        call(
+            &hub,
+            phone,
+            "chat_pins_set",
+            json!({ "pins": refs(&["ada", "web", "api"]) }),
+        )
+        .await
+        .unwrap();
+    }
+    let web = serde_json::from_value(json!({ "machineId": "lab", "projectId": "web" })).unwrap();
+    hub.db.transaction(|c| super::forget(c, &web)).unwrap();
+    for phone in [&ann_phone, &bob_phone] {
+        assert_eq!(
+            get(&hub, phone).await,
+            json!({ "pins": refs(&["ada", "api"]), "set": true })
+        );
+    }
+}

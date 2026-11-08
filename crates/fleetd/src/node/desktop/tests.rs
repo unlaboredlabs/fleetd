@@ -203,6 +203,65 @@ fn cleanup_never_kills_a_process_that_took_a_dead_xvfbs_pid() {
     let _ = other.wait();
 }
 
+/// An Xvfb killed leaves its lock and socket in /tmp, which kept its display number taken: the devbox ran out of
+/// numbers from 100 to 599, and every desktop start failed. A display thrown away leaves its number free.
+#[test]
+fn a_display_thrown_away_frees_its_number() {
+    let Some(config) = test_config() else { return };
+    let home = tempfile::tempdir().unwrap();
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    if settings.backend != DesktopBackend::Xvfb {
+        return;
+    }
+    let display = super::display::Display::start(&settings, None).unwrap();
+    let lock = PathBuf::from(format!("/tmp/.X{}-lock", &display.name[1..]));
+    let socket = display.socket.clone();
+    assert!(lock.exists() && socket.exists(), "{}", display.name);
+    drop(display);
+    assert!(!lock.exists(), "{} is left", lock.display());
+    assert!(!socket.exists(), "{} is left", socket.display());
+}
+
+/// Displays started at once (a pool refilling while a session starts, the suite's tests) each get a number of their own.
+/// They all picked the lowest free one, and Xvfb's lock doesn't stop servers started together: several ran on one
+/// number, only the last one's socket answered, and the others' sessions were refused or reset.
+#[test]
+fn displays_started_at_once_each_get_their_own_number() {
+    let Some(config) = test_config() else { return };
+    let home = tempfile::tempdir().unwrap();
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    if settings.backend != DesktopBackend::Xvfb {
+        return;
+    }
+    let go = std::sync::Barrier::new(6);
+    let displays: Vec<_> = std::thread::scope(|s| {
+        let starts: Vec<_> = (0..6)
+            .map(|_| {
+                s.spawn(|| {
+                    go.wait();
+                    super::display::Display::start(&settings, None)
+                })
+            })
+            .collect();
+        starts.into_iter().map(|t| t.join().unwrap()).collect()
+    });
+    let displays: Vec<_> = displays
+        .into_iter()
+        .map(|d| d.unwrap_or_else(|why| panic!("a start failed: {why}")))
+        .collect();
+    let mut names: Vec<&str> = displays.iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), 6, "{names:?}");
+    for display in &displays {
+        assert!(
+            display.connect().is_ok(),
+            "{} answers its own",
+            display.name
+        );
+    }
+}
+
 #[test]
 fn an_image_that_doesnt_build_falls_back_to_xvfb() {
     let home = tempfile::tempdir().unwrap();
@@ -586,6 +645,15 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         live: Default::default(),
     };
 
+    // The pool's one display, by its folder: the session's home is in it. (Not by how fast it started, which a busy
+    // machine slows past any limit.)
+    let warm: Vec<String> =
+        std::fs::read_dir(super::desktop_dir(node_home.path()).join("displays"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+    assert_eq!(warm.len(), 1, "{warm:?}");
+
     let started = call(
         &router,
         json!({ "op": "session_start", "purpose": "Try the terminal", "kind": "linux_desktop" }),
@@ -598,9 +666,10 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         "desktop session ({}) started in {} ms",
         result["desktop"], result["startMs"]
     );
+    let home = read_back(&router, "echo \"$HOME\"").await;
     assert!(
-        result["startMs"].as_u64().unwrap() < 1000,
-        "from the warm pool: {started}"
+        home.contains(&format!("/displays/{}/home", warm[0])),
+        "from the warm pool: {home}"
     );
     // One session of any kind at a time.
     let second = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
@@ -752,10 +821,13 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
     assert_eq!(recorded["kind"], "linux_desktop");
-    assert!(
-        !super::recordings_dir(node_home.path()).join(&id).exists(),
-        "the node let it go"
-    );
+    // The node lets its copy go once the hub has said so.
+    let kept = super::recordings_dir(node_home.path()).join(&id);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while kept.exists() {
+        assert!(Instant::now() < deadline, "the node never let it go");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
     assert!(
         !actions.contains(SECRET),
@@ -929,7 +1001,7 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     .await;
     let id = started["result"]["sessionId"]
         .as_str()
-        .expect("started")
+        .unwrap_or_else(|| panic!("not started: {started}"))
         .to_owned();
     assert!(
         started["result"]["worktree"].is_null(),
@@ -941,21 +1013,21 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     );
 
     let act = |action: Value| via_host(&router, &hosted, &box_key, key, action, None);
+    let screenshot = async || {
+        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
+        B64.decode(shot["result"]["jpegB64"].as_str().unwrap())
+            .unwrap()
+            .len()
+    };
+    // Against the empty screen, whose JPEG alone is some 16 KB: a fixed size passed before xterm's window was up, and
+    // what was typed then went nowhere.
+    let blank = screenshot().await;
     let launched =
         act(json!({ "op": "desktop", "action": "launch", "text": "xterm -geometry 100x30+0+0" }))
             .await;
     assert!(launched["result"].is_object(), "{launched}");
     let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
-        if B64
-            .decode(shot["result"]["jpegB64"].as_str().unwrap())
-            .unwrap()
-            .len()
-            > 8000
-        {
-            break;
-        }
+    while screenshot().await <= blank + 500 {
         assert!(Instant::now() < deadline, "xterm's window never showed");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }

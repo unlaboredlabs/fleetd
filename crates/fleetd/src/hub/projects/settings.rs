@@ -64,6 +64,26 @@ fn set_bytes(v: &EnvVarSet) -> usize {
     }
 }
 
+/// `project.settings` about `r`, with what changed in `data`: every open app reads that project's settings again.
+pub fn announce(
+    hub: &Hub,
+    r: &ProjectRef,
+    summary: String,
+    data: serde_json::Value,
+) -> Result<(), StoreError> {
+    hub.events.append(NewEvent {
+        at: crate::hub::checks::now_ts(hub.clock.as_ref()),
+        r#type: HubEventType::ProjectSettings,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary,
+        data: Some(data),
+        attention: None,
+    })?;
+    Ok(())
+}
+
 pub struct ProjectSettingsStore<'a> {
     db: &'a HubDb,
 }

@@ -165,7 +165,21 @@ async fn revoke(
     if !own && !allows_everywhere(&caller, Role::Admin) {
         return Err(not_found());
     }
-    super::revoke_issued(&hub, input.link_id.as_str())?;
+    if super::revoke_issued(&hub, input.link_id.as_str())?
+        && let Some(person) = link.person.as_ref().or(caller.person.as_ref())
+    {
+        // Every open app's lists of links read again: its person's, and an admin's of everyone's.
+        crate::hub::people::tools::announce(
+            &hub.events,
+            hub.clock.as_ref(),
+            crate::hub::people::tools::change(
+                fleetd_contracts::people::PeopleChange::LinkRevoked,
+                person,
+                caller.person.as_ref(),
+            ),
+            format!("A hub link of {} was revoked", person.name),
+        );
+    }
     Ok(HubLinkRevokeOutput {
         link: issued_get(&hub.db, input.link_id.as_str())?.ok_or_else(not_found)?,
         next: Some("Revoked: its next request is refused.".into()),
@@ -254,6 +268,12 @@ async fn remove(
     may_manage(&hub, &caller, &link.navi)?;
     // The key goes first, so nothing more goes through it; then the other hub is asked to revoke it too.
     super::forget(&hub.db, &link.link_id)?;
+    crate::hub::projects::settings::announce(
+        &hub,
+        &link.navi,
+        format!("{} unlinked", link.label),
+        serde_json::json!({ "hubLinkRemoved": link.link_id }),
+    )?;
     let revoked_there = client::revoke_there(&hub, &link).await;
     Ok(HubLinkRemoveOutput {
         next: (!revoked_there).then(|| {

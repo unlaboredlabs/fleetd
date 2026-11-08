@@ -3,6 +3,7 @@
 import { Check, Circle } from "lucide-react";
 import type { AttachmentBlock, ChecklistBlock } from "../../../../shared/contracts";
 import { useToolQuery } from "../../../src/data/react";
+import { useSeen } from "../../live";
 import { cx, Text } from "../../../ui";
 import { useBubbleActions } from "../actions";
 import { useOpenImage } from "../ImageViewer";
@@ -35,14 +36,15 @@ export function Checklist({ list }: { list: ChecklistBlock }) {
 export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }) {
   const project = useBubbleActions()?.project;
   const open = useOpenImage();
-  const got = useToolQuery("attachment_get", { projectRef: project ?? { machineId: "", projectId: "" }, attachmentId: media.attachmentId }, { enabled: project !== undefined });
+  const [seen, box] = useSeen();
+  const got = useToolQuery("attachment_get", { projectRef: project ?? { machineId: "", projectId: "" }, attachmentId: media.attachmentId }, { enabled: project !== undefined && seen });
   const data = got.data;
   const src = data === undefined ? undefined : `data:${data.mime};base64,${data.dataB64}`;
   const alt = media.caption ?? data?.name ?? "";
   return (
     <figure className={b.media} data-block={clip ? "clip" : "image"}>
       {src === undefined ? (
-        <div className={b.mediaWait}>
+        <div ref={box} className={b.mediaWait}>
           <Text size="xs" tone="quiet">
             {got.isError ? "Couldn’t load this." : "Loading…"}
           </Text>

@@ -2,10 +2,11 @@
 //! who wrote it (a Navi or lead, or a person), when, the one line on why, and the whole text, the newest
 //! [`SKILL_VERSIONS_KEPT`] of them. A revert is a new version with an older one's text. `skill_uses` holds a skill as
 //! one project's sessions get it: turned off there, and when one of them last ran it (`used`, from the hub's view of
-//! the session's Skill calls). Both go with the skill's delete and the project's.
+//! the session's Skill calls). Both go with the skill's delete (a hub-wide one's in every project without its own of
+//! the name) and the project's.
 use std::collections::{HashMap, HashSet};
 
-use fleetd_contracts::ids::{ProjectId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::prim::{Int, Line};
 use fleetd_contracts::skills::{
     SKILL_VERSIONS_KEPT, SkillAuthor, SkillName, SkillScope, SkillVersion, WHY_CAP,
@@ -142,6 +143,20 @@ pub(super) fn forget(
         )?;
     }
     Ok(())
+}
+
+/// The projects with a row in `skill_uses` for `name`: turned off there, or used there.
+pub(super) fn uses_of(c: &Connection, name: &SkillName) -> Result<Vec<ProjectRef>, StoreError> {
+    let mut st = c.prepare_cached(
+        "SELECT machine_id, project_id FROM skill_uses WHERE name = ? AND machine_id != ''",
+    )?;
+    let rows = st.query_map([name.as_str()], |row| {
+        Ok(ProjectRef {
+            machine_id: MachineId::unchecked(row.get::<_, String>(0)?),
+            project_id: ProjectId::unchecked(row.get::<_, String>(1)?),
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 /// The skill's versions, newest first, without their texts.

@@ -362,6 +362,24 @@ async fn a_secret_goes_to_its_node_and_the_hub_keeps_only_its_fingerprint() {
             .servers
             .is_empty()
     );
+    // And tells every open app, so Integrations on another device drops it too.
+    let told = hub
+        .events
+        .page(
+            0,
+            Some(&[fleetd_contracts::events::HubEventType::McpOauth]),
+            None,
+        )
+        .unwrap()
+        .events
+        .pop()
+        .and_then(|e| e.data)
+        .unwrap_or_default();
+    assert_eq!(
+        (told["name"].as_str(), told["removed"].as_bool()),
+        (Some("github"), Some(true)),
+        "{told}"
+    );
 }
 
 #[tokio::test]

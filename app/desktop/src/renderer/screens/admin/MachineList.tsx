@@ -1,8 +1,8 @@
 // Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state (and, unless online, what
 // it needs), a link to its page (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
-// machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. The hub sends no event when it forgets a machine, so a removed one leaves the list here at once and
-// the store's next snapshot. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
+// machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. A
+// removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
 import { useState } from "react";

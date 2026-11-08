@@ -2255,16 +2255,30 @@
       "type": "object"
     },
     "PeopleChange": {
-      "enum": [
-        "invited",
-        "joined",
-        "invite_revoked",
-        "renamed",
-        "role_changed",
-        "removed",
-        "device_revoked"
+      "oneOf": [
+        {
+          "enum": [
+            "invited",
+            "joined",
+            "invite_revoked",
+            "renamed",
+            "role_changed",
+            "removed",
+            "device_revoked"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "account_removed",
+          "description": "One of their accounts was removed: their Claude subscription, 1Password token or GitHub connection.",
+          "type": "string"
+        },
+        {
+          "const": "link_revoked",
+          "description": "A hub link minted as them was revoked.",
+          "type": "string"
+        }
       ],
-      "type": "string",
       "x-open": true
     },
     "PeopleChangedData": {

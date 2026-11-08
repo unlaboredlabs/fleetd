@@ -195,6 +195,11 @@ async fn disconnect(
     let revoked = hub.github_app.disconnect(&person).await.map_err(failed)?;
     // Their open orders' agents no longer hold it.
     super::sessions::withdraw_person(&hub, &person).await;
+    if let Some(who) =
+        crate::hub::people::People::new(hub.db.clone(), hub.clock.clone()).person_ref(&person)?
+    {
+        crate::hub::people::tools::account_removed(&hub, &who, "GitHub connection");
+    }
     Ok(GithubDisconnectOutput {
         revoked,
         next: None,

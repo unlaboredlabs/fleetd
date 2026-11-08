@@ -347,7 +347,22 @@ impl Skills<'_> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
             Err(e) => return Err(e.into()),
         };
-        self.db.with(|c| versions::forget(c, scope, r, name))?;
+        self.db.with(|c| {
+            versions::forget(c, scope, r, name)?;
+            // A hub-wide skill is turned off and used per project: those go too, so a new one of the name starts on
+            // and unused. A project's own skill of the name is what its rows are of, so they stay.
+            if scope == SkillScope::Global {
+                for project in versions::uses_of(c, name)? {
+                    let own = self
+                        .skill_dir(SkillScope::Project, Some(&project), name)
+                        .is_some_and(|d| d.join(SKILL_FILE).is_file());
+                    if !own {
+                        versions::forget(c, SkillScope::Project, Some(&project), name)?;
+                    }
+                }
+            }
+            Ok(())
+        })?;
         Ok(removed)
     }
 

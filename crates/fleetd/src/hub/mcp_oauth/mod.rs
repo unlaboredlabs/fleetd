@@ -326,6 +326,31 @@ fn show(hub: &Hub, row: &Row, change: impl FnOnce(&mut McpOauth)) -> Result<(), 
     Ok(())
 }
 
+/// `mcp.oauth` for a server removed from `scope`: every open app reads its servers again, and the server is gone.
+pub fn removed(hub: &Hub, scope: &McpScope, name: &McpServerName) -> Result<(), StoreError> {
+    let project = match scope {
+        McpScope::Project {
+            machine_id,
+            project_id,
+        } => Some(ProjectRef {
+            machine_id: machine_id.clone(),
+            project_id: project_id.clone(),
+        }),
+        McpScope::Global => None,
+    };
+    hub.events.append(NewEvent {
+        at: iso_ms(now(hub)).into(),
+        r#type: HubEventType::McpOauth,
+        machine_id: project.as_ref().map(|r| r.machine_id.clone()),
+        project_id: project.as_ref().map(|r| r.project_id.clone()),
+        thread_id: None,
+        summary: format!("{name} removed"),
+        data: Some(json!({ "projectRef": project, "name": name, "removed": true })),
+        attention: None,
+    })?;
+    Ok(())
+}
+
 /// A line in the project's chat.
 fn say(hub: &Hub, row: &Row, text: &str) {
     if let Some(r) = row.project()

@@ -307,6 +307,11 @@ async fn machine_remove(
     )
     .await
     .map_err(stopped)?;
+    // Removed whatever its steps on the machine did: every open app drops it and its projects.
+    hub.events.append(super::removed_event(
+        &input.machine_id,
+        iso_ms(now_ms(hub.clock.as_ref())),
+    ))?;
     let Steps { steps, said } = collect.0.into_inner().unwrap();
     let mut next = said;
     if !removed.remote_ok {
