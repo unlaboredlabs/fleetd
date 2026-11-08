@@ -49,6 +49,16 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             crate::hello::PROTOCOL_VERSION.into(),
         ),
         (
+            "APP_CLOSE_RESTART",
+            "The /app close code when the hub stops (Service Restart): redial at once, it comes back within a moment.",
+            crate::app::APP_CLOSE_RESTART.into(),
+        ),
+        (
+            "APP_CLOSE_UPDATING",
+            "The start of that close's reason while an update restarts the hub: \"updating to <version>\".",
+            crate::app::APP_CLOSE_UPDATING.into(),
+        ),
+        (
             "SPARK_BUCKET_SECS",
             "Seconds per sparkline bucket.",
             live::SPARK_BUCKET_SECS.into(),

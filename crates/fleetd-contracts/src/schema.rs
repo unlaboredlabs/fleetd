@@ -110,6 +110,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(crate::people::SidebarOrderData: SidebarOrder);
         data!(crate::people::ChatPinsData: ChatPins);
         data!(crate::machine_setup::MachineAddStepData: MachineAddStep);
+        data!(crate::mcp::HubUpdateData: HubUpdate);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();

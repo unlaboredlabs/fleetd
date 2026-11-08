@@ -68,6 +68,14 @@ pub const APP_DEFLATE: &str = "deflate";
 /// always.
 pub const APP_FEATURES_HEADER: &str = "x-fleetd-features";
 
+/// The close code of every /app socket when the hub stops: WebSocket's "Service Restart". The hub comes back within a
+/// moment, so redial at once rather than back off. The close reason says why: [`APP_CLOSE_UPDATING`] then the build
+/// it updates to while an update restarts it (also in `hub.update`, sent just before), else "hub restarting".
+pub const APP_CLOSE_RESTART: u16 = 1012;
+
+/// The start of the close reason when the hub restarts for an update: "updating to <version>".
+pub const APP_CLOSE_UPDATING: &str = "updating to ";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum AppClientMessage {

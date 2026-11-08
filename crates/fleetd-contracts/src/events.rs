@@ -311,6 +311,10 @@ pub enum HubEventType {
     /// mcp_servers_get reads the rest; never a token.
     #[serde(rename = "mcp.oauth")]
     McpOauth,
+    /// An update started, its hub or a machine moved a state (restarting, back on the new build), or it ended:
+    /// `data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.
+    #[serde(rename = "hub.update")]
+    HubUpdate,
 }
 
 impl HubEventType {
@@ -408,6 +412,7 @@ impl HubEventType {
             Self::ChatPins => "chat.pins",
             Self::MachineAddStep => "machine_add.step",
             Self::McpOauth => "mcp.oauth",
+            Self::HubUpdate => "hub.update",
         }
     }
 }
