@@ -99,3 +99,28 @@ test("an artifact keeps its versions, posts a card and lists in the Artifacts ta
   });
   done();
 });
+
+test("chat_state says whether the chat waits on the person", async () => {
+  const { chatState } = await import("../src/hub/chat/index.ts");
+  const { hub, done } = testHub();
+  expect(chatState(hub).needsYou(PROJECT)).toBe(false);
+  chat(hub).add(PROJECT, { author: "lead", text: "Ship it?", source: "s1" });
+  expect(chatState(hub).needsYou(PROJECT)).toBe(true);
+  chat(hub).add(PROJECT, { author: "human", text: "yes", request: "r1" });
+  expect(chatState(hub).needsYou(PROJECT)).toBe(false);
+  done();
+});
+
+test("an agent's message to another lead is stored once, held, and says why it waits", async () => {
+  const { sendAsAgent } = await import("../src/hub/chat/index.ts");
+  const { checklistRead } = await import("../src/hub/checklist/index.ts");
+  const { hub, done } = testHub();
+  const first = await sendAsAgent(hub, PROJECT, "Ada (Navi)", "Can you book the room?", "navi:1");
+  expect(first.message).toMatchObject({ author: "agent", by: "Ada (Navi)", delivery: "queued", text: "Can you book the room?" });
+  expect(first.leadWaiting).toBe("Launching a lead thread is not wired in this hub yet.");
+  const again = await sendAsAgent(hub, PROJECT, "Ada (Navi)", "Can you book the room?", "navi:1");
+  expect(again.message.messageId).toBe(first.message.messageId);
+  expect(chat(hub).held(PROJECT).length).toBe(1);
+  expect(checklistRead(hub, PROJECT)).toEqual({ items: [], nextId: 1 });
+  done();
+});

@@ -46,46 +46,6 @@ export function cap<T>(items: T[], max: number): { items: T[]; truncated?: true 
   return items.length > max ? { items: items.slice(0, max), truncated: true } : { items };
 }
 
-/** The Navis `caller` may not see or use: every one with an owner other than them (navi/owner.rs `others`). */
-export function otherNavis(db: { conn: import("bun:sqlite").Database }, caller: Caller): Set<string> {
-  const me =
-    caller.person?.personId ??
-    db.conn
-      .query<{ person_id: string }, []>(
-        "SELECT person_id FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1",
-      )
-      .get()?.person_id ??
-    null;
-  const rows = db.conn
-    .query<{ machine_id: string; project_id: string }, [string | null]>(
-      `SELECT machine_id, project_id FROM project_settings
-       WHERE only_me = 1 AND owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)`,
-    )
-    .all(me);
-  return new Set(rows.map((r) => `${r.machine_id}/${r.project_id}`));
-}
-
-/** Whether the thread is one of `navis`' (navi/owner.rs `thread_among`); one that can't be read counts as theirs. */
-export function threadAmong(db: { conn: import("bun:sqlite").Database }, navis: Set<string>, machineId: string, threadId: string): boolean {
-  if (navis.size === 0) return false;
-  try {
-    const row = db.conn
-      .query<{ project_id: string }, [string, string]>("SELECT project_id FROM threads WHERE machine_id = ? AND thread_id = ?")
-      .get(machineId, threadId);
-    return !!row && navis.has(`${machineId}/${row.project_id}`);
-  } catch {
-    return true;
-  }
-}
-
-/** The refusal for a call that names another person's Navi (navi/owner.rs `refused`). */
-export const navisRefused = (r: ProjectRef) =>
-  new ToolError(
-    "forbidden",
-    `${r.projectId} on ${r.machineId} is another person's Only me project: only its owner uses and manages it.`,
-    "Your own projects are in your list; make one with project_add.",
-  );
-
 /** A message sent through the hub's offline write queue (hub/queue): delivered now, or queued for its machine. */
 export type QueueSent = { queued: boolean; queuedUntil?: string; runId?: string };
 
