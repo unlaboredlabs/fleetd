@@ -26,7 +26,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, emptyChat, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, emptyChat, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useCanStop } from "../stopProbe";
@@ -49,7 +49,7 @@ import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { HoldMenu } from "../ui/HoldMenu";
 import { ArtifactLinks, Grid, Markdown } from "../ui/Markdown";
-import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
+import { FileBubble, ImageBubble, ImageViewer, shareFile, type OpenedImage } from "../ui/Media";
 import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
@@ -90,7 +90,7 @@ const AWAY = 280;
 interface ThreadActions {
   readonly reply: (target: { readonly id: string; readonly part: number; readonly who: string; readonly quote: string }) => void;
   readonly selectText: (text: string) => void;
-  readonly openImage: (image: AttachmentGetOutput) => void;
+  readonly openImage: (image: OpenedImage) => void;
   readonly jumpTo: (messageId: string) => void;
   /** Whose the message is, as a reply's quote names them: "You", or the chat's lead. */
   readonly whoWrote: (messageId: string) => string;
@@ -185,7 +185,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // thread; a bubble's Reply sets the draft's quote, and a send brings it.
   const canStop = useCanStop(session, working);
   const [selecting, setSelecting] = useState<string | null>(null);
-  const [image, setImage] = useState<AttachmentGetOutput | null>(null);
+  const [image, setImage] = useState<OpenedImage | null>(null);
   const [lit, setLit] = useState<string | null>(null);
   // The thread's height, and what of it shows between the bar over it and the composer.
   const [height, setHeight] = useState(0);

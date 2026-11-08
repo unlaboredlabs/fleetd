@@ -57,6 +57,9 @@ final class ShareModel: ObservableObject {
   private var images: [SharedImage] = []
   /// Attachment ids of what went up already, by file index: the images, then a text file.
   private var uploaded: [Int: String] = [:]
+  /// The file a dropped link cut off mid-way: its bytes as they went, its upload and the bytes the hub answered for. The
+  /// next try goes on from there; the hub answers a piece it already had as taken, and the same put with its file.
+  private var partial: (index: Int, file: Upload, uploadId: String, offset: Int)?
   private let requestId = "share-" + UUID().uuidString.lowercased()
 
   init(items: [NSExtensionItem]) {
@@ -144,8 +147,8 @@ final class ShareModel: ObservableObject {
     // Sizes from the files, for the progress: a converted image ends up smaller or close.
     let sizes = images.map(\.bytes) + (out.textFile.map { [$0.data.count] } ?? [])
     let total = max(1, sizes.reduce(0, +))
-    var done = sizes.indices.filter { uploaded[$0] != nil }.reduce(0) { $0 + sizes[$1] }
-    phase = .sending(Double(done) / Double(total))
+    var done = sizes.indices.filter { uploaded[$0] != nil }.reduce(0) { $0 + sizes[$1] } + (partial?.offset ?? 0)
+    phase = .sending(min(1, Double(done) / Double(total)))
     do {
       if link == nil, let pairing, let fresh = HubLink(pairing) {
         _ = try await fresh.open()
@@ -155,7 +158,9 @@ final class ShareModel: ObservableObject {
       for i in sizes.indices where uploaded[i] == nil {
         // One file in memory at a time: read (mapped) or converted here, gone when the loop moves on.
         let file: Upload
-        if i < images.count {
+        if let partial, partial.index == i {
+          file = partial.file
+        } else if i < images.count {
           let image = images[i]
           guard let prepared = await Task.detached(priority: .userInitiated, operation: { Self.prepare(image, index: i) }).value else {
             throw Problem.unreadable(image.name ?? "An image")
@@ -165,12 +170,13 @@ final class ShareModel: ObservableObject {
         } else if let text = out.textFile {
           file = text
         } else { continue }
-        var uploadId: String?
-        var offset = 0
+        var uploadId = partial?.index == i ? partial?.uploadId : nil
+        var offset = uploadId == nil ? 0 : partial?.offset ?? 0
         let ranges = file.pieceRanges
-        for range in ranges.dropLast() {
+        for range in ranges.dropLast() where range.lowerBound >= offset {
           uploadId = try await link.call("attachment_part", Calls.part(file.data.subdata(in: range), uploadId: uploadId, offset: offset))["uploadId"] as? String
           offset += range.count
+          if let uploadId { partial = (i, file, uploadId, offset) }
           done += range.count
           phase = .sending(min(1, Double(done) / Double(total)))
         }
@@ -179,6 +185,7 @@ final class ShareModel: ObservableObject {
           throw Problem.hub(code: "", message: "The hub didn't store \(file.name).", fix: nil)
         }
         uploaded[i] = id
+        partial = nil
         done = sizes.indices.filter { uploaded[$0] != nil }.reduce(0) { $0 + sizes[$1] }
         phase = .sending(min(1, Double(done) / Double(total)))
         Self.log.info("sent \(file.name, privacy: .public) (\(file.data.count) bytes); footprint \(Self.footprint()) MB")
@@ -192,9 +199,11 @@ final class ShareModel: ObservableObject {
       try? await Task.sleep(nanoseconds: 900_000_000)
       onDone()
     } catch {
-      // A dropped link is gone: the next try opens another.
+      // A dropped link is gone: the next try opens another, and goes on with the file it cut off. Anything else (an
+      // older hub refusing a piece it already had) sends that file again from its start.
       link?.close()
       link = nil
+      if error as? Problem != pairing.map(Problem.dropped) { partial = nil }
       UINotificationFeedbackGenerator().notificationOccurred(.error)
       sendProblem = error as? Problem ?? pairing.map(Problem.dropped) ?? .notPaired
       phase = .choosing

@@ -4,7 +4,7 @@
 // person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type TransferCall, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -32,6 +32,13 @@ export interface SessionOptions {
   readonly pins?: PinStore;
   /** Where the chats as last seen and the messages on their way are kept between launches (cacheStore.ts); none without one. */
   readonly cache?: CacheStore;
+  /** Where the pictures' previews are kept between launches (cacheStore.ts); in memory without one. */
+  readonly previews?: PreviewStore;
+}
+
+export interface PreviewStore {
+  load(hub: string, attachmentId: string): AttachmentGetOutput | null;
+  save(hub: string, attachmentId: string, preview: AttachmentGetOutput): void;
 }
 
 export interface CacheStore {
@@ -63,6 +70,7 @@ export class Session {
   readonly #pins: Pins;
   readonly #hub: string;
   readonly #cache: CacheStore | undefined;
+  readonly #previewStore: PreviewStore | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The open chat, when the link dropped with its latest page shown: a replay after the drop keeps it going. */
   #resumable: Key | null = null;
@@ -74,6 +82,7 @@ export class Session {
     this.#push = options.push;
     this.#hub = options.hub;
     this.#cache = options.cache;
+    this.#previewStore = options.previews;
     const empty = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     const cached = options.cache === undefined ? null : parseCached(options.cache.load(), options.hub);
     this.#state = cached === null ? empty : withCached(empty, cached);
@@ -213,15 +222,48 @@ export class Session {
 
   readonly #files = new Map<string, Promise<AttachmentGetOutput | null>>();
 
-  /** A message's file, read once (attachment_get) and kept while the app runs; null when the hub can't give it. */
+  /** The hub's calls a file's transfer makes (desktop.ts readFile, readPreview). */
+  readonly #transfer: TransferCall = (tool, input, ms) => this.#client.call(tool, input as never, ms);
+
+  /**
+   * A message's file, whole: read once, when it is opened or shared, in pieces that go on from where a drop stopped
+   * them (readFile), and kept while the app runs; null when the hub can't give it.
+   */
   attachment(key: Key, attachmentId: string): Promise<AttachmentGetOutput | null> {
     const known = this.#files.get(attachmentId);
     if (known !== undefined) return known;
-    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000).then((r) => (r.ok ? r.output : null));
+    const read = readFile(this.#transfer, { projectRef: refOf(key), attachmentId }).then((r) => (r.ok ? r.file : null));
     this.#files.set(attachmentId, read);
     // A failed read is tried again next time.
     void read.then((out) => {
       if (out === null) this.#files.delete(attachmentId);
+    });
+    return read;
+  }
+
+  readonly #previews = new Map<string, Promise<AttachmentGetOutput | null>>();
+
+  /**
+   * A picture as its bubble shows it: its preview, at most PREVIEW_SIDE.phone pixels a side, read once and kept on
+   * disk between launches; null when the hub can't give it. A hub that sent the picture itself (it was small, or the
+   * hub reads no maxSide) gave the file too, which opening it then uses.
+   */
+  preview(key: Key, attachmentId: string): Promise<AttachmentGetOutput | null> {
+    const known = this.#previews.get(attachmentId);
+    if (known !== undefined) return known;
+    const kept = this.#previewStore?.load(this.#hub, attachmentId) ?? null;
+    const read =
+      kept !== null
+        ? Promise.resolve(kept)
+        : readPreview(this.#transfer, { projectRef: refOf(key), attachmentId }, PREVIEW_SIDE.phone).then((r) => {
+            if (!r.ok) return null;
+            this.#previewStore?.save(this.#hub, attachmentId, r.file);
+            return r.file;
+          });
+    this.#previews.set(attachmentId, read);
+    void read.then((out) => {
+      if (out === null) this.#previews.delete(attachmentId);
+      else if (out.preview !== true && !this.#files.has(attachmentId)) this.#files.set(attachmentId, Promise.resolve(out));
     });
     return read;
   }

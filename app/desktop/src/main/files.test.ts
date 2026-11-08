@@ -20,6 +20,7 @@ vi.mock("electron", () => ({
 }));
 
 const { openFile } = await import("./files");
+const { READ_PIECE_BYTES } = await import("../shared/transfer");
 
 const request = { projectRef: { machineId: "devbox", projectId: "ivy" }, attachmentId: "F7" };
 const dir = mkdtempSync(join(tmpdir(), "fleetd-files-test-"));
@@ -37,7 +38,8 @@ it("writes the file under a name of its type and opens it", async () => {
     return Promise.resolve({ ok: true as const, output: { name: "run.command", mime: "text/plain", dataB64: Buffer.from("echo hi").toString("base64") } });
   };
   expect(await openFile(call, request, dir)).toEqual({ ok: true });
-  expect(asked).toEqual([["attachment_get", request]]);
+  // From its start, in pieces: a hub that sends no offset sent it whole.
+  expect(asked).toEqual([["attachment_get", { ...request, offset: 0, length: READ_PIECE_BYTES }]]);
   expect(opened).toHaveLength(1);
   const path = opened[0] ?? "";
   expect(basename(path)).toBe("run.command.txt");

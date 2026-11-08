@@ -1,6 +1,7 @@
 // What a message carries besides words: a picture, shown as itself with rounded corners as Messages does, which opens
 // full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
-// share sheet (Save to Files, another app). Each is read from the hub once (attachment_get) as its bubble shows.
+// share sheet (Save to Files, another app). A picture's bubble reads its preview (session.preview, kept on disk), the
+// viewer the picture itself; a file is read only when it is opened, in pieces that resume after a drop.
 import { File, Paths } from "expo-file-system";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -17,13 +18,13 @@ import { Tail, TAIL_REACH } from "./Bubble";
 import { Icon, type IconName } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
-/** A message's file, read from the hub; undefined while it comes, null when it couldn't be. */
-export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
+/** A picture's preview for its bubble, read from the hub or the disk; undefined while it comes, null when it couldn't be. */
+const usePreview = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
   const session = useSession();
   const [got, setGot] = useState<AttachmentGetOutput | null | undefined>(undefined);
   useEffect(() => {
     let on = true;
-    void session.attachment(chatKey, attachmentId).then((out) => {
+    void session.preview(chatKey, attachmentId).then((out) => {
       if (on) setGot(out);
     });
     return () => {
@@ -32,6 +33,9 @@ export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGet
   }, [session, chatKey, attachmentId]);
   return got;
 };
+
+/** A picture opened full screen: the one its bubble showed, until the picture itself is read. */
+export type OpenedImage = { readonly chatKey: Key; readonly attachmentId: string; readonly shown: AttachmentGetOutput };
 
 const uriOf = (a: AttachmentGetOutput): string => `data:${a.mime};base64,${a.dataB64}`;
 
@@ -58,13 +62,13 @@ export function ImageBubble({
   chatKey: Key;
   attachmentId: string;
   name: string;
-  onOpen: (a: AttachmentGetOutput) => void;
+  onOpen: (a: OpenedImage) => void;
   side: "me" | "them";
   tail?: boolean;
 }) {
   const t = useTheme();
   const screen = useWindowDimensions();
-  const got = useAttachment(chatKey, attachmentId);
+  const got = usePreview(chatKey, attachmentId);
   const [aspect, setAspect] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (got === undefined || got === null) return;
@@ -84,7 +88,7 @@ export function ImageBubble({
       accessibilityRole="imagebutton"
       accessibilityLabel={`Photo, ${name}`}
       accessibilityHint="Opens it full screen"
-      onPress={() => onOpen(got)}
+      onPress={() => onOpen({ chatKey, attachmentId, shown: got })}
     >
       {({ pressed }) => {
         const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: height + TAIL_REACH }} resizeMode="cover" accessibilityIgnoresInvertColors />;
@@ -112,12 +116,15 @@ export const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; reado
 };
 
 /**
- * Any other file: its kind's glyph on a tile of its color, its name, and its kind and size. Tapping opens the share
- * sheet with the file as itself, its preview on top: Save to Files, or open it in Numbers, Pages or another app.
+ * Any other file: its kind's glyph on a tile of its color, its name, and its kind and size. Tapping reads it from the
+ * hub and opens the share sheet with the file as itself, its preview on top: Save to Files, or open it in Numbers,
+ * Pages or another app. Nothing is read before the tap: a card costs no bytes.
  */
 export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tail = false }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; tail?: boolean }) {
   const t = useTheme();
-  const got = useAttachment(chatKey, attachmentId);
+  const session = useSession();
+  // undefined: not read yet; "reading"; null: the hub couldn't give it.
+  const [got, setGot] = useState<"reading" | null | undefined>(undefined);
   const screen = useWindowDimensions();
   const ink = mine ? t.onAccent : t.label;
   const fill = mine ? t.accentFill : t.bubble;
@@ -128,11 +135,14 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
       accessibilityRole="button"
       accessibilityLabel={`${kindOf(mime)}, ${name}${bytes > 0 ? `, ${fileSize(bytes)}` : ""}`}
       accessibilityHint="Opens the share sheet to save it or open it in another app"
-      disabled={got === undefined || got === null}
+      disabled={got === "reading"}
       onPress={() => {
-        if (got === undefined || got === null) return;
         haptics.tap();
-        void shareFile(got).catch(() => undefined);
+        setGot("reading");
+        void session.attachment(chatKey, attachmentId).then((file) => {
+          setGot(file === null ? null : undefined);
+          if (file !== null) void shareFile(file).catch(() => undefined);
+        });
       }}
       style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(screen.width), FILE_WIDTH) }, pressed && styles.pressed]}
     >
@@ -148,7 +158,7 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
           {meta}
         </Text>
       </View>
-      {got === undefined ? <ActivityIndicator size="small" color={ink} /> : <Icon name="share" size={17} color={mine ? ink : t.accent} weight="medium" />}
+      {got === "reading" ? <ActivityIndicator size="small" color={ink} /> : <Icon name="share" size={17} color={mine ? ink : t.accent} weight="medium" />}
     </Pressable>
   );
 }
@@ -156,12 +166,30 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
 /** A file card's width: one size for every file, as Messages draws them, within the bubble's widest. */
 const FILE_WIDTH = 288;
 
-/** A picture full screen, on black: pinch or double-tap to zoom, Share and Done over it in glass. */
-export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | null; onClose: () => void }) {
+/**
+ * A picture full screen, on black: pinch or double-tap to zoom, Share and Done over it in glass. It opens on the
+ * bubble's preview and turns sharp once the picture itself is read; Share sends the picture itself.
+ */
+export function ImageViewer({ image: opened, onClose }: { image: OpenedImage | null; onClose: () => void }) {
   const screen = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const session = useSession();
   const [chrome, setChrome] = useState(true);
-  if (image === null) return null;
+  const [full, setFull] = useState<AttachmentGetOutput | null>(null);
+  useEffect(() => {
+    setFull(null);
+    if (opened === null) return;
+    if (opened.shown.preview !== true) return setFull(opened.shown);
+    let on = true;
+    void session.attachment(opened.chatKey, opened.attachmentId).then((out) => {
+      if (on && out !== null) setFull(out);
+    });
+    return () => {
+      on = false;
+    };
+  }, [session, opened]);
+  if (opened === null) return null;
+  const image = full ?? opened.shown;
   return (
     <Modal visible animationType="fade" presentationStyle="overFullScreen" transparent onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.viewer} accessibilityViewIsModal onAccessibilityEscape={onClose}>
@@ -193,7 +221,10 @@ export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | n
                 accessibilityLabel="Share"
                 onPress={() => {
                   haptics.tap();
-                  void shareFile(image).catch(() => undefined);
+                  void session
+                    .attachment(opened.chatKey, opened.attachmentId)
+                    .then((file) => (file === null ? undefined : shareFile(file)))
+                    .catch(() => undefined);
                 }}
                 style={styles.viewerHit}
               >

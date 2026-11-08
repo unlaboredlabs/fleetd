@@ -443,6 +443,8 @@ pub type Attachments = UniqueList<AttachmentId, 0, ATTACHMENTS_MAX>;
 pub const ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
 /// The piece of a file the app sends per attachment_part call, decoded: its base64 fits one app call.
 pub const ATTACHMENT_PART_BYTES: usize = 512 * 1024;
+/// Largest side an image's preview (attachment_get's maxSide) may ask for.
+pub const ATTACHMENT_PREVIEW_MAX_SIDE: i64 = 4096;
 
 /// A file's type, as the hub keeps attachments: images, PDF, text and CSV, Office documents and zip archives. The hub
 /// checks a file's bytes against its type ([`AttachmentMime::fits`]) before it keeps it.
@@ -720,7 +722,9 @@ pub type IntakeRefs = List<IntakeRef, 0, 20>;
 
 // attachment_part: one piece of a file too large for one call, in order. The first piece (no uploadId) starts an
 // upload; each next one passes the uploadId it returned and offset, the bytes sent so far. attachment_put with the
-// uploadId and the last piece stores the file. An upload untouched for an hour is deleted.
+// uploadId and the last piece stores the file. An upload untouched for an hour is deleted. A piece sent again after its
+// answer was lost (the link dropped) is answered as taken, once its bytes match the upload's last ones, so a client
+// resends the piece it has no answer for and goes on.
 input!(AttachmentPartInput {
     upload_id: Option<UploadId>,
     /// With uploadId: the bytes sent so far, which must match the hub's count.
@@ -735,6 +739,7 @@ output!(AttachmentPartOutput {
 });
 
 // attachment_put: upload one file for a later chat_send or steer_send. Unreferenced uploads are deleted after 24 h.
+// Sent again with the same uploadId after its answer was lost, it answers with the file it already stored.
 input!(AttachmentPutInput {
     name: Line<1, 120>,
     mime: AttachmentMime,
@@ -751,18 +756,30 @@ output!(AttachmentPutOutput {
 
 // attachment_get: one file of a project's chat or orders, to show it (an image in a chat message): at most 25 MiB,
 // the attachment_put cap. Read on the project's machine; the file must belong to that project, or the caller uploaded
-// it.
+// it. With maxSide, an image's preview instead of the file; with offset, one piece of the file, so a large one comes
+// in pieces that a dropped link resumes. A hub older than either sends the whole file: no preview, no offset.
 input!(AttachmentGetInput {
     project_ref: ProjectRef,
     attachment_id: AttachmentId,
+    /// A png, jpeg or webp image larger than this many pixels a side comes shrunk to fit, as a JPEG (a PNG where it is
+    /// clear), when that is smaller than the file: `preview` says so. Anything else comes as itself.
+    max_side: Option<Int<64, ATTACHMENT_PREVIEW_MAX_SIDE>>,
+    /// The piece of the file from this byte, at most `length` (absent: ATTACHMENT_PART_BYTES); ignored with maxSide.
+    offset: Option<Count>,
+    length: Option<Int<1, { ATTACHMENT_PART_BYTES as i64 }>>,
 });
 output!(AttachmentGetOutput {
     attachment_id: AttachmentId,
     name: Line<1, 120>,
     mime: AttachmentMime,
+    /// The file's size, whatever dataB64 holds.
     bytes: Count,
-    /// Standard base64.
+    /// Standard base64: the file, its piece from `offset`, or its preview.
     data_b64: String,
+    /// Where dataB64 starts in the file, when it is a piece: the input's offset, echoed.
+    offset: Option<Count>,
+    /// True when dataB64 is the image shrunk to maxSide, in `mime`'s type rather than the file's.
+    preview: Option<bool>,
 });
 
 // project_files: a project's files for @-mentions, best fuzzy match first.

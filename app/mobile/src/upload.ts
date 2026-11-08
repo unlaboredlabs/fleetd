@@ -1,8 +1,8 @@
 // A photo or file sent from the composer, as the desktop app sends one (screens/chat/drafts.ts): what the hub takes
 // (images, PDFs, text and CSV, Office files and zips, up to its size limit), then attachment_part pieces in order and
-// attachment_put with the last, with progress after each. Pure but for the call it is given, so it is unit-tested.
+// attachment_put with the last, with progress after each, resumed after a drop (the desktop's shared/transfer.ts). Pure but for the call it is given, so it is unit-tested.
 import { fileSize } from "./chatView";
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, mimeOfFile, TAKES, type AttachmentMime, type AttachmentRef, type ToolInput, type ToolName } from "./desktop";
+import { ATTACHMENT_MAX_BYTES, mimeOfFile, sendFile, TAKES, type AttachmentMime, type AttachmentRef, type ToolInput, type ToolName, type Wait } from "./desktop";
 import type { Typed } from "./hub/client";
 
 /** The hub's call, as HubClient's. */
@@ -62,21 +62,19 @@ export const toBase64 = (bytes: Uint8Array): string => {
   return btoa(bin);
 };
 
-/** Sends `bytes` to the hub as `name`; `progress` hears the share sent so far, 0 to 1. */
-export const upload = async (call: Call, bytes: Uint8Array, name: string, mime: AttachmentMime, progress: (done: number) => void = () => undefined): Promise<Uploaded> => {
-  const failed = (o: { readonly error: { readonly message: string } }): Uploaded => ({ ok: false, message: o.error.message });
-  const piece = (at: number) => toBase64(bytes.subarray(at, Math.min(at + ATTACHMENT_PART_BYTES, bytes.length)));
-  let uploadId: string | undefined;
-  let at = 0;
-  progress(0);
-  for (; at + ATTACHMENT_PART_BYTES < bytes.length; at += ATTACHMENT_PART_BYTES) {
-    const o = await call("attachment_part", { ...(uploadId === undefined ? {} : { uploadId, offset: at }), dataB64: piece(at) }, UPLOAD_TIMEOUT_MS);
-    if (!o.ok) return failed(o);
-    uploadId = o.output.uploadId;
-    progress((at + ATTACHMENT_PART_BYTES) / bytes.length);
-  }
-  const o = await call("attachment_put", { name, mime, dataB64: piece(at), ...(uploadId === undefined ? {} : { uploadId }) }, UPLOAD_TIMEOUT_MS);
-  if (!o.ok) return failed(o);
-  progress(1);
-  return { ok: true, ref: { attachmentId: o.output.attachmentId, name, mime, bytes: o.output.bytes } };
+/**
+ * Sends `bytes` to the hub as `name`; `progress` hears the share sent so far, 0 to 1. A piece the link cut off goes
+ * again once it is back (sendFile), so a drop mid-way costs that piece, not the file.
+ */
+export const upload = async (call: Call, bytes: Uint8Array, name: string, mime: AttachmentMime, progress: (done: number) => void = () => undefined, wait?: Wait): Promise<Uploaded> => {
+  const sent = await sendFile(
+    (tool, input, ms) => call(tool, input as never, ms),
+    bytes.length,
+    (start, end) => toBase64(bytes.subarray(start, Math.min(end, bytes.length))),
+    name,
+    mime,
+    progress,
+    wait,
+  );
+  return sent.ok ? { ok: true, ref: { attachmentId: sent.attachmentId, name, mime, bytes: sent.bytes } } : sent;
 };

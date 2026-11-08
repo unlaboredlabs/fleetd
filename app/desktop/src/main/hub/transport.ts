@@ -1,5 +1,5 @@
 import type { Socket } from "node:net";
-import { constants, createInflateRaw, type InflateRaw } from "node:zlib";
+import { constants, createInflateRaw, deflateRawSync, type InflateRaw } from "node:zlib";
 import WebSocket from "ws";
 import type { SocketError } from "./explain";
 import { trustSystemCAs } from "../trust";
@@ -17,7 +17,8 @@ export interface ConnectionEvents {
 }
 
 export interface Connection {
-  send(text: string): void;
+  /** A frame as Text, or with `compress` as a Binary the hub inflates (only once its `ready` listed `deflate`). */
+  send(text: string, compress?: boolean): void;
   /** A WebSocket ping; the hub (axum) answers with a pong. */
   ping(): void;
   /** Drops the link at once, without waiting on a closing handshake a dead peer would never answer. */
@@ -30,6 +31,16 @@ export type Transport = (url: string, events: ConnectionEvents) => Connection;
 /** The most one compressed frame may inflate to, as the hub's own cap. */
 export const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
 const SYNC_TAIL = Buffer.from([0x00, 0x00, 0xff, 0xff]);
+
+/**
+ * One frame as the hub inflates the app's: raw DEFLATE, sync-flushed with its 00 00 ff ff cut off, at the fastest
+ * level (an upload's piece is base64, which deflates to three quarters at any level). Each message is a stream of its
+ * own that never looks back, so the hub's one inflater per connection reads it whatever came before.
+ */
+export const deflated = (text: string): Buffer => {
+  const out = deflateRawSync(Buffer.from(text, "utf8"), { level: 1, finishFlush: constants.Z_SYNC_FLUSH });
+  return out.subarray(0, out.length - SYNC_TAIL.length);
+};
 
 /**
  * A hub that read `deflate` in the auth sends frames as Binary: permessage-deflate (RFC 7692), one raw DEFLATE stream
@@ -129,8 +140,8 @@ export const webSocketTransport: Transport = (url, events) => {
   });
   socket.on("close", (code, reason) => close(code, reason.toString("utf8")));
   return {
-    send: (text) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(text);
+    send: (text, compress = false) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(compress ? deflated(text) : text, { binary: compress });
     },
     ping: () => {
       if (socket.readyState === WebSocket.OPEN) socket.ping();

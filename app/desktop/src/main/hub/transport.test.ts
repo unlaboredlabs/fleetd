@@ -2,7 +2,7 @@ import type { AddressInfo } from "node:net";
 import { constants, createDeflateRaw, type DeflateRaw } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
-import { inflater, webSocketTransport, type ConnectionEvents } from "./transport";
+import { deflated, inflater, webSocketTransport, type ConnectionEvents } from "./transport";
 
 /** The hub's side of `deflate`: one raw DEFLATE stream per connection, each message sync-flushed, its tail cut off. */
 const deflater = (): ((text: string) => Promise<Buffer>) => {
@@ -32,6 +32,16 @@ describe("inflater", () => {
     expect(second.length).toBeLessThan(first.length / 2);
     expect(await inflate(first)).toBe(frame);
     expect(await inflate(second)).toBe(frame);
+  });
+
+  it("compresses the app's frames so the hub's one inflater for the connection reads each in turn", async () => {
+    const inflate = inflater();
+    const piece = (n: number) => JSON.stringify({ t: "call", id: `c${String(n)}`, tool: "attachment_part", input: { dataB64: "QUJD".repeat(20_000 + n) } });
+    const small = deflated(piece(1));
+    expect(small.length).toBeLessThan(piece(1).length / 10);
+    expect(await inflate(small)).toBe(piece(1));
+    expect(await inflate(deflated(piece(2)))).toBe(piece(2));
+    expect(await inflate(deflated(piece(3)))).toBe(piece(3));
   });
 
   it("refuses what isn't DEFLATE", async () => {
