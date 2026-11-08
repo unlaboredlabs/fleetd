@@ -137,7 +137,10 @@ function tailnetIp(): string | undefined {
 function lanIp(): Promise<string | undefined> {
   return new Promise((resolve) => {
     const socket = createSocket("udp4");
+    let settled = false;
     const done = (ip?: string) => {
+      if (settled) return;
+      settled = true;
       socket.close();
       resolve(ip !== undefined && !isUnspecified(ip) && !isLoopback(ip) ? ip : undefined);
     };
