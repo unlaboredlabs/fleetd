@@ -47,3 +47,15 @@ export function others(db: Database, person: PersonId | undefined): ProjectRef[]
     .all(person ?? null)
     .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
 }
+
+/**
+ * Turns Only me on or off. On, the project becomes `owner`'s when it has no owner yet; off, it is everyone's on the
+ * hub, and keeps its owner for when it is turned on again.
+ */
+export function setOnlyMe(db: Database, r: ProjectRef, on: boolean, owner: PersonId | undefined): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, only_me, owner_person) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET only_me = excluded.only_me,
+           owner_person = COALESCE(project_settings.owner_person, excluded.owner_person)`,
+  ).run(r.machineId, r.projectId, on ? 1 : 0, on ? (owner ?? null) : null);
+}

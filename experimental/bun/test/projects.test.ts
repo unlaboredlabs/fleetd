@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test";
 import { profiles } from "../src/hub/projects/profiles.ts";
 import { events } from "../src/hub/store/events.ts";
+import { store } from "../src/hub/store/hub_store.ts";
 import { key, kit, project } from "./work-kit.ts";
 
 /** An owner's device with admin everywhere. */
@@ -80,4 +81,58 @@ test("picking an icon forgets the picture and says so; a project with no picture
   expect(await k.refused(key("read"), "project_avatar_get", r)).toBe("not_found");
   expect(await k.refused(key("read"), "project_icon_set", { ...r, icon: { face: "joy", color: "sun" } })).toBe("forbidden");
   expect(await k.refused(key("operate"), "project_icon_set", { machineId: "devbox", projectId: "nope", icon: { face: "joy", color: "sun" } })).toBe("not_found");
+});
+
+test("a project's settings: memory refresh, setup per repo, Only me's rules, and what env_set refuses", async () => {
+  const k = kit();
+  const r = { machineId: "devbox", projectId: "app" };
+  project(k.hub, r, { title: "App" });
+  k.hub.db.conn.run("INSERT INTO machines (machine_id, data) VALUES ('devbox', '{\"machineId\":\"devbox\",\"name\":\"devbox\",\"nodeVersion\":\"1\",\"status\":\"offline\",\"lastSeenAt\":\"x\"}')");
+  const got = await k.ok(key("read"), "project_settings_get", r);
+  expect(got.settings).toMatchObject({
+    machineId: "devbox",
+    projectId: "app",
+    title: "App",
+    memoryRefresh: true,
+    env: [],
+    setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+    worktreesUnknown: "devbox is offline.",
+  });
+  expect(await k.refused(key("read"), "project_settings_get", { ...r, repo: "web" })).toBe("not_found");
+
+  const off = await k.ok(key("operate"), "project_settings_set", { ...r, memoryRefresh: false });
+  expect(off.settings.memoryRefresh).toBe(false);
+  expect(off.next).toBe("The nightly memory refresh is off for this project; memory stays as the lead and you write it.");
+  const setup = await k.ok(key("operate"), "project_settings_set", { ...r, setup: { commands: ["bun install"] } });
+  expect(setup.settings.setup).toEqual({ commands: ["bun install"], timeoutSec: 600, runAnyway: false, inputs: [] });
+  expect(setup.next).toBe("New tasks of the project use these settings. devbox's node is too old to run setup commands: update fleetd there.");
+  // A repo of the project keeps its own setup; an empty one is the project's.
+  k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'web', 'devbox', 'web')");
+  await k.ok(key("operate"), "project_settings_set", { ...r, repo: "web", setup: { commands: ["make"] } });
+  expect((await k.ok(key("read"), "project_settings_get", { ...r, repo: "web" })).settings).toMatchObject({ repo: "web", setup: { commands: ["make"] } });
+  expect((await k.ok(key("read"), "project_settings_get", r)).settings.setup.commands).toEqual(["bun install"]);
+  // A rename needs the node.
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, title: "Renamed" })).toBe("machine_offline");
+
+  // Only me: a person's device only; nobody owns it, so only an admin turns it on, and it becomes theirs.
+  k.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p-ada', 'Ada', 'member', 0), ('p-bo', 'Bo', 'admin', 1)");
+  const ada = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
+  const bo = key("admin", { human: true, person: { personId: "p-bo", name: "Bo" } });
+  expect(await k.refused(key("admin"), "project_settings_set", { ...r, onlyMe: true })).toBe("forbidden");
+  expect(await k.refused(ada, "project_settings_set", { ...r, onlyMe: true })).toBe("forbidden");
+  await k.ok(bo, "project_settings_set", { ...r, onlyMe: true });
+  expect(store(k.hub).projectGet(r)).toMatchObject({ onlyMe: true, owner: "p-bo" });
+  expect(events(k.hub).page(0).events.at(-1)?.summary).toBe("App: Only me on");
+
+  // env_set: a person's, within the limits, and only with the node there.
+  const set = (vars: unknown[]) => ({ ...r, set: vars, remove: [] });
+  expect(await k.refused(key("operate"), "project_env_set", set([{ kind: "plain", name: "A", value: "1" }]))).toBe("forbidden");
+  const many = Array.from({ length: 101 }, (_, i) => ({ kind: "plain", name: `V${i}`, value: "1" }));
+  expect(await k.refused(bo, "project_env_set", set(many))).toBe("invalid");
+  const fat = Array.from({ length: 9 }, (_, i) => ({ kind: "plain", name: `F${i}`, value: "x".repeat(60 * 1024) }));
+  const res = await k.call(bo, "project_env_set", set(fat));
+  expect("error" in res && res.error.kind === "tool" && res.error.error.message).toBe(
+    "A project's variables take at most 512 KiB together; these would take 540 KiB.",
+  );
+  expect(await k.refused(bo, "project_env_set", set([{ kind: "plain", name: "A", value: "1" }]))).toBe("machine_offline");
 });

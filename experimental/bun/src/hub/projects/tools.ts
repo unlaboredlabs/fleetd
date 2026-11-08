@@ -5,9 +5,11 @@ import type { Registry } from "../api/registry.ts";
 import * as avatar from "./avatar.ts";
 import * as icon from "./icon.ts";
 import * as profiles from "./profiles.ts";
+import * as settings from "./settings.ts";
 
 export function register(tools: Registry): void {
   profiles.register(tools);
+  settings.register(tools);
   tools.add("project_icon_set", (hub, caller, input) => {
     const r = { machineId: input.machineId, projectId: input.projectId };
     requireRole(caller, "operate", r.machineId);

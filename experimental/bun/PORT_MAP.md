@@ -152,8 +152,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `project_purchases` → `src/hub/navi` (read) <!-- tool:`project_purchases` -->
 - [ ] `navi_card_set` → `src/hub/navi` (operate) <!-- tool:`navi_card_set` -->
 - [ ] `project_card_set` → `src/hub/navi` (operate) <!-- tool:`project_card_set` -->
-- [ ] `project_settings_get` → `src/hub/projects` (read) <!-- tool:`project_settings_get` -->
-- [ ] `project_settings_set` → `src/hub/projects` (operate) <!-- tool:`project_settings_set` -->
+- [x] `project_settings_get` → `src/hub/projects` (read) <!-- tool:`project_settings_get` -->
+- [x] `project_settings_set` → `src/hub/projects` (operate) <!-- tool:`project_settings_set` -->
 - [ ] `project_env_set` → `src/hub/projects` (operate) <!-- tool:`project_env_set` -->
 - [ ] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
 - [ ] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
