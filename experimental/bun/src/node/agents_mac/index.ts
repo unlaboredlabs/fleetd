@@ -33,7 +33,7 @@ import {
 } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
 import type { NodeConfig } from "../config.ts";
-import { Live, run as runChecks } from "./checks.ts";
+import { readMac, run as runChecks } from "./checks.ts";
 import { checkedFile, type MacHealth, writeHealth } from "./common.ts";
 import { answer, askLost, CHECK_EVERY, every, type Fresh, overlay, takeUp } from "./grants.ts";
 import { Installing } from "./tools.ts";
@@ -150,29 +150,29 @@ export class AgentsMac {
     else this.awake = held;
     askLost(this.home);
     if (process.platform === "darwin") {
-      const grants = () => {
+      const grants = async () => {
         if (this.stopped) return;
         answer(this.home);
-        const found = takeUp(this.home);
+        const found = await takeUp(this.home);
         if (found) {
           this.fresh = found;
           if (this.last) this.publish(this.last);
         }
-        this.timers.push(setTimeout(grants, every(found?.grants)));
+        if (!this.stopped) this.timers.push(setTimeout(() => void grants(), every(found?.grants)));
       };
-      grants();
+      void grants();
     }
     void this.tools.run(this.home);
-    const check = () => {
+    const check = async () => {
       if (this.stopped) return;
-      this.publish(runChecks(new Live(typeof held === "string" ? held : undefined, this.tools.state)));
+      this.publish(runChecks(await readMac(typeof held === "string" ? held : undefined, this.tools.state)));
       // A run of every check, not the grants alone republished: setup counts only these.
       try {
         writeFileSync(checkedFile(this.home), "");
       } catch {}
-      this.timers.push(setTimeout(check, CHECK_EVERY));
+      if (!this.stopped) this.timers.push(setTimeout(() => void check(), CHECK_EVERY));
     };
-    check();
+    void check();
   }
 
   stop(): void {
