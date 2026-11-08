@@ -1,4 +1,5 @@
 lead:lead call `artifact_publish`
+lead:lead call `ask_lead`
 lead:lead call `automation_confirm`
 lead:lead call `automation_create`
 lead:lead call `automation_delete`
@@ -8,6 +9,7 @@ lead:lead call `automation_run`
 lead:lead call `automation_runs`
 lead:lead call `automation_update`
 lead:lead call `brief_create`
+lead:lead call `brief_read`
 lead:lead call `browser_recording_part`
 lead:lead call `browser_session`
 lead:lead call `browser_takeover`
@@ -38,7 +40,11 @@ lead:lead call `session_route`
 lead:lead call `session_step`
 lead:lead call `skill_install`
 lead:lead call `skill_save`
+lead:lead call `task_cancel`
+lead:lead call `task_list`
 lead:lead call `task_message`
+lead:lead call `task_spawn`
 lead:lead call `usage_resume`
+lead:lead call `wait_ci`
 link:hub→node `lead_result` send
 link:node→hub `lead_call` handle
