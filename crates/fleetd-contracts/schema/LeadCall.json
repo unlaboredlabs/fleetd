@@ -2413,7 +2413,7 @@
           "type": "object"
         },
         {
-          "description": "`mac sim start [--device <type>]`: an iOS simulator of the agent's own on the Mac, booted, which `agent-device`\ndrives from then on. One per agent; the same one again while it holds it. `device` names a device type\n(\"iPad Pro 13-inch (M5)\"); absent, the Mac's plain iPhone.",
+          "description": "`mac sim start [--device <type>]`: an iOS simulator of the agent's own on the Mac, booted, which `agent-device`\ndrives from then on. One per agent; the same one again while it holds it. `device` names a device type\n(\"iPad Pro 13-inch (M5)\"); absent, the Mac's plain iPhone. `wait`: while none is free, the agent joins the\nMac's line of agents waiting for one and hears its place ([`MacDone::SimQueued`]); asking again keeps it, and\nthe agents ahead get theirs first. Without it (`--no-wait`, an older `mac`) the Mac says why there is none.",
           "properties": {
             "device": {
               "default": null,
@@ -2422,6 +2422,9 @@
             "step": {
               "const": "sim_start",
               "type": "string"
+            },
+            "wait": {
+              "type": "boolean"
             }
           },
           "required": [
