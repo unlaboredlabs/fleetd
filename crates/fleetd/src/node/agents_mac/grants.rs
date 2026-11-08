@@ -5,8 +5,9 @@
 //! running node can't make it restart again and again.
 //!
 //! The node is also the one that asks macOS for a grant, so fleetd (not Terminal or the app) is what lands in System
-//! Settings' list: setup's grant step writes [`ask_file`] and the node asks within 2 s ([`answer`]). At its start it
-//! asks again for a grant an update lost ([`lost`]), and the grant's check says so.
+//! Settings' list: setup's grant step writes [`ask_file`] and the node asks within 2 s ([`answer`]). Only then: a grant
+//! an update lost ([`lost`]) is said by its check, whose fix asks, as a node asking by itself at each start would show
+//! macOS's prompt again and again.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -191,18 +192,6 @@ pub fn answer(home: &Path) {
         tracing::info!(
             "the agents' Mac asks macOS for {}, as setup asked",
             id.as_str()
-        );
-        super::tcc::ask(id);
-    }
-}
-
-/// At the node's start: asks macOS again for each grant an update lost, so its prompt is at the Mac.
-pub fn ask_lost(home: &Path) {
-    for id in lost(Grants::own(), seen(home).as_ref(), crate::version()) {
-        tracing::warn!(
-            "the agents' Mac lost {} with an update to {}: it asks macOS again",
-            id.as_str(),
-            crate::version()
         );
         super::tcc::ask(id);
     }
