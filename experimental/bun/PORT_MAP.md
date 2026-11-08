@@ -503,22 +503,22 @@ every `fleetd` command.
 - [x] `fleetd chat history` → `src/cli/chat` <!-- cli:`fleetd chat history` -->
 - [x] `fleetd cloud stop` → `src/cli/cloud` <!-- cli:`fleetd cloud stop` -->
 - [x] `fleetd doctor` → `src/cli/setup` <!-- cli:`fleetd doctor` -->
-- [ ] `fleetd github-app` → `src/cli/github_app` <!-- cli:`fleetd github-app` -->
-- [ ] `fleetd github-app create` → `src/cli/github_app` <!-- cli:`fleetd github-app create` -->
-- [ ] `fleetd github-app remove` → `src/cli/github_app` <!-- cli:`fleetd github-app remove` -->
-- [ ] `fleetd github-app test` → `src/cli/github_app` <!-- cli:`fleetd github-app test` -->
+- [x] `fleetd github-app` → `src/cli/github_app` <!-- cli:`fleetd github-app` -->
+- [x] `fleetd github-app create` → `src/cli/github_app` <!-- cli:`fleetd github-app create` -->
+- [x] `fleetd github-app remove` → `src/cli/github_app` <!-- cli:`fleetd github-app remove` -->
+- [x] `fleetd github-app test` → `src/cli/github_app` <!-- cli:`fleetd github-app test` -->
 - [x] `fleetd help` → `src/cli` <!-- cli:`fleetd help` -->
 - [x] `fleetd hub key create` → `src/cli/hub_key` <!-- cli:`fleetd hub key create` -->
 - [x] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
 - [x] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
 - [ ] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
 - [ ] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
-- [ ] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
+- [x] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
 - [x] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
 - [x] `fleetd invite list` → `src/cli/people` <!-- cli:`fleetd invite list` -->
 - [x] `fleetd invite revoke` → `src/cli/people` <!-- cli:`fleetd invite revoke` -->
 - [x] `fleetd mac` → `src/cli/mac_tool` <!-- cli:`fleetd mac` -->
-- [ ] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
+- [x] `fleetd machine add` → `src/cli/setup` <!-- cli:`fleetd machine add` -->
 - [ ] `fleetd machine remove` → `src/cli/setup` <!-- cli:`fleetd machine remove` -->
 - [x] `fleetd machine set` → `src/cli/setup` <!-- cli:`fleetd machine set` -->
 - [x] `fleetd metrics` → `src/cli/metrics` <!-- cli:`fleetd metrics` -->
@@ -531,7 +531,7 @@ every `fleetd` command.
 - [ ] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
 - [ ] `fleetd node grants` → `src/cli/node` <!-- cli:`fleetd node grants` -->
 - [x] `fleetd node join` → `src/cli/node` <!-- cli:`fleetd node join` -->
-- [ ] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
+- [x] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
 - [x] `fleetd node run` → `src/cli/node` <!-- cli:`fleetd node run` -->
 - [x] `fleetd pair` → `src/cli/pair` <!-- cli:`fleetd pair` -->
 - [x] `fleetd people` → `src/cli/people` <!-- cli:`fleetd people` -->
@@ -549,12 +549,12 @@ every `fleetd` command.
 - [x] `fleetd project set` → `src/cli/project` <!-- cli:`fleetd project set` -->
 - [x] `fleetd project stop` → `src/cli/project` <!-- cli:`fleetd project stop` -->
 - [x] `fleetd project unarchive` → `src/cli/project` <!-- cli:`fleetd project unarchive` -->
-- [ ] `fleetd prompts diff` → `src/cli/prompts` <!-- cli:`fleetd prompts diff` -->
-- [ ] `fleetd prompts edit` → `src/cli/prompts` <!-- cli:`fleetd prompts edit` -->
-- [ ] `fleetd prompts list` → `src/cli/prompts` <!-- cli:`fleetd prompts list` -->
-- [ ] `fleetd prompts reset` → `src/cli/prompts` <!-- cli:`fleetd prompts reset` -->
-- [ ] `fleetd prompts show` → `src/cli/prompts` <!-- cli:`fleetd prompts show` -->
-- [ ] `fleetd push-relay` → `src/push_relay` <!-- cli:`fleetd push-relay` -->
+- [x] `fleetd prompts diff` → `src/cli/prompts` <!-- cli:`fleetd prompts diff` -->
+- [x] `fleetd prompts edit` → `src/cli/prompts` <!-- cli:`fleetd prompts edit` -->
+- [x] `fleetd prompts list` → `src/cli/prompts` <!-- cli:`fleetd prompts list` -->
+- [x] `fleetd prompts reset` → `src/cli/prompts` <!-- cli:`fleetd prompts reset` -->
+- [x] `fleetd prompts show` → `src/cli/prompts` <!-- cli:`fleetd prompts show` -->
+- [x] `fleetd push-relay` → `src/push_relay` <!-- cli:`fleetd push-relay` -->
 - [x] `fleetd push-relay set` → `src/push_relay` <!-- cli:`fleetd push-relay set` -->
 - [x] `fleetd status` → `src/cli/status` <!-- cli:`fleetd status` -->
 - [x] `fleetd steer` → `src/cli/steer` <!-- cli:`fleetd steer` -->
@@ -562,7 +562,7 @@ every `fleetd` command.
 - [x] `fleetd steers` → `src/cli/steer` <!-- cli:`fleetd steers` -->
 - [x] `fleetd time` → `src/cli/time` <!-- cli:`fleetd time` -->
 - [x] `fleetd uninstall` → `src/cli/setup` <!-- cli:`fleetd uninstall` -->
-- [ ] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
+- [x] `fleetd update` → `src/cli/update` <!-- cli:`fleetd update` -->
 - [ ] `fleetd update-claude` → `src/cli/update` <!-- cli:`fleetd update-claude` -->
 - [x] `fleetd update-finish` → `src/update` <!-- cli:`fleetd update-finish` -->
 - [x] `fleetd update-hold` → `src/node/hold` <!-- cli:`fleetd update-hold` -->

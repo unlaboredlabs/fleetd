@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "fleetd Edge · Nov 8, HH:MM UTC · e4509af (0.0.0-edge.202611081341+e4509af) -> Edge · Nov 9, HH:MM UTC · abc1234 (0.0.0-edge.202611091200+abc1234) (edge)\nrun `fleetd update` to install\n",
+  "stderr": ""
+}

@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no first message kept for devbox/t1: fleetd did not start it, or started it before prompts were kept\n"
+}

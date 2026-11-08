@@ -1,8 +1,22 @@
-// `fleetd update [--check] [--channel <c>] [--now]` and `fleetd update-claude` (crates/fleetd/src/cli/update.rs): the
-// flags here, the update itself in src/update, which T2256 ports (feed, plan, finish, services).
+// `fleetd update [--check] [--channel edge|stable] [--now]` (crates/fleetd/src/cli/update.rs), on src/update: replaces
+// this binary with the latest build of a release channel, then restarts the hub and node services that run it: the
+// hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 10 minutes at most;
+// `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
+//
+// Not here: replacing the pre-Electron GPUI app (the Rust CLI's App migration), which no Bun-built machine has, and
+// `update-claude`, which waits on the node's Claude Code installer.
+import { spawnSync } from "node:child_process";
 import { NotImplemented } from "../shared/errors.ts";
+import { VERSION } from "../shared/version.ts";
 import { ArgError, parse } from "./args.ts";
+import { resolveHome } from "./common.ts";
 import { usageText } from "./index.ts";
+import { sendToNode, nodeSocketPath } from "./agent_mcp/socket.ts";
+import { connectAs } from "./setup/doctor.ts";
+import { hubInfo, versionShown } from "./versions.ts";
+
+/** How often `fleetd update` looks at its node's agents again while it waits for them. */
+const WAIT_POLL_MS = 2000;
 
 export async function updateCommand(argv: string[]): Promise<number> {
   const v = parse(argv, { options: { check: "bool", channel: "str", now: "bool" }, positionals: false });
@@ -10,9 +24,138 @@ export async function updateCommand(argv: string[]): Promise<number> {
     process.stderr.write(`fleetd: ${v.message}\n\n${usageText()}`);
     return 2;
   }
-  throw new NotImplemented("src/update: fleetd update");
+  try {
+    await run({ check: v.flag("check"), ...(v.str("channel") === undefined ? {} : { channel: v.str("channel")! }), now: v.flag("now") });
+    return 0;
+  } catch (error) {
+    process.stderr.write(`fleetd: ${(error as Error).message}\n`);
+    return 1;
+  }
 }
 
+/** The version the hub on this machine runs (`hub_info`), through the CLI's own key. */
+async function askHub(): Promise<string | undefined> {
+  try {
+    const client = await connectAs(resolveHome(), "fleetd-update");
+    const info = await hubInfo(client);
+    return typeof info?.version === "string" ? info.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function run(args: { check: boolean; channel?: string; now: boolean }): Promise<void> {
+  const { HttpFeed, baseUrl, channelOf, cliAsset, installedExe, parseChannel, release, verifiedTo } = await import("../update/index.ts");
+  const { isHubService, services: servicesOf } = await import("../update/service.ts");
+  const current = VERSION;
+  const releaseBuild = process.env.FLEETD_VERSION !== undefined;
+  const named = args.channel ?? process.env.FLEETD_CHANNEL;
+  const channel = named !== undefined ? parseChannel(named) : channelOf(current, releaseBuild);
+  const feed = new HttpFeed(baseUrl(channel));
+  const rel = await release(feed);
+  const cliLatest = rel.cliVersion !== undefined && rel.cliVersion !== current ? rel.cliVersion : undefined;
+  const exe = installedExe();
+  const services = servicesOf(exe);
+  const hub = services.some(isHubService) ? await askHub() : undefined;
+  // An earlier update installed this binary, and the hub still runs the one before.
+  const pending = hub !== undefined && cliLatest === undefined && hub !== current && hub !== "0.0.0" ? hub : undefined;
+  if (cliLatest !== undefined) console.log(`fleetd ${versionShown(current)} -> ${versionShown(cliLatest)} (${channel})`);
+  else if (rel.cliVersion !== undefined) console.log(`fleetd ${versionShown(current)} is up to date (${channel})`);
+  else console.log(`the ${channel} channel has no fleetd CLI build yet`);
+  if (pending !== undefined) console.log(`the hub still runs ${versionShown(pending)}; a restart moves it to ${versionShown(current)}`);
+  const restartDue = services.length > 0 && (cliLatest !== undefined || pending !== undefined);
+  if (args.check || !restartDue) {
+    if (args.check && cliLatest !== undefined) console.log("run `fleetd update` to install");
+    else if (args.check && pending !== undefined) console.log("run `fleetd update` to restart it");
+    return;
+  }
+  if (cliLatest !== undefined) {
+    if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
+    try {
+      await verifiedTo(feed, cliAsset(), exe);
+    } catch (error) {
+      throw new Error(`replacing ${exe}: ${(error as Error).message}`);
+    }
+    console.log(`updated ${exe}`);
+  }
+  if (restartDue) await restart(services, !args.now, exe);
+  // This machine runs agents: its Claude Code goes to the version the installed build was tested with.
+  if (cliLatest !== undefined && services.some((s) => !isHubService(s))) {
+    const status = spawnSync(exe, ["update-claude"], { stdio: "inherit" });
+    if (status.status !== 0) console.error("Claude Code wasn't brought to the version fleetd is tested with; `fleetd doctor` says more");
+  }
+}
+
+/** Holds this machine's node's agents between steps and waits until none is mid-step, `deadlineMs` at most. */
+async function waitForAgents(deadlineMs: number) {
+  const socket = nodeSocketPath(process.env.FLEETD_NODE_SOCK);
+  const started = Date.now();
+  let said: number | undefined;
+  for (;;) {
+    let steps = 0;
+    try {
+      const answer = await sendToNode(socket, { t: "hold" }, 10_000);
+      steps = typeof answer.steps === "number" ? answer.steps : 0;
+    } catch {}
+    if (steps === 0) return;
+    if (Date.now() - started >= deadlineMs) {
+      console.log(`restarting the node with ${steps} still mid-step: they carry on by themselves afterwards`);
+      return;
+    }
+    if (said !== steps) {
+      console.log(
+        `waiting for ${steps} agent${steps === 1 ? "" : "s"} to finish ${steps === 1 ? "its" : "their"} step (at most ${Math.floor(deadlineMs / 60_000)} min; --now doesn't wait)`,
+      );
+      said = steps;
+    }
+    await Bun.sleep(WAIT_POLL_MS);
+  }
+}
+
+/** Restarts `services`: the hub's at once, a node's once its agents finish their step when `wait`. Run as one of the
+ * node's approved commands, the node restarts only once this command ended (`node restart --after`). */
+async function restart(services: { name: string; unit: string }[], wait: boolean, exe: string) {
+  const { isHubService, restart: restartOne, spawnOutside } = await import("../update/service.ts");
+  const { DRAIN_MINUTES, drainIn } = await import("../hub/update/index.ts");
+  const { APPROVED_RUN_ENV } = await import("../node/secrets/index.ts");
+  const one = (s: { name: string; unit: string }) => {
+    try {
+      restartOne(s);
+      console.log(`restarted ${s.name}`);
+    } catch (error) {
+      console.error(`${(error as Error).message}; restart ${s.name} yourself`);
+    }
+  };
+  const hubs = services.filter(isHubService);
+  const nodes = services.filter((s) => !isHubService(s));
+  hubs.forEach(one);
+  if (wait && nodes.length > 0) {
+    const fallback = DRAIN_MINUTES * 60_000;
+    let deadline = fallback;
+    try {
+      deadline = drainIn(resolveHome(), fallback);
+    } catch {}
+    await waitForAgents(deadline);
+  }
+  const approved = process.env[APPROVED_RUN_ENV] !== undefined;
+  for (const s of nodes) {
+    if (!approved) {
+      one(s);
+      continue;
+    }
+    try {
+      spawnOutside(exe, ["node", "restart", "--after", String(process.pid)]);
+      console.log(`${s.name} restarts once this command ends`);
+    } catch (error) {
+      console.error(`${(error as Error).message}; restart ${s.name} yourself`);
+    }
+  }
+  console.log(
+    "anything that was running carries on by itself: leads and agents resume in their threads, and the merge train takes up what it was merging",
+  );
+}
+
+/** `fleetd update-claude`: brings this machine's Claude Code to the version this build was tested with. */
 export async function runClaude(): Promise<number> {
-  throw new NotImplemented("src/update: fleetd update-claude");
+  throw new NotImplemented("src/node/runner/claude: fleetd update-claude (the node's Claude Code installer)");
 }

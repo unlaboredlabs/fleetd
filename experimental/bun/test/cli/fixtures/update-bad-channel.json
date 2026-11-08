@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: unknown channel \"beta\": use edge or stable\n"
+}

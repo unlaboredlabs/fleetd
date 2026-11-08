@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd push-relay: --listen must be <ip>:<port>, got 'localhost:4795'\n"
+}

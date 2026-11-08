@@ -4,6 +4,21 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Fleet, fixture, record, RECORD, RUST, UNSET } from "./golden.ts";
 
+/** A release feed on this machine for `fleetd update`: /newer/ has a newer CLI, /same/ this build, /none/ none. */
+const feed = Bun.serve({
+  port: 0,
+  hostname: "127.0.0.1",
+  fetch(req) {
+    const path = new URL(req.url).pathname;
+    if (path === "/newer/release.json") return Response.json({ cliVersion: "0.0.0-edge.202611091200+abc1234" });
+    if (path === "/same/release.json") return Response.json({ cliVersion: "0.0.0-edge.202611081341+e4509af" });
+    if (path === "/none/release.json") return Response.json({});
+    if (path === "/broken/release.json") return new Response("not json");
+    return new Response("not found", { status: 404 });
+  },
+});
+const feedAt = (dir: string) => ({ FLEETD_BASE_URL: `http://127.0.0.1:${feed.port}/${dir}` });
+
 type Case = { name: string; argv: string[]; cwd?: string; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void> };
 
 /** No hub needed: usage, parse errors, and what opens the hub's database directly. */
@@ -150,6 +165,7 @@ const OFFLINE: Case[] = [
   { name: "init-join-no-code", argv: ["init", "--no-service", "--join", "http://h"] },
   { name: "init-mac-no-join", argv: ["init", "--no-service", "--mac"] },
   { name: "init-bad-step", argv: ["init", "--step", "frob"] },
+  { name: "init-step-no-hub", argv: ["init", "--step", "people"] },
   { name: "init-positional", argv: ["init", "x"] },
   {
     name: "init-again",
@@ -165,6 +181,10 @@ const OFFLINE: Case[] = [
   },
   { name: "uninstall-flag", argv: ["uninstall", "--force"] },
   { name: "push-relay-what", argv: ["push-relay", "frob"] },
+  { name: "push-relay-no-credentials", argv: ["push-relay", "--listen", "127.0.0.1:1"] },
+  { name: "push-relay-bad-listen", argv: ["push-relay", "--listen", "localhost:4795"] },
+  { name: "push-relay-missing-key-file", argv: ["push-relay"], env: { FLEETD_APNS_KEY_FILE: "/nonexistent/apns.p8" } },
+  { name: "push-relay-empty-apns-id", argv: ["push-relay"], env: { FLEETD_APNS_KEY_FILE: "/dev/null" } },
   { name: "push-relay-set-hub-only", argv: ["push-relay", "set", "off", "--hub", "x"] },
   { name: "build-slot-none", argv: ["build-slot"] },
   { name: "node-none", argv: ["node"] },
@@ -180,6 +200,77 @@ const OFFLINE: Case[] = [
   { name: "update-bad-flag", argv: ["update", "--frob"] },
   { name: "update-positional", argv: ["update", "now"] },
   { name: "doctor-no-hub-color", argv: ["doctor"], env: { NO_COLOR: UNSET } },
+  { name: "machine-add-none", argv: ["machine", "add"] },
+  { name: "machine-add-two", argv: ["machine", "add", "a", "b"] },
+  { name: "machine-add-host-and-local", argv: ["machine", "add", "a", "--local"] },
+  { name: "machine-add-bad-id", argv: ["machine", "add", "builder", "--machine-id", "Bad_Id"] },
+  { name: "machine-add-no-setup", argv: ["machine", "add", "builder"] },
+  { name: "machine-add-dry-run", argv: ["machine", "add", "dev@builder-1.example", "--dry-run"], setup: async (f) => writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://devbox.example:4790", machines: {} })), },
+  { name: "machine-add-dry-run-user", argv: ["machine", "add", "builder-2", "--dry-run", "--no-service", "--claude-config-dir", "/srv/claude"], env: { USER: "ops" }, setup: async (f) => writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://127.0.0.1:1", gitIdentity: { name: "Dev", email: "dev@example.com" }, machines: {} })), },
+  { name: "machine-add-no-hub", argv: ["machine", "add", "builder-3"], setup: async (f) => writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://devbox.example:4790", machines: {} })), },
+  { name: "machine-remove-none", argv: ["machine", "remove"] },
+  { name: "machine-unknown", argv: ["machine", "frob"] },
+  { name: "machine-none", argv: ["machine"] },
+  { name: "prompts-none", argv: ["prompts"] },
+  { name: "prompts-no-hub", argv: ["prompts", "list"] },
+  { name: "prompts-bad-project", argv: ["prompts", "list", "--project", "nope"] },
+  { name: "prompts-list", argv: ["prompts", "list"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-unknown-verb", argv: ["prompts", "frob", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-show-none", argv: ["prompts", "show"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-show-unknown", argv: ["prompts", "show", "nope.nope"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-show", argv: ["prompts", "show", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-show-default", argv: ["prompts", "show", "instructions", "--default"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-show-session", argv: ["prompts", "show", "--session", "devbox/t1"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-project-missing", argv: ["prompts", "show", "lead.start", "--project", "devbox/nope"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-diff-shipped", argv: ["prompts", "diff", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-reset-shipped", argv: ["prompts", "reset", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "instructions-what", argv: ["instructions", "frob"] },
+  { name: "instructions-show", argv: ["instructions", "show"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-edited-diff", argv: ["prompts", "diff", "instructions"], setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
+      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+    } },
+  { name: "prompts-edited-list", argv: ["prompts", "list"], setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
+      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+    } },
+  { name: "prompts-edited-show", argv: ["instructions", "show"], setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
+      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+    } },
+  { name: "prompts-edited-reset", argv: ["prompts", "reset", "instructions"], setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
+      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+    } },
+  {
+    name: "prompts-edit-no",
+    argv: ["prompts", "edit", "instructions"],
+    env: { VISUAL: "./ed.sh" },
+    stdin: "n\n",
+    setup: async (f) => {
+      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\necho more >> \"$1\"\n", { mode: 0o755 });
+    },
+  },
+  { name: "prompts-edit-editor-fails", argv: ["prompts", "edit", "instructions"], env: { VISUAL: "false" }, setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "github-app-none", argv: ["github-app"] },
+  { name: "github-app-test-none", argv: ["github-app", "test"] },
+  { name: "github-app-remove-none", argv: ["github-app", "remove"] },
+  { name: "github-app-bad-org", argv: ["github-app", "create", "--org", "-bad"] },
+  { name: "github-app-bad-port", argv: ["github-app", "create", "--port", "http"] },
+  { name: "github-app-unknown", argv: ["github-app", "frob"] },
+  { name: "github-app-flag", argv: ["github-app", "--frob"] },
+  { name: "update-check-newer", argv: ["update", "--check"], env: feedAt("newer") },
+  { name: "update-check-same", argv: ["update", "--check"], env: feedAt("same") },
+  { name: "update-check-none", argv: ["update", "--check", "--channel", "stable"], env: feedAt("none") },
+  { name: "update-check-missing", argv: ["update", "--check"], env: feedAt("gone") },
+  { name: "update-bad-channel", argv: ["update", "--check", "--channel", "beta"], env: feedAt("newer") },
+  { name: "update-no-services", argv: ["update"], env: feedAt("newer") },
+  { name: "node-restart-none", argv: ["node", "restart"] },
   { name: "hub-key-missing", argv: ["hub", "key"] },
   { name: "hub-key-unknown", argv: ["hub", "key", "frob"] },
   { name: "hub-key-create-no-name", argv: ["hub", "key", "create"] },
@@ -234,6 +325,11 @@ const ONLINE: Case[] = [
   { name: "time-order", argv: ["time", "W9", "--since", "2d"] },
   { name: "time-project-unknown", argv: ["time", "nope"] },
   { name: "doctor", argv: ["doctor"] },
+  { name: "init-step-address", argv: ["init", "--step", "address"] },
+  { name: "init-step-people", argv: ["init", "--step", "people"] },
+  { name: "init-step-machines", argv: ["init", "--step", "machines"] },
+  { name: "init-step-cloud", argv: ["init", "--step", "cloud"] },
+  { name: "init-step-mac", argv: ["init", "--step", "mac"] },
   // Piped stderr, no NO_COLOR: plain text all the same, as a person's shell or an agent's sees it.
   { name: "doctor-piped-color", argv: ["doctor"], env: { NO_COLOR: UNSET } },
   { name: "push-relay-off", argv: ["push-relay", "set", "off"] },

@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no hub answers at 127.0.0.1:1. Fix: fleetd init (it starts the hub), then run fleetd machine add builder-3\n"
+}
