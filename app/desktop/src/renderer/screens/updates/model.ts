@@ -446,13 +446,16 @@ export interface UpdatesInput {
   readonly now?: number;
   /** For the times it names; the person's own when absent. */
   readonly timeZone?: string;
+  /** An owner or admin, who updates the hub and its machines (hub_update refuses anyone else). A member reads where
+   * they stand; their line, notice and update are only this app's (D211). True when absent. */
+  readonly administers?: boolean;
 }
 
 /**
  * The line names the most pressing: this app's restart or download, then a run going on or failed, then anything
  * with a newer build.
  */
-export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, now = Date.now(), timeZone }: UpdatesInput): UpdatesView => {
+export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, now = Date.now(), timeZone, administers = true }: UpdatesInput): UpdatesView => {
   const of = hub.url === null ? null : target(hub, app);
   // A finished run behind a newer build (ready on the hub, or on the channel) is history, whatever the flow: the sheet
   // and the notice offer that build, not Retry of the old one.
@@ -491,7 +494,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
           });
 
   const appFound = app !== null && found(app.app);
-  const outdated = appFound || (hubPart?.tone === "accent") || nodes.some((n) => n.tone === "accent");
+  const outdated = appFound || (administers && (hubPart?.tone === "accent" || nodes.some((n) => n.tone === "accent")));
   const going = flow.phase === "starting" || flow.phase === "following" || (flow.phase === "app" && app?.app.kind !== "failed");
   const runGoing = live !== null && live.finishedAt === undefined;
   const machineCount = nodes.filter((n) => !n.key.startsWith("claude:")).length;
@@ -503,7 +506,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   const retryable = live !== null && live.finishedAt !== undefined && hubUpdated(live) && !going;
   const retries = retryable && live.parts.some((p) => p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude"));
   const update =
-    going || hub.url === null || !outdated || retries
+    !administers || going || hub.url === null || !outdated || retries
       ? null
       : {
           label: "Update",

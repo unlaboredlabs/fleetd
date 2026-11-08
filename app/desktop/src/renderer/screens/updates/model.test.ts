@@ -92,6 +92,22 @@ describe("the hub and its machines", () => {
     expect(appOnly.update?.label).toBe("Update");
   });
 
+  it("are a member's to read, not to update: no Update, no ready notice, no sidebar line for them (D211)", () => {
+    // The hub refuses hub_update to anyone but an admin everywhere; a member pressing Update only got "Forbidden".
+    const behind = updatesView({ app: { current: MINE, app: current, release }, hub: hubOf({ version: OLDER }), machines: [machine("builder", OLDER)], ready: NEXT, administers: false });
+    expect(behind.hub?.status).toBe("Edge · Oct 22, 10:30 UTC · abc1234 is available");
+    expect(behind.update).toBeNull();
+    expect(behind.notice).toBeNull();
+    expect(behind.line).toBeNull();
+    expect(hubStanding(behind)).toEqual({ tone: "accent", text: "An update is ready for the hub and its machines." });
+
+    // Their own app's update stays theirs.
+    const app = updatesView({ app: { current: MINE, app: { kind: "ready", version: NEXT }, release }, hub: hubOf({ version: OLDER }), administers: false });
+    expect(app.line).toEqual({ tone: "accent", text: "Restart to update" });
+    expect(app.app?.action?.label).toBe("Restart to update");
+    expect(app.update).toBeNull();
+  });
+
   it("offer a hub and machines on a nightly build, from before Edge had its name, the channel's newest Edge build", () => {
     const LAST_NIGHTLY = "0.0.0-nightly.202610201030+0001111";
     const v = updatesView({
