@@ -716,6 +716,10 @@
         "slots": {
           "$ref": "#/$defs/SlotState",
           "description": "Absent until the hub runs the slot board (M5)."
+        },
+        "update": {
+          "$ref": "#/$defs/HubUpdateData",
+          "description": "The app snapshot only: the update going on, or the last one (`hub.update`'s data). Absent when the hub never\nupdated itself, and from fleetd_status."
         }
       },
       "required": [
@@ -1231,6 +1235,132 @@
         {
           "const": "mcp.oauth",
           "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`), or the server was removed (`data.removed`, no status).\nmcp_servers_get reads the rest; never a token.",
+          "type": "string"
+        },
+        {
+          "const": "hub.update",
+          "description": "An update started, its hub or a machine moved a state (restarting, back on the new build), or it ended:\n`data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "HubUpdateData": {
+      "description": "What an update looks like from the hub row: the `hub.update` event's data, sent whenever its state or a machine's\nchanges, and the app snapshot's `update`, so an app that reconnects after the hub's restart reads it at once. The\nupdate going on, or the last one; hub_update_status reads it in full.",
+      "properties": {
+        "auto": {
+          "description": "Started by itself (automatic updates). Absent otherwise.",
+          "type": "boolean"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When every part had its result; absent while `updating`."
+        },
+        "from": {
+          "description": "The build the hub ran when the update started.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "hub": {
+          "$ref": "#/$defs/UpdateState",
+          "description": "The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with\n`APP_CLOSE_RESTART`, 1001), `done` once it runs it."
+        },
+        "machines": {
+          "description": "Each machine's node, by name: `restarting` while it restarts, `done` once it is back on the new build.",
+          "items": {
+            "$ref": "#/$defs/HubUpdateMachine"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "message": {
+          "description": "With `failed` or `put_back`: what happened, in one sentence (the hub's, or the machine's that missed the build).",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "moreMachines": {
+          "description": "Machines past `machines`, not named here.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runId": {
+          "description": "The run's id, as hub_update_status names it.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/HubUpdatePhase"
+        },
+        "to": {
+          "description": "The build it updates to; absent until the hub read the channel.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId",
+        "state",
+        "hub",
+        "from",
+        "startedAt",
+        "machines"
+      ],
+      "type": "object"
+    },
+    "HubUpdateMachine": {
+      "description": "One machine's node in [`HubUpdateData`].",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/UpdateState"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "state"
+      ],
+      "type": "object"
+    },
+    "HubUpdatePhase": {
+      "description": "An update as the hub row says it.",
+      "oneOf": [
+        {
+          "const": "updating",
+          "description": "Going on: the hub or its machines download, restart or come back. \"Updating…\"",
+          "type": "string"
+        },
+        {
+          "const": "updated",
+          "description": "Finished, and the hub or a machine moved to `to` (\"Updated\"); a machine that didn't says so in `machines`.",
+          "type": "string"
+        },
+        {
+          "const": "put_back",
+          "description": "The hub didn't come up healthy on `to`, so its previous build was put back. \"Put back\"",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Nothing changed: the hub didn't update (the download, the checksum or the install failed), or it already ran\n`to` and a machine behind it didn't get it. `message` says why.",
+          "type": "string"
+        },
+        {
+          "const": "current",
+          "description": "Finished with nothing to do: the hub and every machine online already ran `to`.",
           "type": "string"
         }
       ],
@@ -2448,6 +2578,51 @@
         "live"
       ],
       "type": "object"
+    },
+    "UpdateState": {
+      "oneOf": [
+        {
+          "const": "waiting",
+          "description": "Its turn hasn't come: a node waits for the hub.",
+          "type": "string"
+        },
+        {
+          "const": "downloading",
+          "description": "Reading the channel and downloading the new binary.",
+          "type": "string"
+        },
+        {
+          "const": "restarting",
+          "description": "The new binary is in place and the service restarts; a health check follows.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Runs the new build.",
+          "type": "string"
+        },
+        {
+          "const": "current",
+          "description": "Already ran the channel's newest build.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Not updated, and nothing changed: the download, the checksum or the install failed.",
+          "type": "string"
+        },
+        {
+          "const": "rolled_back",
+          "description": "The new build didn't come up healthy, so the previous one was put back.",
+          "type": "string"
+        },
+        {
+          "const": "skipped",
+          "description": "Not tried: offline, or its fleetd is too old to update from the hub (`message` says how).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     }
   },
   "$ref": "#/$defs/AppServerMessage",

@@ -25,8 +25,10 @@ use tokio::task::JoinSet;
 pub const CLOSE_UNAUTHORIZED: u16 = 4401;
 /// Calls one connection may have running at once; more are refused rather than queued without bound.
 pub const MAX_CALLS_IN_FLIGHT: usize = 32;
-/// "Going away": the hub is shutting down.
-const CLOSE_GOING_AWAY: u16 = 1001;
+/// "Going Away": the hub is stopping and comes back within a moment; the reason says when an update restarts it.
+const CLOSE_RESTART: u16 = fleetd_contracts::app::APP_CLOSE_RESTART;
+/// [`CLOSE_RESTART`]'s reason when no update restarts the hub.
+const RESTARTING: &str = "hub restarting";
 /// "Try again later": the connection fell too far behind (see `outbox`); the app reconnects and reads again.
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 /// How long a closing frame may take: a socket too far behind may never take it.
@@ -269,15 +271,22 @@ impl Session {
             .call(&self.hub, info, "fleetd_status", json!({}))
             .await
         {
-            Ok(status) => self.send(json!({
-                "t": "snapshot",
-                "machines": status["machines"],
-                "projects": status["projects"],
-                "attention": status["attention"],
-                "cursor": status["cursor"],
-                "slots": status["slots"],
-                "chats": status["chats"],
-            })),
+            Ok(status) => {
+                let mut frame = json!({
+                    "t": "snapshot",
+                    "machines": status["machines"],
+                    "projects": status["projects"],
+                    "attention": status["attention"],
+                    "cursor": status["cursor"],
+                    "slots": status["slots"],
+                    "chats": status["chats"],
+                });
+                // Absent, not null, when the hub never updated itself.
+                if let Some(update) = self.hub.updates.signal() {
+                    frame["update"] = json!(update);
+                }
+                self.send(frame);
+            }
             Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
             Err(other) => tracing::error!(?other, "app snapshot failed"),
         }
@@ -642,7 +651,7 @@ pub async fn handle(
     let mut deferred: Option<std::time::Instant> = None;
     let close = loop {
         tokio::select! {
-            () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
+            () = shutdown.wait() => break Some((CLOSE_RESTART, RESTARTING)),
             // A revoked key's connection streams nothing more: it closes as refused, as at `auth`. A check is no
             // traffic, so it leaves the keepalive's clock alone.
             Ok(()) = revokes.changed() => {
@@ -781,6 +790,11 @@ pub async fn handle(
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {
+        // A stop an update asked for says so, read as the hub stops: its `hub.update` event may not reach the app first.
+        let reason = match session.hub.updates.restart_reason() {
+            Some(updating) if code == CLOSE_RESTART => updating,
+            _ => reason.to_owned(),
+        };
         let closing = socket.send(Message::Close(Some(CloseFrame {
             code,
             reason: reason.into(),

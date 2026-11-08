@@ -33,8 +33,9 @@ use std::time::Duration;
 
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::mcp::{
-    AutoUpdateResult, DRAIN_MINUTES_MAX, HubChannel, LastAutoUpdate, UpdatePart, UpdatePartKind,
-    UpdateRun, UpdateSettings, UpdateStage, UpdateState,
+    AutoUpdateResult, DRAIN_MINUTES_MAX, HUB_UPDATE_MACHINES_MAX, HubChannel, HubUpdateData,
+    HubUpdateMachine, HubUpdatePhase, LastAutoUpdate, UpdatePart, UpdatePartKind, UpdateRun,
+    UpdateSettings, UpdateStage, UpdateState,
 };
 use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::{List, Text};
@@ -125,6 +126,8 @@ pub trait UpdatePorts: Send + Sync {
         machine_id: &'a MachineId,
         update: &'a NodeUpdate,
     ) -> BoxFuture<'a, Result<NodeAnswer, String>>;
+    /// Tells the apps how the update looks now (the `hub.update` event); called only when that changed.
+    fn announce(&self, update: &HubUpdateData);
 }
 
 /// A node's answer to its update, and the wait for its second.
@@ -199,6 +202,8 @@ pub struct Updates {
     next_check: Mutex<Option<i64>>,
     /// Why the last look at the channel came to nothing, in a sentence; None when it went.
     check_failed: Mutex<Option<String>>,
+    /// What [`UpdatePorts::announce`] last told the apps, so a write that changes nothing they show sends nothing.
+    announced: Mutex<Option<HubUpdateData>>,
 }
 
 /// How long a node waits for its agents to finish their step by default.
@@ -281,6 +286,7 @@ impl Updates {
             fetching: tokio::sync::Mutex::const_new(()),
             next_check: Mutex::default(),
             check_failed: Mutex::default(),
+            announced: Mutex::default(),
         })
     }
 
@@ -467,6 +473,22 @@ impl Updates {
     /// The update going now, or the last one.
     pub fn status(&self) -> Option<UpdateRun> {
         self.run.lock().unwrap().clone()
+    }
+
+    /// The update going now, or the last one, as the hub row shows it: the app snapshot's `update`.
+    pub fn signal(&self) -> Option<HubUpdateData> {
+        self.status().map(|run| signal(&run))
+    }
+
+    /// The close reason of the apps' sockets when the hub stops now: "updating to <version>" while an update restarts
+    /// it, else None.
+    pub fn restart_reason(&self) -> Option<String> {
+        let run = self.status()?;
+        let hub = run.parts.iter().find(|p| p.part == UpdatePartKind::Hub)?;
+        (run.finished_at.is_none() && hub.state == UpdateState::Restarting).then(|| {
+            let to = run.to.as_ref().map_or("", |t| t.as_str());
+            format!("{}{to}", fleetd_contracts::app::APP_CLOSE_UPDATING)
+        })
     }
 
     /// The channel's newest build when it is downloaded and checked here, ready to install.
@@ -925,6 +947,7 @@ impl Updates {
         if run.auto == Some(true) && run.finished_at.is_some() {
             self.save_last_auto(run);
         }
+        self.announce(run);
         let wrote = fs::create_dir_all(&self.dir).and_then(|()| {
             crate::update::replace_file(
                 &self.dir.join("run.json"),
@@ -936,6 +959,21 @@ impl Updates {
                 "update: couldn't write {}: {e}",
                 self.dir.join("run.json").display()
             );
+        }
+    }
+
+    /// Tells the apps how `run` looks now, when that changed since the last time.
+    fn announce(&self, run: &UpdateRun) {
+        let now = signal(run);
+        {
+            let mut announced = self.announced.lock().unwrap();
+            if announced.as_ref() == Some(&now) {
+                return;
+            }
+            *announced = Some(now.clone());
+        }
+        if let Some(ports) = self.ports() {
+            ports.announce(&now);
         }
     }
 
@@ -1727,6 +1765,74 @@ fn last_auto(run: &UpdateRun) -> LastAutoUpdate {
         to: run.to.clone().filter(|_| hub_ok),
         result,
         message: message.map(|m| text(&m)),
+    }
+}
+
+/// How `run` looks from the hub row ([`HubUpdateData`]): updating until every part has its result; then put back or
+/// failed by the hub's part, updated when the hub or a machine moved, current when every machine already ran the hub's
+/// build (or was offline), and failed when a machine the hub's build was for didn't get it and none did.
+pub fn signal(run: &UpdateRun) -> HubUpdateData {
+    let hub = run.parts.iter().find(|p| p.part == UpdatePartKind::Hub);
+    let hub_state = hub.map_or(UpdateState::Waiting, |p| p.state);
+    let nodes: Vec<&UpdatePart> = run
+        .parts
+        .iter()
+        .filter(|p| p.part == UpdatePartKind::Node)
+        .collect();
+    // A machine that didn't get the hub's build: not one that already ran it, nor one offline when the update started.
+    let missed = nodes.iter().find(|p| match p.state {
+        UpdateState::Done | UpdateState::Current => false,
+        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
+        _ => true,
+    });
+    let state = if run.finished_at.is_none() {
+        HubUpdatePhase::Updating
+    } else {
+        match hub_state {
+            UpdateState::RolledBack => HubUpdatePhase::PutBack,
+            UpdateState::Done => HubUpdatePhase::Updated,
+            UpdateState::Current if nodes.iter().any(|p| p.state == UpdateState::Done) => {
+                HubUpdatePhase::Updated
+            }
+            UpdateState::Current if missed.is_none() => HubUpdatePhase::Current,
+            _ => HubUpdatePhase::Failed,
+        }
+    };
+    // Failed with the hub current: the machine that missed says why, as `last_auto` words it.
+    let message = match (state, hub_state) {
+        (HubUpdatePhase::Failed, UpdateState::Current) => missed.map(|p| {
+            let why = p.message.as_ref().map_or("didn't update", |m| m.as_str());
+            text(&format!("{}: {why}", p.name))
+        }),
+        (HubUpdatePhase::PutBack | HubUpdatePhase::Failed, _) => hub
+            .and_then(|p| p.message.as_ref())
+            .map(|m| text(m.as_str())),
+        _ => None,
+    };
+    let machines = nodes
+        .iter()
+        .take(HUB_UPDATE_MACHINES_MAX)
+        .filter_map(|p| {
+            Some(HubUpdateMachine {
+                machine_id: p.machine_id.clone()?,
+                name: text(p.name.as_str()),
+                state: p.state,
+            })
+        })
+        .collect();
+    let more = nodes.len().saturating_sub(HUB_UPDATE_MACHINES_MAX);
+    HubUpdateData {
+        run_id: run.id.clone(),
+        state,
+        hub: hub_state,
+        from: hub.map_or_else(|| text(""), |p| p.from.clone()),
+        to: run.to.clone(),
+        started_at: run.started_at.clone(),
+        finished_at: run.finished_at.clone(),
+        auto: run.auto,
+        machines: List::new(machines).expect("at most HUB_UPDATE_MACHINES_MAX"),
+        more_machines: (more > 0).then(|| u32::try_from(more).unwrap_or(u32::MAX)),
+        message,
     }
 }
 

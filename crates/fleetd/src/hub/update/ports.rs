@@ -2,7 +2,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
-use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{MachineId, Timestamp};
+use fleetd_contracts::mcp::{HubUpdateData, HubUpdatePhase, UpdateState};
 use fleetd_contracts::node_link::{
     CAP_CLAUDE_INSTALL, CAP_SELF_UPDATE, CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, NodeActionResult,
     NodeUpdate,
@@ -167,6 +169,51 @@ impl UpdatePorts for HubPorts {
                 .map_err(|e| e.message)?;
             Ok((result, Box::new(refusal) as Box<dyn Refusal>))
         })
+    }
+
+    fn announce(&self, update: &HubUpdateData) {
+        let Some(hub) = self.hub() else { return };
+        let to = update.to.as_ref().map(|t| crate::version_label(t.as_str()));
+        let to = to.as_deref().unwrap_or("the newest build");
+        let summary = match update.state {
+            HubUpdatePhase::Updating => {
+                let restarting = update
+                    .machines
+                    .iter()
+                    .filter(|m| m.state == UpdateState::Restarting)
+                    .count();
+                match (update.hub, restarting) {
+                    (UpdateState::Restarting, _) => {
+                        format!("Updating fleetd to {to}: the hub restarts")
+                    }
+                    (_, 0) => format!("Updating fleetd to {to}"),
+                    (_, 1) => format!("Updating fleetd to {to}: 1 machine restarts"),
+                    (_, n) => format!("Updating fleetd to {to}: {n} machines restart"),
+                }
+            }
+            HubUpdatePhase::Updated => format!("Updated fleetd to {to}"),
+            HubUpdatePhase::PutBack => format!(
+                "fleetd {to} didn't come up healthy, so {} was put back",
+                crate::version_label(update.from.as_str())
+            ),
+            HubUpdatePhase::Current => format!("fleetd already runs {to}"),
+            _ => "fleetd didn't update".to_owned(),
+        };
+        let event = crate::hub::store::NewEvent {
+            at: Timestamp(crate::hub::store::iso_ms(crate::hub::store::now_ms(
+                hub.clock.as_ref(),
+            ))),
+            r#type: HubEventType::HubUpdate,
+            machine_id: None,
+            project_id: None,
+            thread_id: None,
+            summary,
+            data: serde_json::to_value(update).ok(),
+            attention: None,
+        };
+        if let Err(error) = hub.events.append(event) {
+            tracing::warn!("hub.update: {error}");
+        }
     }
 }
 

@@ -439,6 +439,11 @@
           "const": "mcp.oauth",
           "description": "An MCP server's sign-in changed: one started, finished or failed, or its token couldn't be renewed\n(`data.projectRef`, `data.name`, `data.status`), or the server was removed (`data.removed`, no status).\nmcp_servers_get reads the rest; never a token.",
           "type": "string"
+        },
+        {
+          "const": "hub.update",
+          "description": "An update started, its hub or a machine moved a state (restarting, back on the new build), or it ended:\n`data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.",
+          "type": "string"
         }
       ],
       "x-open": true
