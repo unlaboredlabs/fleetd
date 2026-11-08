@@ -14,6 +14,7 @@ pub mod config;
 pub mod desktop;
 pub mod device;
 pub mod flush;
+pub mod gated;
 pub mod hold;
 pub mod hosts;
 pub mod identity;

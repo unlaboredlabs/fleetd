@@ -25,6 +25,10 @@ struct Fake {
     /// Each gated command the node ran: machine and input.
     runs: Mutex<Vec<(String, Value)>>,
     gated_reply: Mutex<Result<GatedOutcome, NodeCommandError>>,
+    /// Each `gated_resume` the node was asked: machine, request and timeout.
+    resumes: Mutex<Vec<(String, String, i64)>>,
+    /// The node's answer to each: by default it has no result (it restarted while the command ran).
+    resume_reply: Mutex<Result<GatedOutcome, NodeCommandError>>,
     /// Each sealed secret the node took: machine and input.
     secrets: Mutex<Vec<(String, Value)>>,
     /// The project's open orders; every other order is refused.
@@ -71,6 +75,11 @@ impl Default for Fake {
             gated_reply: Mutex::new(Ok(GatedOutcome {
                 exit_code: Some(0),
                 output_tail: "migrated 3 tables\n".into(),
+                ..Default::default()
+            })),
+            resumes: Mutex::default(),
+            resume_reply: Mutex::new(Ok(GatedOutcome {
+                unknown: Some("lab-a's node restarted while it ran, which ended it".into()),
                 ..Default::default()
             })),
             secrets: Mutex::default(),
@@ -151,6 +160,19 @@ impl ApprovalNodes for Fake {
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
         self.runs.lock().unwrap().push((m.into(), input));
         let reply = self.gated_reply.lock().unwrap().clone();
+        Box::pin(async move { reply })
+    }
+    fn resume_gated(
+        &self,
+        m: &str,
+        request_id: &str,
+        timeout_sec: i64,
+    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
+        self.resumes
+            .lock()
+            .unwrap()
+            .push((m.into(), request_id.into(), timeout_sec));
+        let reply = self.resume_reply.lock().unwrap().clone();
         Box::pin(async move { reply })
     }
     fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
@@ -435,7 +457,7 @@ async fn approve_runs_the_stored_command_and_wakes_the_lead_with_its_outcome() {
         fake.runs.lock().unwrap().as_slice(),
         [(
             "lab-a".to_string(),
-            json!({ "argv": ["sh", "-c", "make migrate"], "cwd": "/w/p1", "timeoutSec": 600 })
+            json!({ "argv": ["sh", "-c", "make migrate"], "cwd": "/w/p1", "timeoutSec": 600, "requestId": "Q1" })
         )]
     );
     let ran = fake.request("Q1");
@@ -715,54 +737,141 @@ async fn after_a_restart_an_approved_command_goes_back_to_the_person_and_never_r
             })
             .unwrap();
     }
+    *fake.linked.lock().unwrap() = true;
     a.reopen_unfinished().await;
     assert_eq!(fake.request("Q1").state, RequestState::Open);
     assert_eq!(
         fake.request("Q1").evidence.unwrap().as_str(),
         NOT_RUN_AFTER_RESTART
     );
-    assert!(
-        fake.request("Q2")
-            .evidence
-            .unwrap()
-            .as_str()
-            .starts_with("interrupted, result unknown: the hub restarted while it ran on lab-a")
+    // Q2 was running: its node is asked, and it restarted too, so it may have run, and the person hears what to check.
+    fake.woken_times(1).await;
+    let q2 = fake.request("Q2");
+    assert_eq!(q2.state, RequestState::Open);
+    assert_eq!(
+        q2.evidence.unwrap().as_str(),
+        "interrupted, may have run: the hub restarted while it ran on lab-a, and lab-a's node restarted while it ran, \
+         which ended it; check on lab-a whether it ran before you approve it again"
     );
+    assert_eq!(fake.resumes.lock().unwrap().len(), 1);
     assert!(fake.runs.lock().unwrap().is_empty());
 }
 
-/// An update restarts the node while an approved command runs: the link drops, and the command goes back to the person
-/// as interrupted with its result unknown. It never runs again by itself, not even once the node is back.
+/// An approved command restarts the hub itself (`fleetd update`) while its node runs it on. Once the node links
+/// again, its result settles the request as if it had come in time: its real exit code and output, never interrupted
+/// and never run again.
 #[tokio::test]
-async fn a_command_an_update_cut_off_is_reported_interrupted_and_never_run_again() {
+async fn an_approved_command_whose_run_spans_a_hub_restart_reports_its_real_result() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
+    a.gated_run(&p1(), migration()).await.unwrap();
+    fake.requests
+        .update(&ChatRequestId::unchecked("Q1"), |r| {
+            r.state = RequestState::Approved;
+            r.answered_by = Some("human:desk".into());
+            r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
+                "running on lab-a, approved by human:desk",
+            ));
+        })
+        .unwrap();
+    *fake.resume_reply.lock().unwrap() = Ok(GatedOutcome {
+        exit_code: Some(0),
+        output_tail: "restarted fleetd-hub\nfleetd-node restarts once this command ends\n".into(),
+        ..Default::default()
+    });
+    // The hub is back before the node's link is.
+    a.reopen_unfinished().await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(fake.request("Q1").state, RequestState::Approved);
+    assert!(fake.resumes.lock().unwrap().is_empty());
+    *fake.linked.lock().unwrap() = true;
+    fake.woken_times(1).await;
+    let done = fake.request("Q1");
+    assert_eq!(done.state, RequestState::Ran);
+    assert_eq!(done.exit_code, Some(0));
+    assert_eq!(
+        done.output_tail.as_ref().map(|t| t.as_str()),
+        Some("restarted fleetd-hub\nfleetd-node restarts once this command ends")
+    );
+    assert_eq!(
+        done.evidence.as_ref().map(|e| e.as_str()),
+        Some("exit 0 on lab-a, approved by human:desk")
+    );
+    assert_eq!(
+        fake.resumes.lock().unwrap().as_slice(),
+        [("lab-a".to_string(), "Q1".to_string(), 600)]
+    );
+    assert!(fake.runs.lock().unwrap().is_empty(), "never run again");
+    assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 ran"]);
+}
+
+/// The link drops while an approved command runs: the node runs it on and keeps its result, and once the link is back
+/// that result settles it. A node that has none says so, and the command never runs again by itself.
+#[tokio::test]
+async fn a_command_whose_link_dropped_reports_its_kept_result_and_never_runs_again() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    a.gated_run(&p1(), migration()).await.unwrap();
     a.gated_run(&p1(), migration()).await.unwrap();
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "lost".into(),
         message: "the link to lab-a's node dropped while the command ran".into(),
         fix: None,
     });
+    *fake.linked.lock().unwrap() = true;
+    *fake.resume_reply.lock().unwrap() = Ok(GatedOutcome {
+        exit_code: Some(2),
+        output_tail: "migration 7 failed\n".into(),
+        ..Default::default()
+    });
     a.answer(&person(), "Q1", true, None).await.unwrap();
     fake.woken_times(1).await;
-    let back = fake.request("Q1");
+    let ran = fake.request("Q1");
+    assert_eq!((ran.state, ran.exit_code), (RequestState::Ran, Some(2)));
+    assert_eq!(
+        ran.output_tail.as_ref().map(|t| t.as_str()),
+        Some("migration 7 failed")
+    );
+
+    // The node restarted while Q2 ran: it may have run, and the person is told what to check.
+    *fake.resume_reply.lock().unwrap() = Ok(GatedOutcome {
+        unknown: Some("lab-a's node restarted while it ran, which ended it".into()),
+        ..Default::default()
+    });
+    a.answer(&person(), "Q2", true, None).await.unwrap();
+    fake.woken_times(2).await;
+    let back = fake.request("Q2");
     assert_eq!(back.state, RequestState::Open);
     assert_eq!(
         back.evidence.as_ref().map(|e| e.as_str()),
         Some(
-            "interrupted, result unknown: the link to lab-a's node dropped while the command ran; check on lab-a whether it ran \
-             before approving it again"
+            "interrupted, may have run: the link to lab-a's node dropped while the command ran, and lab-a's node \
+             restarted while it ran, which ended it; check on lab-a whether it ran before you approve it again"
         )
     );
-    // The node is back (and the hub restarted too): nothing runs it again.
-    *fake.linked.lock().unwrap() = true;
+    // A node too old to keep results says the same.
+    *fake.resume_reply.lock().unwrap() = Err(NodeCommandError {
+        reason: "old".into(),
+        message: "lab-a's node is too old to keep a command's result".into(),
+        fix: None,
+    });
+    a.answer(&person(), "Q2", true, None).await.unwrap();
+    fake.woken_times(3).await;
+    assert!(
+        fake.request("Q2")
+            .evidence
+            .unwrap()
+            .as_str()
+            .starts_with("interrupted, may have run: the link to lab-a's node dropped while the command ran, and lab-a's node is too old")
+    );
+    // The hub restarted too: nothing runs either again.
     a.reopen_unfinished().await;
     assert_eq!(
         fake.runs.lock().unwrap().len(),
-        1,
-        "it ran once, when it was approved"
+        3,
+        "each ran once per approval"
     );
-    assert_eq!(fake.request("Q1").state, RequestState::Open);
+    assert_eq!(fake.request("Q2").state, RequestState::Open);
 }
 
 /// Two people answer the same approval at once: exactly one answer counts, and the command runs once.

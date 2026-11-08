@@ -37,18 +37,23 @@ pub struct SystemGh;
 
 impl GhRunner for SystemGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
-        Box::pin(run_gh("gh", args, None))
+        Box::pin(run_gh("gh", args, None, None))
     }
 }
 
 /// One run of `program` (`gh`), 30 s at most; with `token`, as that token (`GH_TOKEN`) instead of gh's own login.
+/// With `env`, in only that environment (and `token`) instead of the hub's own: a stand-in's in tests.
 pub async fn run_gh(
     program: &str,
     args: Vec<String>,
     token: Option<&str>,
+    env: Option<&[(String, String)]>,
 ) -> Result<GhOut, String> {
     let mut command = tokio::process::Command::new(program);
     command.args(&args).kill_on_drop(true);
+    if let Some(env) = env {
+        command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
     if let Some(token) = token {
         command.env("GH_TOKEN", token);
     }

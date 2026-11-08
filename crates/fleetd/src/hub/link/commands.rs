@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::node_link::{
-    CmdResult, GatedResult, GatedRun, HubToNode, NodeActionKind, NodeActionResult, NodeToHub,
-    SecretDeliver, SecretResult,
+    CmdResult, GatedResult, GatedResume, GatedRun, HubToNode, NodeActionKind, NodeActionResult,
+    NodeToHub, SecretDeliver, SecretResult,
 };
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
@@ -353,6 +353,24 @@ impl NodeCommands {
         let request = serde_json::to_value(HubToNode::GatedRun(input)).unwrap_or_default();
         let timeout = request["timeoutSec"].as_u64().unwrap_or(0);
         let wait = Duration::from_secs(timeout + REPLY_GRACE_SEC);
+        match self
+            .request(machine_id, request, "gated_result", wait)
+            .await?
+        {
+            NodeToHub::GatedResult(r) => Ok(r),
+            _ => unreachable!("resolve matches the reply tag"),
+        }
+    }
+
+    /// Asks the node for the result of the approved command it ran for `input.request_id`, waiting as long as a
+    /// `gated_run` would for one still running. `input.id` is replaced.
+    pub async fn resume_gated(
+        &self,
+        machine_id: &MachineId,
+        input: GatedResume,
+    ) -> Result<GatedResult, NodeCommandError> {
+        let wait = Duration::from_secs(input.timeout_sec.get() as u64 + REPLY_GRACE_SEC);
+        let request = serde_json::to_value(HubToNode::GatedResume(input)).unwrap_or_default();
         match self
             .request(machine_id, request, "gated_result", wait)
             .await?

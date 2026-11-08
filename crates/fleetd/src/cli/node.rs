@@ -22,6 +22,8 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("mac", Kind::Bool),
     ("wait", Kind::Str),
     ("ask", Kind::Str),
+    // `node restart`'s, for `fleetd update` run as one of the node's approved commands: the process to wait for.
+    ("after", Kind::Str),
 ];
 
 fn usage(message: &str) -> u8 {
@@ -38,6 +40,18 @@ fn exit(outcome: Result<(), String>) -> u8 {
             1
         }
     }
+}
+
+/// Waits until process `pid` has ended (an hour at most), then long enough for the node to keep and send its result.
+async fn restart_after(pid: i32) {
+    let pid = nix::unistd::Pid::from_raw(pid);
+    let started = std::time::Instant::now();
+    while nix::sys::signal::kill(pid, None).is_ok()
+        && started.elapsed() < std::time::Duration::from_secs(3600)
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(crate::update::finish::ANSWER_WAIT).await;
 }
 
 /// `fleetd node …`. Long-running, so it returns an exit code once the node stops.
@@ -138,8 +152,14 @@ pub async fn node_command(argv: &[String]) -> u8 {
             }
         },
         // The node service fleetd init made for this binary, restarted: `launchctl kickstart -k` or `systemctl --user
-        // restart`. The agents' Mac's node runs it to take up a new grant; setup runs it to retry.
+        // restart`. The agents' Mac's node runs it to take up a new grant; setup runs it to retry. With `--after
+        // <pid>`, once that process ended: `fleetd update` run by the node itself, whose result the node keeps first.
         Some("restart") => {
+            let after = match v.str("after").map(str::parse::<i32>) {
+                None => None,
+                Some(Ok(pid)) => Some(pid),
+                Some(Err(_)) => return usage("--after takes a process id"),
+            };
             let node = crate::cli::setup::current_exe().ok().and_then(|exe| {
                 crate::update::service::services(&exe)
                     .into_iter()
@@ -150,15 +170,20 @@ pub async fn node_command(argv: &[String]) -> u8 {
                     "no node service of this fleetd here. Fix: fleetd init --join sets one up"
                         .into(),
                 )),
-                Some(service) => match crate::update::service::restart(&service) {
-                    Ok(()) => {
-                        println!("restarted {}", service.name);
-                        0
+                Some(service) => {
+                    if let Some(pid) = after {
+                        restart_after(pid).await;
                     }
-                    Err(why) => exit(Err(format!(
-                        "{why}. Fix: log in as this user at the machine's screen, then run fleetd node restart again"
-                    ))),
-                },
+                    match crate::update::service::restart(&service) {
+                        Ok(()) => {
+                            println!("restarted {}", service.name);
+                            0
+                        }
+                        Err(why) => exit(Err(format!(
+                            "{why}. Fix: log in as this user at the machine's screen, then run fleetd node restart again"
+                        ))),
+                    }
+                }
             }
         }
         Some("flush") => {

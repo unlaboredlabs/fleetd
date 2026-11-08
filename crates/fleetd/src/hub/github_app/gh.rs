@@ -12,18 +12,30 @@ use crate::hub::train::host::BoxFut;
 pub struct AppGh {
     apps: Arc<GithubApps>,
     program: String,
+    /// The environment `program` runs in; None: the hub's own, as `gh` on the machine's login needs.
+    env: Option<Vec<(String, String)>>,
 }
 
 impl AppGh {
     pub fn new(apps: Arc<GithubApps>) -> Self {
-        Self::with_program(apps, "gh")
+        Self {
+            apps,
+            program: "gh".into(),
+            env: None,
+        }
     }
 
-    /// Runs `program` instead of `gh`: a stand-in in tests.
-    pub fn with_program(apps: Arc<GithubApps>, program: impl Into<String>) -> Self {
+    /// Runs `program` instead of `gh`, in only `env` (and the App's token): a stand-in in tests, which so never sees
+    /// what the test process inherited (an agent's own `GH_TOKEN`).
+    pub fn with_program(
+        apps: Arc<GithubApps>,
+        program: impl Into<String>,
+        env: Vec<(String, String)>,
+    ) -> Self {
         Self {
             apps,
             program: program.into(),
+            env: Some(env),
         }
     }
 }
@@ -31,20 +43,21 @@ impl AppGh {
 impl GhRunner for AppGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
         Box::pin(async move {
+            let env = self.env.as_deref();
             let token = match repo_of(&args) {
                 Some(repo) => self.apps.token_for(&repo).await,
                 None => None,
             };
             let Some(token) = token else {
-                return run_gh(&self.program, args, None).await;
+                return run_gh(&self.program, args, None, env).await;
             };
-            let out = run_gh(&self.program, args.clone(), Some(token.as_str())).await?;
+            let out = run_gh(&self.program, args.clone(), Some(token.as_str()), env).await?;
             if out.exit_code != 0 && refused_app(&out.stderr) {
                 tracing::warn!(
                     "github app: GitHub refused the App on gh {}; running it on the machine's login",
                     args.first().map(String::as_str).unwrap_or_default()
                 );
-                return run_gh(&self.program, args, None).await;
+                return run_gh(&self.program, args, None, env).await;
             }
             Ok(out)
         })
