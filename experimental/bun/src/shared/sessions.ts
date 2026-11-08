@@ -259,7 +259,7 @@ export type ThreadSnapshot = {
 export type LoginStatus = "logged_in" | "logged_out" | "unknown";
 
 /** What a Navi's OS sandbox is on a machine, in a person's words. */
-export type SandboxStatus = "ready" | "gap" | "missing" | (string & {});
+export type SandboxStatus = "ready" | "gap" | "missing";
 export type NaviSandbox = { status: SandboxStatus; line: string; fix?: string };
 
 export type RunnerInfo = {
@@ -349,11 +349,14 @@ export type SessionOutputKind = SessionOutput["kind"];
 export type CloneProgressFrame = { addId: string; phase: ClonePhase; percent?: number; detail?: string };
 
 /**
- * `window`'s entries, tagged by `kind`. Rust's `WindowEntry::Item(ThreadItem)` puts its tag beside the item's own
- * `kind` field, so an item entry's `kind` is "item" on the wire and the item's kind is lost there: read items from
- * `read_item` when their kind matters.
+ * `window`'s entries. Rust's `WindowEntry` is tagged by `kind`, and `WindowEntry::Item(ThreadItem)` puts that tag
+ * beside the item's own `kind` field, so serde writes both: `{"kind":"item",…,"kind":{"type":"command",…}}`.
+ * `JSON.parse` keeps the last, so an item entry arrives as a plain ThreadItem whose `kind` is its ItemKind object;
+ * a message entry's `kind` is the string "message". Tell them apart with `isWindowItem`.
  */
-export type WindowEntry = ({ kind: "item" } & Omit<ThreadItem, "kind">) | ({ kind: "message" } & ThreadMessage);
+export type WindowEntry = ThreadItem | ({ kind: "message" } & ThreadMessage);
+
+export const isWindowItem = (entry: WindowEntry): entry is ThreadItem => typeof entry.kind === "object";
 
 /** sessions.rs `SessionResult`, externally tagged. */
 export type SessionResult = { ok: SessionOutput } | { err: SessionError };
