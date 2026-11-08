@@ -2,6 +2,7 @@
 // project on another hub keeps it sealed and reaches that hub's projects through it. Here: what a pasted key text holds,
 // the words for a kept link's state, and the lines for a minted link. Pure, so it is unit-tested.
 import type { HubLink, IssuedLink, ProjectRef } from "../../../shared/contracts";
+import { when } from "../status/view";
 
 /** As the hub takes a link's label (HubLabel): 1 to 40 characters on one line. */
 export const LABEL_MAX = 40;
@@ -51,8 +52,15 @@ export interface LinkState {
 /** The other hub's words without its id for the link ("The link hl_ab2c… was revoked" → "The link was revoked"). */
 const withoutId = (text: string): string => text.replace(/\s*\bhl_[a-z2-7]{8}\b/gu, "");
 
-/** A kept link's state, plainly: working, can't reach the other hub (with its address), or revoked there. */
-export const linkState = (link: Pick<HubLink, "label" | "url" | "state" | "error">): LinkState => {
+/** A kept link's state, plainly: working, can't reach the other hub (with its address), or revoked there, and since when. */
+export const linkState = (link: Pick<HubLink, "label" | "url" | "state" | "error" | "checkedAt">, nowMs = Date.now()): LinkState => {
+  const shown = linkWords(link);
+  // The hub moves `checkedAt` only when the state or its error changes: the time it went this way.
+  const since = link.checkedAt === undefined ? "" : when(link.checkedAt, nowMs);
+  return shown.line === null || since === "" ? shown : { ...shown, line: `${shown.line} Since ${since}.` };
+};
+
+const linkWords = (link: Pick<HubLink, "label" | "url" | "state" | "error">): LinkState => {
   switch (link.state) {
     case "ok":
       return { word: "Working", line: null, fix: null, tone: "quiet" };

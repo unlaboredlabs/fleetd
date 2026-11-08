@@ -11,6 +11,7 @@ import type { DoctorFix } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Field, Input, StateGlyph, Text, Truncate, toast, type GlyphState } from "../../ui";
+import { useNow } from "../live";
 import { openExternal } from "../prs/PrDetail";
 import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive } from "../settings/hub";
@@ -21,6 +22,7 @@ import { PagePart, PageHead } from "../settings/parts";
 import { MachineScreens } from "../settings/Screens";
 import { RunOn, Values } from "../setup/Guide";
 import { toHash } from "../shell/routes";
+import { when } from "../status/view";
 import { checklistOf, fixPlace, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -36,6 +38,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
   const checks = useToolQuery("doctor_list", allChecks);
   const roles = useToolQuery("machine_roles", noInput).data?.machines.find((m) => m.machineId === machineId);
   const layer = useDataLayer();
+  const nowMs = useNow(true, 60_000);
   const [rerunning, setRerunning] = useState(false);
   const back = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
 
@@ -51,6 +54,8 @@ export function MachinePage({ machineId }: { machineId: string }) {
   // hub couldn't answer: the hub checks it now, rather than the page waiting for its next round. Once per page.
   const checked = useRef(false);
   const mine = checks.data?.checks.filter((c) => c.machineId === machineId);
+  // This machine's own run, which another machine's or the hub's doesn't move (absent from older hubs).
+  const checkedAt = mine?.find((c) => c.checkedAt !== undefined)?.checkedAt;
   const unchecked = machine !== undefined && machine.status !== "offline" && mine !== undefined && (mine.length === 0 || mine.some((c) => c.status === "unknown"));
   useEffect(() => {
     if (!unchecked || checked.current) return;
@@ -75,7 +80,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
             ? fresh
               ? "This hub has no such machine. It may have been removed."
               : "Loading…"
-            : `${status ?? ""} · fleetd ${machine.nodeVersion}`}
+            : `${status ?? ""} · fleetd ${machine.nodeVersion}${checkedAt === undefined ? "" : ` · checked ${when(checkedAt, nowMs)}`}`}
         </PageHead>
         {machine === undefined ? null : (
           <section className={s.part} aria-label="Checklist">

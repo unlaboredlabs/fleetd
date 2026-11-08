@@ -24,6 +24,10 @@ describe("Administration › Machines' model", () => {
     expect(statusLine({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in. Open laptop for the fix.");
     expect(statusLine({ name: "laptop", status: "degraded" })).toBe("Something needs a look. Open laptop for the fix.");
     expect(statusLine({ name: "laptop", status: "offline" })).toContain("Repair sets its node up again");
+    // An offline machine says since when: the hub last heard from it then.
+    expect(statusLine({ name: "laptop", status: "offline", lastSeenAt: "2026-10-27T10:00:00.000Z" }, Date.parse("2026-11-07T12:00:00.000Z"))).toBe(
+      "Offline since Oct 27: its node isn't connected. If the machine is on, Repair sets its node up again.",
+    );
   });
 
   it("says where a fix runs as the hub says: the machine, or the hub's machine", () => {

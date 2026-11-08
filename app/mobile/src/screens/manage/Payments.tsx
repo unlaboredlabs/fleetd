@@ -71,6 +71,14 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
     read.reload();
   };
 
+  // A card list that failed (the hub's error, or 1Password's) is no answer: the Card row asks again, and pulling to
+  // refresh puts it away with the read.
+  const cardsFailed = cards !== null && cards !== "reading" && (!cards.ok || cards.value.error !== undefined);
+  const refresh = () => {
+    if (cardsFailed) setCards(null);
+    read.reload();
+  };
+
   const spinner = <ActivityIndicator color={t.secondary} />;
   const options = cards !== null && cards !== "reading" && cards.ok ? cardOptions(cards.value.cards, card) : undefined;
   return (
@@ -78,13 +86,13 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: space.xxl }}
       style={{ backgroundColor: t.grouped }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={read.reload} tintColor={t.secondary} />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={t.secondary} />}
     >
       <ListSection footer={PAYMENTS_HELP}>
         {view === undefined ? (
           <ListRow title={read.value?.ok === false ? "Couldn't read its payments" : "Reading…"} {...(read.value === undefined ? { accessory: spinner } : {})} />
         ) : (
-          <ListRow title="Card" value={card === undefined ? "None" : cardLabel({ ref: card })} {...(live && cards === null ? { onPress: change } : {})} />
+          <ListRow title="Card" value={card === undefined ? "None" : cardLabel({ ref: card })} {...(live && (cards === null || cardsFailed) ? { onPress: change } : {})} />
         )}
       </ListSection>
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : undefined} />

@@ -1162,7 +1162,8 @@ input!(DoctorListInput { machine_id: Option<MachineId>, rerun: Option<bool> });
 output!(DoctorListOutput {
     /// Hub checks first, then each machine's, in a fixed order.
     checks: List<DoctorCheck, 0, 500>,
-    /// When these results were taken.
+    /// When these results were taken: the latest run of any of them, the hub's own or a machine's. A machine's own
+    /// time is on its checks.
     checked_at: Timestamp,
 });
 

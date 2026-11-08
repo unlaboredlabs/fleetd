@@ -432,7 +432,10 @@ describe("Session", () => {
     expect(older()).toHaveLength(2);
     hub.fail("chat_history", "unavailable", "The machine is offline.");
     await flush();
-    expect(session.state.chats[KEY]).toMatchObject({ loadingOlder: false, error: { message: "The machine is offline." } });
+    // An older page's failure is said at the top of the thread, not as the chat's.
+    expect(session.state.chats[KEY]).toMatchObject({ loadingOlder: false });
+    expect(session.state.chats[KEY]?.error).toBeUndefined();
+    expect(session.state.olderErrors[KEY]).toMatchObject({ message: "The machine is offline." });
   });
 
   it("reads a message too big for its event by seq", async () => {
@@ -445,6 +448,64 @@ describe("Session", () => {
     hub.answer("chat_history", page([message(2, "A long one")]));
     await flush();
     expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Hi", "A long one"]);
+  });
+});
+
+describe("Stale errors", () => {
+  const devbox = { machineId: "m1", name: "devbox", nodeVersion: "0.9.0", status: "offline", tags: [], lastSeenAt: AT };
+
+  it("say a machine is back as soon as the hub does, not at the next snapshot", () => {
+    const { hub, session } = setup();
+    hub.link.frame({ ...snapshot, cursor: 2, machines: [devbox] });
+    expect(session.state.machines[0]?.status).toBe("offline");
+    const before = session.state;
+    hub.link.frame({ t: "event", seq: 3, type: "machine.online", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("online");
+    hub.link.frame({ t: "event", seq: 4, type: "machine.degraded", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("degraded");
+    hub.link.frame({ t: "event", seq: 5, type: "machine.offline", at: AT, machineId: "m1" });
+    expect(session.state.machines[0]?.status).toBe("offline");
+    // One the snapshot doesn't list changes nothing.
+    const now = session.state;
+    hub.link.frame({ t: "event", seq: 6, type: "machine.online", at: AT, machineId: "buildbox" });
+    expect(session.state.machines).toBe(now.machines);
+    expect(before.machines[0]?.status).toBe("offline");
+  });
+
+  it("tell a screen each time the link is live again, so a read that failed while it was down is read again", () => {
+    const hub = fakeHub();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, now: () => Date.parse(AT) });
+    const lives = vi.fn();
+    session.onLive(lives);
+    session.start();
+    expect(lives).not.toHaveBeenCalled();
+    hub.ready();
+    expect(lives).toHaveBeenCalledTimes(1);
+    // A snapshot or event on the same link is no new link.
+    hub.link.frame(snapshot);
+    expect(lives).toHaveBeenCalledTimes(1);
+    hub.link.close(1006);
+    vi.advanceTimersByTime(1000);
+    hub.ready();
+    expect(lives).toHaveBeenCalledTimes(2);
+  });
+
+  it("keep an older page that failed apart from the chat, for the top of the thread, until a page comes", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page([message(2, "Hi")]), moreBefore: true });
+    await flush();
+    const older = session.loadOlder(KEY);
+    hub.fail("chat_history", "timeout", "The hub didn't answer chat_history within 30 s.");
+    await older;
+    expect(session.state.chats[KEY]?.error).toBeUndefined();
+    expect(session.state.olderErrors[KEY]).toMatchObject({ code: "timeout" });
+    // Tried again, and read.
+    const again = session.loadOlder(KEY);
+    hub.answer("chat_history", page([message(1, "Hello")]));
+    await again;
+    expect(session.state.olderErrors[KEY]).toBeUndefined();
+    expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Hello", "Hi"]);
   });
 });
 
@@ -511,6 +572,23 @@ describe("A chat's picture", () => {
     await expect(stale).resolves.toBeNull();
     void session.picture(REF, "0000000000000000");
     expect(reads()).toHaveLength(3);
+  });
+});
+
+describe("A message's file", () => {
+  it("that couldn't be read says the hub's why, and is read again on the next ask, not kept", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "attachment_get");
+    const first = session.attachment(KEY, "att1");
+    hub.fail("attachment_get", "not_found", "The hub no longer has that file.");
+    await expect(first).resolves.toMatchObject({ ok: false, error: { message: "The hub no longer has that file." } });
+    const again = session.attachment(KEY, "att1");
+    expect(reads()).toHaveLength(2);
+    hub.answer("attachment_get", { attachmentId: "att1", name: "lease.png", mime: "image/png", dataB64: "iVBORw==" });
+    await expect(again).resolves.toMatchObject({ ok: true, output: { name: "lease.png" } });
+    // Read once it's had.
+    await expect(session.attachment(KEY, "att1")).resolves.toMatchObject({ ok: true });
+    expect(reads()).toHaveLength(2);
   });
 });
 

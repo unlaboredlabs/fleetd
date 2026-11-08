@@ -1,6 +1,7 @@
 // Settings › Hub › Machines, apart from React: how a machine's Repair goes, what Remove says it does, and the
 // checklist a machine's page shows once it has joined, read from the hub's own checks (doctor_list).
 import type { DoctorCheck, DoctorFix, Machine, MachineHost } from "../../../shared/contracts";
+import { when } from "../status/view";
 
 /**
  * How long the app waits on a call that waits on a machine: the hub gives a node 90 s for its login, and Remove runs
@@ -28,9 +29,12 @@ export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> 
  * What a machine that isn't simply online needs, under its name in the list: why it is degraded and where its fix
  * is, or for one offline, what brings its node back. Null while it is online.
  */
-export const statusLine = (m: Pick<Machine, "name" | "status" | "degradedReason">): string | null => {
+export const statusLine = (m: Pick<Machine, "name" | "status" | "degradedReason"> & { lastSeenAt?: string | undefined }, nowMs = Date.now()): string | null => {
   if (m.status === "online") return null;
-  if (m.status === "offline") return "Its node isn't connected. If the machine is on, Repair sets its node up again.";
+  if (m.status === "offline") {
+    const since = m.lastSeenAt === undefined ? "" : when(m.lastSeenAt, nowMs);
+    return `${since === "" ? "Its" : `Offline since ${since}: its`} node isn't connected. If the machine is on, Repair sets its node up again.`;
+  }
   // The page has the fix: the reason alone here, without the hub's own "Fix: …".
   const why = m.degradedReason?.split(/\s+Fix:/u)[0]?.trim().replace(/[.:]$/u, "");
   return `${why === undefined || why === "" ? "Something needs a look" : why.charAt(0).toUpperCase() + why.slice(1)}. Open ${m.name} for the fix.`;

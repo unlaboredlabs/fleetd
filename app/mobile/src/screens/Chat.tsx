@@ -114,6 +114,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const project = state.projects?.[chatKey];
   const chatState = state.chatStates[chatKey];
   const chat = state.chats[chatKey] ?? emptyChat;
+  const olderError = state.olderErrors[chatKey];
   const sends = state.sends[chatKey];
   const items = useMemo(() => chatItems(chat, sends ?? []), [chat, sends]);
   const working = chatState?.leadWorking === true;
@@ -293,7 +294,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       setPlaced(true);
       return;
     }
-    const found = landingOf(items, { messageId, requestId }, { hasOlder: chat.hasOlder, failed: chat.error !== undefined });
+    const found = landingOf(items, { messageId, requestId }, { hasOlder: chat.hasOlder, failed: chat.error !== undefined || olderError !== undefined });
     if (found === "older") {
       if (!chat.loadingOlder) void session.loadOlder(chatKey);
       return;
@@ -496,7 +497,19 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               // The list is upside down: its footer is the top, under the clear header.
               ListFooterComponent={
                 <View style={{ paddingTop: top + space.sm }}>
-                  {loading && items.length === 0 ? <SkeletonThread /> : chat.loadingOlder ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
+                  {loading && items.length === 0 ? (
+                    <SkeletonThread />
+                  ) : chat.loadingOlder ? (
+                    <ActivityIndicator style={styles.older} color={t.secondary} />
+                  ) : olderError !== undefined ? (
+                    // Where the older messages would be: why they didn't come, and a tap reads them again.
+                    <Pressable accessibilityRole="button" accessibilityHint="Reads them again" onPress={() => void session.loadOlder(chatKey)} style={styles.older}>
+                      <Text style={[type.footnote, styles.olderError, { color: t.secondary }]}>
+                        {`Older messages didn't load. ${olderError.message} `}
+                        <Text style={{ color: t.accent }}>Try Again</Text>
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               }
               renderItem={renderRow}
@@ -1051,7 +1064,7 @@ function MediaView({
       presents: true,
       onPress: () =>
         void session.attachment(chatKey, bubble.attachmentId).then((a) => {
-          if (a !== null) void shareFile(a).catch(() => undefined);
+          if (a.ok) void shareFile(a.output).catch(() => undefined);
         }),
     },
   ];
@@ -1268,6 +1281,7 @@ const styles = StyleSheet.create({
   starters: { alignSelf: "stretch", gap: space.sm, marginTop: space.lg },
   starter: { borderRadius: 18, borderCurve: "continuous", paddingHorizontal: space.lg, paddingVertical: 12 },
   older: { paddingVertical: space.md },
+  olderError: { paddingHorizontal: space.lg, textAlign: "center" },
   error: { position: "absolute", left: 0, right: 0, paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },
   bar: { position: "absolute", left: 12, right: 12, height: BAR_BUTTON, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22 - BAR_BUTTON / 2 },
   barButton: { width: BAR_BUTTON, height: BAR_BUTTON, borderRadius: BAR_BUTTON / 2 },

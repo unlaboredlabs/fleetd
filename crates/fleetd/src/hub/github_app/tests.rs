@@ -639,6 +639,34 @@ async fn tokens_reach_only_installed_repositories_and_are_minted_again_near_thei
 }
 
 #[tokio::test]
+async fn a_failed_test_clears_once_a_later_read_of_its_installations_works() {
+    let lab = lab().await;
+    created(&lab).await;
+    lab.fake.lock().unwrap().down = true;
+    let out = call(&lab.hub, &admin(&lab.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(out["app"]["lastTest"]["ok"], false, "{out}");
+    // GitHub answers again, and the hub's own read of where the App is installed works: the failure is gone.
+    lab.fake.lock().unwrap().down = false;
+    lab.clock.advance(Duration::from_secs(11 * 60));
+    assert!(lab.hub.github_app.token_for("acme/web").await.is_some());
+    let got = call(&lab.hub, &admin(&lab.hub), "github_app_get", json!({}))
+        .await
+        .unwrap();
+    let last = &got["app"]["lastTest"];
+    assert_eq!(last["ok"], true, "{got}");
+    assert_eq!(
+        last["said"],
+        "\"fleetd on devbox 2\" is installed on acme (2 repositories), Solo (all 31 repositories), and its tokens work."
+    );
+    assert_ne!(
+        last["at"], out["app"]["lastTest"]["at"],
+        "when it last worked"
+    );
+}
+
+#[tokio::test]
 async fn gh_runs_as_the_app_on_its_repositories_and_on_its_own_login_elsewhere() {
     let lab = lab().await;
     created(&lab).await;

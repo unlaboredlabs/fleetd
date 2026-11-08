@@ -95,8 +95,10 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const skills = skillsShown(state.hub);
   const live = state.hub.phase === "live";
   const key = `${p.machineId}/${p.projectId}`;
+  // Read again when its machine comes back or goes: what its node holds is as of the read.
+  const status = state.machines.find((m) => m.machineId === p.machineId)?.status;
   // Read again once the link is live: one read before it (a launch opening on the cached chats) answers offline.
-  const info = useInfo(key, (part) => readInfo(session, p, Date.now(), skills, part), [session, key, skills, live]);
+  const info = useInfo(key, (part) => readInfo(session, p, Date.now(), skills, part), [session, key, skills, live, status]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);

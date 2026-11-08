@@ -109,7 +109,7 @@ function FileRow({ chatKey, file, when }: { chatKey: string; file: ChatFile; whe
         setBusy(true);
         void session
           .attachment(chatKey, file.attachmentId)
-          .then((got) => (got === null ? Alert.alert(`Couldn't open ${file.name}`, "The hub didn't send it. Try again in a moment.") : shareFile(got)))
+          .then((got) => (got.ok ? shareFile(got.output) : Alert.alert(`Couldn't open ${file.name}`, got.error.message)))
           .catch((e: unknown) => Alert.alert(`Couldn't open ${file.name}`, e instanceof Error ? e.message : String(e)))
           .finally(() => setBusy(false));
       }}

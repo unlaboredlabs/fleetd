@@ -510,3 +510,34 @@ async fn a_red_main_is_a_warning_on_the_row_not_a_block() {
         Some("`ios sessions` is red on main, fix in progress")
     );
 }
+
+/// A usage limit claude rejected on the machine's login blocks the row until it resets, and says until when; a node
+/// that still reports it once it has reset no longer blocks it.
+#[tokio::test]
+async fn a_rejected_usage_limit_blocks_the_row_until_it_resets() {
+    use fleetd_contracts::node_link::LoginLimit;
+    use fleetd_contracts::prim::{List, NonNegative, Text};
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let devbox = MachineId::unchecked("devbox");
+    let mut load = crate::hub::link::guard::tests::load(500, 1.0);
+    load.limits = List::unchecked(vec![LoginLimit {
+        limit_type: Text::unchecked("five_hour"),
+        utilization: Some(NonNegative::new(1.0).unwrap()),
+        resets_at: Some(iso_ms_of(T0 as i64 + 2 * 3_600_000).into()),
+        status: Text::unchecked("rejected"),
+        observed_at: Some(iso_ms_of(T0 as i64).into()),
+    }]);
+    hub.link
+        .observe_load(&devbox, Some(load.clone()), &iso_ms_of(T0 as i64));
+    let r = row(&hub);
+    assert_eq!(
+        r.blocked_reason.as_ref().map(|l| l.as_str()),
+        Some("usage limit reached on devbox until 19:46")
+    );
+    clock.advance(Duration::from_secs(3 * 3600));
+    let now = iso_ms_of(T0 as i64 + 3 * 3_600_000);
+    hub.link.observe_load(&devbox, Some(load), &now);
+    let r = row(&hub);
+    assert_eq!(r.blocked_reason, None, "{r:?}");
+}

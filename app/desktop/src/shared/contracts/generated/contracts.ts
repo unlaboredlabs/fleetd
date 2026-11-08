@@ -2314,6 +2314,11 @@ export type KnownDiffLineKind = "context" | "add" | "del" | "hunk";
 export type DiffLineKind = KnownDiffLineKind | (string & {});
 
 export type DoctorCheck = {
+  /**
+   * A machine's check: when that machine's checks last ran, which another machine's run doesn't move. Absent on the
+   * hub's own checks and from older hubs.
+   */
+  checkedAt?: Timestamp;
   /** Absent when there is nothing to do. */
   fix?: DoctorFix;
   id: DoctorCheckId;
@@ -2360,7 +2365,10 @@ export type DoctorListInput = {
 };
 
 export type DoctorListOutput = {
-  /** When these results were taken. */
+  /**
+   * When these results were taken: the latest run of any of them, the hub's own or a machine's. A machine's own
+   * time is on its checks.
+   */
   checkedAt: Timestamp;
   /** Hub checks first, then each machine's, in a fixed order. */
   checks: DoctorCheck[];

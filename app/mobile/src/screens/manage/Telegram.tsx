@@ -28,7 +28,9 @@ export function Telegram({ route }: ChatInfoProps<"Telegram">) {
   const ref = refOf(key);
   const title = state.projects?.[key]?.title ?? "it";
   const machine = machineName(state.machines, ref.machineId);
-  const read = useRead(() => readTelegram(session, ref), [session, key]);
+  // Read again when its machine comes back or goes: the bridge's "offline" is as of the read.
+  const status = state.machines.find((m) => m.machineId === ref.machineId)?.status;
+  const read = useRead(() => readTelegram(session, ref), [session, key, status]);
   const [busy, setBusy] = useState<Act["t"] | null>(null);
   const [error, setError] = useState<HubError | null>(null);
   const live = state.hub.phase === "live";

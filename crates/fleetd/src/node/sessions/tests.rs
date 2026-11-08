@@ -5654,3 +5654,33 @@ async fn a_monitor_that_fired_or_expired_wakes_nothing_when_its_claude_goes() {
     let row = after.service.store().session("s1").unwrap().unwrap();
     assert!(row.local.monitors.is_empty());
 }
+
+#[tokio::test]
+async fn a_limit_past_its_reset_is_no_longer_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    let now_s = chrono::Utc::now().timestamp();
+    let limit = |kind: &str, status: &str, resets_at: i64| crate::node::runner::RateLimit {
+        status: status.into(),
+        resets_at: Some(resets_at),
+        limit_type: Some(kind.into()),
+        utilization: Some(1.0),
+    };
+    // The five-hour window was hit an hour ago and has since reset; the week's still runs.
+    hub.service
+        .remember_limit(limit("five_hour", "rejected", now_s - 60));
+    hub.service
+        .remember_limit(limit("seven_day", "allowed_warning", now_s + 86_400));
+    let kinds: Vec<String> = hub
+        .service
+        .login_limits()
+        .iter()
+        .map(|l| format!("{} {}", l.limit_type.as_str(), l.status.as_str()))
+        .collect();
+    assert_eq!(kinds, ["seven_day allowed_warning"]);
+}

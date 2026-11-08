@@ -47,6 +47,21 @@ async fn doctor_list(
     } else {
         "Every check passes. rerun: true runs them now; the hub also runs them every 15 minutes and emits doctor.changed."
     };
+    // Each machine's check carries when that machine's checks last ran.
+    let checks: Vec<Value> = checks
+        .into_iter()
+        .map(|c| {
+            let at = c
+                .machine_id
+                .as_ref()
+                .and_then(|m| results.machines_checked_at.get(m));
+            let mut v = json!(c);
+            if let (Some(at), Some(o)) = (at, v.as_object_mut()) {
+                o.insert("checkedAt".into(), json!(at));
+            }
+            v
+        })
+        .collect();
     Ok(json!({ "checks": checks, "checkedAt": results.checked_at, "next": next }))
 }
 
