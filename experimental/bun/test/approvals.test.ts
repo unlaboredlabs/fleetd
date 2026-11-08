@@ -34,7 +34,7 @@ class Fake {
   secretReply: () => Promise<SecretOutcome> = async () => ({ fingerprint: "ab12cd34" });
   linked = true;
   pending: PendingPermission | undefined;
-  hooks: ApprovalHooks = { ...defaultHooks(), naviLead: async () => true, pendingPermission: async () => this.pending };
+  hooks: ApprovalHooks = { ...defaultHooks(), naviLead: async () => true };
   private wakers: (() => void)[] = [];
 
   approvals(): Approvals {
@@ -61,7 +61,7 @@ class Fake {
         answerPermission: async (machine, thread, request, decision, by) => {
           this.answers.push({ machine, thread, request, decision, by });
         },
-        pendingPermission: (m, t) => this.hooks.pendingPermission(m, t),
+        pendingPermission: async () => this.pending,
       },
       hub: {
         boxKey: async (m) => (m === "lab-a" ? "A".repeat(43) + "=" : m === "lab-old" ? null : undefined),
@@ -512,19 +512,19 @@ test("the tools and lead calls go through the hub's registries", async () => {
     "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (7, 'lab-a', 'p2', 'open', '{}')",
   );
   registerLeadCalls(hub);
-  const lead = { projectRef: p1, by: "lead:lab-a/p1", agent: {} };
-  const gated = leadCalls(hub).handlers.get("gated_run")!;
-  expect(await gated(lead, { argv: ["make"], class: "irreversible", reason: "build" })).toEqual({
+  const lead = { projectRef: p1, by: "lead:lab-a/p1", agent: { kind: "lead" } } as never;
+  const gated = leadCalls(hub).handler("gated_run")!;
+  expect(await gated(lead, { op: "gated_run", argv: ["make"], class: "irreversible", reason: "build" })).toEqual({
     requestId: "Q1",
     state: "open",
     next: "carry on with other work: the person approves or denies it in chat, and the exit code and output tail arrive in a wake.",
   });
   expect(approvals(hub).get("Q1")!.gated).toEqual({ argv: ["make"], cwd: "/w/p1", class: "irreversible", reason: "build", timeoutSec: 1800 });
-  expect((await refused(Promise.resolve(gated(lead, { argv: ["make"], class: "irreversible", reason: "b", workstreamId: "W7" })))).message).toBe(
+  expect((await refused(Promise.resolve(gated(lead, { op: "gated_run", argv: ["make"], class: "irreversible", reason: "b", workstreamId: "W7" })))).message).toBe(
     "There is no workstream W7 in your project.",
   );
   // A machine with no box key takes no secrets.
-  await leadCalls(hub).handlers.get("request_secret")!(lead, { key: "a.b", sink: "file:lab-a:/x", text: "t" });
+  await leadCalls(hub).handler("request_secret")!(lead, { op: "request_secret", key: "a.b", sink: "file:lab-a:/x", text: "t" });
 
   const tools = new Registry();
   registerAll(tools);
@@ -535,7 +535,7 @@ test("the tools and lead calls go through the hub's registries", async () => {
   expect(submit).toMatchObject({ error: { kind: "tool", error: { code: "invalid", message: "lab-a's node takes no secrets: it publishes no box key." } } });
   const denied = await tools.call(hub, human, "approval_answer", { requestId: "Q1", decision: "deny", message: "no" });
   expect((denied as { output: { request: HumanRequest } }).output.request.state).toBe("denied");
-  await leadCalls(hub).handlers.get("request_withdraw")!(lead, { requestId: "Q2" });
+  await leadCalls(hub).handler("request_withdraw")!(lead, { op: "request_withdraw", requestId: "Q2" });
   expect(approvals(hub).get("Q2")!.state).toBe("withdrawn");
   // Another person's Navi's requests are theirs alone.
   hub.db.conn.run(

@@ -3,7 +3,7 @@
 import type { HumanRequest, McpServer, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
-import { linkOf } from "../cloud/node.ts";
+import { nodePort } from "../cloud/node.ts";
 import { mcpServers } from "../mcp_servers/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -43,12 +43,10 @@ function gatedOutcome(result: Record<string, unknown>): GatedOutcome {
   };
 }
 
-export function linkNodes(hub: Hub, pending: (m: string, t: string) => Promise<PendingPermission | undefined>): ApprovalNodes {
+export function linkNodes(hub: Hub): ApprovalNodes {
   const ask = async (m: string, frame: Record<string, unknown>) => {
-    const link = linkOf(hub);
-    if (!link) throw offline(m);
     try {
-      return await link.request(m, { ...frame, id: "pending" });
+      return await nodePort(hub).request(m, { ...frame, id: "pending" });
     } catch (e) {
       throw nodeError(e);
     }
@@ -65,24 +63,27 @@ export function linkNodes(hub: Hub, pending: (m: string, t: string) => Promise<P
       return gatedOutcome(await ask(m, { t: "gated_run", ...input }));
     },
     async resumeGated(m, requestId, timeoutSec) {
-      const link = linkOf(hub);
+      const port = nodePort(hub);
       // Between links, the hub may see the node's sessions before its new hello: it is not back yet.
-      if (!link?.linkId(m)) throw offline(m);
-      if (!link.can(m, CAP_GATED_RESUME)) throw new NodeCommandError("old", `${m}'s node is too old to keep a command's result`);
+      if (!port.onLink(m)) throw offline(m);
+      if (!port.can(m, CAP_GATED_RESUME)) throw new NodeCommandError("old", `${m}'s node is too old to keep a command's result`);
       return gatedOutcome(await ask(m, { t: "gated_resume", requestId, timeoutSec }));
     },
     async isLinked(m) {
-      return linkOf(hub)?.linkId(m) !== undefined;
+      return nodePort(hub).linked(m);
     },
     async answerPermission(m, threadId, requestId, decision, by) {
-      const result = await ask(m, {
-        t: "session_call",
-        call: { op: "answer", sessionId: threadId, requestId, decision, ...(by ? { by } : {}) },
-      });
-      const err = (result.result as { err?: { message?: string } } | undefined)?.err;
-      if (err) throw new NodeCommandError("failed", err.message ?? "the node refused the answer");
+      try {
+        await nodePort(hub).call(m, "answer", { op: "answer", sessionId: threadId, requestId, decision, ...(by ? { by } : {}) }, 15_000);
+      } catch (e) {
+        // executor_error: offline, not found, or the node's own failure.
+        const kind = (e as { kind?: string }).kind;
+        throw new NodeCommandError(kind === "not_connected" ? "offline" : kind === "thread_not_found" ? "not_found" : "failed", (e as Error).message);
+      }
     },
-    pendingPermission: pending,
+    async pendingPermission(m, threadId) {
+      return nodePort(hub).pending(m, threadId);
+    },
   };
 }
 
@@ -107,7 +108,7 @@ export function storeHub(hub: Hub, mcpServers: (project: ProjectRef) => Promise<
 export function hubDeps(hub: Hub): ApprovalsDeps {
   const deps: ApprovalsDeps = {
     requests: new Requests(hub.db),
-    nodes: linkNodes(hub, (m, t) => deps.hooks.pendingPermission(m, t)),
+    nodes: linkNodes(hub),
     hub: storeHub(hub, async (r) => {
       try {
         return mcpServers(hub).serversFor(r);

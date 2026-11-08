@@ -130,8 +130,6 @@ export type ApprovalHooks = {
   shellRefused(command: string): string | undefined;
   /** An action the checker never judges (navi/checker.rs `always_asks`). */
   alwaysAsks(action: Action): boolean;
-  /** The prompt the thread's run waits on now, with its input, from the machine stream (executor `pending_permission`). */
-  pendingPermission(machineId: string, threadId: string): Promise<PendingPermission | undefined>;
 };
 
 export const NOT_PORTED_ORDERS = "The Bun hub can't set an order's variable yet (src/hub/projects: order_env).";
@@ -155,7 +153,6 @@ export const defaultHooks = (): ApprovalHooks => ({
   visitCarriesData: () => false,
   shellRefused: () => undefined,
   alwaysAsks: () => false,
-  pendingPermission: async () => undefined,
 });
 
 /** The rest of the hub approvals reads or wakes, over the hub's own store. */

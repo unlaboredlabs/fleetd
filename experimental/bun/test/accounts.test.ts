@@ -4,7 +4,7 @@ import { registerAll } from "../src/gen/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { CONNECT_REFUSAL, Setup, type Whose, whoseForLead, whoseForTask } from "../src/hub/claude_accounts/index.ts";
-import type { Link } from "../src/hub/cloud/node.ts";
+import { fakeNodePort, type Link } from "../src/hub/cloud/node.ts";
 import { Outbox } from "../src/hub/cloud/outbox.ts";
 import { forTask as opForTask } from "../src/hub/onepassword/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -129,7 +129,7 @@ class FakeLink implements Link {
 function setup() {
   const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 0 } }, HubDb.memory(), { now: () => Date.parse("2026-11-08T10:00:00Z") });
   const link = new FakeLink();
-  hub.area("link", () => link);
+  hub.area("node_port", () => fakeNodePort(link));
   const at = "2026-11-08T10:00:00.000Z";
   for (const m of ["lab", "mac"]) {
     store(hub).machineUpsert({ machineId: m, name: m, nodeVersion: "1", status: "online", lastSeenAt: at } as never);
@@ -213,7 +213,7 @@ test("a person connects their own subscription; a sleeping cloud machine forgets
   expect(hub.db.all<{ type: string }>("SELECT type FROM events").map((e) => e.type)).toEqual(["people.changed"]);
   // An agent key never connects one.
   const agent = { ...bob, kind: undefined, person: undefined } as Caller;
-  await expect(call(agent, "claude_subscription_set", { sealed: [] })).rejects.toMatchObject({ code: "forbidden" });
+  await expect(call(agent, "claude_subscription_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({ code: "forbidden" });
 });
 
 test("1Password: a person's token is kept as fingerprints, tested, listed and forgotten", async () => {

@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "bun:test";
 import { registerAll } from "../src/gen/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
-import type { Link } from "../src/hub/cloud/node.ts";
+import { fakeNodePort, type Link } from "../src/hub/cloud/node.ts";
 import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
 import { getRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
@@ -118,7 +118,7 @@ function lab() {
   let now = Date.parse("2026-11-08T10:00:00Z");
   const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4795 } }, HubDb.memory(), { now: () => now });
   const link = new FakeLink();
-  hub.area("link", () => link);
+  hub.area("node_port", () => fakeNodePort(link));
   const at = "2026-11-08T10:00:00.000Z";
   store(hub).machineUpsert({
     machineId: "lab",
