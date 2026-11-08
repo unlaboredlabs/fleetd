@@ -9,7 +9,7 @@ import { sfSymbol } from "./Icon";
 import { Menu, type MenuItem, type Rect } from "./Menu";
 
 interface NativeProps {
-  readonly actions: ReadonlyArray<{ id: string; title: string; systemImage: string; destructive: boolean }>;
+  readonly actions: ReadonlyArray<{ id: string; title: string; systemImage: string; destructive: boolean; instant: boolean }>;
   readonly menuTitle?: string | undefined;
   readonly previewRadius: number;
   readonly previewColor?: string | undefined;
@@ -76,7 +76,7 @@ export function HoldMenu({
   if (NativeMenu !== null) {
     return (
       <NativeMenu
-        actions={items.map((m) => ({ id: m.label, title: m.label, systemImage: sfSymbol(m.icon), destructive: m.destructive === true }))}
+        actions={items.map((m) => ({ id: m.label, title: m.label, systemImage: sfSymbol(m.icon), destructive: m.destructive === true, instant: m.instant === true }))}
         menuTitle={title}
         previewRadius={radius}
         previewColor={color}

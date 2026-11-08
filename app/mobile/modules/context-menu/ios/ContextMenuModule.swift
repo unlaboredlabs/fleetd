@@ -1,6 +1,7 @@
 // iOS's own context menu (UIContextMenuInteraction) around a React Native view, as Messages' bubbles and chats have:
 // held, the view lifts in a shape of its own over a blurred screen, with the menu beside it, all drawn and timed by
-// iOS on the main thread. An action fires once the menu is gone, so a sheet it opens (Share, Select Text) can come up.
+// iOS on the main thread. An action fires once the menu is gone, so a sheet it opens (Share, Select Text) can come up;
+// an instant one (Reply) fires as it's picked, so what it shows comes in as the menu goes, not after.
 import ExpoModulesCore
 import UIKit
 
@@ -33,6 +34,8 @@ struct MenuAction: Record {
   /** An SF Symbol's name. */
   @Field var systemImage: String? = nil
   @Field var destructive: Bool = false
+  /** Fires as it's picked, not once the menu has gone: it changes only the screen under the menu. */
+  @Field var instant: Bool = false
 }
 
 final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
@@ -101,7 +104,7 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
         ) { [weak self] _ in
           guard let self else { return }
           self.chosen = action.id
-          if !self.open { self.fire() }
+          if action.instant || !self.open { self.fire() }
         }
       }
       return UIMenu(title: self.menuTitle, children: items)

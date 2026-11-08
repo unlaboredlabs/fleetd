@@ -991,7 +991,7 @@ function HeldBubble({
   onPress?: (() => void) | undefined;
 }) {
   const menu: MenuItem[] = [
-    ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, onPress: () => actions.reply({ ...target, quote: quoteOf(text) }) }]),
+    ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, instant: true, onPress: () => actions.reply({ ...target, quote: quoteOf(text) }) }]),
     {
       label: "Copy",
       icon: "copy",
@@ -1057,7 +1057,7 @@ function MediaView({
   const session = useSession();
   if (bubble.kind !== "image" && bubble.kind !== "file") return null;
   const menu: MenuItem[] = [
-    ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, onPress: () => actions.reply({ ...target, quote: bubble.kind === "image" ? `Photo: ${bubble.name}` : bubble.name }) }]),
+    ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, instant: true, onPress: () => actions.reply({ ...target, quote: bubble.kind === "image" ? `Photo: ${bubble.name}` : bubble.name }) }]),
     {
       label: "Share",
       icon: "share",
