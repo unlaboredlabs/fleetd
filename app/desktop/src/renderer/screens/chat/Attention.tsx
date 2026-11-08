@@ -12,7 +12,7 @@ import { X } from "lucide-react";
 import { Button, Text, Tooltip } from "../../ui";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
-import { ResumeButton } from "../status/Resume";
+import { ResumeButton } from "./Resume";
 import type { LookAt, Waiting } from "./attentionModel";
 import s from "./view.module.css";
 

@@ -1,11 +1,13 @@
 ---
 title: Status
-description: Each project's state and its work in groups at a glance, in the app and in the terminal.
+description: Each project's state and its work in groups at a glance, in the terminal.
 ---
 
-Status shows, for each project, what state it is in and where each piece of its work is.
+Status shows, for each project, what state it is in and where each piece of its work is. `fleetd status` prints it on
+the hub machine, and an MCP client reads the same rows with `status_get`. In the app, the sidebar marks a project
+that is blocked or has CI red, and the line above the chat's message box says why.
 
-## In the app {#app}
+## Each row {#rows}
 
 Status has one row per project:
 
@@ -16,18 +18,15 @@ Status has one row per project:
 | Agents | How many agents are running. |
 | Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |
 
-Under each row, its work is listed group by group, newest first. Click an item to open its agent, or its pull request,
-in the panel beside the project's chat. Click a row to open that project's chat, or PRs at its end for the project's
-pull requests. Rows needing you come first, then blocked, working and idle. An MCP client reads the same rows with
-`status_get`. Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
+Under each row, its work is listed group by group, newest first. Rows needing you come first, then blocked, working
+and idle.
 
 ## A check red on main {#red-main}
 
 A check that fails on the base branch doesn't block the project: the [merge train](/docs/merge-train) keeps merging,
-since it waits only for each pull request's own checks. Status shows it as a warning instead, **CI red** beside the
-project's name, and says which check and whether a fix is under way: "`ios sessions` is red on main, fix in
+since it waits only for each pull request's own checks. Status shows it as a warning instead, and says which check and whether a fix is under way: "`ios sessions` is red on main, fix in
 progress" while the [fix order](/docs/merge-train#after-merge) for it is open, "no fix under way" otherwise. The
-sidebar and the line above the chat's message box say the same. A project with more than one repo names the repo.
+sidebar marks the project **CI red**, and the line above the chat's message box says the same. A project with more than one repo names the repo.
 
 ## The groups {#groups}
 
@@ -88,9 +87,8 @@ Status never shows old data as live. Each source has a normal rhythm, and the hu
 | GitHub | every train pass (15 s) | 180 s without a good answer | "GitHub not reached for 4m: …" |
 | A merge train | every 15 s | 120 s | "the acme/storefront train hasn't run for 3m" |
 
-A stale row keeps its last values and says `stale` with why and since when; in the terminal it prints a `STALE` line.
-If the app loses the hub, the view greys out with "Not live: reconnecting"; `fleetd status --watch` prints "NOT LIVE:
-reconnecting to the hub" over the last rows.
+A stale row keeps its last values and prints a `STALE` line with why and since when. If it loses the hub,
+`fleetd status --watch` prints "NOT LIVE: reconnecting to the hub" over the last rows.
 
 ## How the hub follows GitHub {#github}
 

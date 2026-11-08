@@ -67,7 +67,7 @@ yet").
 
 fleetd never asks an agent how long something will take, and the lead is told never to put an ETA or a duration
 anywhere. Work is sized `s`, `m` or `l` instead. What fleetd measures, such as CI runs and span durations, is shown as
-measured. See [Status](/docs/status).
+measured.
 
 ### Running the work {#running}
 

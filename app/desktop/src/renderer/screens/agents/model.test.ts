@@ -135,7 +135,7 @@ describe("an agent's state and where its work is", () => {
     expect(on("acme/shop", 7)).toBe(false);
     expect(on("acme/shop", 212, "web")).toBe(false);
     expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "agents", agent: null } }, row)).toBe(false);
-    expect(onItsPr({ id: "status" }, row)).toBe(false);
+    expect(onItsPr({ id: "home" }, row)).toBe(false);
     expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "prs", pr: { repo: null, number: 212 } } }, { projectRef: row.projectRef })).toBe(false);
   });
 });

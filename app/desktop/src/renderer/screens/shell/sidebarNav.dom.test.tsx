@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The sidebar's rows under the lists: Status, Factory and Settings, with no Administration row (D211). Time is the
+// The sidebar's rows under the lists: Screens, Factory and Settings, with no Administration row (D211). Time is the
 // Factory's Agent time tab and Machines is reached from the hub's footer row, so neither has a row of its own.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -42,7 +42,7 @@ const mount = (o: { admin?: boolean; factory?: boolean; screen?: Routed } = {}) 
         <DataProvider layer={createDataLayer(hub)}>
           <Sidebar
             projects={[]}
-            screen={o.screen ?? { id: "status", at: "hub" }}
+            screen={o.screen ?? { id: "home", at: "hub" }}
             jumpHints={false}
             collapsed={new Set()}
             onToggleHub={() => undefined}
@@ -76,16 +76,16 @@ const row = (label: string): HTMLElement => {
 };
 
 describe("the sidebar's rows", () => {
-  it("are Status, Factory and Settings, with no Time or Machines", () => {
+  it("are Screens, Factory and Settings, with no Time or Machines", () => {
     mount();
-    expect(labels()).toEqual(["Status", "Screens", "Factory", "Settings"]);
+    expect(labels()).toEqual(["Screens", "Factory", "Settings"]);
     expect(host.textContent).not.toContain("Time");
     expect(host.textContent).not.toContain("Machines");
   });
 
   it("end with Settings for an admin too: the hub's pages are Settings' Hub group", () => {
     mount({ admin: true });
-    expect(labels()).toEqual(["Status", "Screens", "Factory", "Settings"]);
+    expect(labels()).toEqual(["Screens", "Factory", "Settings"]);
   });
 
   it("open the Factory on Output, and on Agent time for a hub without metrics", () => {
@@ -107,7 +107,7 @@ describe("the sidebar's rows", () => {
     expect(row("Factory").getAttribute("aria-current")).toBe("page");
     mount({ screen: { id: "factory", project: null, at: "hub" } });
     expect(row("Factory").getAttribute("aria-current")).toBe("page");
-    expect(row("Status").getAttribute("aria-current")).toBeNull();
+    expect(row("Settings").getAttribute("aria-current")).toBeNull();
   });
 });
 
@@ -127,7 +127,7 @@ describe("the Screens row", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(counting)}>
-            <Sidebar projects={[]} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory admin={false} go={(s) => went.push(s)} />
+            <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory admin={false} go={(s) => went.push(s)} />
           </DataProvider>
         </UiProvider>,
       ),

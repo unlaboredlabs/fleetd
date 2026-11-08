@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { applyFrame, initialState } from "../../src/data/store";
-import { chatRoute, defaultCommands, statusToggleTarget, themeCommands } from "./defaults";
+import { chatRoute, defaultCommands, themeCommands } from "./defaults";
 import { currentProjectItem, projectItems } from "./projects";
 import { dispatchable } from "./keymap";
 import { boost, frecency, match, noteUse, rank, score } from "./rank";
@@ -31,14 +31,14 @@ describe("rank", () => {
     item("go:settings.prompts", "Prompts for fleetd", "settings", { searchOnly: true }),
     item("project:devbox/fleetd", "fleetd", "projects"),
     item("project:devbox/storefront", "storefront", "projects", { keywords: ["shop-w14"] }),
-    item("status.toggle", "Status", "go-to"),
+    item("factory.open", "Factory", "go-to"),
   ];
 
   const used = (entries: Record<string, number>) => new Map(Object.entries(entries));
 
   it("with nothing typed, suggests the most used first, then groups, and hides search-only items", () => {
-    const ranked = rank("", items, used({ "status.toggle": 1, "project:devbox/fleetd": 3, gone: 9 }));
-    expect(ranked.suggested.map((i) => i.id)).toEqual(["project:devbox/fleetd", "status.toggle"]);
+    const ranked = rank("", items, used({ "factory.open": 1, "project:devbox/fleetd": 3, gone: 9 }));
+    expect(ranked.suggested.map((i) => i.id)).toEqual(["project:devbox/fleetd", "factory.open"]);
     expect(ranked.matches.map((i) => i.id)).toEqual(["project:devbox/storefront", "settings.open"]);
   });
 
@@ -217,13 +217,6 @@ describe("keys while the palette is open", () => {
 });
 
 describe("default navigation", () => {
-  it("toggles Status: open it from anywhere, go back from it", () => {
-    expect(statusToggleTarget("#/project/devbox/storefront")).toBe("#/status");
-    expect(statusToggleTarget("")).toBe("#/status");
-    expect(statusToggleTarget("#/status")).toBe("back");
-    expect(statusToggleTarget("#/statusx")).toBe("#/status");
-  });
-
   it("leaves Machines to the admins' Hub command, and opens Agent time on the Factory", () => {
     const location = { hash: "#/project/devbox/storefront" };
     vi.stubGlobal("window", { location });
@@ -248,7 +241,7 @@ describe("projects", () => {
   });
 
   it("is found fuzzily and listed before the go-tos when nothing is typed", () => {
-    const items = [...projectItems(state([live(), snapshot(1)]), () => undefined), item("status.toggle", "Status", "go-to")];
+    const items = [...projectItems(state([live(), snapshot(1)]), () => undefined), item("factory.open", "Factory", "go-to")];
     expect(rank("stfr", items).matches.map((i) => i.title)).toEqual(["storefront"]);
     expect(rank("", items).matches.map((i) => i.group)).toEqual(["projects", "go-to"]);
   });
@@ -281,7 +274,7 @@ describe("projects", () => {
     expect(currentProjectItem("#/project/devbox/storefront")).toBe("project:devbox/storefront");
     expect(currentProjectItem("#/project/dev%20box/a%2Fb?message=m1")).toBe("project:dev box/a/b");
     expect(currentProjectItem("#/project/devbox/storefront/prs/acme/storefront/11")).toBe("project:devbox/storefront");
-    expect(currentProjectItem("#/status")).toBeUndefined();
+    expect(currentProjectItem("#/factory")).toBeUndefined();
   });
 
   it("lists nothing until the hub's snapshot arrives", () => {

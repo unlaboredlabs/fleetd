@@ -15,23 +15,9 @@ const go = (route: string) => {
 export const chatRoute = (machineId: string, projectId: string): string =>
   `#/project/${encodeURIComponent(machineId)}/${encodeURIComponent(projectId)}`;
 
-/** ⌘. from Status goes back to where you were; from anywhere else it opens Status. */
-export const statusToggleTarget = (hash: string): "back" | "#/status" => (/^#\/status(?:[/?]|$)/u.test(hash) ? "back" : "#/status");
-
 export const defaultCommands = (): Command[] => [
   { id: "palette.toggle", title: "Command palette", group: "actions", searchOnly: true, run: togglePalette },
   { id: "shortcuts.show", title: "Keyboard shortcuts", group: "actions", searchOnly: true, keywords: ["keys", "hotkeys", "help"], run: toggleShortcuts },
-  {
-    id: "status.toggle",
-    title: "Status",
-    detail: "Every project: working, waiting on you, idle or blocked",
-    group: "go-to",
-    run: () => {
-      const target = statusToggleTarget(window.location.hash);
-      if (target === "back") window.history.back();
-      else go(target);
-    },
-  },
   {
     id: "go:time",
     title: "Agent time",

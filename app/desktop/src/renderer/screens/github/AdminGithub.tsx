@@ -17,7 +17,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PagePart } from "../settings/parts";
 import { ConfirmRemove } from "../settings/claudeParts";
 import { Part } from "../setup/Guide";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { dayWords, listWords } from "./words";
 import s from "./github.module.css";
 import settings from "../settings/settings.module.css";

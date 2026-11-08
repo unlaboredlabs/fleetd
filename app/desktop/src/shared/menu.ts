@@ -5,7 +5,6 @@ export const MENU_COMMANDS = [
   "app.checkForUpdates",
   "go:projects.add",
   "composer.focus",
-  "status.toggle",
   "factory.open",
   "go:time",
   "palette.toggle",
@@ -14,6 +13,7 @@ export const MENU_COMMANDS = [
   "panel.toggle",
   "project.previous",
   "project.next",
+  "project.nextNeedsYou",
 ] as const;
 export type MenuCommand = (typeof MENU_COMMANDS)[number];
 

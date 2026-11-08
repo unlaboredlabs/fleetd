@@ -170,7 +170,7 @@ const THREE: HubEntry[] = [
 ];
 
 beforeEach(() => {
-  window.location.hash = "#/status";
+  window.location.hash = "#/";
   window.localStorage.clear();
   fake.hubs.clear();
   fake.roles.clear();

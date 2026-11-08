@@ -119,11 +119,8 @@ export const fixtures = [
   "onboarding-app-too-old",
   "onboarding-hub-too-old",
   "projects-errors",
-  // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, stale, a
-  // ~120-character name).
+  // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
-  "status-stale",
-  "status-skeleton",
   // status-rows with search blocked by a usage pause on buildbox: the top bar's reason with Resume (fixtures/topbar).
   "topbar-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
@@ -662,25 +659,15 @@ export const screens: readonly Screen[] = [
   // The lead chat (lead-chat-spec.md).
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
-  { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
+  { id: "shell", route: "#/", fixtures: ["sidebar-reasons"], variant: "sidebar" },
   // Settings' entry in the sidebar: for the hub's owner it counts the setup steps left; a member's says nothing.
-  { id: "shell", route: "#/status", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
-  // Several hubs: each hub's projects under its name, Status a section per hub, and each hub's connection on its own
-  // row; Acme offline waits on its own while Personal works on.
-  { id: "status.fleet", route: "#/status", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
-  // Cloud machines' line under the projects: the day's spend against its budget and how many are awake (W407).
-  {
-    id: "status.fleet",
-    route: "#/status",
-    fixtures: ["machines-cloud"],
-    variant: "cloud",
-    open: async (page) => {
-      await page.locator("[data-cloud-status]").waitFor();
-    },
-  },
+  { id: "shell", route: "#/", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
+  // Several hubs: each hub's projects under its name, and each hub's connection on its own row; Acme offline waits on
+  // its own while Personal works on.
+  { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
   {
     id: "shell",
-    route: "#/status",
+    route: "#/",
     fixtures: ["sidebar-hubs"],
     variant: "hub-collapsed",
     open: async (page) => {
@@ -2814,13 +2801,6 @@ export const screens: readonly Screen[] = [
   { id: "settings.hub.prompts", route: "#/settings/hub/prompts?prompt=lead.start", fixtures: ["settings-prompts"] },
   { id: "settings.hub.prompts.update", route: "#/settings/hub/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status, one row per project: every state word, its work in groups, long titles, no projects, quiet sources,
-  // the skeleton before the first answer, and the link down.
-  {
-    id: "status.fleet",
-    route: "#/status",
-    fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-skeleton"],
-  },
   // The Factory (D33, fixtures/factory): the four tiles, the three charts, the projects table and the merge list over
   // 30 days; long titles; eight projects with one repo on two machines; no projects; no hub; failing reads; nothing
   // merged. Then one project, the last 90 days in weekly columns, the period before, and a column's hover card.
