@@ -45,11 +45,12 @@ test("a pool keeps its newest few, and none older than a week", () => {
   try {
     const dir = join(home.dir, "pool");
     const nanos = (ms: number) => `${(BigInt(ms) * 1_000_000n).toString().padStart(24, "0")}-1`;
-    for (const ms of [Date.now() - 1000, Date.now() - 2000, Date.now() - 3000, Date.now() - 8 * 24 * 3600_000])
-      mkdirSync(join(dir, nanos(ms)), { recursive: true });
+    const now = Date.now();
+    const [newest, next] = [now - 1000, now - 2000];
+    for (const ms of [newest, next, now - 3000, now - 8 * 24 * 3600_000]) mkdirSync(join(dir, nanos(ms)), { recursive: true });
     mkdirSync(join(dir, ".gone-left"));
-    expect(prunePool(dir, 2)).toBe(3);
-    expect(readdirSync(dir).sort()).toEqual([nanos(Date.now() - 2000), nanos(Date.now() - 1000)].sort());
+    expect(prunePool(dir, 2, now)).toBe(3);
+    expect(readdirSync(dir).sort()).toEqual([nanos(next), nanos(newest)].sort());
   } finally {
     home.done();
   }
