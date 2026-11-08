@@ -116,7 +116,7 @@ describe("a project's draft", () => {
 
   it("uploads files into it, refuses what the hub can't take, and says why", async () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: { attachmentId: "att-1", bytes: 3, sha256: "x" } })));
-    d.attach("devbox/api", [new File(["png"], "shot.png", { type: "image/png" }), new File([new Uint8Array([0xff, 0xfe, 0x00])], "blob.bin")]);
+    d.attach("devbox/api", [new File(["png"], "shot.png", { type: "image/png" }), new File([new Uint8Array([0x7f, 0x45, 0x00, 0x01])], "blob.bin")]);
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached.every((a) => a.upload !== undefined)).toBe(true));
     const draft = d.store.getState()["devbox/api"];
     expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, ref: { attachmentId: "att-1", name: "shot.png", mime: "image/png", bytes: 3 } }]]);

@@ -26,13 +26,16 @@ export const toBase64 = (buf: ArrayBuffer): string => {
   return btoa(bin);
 };
 
+/** How much of a file the hub reads to tell text (AttachmentMime::fits): read as much here. */
+export const TEXT_HEAD = 64 * 1024;
+
+/**
+ * Text as the hub takes it: a UTF-16 byte-order mark, or no NUL byte in the head. Windows-1252 is text too, and a
+ * NUL anywhere in valid UTF-8 says binary, so a file offered as text is never refused for its bytes once uploaded.
+ */
 export const looksText = (buf: ArrayBuffer): boolean => {
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(buf).subarray(0, 4096));
-    return true;
-  } catch {
-    return false;
-  }
+  const head = new Uint8Array(buf).subarray(0, TEXT_HEAD);
+  return (head[0] === 0xfe && head[1] === 0xff) || (head[0] === 0xff && head[1] === 0xfe) || !head.includes(0);
 };
 
 /** The box an image sent with a message fits in, keeping its shape. */
