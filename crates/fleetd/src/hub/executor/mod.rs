@@ -2000,12 +2000,37 @@ impl Executors {
         ))
     }
 
+    /// A plain send that waits at most [`READ_TIMEOUT`] for the node, never [`PATIENCE`]: for a caller that holds a
+    /// lock others wait on.
+    pub async fn send_brief(
+        &self,
+        r: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+    ) -> Result<SendOutcome, ExecutorError> {
+        let opts = crate::hub::queue::ports::SendOpts::default();
+        self.send_within(r, message, client_request_id, &opts, false)
+            .await
+    }
+
     pub async fn send_with(
         &self,
         r: &ThreadRef,
         message: &str,
         client_request_id: &str,
         opts: &crate::hub::queue::ports::SendOpts,
+    ) -> Result<SendOutcome, ExecutorError> {
+        self.send_within(r, message, client_request_id, opts, true)
+            .await
+    }
+
+    async fn send_within(
+        &self,
+        r: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+        opts: &crate::hub::queue::ports::SendOpts,
+        patient: bool,
     ) -> Result<SendOutcome, ExecutorError> {
         let op = NodeOperation::Send;
         // Every turn of every lead goes through here: an archived project's lead takes none (W79), whichever path
@@ -2040,9 +2065,13 @@ impl Executors {
             mcp,
             skills,
         };
-        let out = self
-            .call_patient(&r.machine_id, op, call, READ_TIMEOUT)
-            .await?;
+        let out = match patient {
+            true => {
+                self.call_patient(&r.machine_id, op, call, READ_TIMEOUT)
+                    .await?
+            }
+            false => self.call(&r.machine_id, op, call, READ_TIMEOUT).await?,
+        };
         if let Some(sent) = mcp_sent {
             self.mcp_sent
                 .lock()
