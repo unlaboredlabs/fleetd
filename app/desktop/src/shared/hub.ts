@@ -9,10 +9,17 @@ export type Snapshot = FleetStatus;
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }
   /**
-   * `restarting`: when the hub closed the link to restart (close 1012, or 1001 from a hub before it), epoch ms; it
-   * stays until a link is ready again. Absent for any other drop and at launch.
+   * `restarting`: when the hub closed the link to restart or stop (close 1001 or 1012), epoch ms; `updatingTo`: the
+   * build it restarts into when the close said it updates ("updating to <version>"). Both stay until a link is ready
+   * again; absent for any other drop and at launch.
    */
-  | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number; readonly restarting?: number | undefined }
+  | {
+      readonly phase: "connecting";
+      readonly hub: string;
+      readonly attempt: number;
+      readonly restarting?: number | undefined;
+      readonly updatingTo?: string | undefined;
+    }
   /**
    * `version`: the hub's fleetd version from its ready frame, absent from hubs before it; `features`: what newer the
    * hub serves, from the same frame (`browser_sessions`: the Agents section's Sessions). Both fresh on each connection.
@@ -26,6 +33,7 @@ export type HubState =
       readonly fix?: string | undefined;
       readonly retryAt: number;
       readonly restarting?: number | undefined;
+      readonly updatingTo?: string | undefined;
     }
   /** The hub refused the key (close 4401 or an auth error). Nothing retries until a new key is saved. */
   | { readonly phase: "refused"; readonly hub: string; readonly message: string };

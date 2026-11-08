@@ -363,13 +363,16 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   );
 }
 
-/** The screen's hub's updates, followed in this window. */
+/** Every hub's updates, each followed on its own so its row says its own; the commands are the screen's hub's. */
 function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
-  const hub = hubs.find((h) => h.id === on);
-  return hub === undefined ? null : (
-    <HubScope key={hub.id} hub={hub}>
-      <UpdatesHost />
-    </HubScope>
+  return (
+    <>
+      {hubs.map((hub) => (
+        <HubScope key={hub.id} hub={hub}>
+          <UpdatesHost commands={hub.id === on} />
+        </HubScope>
+      ))}
+    </>
   );
 }
 

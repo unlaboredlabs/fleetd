@@ -6,7 +6,7 @@ import { awayFor, lineView, MACHINES_WAIT_MS } from "./RestartLine";
 const NOW = Date.parse("2026-10-26T10:00:00.000Z");
 const HUB = "http://devbox.example.ts.net:4790";
 const machine = (machineId: string, status: Machine["status"]): Machine => ({ machineId, name: machineId, nodeVersion: "1", status, lastSeenAt: "2026-10-26T09:00:00.000Z" });
-const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "x", retryAt: NOW, restarting: NOW - ms });
+const away = (ms: number, update = true): HubState => ({ phase: "retrying", hub: HUB, reason: "x", retryAt: NOW, restarting: NOW - ms, ...(update ? { updatingTo: "0.9.2" } : {}) });
 const LIVE: HubState = { phase: "live", hub: HUB, protocol: 1 };
 
 describe("the long-restart line", () => {
@@ -14,6 +14,8 @@ describe("the long-restart line", () => {
     expect(lineView(away(29_000), null, [], NOW)).toBeNull();
     expect(lineView(away(41_400), null, [], NOW)).toEqual({ t: "down", hub: "devbox", seconds: 41 });
     expect(lineView(away(121_000), null, [], NOW)).toBeNull();
+    // A restart that isn't an update never gets it: past its hold it is offline as any lost link.
+    expect(lineView(away(41_400, false), null, [], NOW)).toBeNull();
     // Any other drop isn't a restart.
     expect(lineView({ phase: "retrying", hub: HUB, reason: "x", retryAt: NOW }, null, [], NOW)).toBeNull();
   });

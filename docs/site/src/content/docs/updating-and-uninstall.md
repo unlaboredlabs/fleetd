@@ -45,10 +45,11 @@ The hub itself never waits: agents don't need it mid-step. A fleetd tool call an
 seconds of restart fails, and the agent tries it again. Each part shows as updated as soon as its machine is back on
 the new build.
 
-While the hub restarts, the app keeps everything on screen and redials every 250 ms. The hub's row keeps its name and
-says **Updating…**, and a message you send meanwhile goes once the hub is back. Past 10 seconds the screens show as
-loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**, and once it is, counts the
-machines coming back; past 2 minutes it is shown as offline. Back on the new build, the row says **Updated** for 15
+While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
+goes once the hub is back. For an update, the hub's row keeps its name and says **Updating…**; past 10 seconds the
+screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**, and once it
+is, counts the machines coming back; past 2 minutes it is shown as offline. Any other restart or stop says nothing of
+updates and is shown as offline once it passes 10 seconds. Back on the new build, the row says **Updated** for 15
 minutes, and a click shows what's new. When a part didn't take the new build, the row says **Put back**: a click says
 which and why, with **Try again** for owners and admins.
 
