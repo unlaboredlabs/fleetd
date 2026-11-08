@@ -29,6 +29,8 @@ use crate::node::worktree::tests::{cloned, repo, run as git};
 
 #[path = "env_tests.rs"]
 mod env_tests;
+#[path = "perf_tests.rs"]
+mod perf_tests;
 
 struct Hub {
     service: SessionService,

@@ -158,25 +158,42 @@ pub enum PeerSession {
 }
 
 /// The session `pid` belongs to: the nearest of itself and its ancestors that is a session's claude in `roots`
-/// (pid → session id); failing that, the session its [`SESSION_MARKER`] names (Linux), which only a process started
-/// inside a session carries.
-pub fn peer_session(table: &[Proc], pid: i32, roots: &HashMap<i32, String>) -> PeerSession {
-    let parents: HashMap<i32, i32> = table.iter().map(|p| (p.pid, p.ppid)).collect();
+/// (pid → session id), each ancestor found by `parent` ([`parents`]); failing that, the session its
+/// [`SESSION_MARKER`] names (Linux), which only a process started inside a session carries.
+pub fn peer_session(
+    pid: i32,
+    roots: &HashMap<i32, String>,
+    parent: impl Fn(i32) -> Option<i32>,
+) -> PeerSession {
     let mut at = pid;
     let mut seen = HashSet::new();
     while at > 1 && seen.insert(at) {
         if let Some(session) = roots.get(&at) {
             return PeerSession::Session(session.clone());
         }
-        let Some(parent) = parents.get(&at) else {
+        let Some(parent) = parent(at) else {
             break;
         };
-        at = *parent;
+        at = parent;
     }
     match marker_session(pid) {
         Some(session) => PeerSession::Detached(session),
         None => PeerSession::Outside,
     }
+}
+
+/// A process's parent pid, for [`peer_session`]. On Linux each lookup reads that one process's `/proc/<pid>/stat`, so
+/// a walk reads only the caller's few ancestors, where [`table`] reads every process on the machine (800 on a busy
+/// devbox: 17 ms of a socket call). Elsewhere one `ps` of the whole table, read once.
+#[cfg(target_os = "linux")]
+pub fn parents() -> impl Fn(i32) -> Option<i32> {
+    |pid| stat_of(pid).map(|p| p.ppid)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn parents() -> impl Fn(i32) -> Option<i32> {
+    let parents: HashMap<i32, i32> = table().iter().map(|p| (p.pid, p.ppid)).collect();
+    move |pid| parents.get(&pid).copied()
 }
 
 /// The session id in `pid`'s marker ([`marker`]: `<session>.<node pid>.<nanos>.<n>`).
@@ -708,6 +725,10 @@ mod peer_tests {
             proc(301, 300),
         ];
         let roots = HashMap::from([(100, "lead".to_owned()), (200, "task".to_owned())]);
+        let peer_session = |table: &[Proc], pid, roots| {
+            let parents: HashMap<i32, i32> = table.iter().map(|p| (p.pid, p.ppid)).collect();
+            peer_session(pid, roots, |pid| parents.get(&pid).copied())
+        };
         assert_eq!(
             peer_session(&table, 101, &roots),
             PeerSession::Session("lead".into())
@@ -729,5 +750,23 @@ mod peer_tests {
         // A cycle in a racy table ends the walk.
         let looped = [proc(400, 401), proc(401, 400)];
         assert_eq!(peer_session(&looped, 400, &roots), PeerSession::Outside);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_live_caller_is_placed_by_its_own_ancestors() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let roots = HashMap::from([(getpid().as_raw(), "s1".to_owned())]);
+        let found = peer_session(child.id() as i32, &roots, parents());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(found, PeerSession::Session("s1".into()));
+        assert_eq!(
+            peer_session(child.id() as i32, &HashMap::new(), parents()),
+            PeerSession::Outside
+        );
     }
 }
