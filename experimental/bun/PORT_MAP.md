@@ -551,7 +551,7 @@ every `fleetd` command.
 - [x] `fleetd navi list` → `src/cli/navi` <!-- cli:`fleetd navi list` -->
 - [x] `fleetd navi rename` → `src/cli/navi` <!-- cli:`fleetd navi rename` -->
 - [x] `fleetd navi unarchive` → `src/cli/navi` <!-- cli:`fleetd navi unarchive` -->
-- [ ] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
+- [x] `fleetd node flush` → `src/cli/node` <!-- cli:`fleetd node flush` -->
 - [ ] `fleetd node grants` → `src/cli/node` <!-- cli:`fleetd node grants` -->
 - [x] `fleetd node join` → `src/cli/node` <!-- cli:`fleetd node join` -->
 - [x] `fleetd node restart` → `src/cli/node` <!-- cli:`fleetd node restart` -->
