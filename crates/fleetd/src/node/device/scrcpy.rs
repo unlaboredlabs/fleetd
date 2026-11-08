@@ -92,6 +92,12 @@ pub fn server_args(scid: &str) -> Vec<String> {
     args
 }
 
+/// What drops a frame that hardly differs from the last one kept: no 8×8 block changed by more than 4 levels a pixel on
+/// average, nor a third of them by 2. scrcpy's server repeats the screen every 100 ms while it is still, and its
+/// encoder sharpens it a little each time; none of that is worth a JPEG (6 ms of CPU and ~130 KB each). A caret or a
+/// typed character changes a block by far more; `max` sends a dropped change after 30 frames all the same.
+const SKIP_REPEATS: &str = "mpdecimate=hi=256:lo=128:frac=0.33:max=30";
+
 /// Puts scrcpy's server on the device, where [`Stream::start`] runs it: done by the pool while a copy waits, so a
 /// session's stream starts without it.
 pub async fn push_server(sdk: &Sdk, serial: &str) -> Result<(), String> {
@@ -168,6 +174,8 @@ impl Stream {
         let mut decoder = Command::new(ffmpeg)
             .args(["-loglevel", "error", "-f", "h264", "-flags", "low_delay"])
             .args(["-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0"])
+            // A JPEG per changed frame only: `vfr`, or ffmpeg fills the dropped ones back in.
+            .args(["-vf", SKIP_REPEATS, "-fps_mode", "vfr"])
             .args(["-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

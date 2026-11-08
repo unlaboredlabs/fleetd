@@ -1147,3 +1147,12 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
         "{actions}"
     );
 }
+
+#[test]
+fn a_still_screens_screenshot_goes_out_once() {
+    let mut last = None;
+    assert!(super::screen::fresh(&mut last, b"one"));
+    assert!(!super::screen::fresh(&mut last, b"one"));
+    assert!(super::screen::fresh(&mut last, b"two"));
+    assert!(super::screen::fresh(&mut last, b"one"));
+}
