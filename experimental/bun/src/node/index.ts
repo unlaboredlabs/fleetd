@@ -185,6 +185,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   relay.hold = () => sessions.hold();
   const node = new Node(home, config, relay);
   sessions.onItemEnded = (session, item) => node.area("items").ended(session, item);
+  sessions.launch = node.area("launch");
   node.area("sessions", () => ({ maskFor: (thread: string) => sessions.maskFor(thread), sessionCwd: (thread: string) => sessions.sessionCwd(thread) }));
   registerAreas(node);
   const link = node.area("link");
