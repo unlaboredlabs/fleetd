@@ -1902,6 +1902,9 @@ export class Tasks {
         case "running": {
           this.asking.delete(taskId);
           const thread = task.threadRef as ThreadRef;
+          // A busy node may take a while to take it (the executor's `callPatient`): other tasks' calls go on.
+          handedOver = true;
+          release();
           try {
             await this.ports.send(thread, text, requestId(task, ["msg", crypto.randomUUID()]));
           } catch (error) {

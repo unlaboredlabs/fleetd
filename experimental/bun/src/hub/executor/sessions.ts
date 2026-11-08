@@ -228,7 +228,7 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
       throw ExecutorError.failed(m, "launch", `the thread's Claude account was not recorded: ${(error as Error).message}`);
     }
   }
-  const out = await ex.call(m, "launch", { op: "launch", ...call }, LAUNCH_TIMEOUT_MS);
+  const out = await ex.callPatient(m, "launch", { op: "launch", ...call }, LAUNCH_TIMEOUT_MS);
   const key = `${m}/${sessionId}`;
   const s = sent(hub);
   if (mcp !== undefined) s.mcp.set(key, [input.projectId, digest(mcp)]);
@@ -294,7 +294,8 @@ export async function sendWith(hub: Hub, r: ThreadRef, message: string, clientRe
   if (message === "") throw ExecutorError.failed(r.machineId, "send", "the message is empty");
   const [mcp, mcpSent] = changedMcp(hub, r);
   const [skills, skillsNow] = changedSkills(hub, r);
-  const out = await executors(hub).call(
+  // A busy node may take a while to take it: the same send goes again until it answers (the node dedupes on runId).
+  const out = await executors(hub).callPatient(
     r.machineId,
     "send",
     {

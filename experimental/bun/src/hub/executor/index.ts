@@ -74,6 +74,8 @@ export const READ_TIMEOUT_MS = 15_000;
 export const LAUNCH_TIMEOUT_MS = 60_000;
 /** The node first stops the project's claude processes, then removes its worktrees and a Navi's sign-ins. */
 export const REMOVE_TIMEOUT_MS = 70_000;
+/** How long a launch or a send waits on a node that is up but busy (swapping, loaded) before it fails: `callPatient`. */
+export const PATIENCE_MS = 120_000;
 /** The node's stop waits up to 25 s for claude to exit. */
 export const STOP_TIMEOUT_MS = 40_000;
 /** The node keeps the last 2000 characters of the assistant's text on the summary. */
@@ -399,6 +401,20 @@ export class Executors {
 
   /** One `session_call` and its `session_reply`, at most `waitMs`. */
   async call(machineId: MachineId, operation: NodeOperation, call: SessionCall, waitMs: number): Promise<SessionOutput> {
+    return this.ask(machineId, operation, call, waitMs, waitMs);
+  }
+
+  /**
+   * `call` for a launch or a send, which a busy node can take long to answer: one with no answer in `waitMs` goes again
+   * under the same frame id, at doubling gaps, until PATIENCE_MS has passed, and the first answer to any copy is the
+   * answer. The node dedupes the copies (a launch on its session id, a send on its run id), so a slow node starts or
+   * sends once. Only the node's refusal, a link that drops (the machine went offline) or that much silence fails it.
+   */
+  callPatient(machineId: MachineId, operation: NodeOperation, call: SessionCall, waitMs: number): Promise<SessionOutput> {
+    return this.ask(machineId, operation, call, waitMs, Math.max(PATIENCE_MS, waitMs));
+  }
+
+  private async ask(machineId: MachineId, operation: NodeOperation, call: SessionCall, waitMs: number, patienceMs: number): Promise<SessionOutput> {
     const session = "sessionId" in call && call.op !== "launch" && call.op !== "read_image" && call.op !== "window" && call.op !== "release" && call.op !== "withdraw"
       ? call.sessionId
       : undefined;
@@ -407,36 +423,58 @@ export class Executors {
     if (!slot || !link) throw ExecutorError.notConnected(machineId);
     const id = newUuid();
     const reply = new Promise<SessionReplyFrame["result"]>((resolve, reject) => slot.pending.set(id, { resolve, reject }));
-    let sent: boolean | void;
-    try {
-      sent = link.send({ t: "session_call", id, call });
-    } catch {
-      sent = false;
-    }
     // A link that refuses the frame (its socket closed) is no live link, as Rust's failed `send` is.
-    if (sent === false) {
-      slot.pending.delete(id);
-      throw ExecutorError.notConnected(machineId);
+    const sendCopy = () => {
+      let sent: boolean | void;
+      try {
+        sent = link.send({ t: "session_call", id, call });
+      } catch {
+        sent = false;
+      }
+      if (sent === false) {
+        slot.pending.delete(id);
+        throw ExecutorError.notConnected(machineId);
+      }
+    };
+    sendCopy();
+    const started = Date.now();
+    const until = started + patienceMs;
+    let gap = waitMs;
+    let copies = 1;
+    let next = started + waitMs;
+    for (;;) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), Math.max(Math.min(next, until) - Date.now(), 0));
+      });
+      let result: SessionReplyFrame["result"] | "timeout";
+      try {
+        result = await Promise.race([reply, timeout]);
+      } catch (error) {
+        // A patient call's link dropped: the machine is offline, and its caller waits for it as for any.
+        if (patienceMs > waitMs) throw ExecutorError.notConnected(machineId);
+        throw ExecutorError.failed(machineId, operation, (error as Error).message);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (result !== "timeout") {
+        if ("ok" in result) return result.ok;
+        throw fromSessionError(machineId, operation, session, result.err);
+      }
+      if (Date.now() >= until) {
+        slot.pending.delete(id);
+        throw ExecutorError.failed(machineId, operation, `no answer within ${Math.floor(patienceMs / 1000)} s`);
+      }
+      console.info(
+        `executor: a busy node hasn't answered yet; the request goes again (${machineId}, ${operation}, waited ${Math.floor((Date.now() - started) / 1000)} s, ${copies} sent)`,
+      );
+      sendCopy();
+      copies += 1;
+      gap *= 2;
+      next = Date.now() + gap;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), waitMs);
-    });
-    let result: SessionReplyFrame["result"] | "timeout";
-    try {
-      result = await Promise.race([reply, timeout]);
-    } catch (error) {
-      throw ExecutorError.failed(machineId, operation, (error as Error).message);
-    } finally {
-      clearTimeout(timer);
-    }
-    if (result === "timeout") {
-      slot.pending.delete(id);
-      throw ExecutorError.failed(machineId, operation, `no answer within ${Math.floor(waitMs / 1000)} s`);
-    }
-    if ("ok" in result) return result.ok;
-    throw fromSessionError(machineId, operation, session, result.err);
   }
+
 
   /** One link's lifetime: subscribe after the stored cursor, then apply the machine stream until detached. */
   private async supervise(machineId: MachineId, slot: Slot, signal: AbortSignal): Promise<void> {
