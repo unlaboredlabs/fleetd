@@ -276,11 +276,17 @@ pub struct AskLeadCall {
 }
 
 /// `wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)
-/// finish. Its thread then continues with one line: the outcome and the failing jobs.
+/// finish, or with `merged`, when the PR merges. Its thread then continues with one line: the outcome and the failing
+/// jobs, or the merge (or why the PR won't merge).
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WaitCiCall {
     /// An Actions run's URL (`…/actions/runs/<id>`, anything after it ignored) or a PR's, in one of the project's repos.
     pub url: Text<1, 500>,
+    /// A PR's only: wait for it to merge, not for its checks. Woken when it merges, when it fails on the merge train
+    /// (CI, review, refused) and when it is closed unmerged.
+    #[serde(default)]
+    pub merged: Option<bool>,
 }
 
 /// `usage_resume` for a lead: lifts the usage pause on the machine its project runs on (the only one it may name) and

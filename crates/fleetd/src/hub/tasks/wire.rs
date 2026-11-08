@@ -633,9 +633,11 @@ impl LeadCallHandler for Calls {
                 let CallerAgent::Task(task_id) = &caller.agent else {
                     return Err(super::policy::check(&caller.agent, "wait_ci").unwrap_err());
                 };
-                return Ok(LeadCallResult::WaitCi(
-                    tasks.wait_ci(task_id, wait.url.as_str())?,
-                ));
+                return Ok(LeadCallResult::WaitCi(tasks.wait_ci(
+                    task_id,
+                    wait.url.as_str(),
+                    wait.merged == Some(true),
+                )?));
             }
             let caller = TaskCaller {
                 project_ref: caller.project_ref,
