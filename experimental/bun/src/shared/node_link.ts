@@ -21,6 +21,11 @@ export const CLOSE = {
   REPLACED: 4003,
   /** No frame for 45 s. */
   HEARTBEAT_TIMEOUT: 4008,
+  /**
+   * WebSocket's "Service Restart": the hub is stopping (an update, a restart) and comes back within a moment, so the
+   * node redials every 250 ms for a minute rather than back off.
+   */
+  RESTART: 1012,
 } as const;
 /** The longest close reason a WebSocket carries; the hub cuts a longer one short. */
 export const REASON_MAX_BYTES = 123;
