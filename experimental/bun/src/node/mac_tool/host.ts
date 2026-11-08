@@ -3,8 +3,9 @@
 // never before), and run in that agent's own folder under `<home>/mac/<task or session>/`: its `repo/` checked out
 // from the project's mirror, its jobs, the files it put and pulls. The answer goes back sealed with the step's key.
 //
-// TODO(bun): iOS simulators (`sim_start`, `sim_end`: device/ios's pool and agent-device's wrapper), the menu bar's
-// activity, and the sweep of folders untouched for FOLDER_DAYS.
+// iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them.
+//
+// TODO(bun): the menu bar's activity, and the sweep of folders untouched for FOLDER_DAYS.
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -23,6 +24,7 @@ import {
 import { dirname, basename, isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { ToolError } from "../../shared/errors.ts";
+import type { MacSims } from "../device/ios/sims.ts";
 import type { MacCaller, MacCallFrame, MacResultFrame, McpToolError } from "../../shared/screens_wire.ts";
 import {
   type Answer,
@@ -90,7 +92,14 @@ export function shellLine(args: string[]): string[] {
 }
 
 /** A job's environment: KEPT from the node's, the agent's folders, and the variables it named. */
-export function jobEnv(agent: Agent, cache: string, named: MacEnv[], node: Record<string, string | undefined>): Record<string, string> {
+export function jobEnv(
+  agent: Agent,
+  cache: string,
+  named: MacEnv[],
+  node: Record<string, string | undefined>,
+  /** The agent's simulator's variables, while it holds one (sims.ts `env`), given the job's PATH. */
+  sim?: (path: string) => [string, string][] | undefined,
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const k of KEPT) if (node[k] !== undefined && k !== "PATH") env[k] = node[k]!;
   const path = node.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -108,6 +117,8 @@ export function jobEnv(agent: Agent, cache: string, named: MacEnv[], node: Recor
     // Manners, not a fence: the Mac's node takes no calls from its jobs.
     FLEETD_NODE_SOCK: "/dev/null",
   });
+  // The agent's simulator: agent-device's wrapper first on the PATH, pointed at it, and for plain simctl its udid and set.
+  for (const [k, v] of sim?.(env.PATH!) ?? []) env[k] = v;
   for (const { name, value } of named) env[name] = value;
   return env;
 }
@@ -122,6 +133,8 @@ export class Host {
   /** Nonces seen within twice the skew. */
   private readonly seen = new Map<string, number>();
   private readonly jobs = new Map<string, { next: number; jobs: Map<number, Job> }>();
+  /** The Mac's iOS simulators, where it has them (node/device/ios). */
+  sims: MacSims | undefined;
 
   constructor(
     /** `<home>/mac`: each agent's folder, and `.mirrors/` of each project's snapshots. */
@@ -151,6 +164,8 @@ export class Host {
     let out: Uint8Array = new Uint8Array();
     try {
       const agent = this.agent(frame.caller);
+      // Any step of the agent's keeps its simulator.
+      this.sims?.touch(agent.name);
       const [done, after] = await this.step(agent, envelope.step, raw);
       answer = { done };
       out = after;
@@ -238,12 +253,16 @@ export class Host {
       case "get":
         return get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false);
       case "sim_start":
+        if (!this.sims) {
+          throw new ToolError(
+            "failed",
+            "The agents' Mac has no iOS simulators: its golden simulator isn't made.",
+            "do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines",
+          );
+        }
+        return [await this.sims.start(agent, step.device), none];
       case "sim_end":
-        throw new ToolError(
-          "failed",
-          "The Bun node on the agents' Mac doesn't run iOS simulators yet.",
-          "do without a simulator and say so in your result",
-        );
+        return [{ step: "sim_end", ended: this.sims?.end(agent.name) ?? false }, none];
       default:
         throw refuse(`the Mac doesn't know the step ${(step as { step: string }).step}`);
     }
@@ -269,7 +288,7 @@ export class Host {
     try {
       child = Bun.spawn(shellLine(args), {
         cwd,
-        env: jobEnv(agent, this.cache(), named, process.env),
+        env: jobEnv(agent, this.cache(), named, process.env, (path) => this.sims?.env(agent.name, path)),
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
