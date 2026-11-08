@@ -486,7 +486,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [ ] node loop `agents_mac::AgentsMac::start` → `src/node/agents_mac` <!-- loop:node loop `agents_mac::AgentsMac::start` -->
 - [x] node loop `browser::Broker::start` → `src/node/browser` <!-- loop:node loop `browser::Broker::start` -->
 - [ ] node loop `desktop::Desktops::start` → `src/node/desktop` <!-- loop:node loop `desktop::Desktops::start` -->
-- [ ] node loop `device::Devices::start` → `src/node/device` <!-- loop:node loop `device::Devices::start` -->
+- [x] node loop `device::Devices::start` → `src/node/device` <!-- loop:node loop `device::Devices::start` -->
 - [ ] node loop `device::ios::Simulators::start` → `src/node/device` <!-- loop:node loop `device::ios::Simulators::start` -->
 - [ ] node loop `mac_tool::host::Host::start` → `src/node/mac_tool` <!-- loop:node loop `mac_tool::host::Host::start` -->
 

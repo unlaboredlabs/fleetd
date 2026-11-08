@@ -154,3 +154,20 @@ test("a session the hub places on another machine: sealed to it, started there, 
   expect(agentNode.router.remotes.size).toBe(0);
   expect(runner.router.hosted.size).toBe(0);
 });
+
+test("a hosted start's sealed secrets reach its broker, which scrubs its recording of them", async () => {
+  const { seal } = await import("../src/shared/sealed_box.ts");
+  const tn = testNode("box2");
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const broker = startNodeBrowser(tn.node, new Broker(tn.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  const router = startRoute(tn.node, new Router(tn.node, broker, new NodeBoxKey(secret)));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    tn.done();
+  });
+  const plain = { secrets: [["TOKEN", "hunter2-value"]], relayKey: Buffer.alloc(32, 7).toString("base64") };
+  const sealed = Buffer.from(seal(publicKeyOf(secret), new TextEncoder().encode(JSON.stringify(plain)))).toString("base64");
+  const answer = await router.host({ hostKey: "host-k1", frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "look" } }, sealed } as never);
+  expect(answer.error).toBeUndefined();
+  expect(broker.live("host-k1")?.recording?.scrub.text("typed hunter2-value")).toBe("typed ***TOKEN***");
+});

@@ -2,6 +2,7 @@
 // one line per area (node/browser, node/device, node/desktop, node/mac_tool).
 import type { Node } from "./api.ts";
 import { broker, start as startBrowser } from "./browser/index.ts";
+import { start as startDevices, stop as stopDevices } from "./device/index.ts";
 import { start as startMac, stop as stopMac } from "./mac_tool/index.ts";
 import { start as startScreens } from "./screens/index.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
@@ -10,6 +11,7 @@ export function registerAreas(node: Node): void {
   startBrowser(node);
   startSessionRoute(node);
   startScreens(node);
+  startDevices(node);
   startMac(node);
 }
 
@@ -19,5 +21,6 @@ export function registerAreas(node: Node): void {
  */
 export async function stopAreas(node: Node): Promise<void> {
   await broker(node).shutdown();
+  await stopDevices(node);
   stopMac(node);
 }
