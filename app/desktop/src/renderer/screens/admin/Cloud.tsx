@@ -1,9 +1,10 @@
 // Cloud machines on boat.dev (D306), in Settings › Hub › Machines and the setup step: the boat.dev group beside the
 // person's own machines (each machine's state, what runs there and its spend today, Reset for a broken one, and the
 // kill switch), then the settings, in the same rows as the page's other settings: the hub's boat.dev key (sealed in main
-// to the hub's own key, never shown again) with Test, the way cloud machines reach the hub (the hub's own SSH tunnel to
-// each, so the hub stays private, and the Test of that whole way), the pool, the budgets, the projects that may use it,
-// and what it can cost, shown before it is turned on. The hub's pool
+// to the hub's own key, never shown again) with Test, the pool (how many machines; their size stays what the hub has,
+// large unless the CLI set another), the budgets, the projects that may use it, the environment, what it can cost,
+// shown before it is turned on, and the switch, with the Test of the whole way to the hub under it (the hub dials each
+// machine and holds an SSH tunnel to it, so there is nothing to set up for it). The hub's pool
 // (cloud_get) is the only source; a hub without it shows nothing here. Status's line is CloudStatus.tsx.
 import { useEffect, useState } from "react";
 import type { CloudView, ToolOutput } from "../../../shared/contracts";
@@ -12,7 +13,7 @@ import { useDataLayer, useHub } from "../../src/data/react";
 import { Button, Checkbox, Dialog, Field, Input, Select, Switch, Text, toast } from "../../ui";
 import { errorText, useHubCall, useRefetch } from "../settings/hub";
 import { PagePart, Setting, useProjects } from "../settings/parts";
-import { awakeCount, cloudStatusLine, costPreview, heldLine, machineLine, money, parseDollars, rate, resettable, stateTone, stateWord, stopAllLine } from "./cloudModel";
+import { awakeCount, cloudStatusLine, costPreview, heldLine, machineLine, money, parseDollars, resettable, stateTone, stateWord, stopAllLine } from "./cloudModel";
 import { useNow } from "../live";
 import { useCloud } from "./useCloud";
 import { HubText } from "../projects/HubText";
@@ -106,7 +107,7 @@ function StopAll({ cloud, onClose }: { cloud: CloudView; onClose: () => void }) 
           refetch(["cloud_get", "setup_list"]);
           toast({
             title: out.stopped.length === 0 ? "Cloud machines are off" : `Stopped ${out.stopped.join(", ")}`,
-            description: out.failed.length > 0 ? `Not stopped: ${out.failed.join("; ")}. Their leases stop them within 30 minutes.` : "No work goes to them until you turn them on again.",
+            description: out.failed.length > 0 ? `Not stopped: ${out.failed.join("; ")}. They stop on their own within 30 minutes.` : "No work goes to them until you turn them on again.",
             tone: out.failed.length > 0 ? "warning" : "success",
           });
         },
@@ -214,7 +215,6 @@ export function CloudSettings({ cloud }: { cloud: CloudView }) {
         </button>
       </Text>
       <KeySetting cloud={cloud} />
-      <WaySetting cloud={cloud} />
       {cloud.hasKey ? <PoolSettings cloud={cloud} /> : null}
     </>
   );
@@ -312,9 +312,9 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
   );
 }
 
-/** How cloud machines reach the hub: through the SSH tunnel the hub holds to each, so nothing is set up on the network.
- * The Test of the whole way shows here, refreshed while it runs, with the public half of the hub's own SSH key. */
-function WaySetting({ cloud }: { cloud: CloudView }) {
+/** The Test of the whole way to the hub (the hub's tunnel to a cloud machine and its node's hello), once there is one,
+ * refreshed while it runs. */
+function PathTest({ cloud }: { cloud: CloudView }) {
   const refetch = useRefetch();
   const test = cloud.pathTest;
   const running = test !== undefined && test.ok === undefined;
@@ -323,35 +323,11 @@ function WaySetting({ cloud }: { cloud: CloudView }) {
     const timer = setInterval(() => refetch(["cloud_get"]), 5_000);
     return () => clearInterval(timer);
   }, [running, refetch]);
-  const untested = !cloud.hasKey
-    ? "Nothing to set up: a hub only your tailnet or LAN reaches works."
-    : cloud.enabled
-      ? "Not tested yet: Test wakes (or makes) a cloud machine and checks the hub's tunnel to it and its node's hello."
-      : "Turn cloud machines on, then Test checks the whole way to the hub.";
+  if (test === undefined) return null;
   return (
-    <Setting
-      reveal="hub.cloud.way"
-      label="Way to the hub"
-      help="The hub dials each cloud machine it wakes and holds an SSH tunnel to it, which the machine's node reaches the hub through. The hub stays private: no public address, port or proxy to set up."
-    >
-      {test === undefined ? (
-        <Text size="sm" tone="quiet" data-way="untested">
-          {untested}
-        </Text>
-      ) : (
-        <Text size="sm" tone={test.ok === true ? "success" : test.ok === false ? "danger" : "default"} data-way={test.ok === true ? "ok" : test.ok === false ? "failed" : "testing"}>
-          <HubText>{test.said}</HubText>
-        </Text>
-      )}
-      {cloud.sshKey === undefined ? null : (
-        <Text size="sm" tone="quiet">
-          {"The hub's own SSH key, which boat.dev puts on each cloud machine (its private half never leaves the hub): "}
-          <Text size="sm" mono>
-            {cloud.sshKey}
-          </Text>
-        </Text>
-      )}
-    </Setting>
+    <Text size="sm" tone={test.ok === true ? "success" : test.ok === false ? "danger" : "default"} data-way={test.ok === true ? "ok" : test.ok === false ? "failed" : "testing"}>
+      <HubText>{test.said}</HubText>
+    </Text>
   );
 }
 
@@ -364,7 +340,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const refetch = useRefetch();
   const projects = (useProjects() ?? []).filter((p) => p.kind !== "assistant");
   const [poolSize, setPoolSize] = useState(cloud.poolSize);
-  const [machineType, setMachineType] = useState(cloud.machineType);
   const [day, setDay] = useState(cloud.dayBudget.toFixed(2));
   const [month, setMonth] = useState(cloud.monthIsPlan ? "" : cloud.monthBudget.toFixed(2));
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(cloud.projects.map((r) => `${r.machineId}/${r.projectId}`)));
@@ -376,7 +351,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const dayBudget = parseDollars(day);
   const monthBudget = month.trim() === "" ? undefined : parseDollars(month);
   const valid = dayBudget !== null && monthBudget !== null;
-  const preview = costPreview(cloud, { poolSize, machineType, dayBudget: dayBudget ?? cloud.dayBudget, monthBudget: monthBudget ?? undefined });
+  const preview = costPreview(cloud, { poolSize, machineType: cloud.machineType, dayBudget: dayBudget ?? cloud.dayBudget, monthBudget: monthBudget ?? undefined });
   const refs = [...picked].map((k) => {
     const [machineId = "", projectId = ""] = k.split("/");
     return { machineId, projectId };
@@ -389,7 +364,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
       const out = await call("cloud_set", {
         enabled,
         poolSize,
-        machineType,
+        machineType: cloud.machineType,
         dayBudget,
         ...(monthBudget === undefined ? {} : { monthBudget }),
         projects: refs,
@@ -428,7 +403,6 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
   const missing = Math.max(0, cloud.poolSize - made);
   const changed =
     poolSize !== cloud.poolSize ||
-    machineType !== cloud.machineType ||
     dayBudget !== cloud.dayBudget ||
     (monthBudget ?? null) !== (cloud.monthIsPlan ? null : cloud.monthBudget) ||
     environment.trim() !== (cloud.environment ?? "") ||
@@ -443,23 +417,10 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
     });
   return (
     <>
-      <Setting reveal="hub.cloud.pool" label="Pool" help="A fixed few machines, made once and kept asleep. Asleep they cost nothing; work wakes one, and it sleeps again 15 minutes after it is idle.">
-        <div className={s.inline}>
-          <Select aria-label="Machines" className={a.pick} value={String(poolSize)} options={POOL_SIZES.map((n) => ({ value: n, label: `${n} ${n === "1" ? "machine" : "machines"}` }))} disabled={busy !== null} onValueChange={(v) => setPoolSize(Number(v))} />
-          <Select
-            aria-label="Size"
-            className={a.pick}
-            value={machineType}
-            options={cloud.sizes.map((z) => ({ value: z.kind, label: `${z.kind} · ${rate(z.perHour)}/h` }))}
-            disabled={busy !== null}
-            onValueChange={setMachineType}
-          />
-        </div>
-        <Text size="xs" tone="quiet">
-          large: 8 vCPUs, 16 GB. Grow by adding machines rather than a bigger size: xlarge costs more per vCPU and needs boat.dev&apos;s $100 plan.
-        </Text>
+      <Setting reveal="hub.cloud.pool" label="Pool" help="Free while asleep. Work wakes one; it sleeps after 15 idle minutes.">
+        <Select aria-label="Machines" className={a.pick} value={String(poolSize)} options={POOL_SIZES.map((n) => ({ value: n, label: `${n} ${n === "1" ? "machine" : "machines"}` }))} disabled={busy !== null} onValueChange={(v) => setPoolSize(Number(v))} />
       </Setting>
-      <Setting reveal="hub.cloud.budgets" label="Budgets" help="In the hub's time zone. Past one, no machine wakes and awake ones stop within 30 minutes; your own machines go on.">
+      <Setting reveal="hub.cloud.budgets" label="Budgets" help="Past a budget, cloud machines stop within 30 minutes. Your own machines go on.">
         <div className={s.inline}>
           <Field label="A day" error={dayBudget === null ? "Dollars above 0" : undefined}>
             <Input aria-label="Day budget" className={a.money} value={day} inputMode="decimal" disabled={busy !== null} onChange={(e) => setDay(e.target.value)} />
@@ -487,7 +448,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
       <Setting reveal="hub.cloud.environment" label="boat.dev environment" help="The environment you made for fleetd, marked safe for third parties. The key is scoped to it.">
         <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />
       </Setting>
-      <Setting reveal="hub.cloud.cost" label="What it can cost" help="Before you turn it on. Work goes to cloud only when every machine here is at its agent limit, so most days cost far less than the ceiling.">
+      <Setting reveal="hub.cloud.cost" label="What it can cost" help="Most days cost far less than the ceiling.">
         <dl className={a.cost} data-cost="">
           <dt>Price</dt>
           <dd>{preview.perHour}</dd>
@@ -502,9 +463,9 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
           <dd>{preview.month}</dd>
         </dl>
       </Setting>
-      <Setting reveal="hub.cloud.on" label="Turn on" help="Work may go to cloud machines. Stop all cloud machines turns this off.">
+      <Setting reveal="hub.cloud.on" label="Turn on">
         <Switch
-          label={cloud.enabled ? "On: work may go to cloud machines" : "Off: no work goes to cloud machines"}
+          label="Use cloud machines"
           checked={cloud.enabled}
           disabled={busy !== null || !valid || (!cloud.enabled && cloud.keyTest?.ok !== true)}
           description={!cloud.enabled && cloud.keyTest?.ok !== true ? "Test the key first." : undefined}
@@ -515,6 +476,7 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
             <HubText>{heldLine(cloud) ?? ""}</HubText>
           </Text>
         )}
+        <PathTest cloud={cloud} />
         <div className={s.inline}>
           <Button variant={changed ? "primary" : "secondary"} disabled={busy !== null || !valid || !changed} onClick={() => void save(cloud.enabled)}>
             {busy === "save" ? "Saving…" : "Save"}

@@ -261,10 +261,10 @@ pub const CHECKER_EFFORT: crate::effort::Effort = crate::effort::Effort::Medium;
 #[serde(rename_all = "camelCase")]
 pub struct NaviApprovals {
     pub mode: NaviApprovalMode,
-    /// The checker's model: the person's pick, else [`CHECKER_MODEL`].
+    /// The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick.
     pub model: crate::effort::ModelName,
     pub effort: crate::effort::Effort,
-    /// Whether model and effort are the hub's defaults, not a pick of the person's.
+    /// Always true now; kept for older apps, which offered "Use the default" when it was false.
     pub defaults: bool,
 }
 
@@ -314,7 +314,7 @@ pub struct ConfirmStepCall {
     pub does: Line<1, 500>,
     /// What the page shows around the button: the details being confirmed.
     pub page: Option<crate::prim::Text<0, 4000>>,
-    /// A screenshot of the page from `chat_image`, for the person's card.
+    /// A screenshot of the page from `chat_file`, for the person's card.
     pub screenshot: Option<crate::mcp::AttachmentId>,
 }
 

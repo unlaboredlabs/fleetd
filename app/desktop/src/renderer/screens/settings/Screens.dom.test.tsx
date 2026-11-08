@@ -1,16 +1,17 @@
 // @vitest-environment happy-dom
-// Hub › Machines › Screens: each machine that hosts screens with a switch per kind, its line from the machine's node,
-// its idle timeout, and the hub's recording retention. A switch goes out as machine_screens_set and the node's answer
-// shows under the row; a machine whose node can't take it can't be switched from here.
+// A machine's Screens, on its page in Hub › Machines: a switch per kind, its line from the machine's node, how many it
+// hosts at once and when an idle one ends (said, not picked); and the hub's recording retention, in days only. A
+// switch goes out as machine_screens_set and the node's answer shows under it; a machine whose node can't take it
+// can't be switched from here.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, useToolQuery } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { Screens } from "./Screens";
+import { MachineScreens, Recordings } from "./Screens";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -60,6 +61,17 @@ const agentsOnly: MachineRolesEntry = { ...devbox, machineId: "builder", name: "
 
 const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [] });
 
+/** Each machine's Screens where its page shows them (it hosts screens, or is the agents' Mac), then Recordings. */
+function Pages() {
+  const machines = useToolQuery("machine_roles", {}).data?.machines ?? [];
+  return (
+    <>
+      {machines.filter((m) => m.mac !== undefined || m.roles.includes("sessions")).map((m) => <MachineScreens key={m.machineId} machine={m} />)}
+      <Recordings />
+    </>
+  );
+}
+
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
@@ -104,7 +116,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <Screens />
+          <Pages />
         </DataProvider>
       </UiProvider>,
     );
@@ -134,17 +146,23 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(toggle(box, "iOS")).toBeNull();
   expect(toggle(box, "Agents’ Mac")?.disabled).toBe(true);
   expect(box?.textContent).toContain("the Mac screen is a Mac's own");
-  expect(box?.textContent).toContain("Idle screens end after");
+  expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
+  // One idle timeout, said rather than picked.
+  expect(box?.textContent).toContain("An idle screen ends after 30 minutes.");
+  expect(box?.querySelector("[aria-label^='Idle timeout']")).toBeNull();
   // An older node: what it hosts shows, and why it can't be switched from here.
   expect(toggle(row("mac1"), "Agents’ Mac")?.getAttribute("aria-checked")).toBe("true");
   expect(toggle(row("mac1"), "Agents’ Mac")?.disabled).toBe(true);
-  expect(row("mac1")?.textContent).toContain("mac1's fleetd is too old to change these from here: press Update in Settings › Hub › Updates.");
+  expect(row("mac1")?.textContent).toContain("Update mac1's fleetd to change these.");
+  expect([...(row("mac1")?.querySelectorAll("button") ?? [])].some((b) => b.textContent === "Open Updates")).toBe(true);
   // And if an update didn't restart it: the command, to copy, and where to run it.
-  expect(row("mac1")?.textContent).toContain("run this on mac1");
+  expect(row("mac1")?.textContent).toContain("Still the same after updating? Run this on mac1:");
   expect(row("mac1")?.textContent).toContain("launchctl kickstart -k gui/501/sh.fleetd.node");
   expect([...(row("mac1")?.querySelectorAll("button") ?? [])].some((b) => b.textContent === "Copy")).toBe(true);
-  expect(row("devbox")?.textContent).not.toContain("too old");
+  expect(row("devbox")?.textContent).not.toContain("Update devbox");
+  // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
+  expect(host.querySelector("[aria-label='Recordings per project, at most']")).toBeNull();
 });
 
 // The person updated: the hub read the machines while devbox's node was restarting onto the new build (the machine
@@ -154,7 +172,7 @@ it("a node restarting after an update is not too old, and its switches come back
   const { screenSettings: _, ...restarting } = devbox;
   listed = [restarting];
   await render();
-  expect(row("devbox")?.textContent).not.toContain("too old");
+  expect(row("devbox")?.textContent).not.toContain("Update devbox");
   expect(row("devbox")?.textContent).toContain("devbox's node is restarting: these come back once it links again.");
   expect(toggle(row("devbox"), "Android")?.disabled).toBe(true);
 
@@ -210,7 +228,7 @@ it("the agents' Mac shows only its own screen's switch", async () => {
   const mac = row("studio");
   expect([...(mac?.querySelectorAll('button[role="switch"]') ?? [])].map((b) => b.getAttribute("aria-label"))).toEqual(["Agents’ Mac screens on studio"]);
   expect(toggle(mac, "Agents’ Mac")?.disabled).toBe(false);
-  expect(mac?.textContent).not.toContain("Idle screens end after");
+  expect(mac?.textContent).not.toContain("An idle screen ends");
   expect(mac?.textContent).toContain("An idle Mac screen ends after 5 minutes, so the next agent gets it.");
   expect(mac?.textContent).not.toContain("Chrome");
   // Another machine keeps every kind.

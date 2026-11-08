@@ -58,7 +58,7 @@ fn heartbeat(hub: &Hub) {
     let mut load = crate::hub::link::guard::tests::load(500, 1.0);
     load.mem_total_bytes = Some(fleetd_contracts::prim::Count::unchecked(60 << 30));
     hub.slots
-        .observe_machine(&devbox(), "devbox", &load)
+        .observe_machine(&devbox(), "devbox", &load, false)
         .unwrap();
 }
 

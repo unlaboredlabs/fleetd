@@ -193,8 +193,10 @@ const section = (label: string) => {
 it("saves the hub's key and endpoint sealed through main, tests it at once, and never shows it back", async () => {
   await render(noKey);
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
-  expect(section("Leads and unrequested work").textContent).toContain("Each machine's own Claude login.");
-  expect(section("Leads and unrequested work").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
+  // What leads run on is one line under the key, with the owner's subscription they fall back to.
+  expect(section("Hub API key").textContent).toContain("Leads and automations run on the hub's key, once it has one, else your subscription.");
+  expect(section("Hub API key").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
+  expect(host.querySelector("section[aria-label='Leads and unrequested work']")).toBeNull();
   await type("API key", KEY);
   await type("Endpoint", "https://gateway.devbox.example");
   await click(button("Save and test"));
@@ -219,8 +221,8 @@ it("shows where the key is, the members switch and the owner's subscription; eac
   expect(key.textContent).toContain("Saved. Sealed on devbox. Through https://gateway.devbox.example.");
   expect(key.textContent).toContain("Not on buildbox: nothing runs on it there.");
   expect(key.textContent).toContain("Worked on devbox");
-  expect(section("Leads and unrequested work").textContent).toContain("The hub's API key.");
-  expect(section("Leads and unrequested work").textContent).toContain("The hub owner's subscription (yours) is connected. Sealed on buildbox and devbox.");
+  expect(key.textContent).toContain("Leads and automations run on this key, else your subscription.");
+  expect(key.textContent).not.toContain("The hub owner's subscription");
   // Everyone's account is on People now.
   expect(host.querySelector("[role='list'][aria-label='Claude accounts']")).toBeNull();
   const toggle = section("Members").querySelector<HTMLElement>("[role='switch']");

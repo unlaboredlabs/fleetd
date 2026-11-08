@@ -1,11 +1,12 @@
-// A project's Integrations (its Projects page): the MCP servers the person connects to its lead. Connecting seals the
+// A project's MCP servers (its Project page, its one list of them): the ones the person connects to its lead, judged by
+// the hub's policy, and the ones its agents get too, by roles and unasked (edited with McpServers' editor). Connecting seals the
 // key in main to the project's machine and saves it (mcp_server_set), then tests it at once
 // (mcp_server_test), which lists each tool by the hub's policy: runs without asking, asks each time, never. A server
 // that wants the person to sign in instead (OAuth) opens its own sign-in page in the browser (mcp_oauth_start), which
 // sends them back to the hub; the dialog follows the server's sign-in until it is done, then tests it. A signed-out
 // server shows why, with Reconnect. Disconnect is mcp_server_remove, which also erases the key on the machine.
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
-import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { McpOauthStartOutput, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
@@ -13,7 +14,6 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   byPolicy,
-  connectionsOf,
   customRequest,
   DOCS,
   emptyNote,
@@ -27,7 +27,8 @@ import {
   testProblem,
   type SignInMark,
 } from "./integrationsModel";
-import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
+import { emptyDraft, globalsFor, nameProblem, rolesText, type Draft } from "./mcpModel";
+import { ServerEditor } from "./McpServers";
 import { CommandLine, Prose } from "../onboarding/Prose";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
@@ -64,7 +65,7 @@ function useConnect() {
   };
 }
 
-type Dialogs = { kind: "custom" } | { kind: "disconnect"; server: McpServer } | { kind: "signin"; server: McpServer };
+type Dialogs = { kind: "custom" } | { kind: "edit"; server: McpServer } | { kind: "disconnect"; server: McpServer } | { kind: "signin"; server: McpServer };
 
 /** Whether a test says the server wants the person to sign in. */
 const wantsSignIn = (t: Tested | null | undefined): boolean => t !== null && t !== undefined && !("error" in t) && t.result.signIn === true;
@@ -275,33 +276,37 @@ function SignInDialog(props: { projectRef: Ref; server: McpServer; onClose: () =
   );
 }
 
-export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
+/**
+ * A project's one MCP servers list: what the lead reaches for it (its integrations, judged by the hub's policy, with
+ * their sign-ins), what its agents get too (by roles, unjudged), and the hub's servers for every project.
+ */
+export function McpServersSection({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
   const read = useToolQuery("mcp_servers_get", { project: projectRef }, { enabled: live });
   const [dialog, setDialog] = useState<Dialogs | null>(null);
   const [tests, setTests] = useState<Readonly<Record<string, Tested>>>({});
   const machine = useMachine(projectRef);
-  const help =
-    "What the lead reaches for you. Reads run unasked; anything that writes, sends, deletes or shares asks you in the chat first, every time, showing exactly what it would send. Moving money, trading and creating accounts are never allowed.";
+  const help = "Tools the lead reaches for you. Reads run unasked; anything else follows Approvals.";
   if (!live || read.data === undefined) {
     return (
-      <Setting reveal="projects.integrations" label="Integrations" help={help}>
+      <Setting reveal="projects.mcp" label="MCP servers" help={help}>
         <Text size="sm" tone={read.isLoadingError ? "danger" : "quiet"}>
-          {!live ? "Not connected. Connect to a hub to change its integrations." : read.isLoadingError ? errorText(read.error) : "Loading…"}
+          {!live ? "Not connected. Connect to a hub to change its MCP servers." : read.isLoadingError ? errorText(read.error) : "Loading…"}
         </Text>
       </Setting>
     );
   }
-  const c = connectionsOf(read.data.project ?? []);
-  const tested = (name: string, t: Tested) => setTests((all) => ({ ...all, [name]: t }));
+  const all = read.data.project ?? [];
+  const globals = globalsFor(read.data.global, all);
+  const tested = (name: string, t: Tested) => setTests((list) => ({ ...list, [name]: t }));
   const done = (name: string) => (t: Tested) => {
     tested(name, t);
     setDialog(null);
   };
   return (
-    <Setting reveal="projects.integrations" label="Integrations" help={help}>
-      <div role="list" aria-label="Integrations" className={s.integrations}>
-        {c.map((server) => (
+    <Setting reveal="projects.mcp" label="MCP servers" help={help}>
+      <div role="list" aria-label="MCP servers" className={s.integrations}>
+        {all.map((server) => (
           <Row
             key={server.name}
             title={server.name}
@@ -310,19 +315,36 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
             machine={machine.name}
             tested={tests[server.name]}
             onTested={tested}
+            onEdit={(s2) => setDialog({ kind: "edit", server: s2 })}
             onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
             onSignIn={(s2) => setDialog({ kind: "signin", server: s2 })}
           />
         ))}
       </div>
+      {globals.length > 0 ? (
+        <div className={s.stack}>
+          <Text size="xs" tone="quiet">
+            For every project, from Hub › Every project › Tools &amp; skills:
+          </Text>
+          {globals.map(({ server, replaced }) => (
+            <Text key={server.name} size="sm" tone="quiet">
+              <Text as="span" mono size="sm">
+                {server.name}
+              </Text>{" "}
+              {replaced ? "· replaced by this project's" : server.enabled ? `· ${rolesText(server.roles)}` : "· off"}
+            </Text>
+          ))}
+        </div>
+      ) : null}
       <div className={s.inline}>
         <Button onClick={() => setDialog({ kind: "custom" })}>Add an MCP server</Button>
         <Button variant="ghost" onClick={() => open(DOCS)}>
-          How integrations work
+          How MCP servers work
         </Button>
       </div>
-      {dialog?.kind === "custom" ? (
-        <ConnectCustom projectRef={projectRef} taken={(read.data.project ?? []).map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} />
+      {dialog?.kind === "custom" ? <ConnectCustom projectRef={projectRef} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} /> : null}
+      {dialog?.kind === "edit" ? (
+        <ServerEditor scope={projectRef} editing={dialog.server} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onSaved={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={machine.name} onClose={() => setDialog(null)} /> : null}
       {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} onClose={() => setDialog(null)} onTested={tested} /> : null}
@@ -337,12 +359,15 @@ function Row(props: {
   machine: string;
   tested: Tested | undefined;
   onTested: (name: string, t: Tested) => void;
+  onEdit: (server: McpServer) => void;
   onDisconnect: (server: McpServer) => void;
   onSignIn: (server: McpServer) => void;
 }) {
   const hubCall = useHubCall();
   const [testing, setTesting] = useState(false);
   const { server } = props;
+  // One the project's agents get too: its roles stand for its policy, since every tool runs unasked.
+  const agents = server.integration === undefined;
   const test = (sv: McpServer) => {
     setTesting(true);
     hubCall("mcp_server_test", { scope: sv.scope, name: sv.name }).then(
@@ -374,7 +399,7 @@ function Row(props: {
         </div>
         <div className={s.inline}>
           <Text size="xs" tone={status.tone}>
-            {status.text}
+            {agents && server.enabled ? `${rolesText(server.roles)} · unasked` : status.text}
           </Text>
           {signIn ? (
             <Button size="sm" variant="primary" onClick={() => props.onSignIn(server)}>
@@ -384,6 +409,11 @@ function Row(props: {
           <Button size="sm" variant="ghost" disabled={testing} onClick={() => test(server)}>
             {testing ? "Testing…" : "Test connection"}
           </Button>
+          {agents ? (
+            <Button size="sm" variant="ghost" onClick={() => props.onEdit(server)}>
+              Edit
+            </Button>
+          ) : null}
           <Button size="sm" variant="ghost" onClick={() => props.onDisconnect(server)}>
             Disconnect
           </Button>
@@ -396,7 +426,7 @@ function Row(props: {
           Key sealed on {props.machine}. It never goes in the chat.
         </Text>
       ) : null}
-      {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} />}
+      {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} brief={agents} />}
     </div>
   );
 }
@@ -488,13 +518,14 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
   const [tested, setTested] = useState<Tested | null>(null);
   const [reads, setReads] = useState<ReadonlySet<string>>(new Set());
   const [client, setClient] = useState({ id: "", secret: "" });
+  const [agents, setAgents] = useState(false);
   const hubCall = useHubCall();
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
   const value = draft.values[0] ?? { name: "", secret: true, value: "", saved: false };
   const setValue = (patch: Partial<typeof value>) => set({ values: [{ ...value, ...patch }] });
   // An empty key is no key: the server takes none.
   const withKey: Draft = value.value === "" && !value.saved ? { ...draft, values: [] } : draft;
-  const built = customRequest(withKey, [...reads], scope, machine.boxes);
+  const built = customRequest(withKey, [...reads], scope, machine.boxes, agents);
   const nameIssue = tested === null ? nameProblem(draft.name.trim(), props.taken) : null;
   const stdio = draft.kind === "stdio";
   const first = () => {
@@ -505,6 +536,11 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
       setBusy(false);
       if (!out.ok) {
         setProblem(out.problem);
+        return;
+      }
+      // Its agents get it too: every tool runs unasked, so there are none to pick.
+      if (agents && !wantsSignIn(out.tested)) {
+        props.onDone(built.request.name, out.tested);
         return;
       }
       setTested(out.tested);
@@ -558,7 +594,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
       title={tested === null ? "Add an MCP server" : failed ? `${name} is added, but its test failed` : `Which of ${name}'s tools may ${who} use without asking?`}
       description={
         tested === null
-          ? `Any MCP server, by its URL or a command run on ${machine.name}. ${who} asks you before it uses any of its tools, until you pick the ones it may use freely.`
+          ? `Any MCP server, by its URL or a command run on ${machine.name}.`
           : failed
             ? `${who} can't use it until it works. Test it again from the list; to change its URL or key, disconnect it and add it again.`
             : `Tick the ones that only look things up. Leave anything that changes, sends or deletes unticked, so ${who} asks you each time. Moving money, trading and creating accounts are always blocked.`
@@ -619,6 +655,13 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
             </Field>
           </div>
           <SealedNote machine={machine.name} what="key" />
+          <Switch
+            label="Agents get it too"
+            description={agents ? "Its writers and reviewers get it as well, and none of its tools asks you: agents can't stop to ask." : `Only ${who} gets it, and asks you before a tool that changes anything.`}
+            checked={agents}
+            disabled={busy}
+            onCheckedChange={setAgents}
+          />
           {stdio ? null : (
             <Text size="xs" tone="quiet">
               No key? Leave it empty for a service you sign in to with your account: fleetd opens its sign-in page next.

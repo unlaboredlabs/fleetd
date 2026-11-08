@@ -21,7 +21,7 @@ export function GithubSettings() {
   const live = useLive();
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   return (
-    <PagePart title="GitHub" reveal="github" intro="The GitHub account the PRs of the orders you start open as. Nobody else's work ever opens a PR as you.">
+    <PagePart title="GitHub" reveal="github" intro="Your pull requests open as this account.">
       {!live ? (
         <Text tone="quiet">Not connected. Connect to a hub to connect your GitHub.</Text>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
@@ -66,7 +66,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
           <div className={s.stack}>
             <Text strong>Not connected</Text>
             <Text size="sm" tone="quiet">
-              Connect before your first PR: until you do, writers for your orders on the App&apos;s repositories are refused, and the lead asks you to connect.
+              Connect before your first pull request. Until then, work that opens one can&apos;t start.
             </Text>
           </div>
         </div>
@@ -75,12 +75,12 @@ function Account({ info }: { info: GithubAppGetOutput }) {
           <div className={s.stack}>
             <Text strong>{`GitHub no longer takes your connection as ${me.login}`}</Text>
             <Text size="sm" tone="quiet">
-              It was revoked on GitHub, or unused for six months. Connect again; writers for your orders are refused until you do.
+              It was revoked on GitHub, or unused for six months. Connect again to open pull requests.
             </Text>
           </div>
         </div>
       ) : (
-        <Text>{`Connected as ${me.login} since ${dayWords(me.connectedAt)}. The PRs of the orders you start open as you.`}</Text>
+        <Text>{`Connected as ${me.login} since ${dayWords(me.connectedAt)}.`}</Text>
       )}
       <span className={s.inline}>
         {me === undefined || lapsed ? (

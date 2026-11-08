@@ -7,7 +7,7 @@ import {
   extrasLine,
   extrasOver,
   fleetTop,
-  fleetWarning,
+  fleetCapLine,
   machineAgents,
   machineHolds,
   machineSource,
@@ -145,7 +145,7 @@ describe("max agents", () => {
     expect(sourceLine(hub, own)).toBe("Set for this project. The default is 12.");
     const follows = projectAgents(hub, billing);
     expect(follows).toMatchObject({ max: 12, own: false });
-    expect(sourceLine(hub, follows)).toBe("Follows the default: the whole fleet's cap.");
+    expect(sourceLine(hub, follows)).toBe("Follows the default: the hub's fleet cap.");
     // The fleet raised to 20 on a machine that runs 16: the default is the machine's, and storefront keeps its 12.
     const raised: SlotState = {
       ...hub,
@@ -156,7 +156,7 @@ describe("max agents", () => {
     };
     expect(projectAgents(raised, storefront)).toMatchObject({ running: 6, limit: 12 });
     expect(projectAgents(raised, billing)).toMatchObject({ running: 2, limit: 16 });
-    expect(sourceLine(raised, projectAgents(raised, billing))).toBe("Follows the default: its machine's cap, within the whole fleet's.");
+    expect(sourceLine(raised, projectAgents(raised, billing))).toBe("Follows the default: its machine's cap.");
     expect(sourceLine(raised, projectAgents(raised, storefront))).toBe("Set for this project. The default is 16.");
   });
 
@@ -192,32 +192,23 @@ describe("max agents", () => {
     expect(extrasLine(0, 2)).toBe("2 agents saved their work and wait for room.");
   });
 
-  it("warns when the fleet cap is below a project's own max", () => {
-    const name = (r: { projectId: string }) => r.projectId;
-    expect(fleetWarning(slots, 12, name)).toBeNull();
-    expect(fleetWarning(slots, 8, name)).toBe("Below billing's max of 12: it runs at most 8 until you raise this.");
-    expect(fleetWarning(slots, 4, name)).toBe("Below the max of storefront and billing: they run at most 4 until you raise this.");
-    const three = { ...slots, perProject: [...slots.perProject, { projectRef: { machineId: "m", projectId: "docs" }, maxAgents: 9, running: 0, queued: 0, used: 0 }] };
-    expect(fleetWarning(three, 4, name)).toBe("Below the max of 3 projects: they run at most 4 until you raise this.");
-  });
-
-  it("doesn't warn for a project on the default, which follows the fleet cap down", () => {
-    const name = (r: { projectId: string }) => r.projectId;
-    const hub: SlotState = {
-      cap: 12,
-      fleetCap: 12,
-      used: 8,
+  it("says a fleet cap the CLI set only while it holds the machines back", () => {
+    const two: SlotState = {
+      cap: 20,
+      used: 0,
       queued: 0,
-      perProject: [
-        { projectRef: storefront, maxAgents: 10, own: true, running: 6, queued: 0 },
-        { projectRef: billing, maxAgents: 12, own: false, running: 2, queued: 0 },
+      perProject: [],
+      perMachine: [
+        { machineId: "devbox", cap: 12, auto: 12, why: "12 of 16 CPUs", running: 0 },
+        { machineId: "buildbox", cap: 8, auto: 8, why: "8 of 8 CPUs", running: 0 },
       ],
     };
-    expect(fleetWarning(hub, 8, name)).toBe("Below storefront's max of 10: it runs at most 8 until you raise this.");
-    expect(fleetWarning(hub, 11, name)).toBeNull();
+    expect(fleetCapLine(two)).toBeNull();
+    expect(fleetCapLine({ ...two, fleetCap: 20 })).toBeNull();
+    expect(fleetCapLine({ ...two, cap: 10, fleetCap: 10 })).toBe("All machines together run at most 10 agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.");
   });
 
-  it("lets the fleet slider reach well past today's cap, and any cap set higher", () => {
+  it("lets the sliders reach well past today's cap, and any cap set higher", () => {
     expect(fleetTop(12)).toBe(64);
     expect(fleetTop(200)).toBe(200);
   });

@@ -1,5 +1,5 @@
 // The words and choices of Hub › Machines › Screens, pure so they are tested on their own: each kind's switch and the
-// line under it from what the machine's node reports, the idle timeout's and recording retention's choices.
+// line under it from what the machine's node reports, when an idle one ends, and recording retention's choices.
 import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
 
 /** The kinds, in the picker's order, with their switch's label. No iOS (D298): the agents' Mac lends its simulators with
@@ -28,22 +28,22 @@ export const nodeWait = (m: MachineRolesEntry): "restarting" | "old" | null =>
 export const lockedWhy = (m: MachineRolesEntry, check: HostCheck | undefined): string | null => {
   if (!m.online) return "Offline";
   const wait = nodeWait(m);
-  if (wait === "restarting") return "Its node is restarting";
+  if (wait === "restarting") return "Restarting…";
   if (wait === "old") return "Its fleetd is too old to change this from here";
-  if (check === undefined) return "Its node hasn't said";
+  if (check === undefined) return "Not known yet";
   if (check.off === "unsupported") return check.detail;
   return null;
 };
 
 /** The line under a kind's switch: ready, off, or what stands in the way, in the node's words. */
 export const stateLine = (check: HostCheck | undefined): string => {
-  if (check === undefined) return "Its node hasn't said";
+  if (check === undefined) return "Not known yet";
   if (check.ready) return "Ready";
   switch (check.off) {
     case "off":
       return "Off";
     case "restarting":
-      return "Starts when its node restarts, once the screens live there end";
+      return "Starts after the screens open now end";
     default:
       return check.detail;
   }
@@ -58,13 +58,13 @@ export const fixOf = (m: MachineRolesEntry, check: HostCheck | undefined): strin
   return check.off === "missing" || check.off === "failed" ? check.fix : null;
 };
 
-/** The machine's idle timeout, as its node reports it: every kind has one, the browser's is shown. */
-export const idleOf = (m: MachineRolesEntry): number | undefined => (m.hosts ?? []).find((h) => h.idleMinutes !== undefined)?.idleMinutes;
+/** When an idle screen ends there, as its node reports it (30 minutes unless its node.json says otherwise). */
+export const idleLine = (m: MachineRolesEntry): string => {
+  if (m.mac !== undefined) return `An idle Mac screen ends after ${String((m.hosts ?? []).find((h) => h.host === "mac")?.idleMinutes ?? 5)} minutes, so the next agent gets it.`;
+  const minutes = (m.hosts ?? []).find((h) => h.idleMinutes !== undefined)?.idleMinutes ?? 30;
+  return `An idle screen ends after ${minutes % 60 === 0 ? `${String(minutes / 60)} ${minutes === 60 ? "hour" : "hours"}` : `${String(minutes)} minutes`}.`;
+};
 
-/** A few choices, and `current` among them when it is another. */
-const choices = (values: readonly number[], current: number | undefined, label: (n: number) => string) =>
-  [...new Set([...values, ...(current === undefined ? [] : [current])])].toSorted((a, b) => a - b).map((n) => ({ value: String(n), label: label(n) }));
-
-export const idleChoices = (current: number | undefined) => choices([10, 15, 30, 60, 120, 240], current, (n) => (n % 60 === 0 ? `${String(n / 60)} h` : `${String(n)} min`));
-export const daysChoices = (current: number | undefined) => choices([7, 14, 30, 60, 90, 180, 365], current, (n) => `${String(n)} days`);
-export const gbChoices = (current: number | undefined) => choices([5, 10, 20, 50, 100, 200], current, (n) => `${String(n)} GB`);
+/** Retention's choices, and `current` among them when it is another. */
+export const daysChoices = (current: number) =>
+  [...new Set([7, 14, 30, 60, 90, 180, 365, current])].sort((a, b) => a - b).map((n) => ({ value: String(n), label: `${String(n)} days` }));

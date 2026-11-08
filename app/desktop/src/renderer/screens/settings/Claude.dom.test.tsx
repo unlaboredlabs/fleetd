@@ -150,8 +150,10 @@ it("asks someone with nothing to run on to connect, seals the pasted token throu
   await render(answer(refused));
   expect(host.textContent).toContain(CONNECT);
   expect(host.textContent).toContain("Members may not use the hub's API on this hub");
-  // The hub's API isn't theirs to pick.
+  // The hub's API isn't theirs to pick: no Runs on row with nothing to choose.
   expect(host.querySelector("[role='radio']")).toBeNull();
+  expect(host.querySelector("[data-reveal='claude.choice'], section[aria-label='Runs on']")).toBeNull();
+  expect(host.textContent).not.toContain("Runs on");
   expect(host.textContent).toContain("claude setup-token");
   await type("Token", TOKEN);
   await click(button("Connect and test"));

@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-// Settings › Hub › Machines: the machine list's Repair (over SSH, or a line that enrolls it again) and Remove (asked
-// first, then gone), the projects left from a removed machine (each with Remove), and a machine's page: its checklist read from the hub's checks, each item waiting until checked,
-// and Claude's login from the app, its code going to the hub once.
+// Settings › Hub › Machines: the machine list's Repair for a machine that isn't well (over SSH, or a line that enrolls
+// it again) and Remove (asked first, then gone), the projects left from a removed machine (each with Remove), and a
+// machine's page: its checklist read from the hub's checks, each item waiting until checked, Claude's login from the
+// app, its code going to the hub once, and its role, screens and max agents.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DoctorCheck, Machine, MachineHost, ProjectSummary } from "../../../shared/contracts";
+import type { DoctorCheck, Machine, MachineHost, MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -43,6 +44,22 @@ const LOGGED_OUT: DoctorCheck[] = [
   check("android", "warn", "Android screens are off: /dev/kvm isn't readable by ada.", { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada", on: "machine" }),
 ];
 const READY: DoctorCheck[] = LOGGED_OUT.map((c) => (c.id === "laptop/claude_login" ? check("claude_login", "ok", "laptop: claude is logged in (Max).") : c));
+/** What machine_roles says: builder-1 runs agents and hosts screens; laptop runs agents only. */
+const ROLES: MachineRolesEntry[] = [
+  {
+    machineId: "builder-1",
+    name: "builder-1",
+    online: true,
+    roles: ["agents", "sessions"],
+    maxSessions: 4,
+    maxSessionsWhy: "auto: 8 CPUs, 16 GB",
+    sessionsLive: 0,
+    hostsOthers: true,
+    screenSettings: true,
+    hosts: [{ host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", on: true, idleMinutes: 30 }],
+  },
+  { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false },
+];
 const LOGIN_URL = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c&state=s1";
 
 let host: HTMLDivElement;
@@ -96,6 +113,8 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
       const output =
         tool === "machine_hosts"
           ? { hosts: HOSTS }
+          : tool === "machine_roles"
+            ? { machines: ROLES }
           : tool === "doctor_list"
             ? { checks, checkedAt: AT }
             : tool === "machine_remove"
@@ -154,7 +173,7 @@ const type = async (input: HTMLInputElement, value: string) => {
   });
 };
 
-it("lists the machines, each with its page, Repair and Remove", async () => {
+it("lists the machines, each with its page and Remove, and Repair only for one that isn't well", async () => {
   const repairs: Repair[] = [];
   await render(<MachineList onRepair={(r) => repairs.push(r)} />);
   const names = [...host.querySelectorAll("[role='listitem']")].map((li) => li.getAttribute("aria-label"));
@@ -166,14 +185,12 @@ it("lists the machines, each with its page, Repair and Remove", async () => {
   expect(row("devbox")?.textContent).not.toContain("Repair sets");
   expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
 
-  await click(rowButton("builder-1", "Repair"));
+  // No raw version on a row: the machine's page says it.
+  expect(row("devbox")?.textContent).not.toContain("0.9.0");
+  expect(() => rowButton("devbox", "Repair")).toThrow();
+  expect(() => rowButton("builder-1", "Repair")).toThrow();
   await click(rowButton("laptop", "Repair"));
-  await click(rowButton("devbox", "Repair"));
-  expect(repairs).toEqual([
-    { kind: "plan", host: HOSTS[1] },
-    { kind: "line", machineId: "laptop", rejoin: true },
-    { kind: "plan", host: HOSTS[0] },
-  ]);
+  expect(repairs).toEqual([{ kind: "line", machineId: "laptop", rejoin: true }]);
 });
 
 it("asks before it removes a machine, then takes it off the list", async () => {
@@ -307,6 +324,26 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
   // The checks run again, and claude's item is done.
   expect(calls.some((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true)).toBe(true);
   expect(items()[0]).toBe("claude:done");
+});
+
+it("holds a machine's role, screens and max agents on its page, under its checklist", async () => {
+  checks = [];
+  await render(<MachinePage machineId="builder-1" />);
+  const parts = [...host.querySelectorAll("section[data-part]")].map((s) => s.getAttribute("data-part"));
+  expect(parts).toEqual(["hub.roles", "hub.screens", "hub.caps"]);
+  expect(host.querySelector("[data-roles='builder-1'] button[aria-pressed='true']")?.textContent).toBe("Both");
+  expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("0 of 4 screens now (auto: 8 CPUs, 16 GB)");
+  expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("An idle screen ends after 30 minutes.");
+  // The checklist comes first.
+  const checklist = host.querySelector("section[aria-label='Checklist']");
+  const role = host.querySelector("section[data-part='hub.roles']");
+  expect(checklist !== null && role !== null && (checklist.compareDocumentPosition(role) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+
+  // A machine that runs agents only has no Screens part.
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render(<MachinePage machineId="laptop" />);
+  expect([...host.querySelectorAll("section[data-part]")].map((s) => s.getAttribute("data-part"))).toEqual(["hub.roles", "hub.caps"]);
 });
 
 it("says so when the hub has no such machine", async () => {

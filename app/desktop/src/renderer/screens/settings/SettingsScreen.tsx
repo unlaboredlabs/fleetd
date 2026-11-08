@@ -81,7 +81,7 @@ function YourMemoryPage() {
   return (
     <div className={s.scroll} data-screen="settings.your-memory">
       <div className={s.column}>
-        <PageHead title="Your memory">How you work, as the leads remember it when you correct them or set a rule. Edit or delete anything that is wrong.</PageHead>
+        <PageHead title="Your memory">What the lead remembers about how you work. Only you see it.</PageHead>
         <YourMemory />
         <ImportMemory />
       </div>
@@ -94,7 +94,7 @@ function YourDevicesPage() {
   return (
     <div className={s.scroll} data-screen="settings.devices">
       <div className={s.column}>
-        <PageHead title="Your devices">The apps signed in as you: this one, your phone. Pair a phone by scanning a QR with the fleetd app.</PageHead>
+        <PageHead title="Your devices">The apps signed in as you.</PageHead>
         <DevicesSettings />
       </div>
     </div>
@@ -106,7 +106,7 @@ function Hubs() {
   return (
     <div className={s.scroll} data-screen="settings.hubs">
       <div className={s.column}>
-        <PageHead title="Hubs">The hubs this app is paired with, and the links that let a project on another hub act as you.</PageHead>
+        <PageHead title="Hubs">The hubs this app is paired with.</PageHead>
         <HubsSettings />
         <HubLinksSettings />
       </div>

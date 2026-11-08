@@ -7176,7 +7176,7 @@
           "$ref": "#/$defs/SessionHost"
         },
         "idleMinutes": {
-          "description": "Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node\nbefore it.",
+          "description": "Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a\nnode before it.",
           "maximum": 1440,
           "minimum": 1,
           "type": "integer"
@@ -11383,12 +11383,6 @@
         "metrics_get.output": {
           "$ref": "#/$defs/MetricsGetOutput"
         },
-        "metrics_retention_set.input": {
-          "$ref": "#/$defs/MetricsRetentionSetInput"
-        },
-        "metrics_retention_set.output": {
-          "$ref": "#/$defs/MetricsRetentionSetOutput"
-        },
         "navi_approvals.input": {
           "$ref": "#/$defs/NaviApprovalsInput"
         },
@@ -11971,12 +11965,6 @@
         "time_insights.output": {
           "$ref": "#/$defs/TimeInsightsOutput"
         },
-        "time_retention_set.input": {
-          "$ref": "#/$defs/TimeRetentionSetInput"
-        },
-        "time_retention_set.output": {
-          "$ref": "#/$defs/TimeRetentionSetOutput"
-        },
         "time_spans.input": {
           "$ref": "#/$defs/TimeSpansInput"
         },
@@ -12243,8 +12231,6 @@
         "memory_undo.output",
         "metrics_get.input",
         "metrics_get.output",
-        "metrics_retention_set.input",
-        "metrics_retention_set.output",
         "navi_approvals.input",
         "navi_approvals.output",
         "navi_approvals_set.input",
@@ -12439,8 +12425,6 @@
         "time_breakdown.output",
         "time_insights.input",
         "time_insights.output",
-        "time_retention_set.input",
-        "time_retention_set.output",
         "time_spans.input",
         "time_spans.output",
         "usage_resume.input",
@@ -13656,38 +13640,6 @@
       ],
       "type": "object"
     },
-    "MetricsRetentionSetInput": {
-      "properties": {
-        "retentionDays": {
-          "maximum": 400,
-          "minimum": 30,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "retentionDays"
-      ],
-      "type": "object"
-    },
-    "MetricsRetentionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "retentionDays": {
-          "maximum": 400,
-          "minimum": 30,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "retentionDays"
-      ],
-      "type": "object"
-    },
     "MetricsTiles": {
       "description": "The KPI row: all four, equal.",
       "properties": {
@@ -13748,7 +13700,7 @@
       "description": "A Navi's approval settings: its mode, and the checker's model and effort.",
       "properties": {
         "defaults": {
-          "description": "Whether model and effort are the hub's defaults, not a pick of the person's.",
+          "description": "Always true now; kept for older apps, which offered \"Use the default\" when it was false.",
           "type": "boolean"
         },
         "effort": {
@@ -13759,7 +13711,7 @@
         },
         "model": {
           "$ref": "#/$defs/ModelName",
-          "description": "The checker's model: the person's pick, else [`CHECKER_MODEL`]."
+          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick."
         }
       },
       "required": [
@@ -13814,7 +13766,7 @@
       "properties": {
         "effort": {
           "$ref": "#/$defs/Effort",
-          "description": "The checker's effort; absent: the hub's default."
+          "description": "Ignored, as `model` is."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
@@ -13824,7 +13776,7 @@
         },
         "model": {
           "$ref": "#/$defs/ModelName",
-          "description": "The checker's model; absent: the hub's default."
+          "description": "Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -17430,6 +17382,10 @@
           "$ref": "#/$defs/WorktreeSetup",
           "description": "What runs in each new worktree before its agent starts; no commands when none are set."
         },
+        "signinsKept": {
+          "description": "Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.\nAbsent when its machine can't say (offline, or an older node).",
+          "type": "boolean"
+        },
         "title": {
           "type": "string"
         },
@@ -17786,6 +17742,10 @@
         "dir": {
           "description": "`<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session.",
           "type": "string"
+        },
+        "signinsKept": {
+          "description": "Whether the node keeps a browser profile of the project's sign-ins (D221) now. Absent from an older node; the\nhub moves it to `ProjectSettings.signinsKept`.",
+          "type": "boolean"
         },
         "worktrees": {
           "items": {
@@ -23389,38 +23349,6 @@
       },
       "required": [
         "insights"
-      ],
-      "type": "object"
-    },
-    "TimeRetentionSetInput": {
-      "properties": {
-        "retentionDays": {
-          "maximum": 365,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "retentionDays"
-      ],
-      "type": "object"
-    },
-    "TimeRetentionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "retentionDays": {
-          "maximum": 365,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "retentionDays"
       ],
       "type": "object"
     },

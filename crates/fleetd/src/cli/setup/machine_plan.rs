@@ -704,30 +704,6 @@ pub fn fresh_facts(user: &str, arch: &str) -> Facts {
     }
 }
 
-/// What an older fleetd installed for T3 Code on a machine: its service and its files. Only `--purge` removes them,
-/// and prints the line only where there is something to remove.
-pub fn old_t3_removal(platform: Platform, home: &str, config_home: &str, uid: u32) -> Step {
-    let home = home.trim_end_matches('/');
-    let dirs = Dirs { home, config_home };
-    let unit = unit_path(platform, &dirs, Role::T3);
-    let services = ServiceManager::new(platform, uid, |role| unit_path(platform, &dirs, role));
-    let files = [
-        format!("{home}/.fleetd/t3"),
-        format!("{home}/.fleetd/t3.env"),
-        format!("{home}/.local/share/fleetd/npm"),
-    ];
-    let quoted = files.iter().map(|f| q(f)).collect::<Vec<_>>().join(" ");
-    step(
-        "remove T3 Code, if an older fleetd installed it",
-        format!(
-            "if [ -e {unit} ] || [ -e {first} ]; then echo 'older fleetd installed T3 Code; removing it'; {remove}; rm -rf {unit} {quoted}; fi",
-            unit = q(&unit),
-            first = q(&files[0]),
-            remove = services.remove(Role::T3),
-        ),
-    )
-}
-
 /// Commands that undo `machine add`: the node's service (unless `own_service` is false: the unit there runs another
 /// fleet's node); with `purge` also the node's key and settings, fleetd's Claude login and config, its logs, and,
 /// for the default fleet only, what an older fleetd left. The fleetd binary stays: it may be the CLI the installer
@@ -777,9 +753,6 @@ pub fn plan_machine_remove(
                 paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
             ),
         ));
-        if fleetd.is_none() {
-            steps.push(old_t3_removal(platform, home, config_home, uid));
-        }
     }
     if platform == Platform::Linux {
         steps.push(step(

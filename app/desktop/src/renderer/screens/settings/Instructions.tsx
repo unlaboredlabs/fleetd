@@ -166,7 +166,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
         <PageHead title="Instructions & memory">What {name ?? "a project"}&apos;s agents are told, and what its leads remember.</PageHead>
-        <PagePart title="Instructions" reveal="instructions" intro="Added to the project's agents' first message, the lead's too, after the hub-wide ones.">
+        <PagePart title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too.">
           {!t.live ? (
             <Text tone="quiet">Not connected. Connect to a hub to add instructions for its agents.</Text>
           ) : project === null ? (
@@ -185,9 +185,10 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   );
 }
 
-/** The nightly refresh's switch, read with the project's settings. */
+/** The nightly refresh, read with the project's settings and, for its hour and runs, its automations. */
 function Refresh({ projectRef }: { projectRef: ProjectRef }) {
   const read = useToolQuery("project_settings_get", { machineId: projectRef.machineId, projectId: projectRef.projectId });
+  const jobs = useToolQuery("automation_list", { projectRef });
   const settings = read.data?.settings;
-  return settings === undefined ? null : <MemoryRefreshSetting settings={settings} />;
+  return settings === undefined ? null : <MemoryRefreshSetting settings={settings} job={jobs.data?.memoryRefresh} />;
 }

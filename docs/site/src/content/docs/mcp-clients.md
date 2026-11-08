@@ -143,7 +143,7 @@ fleetd work done                                                   # the claim o
 |---|---|
 | `read` | Read chats, status, time and prompts. |
 | `operate` | Also write to leads, set a project's max agents, and manage projects. |
-| `admin` | Also change hub settings, such as timeline retention. |
+| `admin` | Also change hub settings, such as screen recordings' retention. |
 
 `--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
 

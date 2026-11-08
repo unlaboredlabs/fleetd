@@ -1672,7 +1672,7 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // The optional cloud step: its parts, then the key's sealed field and the way to the hub inline (nothing to set up).
+  // The optional cloud step: its parts, then the key's sealed field inline (nothing to set up for the way to the hub).
   {
     id: "setup",
     route: "#/setup/cloud",
@@ -1680,7 +1680,6 @@ export const screens: readonly Screen[] = [
     variant: "cloud",
     open: async (page) => {
       await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
-      await page.locator('[data-way="untested"]').waitFor();
     },
   },
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
@@ -2467,24 +2466,24 @@ export const screens: readonly Screen[] = [
   { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
   { id: "settings.hub.offline", route: "#/settings/hub/people", fixtures: ["hub-unreachable"] },
-  // Machines' max agents: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto.
+  // A machine's page, under its checklist: its role, its screens and its max agents, devbox's auto 22 and where it
+  // comes from.
   {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/devbox",
     fixtures: ["settings-machines"],
     variant: "caps",
     open: async (page) => {
-      const machines = page.getByRole("region", { name: "Max agents" }).getByRole("region", { name: "Machines" });
-      await machines.scrollIntoViewIfNeeded();
-      await machines.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
-      await machines.getByRole("button", { name: "Use auto" }).waitFor();
+      const caps = page.locator('[data-part="hub.caps"]');
+      await caps.scrollIntoViewIfNeeded();
+      await caps.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
     },
   },
-  // Machines › Screens: a switch per kind (no iOS, D298), the agents' Mac's switch on the Mac and, on Linux, still with
-  // the reason it can't turn on there.
+  // devbox's Screens: a switch per kind (no iOS, D298), the agents' Mac's, on Linux, with the reason it can't turn on
+  // there; how many at once, and when an idle one ends.
   {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/devbox",
     fixtures: ["settings-machines"],
     variant: "screens",
     open: async (page) => {
@@ -2494,14 +2493,14 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("switch", { name: /^iOS screens on /u })).toHaveCount(0);
     },
   },
-  // Machines › Screens on the agents' Mac: its own screen's switch alone, and how soon an idle one ends.
+  // The agents' Mac's page: its switch for agents, its own screen's switch alone, and how soon an idle one ends.
   {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/buildbox",
     fixtures: ["settings-agents-mac"],
     variant: "agents-mac",
     open: async (page) => {
-      const mac = page.locator("[data-screens]").nth(1);
+      const mac = page.locator("[data-screens]");
       await mac.scrollIntoViewIfNeeded();
       await mac.getByRole("switch", { name: /^Agents’ Mac screens on /u }).waitFor();
       await expect(mac.getByRole("switch")).toHaveCount(1);
@@ -2517,7 +2516,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.scrollIntoViewIfNeeded();
-      await storefront.getByRole("button", { name: "Machine caps in Hub › Machines" }).waitFor();
+      await storefront.getByRole("button", { name: "devbox's max in Hub › Machines" }).waitFor();
     },
   },
   // A project's allowed profiles: high (the default, checked for good) and medium, quick left out; and storefront
@@ -2566,18 +2565,17 @@ export const screens: readonly Screen[] = [
       await storefront.getByText("Set for this project. The default is 16.").waitFor();
       await storefront.getByRole("button", { name: "Use the default" }).click();
       await storefront.getByText("Max agents, the default: 16, was 12.").waitFor();
-      await storefront.getByText("Follows the default: the whole fleet's cap.").waitFor();
+      await storefront.getByText("Follows the default: the hub's fleet cap.").waitFor();
     },
   },
+  // A fleet cap the CLI set below the machines' total: no slider, a line under the list saying it and how to change it.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
     fixtures: ["settings-agents"],
-    variant: "fleet-below",
+    variant: "fleet-cap",
     open: async (page) => {
-      await page.getByRole("region", { name: "Max agents" }).getByRole("slider").first().focus();
-      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
-      await page.getByRole("button", { name: "Undo" }).waitFor();
+      await page.locator("[data-fleet-cap]").scrollIntoViewIfNeeded();
     },
   },
   // Hub links: a project's Linked hubs (in its settings), working, can't reach and revoked there, and none yet; a
@@ -2696,7 +2694,7 @@ export const screens: readonly Screen[] = [
     route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["integrations-signin"],
     open: async (page) => {
-      const list = page.getByRole("list", { name: "Integrations" });
+      const list = page.getByRole("list", { name: "MCP servers" });
       await expect(list.getByRole("listitem", { name: "calendar" })).toContainText("Signed out");
       await expect(list.getByRole("listitem", { name: "mail" })).toContainText("Signed in with auth.mail.example");
       await list.scrollIntoViewIfNeeded();

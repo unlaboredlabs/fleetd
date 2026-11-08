@@ -267,11 +267,21 @@ fn enum_values(schema: &Value) -> Vec<String> {
 }
 
 fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
-    let (Some(spawners), Some(worker_calls)) =
-        (names_of(SPAWN_OPS, lead), names_of(WORKER_OPS, task))
-    else {
+    let Some(spawners) = names_of(SPAWN_OPS, lead) else {
         return Err("agent tools: a hub policy op has no MCP tool".into());
     };
+    // Every tool a task is offered: its lead calls, which the hub allows by WORKER_OPS, and its browser calls, which
+    // its node answers.
+    if let Some(t) = task
+        .iter()
+        .find(|t| !t.browser && !WORKER_OPS.contains(&t.op))
+    {
+        return Err(format!(
+            "agent tools: a task is offered {}, which the hub refuses it",
+            t.name
+        ));
+    }
+    let worker_calls: Vec<&str> = task.iter().map(|t| t.name).collect();
     let gated = inline_schema::<GatedRunCall>();
     let timeout = gated["properties"]["timeoutSec"]["maximum"]
         .as_u64()
@@ -673,10 +683,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "automationId": "au_k3Jd8sQp2xYz",
             "schedule": { "cron": "0 9 * * 1-5", "tz": "Europe/Berlin" },
         }),
-        (Role::Lead, "automation_pause") => json!({
-            "automationId": "au_k3Jd8sQp2xYz",
-            "paused": true,
-        }),
         (Role::Lead, "automation_delete") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
         (Role::Lead, "automation_run") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
         (Role::Lead, "automation_confirm") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
@@ -731,8 +737,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             json!({ "url": "https://github.com/acme/storefront/actions/runs/4242" })
         }
         (_, "review_read") => json!({ "pr": "https://github.com/acme/storefront/pull/7" }),
-        (_, "chat_image") => json!({ "path": "shots/checkout-after.png" }),
-        (_, "chat_file") => json!({ "path": "trips/lisbon-itinerary.pdf" }),
+        (_, "chat_file") => json!({ "path": "shots/checkout-after.png" }),
         (_, "publish_artifact") => json!({
             "name": "dependency-sweep",
             "title": "Dependency sweep, November",

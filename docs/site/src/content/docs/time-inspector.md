@@ -132,11 +132,5 @@ before the retention window. It never fills a gap with a guess.
 
 | Data | Kept |
 |---|---|
-| Every span | 30 days by default (1 to 365). |
+| Every span | 30 days. |
 | Daily totals and each piece of work's critical path | 400 days. |
-
-Change it with an admin key:
-
-```sh
-fleetd time --retention 90
-```

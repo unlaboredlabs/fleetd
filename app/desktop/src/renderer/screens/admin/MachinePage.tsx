@@ -1,5 +1,7 @@
-// Settings › Hub › Machines › one machine (#/settings/hub/machines/<id>): what it needs once it has joined, as a checklist
-// read from the hub's own checks (doctor_list, refetched on doctor.changed): claude installed and logged in, the git
+// Settings › Hub › Machines › one machine (#/settings/hub/machines/<id>): everything about it in one place. Its role
+// (settings/MachineRoles.tsx), its screens and how many it hosts at once (settings/Screens.tsx), and its max agents
+// (settings/Agents.tsx), all read from machine_roles and the hub's slot state; then what it needs, as a checklist read
+// from the hub's own checks (doctor_list, refetched on doctor.changed): claude installed and logged in, the git
 // identity its commits carry, GitHub access, and the sessions it can host. Each item that wants a look has its fix: a
 // command to run on the machine, with Copy, or for claude's login, Log in, which runs `claude auth login` on the
 // machine through its node. The person signs in on their own device and pastes the code the page shows; the token
@@ -13,7 +15,10 @@ import { openExternal } from "../prs/PrDetail";
 import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive } from "../settings/hub";
 import { revealNext } from "../settings/search";
-import { PageHead } from "../settings/parts";
+import { MachineCap } from "../settings/Agents";
+import { MachineRole } from "../settings/MachineRoles";
+import { PagePart, PageHead } from "../settings/parts";
+import { MachineScreens } from "../settings/Screens";
 import { RunOn, Values } from "../setup/Guide";
 import { toHash } from "../shell/routes";
 import { checklistOf, fixPlace, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
@@ -29,6 +34,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
   const machine = useData((d) => d.machines[machineId]);
   const fresh = useData((d) => d.fresh);
   const checks = useToolQuery("doctor_list", allChecks);
+  const roles = useToolQuery("machine_roles", noInput).data?.machines.find((m) => m.machineId === machineId);
   const layer = useDataLayer();
   const [rerunning, setRerunning] = useState(false);
   const back = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
@@ -69,15 +75,22 @@ export function MachinePage({ machineId }: { machineId: string }) {
             ? fresh
               ? "This hub has no such machine. It may have been removed."
               : "Loading…"
-            : `${status ?? ""} · fleetd ${machine.nodeVersion}. What it needs to run agents, as the hub last checked.`}
+            : `${status ?? ""} · fleetd ${machine.nodeVersion}`}
         </PageHead>
         {machine === undefined ? null : (
-          <section className={a.section} aria-label="Checklist">
-            <div className={a.checklistHead}>
-              <Text strong>Checklist</Text>
-              <Button variant="ghost" size="sm" disabled={rerunning} onClick={() => void rerun()}>
-                {rerunning ? "Checking…" : "Check again"}
-              </Button>
+          <section className={s.part} aria-label="Checklist">
+            <div className={s.partHead}>
+              <div className={s.partTitle}>
+                <Text as="h2" size="lg" strong>
+                  Checklist
+                </Text>
+                <Button variant="ghost" size="sm" disabled={rerunning} onClick={() => void rerun()}>
+                  {rerunning ? "Checking…" : "Check again"}
+                </Button>
+              </div>
+              <Text size="sm" tone="quiet">
+                What it needs to run agents, as the hub last checked.
+              </Text>
             </div>
             {checks.error ? (
               <Text tone="danger">{`Couldn't read the checks: ${errorText(checks.error)}`}</Text>
@@ -91,6 +104,21 @@ export function MachinePage({ machineId }: { machineId: string }) {
               </ol>
             )}
           </section>
+        )}
+        {roles === undefined ? null : (
+          <PagePart title="Role" reveal="hub.roles">
+            <MachineRole machine={roles} />
+          </PagePart>
+        )}
+        {roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (
+          <PagePart title="Screens" reveal="hub.screens">
+            <MachineScreens machine={roles} />
+          </PagePart>
+        ) : null}
+        {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
+          <PagePart title="Max agents" reveal="hub.caps">
+            <MachineCap machineId={machineId} />
+          </PagePart>
         )}
       </div>
     </div>
@@ -113,14 +141,7 @@ function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; mach
         {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} name={name} /> : null}
         {item.screens === true ? (
           <span>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => {
-                revealNext("hub.screens");
-                window.location.hash = toHash({ id: "settings", tab: "hub.machines" });
-              }}
-            >
+            <Button variant="link" size="sm" onClick={() => revealNext(document.querySelector("[data-part='hub.screens']") === null ? "hub.roles" : "hub.screens")}>
               Turn them on under Screens
             </Button>
           </span>

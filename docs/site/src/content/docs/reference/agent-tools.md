@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents wait for 5 GB of disk each above the free-space floor; load and memory never hold them back. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `chat_image`, `chat_file`, `publish_artifact`. Every other call is refused. |
+| Calls a task's agent may make | `decisions_search`, `report`, `ask_lead`, `brief_read`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -60,8 +60,7 @@ Every lead gets these.
 | [`nudge`](#nudge) | Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
 | [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). | No |
 | [`automation_list`](#automation_list) | This project's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run. | No |
-| [`automation_update`](#automation_update) | Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay. | No |
-| [`automation_pause`](#automation_pause) | Pause (paused: true) or resume an automation. | No |
+| [`automation_update`](#automation_update) | Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: true) or resume it (false); fields left out stay. | No |
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
@@ -73,12 +72,11 @@ Every lead gets these.
 | [`factory_status`](#factory_status) | A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is linked to. | No |
 | [`chat_search`](#chat_search) | A lead's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. | No |
 | [`chat_read`](#chat_read) | A lead's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). | No |
-| [`confirm_step`](#confirm_step) | A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_image. | No |
+| [`confirm_step`](#confirm_step) | A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_file. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
-| [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
-| [`chat_file`](#chat_file) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
+| [`chat_file`](#chat_file) | Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
@@ -503,12 +501,13 @@ No parameters.
 
 ### automation_update
 
-Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay.
+Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: true) or resume it (false); fields left out stay. Paused, its schedule and webhook start nothing; resumed, the schedule goes on from now.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
 | `name` | string | no | One line. At most 80 characters. |
+| `paused` | boolean | no | True: its schedule and webhook start nothing; false: resume it, its schedule going on from now. |
 | `prompt` | string | no | At most 2000 characters. |
 | `removeSchedule` | boolean | no | True: take its schedule off. |
 | `schedule` | object | no | A schedule in the lead's calls: a cron or a one-time at, one of the two. A tz left out is the zone of the person who last wrote in the chat (their app or phone tells the hub), else the hub's `policy.tz`, else the hub machine's. |
@@ -527,27 +526,6 @@ Change an automation's name, prompt or schedule (removeSchedule: true takes it o
       "cron": "0 9 * * 1-5",
       "tz": "Europe/Berlin"
     }
-  }
-}
-```
-
-### automation_pause
-
-Pause (paused: true) or resume an automation. Paused, its schedule and webhook start nothing; resumed, the schedule goes on from now.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `automationId` | string | yes | Matches `^au_[A-Za-z0-9_-]{6,40}$`. |
-| `paused` | boolean | yes |  |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "automation_pause",
-  "arguments": {
-    "automationId": "au_k3Jd8sQp2xYz",
-    "paused": true
   }
 }
 ```
@@ -808,14 +786,14 @@ A lead's call: read the messages around one of your own chat by its id from chat
 
 ### confirm_step
 
-A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_image. It goes through your approval mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or trade never goes through here: hand that click to the person with request_takeover.
+A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_file. It goes through your approval mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or trade never goes through here: hand that click to the person with request_takeover.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `button` | string | yes | The button's label, as the page shows it: "Complete reservation". At most 120 characters. |
 | `does` | string | yes | What clicking it does, in one or two plain sentences: "Books a table for 2 at Lupa, Sat 8 pm, under Sam". At most 500 characters. |
 | `page` | string | no | What the page shows around the button: the details being confirmed. At most 4000 characters. |
-| `screenshot` | string | no | A screenshot of the page from `chat_image`, for the person's card. |
+| `screenshot` | string | no | A screenshot of the page from `chat_file`, for the person's card. |
 | `site` | string | yes | The site the page is on: `opentable.com`. At most 253 characters. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -894,28 +872,9 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 }
 ```
 
-### chat_image
-
-Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message with an image block ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `path` | string | yes | The image file: relative to your working directory, or absolute inside it. At most 1000 characters. |
-
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "chat_image",
-  "arguments": {
-    "path": "shots/checkout-after.png"
-  }
-}
-```
-
 ### chat_file
 
-Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead shows it in its message with a file block ({"v":1,"kind":"file","attachmentId":"F12"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone and gets as a document on Telegram ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -927,7 +886,7 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
 {
   "name": "chat_file",
   "arguments": {
-    "path": "trips/lisbon-itinerary.pdf"
+    "path": "shots/checkout-after.png"
   }
 }
 ```
@@ -963,7 +922,7 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
+| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -1064,7 +1023,7 @@ Fill a login field of your browser session from 1Password without seeing the val
 
 ### purchase_request
 
-A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. Nobody is asked (D310): it goes in the person's purchases log, and you call purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.
+A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. Nobody is asked: it goes in the person's purchases log, and you call purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1185,8 +1144,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`wait_ci`](#wait_ci) | Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
-| [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
-| [`chat_file`](#chat_file-task) | Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. | No |
+| [`chat_file`](#chat_file-task) | Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact-task) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
@@ -1308,28 +1266,9 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 }
 ```
 
-### chat_image (task)
-
-Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message with an image block ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `path` | string | yes | The image file: relative to your working directory, or absolute inside it. At most 1000 characters. |
-
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "chat_image",
-  "arguments": {
-    "path": "shots/checkout-after.png"
-  }
-}
-```
-
 ### chat_file (task)
 
-Send the person a file you made (a PDF, a CSV, a document) in this project's chat, as a card they open or save on their computer or phone, and as a document on Telegram. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: an image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId. A lead shows it in its message with a file block ({"v":1,"kind":"file","attachmentId":"F12"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}), a file block for anything else, a card the person opens or saves on their computer or phone and gets as a document on Telegram ({"v":1,"kind":"file","attachmentId":"F12"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1341,7 +1280,7 @@ Send the person a file you made (a PDF, a CSV, a document) in this project's cha
 {
   "name": "chat_file",
   "arguments": {
-    "path": "trips/lisbon-itinerary.pdf"
+    "path": "shots/checkout-after.png"
   }
 }
 ```
@@ -1377,7 +1316,7 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
+| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.

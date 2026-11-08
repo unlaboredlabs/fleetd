@@ -60,9 +60,6 @@ pub const IDLE_MINUTES: u64 = 5;
 pub struct MacConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// A session no action touched for this long ends. Absent: 5.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idle_minutes: Option<u64>,
     /// iOS simulators agents may have booted at once (`mac sim`, node/mac_tool). Absent: from the Mac's memory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub simulators: Option<u32>,
@@ -75,7 +72,7 @@ impl MacConfig {
     }
 
     pub fn idle(&self) -> Duration {
-        Duration::from_secs(60 * self.idle_minutes.unwrap_or(IDLE_MINUTES).max(1))
+        Duration::from_secs(60 * IDLE_MINUTES)
     }
 }
 
@@ -349,7 +346,7 @@ impl Desktops {
             return Err(refuse(
                 ErrorCode::Failed,
                 "This machine lends no Mac screen: it is off in its node.json, or this isn't a Mac.",
-                "say so in your result: an admin turns the Mac screen on in Settings › Hub › Machines › Screens",
+                "say so in your result: an admin turns the Mac screen on, on the Mac's page in Settings › Hub › Machines",
             ));
         }
         if let Some(open) = self.live(&thread) {

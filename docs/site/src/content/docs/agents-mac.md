@@ -363,7 +363,7 @@ holding the Mac can read. That's your call.
 
 ## Agents may use this Mac {#switch}
 
-**Settings › Hub › Machines › Machine roles** shows the agents' Mac with one switch, **Agents may use this Mac**, for
+The agents' Mac's page in **Settings › Hub › Machines** shows it with one switch, **Agents may use this Mac**, for
 every project's agents. Off, agents' `mac` commands answer that the Mac is turned off. Under it, the row
 says why agents can't use the Mac now, when they can't: offline, or a node that doesn't offer the tool.
 
@@ -395,6 +395,6 @@ read the node's own key, as on any worker. Loopback ports are shared between mac
 | Key | What it does |
 |---|---|
 | `"agentsMac": true` | This machine is the agents' Mac: a tool, never a runner. Only `--mac` sets it; no switch in the app turns it off. The node offers agents its tool on macOS, in whatever account it runs. |
-| `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)), and the only screen it hosts: `browser`, `device` and `desktop` are ignored there. Settings › Hub › Machines › Screens turns it off and on; the Mac stays a tool either way. |
+| `"mac": {"enabled": true}` | Its own screen, which one agent at a time drives ([the Mac's screen](/docs/browser-sessions#mac)), and the only screen it hosts: `browser`, `device` and `desktop` are ignored there. The Screens part of its page in Settings › Hub › Machines turns it off and on; the Mac stays a tool either way. |
 | `"mac": {"simulators": N}` | How many [iOS simulators](#sim) agents may have booted at once. Absent: from the Mac's memory. Not written by `--mac`. |
-| `"ios": {…}` | The [simulators](#sim)' golden and warm pool, by hand only: `pool` (clones kept booted, absent 1, each 1–2 GB of memory) and `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). Its `enabled` is ignored on the agents' Mac: simulators are always on there. Not written by `--mac`. |
+| `"ios": {…}` | The [simulators](#sim)' golden and warm clone, by hand only: `deviceType` (such as `iPhone 17 Pro`; absent, the newest plain iPhone on the newest iOS runtime that runs one; the node makes the golden again when it starts with another). One clone is kept booted, 1–2 GB of memory. Its `enabled` is ignored on the agents' Mac: simulators are always on there. Not written by `--mac`. |

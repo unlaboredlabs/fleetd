@@ -33,7 +33,7 @@ pub(super) fn hub_on(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let mut load = crate::hub::link::guard::tests::load(500, 1.0);
     load.mem_total_bytes = Some(fleetd_contracts::prim::Count::unchecked(128 << 30));
     hub.slots
-        .observe_machine(&MachineId::unchecked("lab-a"), "lab-a", &load)
+        .observe_machine(&MachineId::unchecked("lab-a"), "lab-a", &load, false)
         .unwrap();
     (hub, home)
 }

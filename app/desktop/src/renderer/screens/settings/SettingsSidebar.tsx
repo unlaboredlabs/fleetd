@@ -1,8 +1,8 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
 // the three groups (D211). You: General, Your accounts, Your memory, Your devices, Hubs. Projects: the project picker and that project's pages,
 // with its prompts under Prompts. Hub, for the hub's owners and admins only: People, Machines, Updates, Every project's four
-// pages (the hub-wide prompts under its Prompts), Hub accounts, and Setup while a required step is left, saying how
-// many. With several hubs the Hub group switches between the hubs this person administers.
+// pages (the hub-wide prompts under its Prompts), Hub accounts, and Setup, always, saying how many required steps are
+// left. With several hubs the Hub group switches between the hubs this person administers.
 import {
   ArrowLeft,
   BookText,
@@ -171,8 +171,8 @@ function ProjectsGroup({ route }: { route: SettingsRoute }) {
 }
 
 /**
- * The Hub group, for an owner or admin of the hub on screen: its pages, Every project's nested under it, and Setup
- * only while a required step is left (or while it is open), with how many.
+ * The Hub group, for an owner or admin of the hub on screen: its pages, Every project's nested under it, and Setup,
+ * always listed, with how many required steps are left while some are.
  */
 function HubGroup({ route }: { route: SettingsRoute }) {
   const { id } = useHub();
@@ -214,9 +214,7 @@ function HubGroup({ route }: { route: SettingsRoute }) {
         ))}
       </div>
       {row("hub.accounts", <KeyRound />)}
-      {left > 0 || route.tab === "hub.setup"
-        ? row("hub.setup", <ListChecks />, left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : undefined)
-        : null}
+      {row("hub.setup", <ListChecks />, left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : undefined)}
     </SidebarSection>
   );
 }

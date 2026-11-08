@@ -1,4 +1,4 @@
-// Members find nothing of the Hub group in Settings' search: the fleet and machine caps, machine roles, task profiles
+// Members find nothing of the Hub group in Settings' search: the machine caps, machine roles, task profiles
 // and the hub's accounts are its pages, which only owners and admins see (D211).
 import { describe, expect, it, vi } from "vitest";
 import { isHubTab } from "../shell/routes";
@@ -11,7 +11,7 @@ vi.hoisted(() => {
 describe("Settings' search for a member", () => {
   it("offers no Hub page or option", () => {
     expect(optionsFor(false).some((o) => isHubTab(o.tab))).toBe(false);
-    for (const q of ["whole fleet", "fleet cap", "machine roles", "people", "invite", "github app", "setup"]) {
+    for (const q of ["machine cap", "max agents", "machine roles", "people", "invite", "github app", "setup"]) {
       expect(searchSettings(q, optionsFor(false)).filter((o) => isHubTab(o.tab)), q).toEqual([]);
     }
   });

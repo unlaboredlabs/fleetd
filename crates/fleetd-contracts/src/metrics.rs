@@ -10,7 +10,7 @@ use serde_with::skip_serializing_none;
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::WorkstreamId;
-use crate::prim::{Count, Int, Line, List, NonNegative, Positive, Text};
+use crate::prim::{Count, Line, List, NonNegative, Positive, Text};
 use crate::tasks::TaskId;
 use crate::train::ChangeId;
 use crate::verification::CommitSha;
@@ -500,9 +500,6 @@ pub const CHANGE_TRAILER: &str = "Fleetd-Change";
 /// The trailer on an agent's commits, `Fleetd-Task: T45`: it finds fleetd's work merged by hand from git alone.
 pub const TASK_TRAILER: &str = "Fleetd-Task";
 
-/// Days the hub keeps landed changes and touches: 400 by default, at least 30.
-pub type MetricsRetentionDays = Int<30, 400>;
-
 // Event data the metrics add to the log.
 
 /// `app.presence`: the app was focused on a project's screen (the event's machine and project) with input in the
@@ -599,17 +596,11 @@ mod tests {
             McpToolName::parse("metrics_get").map(McpToolName::scope),
             Some(Role::Read)
         );
-        assert_eq!(
-            McpToolName::parse("metrics_retention_set").map(McpToolName::scope),
-            Some(Role::Admin)
-        );
+        // Retention is fixed: no tool sets it.
+        assert!(McpToolName::parse("metrics_retention_set").is_none());
         let docs = crate::schema::json_schemas();
         let tools = &docs["McpTools"]["$defs"]["McpTools"]["properties"];
-        for key in [
-            "metrics_get.input",
-            "metrics_get.output",
-            "metrics_retention_set.input",
-        ] {
+        for key in ["metrics_get.input", "metrics_get.output"] {
             assert!(tools.get(key).is_some(), "{key}");
         }
         let input = &docs["McpTools"]["$defs"]["MetricsGetInput"];
@@ -634,7 +625,7 @@ mod tests {
 
     #[test]
     fn the_input_defaults_and_bounds_hold() {
-        use crate::mcp::{MetricsGetInput, MetricsRetentionSetInput};
+        use crate::mcp::MetricsGetInput;
         use serde_json::json;
 
         let input: MetricsGetInput =
@@ -650,12 +641,6 @@ mod tests {
                 serde_json::from_value::<MetricsGetInput>(bad.clone()).is_err(),
                 "{bad}"
             );
-        }
-        for (days, ok) in [(29, false), (30, true), (400, true), (401, false)] {
-            let decoded = serde_json::from_value::<MetricsRetentionSetInput>(
-                json!({ "retentionDays": days }),
-            );
-            assert_eq!(decoded.is_ok(), ok, "{days}");
         }
     }
 

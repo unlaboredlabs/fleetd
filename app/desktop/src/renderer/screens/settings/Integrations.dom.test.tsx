@@ -8,7 +8,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { IntegrationsSection } from "./Integrations";
+import { McpServersSection } from "./Integrations";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -47,6 +47,7 @@ let calls: Array<{ tool: string; input: unknown }>;
 let saved: McpServerRequest[];
 let tested: unknown;
 let project: McpServer[];
+let global: McpServer[];
 let started: unknown;
 let opened: string[];
 let send: (frame: HubFrame) => void;
@@ -58,6 +59,7 @@ beforeEach(() => {
   calls = [];
   saved = [];
   project = [];
+  global = [];
   opened = [];
   started = { authorizeUrl: "https://auth.mail.example/authorize?client_id=c1&state=s1", redirectUri: "http://devbox:4710/oauth/callback" };
   tested = {
@@ -80,7 +82,12 @@ beforeEach(() => {
     secret: {
       mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
-        project = [{ ...crm, name: request.name, integration: request.integration?.readTools === undefined ? {} : { readTools: request.integration.readTools } }];
+        const { integration: _, ...plain } = crm;
+        project = [
+          request.integration === undefined
+            ? { ...plain, name: request.name, roles: request.roles }
+            : { ...crm, name: request.name, integration: request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools } },
+        ];
         return Promise.resolve({ ok: true, output: { server: project[0] } });
       },
     },
@@ -103,7 +110,7 @@ const render = async () => {
       if (tool === "mcp_server_remove") project = [];
       const output =
         tool === "mcp_servers_get"
-          ? { global: [], project, userServers: true }
+          ? { global, project, userServers: true }
           : tool === "mcp_server_test"
             ? tested
             : tool === "mcp_oauth_start"
@@ -122,7 +129,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={layer}>
-          <IntegrationsSection projectRef={ref} />
+          <McpServersSection projectRef={ref} />
         </DataProvider>
       </UiProvider>,
     );
@@ -173,12 +180,12 @@ const row = (name: string) => {
 };
 const hubCalls = () => JSON.stringify(calls);
 
-describe("a project's integrations", () => {
-  it("offers to add an MCP server", async () => {
+describe("a project's MCP servers", () => {
+  it("offers to add an MCP server, and says the lead's writes follow Approvals", async () => {
     await render();
     expect(document.querySelectorAll('[role="listitem"]')).toHaveLength(0);
     expect(document.body.textContent).toContain("Add an MCP server");
-    expect(document.body.textContent).toContain("Moving money, trading and creating accounts are never allowed.");
+    expect(document.body.textContent).toContain("Reads run unasked; anything else follows Approvals.");
     expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
 
@@ -303,6 +310,49 @@ const signInMoved = async (oauth: NonNullable<McpServer["oauth"]>) => {
   });
   await settle();
 };
+
+describe("one list for the lead and the project's agents", () => {
+  const github: McpServer = {
+    ...crm,
+    name: "github",
+    roles: { lead: true, writers: true, reviewers: false },
+    transport: { type: "http", url: "https://api.example.com/mcp" },
+  };
+
+  it("lists an agents' server by its roles with Edit, beside the lead's, and the global it replaces", async () => {
+    const { integration: _, ...plain } = github;
+    project = [crm, plain];
+    global = [{ ...plain, scope: { kind: "global" } }];
+    await render();
+    expect(row("github").textContent).toContain("Lead and writers · unasked");
+    expect(() => button("Edit", row("crm"))).toThrow();
+    expect(document.body.textContent).toContain("replaced by this project's");
+    await click(button("Edit", row("github")));
+    // The saved secret stays unless a new value is typed, and it is sealed to the project's machine only.
+    await click(button("Save", dialog()));
+    expect(saved[0]?.scope).toEqual({ kind: "project", ...ref });
+    expect(saved[0]?.headers).toEqual([{ kind: "keep", name: "Authorization" }]);
+    expect(saved[0]?.roles).toEqual({ lead: true, writers: true, reviewers: false });
+    expect(saved[0]?.integration).toBeUndefined();
+  });
+
+  it("adds one the agents get too: every role, no policy, and no tools to pick", async () => {
+    await render();
+    await click(button("Add an MCP server"));
+    await type(field("Name"), "db");
+    await type(field("URL"), "https://mcp.db.example/mcp");
+    const agents = [...dialog().querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label")?.textContent.includes("Agents get it too") ?? false);
+    if (agents === undefined) throw new Error("no agents switch");
+    await click(agents);
+    expect(dialog().textContent).toContain("none of its tools asks you");
+    await click(button("Connect and test", dialog()));
+    expect(saved[0]?.roles).toEqual({ lead: true, writers: true, reviewers: true });
+    expect(saved[0]?.integration).toBeUndefined();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(row("db").textContent).toContain("Lead, writers and reviewers · unasked");
+    expect(row("db").textContent).toContain("Works on devbox (CRM 2.0.0).");
+  });
+});
 
 describe("an MCP server that signs you in", () => {
   it("opens its sign-in page from Add, follows the sign-in, then asks which tools may run unasked", async () => {

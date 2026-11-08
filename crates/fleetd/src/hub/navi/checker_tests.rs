@@ -560,9 +560,10 @@ async fn the_checker_is_on_by_default_and_only_a_person_changes_it() {
         )
         .await
         .unwrap();
+    // An older app's model and effort are taken, and the checker stays on the hub's default.
     assert_eq!(
         set["approvals"],
-        json!({ "mode": "yolo", "model": "claude-opus-5-5", "effort": "high", "defaults": false })
+        json!({ "mode": "yolo", "model": "claude-sonnet-5-5", "effort": "medium", "defaults": true })
     );
     let back = registry()
         .call(
@@ -574,6 +575,24 @@ async fn the_checker_is_on_by_default_and_only_a_person_changes_it() {
         .await
         .unwrap();
     assert_eq!(back["approvals"]["model"], "claude-sonnet-5-5");
+    // A pick an older hub stored stays in its row, unused: the project is back on the default.
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE navi_approvals SET model = 'claude-opus-5-5', effort = 'max' WHERE project_id = 'navi-sam'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let stored = hub
+        .db
+        .with(|c| Ok(checker::approvals(c, &navi_ref())?))
+        .unwrap();
+    assert_eq!(
+        (stored.model.as_str(), stored.effort, stored.defaults),
+        ("claude-sonnet-5-5", Effort::Medium, true)
+    );
     assert_eq!(
         hub.db
             .with(|c| Ok(checker::approvals(c, &navi_ref())?))

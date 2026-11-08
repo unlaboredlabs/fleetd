@@ -143,10 +143,9 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         cmd_roots: None,
         claude_config_dir: args.claude_config_dir,
         min_free_gb: None,
-        mem_per_agent_gb: None,
-        disk_per_agent_gb: None,
         warm_builds: None,
         build_slots: None,
+        screen_idle_minutes: None,
         enrolled: false,
         browser: None,
         device: None,
@@ -154,7 +153,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         desktop: None,
         mac: args.mac.then_some(desktop::mac::MacConfig {
             enabled: Some(true),
-            idle_minutes: None,
             simulators: None,
         }),
         agents_mac: args.mac.then_some(true),
@@ -186,16 +184,6 @@ pub async fn run(args: RunArgs) -> Result<(), NodeError> {
             "this node has not joined a hub (no enrolled config in {}): run fleetd node join first",
             home.display()
         ))),
-    }
-}
-
-/// What an older build kept for a Navi's Google connection, in `<node home>/google`: the OAuth client's secret, each
-/// Navi's tokens, the Pub/Sub key and how far each inbox was read. fleetd has no Google connection now, so it goes.
-fn forget_google(home: &Path) {
-    match std::fs::remove_dir_all(home.join("google")) {
-        Ok(()) => tracing::info!("removed the Google tokens an older fleetd kept"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => tracing::warn!("the Google tokens an older fleetd kept were not removed: {e}"),
     }
 }
 
@@ -235,7 +223,6 @@ async fn run_node(
     tracing::info!(machine_id = %config.machine_id, hub = %config.hub, "fleetd node starting");
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
-    forget_google(home);
     // Before any session starts: their fleetd tools run this binary, wherever an update moves the installed one.
     let pin_home = home.to_owned();
     let _ = tokio::task::spawn_blocking(move || self_exe::pin(&pin_home)).await;
@@ -292,7 +279,7 @@ async fn run_node(
         let sessions = node_sessions.clone();
         hosted.secrets_for(Arc::new(move |session| sessions.call_secrets(session)))
     };
-    let browser_config = config.browser.clone().unwrap_or_default();
+    let browser_config = config.browser_screen();
     let broker = match browser_config.enabled() && !agents_mac {
         true => {
             let broker = browser::Broker::start(
@@ -306,7 +293,7 @@ async fn run_node(
         }
         false => None,
     };
-    let device_config = config.device.clone().unwrap_or_default();
+    let device_config = config.device_screen();
     let devices = match device_config.enabled() && !agents_mac {
         true => Some(
             device::Devices::start(
@@ -319,7 +306,7 @@ async fn run_node(
         ),
         false => None,
     };
-    let ios_config = agents_mac::ios_config(config.ios.clone(), tool);
+    let ios_config = agents_mac::ios_config(Some(config.ios_screen()), tool);
     let ios = match ios_config.enabled() {
         true => Some(
             device::ios::Simulators::start(
@@ -341,7 +328,7 @@ async fn run_node(
             enabled: Some(false),
             ..Default::default()
         },
-        false => config.desktop.clone().unwrap_or_default(),
+        false => config.desktop_screen(),
     };
     let mac_config = config.mac.clone().unwrap_or_default();
     let desktops = match desktop_config.enabled() || mac_config.enabled() {
@@ -542,26 +529,4 @@ pub(crate) fn claude_binary() -> PathBuf {
             PathBuf::from("claude")
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn a_node_forgets_the_google_tokens_an_older_build_kept() {
-        let home = tempfile::tempdir().unwrap();
-        let google = home.path().join("google");
-        std::fs::create_dir_all(google.join("accounts")).unwrap();
-        std::fs::write(google.join("client.json"), r#"{"clientSecret":"x"}"#).unwrap();
-        std::fs::write(
-            google.join("accounts/p1.json"),
-            r#"{"refreshToken":"1//x"}"#,
-        )
-        .unwrap();
-        std::fs::write(home.path().join("node.json"), "{}").unwrap();
-        super::forget_google(home.path());
-        assert!(!google.exists());
-        assert!(home.path().join("node.json").exists());
-        // Nothing to forget is no error.
-        super::forget_google(home.path());
-    }
 }

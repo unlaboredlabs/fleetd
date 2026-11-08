@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { McpServer } from "../../../shared/contracts";
 import { emptyDraft } from "./mcpModel";
-import { byPolicy, connectionsOf, customRequest, emptyNote, markOf, policyLine, signInLine, signInOutcome, statusOf, testProblem } from "./integrationsModel";
+import { byPolicy, customRequest, emptyNote, markOf, policyLine, signInLine, signInOutcome, statusOf, testProblem } from "./integrationsModel";
 
 const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
 const boxes = [{ machineId: "devbox", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }];
@@ -15,10 +15,11 @@ describe("a project's integrations model", () => {
     const none = customRequest(draft, [], scope, boxes);
     expect(none.ok && none.request.integration).toEqual({});
   });
-  it("finds the servers connected as integrations, whatever an older app marked them", () => {
-    const s = (name: string, integration?: object) => ({ name, ...(integration === undefined ? {} : { integration }) }) as unknown as McpServer;
-    const c = connectionsOf([s("plain"), s("crm", {}), s("docs", { kind: "custom", readTools: ["search"] })]);
-    expect(c.map((x) => x.name)).toEqual(["crm", "docs"]);
+  it("saves one the project's agents get too for every role, with no policy: an agent can't ask", () => {
+    const draft = { ...emptyDraft(), name: "db", kind: "http" as const, url: "https://mcp.example.com/mcp" };
+    const built = customRequest(draft, ["query"], scope, boxes, true);
+    expect(built.ok && built.request.integration).toBeUndefined();
+    expect(built.ok && built.request.roles).toEqual({ lead: true, writers: true, reviewers: true });
   });
   it("says what a test found by policy, and where a failure happened", () => {
     const p = byPolicy([{ name: "a", policy: "read" }, { name: "b" }, { name: "c", policy: "blocked" }]);

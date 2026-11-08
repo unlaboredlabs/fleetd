@@ -1,7 +1,7 @@
 // Memory, as the plain text files the hub keeps (D212): a project's MEMORY.md and the topic files it lists, on its
 // Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
 // work you start and your Only-me projects read, and only you edit; and the hub's old shared user.md, read by no agent now, on Hub ›
-// Every project › Instructions & memory for an owner or admin to read and retire. The lead writes with `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
+// Every project › Instructions & memory for an owner or admin to read and retire, there only while it has text. The lead writes with `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set (memory_shared_set for the shared file), a human key's write.
@@ -44,7 +44,6 @@ type Target = Omit<MemorySetInput, "text">;
 /** Memory, on a project's Instructions & memory: the project's own files. Yours is on You › Your memory. */
 export function Memory({ project }: { project: Scope | null }) {
   const live = useLive();
-  const projects = useProjects();
   const [query, setQuery] = useState("");
   const ref = project ? projectRefOf(project) : undefined;
   const read = useToolQuery("memory_get", ref ? { projectRef: ref } : {}, { enabled: live });
@@ -59,7 +58,7 @@ export function Memory({ project }: { project: Scope | null }) {
     return now.files?.find((f) => fileName(f) === name)?.text ?? "";
   };
 
-  const head = "What the project's leads remember when you correct them or set a rule. Each of its sessions starts with it; edit or delete anything that is wrong. What they remember about you is in You › Your memory.";
+  const head = "What the lead remembers about this project. Edit or delete anything that's wrong.";
   if (!live) {
     return (
       <PagePart title="Memory" reveal="memory" intro={head}>
@@ -70,7 +69,6 @@ export function Memory({ project }: { project: Scope | null }) {
 
   const d = read.data;
   const files = ref && d?.files ? d.files : [];
-  const name = project ? scopeName(project, projects) : null;
   const all = files;
   const hits = all.reduce((n, f) => n + memoryLines(f).filter((l) => l.kind === "entry" && lineMatches(l, query)).length, 0);
   const total = ref && d?.files ? projectCapState(files, null, d.projectCap ?? 0) : null;
@@ -107,14 +105,6 @@ export function Memory({ project }: { project: Scope | null }) {
         </div>
       </div>
       <div className={s.stack}>
-        <div className={s.setting}>
-          <div className={s.settingLabel}>
-            <Text strong>{name ?? "This project"}</Text>
-            <Text size="xs" tone="quiet">
-              {name ? `Only ${name}'s sessions get this.` : "No project yet."}
-            </Text>
-          </div>
-        </div>
         {total ? <CapMeter state={total} label="This project's memory" /> : null}
         {ref && d?.files
           ? files.map((f) =>
@@ -122,7 +112,7 @@ export function Memory({ project }: { project: Scope | null }) {
                 f,
                 projectTarget(ref, f),
                 f.topic ? f.topic : "Always on",
-                f.topic ? "Opened by the lead when it needs it." : "Every session of this project starts with it.",
+                f.topic ? "Read when needed." : "Always read.",
                 { files, cap: d.projectCap ?? 0 },
               ),
             )
@@ -150,8 +140,9 @@ export function YourMemory() {
         <Input type="search" aria-label="Search your memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <MemoryGroup
+        bare
         label="Your memory"
-        help="Read by the agents of work you start and by your Only-me projects. Nobody else reads or edits it."
+        help=""
         name="your memory"
         file={read.data?.user}
         query={query}
@@ -164,38 +155,41 @@ export function YourMemory() {
 }
 
 /**
- * Hub › Every project › Instructions & memory: the hub's old shared user.md (D212). Its owner got a copy as their own;
- * no agent reads it now. An owner or admin reads it, moves what still matters to the people it was about, and retires
- * it (empty). A hub from before per-person memory has no such tool, and says so.
+ * Hub › Every project › Instructions & memory: the hub's old shared user.md (D212), shown only while it still has
+ * text. Its owner got a copy as their own; no agent reads it now. An owner or admin reads it, moves what still matters
+ * to the people it was about, and retires it (empty), and then the part is gone. A hub from before per-person memory
+ * has no such tool, and says so.
  */
 export function SharedMemory() {
   const live = useLive();
   const read = useToolQuery("memory_shared_get", {}, { enabled: live });
   const hubCall = useHubCall();
   const refetch = useRefetch();
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
-  if (read.error instanceof CallError && lacksTool(read.error.error)) {
-    return <Text tone="quiet">This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</Text>;
-  }
+  const old = read.error instanceof CallError && lacksTool(read.error.error);
   const file = read.data?.file;
+  if (!live || (!old && !read.isLoadingError && (file === undefined || file.text.trim() === ""))) return null;
   return (
-    <div className={s.stack}>
-      <FileError read={read} />
-      {file !== undefined && file.text.trim() === "" ? (
-        <Text tone="quiet">Retired: each person&apos;s memory is their own.</Text>
+    <PagePart title="Shared memory" part="hub.shared-memory" intro="The one memory every lead read before each person had their own. Owners and admins only.">
+      {old ? (
+        <Text tone="quiet">This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</Text>
       ) : (
-        <MemoryGroup
-          label="Shared memory"
-          help="What every lead read before each person had their own. No agent reads it now; its owner got a copy. Retire it once nothing in it is missing elsewhere."
-          name="user.md"
-          file={file}
-          query=""
-          onSave={(text) => hubCall("memory_shared_set", { text }).then(() => refetch(["memory_shared_get"]))}
-          reread={() => hubCall("memory_shared_get", {}).then((now) => now.file.text)}
-          deletable
-        />
+        <div className={s.stack}>
+          <FileError read={read} />
+          {file === undefined ? null : (
+            <MemoryGroup
+              label="Shared memory"
+              help="No agent reads it now; its owner got a copy. Empty it once nothing in it is missing elsewhere, and it goes."
+              name="user.md"
+              file={file}
+              query=""
+              onSave={(text) => hubCall("memory_shared_set", { text }).then(() => refetch(["memory_shared_get"]))}
+              reread={() => hubCall("memory_shared_get", {}).then((now) => now.file.text)}
+              deletable
+            />
+          )}
+        </div>
       )}
-    </div>
+    </PagePart>
   );
 }
 
@@ -243,6 +237,8 @@ function MemoryGroup(props: {
   reread: () => Promise<string>;
   /** A topic file, which Edit as text can delete whole. */
   deletable: boolean;
+  /** The page's one file, which the page already names: no label of its own, only Edit as text. */
+  bare?: boolean;
 }) {
   const { file, name } = props;
   const [asText, setAsText] = useState(false);
@@ -294,19 +290,23 @@ function MemoryGroup(props: {
   return (
     <section className={m.group} aria-label={`${props.label} (${name})`}>
       <div className={m.groupHead}>
-        <div className={s.settingLabel}>
-          <div className={m.title}>
-            <Text strong>{props.label}</Text>
-            <span data-text="code">
-              <Text size="xs" tone="quiet">
-                {name}
-              </Text>
-            </span>
+        {props.bare === true ? (
+          <span />
+        ) : (
+          <div className={s.settingLabel}>
+            <div className={m.title}>
+              <Text strong>{props.label}</Text>
+              <span data-text="code">
+                <Text size="xs" tone="quiet">
+                  {name}
+                </Text>
+              </span>
+            </div>
+            <Text size="xs" tone="quiet">
+              {props.help}
+            </Text>
           </div>
-          <Text size="xs" tone="quiet">
-            {props.help}
-          </Text>
-        </div>
+        )}
         <Button variant="ghost" size="sm" disabled={file === undefined} onClick={() => setAsText(!asText)}>
           {asText ? "Show entries" : "Edit as text"}
         </Button>

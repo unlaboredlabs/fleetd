@@ -165,7 +165,7 @@ answers at once, its screen on its way. `screen_end` with the waitId gives up a 
   use its token.
 - **Chrome's own sandbox**, wherever the machine allows it. A machine without unprivileged user namespaces (Ubuntu
   23.10 and later restrict them by default) runs the pinned headless shell with `--no-sandbox`, and the node's log says
-  so once. System Chrome brings its own sandbox helper, so `chrome` set to it keeps the sandbox there.
+  so once. System Chrome brings its own sandbox helper, so `FLEETD_CHROME` set to it keeps the sandbox there.
 - **The node's own connection is hidden from the agent.** The node uses its connection for the recording. The
   agent's driver never sees the node's target sessions or screencast frames.
 
@@ -262,9 +262,9 @@ logins made for agents.
 The hub keeps each recording for **30 days**, and up to **20 GB** per project, deleting a project's oldest first. It
 checks every hour. An upload still in progress counts toward the size, and is never cut short. One its machine never
 finished is treated as a recording from a day after it started: it goes past the 30 days, or when its project is over
-its size. An expired screen keeps its row, with no files. An owner or admin changes both limits under
-**Settings › Hub › Machines › Screens** ([below](#settings)); an admin key on every machine changes them with
-`browser_retention_set`.
+its size. An expired screen keeps its row, with no files. An owner or admin changes the days under
+**Settings › Hub › Machines › Recordings**; the size limit stays as a safety net. An admin key on every machine changes
+both with `browser_retention_set`.
 
 The app and any [MCP client](/docs/mcp-clients) read screens with `browser_sessions`: each one's agent and task,
 purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files. They read a file with
@@ -272,7 +272,8 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 
 ## Turn screens on in Settings {#settings}
 
-**Settings › Hub › Machines › Screens**, for a hub's owners and admins, lists each machine that hosts screens:
+A machine's page in **Settings › Hub › Machines**, for a hub's owners and admins, has a **Screens** part when the
+machine hosts screens:
 
 - **A switch per kind**: Browser, Android, Linux desktop and Agents' Mac. Under each, what the machine's node says:
   ready, off, installing, or what stands in the way (no KVM, no docker or Xvfb, no grants). A kind the machine can't
@@ -280,13 +281,15 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
   lends its [simulators](/docs/agents-mac#sim) to agents.
 - **The agents' Mac has one switch, Agents' Mac.** It offers only its own screen: no browser, Android or Linux
   desktop runs there, so its row has none of their switches, and New screen never offers it for them.
-- **Idle screens end after**: the minutes without a command before a screen there ends, for every kind but the
-  agents' Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting. Its row says so instead.
-- **Recordings**: how long the hub keeps them and how much per project, for every project
-  ([On the hub](#hub)).
+- **How many at once**: its screen cap, Auto or a number ([Machine roles](/docs/machines#roles)).
+- **When an idle screen ends**: after 30 minutes without a command, said in a line, for every kind but the agents'
+  Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting. A `screenIdleMinutes` in node.json
+  (set by hand, or by `machine_screens_set`) still holds there, and the line says it; the app no longer picks it.
 
-A switch writes the machine's node.json for you: the kind's `enabled`, or every kind's `idleMinutes`; the rest of the
-file stays as it is. Turning Android on opts the machine in, so it installs what it needs, as the setting
+**Recordings**, on Settings › Hub › Machines itself, sets how many days the hub keeps them, for every project
+([On the hub](#hub)).
+
+A switch writes the machine's node.json for you: the kind's `enabled`; the rest of the file stays as it is. Turning Android on opts the machine in, so it installs what it needs, as the setting
 below does by hand. A node reads its screen settings as it starts, so it restarts itself to apply a change once no
 screen is live on it. As for an [update](/docs/updating-and-uninstall), it first holds its agents' tool calls and
 waits for the ones mid-step to finish (10 minutes at most), so the restart finds them between steps; they carry on
@@ -314,17 +317,17 @@ as does the first one after an install that failed as the node started (say, bef
 without Node.js, `session_start` explains why it can't start one. A machine without an ffmpeg records screens without
 their video, and each screen's note says so.
 
-Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`enabled` and `idleMinutes` from
-[Settings](#settings) too):
+Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`enabled` from [Settings](#settings)
+too). The node keeps one Chrome launched for the next screen, about 0.5 GB of memory. A screen ends after
+`screenIdleMinutes` (absent: 30) without an `agent-browser` command.
 
 | Key | Means |
 |---|---|
 | `enabled` | `false` turns browser screens off on this machine. Absent or `true`: on, and the node installs the browser as it starts. |
-| `chrome` | A Chrome or headless shell to use instead of the pinned one. |
-| `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
-| `pool` | Chromes kept launched for the next screens. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
 | `sandbox` | `true` requires Chrome's own sandbox: a machine that refuses it starts no browser. `false` turns it off. Absent: on wherever the machine allows it, else off. |
-| `idleMinutes` | End a screen after this many minutes without an `agent-browser` command. Absent: 30. |
+
+For fleetd's own development, the node's environment can point it at other binaries: `FLEETD_CHROME` (a Chrome or
+headless shell) and `FLEETD_FFMPEG` (Matroska and MJPEG in, `libvpx-vp9` out).
 
 ### How long a screen takes to start {#start-time}
 
@@ -395,19 +398,19 @@ then installs everything the first time an agent asks for an Android screen, abo
 
 It then boots the emulator once to save its snapshot. Until that's done, `session_start` says it is still installing.
 
-Settings go under `device` in [node.json](/docs/config-and-files#node-json):
+Settings go under `device` in [node.json](/docs/config-and-files#node-json). The node keeps one emulator booted for
+the next screen, about 2 GB of memory. A person's screen ends after `screenIdleMinutes` (absent: 30) without a tap or
+key.
 
 | Key | Means |
 |---|---|
 | `enabled` | `true` opts this machine in: the first Android screen installs the emulator. `false` turns Android screens off. Absent: on only where they are installed already; nothing is installed. |
-| `pool` | Emulators kept booted for the next screens. Absent: 1. Each takes about 2 GB of memory. |
-| `idleMinutes` | End a person's screen after this many minutes without a tap or key. Absent: 30. |
 
 ## iOS screens are gone {#ios}
 
 iOS simulators aren't a kind of screen any more (decision `mac.shared-mac`, D298). An agent starts one of its own on
 [the agents' Mac](/docs/agents-mac#sim) with `mac sim start` and drives it with
-[agent-device](https://github.com/callstack/agent-device) as before. New screen and Settings › Hub › Machines › Screens
+[agent-device](https://github.com/callstack/agent-device) as before. New screen and the Screens part of a machine's page in Settings › Hub › Machines
 offer no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its fix while none is set up.
 
 For one release, `ios` stays as a legacy value. `session_start` with `kind` `ios` answers with the way to
@@ -455,20 +458,19 @@ Nothing starts until an agent first asks for a desktop screen (or as soon as the
 `"enabled": true`). Then, with a container runtime that answers `docker info` (or podman's), the node builds the
 pinned image once (a few minutes) as `localhost/fleetd-desktop:<hash>`: Debian 13 pinned by digest, with its packages
 from snapshot.debian.org at a fixed date. Screens that ask meanwhile are told to come back. If the build fails, the
-node uses Xvfb where it has one, and tries the build again at its next start. The recording's video needs an ffmpeg: the browser screens' or the Android screens' one, or `ffmpeg` below.
+node uses Xvfb where it has one, and tries the build again at its next start. The recording's video needs an ffmpeg: the browser screens' or the Android screens' one.
 
-Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
+Settings go under `desktop` in [node.json](/docs/config-and-files#node-json). The node keeps one display started for
+the next screen. A screen ends after `screenIdleMinutes` (absent: 30) without a `desktop` action.
 
 | Key | Means |
 |---|---|
-| `enabled` | `false` turns desktop screens off on this machine. `true` prepares them (builds the image, fills the pool) when the node starts. Absent: on, prepared at the first screen. |
+| `enabled` | `false` turns desktop screens off on this machine. `true` prepares them (builds the image, starts a display) when the node starts. Absent: on, prepared at the first screen. |
 | `backend` | `container` or `xvfb` only. Absent: a container where docker or podman answers, else Xvfb. |
-| `runtime` | The docker or podman to use instead of the one on the `PATH`. |
-| `image` | An image to run instead of building the pinned one. It must start Xvfb on `:0` with `-auth /fleetd/xauth`. |
-| `xvfb` | The Xvfb to use instead of the one on the `PATH`. |
-| `ffmpeg` | An ffmpeg for the video. It needs Matroska and MJPEG in, and `libvpx-vp9` out. |
-| `pool` | Displays kept started for the next screens. Absent: 1. |
-| `idleMinutes` | End a screen after this many minutes without a `desktop` action. Absent: 30. |
+
+For fleetd's own development, the node's environment can override what it runs: `FLEETD_DESKTOP_RUNTIME` (a docker
+or podman), `FLEETD_DESKTOP_IMAGE` (an image instead of the pinned one; it must start Xvfb on `:0` with
+`-auth /fleetd/xauth`), `FLEETD_XVFB` and `FLEETD_FFMPEG`.
 
 ## The agents' Mac's screen {#mac}
 
@@ -480,8 +482,7 @@ On a Mac set aside for agents, the desktop of the account its fleetd node runs i
   but it only observes: its `desktop` tool's `screenshot`, `cursor_position` and `wait`, and agent-desktop's reading
   commands (`snapshot`, `find`, `get`, `is`, `list-apps`, ...), work; its other actions answer who holds the screen.
   Once the holder ends, the observer's next action takes the screen.
-- **Idle release.** A Mac screen session with no action for 5 minutes ends, and the screen is free for the next one
-  (`idleMinutes` under `mac` below).
+- **Idle release.** A Mac screen session with no action for 5 minutes ends, and the screen is free for the next one.
 - **Your takeover takes it.** Taking over any Mac screen session, or opening one yourself from **New screen ›
   Agents' Mac**, makes it yours: the agent that held it only observes until you're done.
 
@@ -517,11 +518,10 @@ On the [agents' Mac](/docs/agents-mac#setup):
 2. Allow fleetd in System Settings › Privacy & Security › **Screen Recording** and **Accessibility** in that session;
    the join opens both, and the node restarts itself to take each up. The Screens setting's fix opens the right pane.
    macOS asks again for Screen Recording about once a month.
-3. Turn **Agents' Mac** on in Settings › Hub › Machines › Screens. The node installs agent-desktop as it starts.
+3. Turn **Agents' Mac** on under Screens, on the Mac's page in Settings › Hub › Machines. The node installs agent-desktop as it starts.
 
 Settings go under `mac` in [node.json](/docs/config-and-files#node-json):
 
 | Key | Means |
 |---|---|
 | `enabled` | `true` lends the Mac's screen. Absent or `false`: off. |
-| `idleMinutes` | End a Mac screen session after this many minutes without an action. Absent: 5. |

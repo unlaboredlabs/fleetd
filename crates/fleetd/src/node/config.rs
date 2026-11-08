@@ -26,12 +26,6 @@ pub struct NodeConfig {
     /// volume or 20 GB, whichever is larger. 0 turns the disk pause off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_free_gb: Option<u64>,
-    /// GB of memory to allow per agent when the hub sizes this machine's cap. Absent or 0: 2 GB.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mem_per_agent_gb: Option<u64>,
-    /// GB of disk to allow per new agent's worktree when the hub decides how many more fit. Absent or 0: 5 GB.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disk_per_agent_gb: Option<u64>,
     /// Warm cargo builds each checkout keeps for its next readers and reviewers (node/warm). Absent: 2. 0 keeps none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warm_builds: Option<u64>,
@@ -39,6 +33,10 @@ pub struct NodeConfig {
     /// 8 GB of memory left once a quarter of it (4 to 16 GB) is kept back, at least 1. 0: no turns, all run at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_slots: Option<u64>,
+    /// Minutes without a command before a browser, Android or Linux desktop screen ends (Settings › Hub › Machines ›
+    /// Screens writes it). Absent: 30. The agents' Mac's screen keeps its own 5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_idle_minutes: Option<u64>,
     /// True once the hub has accepted this node's key.
     pub enrolled: bool,
     /// Browser sessions for agents (node/browser): on unless `enabled` is false.
@@ -78,12 +76,73 @@ pub fn read_config(home: &Path) -> std::io::Result<Option<NodeConfig>> {
     if !file.exists() {
         return Ok(None);
     }
-    let config: NodeConfig =
+    let mut json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&file)?).map_err(std::io::Error::other)?;
+    lift_screen_idle(&mut json);
+    let config: NodeConfig = serde_json::from_value(json).map_err(std::io::Error::other)?;
     if !is_machine_id(&config.machine_id) {
         return Err(std::io::Error::other("invalid machine id"));
     }
     Ok(Some(config))
+}
+
+/// An older node.json kept the screens' idle time in each kind's section; the first one found is the one time now.
+fn lift_screen_idle(json: &mut serde_json::Value) {
+    let Some(root) = json.as_object_mut() else {
+        return;
+    };
+    if root.contains_key("screenIdleMinutes") {
+        return;
+    }
+    let old = ["browser", "device", "desktop", "ios"]
+        .iter()
+        .find_map(|kind| root.get(*kind)?.get("idleMinutes").cloned());
+    if let Some(minutes) = old {
+        root.insert("screenIdleMinutes".into(), minutes);
+    }
+}
+
+/// A development override of a binary or image a screen kind uses, from the node's environment.
+fn dev_override(var: &str) -> Option<String> {
+    std::env::var(var).ok().filter(|v| !v.is_empty())
+}
+
+impl NodeConfig {
+    /// Each screen kind's settings as its broker and checks take them: node.json's section, the one idle time, and
+    /// the development overrides from the environment.
+    pub fn browser_screen(&self) -> super::browser::BrowserConfig {
+        super::browser::BrowserConfig {
+            idle_minutes: self.screen_idle_minutes,
+            chrome: dev_override("FLEETD_CHROME"),
+            ffmpeg: dev_override("FLEETD_FFMPEG"),
+            ..self.browser.clone().unwrap_or_default()
+        }
+    }
+
+    pub fn device_screen(&self) -> super::device::DeviceConfig {
+        super::device::DeviceConfig {
+            idle_minutes: self.screen_idle_minutes,
+            ..self.device.clone().unwrap_or_default()
+        }
+    }
+
+    pub fn ios_screen(&self) -> super::device::ios::IosConfig {
+        super::device::ios::IosConfig {
+            idle_minutes: self.screen_idle_minutes,
+            ..self.ios.clone().unwrap_or_default()
+        }
+    }
+
+    pub fn desktop_screen(&self) -> super::desktop::DesktopConfig {
+        super::desktop::DesktopConfig {
+            idle_minutes: self.screen_idle_minutes,
+            runtime: dev_override("FLEETD_DESKTOP_RUNTIME"),
+            image: dev_override("FLEETD_DESKTOP_IMAGE"),
+            xvfb: dev_override("FLEETD_XVFB"),
+            ffmpeg: dev_override("FLEETD_FFMPEG"),
+            ..self.desktop.clone().unwrap_or_default()
+        }
+    }
 }
 
 pub fn mkdir_private(dir: &Path) -> std::io::Result<()> {
@@ -107,4 +166,37 @@ pub fn write_config(home: &Path, config: &NodeConfig) -> std::io::Result<()> {
         .mode(0o600)
         .open(config_file(home))?;
     file.write_all(text.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An older node.json's screen tuning: its idle time, kept in each kind's section, is the one time now; pools,
+    /// binary paths and per-agent sizes are ignored, and it still reads.
+    #[test]
+    fn an_older_node_json_keeps_its_screens_idle_time_and_ignores_the_rest() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(
+            home.path().join("node.json"),
+            r#"{ "hub": "http://devbox:4790", "machineId": "devbox", "name": "devbox", "enrolled": true,
+                 "memPerAgentGb": 4, "diskPerAgentGb": 2,
+                 "browser": { "pool": 2, "chrome": "/opt/chrome", "idleMinutes": 45 },
+                 "desktop": { "backend": "xvfb", "image": "x", "pool": 3, "idleMinutes": 45 } }"#,
+        )
+        .unwrap();
+        let config = read_config(home.path()).unwrap().unwrap();
+        assert_eq!(config.screen_idle_minutes, Some(45));
+        let browser = config.browser_screen();
+        assert_eq!(browser.idle_minutes, Some(45));
+        assert_eq!(browser.chrome, std::env::var("FLEETD_CHROME").ok());
+        let desktop = config.desktop_screen();
+        assert_eq!(desktop.pool, None);
+        assert_eq!(
+            desktop.backend,
+            Some(fleetd_contracts::browser::DesktopBackend::Xvfb)
+        );
+        assert_eq!(desktop.idle_minutes, Some(45));
+        assert_eq!(config.ios_screen().idle_minutes, Some(45));
+    }
 }

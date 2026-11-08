@@ -329,9 +329,7 @@ export function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
           Your hub is running
         </Text>
         <Text as="p" tone="quiet">
-          A few accounts and keys turn it into a factory. Each step says why, gives you the exact values to paste, and
-          checks your work. Your progress is saved; stop at any point and come back, here, in Settings › Hub › Setup or
-          with fleetd init.
+          A few accounts and keys, each checked as you go. Your progress is saved.
         </Text>
         <StepSummary title="Needed before agents can run" steps={required} />
         <StepSummary title="When you need them" steps={later} brief />

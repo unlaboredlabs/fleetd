@@ -2,7 +2,8 @@
 // steps' style (setup/Guide.tsx). 1 make a bot with @BotFather, the exact messages to send it; 2 paste the token it
 // gives, which main seals to the project's machine (telegram_set) and the page never gets back; 3 Test, the bot's name
 // and photo as Telegram answers (telegram_test); 4 Pair, which opens t.me/<bot>?start=<code> (telegram_pair) and waits
-// for the person's Start. Once paired: the bot, who it answers, the bridge's status, Pause, Unpair and Remove.
+// for the person's Start. Once paired: the bot, who it answers, the bridge's status, Replace token and Remove (and
+// Resume, for a bridge paused from the CLI).
 import { Check, ExternalLink, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { TelegramBot, TelegramBridge } from "../../../shared/contracts";
@@ -197,7 +198,7 @@ function Steps({ projectRef, bridge, onSaved, onCancel }: { projectRef: Ref; bri
         </Text>
       </Step>
       <Step n={2} title="Paste the bot's token" done={step !== 1} open={pasteOpen} summary={`Sealed on ${project.machine}.`}>
-        <Field label="Token" description={`Sealed on this computer to ${project.machine}: fleetd never shows it again, and it never goes in a chat.`}>
+        <Field label="Token" description="Kept encrypted on the hub's machines. Never shown again.">
           <Input
             mono
             aria-label="Bot token"
@@ -396,12 +397,12 @@ function Paired({ projectRef, bridge, onReplace }: { projectRef: Ref; bridge: Te
         </div>
       )}
       <div className={s.inline}>
-        <Button size="sm" variant="ghost" disabled={busy || bridge.offline === true} onClick={() => act(() => hubCall("telegram_pause", { navi: projectRef, paused: !paused }))}>
-          {paused ? "Resume" : "Pause"}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={busy || bridge.offline === true} onClick={() => act(() => hubCall("telegram_unpair", { navi: projectRef }))}>
-          Unpair
-        </Button>
+        {paused ? (
+          // Paused from the CLI or an older app: the way back stays here.
+          <Button size="sm" variant="ghost" disabled={busy || bridge.offline === true} onClick={() => act(() => hubCall("telegram_pause", { navi: projectRef, paused: false }))}>
+            Resume
+          </Button>
+        ) : null}
         <Button size="sm" variant="ghost" disabled={busy} onClick={onReplace}>
           Replace token
         </Button>

@@ -1,7 +1,7 @@
 // Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { daysChoices, fixOf, idleChoices, idleOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { daysChoices, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -29,7 +29,7 @@ describe("a kind's switch", () => {
     expect(switchOn(check("desktop"))).toBe(true);
     expect(stateLine(check("browser"))).toBe("Ready");
     expect(stateLine(check("android"))).toBe("Off");
-    expect(stateLine(check("desktop"))).toBe("Starts when its node restarts, once the screens live there end");
+    expect(stateLine(check("desktop"))).toBe("Starts after the screens open now end");
     // A node before switches: on where it can host.
     expect(switchOn({ host: "browser", ready: true, detail: "Chrome" })).toBe(true);
   });
@@ -41,7 +41,7 @@ describe("a kind's switch", () => {
     expect(lockedWhy({ ...devbox, screenSettings: false }, check("android"))).toContain("too old");
     // Its node between two links, as after an update: restarting, never too old.
     const { screenSettings: _, ...restarting } = devbox;
-    expect(lockedWhy(restarting, check("android"))).toBe("Its node is restarting");
+    expect(lockedWhy(restarting, check("android"))).toBe("Restarting…");
     expect(nodeWait(restarting)).toBe("restarting");
     expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
     expect(nodeWait({ ...restarting, online: false })).toBeNull();
@@ -65,10 +65,16 @@ describe("a kind that can't run", () => {
   });
 });
 
-describe("the choices", () => {
-  it("offer a few values, and the machine's own among them", () => {
-    expect(idleOf(devbox)).toBe(45);
-    expect(idleChoices(45).map((c) => c.label)).toEqual(["10 min", "15 min", "30 min", "45 min", "1 h", "2 h", "4 h"]);
+describe("the idle line and retention's choices", () => {
+  it("say when an idle screen ends, as the node has it, with no timeout to pick", () => {
+    expect(idleLine(devbox)).toBe("An idle screen ends after 45 minutes.");
+    expect(idleLine({ ...devbox, hosts: [] })).toBe("An idle screen ends after 30 minutes.");
+    expect(idleLine({ ...devbox, hosts: [{ host: "browser", ready: true, detail: "Chrome", idleMinutes: 120 }] })).toBe("An idle screen ends after 2 hours.");
+    expect(idleLine({ ...devbox, mac: { on: true, ready: true }, hosts: [] })).toBe("An idle Mac screen ends after 5 minutes, so the next agent gets it.");
+  });
+
+  it("offer a few retention values, and the hub's own among them", () => {
     expect(daysChoices(30).map((c) => c.value)).toEqual(["7", "14", "30", "60", "90", "180", "365"]);
+    expect(daysChoices(45).map((c) => c.value)).toEqual(["7", "14", "30", "45", "60", "90", "180", "365"]);
   });
 });

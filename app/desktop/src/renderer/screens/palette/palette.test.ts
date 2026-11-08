@@ -224,12 +224,11 @@ describe("default navigation", () => {
     expect(statusToggleTarget("#/statusx")).toBe("#/status");
   });
 
-  it("keeps Machines, which has no sidebar row, and opens Agent time on the Factory", () => {
+  it("leaves Machines to the admins' Hub command, and opens Agent time on the Factory", () => {
     const location = { hash: "#/project/devbox/storefront" };
     vi.stubGlobal("window", { location });
     const byId = new Map(defaultCommands().map((c) => [c.id, c]));
-    byId.get("go:machines")?.run();
-    expect(location.hash).toBe("#/settings/hub/machines");
+    expect(byId.has("go:machines")).toBe(false);
     expect(byId.get("go:time")?.title).toBe("Agent time");
     byId.get("go:time")?.run();
     expect(location.hash).toBe("#/factory/time");

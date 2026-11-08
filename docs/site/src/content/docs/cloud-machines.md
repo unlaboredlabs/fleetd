@@ -135,8 +135,8 @@ There is nothing to set up on your network. Once cloud machines are on, **Test**
 an asleep machine (one start), or follows one already waking, or makes the first one, and passes once the hub's tunnel
 to it is up and its node said hello through it. If a step fails, it says which and why, for example "boat-1: no hello
 within 2 minutes of its wake: the hub's tunnel to it didn't come up (…: connection refused)". A wake or create that
-doesn't start says why on that machine's line (or as the pool's hold), not under Way to the hub, and a failed Test
-clears once a later start goes through. A Test wake goes back to sleep after 5 idle minutes.
+doesn't start says why on that machine's line (or as the pool's hold), and a failed Test clears once a later start
+goes through. The Test's result shows under **Use cloud machines**. A Test wake goes back to sleep after 5 idle minutes.
 
 Claude needs nothing more: each cloud machine gets the hub's Claude configuration (its API key or the owner's
 subscription) sealed to it when it joins, and again whenever it changes. Nobody pastes it.
@@ -219,8 +219,8 @@ then makes it again with one start. Work pushed to GitHub is safe. An awake mach
 
 - boat.dev runs in the EU only. From elsewhere, live views of screens on a cloud machine feel slower.
 - Every cloud machine is x86_64 Ubuntu: no macOS and no iOS simulators. Those stay on [the agents' Mac](/docs/agents-mac).
-- A pool holds 1 to 10 machines of one size. Grow it with more `large` machines rather than `xlarge`, which costs more
-  per vCPU.
+- A pool holds 1 to 10 `large` machines. The app picks only how many: grow by adding machines, not size. A hub that
+  saved another size keeps it, and an admin key's `cloud_set {machineType}` still changes it.
 - Any agent of the projects you opt in may go to cloud machines, writers too: the project ticks and the budgets are
   the controls.
 - Cloud machines reach the hub only through the hub's own tunnel; they never join your tailnet.

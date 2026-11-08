@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // A project's Telegram: the guided steps open @BotFather with the exact messages to send it, the pasted token goes to
 // main to seal to the project's machine and is tested at once (the bot's name), Pair opens the bot's one-time link and waits for
-// the Start, and once paired the bridge's status, Pause, Unpair and Remove.
+// the Start, and once paired the bridge's status, Replace token and Remove (Resume only for one paused elsewhere).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -188,6 +188,13 @@ it("lets a token Telegram refuses be replaced or removed before pairing", async 
   expect(sent("telegram_remove")).toEqual([{ navi: ada }]);
 });
 
+it("resumes a bridge paused from the CLI", async () => {
+  await render({ bridge: { ...saved, bot, paired: { userId: 42, name: "Sam Rivera", pairedAt: AT }, paused: true, status: { state: "paused", since: AT } } });
+  expect(host.querySelector("[data-telegram-status]")?.textContent).toBe("Paused");
+  await click(button("Resume", host));
+  expect(sent("telegram_pause")).toEqual([{ navi: ada, paused: false }]);
+});
+
 it("goes back from Replace token to the paired view with Cancel", async () => {
   await render({ bridge: { ...saved, bot, paired: { userId: 42, name: "Sam Rivera", username: "samrivera", pairedAt: AT }, status } });
   await click(button("Replace token", host));
@@ -196,15 +203,11 @@ it("goes back from Replace token to the paired view with Cancel", async () => {
   expect(host.textContent).toContain("Answers Sam Rivera");
 });
 
-it("shows who it answers and how it stands, and pauses and removes it", async () => {
+it("shows who it answers and how it stands, with only Replace token and Remove, and removes it", async () => {
   await render({ bridge: { ...saved, bot, paired: { userId: 42, name: "Sam Rivera", username: "samrivera", pairedAt: AT }, status } });
   expect(host.textContent).toContain("Answers Sam Rivera (@samrivera) only.");
   expect(host.querySelector("[data-telegram-status]")?.textContent).toBe("Connected");
-  await click(button("Pause"));
-  expect(sent("telegram_pause")).toEqual([{ navi: ada, paused: true }]);
-  for (let i = 0; i < 2; i++) await settle();
-  expect(host.querySelector("[data-telegram-status]")?.textContent).toBe("Paused");
-  expect(button("Resume")).toBeDefined();
+  for (const gone of ["Pause", "Unpair", "Resume"]) expect(() => button(gone, host)).toThrow();
   await click(button("Remove", host));
   const dialog = document.querySelector("[role='dialog']");
   if (dialog === null) throw new Error("no dialog");

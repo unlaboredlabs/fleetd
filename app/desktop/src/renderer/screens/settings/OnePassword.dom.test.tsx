@@ -149,12 +149,14 @@ it("guides a person to a service account, seals the pasted token through main, l
   expect([...host.querySelectorAll("input")].map((i) => i.value)).not.toContain(TOKEN);
 });
 
-it("asks for a vault of fleetd's own and a low-limit card, and is quiet when the token reads one vault", async () => {
+it("asks for a vault of fleetd's own in three steps, and is quiet when the token reads one vault", async () => {
   await render({ token: saved });
-  expect(host.textContent).not.toContain("make a vault");
+  expect(host.textContent).not.toContain("Make a vault");
   await click(button("Replace"));
-  expect(host.textContent).toContain("make a vault for fleetd with only the logins");
-  expect(host.textContent).toContain("virtual card with a monthly limit or a low-limit card");
+  expect(host.textContent).toContain("Make a vault for fleetd with only the logins and card your agents may use.");
+  expect(host.querySelectorAll("ol > li")).toHaveLength(3);
+  // The card advice is on the project's Payments.
+  expect(host.textContent).not.toContain("virtual card");
   testAnswer = { test: { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] } };
   await click(button("Test"));
   expect(host.querySelector("[role='alert']")).toBeNull();

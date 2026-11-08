@@ -2736,8 +2736,8 @@ export type HostCheck = {
   fix?: string;
   host: SessionHost;
   /**
-   * Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node
-   * before it.
+   * Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a
+   * node before it.
    */
   idleMinutes?: number;
   /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */
@@ -4580,16 +4580,6 @@ export type MetricsRepoRow = {
   throughFleetdPct?: number;
 };
 
-export type MetricsRetentionSetInput = {
-  retentionDays: number;
-};
-
-export type MetricsRetentionSetOutput = {
-  next?: string;
-  retentionDays: number;
-  truncated?: boolean;
-};
-
 /** The KPI row: all four, equal. */
 export type MetricsTiles = {
   human: HumanTile;
@@ -4620,11 +4610,11 @@ export type NaviApprovalMode = "ask" | "checker" | "yolo";
 
 /** A Navi's approval settings: its mode, and the checker's model and effort. */
 export type NaviApprovals = {
-  /** Whether model and effort are the hub's defaults, not a pick of the person's. */
+  /** Always true now; kept for older apps, which offered "Use the default" when it was false. */
   defaults: boolean;
   effort: Effort;
   mode: NaviApprovalMode;
-  /** The checker's model: the person's pick, else [`CHECKER_MODEL`]. */
+  /** The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. */
   model: ModelName;
 };
 
@@ -4642,11 +4632,11 @@ export type NaviApprovalsOutput = {
 };
 
 export type NaviApprovalsSetInput = {
-  /** The checker's effort; absent: the hub's default. */
+  /** Ignored, as `model` is. */
   effort?: Effort;
   machineId: MachineId;
   mode: NaviApprovalMode;
-  /** The checker's model; absent: the hub's default. */
+  /** Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works. */
   model?: ModelName;
   projectId: ProjectId;
 };
@@ -4861,7 +4851,10 @@ export type NodeLoad = {
   desktop?: DesktopHealth;
   /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
   disk?: NodeDisk;
-  /** Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes. */
+  /**
+   * Disk to allow per new agent's worktree: an older node's node.json `diskPerAgentGb`, or its 5 GB default. A
+   * node now sends none: the hub counts 5 GB.
+   */
   diskPerAgentBytes?: number;
   /**
    * What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
@@ -4886,8 +4879,8 @@ export type NodeLoad = {
    */
   mac?: MacHealth;
   /**
-   * Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
-   * older nodes.
+   * Memory to allow per agent when sizing the machine's cap: an older node's node.json `memPerAgentGb`, or its
+   * 2 GB default. A node now sends none: the hub sizes it.
    */
   memPerAgentBytes?: number;
   /** Physical memory; absent from older nodes and when it can't be read. */
@@ -6042,6 +6035,11 @@ export type ProjectSettings = {
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
+  /**
+   * Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.
+   * Absent when its machine can't say (offline, or an older node).
+   */
+  signinsKept?: boolean;
   title: string;
   workspaceRoot: string;
   /** From the node, now: absent while it is offline or too old to say. */
@@ -6211,6 +6209,11 @@ export type ProjectWorktrees = {
   baseBranch?: string;
   /** `<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session. */
   dir: string;
+  /**
+   * Whether the node keeps a browser profile of the project's sign-ins (D221) now. Absent from an older node; the
+   * hub moves it to `ProjectSettings.signinsKept`.
+   */
+  signinsKept?: boolean;
   worktrees: ProjectWorktree[];
 };
 
@@ -8258,16 +8261,6 @@ export type TimeInsightsOutput = {
   truncated?: boolean;
 };
 
-export type TimeRetentionSetInput = {
-  retentionDays: number;
-};
-
-export type TimeRetentionSetOutput = {
-  next?: string;
-  retentionDays: number;
-  truncated?: boolean;
-};
-
 /** What the numbers cover. */
 export type TimeScope = {
   kind: "fleet";
@@ -9125,7 +9118,6 @@ export interface ToolMap {
   memory_shared_set: { input: MemorySharedSetInput; output: MemorySharedSetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
-  metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   navi_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };
   navi_approvals_set: { input: NaviApprovalsSetInput; output: NaviApprovalsSetOutput };
   navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
@@ -9223,7 +9215,6 @@ export interface ToolMap {
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };
   time_breakdown: { input: TimeBreakdownInput; output: TimeBreakdownOutput };
   time_insights: { input: TimeInsightsInput; output: TimeInsightsOutput };
-  time_retention_set: { input: TimeRetentionSetInput; output: TimeRetentionSetOutput };
   time_spans: { input: TimeSpansInput; output: TimeSpansOutput };
   usage_resume: { input: UsageResumeInput; output: UsageResumeOutput };
   usage_status: { input: UsageStatusInput; output: UsageStatusOutput };

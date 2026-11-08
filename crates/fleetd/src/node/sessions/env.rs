@@ -571,8 +571,7 @@ impl SessionService {
         vars.extend(order);
         vars.retain(|(k, _)| !env.iter().any(|(e, _)| e == k) && k != TOKEN_ENV);
         env.extend(vars);
-        let jobs_home = home.clone();
-        let n = blocking(move || super::super::load::build_jobs_here(&jobs_home)).await;
+        let n = blocking(super::super::load::build_jobs_here).await;
         env.extend(share::jobs_env(&env, n));
         let scratch = share::scratch_dir(&home, row.summary.session_id.as_str());
         if super::super::config::mkdir_private(&scratch).is_ok() {

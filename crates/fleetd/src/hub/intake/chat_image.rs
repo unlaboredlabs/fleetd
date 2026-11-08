@@ -1,5 +1,6 @@
-//! `chat_image` and `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the
-//! chat takes (a PDF, a CSV, a document), in its project's chat. The hub asks the caller's own node for the file,
+//! `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the chat takes (a PDF,
+//! a CSV, a document), in its project's chat, and is told which block shows it. `chat_image`, its images-only
+//! forerunner, comes only from older nodes now. The hub asks the caller's own node for the file,
 //! which reads it only from that session's working directory, as the node started it, and only a png, jpeg, webp or
 //! gif by its bytes, or for `chat_file` a file whose bytes fit the type its name says
 //! ([`crate::node::sessions::files::read_image`]). It is stored as an attachment `by` the project's lead
@@ -72,7 +73,7 @@ fn session_of(hub: &Hub, caller: &LeadCaller) -> Result<ThreadRef, ToolError> {
             ErrorCode::NotFound,
             "The hub knows no session of yours to read the file from.",
         )
-        .with_fix("Call chat_image or chat_file from your own session.")
+        .with_fix("Call chat_file from your own session.")
     })
 }
 
@@ -137,13 +138,15 @@ async fn chat_image(
     let name = super::attachments::safe_name(&name);
     let (attachment_id, len, _) =
         super::attachments::store(hub, data, &name, mime, &caller.by).await?;
+    // An image shows inline in an image block, anything else as a file card.
+    let kind = if mime.is_image() { "image" } else { "file" };
     let next = match caller.agent {
         CallerAgent::Task(_) => format!(
-            "Put {attachment_id} in your result for your lead to show. Unshown, it is deleted after 24 h."
+            "Put {attachment_id} in your result for your lead to show in {a} {kind} block. Unshown, it is deleted after 24 h.",
+            a = if mime.is_image() { "an" } else { "a" }
         ),
         _ => format!(
-            "Show it in your chat message with a fleetd-block {{\"v\":1,\"kind\":\"{kind}\",\"attachmentId\":\"{attachment_id}\",\"caption\":\"…\"}}. Unshown, it is deleted after 24 h.",
-            kind = if mime.is_image() { "image" } else { "file" }
+            "Show it in your chat message with a fleetd-block {{\"v\":1,\"kind\":\"{kind}\",\"attachmentId\":\"{attachment_id}\",\"caption\":\"…\"}}. Unshown, it is deleted after 24 h."
         ),
     };
     Ok(ChatImageResult {

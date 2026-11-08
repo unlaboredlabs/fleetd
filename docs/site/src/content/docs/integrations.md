@@ -4,10 +4,12 @@ description: Connect a project to any MCP server, with a key or by signing in wi
 ---
 
 A project's lead can reach any service with an MCP server. You connect each one yourself in the project's settings,
-under **Integrations**, with a key you make or by signing in with your own account. Your keys are sealed on the
+under **MCP servers** (the project's one list of them), with a key you make or by signing in with your own account. Your keys are sealed on the
 project's machine, and the lead never sees them.
 
-An integration reaches the project's lead alone: its agents never get one. A project on a machine whose fleetd is
+An integration reaches the project's lead alone: its agents never get one. Turn on **Agents get it too** when you add
+a server to give it to the project's writers and reviewers as well: then none of its tools asks you, since an agent
+can't stop to ask, and it is a [project MCP server](/docs/mcp-servers) with roles you edit. A project on a machine whose fleetd is
 older takes none until that machine runs `fleetd update`.
 
 ## What runs unasked, and what asks {#policy}

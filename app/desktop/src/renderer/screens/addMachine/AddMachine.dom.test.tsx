@@ -245,7 +245,7 @@ it("offers this computer, a machine the hub can reach, and any other machine", a
   await render();
   expect(state()).toBe("choose");
   expect(host.textContent).toContain("This computer");
-  expect(host.textContent).toContain("laptop: downloads the hub's fleetd for this computer");
+  expect(host.textContent).toContain("laptop: installs fleetd here and joins the hub.");
   expect(host.textContent).toContain("A machine the hub can reach");
   expect(host.textContent).toContain("Any other machine");
   expect(button("Get the line…")?.disabled).toBe(false);
@@ -590,7 +590,7 @@ it("sets up a Mac for agents in Terminal between the hub's own guide, and replac
   // The Xcode block first, from the hub's guide; the name defaults to mac. A user of its own is only pointed to.
   expect(host.textContent).toContain("sudo xcodebuild -license accept");
   expect(host.textContent).not.toContain("sudo sysadminctl -addUser agents");
-  expect(host.textContent).toContain("give them a user of its own");
+  expect(host.textContent).toContain("give them their own user (see Setup › A Mac for agents)");
   expect(host.textContent).not.toContain("open Privacy_Accessibility");
   expect(host.querySelector<HTMLInputElement>("form[aria-label='Name the machine'] input")?.value).toBe("mac");
   await click("Make the line");

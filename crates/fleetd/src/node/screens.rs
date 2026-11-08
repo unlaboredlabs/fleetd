@@ -31,10 +31,10 @@ struct Sections {
 impl Sections {
     fn of(config: &NodeConfig) -> Self {
         Self {
-            browser: config.browser.clone().unwrap_or_default(),
-            device: config.device.clone().unwrap_or_default(),
-            ios: config.ios.clone().unwrap_or_default(),
-            desktop: config.desktop.clone().unwrap_or_default(),
+            browser: config.browser_screen(),
+            device: config.device_screen(),
+            ios: config.ios_screen(),
+            desktop: config.desktop_screen(),
             mac: config.mac.clone().unwrap_or_default(),
         }
     }
@@ -268,7 +268,9 @@ fn section(host: SessionHost) -> &'static str {
     }
 }
 
-/// node.json's text with `settings` in it: the kind's `enabled`, every section's `idleMinutes`. Everything else stays.
+/// node.json's text with `settings` in it: the kind's `enabled`, and `screenIdleMinutes`, the one idle time of every
+/// kind but the Mac's lease, which keeps its own short release (one screen for every agent, so a long one keeps them
+/// all waiting). Everything else stays.
 pub fn edited(text: &str, settings: &ScreenSettings) -> Result<String, String> {
     let mut json: Value =
         serde_json::from_str(text).map_err(|e| format!("node.json doesn't read as JSON: {e}"))?;
@@ -291,13 +293,12 @@ pub fn edited(text: &str, settings: &ScreenSettings) -> Result<String, String> {
         set(section(host), "enabled", Value::Bool(on))?;
     }
     if let Some(minutes) = settings.idle_minutes {
-        // The Mac's lease keeps its own short idle release: one screen for every agent, so a long one keeps them all
-        // waiting.
-        for host in SessionHost::ALL
-            .into_iter()
-            .filter(|h| *h != SessionHost::Mac)
-        {
-            set(section(host), "idleMinutes", Value::from(minutes.get()))?;
+        root.insert("screenIdleMinutes".into(), Value::from(minutes.get()));
+        // Where an older node kept it, so it reads as the one time.
+        for kind in ["browser", "device", "desktop", "ios"] {
+            if let Some(part) = root.get_mut(kind).and_then(Value::as_object_mut) {
+                part.remove("idleMinutes");
+            }
         }
     }
     let out = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
@@ -466,13 +467,13 @@ mod tests {
     }
 
     #[test]
-    fn the_idle_timeout_goes_to_every_kind_but_the_macs_lease() {
+    fn the_idle_timeout_is_one_time_for_every_kind_but_the_macs_lease() {
         let out = edited(NODE, &settings(None, None, Some(45))).unwrap();
         let config: NodeConfig = serde_json::from_str(&out).unwrap();
-        assert_eq!(config.browser.unwrap().idle_minutes, Some(45));
-        assert_eq!(config.device.unwrap().idle_minutes, Some(45));
-        assert_eq!(config.ios.unwrap().idle_minutes, Some(45));
-        assert_eq!(config.desktop.unwrap().idle_minutes, Some(45));
+        assert_eq!(config.screen_idle_minutes, Some(45));
+        assert_eq!(config.browser_screen().idle_minutes, Some(45));
+        assert_eq!(config.device_screen().idle_minutes, Some(45));
+        assert_eq!(config.desktop_screen().idle_minutes, Some(45));
         assert!(config.mac.is_none(), "the Mac's screen keeps its 5 minutes");
         let on = edited(NODE, &settings(Some(SessionHost::Mac), Some(true), None)).unwrap();
         let config: NodeConfig = serde_json::from_str(&on).unwrap();

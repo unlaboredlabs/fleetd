@@ -48,7 +48,7 @@ export function People({ me }: { me: Person | undefined }) {
   return (
     <div className={s.scroll} data-screen="settings.hub.people">
       <div className={s.column}>
-        <PageHead title="People">Who is on this hub. Each person's devices act as them; removing someone signs all of them out.</PageHead>
+        <PageHead title="People">Who is on this hub.</PageHead>
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
         ) : lacksPeople(read.error) ? (

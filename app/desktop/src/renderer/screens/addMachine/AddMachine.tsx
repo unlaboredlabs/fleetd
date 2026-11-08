@@ -50,10 +50,9 @@ import { MacCode } from "./MacCode";
 import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
 
-const MAC_LINE = "A Mac every project's agents use for builds and iOS simulators, set up from the fleetd app on it with a 6-digit code: never a runner.";
+const MAC_LINE = "For iOS builds and simulators.";
 
-const MAC_HEAD =
-  "Its fleetd runs in the account logged in at the Mac's screen, yours included: it runs no claude and no lead, and takes no secret. Paste both parts in Terminal there.";
+const MAC_HEAD = "Paste both parts in Terminal on the Mac, in the account logged in at its screen.";
 
 export type View =
   | { readonly kind: "choose" }
@@ -682,9 +681,16 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
       )}
       {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin ? 4 : 3) ?? []} from={2} /> : null}
       {mac ? (
-        <Text size="xs" tone="quiet">
-          {"Agents act as the account the node runs in. To keep them out of yours, give them a user of its own: Settings › Hub › Setup › A Mac for agents, last part."}
-        </Text>
+        <>
+          <Text size="xs" tone="quiet">
+            Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents).
+          </Text>
+          <span>
+            <Button size="sm" variant="link" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.setup" }))}>
+              Open Setup
+            </Button>
+          </span>
+        </>
       ) : null}
       {state === undefined ? null : (
         <div className={s.wait} data-line={state}>

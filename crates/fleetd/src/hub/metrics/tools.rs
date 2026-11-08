@@ -1,4 +1,4 @@
-//! `metrics_get` and `metrics_retention_set`. A project's view covers its repos (the trains it owns, its Changes'
+//! `metrics_get`. A project's view covers its repos (the trains it owns, its Changes'
 //! repos and the merges it owns), with every landed change on them, whoever's they are; the fleet's covers every
 //! repo a caller can read on some machine, each counted once.
 use std::collections::{BTreeMap, BTreeSet};
@@ -7,10 +7,7 @@ use std::sync::Arc;
 use chrono_tz::Tz;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::{MachineId, Timestamp};
-use fleetd_contracts::mcp::{
-    ErrorCode, MetricsGetInput, MetricsGetOutput, MetricsRetentionSetInput,
-    MetricsRetentionSetOutput,
-};
+use fleetd_contracts::mcp::{ErrorCode, MetricsGetInput, MetricsGetOutput};
 use fleetd_contracts::metrics::{
     GitHost, MetricsComparePeriod, MetricsCoverage, RemoteRepo, RepoCoverage, RepoStale,
 };
@@ -21,9 +18,7 @@ use super::compute::{self, Period};
 use super::human;
 use super::no_host;
 use super::store::{self, MergeRow, RepoRow, TouchRow};
-use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows, allows_everywhere, require,
-};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
 use crate::hub::status::fresh;
 use crate::hub::store::{StoreError, iso_ms, now_ms, parse_ms};
 
@@ -44,7 +39,6 @@ const INVISIBLE: &[&str] = &[
 
 pub fn register(tools: &mut Registry) {
     tools.add("metrics_get", metrics_get);
-    tools.add("metrics_retention_set", metrics_retention_set);
 }
 
 fn invalid(message: impl Into<String>) -> ToolError {
@@ -329,27 +323,5 @@ async fn metrics_get(
                 .into(),
         ),
         truncated: (merges_total > MAX_MERGES).then_some(true),
-    })
-}
-
-async fn metrics_retention_set(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: MetricsRetentionSetInput,
-) -> Result<MetricsRetentionSetOutput, ToolError> {
-    // Retention prunes every repo's merges, so Admin on one machine is not enough.
-    if !allows_everywhere(&caller, Role::Admin) {
-        return Err(ToolError::new(
-            ErrorCode::Forbidden,
-            "Metrics retention is fleet-wide: it needs Admin on every machine.",
-        )
-        .with_fix(admin_everywhere_fix(&caller)));
-    }
-    let days = input.retention_days.get();
-    hub.db.transaction(|c| store::set_retention_days(c, days))?;
-    Ok(MetricsRetentionSetOutput {
-        retention_days: input.retention_days,
-        next: Some("Landed changes older than this go at the next hourly prune.".into()),
-        truncated: None,
     })
 }

@@ -66,8 +66,13 @@
   white-space: nowrap;
   transition: background var(--dur-quick) var(--ease-snap);
 }
-.down:hover {
+button.down:hover {
   background: var(--hover);
+}
+/* A member's: the same word, nothing to open. */
+span.down {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */

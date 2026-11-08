@@ -10,8 +10,6 @@ pub enum Platform {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Hub,
-    /// Only for `--purge` where an older fleetd installed T3 Code.
-    T3,
     Node,
 }
 
@@ -19,7 +17,6 @@ impl Role {
     pub fn as_str(self) -> &'static str {
         match self {
             Role::Hub => "hub",
-            Role::T3 => "t3",
             Role::Node => "node",
         }
     }
@@ -240,7 +237,7 @@ pub struct ServiceManager {
 
 impl ServiceManager {
     pub fn new(platform: Platform, uid: u32, unit_file: impl Fn(Role) -> String) -> Self {
-        let unit_files = [Role::Hub, Role::T3, Role::Node]
+        let unit_files = [Role::Hub, Role::Node]
             .into_iter()
             .map(|role| (role, unit_file(role)))
             .collect();

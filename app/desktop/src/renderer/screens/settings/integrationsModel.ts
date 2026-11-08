@@ -1,5 +1,4 @@
-// A project's integrations, as pure functions: which of its MCP servers are its integrations; the request that
-// connects one (main seals the key to the project's machine, mcp_server_set saves it); what a connection test found, by the
+// A project's MCP servers, as pure functions: the request that connects one (main seals the key to the project's machine, mcp_server_set saves it); what a connection test found, by the
 // hub's tool policy; and a failed test in words a person can act on.
 import type { McpOauth, McpScope, McpServer, McpTestResult, McpToolInfo } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
@@ -7,18 +6,20 @@ import { toRequest, type Draft } from "./mcpModel";
 
 export const DOCS = "https://fleetd.sh/docs/integrations/";
 
-/** Integrations get only the lead's role: the lead is the one whose every write asks first. */
+/** A server for the lead alone is an integration: the lead is the one whose every write asks first. */
 const LEAD_ONLY = { lead: true, writers: false, reviewers: false } as const;
-
-/** A project's own MCP servers connected as its integrations. */
-export const connectionsOf = (servers: ReadonlyArray<McpServer>): ReadonlyArray<McpServer> => servers.filter((s) => s.integration !== undefined);
+/** One the project's agents get too runs every tool unasked: an agent can't stop to ask. */
+const EVERYONE = { lead: true, writers: true, reviewers: true } as const;
 
 type Built = { ok: true; request: McpServerRequest } | { ok: false; problem: string };
 
-/** A server for the project's lead only, with the tools the person marked as only reading. */
-export const customRequest = (draft: Draft, readTools: ReadonlyArray<string>, scope: McpScope, boxes: McpServerRequest["boxes"]): Built => {
-  const built = toRequest({ ...draft, roles: LEAD_ONLY, enabled: true }, scope, boxes);
-  if (!built.ok) return built;
+/**
+ * A new project server: for the lead alone, with the tools the person marked as only reading (an integration, judged
+ * by the hub's policy), or for its agents too, unjudged.
+ */
+export const customRequest = (draft: Draft, readTools: ReadonlyArray<string>, scope: McpScope, boxes: McpServerRequest["boxes"], agents = false): Built => {
+  const built = toRequest({ ...draft, roles: agents ? EVERYONE : LEAD_ONLY, enabled: true }, scope, boxes);
+  if (!built.ok || agents) return built;
   return { ok: true, request: { ...built.request, integration: readTools.length === 0 ? {} : { readTools: [...readTools] } } };
 };
 

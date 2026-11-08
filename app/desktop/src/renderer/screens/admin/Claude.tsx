@@ -1,9 +1,9 @@
 // Settings › Hub accounts › Claude (teams step 8, D200): the hub's API configuration (its Claude API key, sealed in main to
-// every machine and never shown back, and an optional endpoint), with Test; whether members may run their work on it
-// (on by default); what projects' leads and work nobody started run on (the key, else the hub owner's own
-// subscription). Each person's account, with any usage pause on it, is on their People row; their own choice and
+// every machine and never shown back, and an optional endpoint), with Test, and a line under it on what leads and
+// automations run on (the key, else the hub owner's own subscription); whether members may run their work on it (on by
+// default). Each person's account, with any usage pause on it, is on their People row; their own choice and
 // subscription are theirs, in Settings › Your accounts › Claude.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, UsageStatus } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
@@ -29,7 +29,7 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
     <PagePart
       title="Claude"
       reveal="admin.claude"
-      intro="The hub's Claude API key, which projects' leads and work nobody asked for run on, and who else may use it. Each person picks their own account in Settings › Your accounts › Claude."
+      intro="The hub's Claude API key, and who may use it. Each person picks their own in You › Your accounts."
     >
       {!live ? (
         <Text tone="quiet">Connect to a hub to see and change this.</Text>
@@ -52,19 +52,15 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
   const hubPause = pauseLine({ kind: "hub" }, usage, nowMs);
   return (
     <>
-      <HubKey api={data.hubApi} pause={hubPause} />
+      <HubKey api={data.hubApi} pause={hubPause}>
+        <Owner data={data} usage={usage} me={me} nowMs={nowMs} runsOn={runsOnLine(data.leadsRunOn, people, me?.personId)} />
+      </HubKey>
       <Members on={data.settings.membersUseHubApi} hubApi={data.hubApi !== undefined} />
-      <Setting reveal="admin.claude.leads" label="Leads and unrequested work" help="Projects' leads serve everyone, as do automations and train fixes: they run on the hub's key, else the hub owner's subscription, never a member's.">
-        <Text>
-          <HubText>{runsOnLine(data.leadsRunOn, people, me?.personId)}</HubText>
-        </Text>
-        <Owner data={data} usage={usage} me={me} nowMs={nowMs} />
-      </Setting>
     </>
   );
 }
 
-function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string | null }) {
+function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause: string | null; children: ReactNode }) {
   const machines = useMachines();
   const save = useSave();
   const test = useTest();
@@ -109,9 +105,8 @@ function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string |
   const open = editing || api === undefined;
   return (
     <Setting
-      reveal="admin.claude.key"
       label="Hub API key"
-      help="From the Claude Console, billed to that account. It is sealed on this computer to every machine: fleetd never shows it again, and no agent sees it."
+      help="From the Claude Console. fleetd never shows it again, and no agent sees it."
     >
       {api === undefined ? null : (
         <>
@@ -138,20 +133,15 @@ function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string |
       )}
       {open ? (
         <>
-          {api === undefined ? (
-            <Text size="sm" tone="quiet">
-              Without one, leads run on the hub owner&apos;s own subscription, and each person connects theirs.
-            </Text>
-          ) : null}
           <div className={s.inline}>
             <Button size="sm" variant="ghost" onClick={() => void window.fleetd.openExternal(CONSOLE_KEYS)}>
               Claude Console › API keys
             </Button>
           </div>
-          <Field label="API key" description={api === undefined ? "ANTHROPIC_API_KEY." : "Leave it empty to keep the saved key."}>
+          <Field label="API key" description={api === undefined ? "From console.anthropic.com." : "Leave it empty to keep the saved key."}>
             <Input mono aria-label="API key" className={s.secretValue} data-secret="" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
           </Field>
-          <Field label="Endpoint (optional)" description="ANTHROPIC_BASE_URL, for a gateway or proxy. Empty: Anthropic's own.">
+          <Field label="Endpoint (optional)" description="Only for a gateway or proxy.">
             <Input mono aria-label="Endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} placeholder="https://api.anthropic.com" onChange={(e) => setEndpoint(e.target.value)} />
           </Field>
           <div className={s.inline}>
@@ -166,11 +156,12 @@ function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string |
           </div>
         </>
       ) : null}
+      {children}
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove
           title="Remove the hub's API key?"
-          description="Each machine forgets it. Leads and unrequested work run on the hub owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
+          description="Each machine forgets it. Leads and automations run on the hub owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
           action="Remove"
           onRemove={() => hubCall("claude_hub_api_remove", {})}
           onClose={() => setRemoving(false)}
@@ -200,7 +191,7 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
     );
   };
   return (
-    <Setting reveal="admin.claude.members" label="Members" help="Owners and admins may always use the hub's key. It never changes what leads and unrequested work run on.">
+    <Setting reveal="admin.claude.members" label="Members" help="Owners and admins always may.">
       <Switch
         label="Members may use the hub's API key"
         description={hubApi ? "Off: each member connects their own subscription before their next order." : "Takes effect once the hub has a key."}
@@ -213,11 +204,33 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
   );
 }
 
-/** The hub owner's own subscription, which leads fall back to without a key. Only the owner connects it, from Settings. */
-function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usage: ReadonlyArray<UsageStatus>; me: Person | undefined; nowMs: number }) {
+/**
+ * Under the key, one quiet line: what leads and automations run on, the key, else the hub owner's own subscription.
+ * Without a key, that subscription and its state follow; only the owner connects it, from Settings. A hub that has
+ * nothing for them to run on says why instead.
+ */
+function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutput; usage: ReadonlyArray<UsageStatus>; me: Person | undefined; nowMs: number; runsOn: string }) {
   const list = usePeople();
   const owner = list.data?.people.find((p) => p.role === "owner" && p.removedAt === undefined);
-  if (owner === undefined) return null;
+  const whose = owner === undefined ? "the hub owner's" : me?.personId === owner.personId ? "your" : `${owner.name}'s`;
+  const lead = (
+    <Text size="sm" tone="quiet" data-leads-run-on="">
+      {`Leads and automations run on ${data.hubApi === undefined ? "the hub's key, once it has one" : "this key"}, else ${whose} subscription.`}
+    </Text>
+  );
+  const refused =
+    data.leadsRunOn.kind === "refused" ? (
+      <Text size="sm" tone="warning">
+        <HubText>{runsOn}</HubText>
+      </Text>
+    ) : null;
+  if (owner === undefined || data.hubApi !== undefined)
+    return (
+      <>
+        {lead}
+        {refused}
+      </>
+    );
   const theirs = (data.people ?? []).find((p) => p.person.personId === owner.personId);
   const sub = theirs?.subscription;
   const you = me?.personId === owner.personId;
@@ -227,6 +240,8 @@ function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usag
   const pause = theirs === undefined || !leadsOnIt ? null : pauseLine({ kind: "person", personId: owner.personId }, usage, nowMs);
   return (
     <div className={s.stack}>
+      {lead}
+      {refused}
       <Text size="sm" tone="quiet">
         {line}
       </Text>
