@@ -83,11 +83,14 @@ export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
   useEffect(() => {
     if (!open) return;
     wanted.current = null;
-    const onFocusIn = (e: FocusEvent) => {
-      if (e.target instanceof HTMLElement && e.target.closest("[role='menu']") === null) wanted.current = e.target;
+    // The trap pulls the focus back as it leaves (focusout, whose relatedTarget is where it was going), before any
+    // focusin there.
+    const onFocusOut = (e: FocusEvent) => {
+      const to = e.relatedTarget;
+      if (to instanceof HTMLElement && to.closest("[role='menu']") === null) wanted.current = to;
     };
-    document.addEventListener("focusin", onFocusIn, true);
-    return () => document.removeEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    return () => document.removeEventListener("focusout", onFocusOut, true);
   }, [open]);
   // The last press or right-click began inside an inner element's menu. A right-click there never reaches this one,
   // but a touch's long press opens every menu it is inside, so this one stays shut.
