@@ -104,16 +104,31 @@ fn write_app_pair(file: &Path, hub: &str, code: &str, expires_at: &str) -> Resul
 
 /// The hub's listen address and URL from `setup.json`, or the defaults when `fleetd init` never ran.
 pub(crate) fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
+    hub_urls_at(home, None)
+}
+
+/// [`local_hub_urls`], asked by the hub itself: `listening` is its own listen address. A hub started by hand (no
+/// setup.json) can't find its own process among those holding its database, and used to give the default address.
+pub(crate) fn hub_urls_at(
+    home: &Path,
+    listening: Option<&crate::hub::api::Listen>,
+) -> Result<Vec<String>, String> {
     let setup = super::setup::state::read_setup(home)?;
-    // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
-    let running = setup.is_none().then(|| running_listen(home)).flatten();
-    let listen_text = setup
-        .as_ref()
-        .map(|s| s.listen.as_str())
-        .or(running.as_deref())
-        .unwrap_or(DEFAULT_LISTEN);
-    let (host, port) = parse_listen(listen_text)
-        .ok_or_else(|| format!("the hub's listen address '{listen_text}' is not host:port"))?;
+    let (host, port) = match (&setup, listening) {
+        (None, Some(own)) => (own.host.clone(), own.port),
+        _ => {
+            // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
+            let running = setup.is_none().then(|| running_listen(home)).flatten();
+            let listen_text = setup
+                .as_ref()
+                .map(|s| s.listen.as_str())
+                .or(running.as_deref())
+                .unwrap_or(DEFAULT_LISTEN);
+            parse_listen(listen_text).ok_or_else(|| {
+                format!("the hub's listen address '{listen_text}' is not host:port")
+            })?
+        }
+    };
     let host_ip = host.parse::<IpAddr>().ok();
     let everywhere = host_ip.is_some_and(|ip| ip.is_unspecified());
     let configured = setup
@@ -224,10 +239,17 @@ pub fn phone_url<'a>(urls: impl IntoIterator<Item = &'a str>) -> Option<&'a str>
     })
 }
 
-/// What to do when the hub has no address a phone can reach.
-pub fn loopback_only_fix() -> &'static str {
-    "Give the hub an address your phone reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
-     pick it (Settings › Hub › Setup › Where the hub listens says how), then pair the phone again."
+/// What to do when the hub has no address `device` ("your phone", "the Mac") can reach, `then` once it has one.
+pub fn loopback_only_fix(device: &str, then: &str) -> String {
+    format!(
+        "Give the hub an address {device} reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
+         pick it (Settings › Hub › Setup › Where the hub listens says how), then {then}."
+    )
+}
+
+/// [`loopback_only_fix`] for a phone.
+pub fn phone_loopback_fix() -> String {
+    loopback_only_fix("your phone", "pair the phone again")
 }
 
 /// `text` as a QR in Unicode half-blocks, two rows of modules a line, with its quiet zone. Light modules are drawn,
@@ -377,6 +399,7 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
     let hub = super::hub_key::open_hub(&home)?;
     let join = worker_join(
         &home,
+        None,
         &hub.auth,
         &machine_id,
         false,
@@ -478,8 +501,10 @@ pub struct WorkerJoin {
 /// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows. `rejoin`: the line enrolls
 /// a machine that joined before again (`--rejoin`), repairing it. `mac`: the line joins the agents' Mac (`--mac`),
 /// pasted in Terminal at its screen. `by` names the caller in the hub log's line for the mint.
+/// `listening`: the hub's own listen address, when the hub itself asks (see [`hub_urls_at`]).
 pub fn worker_join(
     home: &Path,
+    listening: Option<&crate::hub::api::Listen>,
     auth: &crate::hub::auth::Auth,
     machine: &fleetd_contracts::ids::MachineId,
     rejoin: bool,
@@ -487,7 +512,7 @@ pub fn worker_join(
     by: &str,
 ) -> Result<WorkerJoin, String> {
     let setup = super::setup::state::read_setup(home)?;
-    let urls = local_hub_urls(home)?;
+    let urls = hub_urls_at(home, listening)?;
     let token = auth
         .create_enroll_token(machine, by)
         .map_err(|error| error.to_string())?;
@@ -569,7 +594,7 @@ fn phone_qr(minted: &Minted) -> String {
         return format!(
             "No QR for a phone: the hub is only at {}, which a phone can't reach. {}\n\n",
             minted.urls.join(", "),
-            loopback_only_fix()
+            phone_loopback_fix()
         );
     };
     match terminal_qr(&deep_link(hub, &minted.code)) {

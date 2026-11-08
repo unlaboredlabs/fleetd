@@ -365,6 +365,7 @@ async fn machine_join(
     admin(&caller)?;
     let join = crate::cli::pair::worker_join(
         &hub.config.home,
+        Some(&hub.config.listen),
         &hub.auth,
         &input.machine_id,
         input.rejoin == Some(true),
