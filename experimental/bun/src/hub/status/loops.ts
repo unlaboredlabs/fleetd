@@ -1,4 +1,7 @@
 import type { Hub } from "../api/hub.ts";
+import { status } from "./index.ts";
 
-/** Starts this module's loops (Rust: status.run); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/** Starts the status follower (Rust: status.run): freshness flips at their deadlines, until the hub stops. */
+export function start(hub: Hub): void {
+  status(hub).run();
+}
