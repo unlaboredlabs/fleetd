@@ -13,8 +13,8 @@ server, auth, keys, people, devices, links, settings, store.
 
 - [x] GET `/healthz` → `src/hub/http` (healthz) <!-- http:GET `/healthz` -->
 - [ ] GET `/app` → `src/hub/app_ws` (app) <!-- http:GET `/app` -->
-- [ ] POST `/pair` → `src/hub/pair` (pair) <!-- http:POST `/pair` -->
-- [ ] POST `/pair/mac` → `src/hub/pair` (mac_pair) <!-- http:POST `/pair/mac` -->
+- [x] POST `/pair` → `src/hub/pair` (pair) <!-- http:POST `/pair` -->
+- [x] POST `/pair/mac` → `src/hub/pair` (mac_pair) <!-- http:POST `/pair/mac` -->
 - [x] GET `/node/link` → `src/hub/link` (node_link) <!-- http:GET `/node/link` -->
 - [ ] ANY `/link/v1/{op}` → `src/hub/hub_links` (hub_link) <!-- http:ANY `/link/v1/{op}` -->
 
@@ -50,18 +50,18 @@ server, auth, keys, people, devices, links, settings, store.
 - [ ] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
 - [ ] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
 - [ ] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
-- [ ] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
-- [ ] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
+- [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
+- [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
 - [ ] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
 - [ ] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
-- [ ] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
-- [ ] `invite_create` → `src/hub/people` (admin) <!-- tool:`invite_create` -->
-- [ ] `invite_revoke` → `src/hub/people` (admin) <!-- tool:`invite_revoke` -->
-- [ ] `person_set` → `src/hub/people` (admin) <!-- tool:`person_set` -->
-- [ ] `person_remove` → `src/hub/people` (admin) <!-- tool:`person_remove` -->
-- [ ] `device_revoke` → `src/hub/people` (operate) <!-- tool:`device_revoke` -->
-- [ ] `pair_code_create` → `src/hub/pair` (read) <!-- tool:`pair_code_create` -->
+- [x] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
+- [x] `invite_create` → `src/hub/people` (admin) <!-- tool:`invite_create` -->
+- [x] `invite_revoke` → `src/hub/people` (admin) <!-- tool:`invite_revoke` -->
+- [x] `person_set` → `src/hub/people` (admin) <!-- tool:`person_set` -->
+- [x] `person_remove` → `src/hub/people` (admin) <!-- tool:`person_remove` -->
+- [x] `device_revoke` → `src/hub/people` (operate) <!-- tool:`device_revoke` -->
+- [x] `pair_code_create` → `src/hub/pair` (read) <!-- tool:`pair_code_create` -->
 - [ ] `push_device_register` → `src/hub/push` (operate) <!-- tool:`push_device_register` -->
 - [ ] `push_devices_list` → `src/hub/push` (read) <!-- tool:`push_devices_list` -->
 - [ ] `push_device_remove` → `src/hub/push` (operate) <!-- tool:`push_device_remove` -->
@@ -98,12 +98,12 @@ server, auth, keys, people, devices, links, settings, store.
 - [ ] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
 - [x] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
 - [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
-- [ ] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
+- [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [ ] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
 - [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
 - [ ] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
-- [ ] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
-- [ ] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
+- [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
+- [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
 
 ## hub-work
 

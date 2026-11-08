@@ -1,4 +1,17 @@
 import type { Hub } from "../api/hub.ts";
+import { sweep } from "../sweep/index.ts";
+import { pairCodes } from "./codes.ts";
 
-/** Starts this module's loops (Rust: pair::prune_on_sweep); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/**
+ * Rust: pair::prune_on_sweep. On every sweep, drops spent device pairing codes and invites and spent worker enroll
+ * codes, so neither table keeps every code ever minted.
+ */
+export function start(hub: Hub): void {
+  sweep(hub).register({
+    name: "spent-codes",
+    run: () => {
+      pairCodes(hub).prune();
+      hub.auth.nodes.pruneEnrollTokens();
+    },
+  });
+}
