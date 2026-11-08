@@ -269,7 +269,7 @@ fleetd project unarchive devbox/taxes
 **Delete project…** stops the project's agents, removes the worktrees they worked in, and erases the project: one rule
 for every project (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and
 decisions, orders and tasks, automations, kept browser sign-ins, Telegram link, transcripts, attachments and screen
-recordings go. A machine whose node is older refuses the delete until you update fleetd there.
+recordings go, and so do its links to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd there.
 **Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a home
 folder, its own directory, or a folder holding another project. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
 those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project's

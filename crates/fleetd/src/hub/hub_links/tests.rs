@@ -1495,3 +1495,43 @@ async fn a_removed_or_revoked_link_tells_every_open_app() {
     let here = last(&l.home, HubEventType::ProjectSettings).unwrap();
     assert_eq!(here["hubLinkRemoved"], json!(l.link_here), "{here}");
 }
+
+/// W465: deleting a Navi deletes its linked hubs' keys with it and asks each other hub to revoke its link, as removing
+/// the link does: nothing follows the other hub for a project that is gone, and its key no longer works there.
+#[tokio::test]
+async fn deleting_a_navi_deletes_its_links_keys_and_revokes_them_there() {
+    let l = linked(None).await;
+    // Home has no machine devbox, so the delete only forgets the Navi in the hub (projects::tools::forget_gone).
+    tool(
+        &l.home,
+        &l.you_home,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "navi" }),
+    )
+    .await
+    .unwrap();
+    let rows: i64 = l
+        .home
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM hub_links", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(rows, 0, "the sealed key is gone");
+    assert_eq!(
+        follow_once(&l.home, &l.link_here, 0).await.unwrap(),
+        Followed::Stop
+    );
+    // The other hub is asked without the delete waiting on it.
+    let revoked = || async {
+        tool(&l.acme, &l.you_acme, "hub_links_get", json!({}))
+            .await
+            .unwrap()["issued"][0]["revokedAt"]
+            .is_string()
+    };
+    for _ in 0..100 {
+        if revoked().await {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(revoked().await, "revoked on the other hub");
+}

@@ -51,6 +51,7 @@ const BY_PROJECT: &[&str] = &[
     "tasks",
     "slot_claims",
     "workstreams",
+    "hub_links",
 ];
 
 /// Tables with rows of the Navi's sessions, by `machine_id` and `thread_id`.

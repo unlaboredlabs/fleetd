@@ -933,7 +933,11 @@ async fn what_older_hubs_left_of_deleted_projects_is_pruned_once() {
         .with(|c| {
             c.execute(
                 "INSERT INTO sidebar_orders (person_id, refs) VALUES ('p_ann', ?)",
-                [order],
+                [&order],
+            )?;
+            c.execute(
+                "INSERT INTO chat_pins (person_id, refs) VALUES ('p_ann', ?)",
+                [&order],
             )?;
             Ok(())
         })
@@ -953,10 +957,46 @@ async fn what_older_hubs_left_of_deleted_projects_is_pruned_once() {
         .map(|p| format!("{}/{}", p.project_ref.machine_id, p.project_ref.project_id))
         .collect();
     assert_eq!(maxes, ["devbox/app", "worker/app"]);
-    let order: String = hub
-        .db
-        .with(|c| Ok(c.query_row("SELECT refs FROM sidebar_orders", [], |r| r.get(0))?))
-        .unwrap();
-    assert_eq!(order, serde_json::to_string(&[project("app")]).unwrap());
+    for table in ["sidebar_orders", "chat_pins"] {
+        let refs: String = hub
+            .db
+            .with(|c| Ok(c.query_row(&format!("SELECT refs FROM {table}"), [], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(
+            refs,
+            serde_json::to_string(&[project("app")]).unwrap(),
+            "{table}"
+        );
+    }
     assert_eq!(prune_orphans(&hub).unwrap(), 0);
+}
+
+/// W465: a deleted project's links to other hubs go with it, their sealed keys too, so nothing follows another hub
+/// for a project that is gone. Only a removed machine dropped them.
+#[tokio::test]
+async fn a_deleted_projects_links_to_other_hubs_go_with_it() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO hub_links (link_id, machine_id, project_id, label, url, sealed, cursor, state, created_ms)
+                 VALUES ('hl_1', 'devbox', 'app', 'acme', 'https://acme.example', x'00', 0, 'ok', 0)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    let links: i64 = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM hub_links", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(links, 0);
 }

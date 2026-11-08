@@ -315,6 +315,7 @@ impl HubStore {
                 n += conn.prepare_cached(sql)?.execute([m, p])?;
             }
             crate::hub::sidebar_order::forget(conn, r)?;
+            crate::hub::chat_pins::forget(conn, r)?;
             Ok(n)
         })
     }
@@ -453,6 +454,7 @@ impl HubStore {
             }
             crate::hub::repos::store::remove_project(conn, r)?;
             crate::hub::sidebar_order::forget(conn, r)?;
+            crate::hub::chat_pins::forget(conn, r)?;
             Ok(())
         })
     }
