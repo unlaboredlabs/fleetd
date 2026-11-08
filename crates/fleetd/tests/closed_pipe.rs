@@ -131,17 +131,26 @@ fn the_hub_keeps_sigpipe_ignored() {
     assert_ne!(ignored & (1 << (sigpipe - 1)), 0, "{status}");
 }
 
-/// An ssh that runs each command here, except that it gives up on the binary without reading it, as one whose
-/// connection drops or whose disk is full does.
-fn fake_ssh(bin: &Path) {
-    let ssh = bin.join("ssh");
-    std::fs::write(
-        &ssh,
-        "#!/bin/sh\nfor last; do :; done\ncase \"$last\" in\n  *fleetd-tmp*) echo 'devbox: disk full' >&2; exit 7 ;;\nesac\nexec sh -c \"$last\"\n",
-    )
-    .unwrap();
+fn script(file: &Path, text: &str) {
+    std::fs::write(file, text).unwrap();
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// An ssh that runs each command here, except that it gives up on the binary without reading it, as one whose
+/// connection drops or whose disk is full does; and the claude the machine needs, which CI has none of.
+fn fake_ssh(bin: &Path) {
+    script(
+        &bin.join("ssh"),
+        "#!/bin/sh\nfor last; do :; done\ncase \"$last\" in\n  *fleetd-tmp*) echo 'devbox: disk full' >&2; exit 7 ;;\nesac\nexec sh -c \"$last\"\n",
+    );
+    script(
+        &bin.join("claude"),
+        &format!(
+            "#!/bin/sh\necho '{} (Claude Code)'\n",
+            fleetd::node::runner::claude::version::TESTED
+        ),
+    );
 }
 
 #[test]
