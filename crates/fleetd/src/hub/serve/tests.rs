@@ -557,10 +557,70 @@ async fn stops_within_a_second_while_an_app_stream_and_an_events_wait_long_poll_
         started.elapsed()
     );
     match app.next().await {
-        Some(Ok(Message::Close(Some(frame)))) => assert_eq!(u16::from(frame.code), 1001),
-        other => panic!("expected a 1001 close, got {other:?}"),
+        Some(Ok(Message::Close(Some(frame)))) => {
+            assert_eq!(
+                (u16::from(frame.code), frame.reason.as_str()),
+                (1012, "hub restarting")
+            );
+        }
+        other => panic!("expected a 1012 close, got {other:?}"),
     }
     poll.abort();
+}
+
+/// While an update restarts the hub, an app reads it in its snapshot, and its socket closes as a service restart
+/// that names the build the hub comes back on, so it shows Updating… rather than a lost hub.
+#[tokio::test]
+async fn an_update_restart_is_in_the_snapshot_and_the_close_says_so() {
+    let t = start().await;
+    let run: fleetd_contracts::mcp::UpdateRun = serde_json::from_value(json!({
+        "id": "U1", "channel": "edge", "to": "0.0.0-nightly.202611081000+bbbbbbb",
+        "startedAt": "2026-11-08T10:00:00.000Z",
+        "parts": [
+            { "part": "hub", "name": "the hub", "from": "0.0.0-nightly.202611070900+aaaaaaa", "state": "restarting" },
+            { "part": "node", "machineId": "devbox", "name": "devbox", "from": "0.0.0-nightly.202611070900+aaaaaaa",
+              "state": "waiting" },
+        ],
+    }))
+    .unwrap();
+    t.hub.updates.drive_for_test(run);
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    app.send(Message::text(
+        json!({ "t": "auth", "key": reader }).to_string(),
+    ))
+    .await
+    .unwrap();
+    app.next().await.unwrap().unwrap();
+    app.send(Message::text(json!({ "t": "snapshot" }).to_string()))
+        .await
+        .unwrap();
+    let snapshot: Value = match app.next().await {
+        Some(Ok(Message::Text(text))) => serde_json::from_str(&text).unwrap(),
+        other => panic!("expected the snapshot, got {other:?}"),
+    };
+    assert_eq!(snapshot["t"], "snapshot");
+    let update = &snapshot["update"];
+    assert_eq!(
+        (
+            &update["state"],
+            &update["hub"],
+            &update["machines"][0]["state"]
+        ),
+        (&json!("updating"), &json!("restarting"), &json!("waiting"))
+    );
+
+    t.hub.shutdown.trigger();
+    t.served.await.unwrap().unwrap();
+    match app.next().await {
+        Some(Ok(Message::Close(Some(frame)))) => assert_eq!(
+            (u16::from(frame.code), frame.reason.as_str()),
+            (1012, "updating to 0.0.0-nightly.202611081000+bbbbbbb")
+        ),
+        other => panic!("expected a 1012 close, got {other:?}"),
+    }
 }
 
 /// The Status screen's rows over the app socket: every project the key reads, idle with nothing to count, and

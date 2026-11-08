@@ -4,6 +4,12 @@
 /** The /app protocol this build speaks. */
 export const PROTOCOL_VERSION = 1;
 
+/** The /app close code when the hub stops (Service Restart): redial at once, it comes back within a moment. */
+export const APP_CLOSE_RESTART = 1012;
+
+/** The start of that close's reason while an update restarts the hub: "updating to <version>". */
+export const APP_CLOSE_UPDATING = "updating to ";
+
 /** Seconds per sparkline bucket. */
 export const SPARK_BUCKET_SECS = 2;
 
@@ -2500,6 +2506,11 @@ export type FleetStatus = {
   projects: ProjectSummary[];
   /** Absent until the hub runs the slot board (M5). */
   slots?: SlotState;
+  /**
+   * The app snapshot only: the update going on, or the last one (`hub.update`'s data). Absent when the hub never
+   * updated itself, and from fleetd_status.
+   */
+  update?: HubUpdateData;
 };
 
 export type FleetdStatusInput = { [key: string]: unknown };
@@ -2518,6 +2529,11 @@ export type FleetdStatusOutput = {
   /** Absent until the hub runs the slot board (M5). */
   slots?: SlotState;
   truncated?: boolean;
+  /**
+   * The app snapshot only: the update going on, or the last one (`hub.update`'s data). Absent when the hub never
+   * updated itself, and from fleetd_status.
+   */
+  update?: HubUpdateData;
 };
 
 /** A git checkout found on a machine (under ~/src, ~/code, ~/projects, ~/dev and similar, at most two levels down). */
@@ -2915,7 +2931,8 @@ export type KnownHubEventType =
   | "sidebar.order"
   | "chat.pins"
   | "machine_add.step"
-  | "mcp.oauth";
+  | "mcp.oauth"
+  | "hub.update";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -3094,6 +3111,37 @@ export type HubSetupStep = {
   why: string;
 };
 
+/**
+ * What an update looks like from the hub row: the `hub.update` event's data, sent whenever its state or a machine's
+ * changes, and the app snapshot's `update`, so an app that reconnects after the hub's restart reads it at once. The
+ * update going on, or the last one; hub_update_status reads it in full.
+ */
+export type HubUpdateData = {
+  /** Started by itself (automatic updates). Absent otherwise. */
+  auto?: boolean;
+  /** When every part had its result; absent while `updating`. */
+  finishedAt?: Timestamp;
+  /** The build the hub ran when the update started. */
+  from: string;
+  /**
+   * The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with
+   * `APP_CLOSE_RESTART`, 1012), `done` once it runs it.
+   */
+  hub: UpdateState;
+  /** Each machine's node, by name: `restarting` while it restarts, `done` once it is back on the new build. */
+  machines: HubUpdateMachine[];
+  /** With `failed` or `put_back`: what happened, in one sentence (the hub's part's message). */
+  message?: string;
+  /** Machines past `machines`, not named here. */
+  moreMachines?: number;
+  /** The run's id, as hub_update_status names it. */
+  runId: string;
+  startedAt: Timestamp;
+  state: HubUpdatePhase;
+  /** The build it updates to; absent until the hub read the channel. */
+  to?: string;
+};
+
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
   channel?: HubChannel;
@@ -3106,6 +3154,13 @@ export type HubUpdateInput = {
    * left skipped, and starts a new one.
    */
   startOver?: boolean;
+};
+
+/** One machine's node in [`HubUpdateData`]. */
+export type HubUpdateMachine = {
+  machineId: MachineId;
+  name: string;
+  state: UpdateState;
 };
 
 export type HubUpdateOutput = {
@@ -3148,6 +3203,11 @@ export type HubUpdateOutput = {
   skipReason?: string;
   truncated?: boolean;
 };
+
+/** An update as the hub row says it. */
+export type KnownHubUpdatePhase = "updating" | "updated" | "put_back" | "failed" | "current";
+/** KnownHubUpdatePhase, or a value from a newer hub. */
+export type HubUpdatePhase = KnownHubUpdatePhase | (string & {});
 
 export type HubUpdateSettingsInput = {
   /**
@@ -9156,6 +9216,7 @@ export interface HubEventDataMap {
   "chat.waiting": ProjectChatState;
   "checklist.changed": ChecklistChangedData;
   "ci.main": CiMainData;
+  "hub.update": HubUpdateData;
   "machine.guard": MachineGuardData;
   "machine.recovery_paused": RecoveryPausedData;
   "machine.slept": MachineSleptData;
