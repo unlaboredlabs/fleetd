@@ -94,7 +94,9 @@ The token reaches the order's agents as `GH_TOKEN`, one of the order's variables
 before it ends, and gone when the order closes. A renewed token reaches agents already at work before their next
 command, not only their next turn: renewing yours ends the one before at GitHub. If the hub can't renew it before it
 ends (GitHub unreachable), its agents hold a value GitHub refuses until it can, and the lead is told; they never fall
-back to the machine's login. Each repo the order works in gets its own: the App's token for that repo's owner, and
+back to the machine's login. A task launched while GitHub gives no token starts anyway, holding that same value: it is
+told so in its first message, and its token reaches its next command at the first renewal GitHub answers (every 5
+minutes). Each repo the order works in gets its own: the App's token for that repo's owner, and
 none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
 If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Your accounts › GitHub says so, with

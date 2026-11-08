@@ -1316,9 +1316,15 @@ async fn fake_node(hub: &Arc<Hub>) -> Arc<Mutex<Vec<fleetd_contracts::sessions::
                 continue;
             };
             let id = f.id.clone();
+            // A launch reads the project's policy file: it has none.
+            let result = match &f.call {
+                fleetd_contracts::sessions::SessionCall::ReadFile { .. } => {
+                    json!({ "ok": { "kind": "file" } })
+                }
+                _ => json!({ "ok": { "kind": "done" } }),
+            };
             seen.lock().unwrap().push(f.call);
-            let reply =
-                json!({ "t": "session_reply", "id": id, "result": { "ok": { "kind": "done" } } });
+            let reply = json!({ "t": "session_reply", "id": id, "result": result });
             hub.executors
                 .handle_frame(&devbox, serde_json::from_value::<NodeToHub>(reply).unwrap());
         }
@@ -1910,4 +1916,89 @@ async fn a_task_on_a_cloud_machine_gets_its_orders_token_there() {
         1,
         "the home checkout's isn't the wake's to renew"
     );
+}
+
+/// The Nov 8 outage: GitHub can't be reached when a writer launches. It starts anyway, told that its token comes later,
+/// holding a placeholder GitHub refuses (never the machine's own login) and with its lead not woken; the first sweep
+/// after GitHub answers hands it its token, the App's and its starter's alike.
+#[tokio::test]
+async fn a_writer_launched_while_github_mints_no_token_starts_and_gets_it_once_github_answers() {
+    use super::sessions::{TOKEN_PENDING, UNRENEWED_TOKEN, kept, renew};
+    use crate::hub::tasks::ports::{LaunchRequest, TaskPorts};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, sams) = order_on_acme(&lab.hub, Some(&person));
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    let link = fake_link(&lab.hub, "devbox").await;
+    let calls = fake_node(&lab.hub).await;
+    let ports = crate::hub::tasks::wire::HubTaskPorts::new(
+        lab.hub.executors.clone(),
+        lab.hub.node_commands.clone(),
+    );
+    ports.bind(&lab.hub);
+    let request = |order: &fleetd_contracts::ledger::WorkstreamId, id: &str| LaunchRequest {
+        project_id: r.project_id.clone(),
+        project_ref: r.clone(),
+        repo_id: None,
+        prompt: "go".into(),
+        system_prompt: None,
+        profile: fleetd_contracts::effort::ProfileName::legacy(),
+        title: "T1: go".into(),
+        client_request_id: id.into(),
+        kind: fleetd_contracts::tasks::TaskKind::Write,
+        worktree: None,
+        order_id: Some(order.clone()),
+    };
+    // Past the ends of the tokens the hub holds from Test and the sign-in: each launch needs a new one.
+    lab.clock.advance(Duration::from_secs(9 * 3600));
+    lab.fake.lock().unwrap().down = true;
+    let devbox = fleetd_contracts::ids::MachineId::unchecked("devbox");
+    for (order, id) in [(&nobody, "c1"), (&sams, "c2")] {
+        ports.launch(&devbox, request(order, id)).await.unwrap();
+        assert_eq!(held(&link, order), UNRENEWED_TOKEN);
+    }
+    let prompts: Vec<String> = calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            fleetd_contracts::sessions::SessionCall::Launch(l) => Some(l.prompt.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(prompts, vec![format!("go\n\n{TOKEN_PENDING}"); 2]);
+    assert!(kept(&lab.hub).iter().all(|k| k.blocked));
+    assert!(
+        !lab.hub.leads.wakes.pending(&r),
+        "the agent is told, not its lead"
+    );
+    // Still down: the sweep hands out nothing more.
+    let handed = link.lock().unwrap().len();
+    renew(&lab.hub).await;
+    assert_eq!(link.lock().unwrap().len(), handed);
+    assert!(!lab.hub.leads.wakes.pending(&r));
+    // GitHub answers: the next sweep hands both their tokens.
+    lab.fake.lock().unwrap().down = false;
+    renew(&lab.hub).await;
+    assert!(
+        held(&link, &nobody).starts_with("ghs_7_"),
+        "{:?}",
+        tokens(&link)
+    );
+    assert!(
+        held(&link, &sams).starts_with("ghu_"),
+        "{:?}",
+        tokens(&link)
+    );
+    assert!(kept(&lab.hub).iter().all(|k| !k.blocked));
+    // Launched with GitHub up, a writer is told nothing.
+    let (_, later) = order_on_acme(&lab.hub, None);
+    ports.launch(&devbox, request(&later, "c3")).await.unwrap();
+    assert!(held(&link, &later).starts_with("ghs_7_"));
 }

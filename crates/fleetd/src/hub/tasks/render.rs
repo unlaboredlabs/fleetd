@@ -472,6 +472,14 @@ pub fn task_message_not_sent_lines(task: &Task, why: &str, text: &str) -> String
     .render()
 }
 
+/// What each agent running on a machine hears once when git there can't reach GitHub: its lead already knows.
+pub const GITHUB_DOWN: &str = "This machine can't reach GitHub right now; keep your work committed and push when it's \
+    back. fleetd tells you when it is, and your lead knows: go on with what doesn't need GitHub.";
+
+/// What those agents hear once when it can again.
+pub const GITHUB_BACK: &str =
+    "This machine reaches GitHub again: push what you committed meanwhile, and go on.";
+
 /// The lead's quiet line for a running task whose machine has been offline for `minutes`.
 pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
     Event::AgentUnreachable {

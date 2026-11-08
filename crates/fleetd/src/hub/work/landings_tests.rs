@@ -39,6 +39,8 @@ const AT: &str = "2026-10-25T10:00:00.000Z";
 #[derive(Default)]
 struct LocalGit {
     offline: Mutex<HashSet<String>>,
+    /// Machines whose git can't reach the remote: their nodes answer, but `ls-remote` and `fetch` fail on the network.
+    no_network: Mutex<HashSet<String>>,
     pulls: Mutex<Vec<MergedPull>>,
     /// GitHub's answer to "which merged PRs is this commit from", by sha.
     commit_pulls: Mutex<HashMap<String, Vec<MergedPull>>>,
@@ -52,9 +54,22 @@ impl NodeGit for LocalGit {
         args: Vec<String>,
     ) -> BoxFut<'a, Option<GitOut>> {
         let offline = self.offline.lock().unwrap().contains(machine.as_str());
+        let no_network = self.no_network.lock().unwrap().contains(machine.as_str())
+            && matches!(
+                args.first().map(String::as_str),
+                Some("ls-remote" | "fetch")
+            );
         Box::pin(async move {
             if offline {
                 return None;
+            }
+            if no_network {
+                return Some(GitOut {
+                    code: Some(128),
+                    out: "fatal: unable to access 'https://github.com/acme/shop.git/': Could not resolve host: \
+                          github.com"
+                        .into(),
+                });
             }
             let out = Command::new("git")
                 .args(&args)
@@ -983,4 +998,123 @@ async fn a_project_from_before_the_ledger_is_bound_once_its_node_connects() {
     );
     assert_eq!(bind_unbound(&hub, &git, None).await, 1);
     assert_eq!(hub.work.scope_of(&other).unwrap(), Some(scope(GITLAB)));
+}
+
+/// A node linked for `machine` that takes every call: the texts sent to each of its sessions, in order.
+async fn node(hub: &Arc<Hub>, machine: &str) -> Arc<Mutex<Vec<(String, String)>>> {
+    use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+    use fleetd_contracts::sessions::SessionCall;
+    let m = MachineId::unchecked(machine);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    hub.executors
+        .attach(
+            &m,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: tx,
+            },
+        )
+        .await;
+    let HubToNode::SessionCall(subscribe) = rx.recv().await.unwrap() else {
+        panic!("not a subscribe")
+    };
+    let frame = |v: Value| {
+        hub.executors
+            .handle_frame(&m, serde_json::from_value::<NodeToHub>(v).unwrap())
+    };
+    frame(json!({ "t": "machine_event", "seq": 1, "at": AT,
+        "event": { "type": "snapshot", "projects": [], "sessions": [] } }));
+    frame(
+        json!({ "t": "session_reply", "id": subscribe.id, "result": { "ok": { "kind": "done" } } }),
+    );
+    hub.executors.await_live(&m).await;
+    let sent: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+    let (seen, hub) = (sent.clone(), hub.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = rx.recv().await {
+            let HubToNode::SessionCall(f) = frame else {
+                continue;
+            };
+            if let SessionCall::Send {
+                session_id, text, ..
+            } = &f.call
+            {
+                seen.lock()
+                    .unwrap()
+                    .push((session_id.to_string(), text.to_string()));
+            }
+            let reply =
+                json!({ "t": "session_reply", "id": f.id, "result": { "ok": { "kind": "done" } } });
+            hub.executors
+                .handle_frame(&m, serde_json::from_value::<NodeToHub>(reply).unwrap());
+        }
+    });
+    sent
+}
+
+/// A task running in `project` on thread `thread` of `machine`.
+fn running_on(hub: &Hub, project: &ProjectRef, machine: &str, thread: &str) {
+    let task: Task = serde_json::from_value(json!({
+        "taskId": "T1", "projectRef": project, "workstreamId": "W1", "title": thread, "kind": "write",
+        "prompt": "do it", "state": "running", "attempt": 1, "createdAt": AT, "startedAt": AT,
+        "threadRef": { "machineId": machine, "threadId": thread },
+    }))
+    .unwrap();
+    hub.db.with(|c| Ok(TaskRecords::create(c, task)?)).unwrap();
+}
+
+/// The texts sent so far, and which sessions they went to.
+fn told(sent: &Mutex<Vec<(String, String)>>) -> Vec<(String, String)> {
+    let mut all = sent.lock().unwrap().clone();
+    all.sort();
+    all
+}
+
+/// The Nov 8 outage: git on devbox can't reach GitHub. Its two running agents each hear it once, however many polls it
+/// lasts, and once more when a poll reaches GitHub again; laptop, whose origin answers throughout, hears nothing. An
+/// agent of devbox's project launched on a cloud machine isn't told either.
+#[tokio::test]
+async fn agents_hear_once_when_their_machine_cant_reach_github_and_once_when_it_can() {
+    let (hub, _clock, _home) = hub();
+    // Linked first: a node's snapshot names its projects, and these name none.
+    let at_devbox = node(&hub, "devbox").await;
+    let at_laptop = node(&hub, "laptop").await;
+    let at_boat = node(&hub, "boat-1").await;
+    let shop = Repo::new(GITHUB);
+    let api = Repo::new("https://github.com/acme/api.git");
+    let devbox = project(&hub, "devbox", "shop", &shop.checkout("shop"));
+    let laptop = project(&hub, "laptop", "api", &api.checkout("api"));
+    running_on(&hub, &devbox, "devbox", "t1");
+    running_on(&hub, &devbox, "devbox", "t2");
+    running_on(&hub, &devbox, "boat-1", "t3");
+    running_on(&hub, &laptop, "laptop", "t4");
+    let git = LocalGit::default();
+    scan(&hub, &git).await;
+    assert!(told(&at_devbox).is_empty(), "reachable: nothing to say");
+
+    git.no_network.lock().unwrap().insert("devbox".into());
+    for _ in 0..3 {
+        scan(&hub, &git).await;
+    }
+    let down = crate::hub::tasks::render::GITHUB_DOWN.to_owned();
+    assert_eq!(
+        told(&at_devbox),
+        [("t1".into(), down.clone()), ("t2".into(), down.clone())]
+    );
+
+    git.no_network.lock().unwrap().clear();
+    scan(&hub, &git).await;
+    scan(&hub, &git).await;
+    let back = crate::hub::tasks::render::GITHUB_BACK.to_owned();
+    assert_eq!(
+        told(&at_devbox),
+        [
+            ("t1".into(), down.clone()),
+            ("t1".into(), back.clone()),
+            ("t2".into(), down),
+            ("t2".into(), back),
+        ]
+    );
+    assert!(told(&at_laptop).is_empty(), "{:?}", told(&at_laptop));
+    assert!(told(&at_boat).is_empty(), "{:?}", told(&at_boat));
 }

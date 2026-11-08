@@ -135,7 +135,7 @@ impl TaskPorts for HubTaskPorts {
                 machine_id: machine_id.clone(),
                 project_id: request.project_id.clone(),
             };
-            let input = LaunchInput {
+            let mut input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
                 system_prompt: request.system_prompt,
@@ -192,27 +192,31 @@ impl TaskPorts for HubTaskPorts {
             };
             // Its order's GitHub token (D187): its starter's, or the App's for work nobody started, on the machine it
             // launches on (a cloud machine's clone too). A writer that can't have its starter's isn't run on the
-            // machine's login instead.
-            if let (Some(hub), Some(order)) = (self.hub(), request.order_id.as_ref())
-                && let Err(e) = crate::hub::github_app::sessions::deliver_on(
+            // machine's login instead. One GitHub gives no token now starts anyway, told so: its token comes with the
+            // first sweep GitHub answers.
+            if let (Some(hub), Some(order)) = (self.hub(), request.order_id.as_ref()) {
+                match crate::hub::github_app::sessions::deliver_at_launch(
                     &hub,
                     &request.project_ref,
                     order,
                     request.repo_id.as_ref(),
                     request.kind == fleetd_contracts::tasks::TaskKind::Write,
-                    Some(&on),
+                    &on,
                 )
                 .await
-            {
-                if request.kind == fleetd_contracts::tasks::TaskKind::Write {
-                    return Err(PortError::Failed(format!(
-                        "The order's GitHub token couldn't be handed over: {e}."
-                    )));
+                {
+                    Ok(None) => {}
+                    Ok(Some(pending)) => input.prompt = format!("{}\n\n{pending}", input.prompt),
+                    Err(e) if request.kind == fleetd_contracts::tasks::TaskKind::Write => {
+                        return Err(PortError::Failed(format!(
+                            "The order's GitHub token couldn't be handed over: {e}."
+                        )));
+                    }
+                    Err(e) => tracing::warn!(
+                        order = order.as_str(),
+                        "github: no token for the order's agents: {e}"
+                    ),
                 }
-                tracing::warn!(
-                    order = order.as_str(),
-                    "github: no token for the order's agents: {e}"
-                );
             }
             // Its order's starter's (or its Navi's owner's) 1Password token, for fill_credential when the project and
             // order have none of their own.
