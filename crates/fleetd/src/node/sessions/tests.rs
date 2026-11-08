@@ -1955,6 +1955,8 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let jobs = var(&spec, "CARGO_BUILD_JOBS").unwrap();
     assert_eq!(var(&spec, "MAKEFLAGS"), Some(format!("-j{jobs}")));
     assert_eq!(var(&spec, "GOFLAGS"), Some(format!("-p={jobs}")));
+    let workers = super::share::test_workers(jobs.parse().unwrap()).to_string();
+    assert_eq!(var(&spec, "VITEST_MAX_WORKERS").as_ref(), Some(&workers));
     // Its cargo is fleetd's, which waits its turn for a build slot.
     let slots = crate::node::build_slots::bin_dir(&dir.path().join("node"));
     assert!(
@@ -1966,7 +1968,8 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     // The note is a standing rule: in the system prompt, which a compaction never summarizes, not the brief.
     let system = std::fs::read_to_string(spec.system_prompt.as_ref().unwrap()).unwrap();
     assert!(
-        system.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
+        system.contains(&format!("- Builds get {jobs} parallel jobs per agent"))
+            && system.contains(&format!("- Test runners get {workers} workers")),
         "{system}"
     );
     assert!(

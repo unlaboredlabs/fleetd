@@ -1,22 +1,33 @@
-//! Each session's share of the machine: build tools held to its part of the CPUs, and a scratch dir of its own on
-//! disk. With 20 agents building at once and no limit, every `cargo`, `make` and `go build` sized itself to all the
-//! machine's cores, and their temporary files and build output went to /tmp, which is often tmpfs and held in RAM.
+//! Each session's share of the machine: build tools and test runners held to its part of the CPUs, and a scratch dir
+//! of its own on disk. With 20 agents building at once and no limit, every `cargo`, `make` and `go build` sized itself
+//! to all the machine's cores, every `pnpm test` started a vitest worker per core (31 forks, 11 GB at peak), and their
+//! temporary files and build output went to /tmp, which is often tmpfs and held in RAM.
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-/// The parallelism variables of the common build tools, each with its value for `n` jobs.
-fn jobs_vars(n: u64) -> [(&'static str, String); 4] {
+/// The test runner's variable: vitest's worker count, the desktop's and the phone's suites alike.
+const TEST_WORKERS_VAR: &str = "VITEST_MAX_WORKERS";
+
+/// Test workers for an agent whose builds get `n` jobs: its share, but at least 4, since a suite of many small files
+/// run on 2 workers takes minutes.
+pub fn test_workers(n: u64) -> u64 {
+    n.max(4)
+}
+
+/// The parallelism variables of the common build tools and the test runner, each with its value for `n` jobs.
+fn jobs_vars(n: u64) -> [(&'static str, String); 5] {
     [
         ("CARGO_BUILD_JOBS", n.to_string()),
         ("MAKEFLAGS", format!("-j{n}")),
         ("CMAKE_BUILD_PARALLEL_LEVEL", n.to_string()),
         ("GOFLAGS", format!("-p={n}")),
+        (TEST_WORKERS_VAR, test_workers(n).to_string()),
     ]
 }
 
-/// The build parallelism variables for `n` jobs that `env` (the user's own setup, `claude.env` included) doesn't
+/// The build and test parallelism variables for `n` jobs that `env` (the user's own setup, `claude.env` included) doesn't
 /// already set: a person's own choice stands.
 pub fn jobs_env(env: &[(String, String)], n: u64) -> Vec<(String, String)> {
     jobs_vars(n)
@@ -53,13 +64,24 @@ pub fn scratch_env(dir: &Path) -> Vec<(String, String)> {
 /// What a worker's brief says about its share of the machine. Names only the variables fleetd set.
 pub fn brief_note(set: &[(String, String)], n: u64) -> String {
     let mut note = String::from("## This machine\n");
-    if !set.is_empty() {
-        let names: Vec<&str> = set.iter().map(|(k, _)| k.as_str()).collect();
+    let names: Vec<&str> = set
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| *k != TEST_WORKERS_VAR)
+        .collect();
+    if !names.is_empty() {
         note.push_str(&format!(
             "- Builds get {n} parallel jobs per agent, your share of this machine's CPUs: {} {} set to it. Keep any \
-             other build or test runner to {n} jobs too.\n",
+             other build to {n} jobs too.\n",
             names.join(", "),
             if names.len() == 1 { "is" } else { "are" },
+        ));
+    }
+    if set.iter().any(|(k, _)| k == TEST_WORKERS_VAR) {
+        let w = test_workers(n);
+        note.push_str(&format!(
+            "- Test runners get {w} workers: {TEST_WORKERS_VAR} is set to it. Keep any other test runner to {w} \
+             workers too.\n"
         ));
     }
     note.push_str(
@@ -112,6 +134,7 @@ mod tests {
                 ("MAKEFLAGS", "-j3"),
                 ("CMAKE_BUILD_PARALLEL_LEVEL", "3"),
                 ("GOFLAGS", "-p=3"),
+                ("VITEST_MAX_WORKERS", "4"),
             ])
         );
         // Set, even to something other than a job count: theirs stands.
@@ -119,7 +142,8 @@ mod tests {
             jobs_env(
                 &env(&[
                     ("MAKEFLAGS", "--no-print-directory"),
-                    ("GOFLAGS", "-mod=vendor")
+                    ("GOFLAGS", "-mod=vendor"),
+                    ("VITEST_MAX_WORKERS", "1")
                 ]),
                 2
             ),
@@ -128,6 +152,20 @@ mod tests {
                 ("CMAKE_BUILD_PARALLEL_LEVEL", "2")
             ])
         );
+    }
+
+    /// The test runner gets the agent's share of the cores, never fewer than 4 workers.
+    #[test]
+    fn test_workers_are_the_share_with_a_floor_of_four() {
+        let workers = |n| {
+            jobs_env(&[], n)
+                .into_iter()
+                .find(|(k, _)| k == "VITEST_MAX_WORKERS")
+                .map(|(_, v)| v)
+        };
+        assert_eq!(workers(2).as_deref(), Some("4"));
+        assert_eq!(workers(4).as_deref(), Some("4"));
+        assert_eq!(workers(8).as_deref(), Some("8"));
     }
 
     #[test]
@@ -162,17 +200,26 @@ mod tests {
 
     #[test]
     fn the_brief_says_how_many_jobs_and_which_variables() {
-        let note = brief_note(&jobs_env(&[], 4), 4);
+        let note = brief_note(&jobs_env(&[], 2), 2);
         assert_eq!(
             note,
             "## This machine\n\
-             - Builds get 4 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, \
-             CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build or test runner to 4 jobs too.\n\
+             - Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, \
+             CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build to 2 jobs too.\n\
+             - Test runners get 4 workers: VITEST_MAX_WORKERS is set to it. Keep any other test runner to 4 workers \
+             too.\n\
              - Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in \
              memory.\n"
         );
         let one = brief_note(&env(&[("GOFLAGS", "-p=2")]), 2);
         assert!(one.contains(": GOFLAGS is set to it."), "{one}");
+        assert!(!one.contains("Test runners"), "{one}");
+        let tests_only = brief_note(&env(&[("VITEST_MAX_WORKERS", "6")]), 6);
+        assert!(!tests_only.contains("Builds get"), "{tests_only}");
+        assert!(
+            tests_only.contains("Test runners get 6 workers"),
+            "{tests_only}"
+        );
         // Nothing fleetd set: no jobs line.
         assert!(!brief_note(&[], 2).contains("jobs"));
     }
