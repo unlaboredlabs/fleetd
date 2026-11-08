@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, TelegramRequest, CloudKeyRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, CloudKeyRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
@@ -56,11 +56,6 @@ export interface FleetdApi {
      * onepassword_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
     onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
-    /**
-     * A project's Telegram bot token: main seals it to the project's machine and calls telegram_set. The output has its
-     * fingerprint only; nothing returns the value.
-     */
-    telegram(hub: HubId, request: TelegramRequest): Promise<CallOutcome>;
     /**
      * The hub's boat.dev API key: main seals it to the hub's own key and calls cloud_key_set. The output has the pool
      * as the hub keeps it; nothing returns the key.

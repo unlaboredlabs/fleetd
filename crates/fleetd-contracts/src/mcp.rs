@@ -1336,8 +1336,8 @@ output!(ProjectAddOutput {
 });
 
 // project_remove: stops the project's agent processes and erases it (D287, one rule for every project since D310): its
-// chat, approvals and purchases, asks and decisions, memory, skills, automations, sign-ins, Telegram link, transcripts,
-// attachments and screen recordings go, on the hub and its machine. Its files and branches stay unless removeFolder;
+// chat, approvals and purchases, asks and decisions, memory, skills, automations, sign-ins, transcripts, attachments
+// and screen recordings go, on the hub and its machine. Its files and branches stay unless removeFolder;
 // its worktrees too, unless removeWorktrees.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
@@ -3620,101 +3620,6 @@ output!(OnePasswordTestOutput {
     test: crate::onepassword::OnePasswordTest
 });
 
-// telegram_get, telegram_set, telegram_test, telegram_pair, telegram_unpair, telegram_pause, telegram_remove: a Navi's
-// Telegram bridge (W237, `telegram.rs`), its owner's own, from their devices. The bot token is sealed in the app to the
-// Navi's machine's boxPubKey; the hub relays the box to the node and keeps the fingerprint, never the token.
-input!(
-    #[serde(remote = "Self")]
-    TelegramGetInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    }
-);
-output!(TelegramGetOutput {
-    /// Absent until a bot token is saved.
-    bridge: Option<crate::telegram::TelegramBridge>,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramSetInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    /// The bot token, sealed on the client with crypto_box_seal to the Navi's machine's boxPubKey.
-    sealed: crate::secrets::SealedSecret,
-}
-);
-output!(TelegramSetOutput {
-    bridge: crate::telegram::TelegramBridge,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramTestInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    }
-);
-output!(TelegramTestOutput {
-    /// The bot Telegram answered for, when the token works.
-    bot: Option<crate::telegram::TelegramBot>,
-    /// Telegram's words when it doesn't, the token masked.
-    error: Option<Text<0, 500>>,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramPairInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    }
-);
-output!(TelegramPairOutput {
-    /// `https://t.me/<bot>?start=<code>`: Start there pairs the account that presses it.
-    link: Line<1, 300>,
-    expires_at: Timestamp,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramUnpairInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    }
-);
-output!(TelegramUnpairOutput {
-    bridge: crate::telegram::TelegramBridge,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramPauseInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    paused: bool,
-}
-);
-output!(TelegramPauseOutput {
-    bridge: crate::telegram::TelegramBridge,
-});
-input!(
-    #[serde(remote = "Self")]
-    TelegramRemoveInput {
-    /// The project (D310); one of `project` and `navi`, its old name for one release.
-    project: Option<ProjectRef>,
-    /// Old name of `project`, accepted for one release.
-    navi: Option<ProjectRef>,
-    }
-);
-output!(TelegramRemoveOutput { ok: True });
-
 // onepassword_cards: the Credit Card items the caller's own 1Password token reads, for a Navi's card picker: each
 // item's reference and name, never its number, expiry or code.
 input!(
@@ -3774,8 +3679,7 @@ output!(ChatPinsSetOutput {
 });
 
 names_project!(
-    required: TelegramGetInput, TelegramSetInput, TelegramTestInput, TelegramPairInput, TelegramUnpairInput,
-        TelegramPauseInput, TelegramRemoveInput, NaviAsksInput, HubLinkAddInput;
+    required: NaviAsksInput, HubLinkAddInput;
     optional: HubLinksGetInput, OnePasswordCardsInput
 );
 
@@ -3861,13 +3765,6 @@ tools! {
     project_approvals_set => ProjectApprovalsSet, Operate, NaviApprovalsSetInput, NaviApprovalsSetOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
     project_signins_forget => ProjectSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
-    telegram_get => TelegramGet, Read, TelegramGetInput, TelegramGetOutput;
-    telegram_set => TelegramSet, Operate, TelegramSetInput, TelegramSetOutput;
-    telegram_test => TelegramTest, Operate, TelegramTestInput, TelegramTestOutput;
-    telegram_pair => TelegramPair, Operate, TelegramPairInput, TelegramPairOutput;
-    telegram_unpair => TelegramUnpair, Operate, TelegramUnpairInput, TelegramUnpairOutput;
-    telegram_pause => TelegramPause, Operate, TelegramPauseInput, TelegramPauseOutput;
-    telegram_remove => TelegramRemove, Operate, TelegramRemoveInput, TelegramRemoveOutput;
     navi_purchases => NaviPurchases, Read, NaviPurchasesInput, NaviPurchasesOutput;
     project_purchases => ProjectPurchases, Read, NaviPurchasesInput, NaviPurchasesOutput;
     navi_card_set => NaviCardSet, Operate, NaviCardSetInput, NaviCardSetOutput;
@@ -4344,17 +4241,15 @@ mod project_arg_tests {
     fn a_project_argument_takes_its_old_name_navi_too() {
         let r = serde_json::json!({ "machineId": "devbox", "projectId": "p1" });
         for key in ["project", "navi"] {
-            let input: TelegramGetInput =
+            let input: NaviAsksInput =
                 serde_json::from_value(serde_json::json!({ key: r })).unwrap();
             assert_eq!(input.project_ref().project_id.as_str(), "p1", "{key}");
         }
         assert!(
-            serde_json::from_value::<TelegramGetInput>(
-                serde_json::json!({ "project": r, "navi": r })
-            )
-            .is_err()
+            serde_json::from_value::<NaviAsksInput>(serde_json::json!({ "project": r, "navi": r }))
+                .is_err()
         );
-        assert!(serde_json::from_value::<TelegramGetInput>(serde_json::json!({})).is_err());
+        assert!(serde_json::from_value::<NaviAsksInput>(serde_json::json!({})).is_err());
         let none: HubLinksGetInput = serde_json::from_value(serde_json::json!({})).unwrap();
         assert!(none.project_ref().is_none());
     }

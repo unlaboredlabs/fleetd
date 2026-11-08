@@ -7,9 +7,6 @@
 //! unless one notification would drop more than half of a person's phones that way: a relay set up wrong makes every
 //! token look dead, so those are kept and logged. Each failure is logged once an hour at most.
 //!
-//! A Navi's reply isn't pushed while the person talks to it on Telegram (their latest message came from there, and its
-//! bridge sends): Telegram already notifies them of it.
-//!
 //! Who an event is for: a Navi's, its owner; another project's, the person who last wrote in its chat, else the hub's
 //! owner; an event about no project, the hub's owners and admins.
 //!
@@ -499,10 +496,6 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             };
             // An inline item (a command to approve, a secret to give) has no text: its request is pushed instead.
             if m.text.as_str().trim().is_empty() {
-                return Ok(None);
-            }
-            // The person talks to this Navi on Telegram, where the reply goes: one notification, not two.
-            if crate::hub::telegram::run::active(hub, r) {
                 return Ok(None);
             }
             message_id = Some(m.message_id.clone());

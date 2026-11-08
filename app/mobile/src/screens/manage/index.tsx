@@ -1,6 +1,6 @@
 // Making and managing projects from the phone: their screens in the root stack (New Project as a sheet; New Screen, a
-// screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Telegram, Linked
-// hubs, Skills, the chat's Artifacts and one artifact pushed over its chat, in a stack of their own, its icon as a
+// screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs,
+// Skills, the chat's Artifacts and one artifact pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
 // bar. App.tsx adds these to its
 // navigators.
@@ -25,7 +25,6 @@ import { SkillEdit } from "./SkillEdit";
 import { SkillHistory } from "./SkillHistory";
 import { Skills } from "./Skills";
 import { SkillVersion } from "./SkillVersion";
-import { Telegram } from "./Telegram";
 import { Symbol } from "./parts";
 import { Artifact } from "../artifacts/Artifact";
 import { Artifacts } from "../artifacts/Artifacts";
@@ -102,9 +101,8 @@ export const newChatOptions = (t: Palette, open: () => void): NativeStackNavigat
 const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 
 /**
- * A project's screen, Rename, Agent Profiles, Approvals, Payments, Telegram, Linked hubs and Skills (a skill's editor a
- * sheet), pushed over its chat
- * as one screen of the root stack, with a bar of their own that slides in and out with them. The root stack's bar stays
+ * A project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs and Skills (a skill's editor a sheet),
+ * pushed over its chat as one screen of the root stack, with a bar of their own that slides in and out with them. The root stack's bar stays
  * hidden over the chat and these, as over the chats list: one it shows and hides again on the way back stood over the
  * screen sliding in, then slid off late (Chat's chatOptions). Info, first in this stack, has a back button of its own
  * to the chat.
@@ -119,7 +117,6 @@ function ChatInfo() {
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
       <InfoStack.Screen name="Approvals" component={Approvals} options={pushed(t, "Approvals")} />
       <InfoStack.Screen name="Payments" component={Payments} options={pushed(t, "Payments")} />
-      <InfoStack.Screen name="Telegram" component={Telegram} options={pushed(t, "Telegram")} />
       <InfoStack.Screen name="LinkedHubs" component={LinkedHubs} options={pushed(t, "Linked Hubs")} />
       <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />
       <InfoStack.Screen name="Skill" component={Skill} options={pushed(t, "")} />

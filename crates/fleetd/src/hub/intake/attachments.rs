@@ -613,40 +613,6 @@ pub async fn get(
     })
 }
 
-/// A file of `project`'s chat, for the hub's own use (a Navi's Telegram bridge sends it on): its name, type and bytes.
-/// None when it isn't the project's, or is gone.
-pub(crate) async fn read(
-    hub: &Hub,
-    id: &AttachmentId,
-    project: &ProjectRef,
-) -> Option<(String, AttachmentMime, Vec<u8>)> {
-    let n: i64 = id.as_str().get(1..)?.parse().ok()?;
-    let r = row(hub, id).ok()??;
-    let key = format!("{}/{}", project.machine_id, project.project_id);
-    let ours = hub
-        .db
-        .with(|c| {
-            Ok(c.query_row(
-                "SELECT 1 FROM attachments WHERE n = ?1 AND project = ?2",
-                params![n, key],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-        })
-        .ok()?;
-    if !ours && !in_project(hub, n, project).ok()? {
-        return None;
-    }
-    let path = dir(hub).join(&r.sha256);
-    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
-        .await
-        .ok()?
-        .ok()?;
-    let mime = serde_json::from_value::<AttachmentMime>(serde_json::Value::String(r.mime)).ok()?;
-    Some((r.name, mime, bytes))
-}
-
 /// The files sent in `project`'s chat, newest first: the ones a person attached there or to one of its orders, and the
 /// ones its lead or agents showed in it. The chat's Artifacts tab lists them.
 pub fn of_chat(

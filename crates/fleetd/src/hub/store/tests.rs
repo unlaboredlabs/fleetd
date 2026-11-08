@@ -428,6 +428,152 @@ fn routed_intents_go_on_an_older_hub() {
     assert_eq!(types, ["workstream.running"]);
 }
 
+/// A hub from before Telegram went (D339): its tables go, and what it left in the chats with them. A message written
+/// there keeps its words with no client; a forward stays someone else's words, as the share sheet's are, and still
+/// decodes.
+#[test]
+fn telegram_goes_on_an_older_hub_and_its_chats_still_decode() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.name == "202611081314_telegram_gone")
+        .expect("the migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m.sql).unwrap();
+    }
+    let message = |seq: i64, author: &str, extra: serde_json::Value| {
+        let mut m = serde_json::json!({
+            "messageId": format!("m{seq}"), "projectRef": { "machineId": "devbox", "projectId": "p1" },
+            "seq": seq, "author": author, "text": format!("words {seq}"),
+            "createdAt": "2026-11-08T09:00:00Z", "state": "final",
+        });
+        m.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        conn.execute(
+            "INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, data) VALUES ('devbox', 'p1', ?, 0, ?)",
+            rusqlite::params![seq, m.to_string()],
+        )
+        .unwrap();
+        m
+    };
+    let written = message(
+        1,
+        "human",
+        serde_json::json!({ "client": "telegram", "by": "Telegram" }),
+    );
+    let forwarded = message(
+        2,
+        "human",
+        serde_json::json!({ "client": "telegram", "by": "Telegram", "forwardedFrom": "Mallory" }),
+    );
+    let paired = message(
+        3,
+        "system",
+        serde_json::json!({ "text": "Telegram paired with Sam (@sam) through @sam_bot: messages there reach this project." }),
+    );
+    message(
+        4,
+        "human",
+        serde_json::json!({ "client": "app", "by": "laptop" }),
+    );
+    message(
+        5,
+        "system",
+        serde_json::json!({ "text": "Telegram unpaired: Sam no longer reaches this project there." }),
+    );
+    conn.execute(
+        "INSERT INTO events (created_ms, type, data) VALUES (0, 'chat.message', ?1), (0, 'chat.message', ?2),
+           (0, 'chat.message', ?3), (0, 'project.settings', ?4)",
+        rusqlite::params![
+            serde_json::json!({ "message": written }).to_string(),
+            serde_json::json!({ "message": forwarded }).to_string(),
+            serde_json::json!({ "message": paired }).to_string(),
+            r#"{"telegram":"removed"}"#
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO telegram_bridges (machine_id, project_id, data) VALUES ('devbox', 'p1', '{}')",
+        [],
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m.sql).unwrap();
+    }
+    let messages: Vec<fleetd_contracts::chat::ChatMessage> = conn
+        .prepare("SELECT data FROM chat_messages ORDER BY seq")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|d| serde_json::from_str(&d.unwrap()).unwrap())
+        .collect();
+    let seen: Vec<_> = messages
+        .iter()
+        .map(|m| {
+            (
+                m.seq.get(),
+                m.text.as_str(),
+                m.client,
+                m.by.as_ref().map(|b| b.as_str()),
+            )
+        })
+        .collect();
+    use fleetd_contracts::chat::ChatClient;
+    assert_eq!(
+        seen,
+        [
+            (1, "words 1", None, None),
+            (
+                2,
+                "Forwarded from Mallory: words 2",
+                Some(ChatClient::Share),
+                None
+            ),
+            (4, "words 4", Some(ChatClient::App), Some("laptop")),
+        ]
+    );
+    // The chat events say what the chat now does: the paired line's is gone.
+    let events: Vec<serde_json::Value> = conn
+        .prepare("SELECT data FROM events ORDER BY seq")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|d| serde_json::from_str(&d.unwrap()).unwrap())
+        .collect();
+    let said: Vec<_> = events
+        .iter()
+        .map(|e| {
+            let m = &e["message"];
+            (
+                m["text"].clone(),
+                m.get("client").cloned(),
+                m.get("by").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (serde_json::json!("words 1"), None, None),
+            (
+                serde_json::json!("Forwarded from Mallory: words 2"),
+                Some(serde_json::json!("share")),
+                None
+            ),
+        ]
+    );
+    let left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'telegram%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
 /// A hub from before the retro went: its tables, events and incident class go, and a playbook change still open is
 /// denied.
 #[test]

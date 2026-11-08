@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use fleetd_contracts::node_link::{
     CAP_AGENTS_MAC, CAP_CLAUDE_ACCOUNTS, CAP_MAC_TOOL, CAP_MCP_SERVERS, CAP_ONEPASSWORD,
-    CAP_SELF_UPDATE, CAP_SESSION_IOS, CAP_TELEGRAM, MacCheckId, MacCheckState,
+    CAP_SELF_UPDATE, CAP_SESSION_IOS, MacCheckId, MacCheckState,
 };
 
 use super::checks::{self, Pods, Probe, Ran};
@@ -519,7 +519,6 @@ fn the_mac_lists_no_call_that_carries_a_secret_a_claude_or_a_navi() {
         CAP_CLAUDE_ACCOUNTS,
         CAP_ONEPASSWORD,
         CAP_MCP_SERVERS,
-        CAP_TELEGRAM,
         fleetd_contracts::node_link::CAP_ASSISTANT,
         fleetd_contracts::node_link::CAP_ORDER_ENV,
         fleetd_contracts::node_link::CAP_CLAUDE_LOGIN,

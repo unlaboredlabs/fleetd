@@ -1,4 +1,4 @@
-// Settings, as iOS's own and Telegram's, behind the person's avatar on Chats: the hub this phone is paired with at the top, on a card as iOS's Apple Account
+// Settings, as iOS's own, behind the person's avatar on Chats: the hub this phone is paired with at the top, on a card as iOS's Apple Account
 // (fleetd's mark, its name and how the link is), then its address and version, for an admin its update, Import
 // Memory, its notifications, this phone and its app, and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";

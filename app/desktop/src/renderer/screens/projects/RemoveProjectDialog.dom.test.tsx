@@ -77,7 +77,7 @@ it("a project on a removed machine is only forgotten in fleetd", async () => {
 it("a project on a machine the hub has is deleted, saying everything that goes and asking for its name", async () => {
   await open({ machineId: "devbox", projectId: "storefront", title: "storefront", path: "/srv/storefront" });
   expect(dialog()?.textContent).toContain("Delete storefront?");
-  expect(dialog()?.textContent).toContain("its chat, memory, skills, approvals, purchases, automations, sign-ins and its Telegram link");
+  expect(dialog()?.textContent).toContain("its chat, memory, skills, approvals, purchases, automations and sign-ins");
   expect(dialog()?.textContent).toContain("Type storefront to confirm");
   expect(button("Delete project")?.disabled).toBe(true);
 });

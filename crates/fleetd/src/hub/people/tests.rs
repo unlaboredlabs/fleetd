@@ -727,7 +727,7 @@ async fn a_persons_zone_is_their_devices_else_policy_tz_else_the_hubs_and_says_w
         "Tue 3 Nov 2026, 12:05 America/New_York, the hub's policy.tz: theirs isn't known yet"
     );
 
-    // Their app sends its zone with a message; from then on it is theirs, on Telegram too.
+    // Their app sends its zone with a message; from then on it is theirs.
     let r = json!({ "machineId": "devbox", "projectId": "app" });
     registry()
         .call(

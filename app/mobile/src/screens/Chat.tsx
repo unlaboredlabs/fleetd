@@ -1,4 +1,4 @@
-// One project's chat, as iOS 26's Messages and Telegram draw one: the thread runs under a glass title and a
+// One project's chat, as iOS 26's Messages draws one: the thread runs under a glass title and a
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
 // and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
@@ -119,7 +119,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const items = useMemo(() => chatItems(chat, sends ?? []), [chat, sends]);
   const working = chatState?.leadWorking === true;
   const live = state.hub.phase === "live";
-  // What was read when the chat opened: the unread bar stays there while it's open, as Telegram's does.
+  // What was read when the chat opened: the unread bar stays there while it's open, as chat apps' does.
   // What was unread is what had come by then: a reply that comes while you look isn't.
   const [readAtOpen] = useState(() => prefs.read[chatKey]);
   const lastAtOpen = useRef<number | undefined>(undefined);
@@ -164,7 +164,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   }, [gone, navigation]);
 
   const link = linkStatus(state.hub);
-  // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
+  // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
@@ -218,7 +218,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
   };
-  // The status bar's tap goes a screen older, as Telegram's, never to the newest end.
+  // The status bar's tap goes a screen older, as chat apps' does, never to the newest end.
   const olderByAScreen = () => {
     const { y, length } = scrolled.current;
     list.current?.scrollToOffset({ offset: olderOffset(y, length, room, height), animated: !reduce });
@@ -639,7 +639,7 @@ function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: () =>
   );
 }
 
-/** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's Telegram. Tapped, its Info, as Messages'. */
+/** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's chat apps draw it. Tapped, its Info, as Messages'. */
 function ChatTitle({ picture, title, status, busy, onPress }: { picture: Pictured | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
@@ -917,7 +917,7 @@ function SendWait({ state, at }: Pick<ChatItem, "state" | "at">) {
   );
 }
 
-/** A send that didn't go: its red !, which offers Try Again and Delete, as Messages' and Telegram's do. */
+/** A send that didn't go: its red !, which offers Try Again and Delete, as Messages' does. */
 function NotSent({ chatKey, id, note }: { chatKey: Key; id: string; note: string | undefined }) {
   const t = useTheme();
   const session = useSession();
@@ -948,7 +948,7 @@ function NotSent({ chatKey, id, note }: { chatKey: Key; id: string; note: string
   );
 }
 
-/** What a reply quotes, inside its bubble: whose and their first line, as Telegram's; tapping goes to it. */
+/** What a reply quotes, inside its bubble: whose and their first line, as chat apps show it; tapping goes to it. */
 function Quote({ who, quote, onAccent, onPress }: { who: string; quote: string; onAccent: boolean; onPress: (() => void) | undefined }) {
   const t = useTheme();
   const ink = onAccent ? t.onAccent : t.accent;
@@ -1247,7 +1247,7 @@ function SkillLine({ saved, onPress }: { saved: SkillSaved; onPress: () => void 
   );
 }
 
-/** A bubble's words to select a part of, in a sheet, as Telegram's Select Text. */
+/** A bubble's words to select a part of, in a sheet, as chat apps' Select Text. */
 function SelectText({ text, onClose }: { text: string | null; onClose: () => void }) {
   const t = useTheme();
   if (text === null) return null;

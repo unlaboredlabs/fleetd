@@ -2,7 +2,7 @@
 // and 50 pt circles come in beside it, each popping in as the row passes it. Past the commit point the first circle
 // stretches into a capsule across the gap, the row jumps ahead, and letting go there runs it. Measured on the iOS 26
 // simulator (Messages: circles 50 pt, 10 pt from the edge and each other, the card's corner 26 pt) and, for what a
-// screenshot can't show, Telegram's open-source port of UIKit's own (ItemListRevealMotion.swift): the commit and armed
+// screenshot can't show, an open-source chat app's port of UIKit's own (ItemListRevealMotion.swift): the commit and armed
 // distances, the edge zone, the 0.7 power resistance, the open-or-close rule and the springs' response and damping.
 // Distances are points along the swipe's direction; velocities, points a second. Every function here is a worklet: the
 // gesture runs them on the UI thread.
@@ -10,7 +10,7 @@
 /** A circle's size, and its gap to the screen's edge and to the next one. */
 export const BUTTON = 50;
 const GAP = 10;
-/** The lifted row's corner: Messages', which is Telegram's. */
+/** The lifted row's corner: Messages'. */
 export const CARD_RADIUS = 26;
 /** Points sideways before a drag is a swipe; a mostly vertical one before that stays the list's scroll. */
 export const SLOP = 12;

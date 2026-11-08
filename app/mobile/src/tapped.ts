@@ -1,5 +1,5 @@
 // Where a tapped notification leaves the app's stack: the chats list, its chat over it, and a screen's live view over
-// that, as Messages and Telegram open a tapped banner, with Back to the list. Whatever was open goes (another chat, a
+// that, as Messages opens a tapped banner, with Back to the list. Whatever was open goes (another chat, a
 // sheet, Settings, a live view), so the chat never opens under a sheet or in place of another chat's screen. The chat
 // already open, or a live view already watching that screen, stays as it was: only its params change, which land it
 // again (`tap`). The chats list keeps its own stack's state, so Back finds it as it was left (scrolled, searched). A

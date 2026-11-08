@@ -62,7 +62,7 @@ words; the hub doesn't read words. Left without a zone, it runs in [yours](/docs
 - It shows in the automations list as "Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)", with its next run, until it
   runs.
 - At that time it opens an order for the lead once. The lead's message lands in the chat, so it reaches
-  [Telegram](/docs/projects#telegram) and your phone's notifications like any reply.
+  your phone's notifications like any reply.
 - Then it is **Done**: it stays in the list with its run, and runs again only with a new time (**Edit**) or Run now.
   When a project's 50 automations are full, the oldest done one makes room for a new one.
 - Delete it to cancel it before it runs. Paused, it doesn't run; resuming it after its time is refused until it has

@@ -1,4 +1,4 @@
-// Chats, as Telegram and Messages list them: your pinned chats as Messages' grid of large avatars over the list
+// Chats, as Messages and other chat apps list them: your pinned chats as Messages' grid of large avatars over the list
 // (Pinned.tsx), then the chats with an approval waiting for you on top with its count, then whatever spoke last, each a full-bleed row with its avatar, its newest message
 // and when, and a count of what you haven't read (grey when muted). Its bars are Messages' on iOS 26: a compact top
 // with the person's avatar on the left, which opens Settings and shows the link to the hub as a dot, and + on the
@@ -300,7 +300,7 @@ function MeButton({ initial, tone, label, onPress }: { initial: string; tone: Li
 }
 
 /**
- * Android's filters, a row of chips over the list, as Telegram's folder tabs: the chosen one filled with the accent.
+ * Android's filters, a row of chips over the list, as chat apps' folder tabs: the chosen one filled with the accent.
  * Unread counts its chats in the accent, Needs you its approvals' chats in the rows' approval orange.
  */
 function Filters({ choices, value, onChange, counts }: { choices: readonly FilterChoice[]; value: Filter; onChange: (f: Filter) => void; counts: { readonly unread: number; readonly needsYou: number } }) {
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   name: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
   nameText: { flexShrink: 1 },
-  // Two lines kept for every row, as Telegram does, so rows keep one rhythm whatever their preview.
+  // Two lines kept for every row, as chat apps do, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
   /** The lead's glyph, centred on the preview's first line, as the desktop's sidebar shows a working lead. */

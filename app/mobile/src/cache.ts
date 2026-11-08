@@ -1,5 +1,5 @@
 // What the phone keeps of a hub between launches, so it opens on the chats as it last saw them, as Messages and
-// Telegram do, rather than on skeleton rows: the projects and their chat states, each chat's newest few messages (the
+// other chat apps do, rather than on skeleton rows: the projects and their chat states, each chat's newest few messages (the
 // list's previews), who the person is, and the messages on their way, which an app iOS kills must not lose. The
 // snapshot and pages replace it all once the link is live. Pure, so it is unit-tested; cacheStore.ts keeps it on disk.
 import type { ChatMessage, ChatSend, ProjectChatState, ProjectSummary } from "./desktop";

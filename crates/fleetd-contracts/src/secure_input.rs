@@ -4,8 +4,7 @@
 //!   site, the field and why. Its node checks the page is on the site and the field is there, then opens the request on
 //!   the hub ([`SecureInputOpenCall`]).
 //! - Typed by the person: a secret request with a `fill:<machine>:<browser session>` sink. The app seals what they
-//!   type to the node, which types it straight into that field on that site (frames included), once. Telegram never
-//!   asks for the value: a chat there isn't sealed, so its card says to open fleetd.
+//!   type to the node, which types it straight into that field on that site (frames included), once.
 //! - From 1Password (`ref`, an Identity, Passport or similar item's field): an approval; once approved, the Navi calls
 //!   [`SecureInputFillCall`] (`secure_input_fill`) within [`FILL_WINDOW_MINUTES`], and the node claims it once and fills
 //!   it.

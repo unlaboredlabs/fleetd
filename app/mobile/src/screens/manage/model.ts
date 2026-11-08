@@ -5,7 +5,7 @@ import { deleteWords as eraseWords, foundRows, isOnlyMe, isYours, tilde, type Ag
 import type { Machine } from "../../store";
 
 /**
- * Whether the person may manage it from the phone: rename, Only me, its approvals, payments, Telegram, links, sign-ins,
+ * Whether the person may manage it from the phone: rename, Only me, its approvals, payments, links, sign-ins,
  * archive and delete. A shared project: anyone who operates its machine, as the desktop's Settings › Projects. An
  * Only-me one: its owner alone; one with no owner, on a hub before people, is everyone's.
  */

@@ -1,4 +1,4 @@
-// A context menu as iOS 26 and Telegram draw one: what was pressed lifted over a blurred screen, and a glass menu of
+// A context menu as iOS 26 draws one: what was pressed lifted over a blurred screen, and a glass menu of
 // actions beside it (each a word, then its symbol). It fades in as the desktop's menus do (--dur-fast, ease-out) and
 // closes at once. Tapping outside closes it; VoiceOver's escape gesture does too.
 import { BlurView } from "expo-blur";

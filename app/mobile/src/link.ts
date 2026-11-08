@@ -1,4 +1,4 @@
-// What the header says while the link to the hub isn't live, as Telegram's "Connecting…": the words take the title's
+// What the header says while the link to the hub isn't live, as chat apps' "Connecting…": the words take the title's
 // place, so nothing is added to the screen and the list under it never moves (linkHeader.tsx, link.test.ts).
 import type { HubState } from "./desktop";
 

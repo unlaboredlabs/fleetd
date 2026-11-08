@@ -43,8 +43,6 @@ const BY_PROJECT: &[&str] = &[
     "navi_sites",
     "skill_versions",
     "skill_uses",
-    "telegram_bridges",
-    "telegram_cards",
     "browser_sessions",
     "screen_waits",
     "session_prompts",

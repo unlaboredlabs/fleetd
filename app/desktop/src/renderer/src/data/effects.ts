@@ -90,8 +90,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     // Its picture, read again only when it has one (project_avatar_set).
     if (type === "project.settings") out.push({ tool: "project_avatar_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }
-  // A linked hub removed from a project, or its Telegram bridge unpaired or removed: its settings pages read again.
-  if (type === "project.settings") out.push({ tool: "telegram_get" }, { tool: "hub_links_get" });
+  // A linked hub removed from a project: its settings pages read again.
+  if (type === "project.settings") out.push({ tool: "hub_links_get" });
   if (type === "prompt.changed" || type === "prompt.default_changed") {
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }

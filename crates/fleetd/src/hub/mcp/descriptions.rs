@@ -54,7 +54,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_remove",
-        "Stop the project's agent processes and erase it, with the checkouts of its repos that no other project holds: one rule for every project (D310). On the hub and its machine its chat, approvals and purchases, asks and decisions, orders and tasks, memory, skills, automations, kept browser sign-ins, Telegram link, linked hubs, transcripts, attachments and screen recordings go. Its files and branches stay on the machine unless removeFolder (default false), which deletes its folder with everything in it, refused for a home folder, fleetd's own or one holding another project. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped. A project of a machine the hub no longer has is only forgotten on the hub, since no machine holds its files.",
+        "Stop the project's agent processes and erase it, with the checkouts of its repos that no other project holds: one rule for every project (D310). On the hub and its machine its chat, approvals and purchases, asks and decisions, orders and tasks, memory, skills, automations, kept browser sign-ins, linked hubs, transcripts, attachments and screen recordings go. Its files and branches stay on the machine unless removeFolder (default false), which deletes its folder with everything in it, refused for a home folder, fleetd's own or one holding another project. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped. A project of a machine the hub no longer has is only forgotten on the hub, since no machine holds its files.",
     ),
     (
         "project_repo_add",
@@ -279,34 +279,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "claude_choice_set",
         "A person's own device only. choice: subscription (their own, always) or hub_api (the hub's API configuration, if they may use it); absent: their subscription once connected, else the hub's API. Agents started from then on run this way; a running one keeps its account.",
-    ),
-    (
-        "telegram_get",
-        "A person's own device only (another person's Only me project is refused). The project's Telegram bridge (project: its ref; navi, its old name, still works): the token's fingerprint (never the token), the bot from the last Test, the paired account, whether a pairing link waits, paused, and the node's status (connected, paused, retrying, stopped, with its last error); offline when the node can't say now. Absent until a token is saved.",
-    ),
-    (
-        "telegram_set",
-        "Any project's, from a person's own device (another person's Only me project is refused). Save the project's Telegram bot token from @BotFather: sealed, the token sealed on the client with crypto_box_seal to the project's machine's boxPubKey. The hub relays the box to its node and keeps the fingerprint, never the token. A new token starts afresh: no paired account. Then telegram_test, then telegram_pair.",
-    ),
-    (
-        "telegram_test",
-        "A person's own device only. Ask Telegram who the saved token is (getMe): bot (its name, @username and photo), else error in Telegram's words with the token masked.",
-    ),
-    (
-        "telegram_pair",
-        "A person's own device only. A one-time link, https://t.me/<bot>?start=<code>, good for 15 minutes: the account that presses Start there becomes the only one the project answers on Telegram, replacing any before.",
-    ),
-    (
-        "telegram_unpair",
-        "A person's own device only. The paired Telegram account no longer reaches the project; telegram_pair connects one again.",
-    ),
-    (
-        "telegram_pause",
-        "A person's own device only. paused true: the node stops reading and sending Telegram until paused false. What the lead says meanwhile stays in the app.",
-    ),
-    (
-        "telegram_remove",
-        "A person's own device only. The project's node forgets the bot token and the bridge ends. Needs the node online.",
     ),
     (
         "onepassword_get",

@@ -13,7 +13,7 @@ config.watchFolders = [
   path.join(desktop, "renderer/screens/projects"),
   path.join(desktop, "renderer/screens/sessions"),
   path.join(desktop, "renderer/screens/settings"),
-  // status/view's `when`: the time Telegram's and linked hubs' words give an error.
+  // status/view's `when`: the time linked hubs' words give an error.
   path.join(desktop, "renderer/screens/status"),
   path.join(desktop, "renderer/screens/updates"),
 ];

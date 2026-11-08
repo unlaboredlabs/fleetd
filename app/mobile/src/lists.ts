@@ -143,7 +143,7 @@ export const rowLine = (row: Pick<Row, "preview" | "working" | "want" | "empty">
   row.preview ?? (row.working ? "Working…" : (row.want ?? (row.empty ? "No messages yet" : "")));
 
 /**
- * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
+ * The chats list's filters, as chat apps' folders: everything, what you haven't read, the chats with an approval
  * waiting for you, the pinned ones, and the archived ones, which are in none of the others.
  */
 export type Filter = "all" | "unread" | "needsYou" | "pinned" | "archived";
@@ -163,7 +163,7 @@ export interface ChatRow extends Row {
 const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Number(a.approvals > 0);
 
 /**
- * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
+ * The chats list, as chat apps keep it: one list, the chats with an approval waiting on top, then the pinned ones in the
  * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
  * and whether it's muted (its count goes grey). Archived projects are only under Archived, except while an approval of
  * theirs waits. `pinned`: this hub's pins, in the person's order (prefs.ts pinsOf).
@@ -277,7 +277,7 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   return { title: `${who} ${wants}`, who, wants, risk, fields, hidden };
 };
 
-/** An approval in a chat once its card is gone: how it went, said as the hub's Telegram card says it. */
+/** An approval in a chat once its card is gone: how it went, in a few words. */
 export interface ApprovalOutcome {
   readonly text: string;
   readonly tone: "approved" | "denied" | "failed" | "waiting";

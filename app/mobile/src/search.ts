@@ -1,4 +1,4 @@
-// Search, as Telegram's: the chats whose name matches, then the messages that say it, newest first, each with the
+// Search, as chat apps': the chats whose name matches, then the messages that say it, newest first, each with the
 // words around the match. The hub has no search of its own, so it runs over what the phone holds: each chat's newest
 // page (read when search opens, session.ts) and whatever was opened. Pure, so it is unit-tested.
 import type { ChatMessage } from "./desktop";

@@ -2,10 +2,10 @@
 // desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
 // orders_board, checklist_get, pr_list, profiles_list, skills_list), Rename (project_settings_set's title), Only me
 // (its onlyMe), Archive, its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent
-// Profiles (project_set), Approvals, Telegram (telegram_*), Linked hubs (hub_links_get, hub_link_remove), Forget
+// Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
 // by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type ProjectIcon, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TelegramBridge, type TodoItem } from "../../desktop";
+import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type ProjectIcon, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -141,19 +141,6 @@ export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<App
 /** A mode picked, the checker's model and effort kept as the person set them; the defaults stay the hub's. */
 export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMode, saved: ApprovalsOutput["approvals"]): Promise<Result<null>> => {
   const r = await hub.call(PROJECT_TOOLS.approvalsSet, { ...ref(p), mode, ...(saved.defaults ? {} : { model: saved.model, effort: saved.effort }) });
-  return r.ok ? { ok: true, value: null } : r;
-};
-
-/** Its Telegram bot, undefined until one is set up (on the desktop). */
-export const readTelegram = async (hub: Hub, p: ProjectRef): Promise<Result<TelegramBridge | undefined>> => {
-  const r = await hub.call("telegram_get", { navi: ref(p) });
-  return r.ok ? { ok: true, value: r.output.bridge } : r;
-};
-
-/** Pause or resume its bot, unpair the account it answers, or remove the bot and its sealed token. */
-export const telegramAct = async (hub: Hub, p: ProjectRef, act: { readonly t: "pause"; readonly paused: boolean } | { readonly t: "unpair" } | { readonly t: "remove" }): Promise<Result<null>> => {
-  const navi = ref(p);
-  const r = act.t === "pause" ? await hub.call("telegram_pause", { navi, paused: act.paused }) : act.t === "unpair" ? await hub.call("telegram_unpair", { navi }) : await hub.call("telegram_remove", { navi });
   return r.ok ? { ok: true, value: null } : r;
 };
 

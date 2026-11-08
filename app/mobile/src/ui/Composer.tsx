@@ -1,4 +1,4 @@
-// The composer, as iOS 26's Messages and Telegram draw it: floating over the thread in Liquid Glass, an attach button
+// The composer, as iOS 26's Messages draws it: floating over the thread in Liquid Glass, an attach button
 // (photos, the camera, files; iOS's own menu on iOS 26, MenuButton) beside a glass field that grows with the text, and a round send button inside it that
 // shows once there is something to send. Picked files upload at once (upload.ts), each a thumbnail with its progress;
 // a reply shows what it quotes above the field. Return makes a new line; the button sends. While the lead works and

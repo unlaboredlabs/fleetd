@@ -73,9 +73,8 @@ describe("event effects", () => {
   it("a remove elsewhere reaches every open page that showed it", () => {
     // An MCP server removed: Integrations drops it.
     expect(effectsOf(e("mcp.oauth", { name: "mail", removed: true }))).toEqual({ invalidate: [{ tool: "mcp_servers_get" }], resync: false });
-    // A linked hub removed from a project, or its Telegram bridge unpaired or removed.
-    const settings = tools(e("project.settings", { telegram: "removed" }, { machineId: "devbox", projectId: "app" }));
-    expect(settings).toContain("telegram_get");
+    // A linked hub removed from a project.
+    const settings = tools(e("project.settings", { hubLinkRemoved: "L1" }, { machineId: "devbox", projectId: "app" }));
     expect(settings).toContain("hub_links_get");
     // Someone's Claude subscription, 1Password token or GitHub connection removed, or a hub link of theirs revoked.
     for (const change of ["account_removed", "link_revoked"]) {

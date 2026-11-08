@@ -999,7 +999,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
 }
 
 /// A message from the phone's share sheet or Shortcuts says so, to the app and to the lead, who reads it as possibly
-/// holding content from elsewhere. Only the hub's Telegram path writes as Telegram: a caller that says so is refused.
+/// holding content from elsewhere.
 #[tokio::test]
 async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
     let (hub, _home) = hub();
@@ -1050,19 +1050,6 @@ async fn the_share_sheet_and_shortcuts_say_where_a_message_came_from() {
         "{}",
         read(&shared)
     );
-    let claimed = tools
-        .call(
-            &hub,
-            &person(),
-            "chat_send",
-            say_to_app("hi", "s3", Some("telegram")),
-        )
-        .await
-        .unwrap_err();
-    let crate::hub::api::CallError::Tool(claimed) = claimed else {
-        panic!("not the tool's refusal")
-    };
-    assert!(claimed.message.contains("Telegram"), "{}", claimed.message);
 }
 
 /// A project's own lead and tasks talk through their fleetd tools, never its chat. Another project's task may write,

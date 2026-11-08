@@ -2,7 +2,7 @@
 // bar the stack showed over a screen and hid again on the way back stood still over the screen sliding in, then slid
 // off after it (UIKit, iOS 26), the "top bar shifts" of going back. The chat draws its bar in the screen; Info, Rename
 // and Agent Profiles are a stack of their own, with their own bar. The chat's title, its name and picture, is a button
-// to its Info, as in Messages and Telegram.
+// to its Info, as in Messages.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";

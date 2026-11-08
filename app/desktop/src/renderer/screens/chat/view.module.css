@@ -545,7 +545,7 @@ span.changeUndo {
   text-align: left;
   cursor: pointer;
 }
-/* Where a person's message came from when not this app (Telegram, a forward there): a quiet line over its bubble. */
+/* Where a person's message came from when not this app (the Share Sheet, Shortcuts): a quiet line under its bubble. */
 .via {
   display: flex;
   align-items: center;

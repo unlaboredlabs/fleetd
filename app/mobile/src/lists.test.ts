@@ -213,7 +213,7 @@ describe("an answered approval's line", () => {
     expect(approvalOutcome({ state: "open" }, undefined)).toMatchObject({ text: "Waiting for approval", tone: "waiting" });
   });
 
-  it("follows the message once it says how it went, as the hub's Telegram card does", () => {
+  it("follows the message once it says how it went", () => {
     const decided = { ...gated("r1"), state: "approved" } as const;
     expect(approvalOutcome({ state: "ran", by: "human:ada", answeredAt: ANSWERED }, decided)).toEqual({ text: "Approved by ada", tone: "approved", at: ANSWERED });
     expect(approvalOutcome({ state: "failed", by: "human:ada" }, decided).text).toBe("Approved by ada, but it failed");

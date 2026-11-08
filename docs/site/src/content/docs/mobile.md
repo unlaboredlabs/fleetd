@@ -89,11 +89,11 @@ The **ⓘ** at the top of a chat opens its project's page:
   always allowed.
 - **Only Me**: who sees and uses it, as in the desktop app.
 - **Machine** and **Folder**: where it runs, read only.
-- **Approvals**, **Payments**, **Telegram**, **Linked Hubs** and **Skills**: the project's
-  [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, its Telegram bot, the
-  hubs it reaches and what it learned, as in the desktop app's settings.
-- **Artifacts**: the chat's [artifacts](#artifacts). The checker's model, setting up a Telegram
-  bot and linking a hub are done in the desktop app.
+- **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the project's
+  [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
+  and what it learned, as in the desktop app's settings.
+- **Artifacts**: the chat's [artifacts](#artifacts). The checker's model and linking a hub are done
+  in the desktop app.
 - **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
 - **Archive Project** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
   again while an approval of its waits); **Unarchive Project** brings it back.

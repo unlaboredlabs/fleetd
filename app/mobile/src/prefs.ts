@@ -1,4 +1,4 @@
-// What this phone keeps about its chats, as Telegram does per device: which are muted, how far each was read, and
+// What this phone keeps about its chats, as chat apps do per device: which are muted, how far each was read, and
 // which were marked unread by hand, which the hub knows none of; and its copy of the person's pinned chats on each hub,
 // which the hub keeps (pins.ts). Pure, so it is unit-tested; prefsStore.ts keeps it on disk.
 import type { ChatMessage } from "./desktop";
