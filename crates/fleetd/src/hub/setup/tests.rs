@@ -565,3 +565,40 @@ async fn cloud_create_mints_no_enroll_code_while_starts_are_held() {
     }
     assert!(hub.auth.open_enroll_tokens().unwrap().is_empty());
 }
+
+/// Cloud machines are the hub's, as its other Hub settings are: a key with admin on some machines only changes none of
+/// them, nor spends a start, nor stops them.
+#[tokio::test]
+async fn the_cloud_tools_take_admin_on_every_machine() {
+    let (hub, _home) = hub();
+    hub.pool.set_key("boat_test_key").unwrap();
+    let one_machine: Caller = serde_json::from_value(json!({
+        "keyId": "k2", "name": "cli", "prefix": "fld_abcdeg", "createdAt": "2026-10-19T10:00:00.000Z",
+        "grants": [{ "role": "admin", "machines": ["devbox"] }],
+    }))
+    .unwrap();
+    let settings = json!({ "enabled": true, "poolSize": 1, "machineType": "large", "dayBudget": 3.0, "environment": "fleetd-devbox" });
+    for (tool, input) in [
+        ("cloud_set", settings.clone()),
+        (
+            "cloud_key_set",
+            json!({ "sealed": "A".repeat(64) + "AA==" }),
+        ),
+        ("cloud_test", json!({})),
+        ("cloud_create", json!({})),
+        ("cloud_reset", json!({ "machineId": "boat-1" })),
+        ("cloud_resume", json!({})),
+        ("cloud_stop", json!({})),
+    ] {
+        let why = format!(
+            "{:?}",
+            call(&hub, &one_machine, tool, input).await.unwrap_err()
+        );
+        assert!(why.contains("Forbidden"), "{tool}: {why}");
+    }
+    assert!(
+        call(&hub, &caller("admin"), "cloud_set", settings)
+            .await
+            .is_ok()
+    );
+}

@@ -285,11 +285,17 @@ pub fn allows(info: &AgentKeyInfo, role: Role, machine_id: Option<&MachineId>) -
 pub struct Auth {
     db: Arc<HubDb>,
     clock: Arc<dyn Clock>,
+    /// Bumped at each revoke in this process, so open connections check their key again at once ([`Self::revocations`]).
+    revoked: tokio::sync::watch::Sender<u64>,
 }
 
 impl Auth {
     pub fn new(db: Arc<HubDb>, clock: Arc<dyn Clock>) -> Self {
-        Self { db, clock }
+        Self {
+            db,
+            clock,
+            revoked: tokio::sync::watch::Sender::new(0),
+        }
     }
 
     fn now(&self) -> i64 {
@@ -377,6 +383,17 @@ impl Auth {
         })
     }
 
+    /// Changes each time keys are revoked in this process (a device signed out, a person removed), so a connection held
+    /// open with a key checks it again then rather than at its next request.
+    pub fn revocations(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.revoked.subscribe()
+    }
+
+    /// Keys were revoked outside [`Self::revoke`] (a person removed): connections check theirs again.
+    pub fn revoked_now(&self) {
+        self.revoked.send_modify(|n| *n = n.wrapping_add(1));
+    }
+
     /// Accepts `fld_…` or `Bearer fld_…`. Revocation is seen on the next call.
     pub fn verify(&self, bearer: &str) -> Result<AgentKeyInfo, AuthError> {
         let key = strip_bearer(bearer);
@@ -448,6 +465,7 @@ impl Auth {
                 key_id: key_id.to_owned(),
             });
         }
+        self.revoked_now();
         Ok(())
     }
 
@@ -478,6 +496,9 @@ impl Auth {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             // The key in it is revoked already; the next start tries again.
             Err(error) => tracing::warn!("cannot delete {}: {error}", file.display()),
+        }
+        if revoked > 0 {
+            self.revoked_now();
         }
         Ok(revoked)
     }

@@ -30,6 +30,9 @@ const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 /// How long a closing frame may take: a socket too far behind may never take it.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How often an open connection's key is checked again with no frame from the app: a revoke in this process is seen at
+/// once ([`crate::hub::auth::Auth::revocations`]), one written by `fleetd hub key revoke` from another by then.
+pub const KEY_RECHECK: std::time::Duration = std::time::Duration::from_secs(15);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -168,6 +171,26 @@ impl Session {
         self.out.push(frame.to_string());
     }
 
+    /// The session's key checked again, its grants read afresh: the refusal, sent, once it is revoked or its person
+    /// removed, which ends the connection and every stream and feed it holds. A failed lookup keeps it until the next.
+    fn refused_now(&mut self) -> Option<After> {
+        let key = self.caller.as_ref()?.0.clone();
+        match self.hub.auth.verify(&key) {
+            Ok(info) => {
+                self.caller = Some((key, info));
+                None
+            }
+            Err(error @ AuthError::Unauthorized(_)) => {
+                self.send(error_frame(&refused(error), None));
+                Some(After::Close(CLOSE_UNAUTHORIZED, "unauthorized"))
+            }
+            Err(other) => {
+                tracing::warn!(error = %other, "an app connection's key not checked again");
+                None
+            }
+        }
+    }
+
     async fn on_text(&mut self, text: &str) -> After {
         let Ok(message) = serde_json::from_str::<AppClientMessage>(text) else {
             let malformed = ToolError::new(ErrorCode::Invalid, "Unknown or malformed message.")
@@ -195,6 +218,9 @@ impl Session {
                     After::Close(CLOSE_UNAUTHORIZED, "unauthorized")
                 }
             };
+        }
+        if let Some(close) = self.refused_now() {
+            return close;
         }
         let Some((key, info)) = self.caller.clone() else {
             let id = match &message {
@@ -442,8 +468,15 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
     let behind = frames.behind();
+    let mut revocations = session.hub.auth.revocations();
+    let mut recheck =
+        tokio::time::interval_at(tokio::time::Instant::now() + KEY_RECHECK, KEY_RECHECK);
+    recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let close = loop {
+        let mut after = None;
         tokio::select! {
+            Ok(()) = revocations.changed() => after = session.refused_now(),
+            _ = recheck.tick() => after = session.refused_now(),
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
             () = behind.wait() => break Some(too_far_behind(&behind)),
             Some(frame) = frames.recv() => {
@@ -477,16 +510,17 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                     }
                     Some(Err(_)) | None => break None,
                 };
-                if let After::Close(code, reason) = session.on_text(&text).await {
-                    // Flush what this frame produced (the refusal) before closing.
-                    while let Some(frame) = frames.try_recv() {
-                        if !send(&mut socket, &behind, frame).await {
-                            break;
-                        }
-                    }
-                    break Some((code, reason));
+                after = Some(session.on_text(&text).await);
+            }
+        }
+        if let Some(After::Close(code, reason)) = after {
+            // Flush what this frame produced (the refusal) before closing.
+            while let Some(frame) = frames.try_recv() {
+                if !send(&mut socket, &behind, frame).await {
+                    break;
                 }
             }
+            break Some((code, reason));
         }
     };
     if let Some(stream) = session.stream.take() {

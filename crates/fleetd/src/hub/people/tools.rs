@@ -370,6 +370,8 @@ async fn person_remove(
     let (person, revoked) = store
         .remove(&input.person_id)?
         .ok_or_else(|| unknown_person(id))?;
+    // Their devices' open connections end now, not at their next request.
+    hub.auth.revoked_now();
     // Their Claude subscription goes with them: nobody's work runs on it again.
     crate::hub::claude_accounts::tools::forget_person(&hub, &person.person_id).await;
     // And their 1Password token.

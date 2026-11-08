@@ -106,6 +106,25 @@ fn five_failures_in_a_minute_block_that_address_only_until_the_minute_passes() {
     assert!(!limiter.blocked(a, 60_000), "the first failure aged out");
 }
 
+/// An IPv6 client holds a whole /64 and picks any address in it, so its wrong codes count together; and an IPv4 client
+/// reaching a dual-stack listener as `::ffff:a.b.c.d` is that IPv4 address.
+#[test]
+fn wrong_codes_count_per_ipv6_64_and_a_mapped_ipv4_is_its_ipv4() {
+    let limiter = Limiter::default();
+    let ip = |s: &str| Some(s.parse::<std::net::IpAddr>().unwrap());
+    for i in 0..5 {
+        let addr = ip(&format!("2001:db8:1:2::{:x}", i + 1));
+        assert!(!limiter.blocked(addr, 0), "the {}th address", i + 1);
+        limiter.failed(addr, 0);
+    }
+    assert!(limiter.blocked(ip("2001:db8:1:2:ffff::9"), 0));
+    assert!(!limiter.blocked(ip("2001:db8:1:3::1"), 0), "another /64");
+    for _ in 0..5 {
+        limiter.failed(ip("::ffff:100.64.0.9"), 0);
+    }
+    assert!(limiter.blocked(ip("100.64.0.9"), 0));
+}
+
 /// A hub with an in-memory database, as the app reaches it.
 pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
