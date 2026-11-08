@@ -183,6 +183,9 @@ impl Encoder {
                 "0",
             ])
             .args(["-vf", &format!("pad={size}:0:0:gray,crop={size}:0:0")])
+            // 4:2:0 whatever the frames are (a desktop's keep colour at full resolution): VP9's profile 0, which every
+            // player plays, at its usual cost.
+            .args(["-pix_fmt", "yuv420p"])
             .arg(out)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())

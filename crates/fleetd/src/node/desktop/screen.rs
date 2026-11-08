@@ -19,6 +19,45 @@ pub struct Shot {
     pub height: u32,
 }
 
+/// JPEG quality of a desktop's frames (the live view's, the video's and the agent's screenshots), for brightness.
+const QUALITY: u8 = 70;
+/// Colour keeps every pixel (4:4:4: halved, as JPEG's usual 4:2:0, red or blue text on a dark terminal goes dim and
+/// soft), at a coarser quality that pays for it.
+const CHROMA_QUALITY: u32 = 40;
+/// JPEG's sample table for colour (ITU-T T.81 Annex K), which a quality scales.
+const CHROMA: [u16; 64] = [
+    17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99,
+    47, 66, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+    99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+];
+
+/// A screen's pixels (32 bits each, BGRA in memory) as a JPEG.
+pub fn jpeg(bgra: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    // As libjpeg (and the encoder, for its own tables) scales a table to a quality.
+    let scale = match CHROMA_QUALITY {
+        q if q < 50 => 5000 / q,
+        q => 200 - 2 * q,
+    };
+    let chroma = CHROMA.map(|v| ((u32::from(v) * scale + 50) / 100).clamp(1, 255) as u16);
+    let mut out = Vec::with_capacity(bgra.len() / 10);
+    let mut encoder = jpeg_encoder::Encoder::new(&mut out, QUALITY);
+    encoder.set_sampling_factor(jpeg_encoder::SamplingFactor::R_4_4_4);
+    encoder.set_quantization_tables(
+        jpeg_encoder::QuantizationTableType::Default,
+        jpeg_encoder::QuantizationTableType::Custom(Box::new(chroma)),
+    );
+    encoder.set_optimized_huffman_tables(true);
+    encoder
+        .encode(
+            bgra,
+            u16::try_from(width).map_err(|_| "the screen is too wide to encode")?,
+            u16::try_from(height).map_err(|_| "the screen is too tall to encode")?,
+            jpeg_encoder::ColorType::Bgra,
+        )
+        .map_err(|e| format!("cannot encode the screen: {e}"))?;
+    Ok(out)
+}
+
 /// A screen: its pixels, and input as a person or an agent gives it. Coordinates are the screen's own pixels, as its
 /// frames show them. Every call blocks.
 pub trait Screen: Send + Sync {

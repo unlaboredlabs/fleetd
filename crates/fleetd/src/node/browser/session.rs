@@ -123,6 +123,7 @@ struct Live {
     last: Option<BrowserFrame>,
     /// When the last frame went to the watcher, and its `seq`.
     sent: Option<(Instant, u64)>,
+    pacer: super::fit::Pacer,
     /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
     page: (f64, f64),
     /// Each page's address, by target, as the browser last said: the followed one's goes on its frames.
@@ -341,7 +342,8 @@ impl Session {
     }
 
     /// One screencast frame of the followed page: kept as the newest, and sent while the hub watches, at most one per
-    /// [`LIVE_GAP`]. `Some`: when to send the newest ([`Self::flush_live`]), which this one waits for.
+    /// [`LIVE_GAP`] and as the watcher's link has room ([`super::fit`]). `Some`: when to send the newest
+    /// ([`Self::flush_live`]), which this one waits for.
     fn live_frame(&self, data: &str, jpeg: &[u8], metadata: &Value) -> Option<Instant> {
         let (width, height) = jpeg_size(jpeg)?;
         let mut live = lock(&self.live);
@@ -376,8 +378,15 @@ impl Session {
         let seq = live.seq;
         live.last = Some(frame);
         let now = Instant::now();
+        let room = live
+            .watcher
+            .as_ref()
+            .map(|w| live.pacer.wait(w.budget(self.id.as_str())))
+            .unwrap_or_default();
         match live.sent {
-            Some((at, _)) if live.watcher.is_some() && now < at + LIVE_GAP => Some(at + LIVE_GAP),
+            Some((at, _)) if live.watcher.is_some() && now < (at + LIVE_GAP).max(now + room) => {
+                Some((at + LIVE_GAP).max(now + room))
+            }
             _ => {
                 self.send_newest(&mut live, now, seq);
                 None
@@ -397,10 +406,7 @@ impl Session {
 
     fn send_newest(&self, live: &mut Live, now: Instant, seq: u64) {
         if let (Some(watcher), Some(frame)) = (&live.watcher, &live.last) {
-            watcher.replace(
-                self.id.as_str(),
-                to_json(&NodeToHub::BrowserFrame(frame.clone())),
-            );
+            super::fit::offer(watcher, &mut live.pacer, frame.clone());
             live.sent = Some((now, seq));
         }
     }

@@ -16,9 +16,6 @@ use x11rb::rust_connection::{DefaultStream, RustConnection};
 pub use super::screen::Shot;
 use super::screen::{Raw, Screen};
 
-/// JPEG quality of the frames: the live view's, the video's and the agent's screenshots.
-const QUALITY: u8 = 70;
-
 const NO_SYMBOL: u32 = 0;
 const SHIFT_L: u32 = 0xffe1;
 
@@ -188,27 +185,18 @@ impl X {
 
     /// A raw grab as a JPEG.
     pub fn encode(&self, raw: &[u8]) -> Result<Vec<u8>, String> {
-        let mut out = Vec::with_capacity(raw.len() / 10);
-        let encoder = jpeg_encoder::Encoder::new(&mut out, QUALITY);
-        let encoded = if self.lsb_first {
-            encoder.encode(raw, self.width, self.height, jpeg_encoder::ColorType::Bgra)
-        } else {
-            // xRGB, most significant byte first: the same bytes reversed in each pixel.
-            let flipped: Vec<u8> = raw
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .flat_map(|[a, r, g, b]| [*b, *g, *r, *a])
-                .collect();
-            encoder.encode(
-                &flipped,
-                self.width,
-                self.height,
-                jpeg_encoder::ColorType::Bgra,
-            )
-        };
-        encoded.map_err(|e| format!("cannot encode the screen: {e}"))?;
-        Ok(out)
+        let (width, height) = self.size();
+        if self.lsb_first {
+            return super::screen::jpeg(raw, width, height);
+        }
+        // xRGB, most significant byte first: the same bytes reversed in each pixel.
+        let flipped: Vec<u8> = raw
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|[a, r, g, b]| [*b, *g, *r, *a])
+            .collect();
+        super::screen::jpeg(&flipped, width, height)
     }
 
     fn fake(&self, kind: u8, detail: u8, x: i16, y: i16) -> Result<(), String> {

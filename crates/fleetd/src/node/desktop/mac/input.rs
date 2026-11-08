@@ -29,8 +29,6 @@ const HID: u32 = 0;
 const CLICK_STATE: u32 = 1;
 /// kCGScrollEventUnitLine.
 const LINES: u32 = 1;
-/// JPEG quality of the frames, as a Linux desktop's.
-const QUALITY: u8 = 70;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -188,16 +186,7 @@ impl Screen for MacScreen {
     }
 
     fn encode(&self, raw: &Raw) -> Result<Vec<u8>, String> {
-        let mut out = Vec::with_capacity(raw.data.len() / 10);
-        jpeg_encoder::Encoder::new(&mut out, QUALITY)
-            .encode(
-                &raw.data,
-                u16::try_from(raw.width).map_err(|_| "the screen is too wide to encode")?,
-                u16::try_from(raw.height).map_err(|_| "the screen is too tall to encode")?,
-                jpeg_encoder::ColorType::Bgra,
-            )
-            .map_err(|e| format!("cannot encode the screen: {e}"))?;
-        Ok(out)
+        crate::node::desktop::screen::jpeg(&raw.data, raw.width, raw.height)
     }
 
     fn sync(&self) -> Result<(), String> {

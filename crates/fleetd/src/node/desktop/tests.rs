@@ -752,10 +752,12 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
     assert_eq!(recorded["kind"], "linux_desktop");
-    assert!(
-        !super::recordings_dir(node_home.path()).join(&id).exists(),
-        "the node let it go"
-    );
+    // The node deletes its copy once the hub has answered the report that lists it recorded: a moment after.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while super::recordings_dir(node_home.path()).join(&id).exists() {
+        assert!(Instant::now() < deadline, "the node let it go");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
     assert!(
         !actions.contains(SECRET),
@@ -941,19 +943,21 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     );
 
     let act = |action: Value| via_host(&router, &hosted, &box_key, key, action, None);
+    let shot = async || {
+        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
+        B64.decode(shot["result"]["jpegB64"].as_str().unwrap())
+            .unwrap()
+            .len()
+    };
+    // An empty screen's JPEG is some KB already: the window shows as the screen growing past it.
+    let blank = shot().await;
     let launched =
         act(json!({ "op": "desktop", "action": "launch", "text": "xterm -geometry 100x30+0+0" }))
             .await;
     assert!(launched["result"].is_object(), "{launched}");
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
-        if B64
-            .decode(shot["result"]["jpegB64"].as_str().unwrap())
-            .unwrap()
-            .len()
-            > 8000
-        {
+        if shot().await > blank + 500 {
             break;
         }
         assert!(Instant::now() < deadline, "xterm's window never showed");
@@ -1015,4 +1019,24 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
         "{typed_line}"
     );
     desktops.shutdown().await;
+}
+
+#[test]
+fn a_desktops_frames_keep_coloured_text_sharp() {
+    // Red columns a pixel wide on black, as a terminal's red text: 4:2:0 would blend each with its black neighbour.
+    let (width, height) = (64u32, 32u32);
+    let bgra: Vec<u8> = (0..width * height)
+        .flat_map(|i| match i % width % 2 {
+            0 => [0, 0, 230, 255],
+            _ => [0, 0, 0, 255],
+        })
+        .collect();
+    let jpeg = super::screen::jpeg(&bgra, width, height).unwrap();
+    let shown = image::load_from_memory(&jpeg).unwrap().into_rgb8();
+    assert_eq!(shown.dimensions(), (width, height));
+    let (red, black) = (shown.get_pixel(20, 16), shown.get_pixel(21, 16));
+    assert!(
+        red[0] > 180 && black[0] < 70,
+        "red {red:?}, black {black:?}"
+    );
 }
