@@ -6,7 +6,7 @@ import type { Decision, HumanRequest, ProjectRef, ThreadRef, UsageParked } from 
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { listDecisions } from "../ledger/repo.ts";
-import { ChangeRecords } from "../train/records.ts";
+import { trainUnlanded } from "../train/digest.ts";
 import type { AgentsLine } from "./events.ts";
 
 /** One lead launch (hub/executor `LaunchInput`), the parts the leads area fills in. */
@@ -94,6 +94,5 @@ export const decisionsOfWorkstream = (hub: Hub, workstreamId: string, limit: num
   listDecisions(hub.db.conn, { scope: { kind: "workstream", workstreamId }, limit });
 
 /** An order's PRs still in the train: `#<n> <state>` (hooks.rs `unlanded`). */
-export const unlanded = (hub: Hub, r: ProjectRef, workstreamId: string): string[] =>
-  new ChangeRecords(hub.db).unlanded(r, workstreamId).map((c) => `#${c.prNumber} ${c.state}`);
+export const unlanded = (hub: Hub, r: ProjectRef, workstreamId: string): string[] => trainUnlanded(hub, r, workstreamId);
 
