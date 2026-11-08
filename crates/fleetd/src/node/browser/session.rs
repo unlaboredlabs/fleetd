@@ -827,6 +827,13 @@ impl Session {
         let _ = self.captures.send(Capture::Step(seq, target));
     }
 
+    /// The page's DOM to itself while it is held: a capture's `DOM.getDocument` drops every node id this connection was
+    /// given, so a lookup by node ids (a fill's `DOM.querySelector` from the root it just got) holds this until it has
+    /// its element as an object.
+    pub async fn dom_turn(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.dom_turn.lock().await
+    }
+
     /// Writes the page's HTML to the DOM trace after action `seq`, unless it is as the last one left it.
     async fn capture_dom(&self, seq: u64, target: Option<StepTarget>) {
         let _turn = self.dom_turn.lock().await;

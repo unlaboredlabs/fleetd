@@ -49,10 +49,12 @@ describe.skipIf(missing)("an HTML artifact in a real engine", () => {
     const packets: Buffer[] = [];
     udp.on("message", (m) => packets.push(m));
     await new Promise<void>((resolve) => udp.bind(0, "127.0.0.1", resolve));
-    const browser = await chromium.launch({ executablePath: chrome, headless: true });
+    // Each step fails on its own clock, inside the test's: a run that ran out of time names the step that hung (one on
+    // CI did, at 30 s, with no step named).
+    const browser = await chromium.launch({ executablePath: chrome, headless: true, timeout: 10_000 });
     try {
       const page = await browser.newPage();
-      await page.setContent(artifactPage(attacks(udp.address().port), "k1"));
+      await page.setContent(artifactPage(attacks(udp.address().port), "k1"), { timeout: 10_000 });
       await page.waitForFunction(() => (window as unknown as { R?: { done?: boolean } }).R?.done === true, null, { timeout: 5000 });
       await new Promise((resolve) => setTimeout(resolve, 1000));
       const r = await page.evaluate(() => (window as unknown as { R: Record<string, unknown> }).R);

@@ -468,6 +468,9 @@ pub async fn fill(
         return Err(fail("the browser has no page".into(), false));
     };
     let call = |method: &'static str, params: Value| session.cdp.call(Some(&page), method, params);
+    // Node ids from here to the field's object: the DOM capture of the step before (the username's fill) waits, or its
+    // getDocument would leave querySelector a root it no longer knows.
+    let turn = session.dom_turn().await;
     let doc = call("DOM.getDocument", json!({ "depth": 0 }))
         .await
         .map_err(|e| fail(e, false))?;
@@ -498,6 +501,7 @@ pub async fn fill(
         .pointer("/object/objectId")
         .cloned()
         .unwrap_or_default();
+    drop(turn);
     let on = |function: &'static str| {
         call(
             "Runtime.callFunctionOn",
