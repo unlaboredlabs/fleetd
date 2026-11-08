@@ -261,9 +261,14 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
 }
 
 fn project(hub: &Hub, machine: &str, id: &str, root: &str) -> ProjectRef {
+    project_at(hub, machine, id, root, AT)
+}
+
+/// [`project`], last active `at`: the scan reads a repo through its most recently active root first.
+fn project_at(hub: &Hub, machine: &str, id: &str, root: &str, at: &str) -> ProjectRef {
     let summary: ProjectSummary = serde_json::from_value(json!({
         "machineId": machine, "projectId": id, "title": id, "workspaceRoot": root,
-        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": at,
     }))
     .unwrap();
     hub.store
@@ -1117,4 +1122,65 @@ async fn agents_hear_once_when_their_machine_cant_reach_github_and_once_when_it_
     );
     assert!(told(&at_laptop).is_empty(), "{:?}", told(&at_laptop));
     assert!(told(&at_boat).is_empty(), "{:?}", told(&at_boat));
+}
+
+/// One repo checked out on devbox and on laptop: the scan reads it through whichever was active last, and stops at the
+/// first that answers. devbox is asked on its own while it has running agents, so they hear that GitHub is down though
+/// laptop answers first; and while it is down, so they hear that it is back after the order flipped twice.
+#[tokio::test]
+async fn a_machine_another_root_of_its_repo_answers_for_still_hears_github_go_and_come_back() {
+    let (hub, _clock, _home) = hub();
+    let at_devbox = node(&hub, "devbox").await;
+    let at_laptop = node(&hub, "laptop").await;
+    let repo = Repo::new(GITHUB);
+    let (devbox_root, laptop_root) = (repo.checkout("shop"), repo.checkout("laptop-shop"));
+    let earlier = "2026-10-25T09:00:00.000Z";
+    let devbox = project_at(&hub, "devbox", "shop", &devbox_root, earlier);
+    project_at(&hub, "laptop", "shop", &laptop_root, AT);
+    running_on(&hub, &devbox, "devbox", "t1");
+    running_on(&hub, &devbox, "devbox", "t2");
+    let git = LocalGit::default();
+    scan(&hub, &git).await;
+    assert!(told(&at_devbox).is_empty());
+
+    // laptop comes first and answers: devbox is asked on its own.
+    git.no_network.lock().unwrap().insert("devbox".into());
+    scan(&hub, &git).await;
+    let down = crate::hub::tasks::render::GITHUB_DOWN.to_owned();
+    let both_down = [("t1".into(), down.clone()), ("t2".into(), down.clone())];
+    assert_eq!(told(&at_devbox), both_down);
+    // devbox comes first, still down, then laptop again: nothing more.
+    project_at(
+        &hub,
+        "devbox",
+        "shop",
+        &devbox_root,
+        "2026-10-25T11:00:00.000Z",
+    );
+    scan(&hub, &git).await;
+    project_at(
+        &hub,
+        "laptop",
+        "shop",
+        &laptop_root,
+        "2026-10-25T12:00:00.000Z",
+    );
+    scan(&hub, &git).await;
+    assert_eq!(told(&at_devbox), both_down);
+
+    // Back, with laptop first: devbox, still marked down, is asked and its agents hear it.
+    git.no_network.lock().unwrap().clear();
+    scan(&hub, &git).await;
+    scan(&hub, &git).await;
+    let back = crate::hub::tasks::render::GITHUB_BACK.to_owned();
+    assert_eq!(
+        told(&at_devbox),
+        [
+            ("t1".into(), down.clone()),
+            ("t1".into(), back.clone()),
+            ("t2".into(), down),
+            ("t2".into(), back),
+        ]
+    );
+    assert!(told(&at_laptop).is_empty(), "{:?}", told(&at_laptop));
 }

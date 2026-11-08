@@ -305,6 +305,11 @@ impl Work {
         }
     }
 
+    /// The scanner last found git on `machine` unable to reach GitHub.
+    pub fn github_down(&self, machine: &MachineId) -> bool {
+        self.github_down.lock().unwrap().contains(machine)
+    }
+
     /// Why the scanner last failed to read the project's base, while it does.
     pub fn scan_failure(&self, project: &ProjectRef) -> Option<String> {
         let failures = self.scan_failures.lock().unwrap();

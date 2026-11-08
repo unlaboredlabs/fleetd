@@ -12,7 +12,7 @@
 //! node is offline its watch waits: nothing is guessed, and the next scan catches up. When git there can't reach the
 //! remote, the project's lead is told once. When git on a machine can't reach GitHub at all (offline), each agent
 //! running there is told once, and once more when a later poll reaches it again.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -236,14 +236,14 @@ pub async fn scan(hub: &Hub, ports: &dyn LandingPorts) {
             None => scopes.push((scope, vec![root])),
         }
     }
-    for (scope, roots) in scopes {
+    for (scope, roots) in &scopes {
         for (project, root) in roots {
             let scanner = Scanner {
                 hub,
                 ports,
-                scope: &scope,
-                project: &project,
-                root: &root,
+                scope,
+                project,
+                root,
                 reach: &reach,
             };
             match scanner.scan().await {
@@ -256,6 +256,7 @@ pub async fn scan(hub: &Hub, ports: &dyn LandingPorts) {
             }
         }
     }
+    ask_the_rest(hub, ports, &scopes, &reach).await;
     for (machine, reached) in reach.into_inner().unwrap() {
         if hub.work.github_reached(&machine, reached)
             && let Err(error) = hub.tasks.github_reach(&machine, reached).await
@@ -263,6 +264,65 @@ pub async fn scan(hub: &Hub, ports: &dyn LandingPorts) {
             tracing::warn!(%error, %machine, "landings: its agents not told whether GitHub answers");
         }
     }
+}
+
+/// Asks each machine the scan didn't (another root of each of its GitHub repos answered first) whether git there
+/// reaches GitHub, with one `ls-remote` on one of its roots, while it has running agents or was found down: else its
+/// agents would never hear that GitHub is down, or that it is back.
+async fn ask_the_rest(
+    hub: &Hub,
+    ports: &dyn LandingPorts,
+    scopes: &[(WorkScope, Vec<(ProjectRef, String)>)],
+    reach: &Mutex<HashMap<MachineId, bool>>,
+) {
+    let mut asked: HashSet<MachineId> = reach.lock().unwrap().keys().cloned().collect();
+    for (scope, roots) in scopes {
+        if !on_github(scope) {
+            continue;
+        }
+        for (project, root) in roots {
+            let machine = &project.machine_id;
+            if !asked.insert(machine.clone()) {
+                continue;
+            }
+            let running = || {
+                hub.db
+                    .with(|c| {
+                        Ok(crate::hub::tasks::records::TaskRecords::running_on(
+                            c,
+                            machine.as_str(),
+                        )?)
+                    })
+                    .is_ok_and(|tasks| !tasks.is_empty())
+            };
+            if !hub.work.github_down(machine) && !running() {
+                continue;
+            }
+            let base_ref = format!("refs/heads/{}", scope.base);
+            // A node that doesn't answer says nothing of GitHub.
+            let Some(out) = git(ports, machine, root, &["ls-remote", "origin", &base_ref]).await
+            else {
+                continue;
+            };
+            let offline = matches!(
+                crate::node::worktree::FetchError::of_text(&out.out),
+                crate::node::worktree::FetchError::Offline
+            );
+            if out.ok() || offline {
+                note(reach, machine, out.ok());
+            }
+        }
+    }
+}
+
+fn on_github(scope: &WorkScope) -> bool {
+    scope.repo_key.as_str().starts_with("github.com/")
+}
+
+/// Notes whether git on `machine` reached GitHub: an answer from any of its repos counts over another's failure.
+fn note(reach: &Mutex<HashMap<MachineId, bool>>, machine: &MachineId, reached: bool) {
+    let mut reach = reach.lock().unwrap();
+    *reach.entry(machine.clone()).or_insert(reached) |= reached;
 }
 
 struct Scanner<'a> {
@@ -392,17 +452,11 @@ impl Scanner<'_> {
             .trigger(self.project, Trigger::train(&line));
     }
 
-    /// Notes whether git on this project's machine reached GitHub, for a scope there: an answer from any of its
-    /// repos counts over another's failure.
+    /// Notes whether git on this project's machine reached GitHub, for a scope there.
     fn reached(&self, reached: bool) {
-        if !self.scope.repo_key.as_str().starts_with("github.com/") {
-            return;
+        if on_github(self.scope) {
+            note(self.reach, &self.project.machine_id, reached);
         }
-        let mut reach = self.reach.lock().unwrap();
-        let seen = reach
-            .entry(self.project.machine_id.clone())
-            .or_insert(reached);
-        *seen |= reached;
     }
 
     fn context(&self) -> Result<Context, StoreError> {
