@@ -17,10 +17,11 @@
 //!   exact release; an edge machine starts on the newest edge build, never older than the hub, and its catch-up evens
 //!   it out);
 //! - sizes the node for builds (`memPerAgentGb`, `warmBuilds`, desktops in Xvfb), puts sccache on the disk that
-//!   survives a stop, runs `gh auth setup-git` so `git push` uses the order's `GH_TOKEN`, and writes boat's pre-stop
-//!   hook (`fleetd node flush`).
+//!   survives a stop, has git ask `gh` for GitHub's credentials so `git push` uses the order's `GH_TOKEN` (nobody logs
+//!   `gh` in on the machine), and writes boat's pre-stop hook (`fleetd node flush`).
 //!
-//! Each failing step exits with one line naming it, which boat shows as the sandbox's `setupError`.
+//! What the steps print goes to `~/fleetd-setup.log` on the VM. A failing step exits with one line on stderr naming it
+//! and its last line, which boat shows as the sandbox's `setupError` and [`failure`] makes the slot's note.
 use fleetd_contracts::ids::MachineId;
 
 use crate::cli::setup::units::q;
@@ -29,6 +30,8 @@ use crate::hub::pool::tunnel::machine_hub_url;
 use crate::update::Channel;
 
 const TEMPLATE: &str = include_str!("setup.sh");
+/// How `setup.sh` starts the one line it prints when a step fails.
+const FAILED_AT: &str = "fleetd cloud setup failed at: ";
 
 /// Where hub/pool puts the slot's pool enroll token: boat's `files` takes `/tmp`, and never snapshots it.
 pub const TOKEN_FILE: &str = "/tmp/fleetd-enroll-token";
@@ -114,4 +117,14 @@ pub fn render(s: &SetupScript) -> String {
         .fold(TEMPLATE.to_owned(), |script, (at, value)| {
             script.replace(at, &q(value))
         })
+}
+
+/// A slot's note for boat's `setupError`: the script's failing step and its last line, or for a script from before it
+/// printed one, the error's last line, never the whole log boat keeps.
+pub fn failure(setup_error: &str) -> String {
+    let lines = || setup_error.lines().map(str::trim).filter(|l| !l.is_empty());
+    match lines().filter_map(|l| l.split_once(FAILED_AT)).next_back() {
+        Some((_, at)) => format!("its setup failed at {at}"),
+        None => format!("its setup failed: {}", lines().next_back().unwrap_or("")),
+    }
 }

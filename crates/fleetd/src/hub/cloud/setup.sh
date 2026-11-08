@@ -1,7 +1,8 @@
 #!/bin/bash
 # fleetd: make this VM one of the hub's cloud machines (crates/fleetd/src/hub/cloud/setup.rs renders it for each slot).
-# boat.dev runs it once, as `user` with sudo, after the VM is ready. Every step that fails exits with one line naming it,
-# which boat shows as the sandbox's setupError. Safe to run again.
+# boat.dev runs it once, as `user` with sudo, after the VM is ready. What the steps print goes to $LOG; a step that fails
+# exits with one line on stderr naming it and its last line, which boat shows as the sandbox's setupError. Safe to run
+# again.
 set -euo pipefail
 
 HUB=@HUB@
@@ -19,12 +20,25 @@ GH_SHA256=@GH_SHA256@
 SCCACHE_VERSION=@SCCACHE_VERSION@
 SCCACHE_SHA256=@SCCACHE_SHA256@
 
+# boat keeps the tail of stderr as the setupError, so the steps' own output (rustup's warnings among it) stays out of it.
+LOG=$HOME/fleetd-setup.log
+: >"$LOG"
+chmod 600 "$LOG"
+exec 3>&1 4>&2 >>"$LOG" 2>&1
 STEP=start
-trap 'echo "fleetd cloud setup failed at: $STEP" >&2' ERR
 step() {
   STEP=$1
   echo "fleetd cloud setup: $1"
+  echo "fleetd cloud setup: $1" >&3
 }
+# What failed: the last line the failing step printed, if it printed one.
+failed() {
+  local code=$? last
+  [ "$code" = 0 ] && return
+  last=$(awk -v m="fleetd cloud setup: $STEP" '$0 == m { l = ""; next } NF { l = $0 } END { print l }' "$LOG")
+  echo "fleetd cloud setup failed at: $STEP${last:+: $last}" >&4
+}
+trap failed EXIT
 # A command as the agents' user, with its own tools first on the PATH, which the node's unit keeps. Rust lives in its
 # home too: boat's /etc/environment points RUSTUP_HOME at /usr/local/rustup, which the agents' user can't write.
 as_agent() {
@@ -35,7 +49,7 @@ as_agent() {
 
 step "the enroll token"
 # Written by the hub under /tmp, which boat never snapshots; read once and deleted.
-[ -s "$TOKEN_FILE" ] || { echo "fleetd cloud setup failed at: no enroll token in $TOKEN_FILE" >&2; exit 1; }
+[ -s "$TOKEN_FILE" ] || { echo "no enroll token in $TOKEN_FILE"; exit 1; }
 CODE=$(cat "$TOKEN_FILE")
 
 step "a fresh machine id"
@@ -104,13 +118,15 @@ as_agent "command -v ~/.cargo/bin/rustup >/dev/null || curl -fsSL https://sh.rus
 as_agent "rustup default stable >/dev/null 2>&1 && [ \"\$(rustup show home)\" = \"\$HOME/.rustup\" ]"
 
 step "the node's environment"
-# Kept on the disk, so builds stay warm across sleeps; `gh` pushes with the order's GH_TOKEN.
+# Kept on the disk, so builds stay warm across sleeps. git asks `gh` for GitHub's credentials, which it answers from the
+# order's GH_TOKEN: nobody logs in on the machine, so `gh auth setup-git` (which wants a login) is not run.
 as_agent "mkdir -p ~/fleetd-cache/sccache ~/.config/systemd/user/fleetd-node.service.d"
 as_agent "printf '%s\n' '[Service]' 'Environment=RUSTC_WRAPPER=/usr/local/bin/sccache' \
   'Environment=SCCACHE_DIR=%h/fleetd-cache/sccache' 'Environment=SCCACHE_CACHE_SIZE=15G' \
   'Environment=RUSTUP_HOME=%h/.rustup' 'Environment=CARGO_HOME=%h/.cargo' \
   'Environment=DISABLE_AUTOUPDATER=1' > ~/.config/systemd/user/fleetd-node.service.d/cloud.conf"
-as_agent "gh auth setup-git"
+as_agent "git config --global --replace-all credential.https://github.com.helper '' \
+  && git config --global --add credential.https://github.com.helper '!gh auth git-credential'"
 
 step "the hub's tunnel"
 # The hub dials this machine over SSH and forwards $HUB on its loopback to itself, so the hub needs no public address.

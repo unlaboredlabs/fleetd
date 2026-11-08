@@ -126,8 +126,10 @@ Setup is the optional **Cloud machines (boat.dev)** step: in `fleetd init`, the 
    pool, the budgets and the projects, and keep the boat.dev environment from part 2 (it starts as `fleetd-<hub>`;
    Create waits until one is saved, since the key reaches only that environment). Check what it can cost, turn it on
    and press **Create cloud machines** (one start each). Each machine sets itself up and joins in a few minutes, then
-   sleeps. One whose node hasn't said hello 15 minutes after its create is deleted and shows as not made, with boat's
-   setup error when it has one; time the hub was down or restarting doesn't count.
+   sleeps. One whose node hasn't said hello 15 minutes after its create is deleted and shows as not made, with the
+   setup step that failed and its last line, for example "its setup failed at packages: E: Unable to locate package
+   xvfb", not the whole setup log; time the hub was down or restarting doesn't count. Nobody logs `gh` in on a cloud
+   machine: git asks `gh` for GitHub's credentials, which it answers from each order's own token.
 
 There is nothing to set up on your network. Once cloud machines are on, **Test** also tries the whole way: it wakes
 an asleep machine (one start), or follows one already waking, or makes the first one, and passes once the hub's tunnel
