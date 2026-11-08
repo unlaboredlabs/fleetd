@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::prim::{Line, List};
 use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::{TaskId, TaskKind};
@@ -128,6 +128,8 @@ pub struct Work {
     landings: OnceLock<Arc<dyn elsewhere::Landings>>,
     /// Each project's last failure to read its base.
     scan_failures: Mutex<HashMap<ProjectRef, ScanFailure>>,
+    /// Machines whose git couldn't reach GitHub at the scanner's last poll of them.
+    github_down: Mutex<HashSet<MachineId>>,
 }
 
 impl Work {
@@ -144,6 +146,7 @@ impl Work {
             ports,
             landings: OnceLock::new(),
             scan_failures: Mutex::default(),
+            github_down: Mutex::default(),
         })
     }
 
@@ -290,6 +293,21 @@ impl Work {
         if let Some(failure) = self.scan_failures.lock().unwrap().get_mut(project) {
             failure.failing = false;
         }
+    }
+
+    /// What a poll of the scanner found of git on `machine` reaching GitHub. True when that flipped since the last
+    /// poll that found out (down, or back up), so its agents are told once per flip.
+    pub fn github_reached(&self, machine: &MachineId, reached: bool) -> bool {
+        let mut down = self.github_down.lock().unwrap();
+        match reached {
+            true => down.remove(machine),
+            false => down.insert(machine.clone()),
+        }
+    }
+
+    /// The scanner last found git on `machine` unable to reach GitHub.
+    pub fn github_down(&self, machine: &MachineId) -> bool {
+        self.github_down.lock().unwrap().contains(machine)
     }
 
     /// Why the scanner last failed to read the project's base, while it does.

@@ -113,6 +113,15 @@ message: "Your Monitor "…" was lost when … Check what you were waiting for a
 timed out wakes nobody. A review
 ends with its turn, so a reviewer waits for its builds and tests to finish before it reports.
 
+### Agents hear when GitHub is unreachable {#github-unreachable}
+
+fleetd's landing scanner asks each project's origin every minute. When git on a machine can't reach GitHub at all (the
+network, not a refused login), each agent running there is told once, however long it lasts: "This machine can't reach
+GitHub right now; keep your work committed and push when it's back." When a later scan reaches GitHub again, each is
+told once more, so agents don't each diagnose the outage and ask their lead. An agent launched while GitHub gives the
+hub no token for its order starts anyway, told that `GH_TOKEN` comes once GitHub answers
+([GitHub](/docs/github)).
+
 ### Claude's auto memory is off {#auto-memory}
 
 Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that off in every `claude` it starts, so
