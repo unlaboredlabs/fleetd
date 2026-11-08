@@ -39,6 +39,9 @@ pub const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const RUNNER_CHECK_EVERY: u32 = 4;
 /// How often a link checks that bytes still arrive while no whole frame has (one large frame coming in slowly).
 const PROGRESS_EVERY: Duration = Duration::from_secs(5);
+/// How long a link may keep heartbeating while its executor isn't live before the hub attaches its sessions again:
+/// otherwise a subscription lost on a healthy link leaves the machine offline until its node restarts.
+const REATTACH_AFTER: Duration = Duration::from_secs(30);
 /// The most one compressed node frame may inflate to: the socket's own message cap, a put_file's 64 MiB.
 const MAX_INFLATED: usize = 64 << 20;
 
@@ -379,6 +382,22 @@ struct Refused {
     reason: String,
 }
 
+/// What the hub logs of a frame that doesn't decode: its `t` and serde's error, each cut short. Never the payload.
+fn undecodable(text: &str, error: &serde_json::Error) -> (String, String) {
+    fn cut(s: &str, max: usize) -> String {
+        let mut end = s.len().min(max);
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        s[..end].to_owned()
+    }
+    let tag = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| v.get("t")?.as_str().map(|t| cut(t, 64)))
+        .unwrap_or_else(|| "(none)".into());
+    (tag, cut(&error.to_string(), 300))
+}
+
 fn refuse<T>(code: u16, reason: impl Into<String>) -> Result<T, Refused> {
     Err(Refused {
         code,
@@ -680,6 +699,31 @@ impl NodeLinkServer {
             ));
         }
         tracing::info!(machine_id = %machine_id, "node link: machine offline");
+    }
+
+    /// On each heartbeat of a link: once its executor hasn't been live for `REATTACH_AFTER` while heartbeats kept
+    /// coming, its sessions are attached again, off the frame loop. `dark_since` is when this link's heartbeats first
+    /// found it not live.
+    fn reattach_if_dark(
+        &self,
+        machine_id: &MachineId,
+        sessions: NodeSessions,
+        dark_since: &mut Option<i64>,
+    ) {
+        if self.deps.executors.is_connected(machine_id) {
+            *dark_since = None;
+            return;
+        }
+        let now = now_ms(self.deps.clock.as_ref());
+        let since = *dark_since.get_or_insert(now);
+        if now - since < REATTACH_AFTER.as_millis() as i64 {
+            return;
+        }
+        tracing::warn!(machine_id = %machine_id, link_id = sessions.link_id, dark_ms = now - since, "node link: heartbeats arrive but its sessions aren't live; attaching them again");
+        *dark_since = Some(now);
+        let executors = self.deps.executors.clone();
+        let machine_id = machine_id.clone();
+        tokio::spawn(async move { executors.reattach(&machine_id, sessions).await });
     }
 
     /// A node whose key was revoked since its hello (`fleetd machine remove`, which may run outside this hub's
@@ -1056,7 +1100,7 @@ impl NodeLinkServer {
             machine_id: machine_id.clone(),
             link_id: id,
         };
-        let _commands = self.deps.commands.attach(&machine_id, id, cmd_tx);
+        let _commands = self.deps.commands.attach(&machine_id, id, cmd_tx.clone());
         // After the attaches, so whoever acts on the announcement can already run commands and sessions there.
         let _runner = AbortOnDrop(self.follow_runner(&machine_id));
         self.check_runner(&machine_id);
@@ -1099,6 +1143,7 @@ impl NodeLinkServer {
         });
         let _progress = progress;
         let mut beats: u32 = 0;
+        let mut dark_since = None;
 
         loop {
             let text = match next_frame(ws, inflater.as_mut()).await {
@@ -1110,7 +1155,11 @@ impl NodeLinkServer {
                 Ok(f) => f,
                 // An older node's word on a preview it still runs: previews are gone from the hub.
                 Err(_) if retired_frame(&text) => continue,
-                Err(_) => return refuse(close::BAD_FRAME, "frame does not decode"),
+                Err(e) => {
+                    let (tag, error) = undecodable(&text, &e);
+                    tracing::warn!(machine_id = %machine_id, link_id = id, tag = %tag, bytes = text.len(), error = %error, "node link: a frame does not decode; closing the link");
+                    return refuse(close::BAD_FRAME, "frame does not decode");
+                }
             };
             // A replaced or timed-out link must not keep the machine alive.
             if self
@@ -1157,6 +1206,14 @@ impl NodeLinkServer {
                     if beats.is_multiple_of(RUNNER_CHECK_EVERY) {
                         self.check_runner(&machine_id);
                     }
+                    self.reattach_if_dark(
+                        &machine_id,
+                        NodeSessions {
+                            link_id: id,
+                            send: cmd_tx.clone(),
+                        },
+                        &mut dark_since,
+                    );
                 }
                 NodeToHub::LeadCall(call) => {
                     // Off the frame loop: a slow call must not hold up heartbeats or other calls.
@@ -1649,5 +1706,103 @@ mod tests {
             .expect("the new link goes live");
         assert!(hub.executors.is_connected(&devbox));
         assert_eq!(hub.link.link_id(&devbox), Some(new_id));
+    }
+
+    /// After the 2026-11-08 outage: a link whose heartbeats keep coming while its executor isn't live (there, an old
+    /// link's supervisor had cleared it) gets its sessions attached again after about 30 s, so the machine is back
+    /// online without a node restart. A live link is left alone.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_heartbeating_link_whose_sessions_arent_live_is_attached_again() {
+        use std::time::Duration;
+
+        use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+        use fleetd_contracts::sessions::SessionCall;
+        use tokio::time::timeout;
+
+        use crate::hub::executor::NodeSessions;
+
+        const WAIT: Duration = Duration::from_secs(10);
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let clock = ManualClock::at(1_792_000_000_000);
+        let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone())
+            .unwrap();
+        let devbox = MachineId::unchecked("devbox");
+        let _link = hub.link.test_link(&devbox, &[]);
+        let link_id = hub.link.link_id(&devbox).unwrap();
+        let (send, mut calls) = tokio::sync::mpsc::unbounded_channel();
+        let sessions = || NodeSessions {
+            link_id,
+            send: send.clone(),
+        };
+        // Answers the hub's next call, which must be a subscription.
+        async fn subscribed(
+            executors: &crate::hub::executor::Executors,
+            devbox: &MachineId,
+            calls: &mut tokio::sync::mpsc::UnboundedReceiver<HubToNode>,
+        ) {
+            let Ok(Some(HubToNode::SessionCall(call))) = timeout(WAIT, calls.recv()).await else {
+                panic!("the hub never subscribed")
+            };
+            assert!(
+                matches!(call.call, SessionCall::Subscribe { .. }),
+                "{:?}",
+                call.call
+            );
+            let reply: NodeToHub = serde_json::from_value(serde_json::json!({
+                "t": "session_reply", "id": call.id, "result": { "ok": { "kind": "done" } }
+            }))
+            .unwrap();
+            executors.handle_frame(devbox, reply);
+            timeout(WAIT, executors.await_live(devbox))
+                .await
+                .expect("the link goes live");
+        }
+        hub.executors.attach(&devbox, sessions()).await;
+        subscribed(&hub.executors, &devbox, &mut calls).await;
+
+        // Live: heartbeats leave it be, however long they come.
+        let mut dark_since = None;
+        hub.link
+            .reattach_if_dark(&devbox, sessions(), &mut dark_since);
+        clock.advance(Duration::from_secs(60));
+        hub.link
+            .reattach_if_dark(&devbox, sessions(), &mut dark_since);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(calls.try_recv().is_err(), "a live link was attached again");
+
+        // Its executor goes dark while the link stays up: heartbeats wait about 30 s, then attach it again.
+        hub.executors.test_go_dark(&devbox);
+        assert!(!hub.executors.is_connected(&devbox));
+        hub.link
+            .reattach_if_dark(&devbox, sessions(), &mut dark_since);
+        clock.advance(Duration::from_secs(20));
+        hub.link
+            .reattach_if_dark(&devbox, sessions(), &mut dark_since);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(calls.try_recv().is_err(), "attached again too soon");
+        clock.advance(Duration::from_secs(11));
+        hub.link
+            .reattach_if_dark(&devbox, sessions(), &mut dark_since);
+        subscribed(&hub.executors, &devbox, &mut calls).await;
+        assert!(hub.executors.is_connected(&devbox));
+    }
+
+    /// A frame that doesn't decode is logged by its tag, its size and serde's words, never its payload.
+    #[test]
+    fn an_undecodable_frame_is_logged_by_its_tag_and_error() {
+        let text = r#"{"t":"machine_event","seq":"not a number","at":"2026-11-08T16:48:00.000Z","event":{}}"#;
+        let e = serde_json::from_str::<fleetd_contracts::node_link::NodeToHub>(text).unwrap_err();
+        let (tag, error) = super::undecodable(text, &e);
+        assert_eq!(tag, "machine_event");
+        assert!(!error.is_empty());
+        let (tag, _) = super::undecodable("not json", &e);
+        assert_eq!(tag, "(none)");
+        let long = format!(r#"{{"t":"{}"}}"#, "x".repeat(500));
+        assert_eq!(super::undecodable(&long, &e).0.len(), 64);
     }
 }
