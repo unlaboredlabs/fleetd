@@ -60,7 +60,7 @@ test("auth, ready, snapshot and calls", async () => {
   await app.send({ t: "call", id: "2", tool: "fleetd_status", input: {} });
   expect(await app.tag("result")).toMatchObject({ id: "2", output: { machines: [] } });
   await app.send({ t: "call", id: "3", tool: "hub_links_get", input: {} });
-  expect(await app.next((f) => f.id === "3")).toMatchObject({ t: "error", code: "failed" });
+  expect(await app.next((f) => f.id === "3")).toMatchObject({ t: "result", output: { links: [], issued: [] } });
   app.close();
 });
 
