@@ -1,6 +1,6 @@
 // `time_spans`, `time_breakdown` and `time_insights` (crates/fleetd/src/hub/time/tools.rs). Reads are bounded: at most
 // MAX_ROWS spans per period are loaded, and a read that hits the bound says so in coverage. `thread_window` reads a
-// session's transcript through the executor's thread view, which is not ported yet.
+// session's transcript around one item through the executor's thread view.
 import type { Database } from "bun:sqlite";
 import type {
   Category,
@@ -24,6 +24,8 @@ import { allows } from "../auth/index.ts";
 import type { Hub } from "../api/hub.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { executors } from "../executor/index.ts";
+import { fromExecutor } from "../executor/tools.ts";
 import { others } from "../navi/owner.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { time } from "./index.ts";
@@ -673,6 +675,22 @@ function periodBreakdown(hub: Hub, caller: Caller, scope: TimeScope, since: numb
 }
 
 export function register(tools: Registry): void {
+  tools.add("thread_window", async (hub, caller, input) => {
+    requireRole(caller, "read", input.machineId);
+    const r = { machineId: input.machineId, threadId: input.threadId };
+    let rows;
+    let focus;
+    try {
+      [rows, focus] = await executors(hub).views.window(r, input.itemId, input.before ?? 10, input.after ?? 10);
+    } catch (error) {
+      throw fromExecutor(error);
+    }
+    return {
+      ...(focus === undefined ? {} : { focus: Math.max(0, focus) }),
+      items: rows.slice(0, 51) as never,
+      next: "thread_tail shows the newest entries.",
+    };
+  });
   tools.add("time_spans", (hub, caller, input) => {
     const now = time(hub).nowMs();
     const [since, until] = period(input.since, input.until, now);

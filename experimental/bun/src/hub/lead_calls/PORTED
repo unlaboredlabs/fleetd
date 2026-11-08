@@ -25,6 +25,7 @@ lead:lead call `gated_run`
 lead:lead call `mac_send`
 lead:lead call `mac_where`
 lead:lead call `memory_read`
+lead:lead call `nudge`
 lead:lead call `purchase_claim`
 lead:lead call `purchase_filled`
 lead:lead call `purchase_open`

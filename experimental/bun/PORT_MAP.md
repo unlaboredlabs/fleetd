@@ -216,16 +216,16 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `time_spans` → `src/hub/time` (read) <!-- tool:`time_spans` -->
 - [x] `time_breakdown` → `src/hub/time` (read) <!-- tool:`time_breakdown` -->
 - [x] `time_insights` → `src/hub/time` (read) <!-- tool:`time_insights` -->
-- [ ] `thread_window` → `src/hub/time` (read) <!-- tool:`thread_window` -->
+- [x] `thread_window` → `src/hub/time` (read) <!-- tool:`thread_window` -->
 - [x] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
 - [x] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
-- [ ] `chat_send` → `src/hub/chat` (operate) <!-- tool:`chat_send` -->
-- [ ] `chat_history` → `src/hub/chat` (read) <!-- tool:`chat_history` -->
-- [ ] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
-- [ ] `project_stop` → `src/hub/chat` (operate) <!-- tool:`project_stop` -->
+- [x] `chat_send` → `src/hub/chat` (operate) <!-- tool:`chat_send` -->
+- [x] `chat_history` → `src/hub/chat` (read) <!-- tool:`chat_history` -->
+- [x] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
+- [x] `project_stop` → `src/hub/chat` (operate) <!-- tool:`project_stop` -->
 - [x] `agents_list` → `src/hub/agents` (read) <!-- tool:`agents_list` -->
 - [x] `agent_work` → `src/hub/agents` (read) <!-- tool:`agent_work` -->
-- [ ] `chat_stop` → `src/hub/chat` (operate) <!-- tool:`chat_stop` -->
+- [x] `chat_stop` → `src/hub/chat` (operate) <!-- tool:`chat_stop` -->
 - [x] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
 - [x] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
 - [x] `work_done` → `src/hub/work` (operate) <!-- tool:`work_done` -->
@@ -233,7 +233,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 ### Background loops
 
 - [x] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
-- [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
+- [x] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
 - [x] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
 - [x] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
@@ -609,7 +609,7 @@ every `fleetd` command.
 - [x] lead call `remember` → `src/hub/lead_calls` <!-- lead:lead call `remember` -->
 - [x] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
 - [x] lead call `memory_read` → `src/hub/lead_calls` <!-- lead:lead call `memory_read` -->
-- [ ] lead call `nudge` → `src/hub/lead_calls` <!-- lead:lead call `nudge` -->
+- [x] lead call `nudge` → `src/hub/lead_calls` <!-- lead:lead call `nudge` -->
 - [x] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
 - [x] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
 - [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->

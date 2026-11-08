@@ -30,7 +30,7 @@ import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
-import { show } from "./attachments.ts";
+import { show } from "../intake/attachments.ts";
 import { parts as partsOf } from "./parts.ts";
 
 export const CHAT_TEXT_MAX = 100_000;

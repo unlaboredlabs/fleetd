@@ -2,7 +2,7 @@
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
-import { ofChat } from "../chat/attachments.ts";
+import { ofChat } from "../intake/attachments.ts";
 import { ARTIFACTS_LISTED, get, list, versions } from "./index.ts";
 
 export function register(tools: Registry): void {
@@ -12,7 +12,7 @@ export function register(tools: Registry): void {
     const artifacts = list(hub.db, r);
     return {
       artifacts,
-      files: ofChat(hub.db, r),
+      files: ofChat(hub, r),
       ...(artifacts.length >= ARTIFACTS_LISTED ? { truncated: true } : {}),
     };
   });
