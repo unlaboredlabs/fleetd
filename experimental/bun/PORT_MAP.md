@@ -54,7 +54,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
 - [ ] `status_get` → `src/hub/status` (read) <!-- tool:`status_get` -->
-- [ ] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
+- [x] `hub_info` → `src/hub/info` (read) <!-- tool:`hub_info` -->
 - [x] `people_list` → `src/hub/people` (read) <!-- tool:`people_list` -->
 - [x] `invite_create` → `src/hub/people` (admin) <!-- tool:`invite_create` -->
 - [x] `invite_revoke` → `src/hub/people` (admin) <!-- tool:`invite_revoke` -->
