@@ -195,11 +195,50 @@
 .managing {
   flex: none;
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
   padding: var(--space-2) var(--space-6);
   border-bottom: 1px solid var(--hairline);
+}
+/* The hubs to manage, as a segmented control: the one managed now raised. */
+.hubChoices {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  min-width: 0;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.hubChoice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.hubChoice:hover {
+  color: var(--text);
+}
+.hubChoice[aria-current="page"] {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--hairline);
+  color: var(--text);
+  font-weight: 500;
+}
+.hubChoice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .hubMark {
   flex: none;

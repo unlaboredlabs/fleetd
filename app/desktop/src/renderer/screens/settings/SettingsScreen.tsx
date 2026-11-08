@@ -1,10 +1,10 @@
-// Settings (⌘, or the app menu), one window in three groups (D211). You: General (appearance, time in the app,
-// notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs on), Your memory (and Import
-// memory), Your devices (and Pair
-// a phone) and Hubs (this app's hubs and their links). Projects: a project picked in the sidebar, with its Project,
-// Agents, Instructions & memory, Automations and Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
-// The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into one prompt. The
-// shell shows SettingsSidebar in the sidebar's place while Settings is open.
+// Settings (⌘, or the app menu), one window in three groups (D211), its sidebar one flat list of pages. You: General
+// (appearance, time in the app, notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs
+// on), Your memory (and Import memory), Your devices (and Pair a phone) and Hubs (this app's hubs and their links).
+// Projects: the list of projects, each opening its Project, Agents, Instructions & memory, Automations and Prompts
+// pages under tabs (Frames.tsx). Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every
+// teammate's work. The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into
+// one prompt. The shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
 import { HubPage } from "../admin/HubPages";
 import { AgentsSettings } from "./Agents";
@@ -17,7 +17,9 @@ import { ImportMemory } from "./ImportMemory";
 import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
 import { OnePasswordSettings } from "./OnePassword";
+import { ProjectFrame } from "./Frames";
 import { PageHead, useProjects } from "./parts";
+import { ProjectList } from "./ProjectList";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
 import { isHubTab, isProjectTab, projectFor, useSettingsRoute } from "./route";
@@ -28,13 +30,15 @@ export { SettingsSidebar } from "./SettingsSidebar";
 export function SettingsScreen() {
   const route = useSettingsRoute();
   const projects = useProjects();
-  // A project's pages are of the project picked in the sidebar; each starts afresh on another, except Prompts, which
-  // stays mounted so it can ask before a switch drops a draft.
-  const project = isProjectTab(route.tab) ? projectFor(route, projects) : route.for;
-  const r = { ...route, for: project };
+  // Projects without a project is the list; a project's pages are of the project opened from it (else the one shown
+  // last, or the first). Each starts afresh on another, except Prompts, which stays mounted so it can ask before a
+  // switch drops a draft.
   const tab = route.tab;
-  return (
-    <div className={s.frame}>
+  const list = tab === "projects" && route.for === null;
+  const project = isProjectTab(tab) && !list ? projectFor(route, projects) : route.for;
+  const r = { ...route, for: project };
+  const page = (
+    <>
       {isHubTab(tab) ? (
         <HubPage tab={tab} route={route} />
       ) : tab === "general" ? (
@@ -57,6 +61,19 @@ export function SettingsScreen() {
         <Automations key={project} route={r} />
       ) : (
         <Prompts route={r} />
+      )}
+    </>
+  );
+  return (
+    <div className={s.frame}>
+      {list ? (
+        <ProjectList />
+      ) : isProjectTab(tab) && project !== null ? (
+        <ProjectFrame project={project} tab={tab}>
+          {page}
+        </ProjectFrame>
+      ) : (
+        page
       )}
     </div>
   );

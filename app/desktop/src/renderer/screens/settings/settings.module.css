@@ -24,7 +24,7 @@
   flex-direction: column;
   gap: var(--space-6);
   max-width: calc(var(--measure) + 160px);
-  padding: var(--space-4) var(--space-6) var(--space-8);
+  padding: var(--space-6) var(--space-6) var(--space-8);
 }
 .setting {
   display: grid;
@@ -108,7 +108,7 @@
   flex-direction: column;
   gap: var(--space-4);
   max-width: 900px;
-  padding: var(--space-4) var(--space-6) var(--space-8);
+  padding: var(--space-6) var(--space-6) var(--space-8);
 }
 .head {
   display: flex;
@@ -374,24 +374,78 @@
 .search {
   padding: var(--space-2) 0;
 }
-.navGroup {
+/* A set's pages (a project's, Every project's) as tabs over the page, in line with its column. */
+.pageTabs {
+  flex: none;
+}
+.pageTabList {
+  padding: 0 var(--space-6);
+}
+
+/* A list of rows that open what they name (Projects, a set's prompts): rows between hairlines, each lit on hover,
+   deeper while pressed, with the focus ring and a trailing chevron. A row reaches a step past the column on each side,
+   so its text stays in line with the heading above. */
+.openList {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
-/* A group title among the prompts, lined up with their labels. */
-/* The project picker under Projects in the sidebar, lined up with its rows. */
-.navPick {
-  padding: var(--space-1) var(--space-2);
+.openItem {
+  border-top: 1px solid var(--hairline);
 }
-.navPicker {
-  width: 100%;
+.openItem:last-child {
+  border-bottom: 1px solid var(--hairline);
 }
-.navNested {
+.openRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: calc(100% + 2 * var(--space-2));
+  margin-inline: calc(-1 * var(--space-2));
+  padding: var(--space-3) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--dur-quick);
+}
+.openRow:hover {
+  background: var(--hover);
+}
+.openRow:active {
+  background: var(--selected);
+}
+.openRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.openText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.openChevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  transition: color var(--dur-quick);
+}
+.openRow:hover .openChevron,
+.openRow:focus-visible .openChevron {
+  color: var(--quiet);
+}
+.promptGroups {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) 2px var(--space-6);
+  gap: var(--space-6);
 }
+
 .sidebarNote {
   padding: 0 var(--space-2);
 }
