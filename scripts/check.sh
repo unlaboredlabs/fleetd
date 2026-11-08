@@ -220,6 +220,10 @@ $schema_wanted && packages+=(-p fleetd-contracts)
 built=true
 if [ ${#packages[@]} -gt 0 ]; then
   build=(cargo build --locked "${packages[@]}")
+  # With the features the tests' build resolves (fleetd's dev-dependency on tokio adds test-util), so both build one
+  # copy of the deps and of fleetd's lib: without them the tests' build compiled tokio and all that depends on it a
+  # second time in a new worktree, and fleetd's lib a third time for the integration tests or another crate's.
+  [[ " ${packages[*]} " == *" fleetd "* ]] && build+=(--features tokio/test-util)
   echo "==> ${uses[*]}: ${build[*]}"
   if ! "${build[@]}"; then
     built=false

@@ -97,4 +97,5 @@ libc = "0.2"
 tikv-jemallocator = "0.7"
 
 [dev-dependencies]
+# scripts/check.sh builds the binaries with these features too, so they and the tests share one build of the deps.
 tokio = { workspace = true, features = ["test-util"] }

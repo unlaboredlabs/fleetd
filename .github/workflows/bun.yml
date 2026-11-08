@@ -1,0 +1,45 @@
+# The Bun/TypeScript fleetd experiment (experimental/bun, D342/D343): its generated files, its type check with tsc-rs,
+# its tests, and the `bun build --compile` binary, run end to end. Only when the experiment changes; not a required
+# check, and nothing else in CI reads it. Pull requests only, so a red run never counts as main's.
+name: Bun experiment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - experimental/bun/**
+      - .github/workflows/bun.yml
+  workflow_dispatch:
+
+concurrency:
+  group: bun-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bun:
+    name: bun (experimental)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: experimental/bun
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      # tsc-rs comes from npm, pinned in bun.lock (its native binary is the @tsc-rs/<platform> package).
+      - run: bun install --frozen-lockfile
+      - name: Generated files are current (tools, migrations, wire tags, PORT_MAP.md)
+        run: bun run gen:check
+      - name: Type check (tsc-rs)
+        run: bun run typecheck
+      - run: bun test
+      - run: bun run compile
+      - name: The binary end to end
+        run: bun run smoke
+      - name: Binary size
+        run: ls -l dist/fleetd
