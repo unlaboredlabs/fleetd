@@ -644,37 +644,89 @@ async fn gh_runs_as_the_app_on_its_repositories_and_on_its_own_login_elsewhere()
     created(&lab).await;
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("gh");
-    // As GitHub answers an App on a path it may not take: refused with its token, fine on the machine's login.
+    // As GitHub answers an App on a path it may not take: refused with its token, fine on the machine's login. It
+    // prints the token it runs as, either one gh reads.
     std::fs::write(
         &script,
-        "#!/bin/sh\ncase \"$*\" in *protected*) if [ \"${GH_TOKEN#ghs_}\" != \"$GH_TOKEN\" ]; then echo 'HTTP 403: Resource not accessible by integration' >&2; exit 1; fi; echo machine; exit 0;; esac\nprintf '%s' \"$GH_TOKEN\"\n",
+        "#!/bin/sh\ncase \"$*\" in *protected*) if [ \"${GH_TOKEN#ghs_}\" != \"$GH_TOKEN\" ]; then echo 'HTTP 403: Resource not accessible by integration' >&2; exit 1; fi; echo machine; exit 0;; esac\nprintf '%s' \"$GH_TOKEN$GITHUB_TOKEN\"\n",
     )
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let gh = AppGh::with_program(lab.hub.github_app.clone(), script.to_string_lossy());
+    // The machine's own login, as the stand-in sees it: never what this test process inherited.
+    let machine = vec![("GH_TOKEN".to_owned(), "gho_machine".to_owned())];
+    let gh = AppGh::with_program(
+        lab.hub.github_app.clone(),
+        script.to_string_lossy(),
+        machine,
+    );
     let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     let out = gh
         .run(args(&["pr", "view", "7", "--repo", "acme/web"]))
         .await
         .unwrap();
-    assert!(out.stdout.starts_with("ghs_7_"), "{}", out.stdout);
     let elsewhere = gh
         .run(args(&["api", "repos/stranger/web/pulls"]))
         .await
         .unwrap();
-    assert!(
-        !elsewhere.stdout.starts_with("ghs_"),
-        "{}",
-        elsewhere.stdout
-    );
     let user = gh.run(args(&["api", "user"])).await.unwrap();
-    assert!(!user.stdout.starts_with("ghs_"));
     // Refused to the App: once more on the machine's login.
     let refused = gh
         .run(args(&["api", "repos/acme/web/branches/main/protected"]))
         .await
         .unwrap();
+    // Checked before anything below prints a run's output: inside an agent, what's inherited is its real token.
+    for name in ["GH_TOKEN", "GITHUB_TOKEN"] {
+        let Some(inherited) = std::env::var(name).ok().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        for run in [&out, &elsewhere, &user, &refused] {
+            assert!(
+                !run.stdout.contains(&inherited) && !run.stderr.contains(&inherited),
+                "the stand-in ran with this process's {name}"
+            );
+        }
+    }
+    assert!(out.stdout.starts_with("ghs_7_"), "{}", out.stdout);
+    assert_eq!(elsewhere.stdout, "gho_machine");
+    assert_eq!(user.stdout, "gho_machine");
     assert_eq!((refused.exit_code, refused.stdout.trim()), (0, "machine"));
+}
+
+/// Inside an agent, the test process holds the agent's own `GH_TOKEN`: this module's tests, run again with it (and
+/// `GITHUB_TOKEN`) set to a marker, pass, and neither their output nor a stand-in's has it.
+#[test]
+fn an_inherited_github_token_reaches_no_stand_in_and_no_test_output() {
+    const MARKER: &str = "ghs_inherited_from_the_agent";
+    let tests = module_path!().split_once("::").unwrap().1;
+    let module = tests.strip_suffix("::tests").unwrap();
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            &format!("{module}::"),
+            "--skip",
+            &format!("{tests}::an_inherited_github_token_reaches_no_stand_in_and_no_test_output"),
+            "--nocapture",
+            "--test-threads=2",
+        ])
+        .env("GH_TOKEN", MARKER)
+        .env("GITHUB_TOKEN", MARKER)
+        .output()
+        .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success() && text.contains("test result: ok"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "gh_runs_as_the_app_on_its_repositories_and_on_its_own_login_elsewhere ... ok"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains(MARKER), "{text}");
 }
 
 /// What each REST path the hub's gh calls needs of a GitHub App, by its first segment after the repository (and, under
