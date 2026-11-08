@@ -220,3 +220,86 @@ async fn two_enqueues_at_once_after_each_other_cannot_both_go() {
         refused.message
     );
 }
+
+/// Another person's Only me project, which the lead's person can't see.
+fn bobs_navi() -> ProjectRef {
+    ProjectRef {
+        machine_id: MachineId::unchecked("lab-b"),
+        project_id: ProjectId::unchecked("bob-navi"),
+    }
+}
+
+/// `after` names only PRs of projects the lead's person sees (D338): one of a repo only another person's Only me
+/// project has is refused with a plain reason, and goes once a project the person sees has the repo too.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_naming_a_pr_of_a_project_the_person_cant_see_is_refused() {
+    let kit = Kit::new();
+    kit.host.unseen.lock().unwrap().insert(bobs_navi());
+    *kit.host.repo_projects.lock().unwrap() = vec![bobs_navi()];
+    let web_url = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
+    let hidden = "https://github.com/bob/private/pull/3";
+    let refused = kit
+        .train
+        .enqueue(&project(), after(enqueue_call(web_url.clone()), hidden))
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains(&format!(
+            "You can't hold on a PR of a project you can't see, and {hidden} is one."
+        )),
+        "{}",
+        refused.message
+    );
+    assert!(refused.fix.as_deref().is_some_and(|f| f.contains("drop")));
+    assert!(kit.train.repos().is_empty());
+
+    kit.host.repo_projects.lock().unwrap().push(project());
+    let web = kit
+        .train
+        .enqueue(&project(), after(enqueue_call(web_url), hidden))
+        .await
+        .unwrap();
+    assert_eq!(web.after, [GitHubPrUrl::unchecked(hidden)]);
+}
+
+/// The PR's Change says whose it is: one on another person's Only me project's train is refused, even when a project
+/// the person sees has its repo too.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_naming_a_pr_on_an_unseen_projects_train_is_refused() {
+    let kit = two_repos();
+    *kit.host.repo_projects.lock().unwrap() = vec![project(), bobs_navi()];
+    let api_url = kit.open_pr_in(API, 8, "fleetd/T2-api", &[add("api.txt", "api\n")]);
+    let web_url = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
+    let api = kit.enqueue_held(api_url.clone()).await;
+    let mut theirs = kit.get(&api.change_id);
+    theirs.project_ref = bobs_navi();
+    kit.train.records().put(&theirs);
+    kit.host.unseen.lock().unwrap().insert(bobs_navi());
+    let refused = kit
+        .train
+        .enqueue(&project(), after(enqueue_call(web_url), &api_url))
+        .await
+        .unwrap_err();
+    assert!(
+        refused
+            .message
+            .contains("You can't hold on a PR of a project you can't see"),
+        "{}",
+        refused.message
+    );
+}
+
+/// A PR of a repo no fleetd project has still goes in `after`, as before: the train reads only its state on GitHub.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_naming_a_pr_of_a_repo_no_project_has_still_goes() {
+    let kit = Kit::new();
+    kit.host.unseen.lock().unwrap().insert(bobs_navi());
+    let web_url = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
+    let upstream = "https://github.com/upstream/lib/pull/4";
+    let web = kit
+        .train
+        .enqueue(&project(), after(enqueue_call(web_url), upstream))
+        .await
+        .unwrap();
+    assert_eq!(web.after, [GitHubPrUrl::unchecked(upstream)]);
+}

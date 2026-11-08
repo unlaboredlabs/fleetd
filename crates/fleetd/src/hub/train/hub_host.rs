@@ -376,6 +376,21 @@ impl TrainHost for HubHost {
         }
     }
 
+    fn sees(&self, by: &ProjectRef, other: &ProjectRef) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        let unseen = crate::hub::navi::of(&hub.db, by).and_then(|navi| {
+            let owner = navi.and_then(|n| n.owner);
+            crate::hub::navi::owner::others_of(&hub.db, owner.as_ref(), false)
+        });
+        match unseen {
+            Ok(unseen) => by == other || !unseen.contains(other),
+            Err(error) => {
+                tracing::warn!(%error, "train: the projects a lead's person sees not read");
+                false
+            }
+        }
+    }
+
     fn landings_watched(&self, repo: &str, base: &str) -> bool {
         let Some(hub) = self.hub() else { return false };
         let scope = fleetd_contracts::work::RepoKey::of(&format!("github.com/{repo}"))

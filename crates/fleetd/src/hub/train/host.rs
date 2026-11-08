@@ -113,6 +113,11 @@ pub trait TrainHost: Send + Sync + 'static {
     fn repo_projects(&self, _repo: &str) -> Vec<ProjectRef> {
         Vec::new()
     }
+    /// Whether the person behind `by` sees `other` (D338): an Only me project's lead sees what its owner sees, any
+    /// other project's what every person does, so neither another person's Only me project.
+    fn sees(&self, _by: &ProjectRef, _other: &ProjectRef) -> bool {
+        true
+    }
     /// Runs `argv` (never through a shell) in `cwd` on the machine of `checkout`, the repo's checkout, for at most
     /// `timeout_sec`: only on a linked node whose role takes agents, as agent and review work runs, never on the hub's
     /// own machine for that. The error says why it can't run there now.

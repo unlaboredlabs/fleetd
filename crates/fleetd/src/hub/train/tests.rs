@@ -1141,6 +1141,8 @@ struct FakeHost {
     repos: Mutex<Vec<(String, ProjectRef)>>,
     /// The projects still on their machines with the repo: none unless a test sets them.
     repo_projects: Mutex<Vec<ProjectRef>>,
+    /// The projects the lead's person can't see (another person's Only me): none unless a test sets them.
+    unseen: Mutex<HashSet<ProjectRef>>,
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
     orders: Mutex<Vec<(String, String)>>,
     closed_orders: Mutex<HashSet<String>>,
@@ -1220,6 +1222,9 @@ impl TrainHost for FakeHost {
     }
     fn repo_projects(&self, _: &str) -> Vec<ProjectRef> {
         self.repo_projects.lock().unwrap().clone()
+    }
+    fn sees(&self, _: &ProjectRef, other: &ProjectRef) -> bool {
+        !self.unseen.lock().unwrap().contains(other)
     }
     fn landings_watched(&self, _repo: &str, base: &str) -> bool {
         self.watched.lock().unwrap().contains(base)
@@ -1606,6 +1611,7 @@ impl Kit {
             watched: Mutex::default(),
             repos: Mutex::default(),
             repo_projects: Mutex::default(),
+            unseen: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
             checkout: Mutex::default(),
