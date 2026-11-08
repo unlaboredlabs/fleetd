@@ -22,7 +22,8 @@ test("every tool in the contracts' table is registered, a stub until its module 
   registerAll(tools);
   expect(tools.names().sort() as string[]).toEqual(Object.keys(TOOLS).sort());
   expect(Object.keys(TOOLS).length).toBeGreaterThan(150);
-  const result = await tools.call(hub, caller("admin"), "fleetd_status", {});
+  // Before its module's register runs, a tool is the stub that names the module.
+  const result = await new Registry().call(hub, caller("admin"), "fleetd_status", {});
   expect(result).toEqual({
     error: { kind: "tool", error: expect.objectContaining({ code: "failed", message: expect.stringContaining("src/hub/executor") }) },
   });

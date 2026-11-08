@@ -4,6 +4,7 @@
 import type { AgentKeyInfo, ToolMap } from "../../shared/contracts.ts";
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";
 import { TOOLS, type ToolName } from "../../gen/tools.ts";
+import { guard } from "../navi/owner.ts";
 import { DecodeError, decodeInput } from "./decode.ts";
 import { isHuman, requireRole } from "./grants.ts";
 import type { Hub } from "./hub.ts";
@@ -73,7 +74,6 @@ export class Registry {
       return { error: { kind: "tool", error: new ToolError("not_found", removed[1], "Update the fleetd app: newer ones no longer offer it.") } };
     }
     const scope = TOOLS[tool as ToolName].scope;
-    // TODO(hub-work): the Navi owner's gate (crates/fleetd/src/hub/navi/owner.rs `guard`) runs here, after the role.
     let decoded: unknown = input ?? {};
     if (!this.raw.has(tool)) {
       try {
@@ -85,6 +85,8 @@ export class Registry {
     }
     try {
       requireRole(caller, scope);
+      // The Navi owner's gate, after the role, on the call as sent: a call naming another person's Only me project is refused.
+      guard(hub.db, caller, tool, input ?? {});
       return { output: await handler(hub, caller, decoded as never) };
     } catch (error) {
       if (error instanceof ToolError) return { error: { kind: "tool", error: isHuman(caller) ? error.forPerson() : error } };
