@@ -95,8 +95,28 @@ They're always on: an older `"ios": {"enabled": false}` in its node.json is igno
 them.
 
 The Mac boots at most as many simulators at once as its memory allows: one for every 3 GB past the 8 GB the Mac keeps
-for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number. When all are
-taken, `mac sim start` says so; the agent tries again later or does without.
+for itself (2 on 16 GB, 8 on 32 GB), at least one. `"mac": {"simulators": N}` in its node.json sets another number.
+
+### Waiting for a simulator {#sim-queue}
+
+When all are taken, or the next clone is still booting, `mac sim start` waits its turn. Agents get simulators in the
+order they asked: the agent first in line gets the next simulator that is ready, however often the others ask. While it
+waits, the command prints its place each time it changes and returns once its simulator is booted:
+
+```text
+3rd in line for a simulator: all 2 of the Mac's iOS simulators are in use by other agents
+1st in line for a simulator, about 40 s: yours is booting
+your simulator: iPhone 17 on iOS 27.2 (…)
+```
+
+A waiting command asks the Mac again every 5 seconds. An agent the Mac doesn't hear from for 2 minutes leaves the line,
+and its turn passes to the next agent: its task ended or was cancelled, or its command was cut off by its tool's time
+limit and not run again. Running `mac sim start` again within those 2 minutes keeps the agent's place, and
+`mac sim end` leaves the line at once. Only an agent that is still asking gets a simulator, so one whose task ended
+never holds one. When boots keep failing and the Mac is waiting before the next, the command stops and says so.
+
+`mac sim start --no-wait` doesn't join the line: it says why there's no simulator now (all are in use, agents are
+waiting ahead of it, or one is booting, with about how long) and exits 1.
 
 ## Each agent's folder {#folders}
 

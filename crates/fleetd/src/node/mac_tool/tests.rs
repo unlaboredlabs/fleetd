@@ -519,15 +519,17 @@ async fn a_mac_without_simulators_says_so_and_jobs_get_no_device() {
     let dir = tempfile::tempdir().unwrap();
     let (host, _) = mac(dir.path());
     let agent = host.agent(&caller("s1")).unwrap();
-    let refused = host
-        .step(&agent, Step::SimStart { device: None })
-        .await
-        .unwrap_err();
-    assert!(
-        refused.message.contains("no iOS simulators"),
-        "{}",
-        refused.message
-    );
+    for wait in [true, false] {
+        let refused = host
+            .step(&agent, Step::SimStart { device: None, wait })
+            .await
+            .unwrap_err();
+        assert!(
+            refused.message.contains("no iOS simulators"),
+            "{}",
+            refused.message
+        );
+    }
     assert_eq!(
         host.step(&agent, Step::SimEnd).await.unwrap(),
         Done::SimEnd { ended: false }

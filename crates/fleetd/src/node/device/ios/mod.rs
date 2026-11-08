@@ -391,6 +391,12 @@ pub fn waiting_words(waiting: &pool::Waiting) -> (String, String) {
     }
 }
 
+/// [`waiting_words`] for `mac sim start`, as its refusal.
+pub fn sim_waiting(waiting: &pool::Waiting) -> McpToolError {
+    let (message, fix) = waiting_words(waiting);
+    sim_words(refuse(ErrorCode::Failed, message, &fix))
+}
+
 /// What the node lists at its link's hello for iOS sessions: `session_ios` once the golden is made (the doctor's
 /// check passes), on a Mac where they aren't off.
 pub fn capabilities(home: &Path) -> Vec<String> {
@@ -579,29 +585,33 @@ impl Simulators {
     /// A booted clone from the warm pool for the agents' Mac's `mac sim start` (node/mac_tool), with no session around
     /// it, and its device and runtime's names. Dropping it deletes the clone.
     pub fn lend(self: &Arc<Self>) -> Result<(pool::Lent, String), McpToolError> {
+        self.lend_or_wait()?
+            .map_err(|waiting| sim_waiting(&waiting))
+    }
+
+    /// [`Self::lend`], or with none warm yet about how long until one is.
+    pub fn lend_or_wait(
+        self: &Arc<Self>,
+    ) -> Result<Result<(pool::Lent, String), pool::Waiting>, McpToolError> {
         let pool = self.pool().map_err(sim_words)?;
-        let lent = pool.take().map_err(|waiting| {
-            let (message, fix) = waiting_words(&waiting);
-            sim_words(refuse(ErrorCode::Failed, message, &fix))
-        })?;
         let device = format!(
             "{} on {}",
             pool.golden.device_type_name, pool.golden.runtime_name
         );
-        Ok((lent, device))
+        Ok(pool.take().map(|lent| (lent, device)))
     }
 
-    /// [`Self::lend`] of the device type `wanted` (`mac sim start --device`): the golden's type is a warm clone, any
-    /// other a simulator made and booted for this agent alone.
+    /// [`Self::lend_or_wait`] of the device type `wanted` (`mac sim start --device`): the golden's type is a warm
+    /// clone, any other a simulator made and booted for this agent alone.
     pub async fn lend_type(
         self: &Arc<Self>,
         wanted: &str,
-    ) -> Result<(pool::Lent, String), McpToolError> {
+    ) -> Result<Result<(pool::Lent, String), pool::Waiting>, McpToolError> {
         let pool = self.pool().map_err(sim_words)?;
         if wanted == pool.golden.device_type_name || wanted == pool.golden.device_type {
-            return self.lend();
+            return self.lend_or_wait();
         }
-        pool.make(wanted).await.map_err(|why| {
+        pool.make(wanted).await.map(Ok).map_err(|why| {
             refuse(
                 ErrorCode::Failed,
                 format!("No {wanted} simulator was made: {why}."),
@@ -609,6 +619,14 @@ impl Simulators {
                  --device for the Mac's iPhone",
             )
         })
+    }
+
+    /// About how long until the `nth` clone from now is ready ([`Pool::ready_in`]); None while there is no pool.
+    pub fn ready_in(&self, nth: usize) -> Option<u64> {
+        match &*lock(&self.prep) {
+            Prep::Ready(pool) => Some(pool.ready_in(nth)),
+            _ => None,
+        }
     }
 
     /// Clones booted for the next sessions.
