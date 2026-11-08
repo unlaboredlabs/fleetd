@@ -11,11 +11,11 @@ server, auth, keys, people, devices, links, settings, store.
 
 ### HTTP routes
 
-- [ ] GET `/healthz` → `src/hub/http` (healthz) <!-- http:GET `/healthz` -->
+- [x] GET `/healthz` → `src/hub/http` (healthz) <!-- http:GET `/healthz` -->
 - [ ] GET `/app` → `src/hub/app_ws` (app) <!-- http:GET `/app` -->
 - [ ] POST `/pair` → `src/hub/pair` (pair) <!-- http:POST `/pair` -->
 - [ ] POST `/pair/mac` → `src/hub/pair` (mac_pair) <!-- http:POST `/pair/mac` -->
-- [ ] GET `/node/link` → `src/hub/link` (node_link) <!-- http:GET `/node/link` -->
+- [x] GET `/node/link` → `src/hub/link` (node_link) <!-- http:GET `/node/link` -->
 - [ ] ANY `/link/v1/{op}` → `src/hub/hub_links` (hub_link) <!-- http:ANY `/link/v1/{op}` -->
 
 ### /app websocket messages
@@ -70,33 +70,33 @@ server, auth, keys, people, devices, links, settings, store.
 
 ### Node link messages
 
-- [ ] node→hub `hello` handle → `src/hub/link` <!-- link:node→hub `hello` handle -->
-- [ ] node→hub `hb` handle → `src/hub/link` <!-- link:node→hub `hb` handle -->
-- [ ] node→hub `cmd_result` handle → `src/hub/link` <!-- link:node→hub `cmd_result` handle -->
-- [ ] node→hub `secret_result` handle → `src/hub/link` <!-- link:node→hub `secret_result` handle -->
-- [ ] node→hub `gated_result` handle → `src/hub/link` <!-- link:node→hub `gated_result` handle -->
-- [ ] node→hub `node_action_result` handle → `src/hub/link` <!-- link:node→hub `node_action_result` handle -->
-- [ ] node→hub `session_reply` handle → `src/hub/link` <!-- link:node→hub `session_reply` handle -->
-- [ ] node→hub `machine_event` handle → `src/hub/link` <!-- link:node→hub `machine_event` handle -->
-- [ ] node→hub `thread_event` handle → `src/hub/link` <!-- link:node→hub `thread_event` handle -->
-- [ ] node→hub `slept` handle → `src/hub/link` <!-- link:node→hub `slept` handle -->
-- [ ] node→hub `spans` handle → `src/hub/link` <!-- link:node→hub `spans` handle -->
-- [ ] node→hub `clone_progress` handle → `src/hub/link` <!-- link:node→hub `clone_progress` handle -->
-- [ ] hub→node `challenge` send → `src/hub/link` <!-- link:hub→node `challenge` send -->
-- [ ] hub→node `welcome` send → `src/hub/link` <!-- link:hub→node `welcome` send -->
-- [ ] hub→node `hb` send → `src/hub/link` <!-- link:hub→node `hb` send -->
-- [ ] hub→node `cmd_check` send → `src/hub/link` <!-- link:hub→node `cmd_check` send -->
-- [ ] hub→node `secret_deliver` send → `src/hub/link` <!-- link:hub→node `secret_deliver` send -->
-- [ ] hub→node `gated_run` send → `src/hub/link` <!-- link:hub→node `gated_run` send -->
-- [ ] hub→node `gated_resume` send → `src/hub/link` <!-- link:hub→node `gated_resume` send -->
-- [ ] hub→node `node_action` send → `src/hub/link` <!-- link:hub→node `node_action` send -->
-- [ ] hub→node `session_call` send → `src/hub/link` <!-- link:hub→node `session_call` send -->
+- [x] node→hub `hello` handle → `src/hub/link` <!-- link:node→hub `hello` handle -->
+- [x] node→hub `hb` handle → `src/hub/link` <!-- link:node→hub `hb` handle -->
+- [x] node→hub `cmd_result` handle → `src/hub/link` <!-- link:node→hub `cmd_result` handle -->
+- [x] node→hub `secret_result` handle → `src/hub/link` <!-- link:node→hub `secret_result` handle -->
+- [x] node→hub `gated_result` handle → `src/hub/link` <!-- link:node→hub `gated_result` handle -->
+- [x] node→hub `node_action_result` handle → `src/hub/link` <!-- link:node→hub `node_action_result` handle -->
+- [x] node→hub `session_reply` handle → `src/hub/link` <!-- link:node→hub `session_reply` handle -->
+- [x] node→hub `machine_event` handle → `src/hub/link` <!-- link:node→hub `machine_event` handle -->
+- [x] node→hub `thread_event` handle → `src/hub/link` <!-- link:node→hub `thread_event` handle -->
+- [x] node→hub `slept` handle → `src/hub/link` <!-- link:node→hub `slept` handle -->
+- [x] node→hub `spans` handle → `src/hub/link` <!-- link:node→hub `spans` handle -->
+- [x] node→hub `clone_progress` handle → `src/hub/link` <!-- link:node→hub `clone_progress` handle -->
+- [x] hub→node `challenge` send → `src/hub/link` <!-- link:hub→node `challenge` send -->
+- [x] hub→node `welcome` send → `src/hub/link` <!-- link:hub→node `welcome` send -->
+- [x] hub→node `hb` send → `src/hub/link` <!-- link:hub→node `hb` send -->
+- [x] hub→node `cmd_check` send → `src/hub/link` <!-- link:hub→node `cmd_check` send -->
+- [x] hub→node `secret_deliver` send → `src/hub/link` <!-- link:hub→node `secret_deliver` send -->
+- [x] hub→node `gated_run` send → `src/hub/link` <!-- link:hub→node `gated_run` send -->
+- [x] hub→node `gated_resume` send → `src/hub/link` <!-- link:hub→node `gated_resume` send -->
+- [x] hub→node `node_action` send → `src/hub/link` <!-- link:hub→node `node_action` send -->
+- [x] hub→node `session_call` send → `src/hub/link` <!-- link:hub→node `session_call` send -->
 - [ ] hub→node `spans_ack` send → `src/hub/link` <!-- link:hub→node `spans_ack` send -->
 
 ### Background loops
 
 - [ ] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
-- [ ] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
+- [x] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
 - [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
 - [ ] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [ ] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->

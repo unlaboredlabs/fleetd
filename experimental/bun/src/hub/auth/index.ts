@@ -5,6 +5,8 @@ import type { AgentKeyInfo, Grant, MachineId, Role } from "../../shared/contract
 import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { HubDb } from "../store/db.ts";
+import { capped, cleanName, OWNER_FALLBACK, roleCap, roleOf } from "../people/roles.ts";
+import { NodeKeys } from "./nodes.ts";
 
 const CREATE_KEY_FIX = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
 const KEY_PREFIX = "fld_";
@@ -41,7 +43,7 @@ export function allows(info: AgentKeyInfo, role: Role, machine?: MachineId): boo
   );
 }
 
-type KeyRow = {
+export type KeyRow = {
   key_id: string;
   name: string;
   kind: string;
@@ -64,10 +66,27 @@ const KEY_QUERY = `SELECT k.key_id, k.name, k.kind, k.prefix, k.grants, k.create
 export const isoMs = (ms: number) => new Date(ms).toISOString();
 
 export class Auth {
+  /** Node enroll tokens and node keys. */
+  readonly nodes: NodeKeys;
+  private readonly revokeListeners = new Set<() => void>();
+
   constructor(
     private readonly db: HubDb,
     private readonly clock: Clock,
-  ) {}
+  ) {
+    this.nodes = new NodeKeys(db, clock);
+  }
+
+  /** Calls `fn` on each key this hub revokes (an open app connection checks its key again); returns the unsubscribe. */
+  onRevoke(fn: () => void): () => void {
+    this.revokeListeners.add(fn);
+    return () => this.revokeListeners.delete(fn);
+  }
+
+  /** Tells open connections that keys were revoked, so each checks its own again. */
+  revokedSome(): void {
+    for (const fn of this.revokeListeners) fn();
+  }
 
   /** Accepts `fld_…` or `Bearer fld_…`; throws a ToolError for any key it refuses. */
   verify(bearer: string): AgentKeyInfo {
@@ -89,10 +108,13 @@ export class Auth {
   }
 }
 
-// TODO(hub-core): a person's role caps their device's grants (hub/people `capped`, `role_cap`), and the name falls
-// back to "Owner" (`clean_name`). Both come with the people module.
-function info(row: KeyRow): AgentKeyInfo {
-  const grants = JSON.parse(row.grants) as Grant[];
+/**
+ * The key as the hub applies it: a device never holds more than its person's role allows, so a member's device reads
+ * (and acts) as operate even where its own grant says admin.
+ */
+export function info(row: KeyRow): AgentKeyInfo {
+  const stored = JSON.parse(row.grants) as Grant[];
+  const grants = row.person_id === null ? stored : capped(stored, roleCap(roleOf(row.person_role ?? "")));
   return {
     keyId: row.key_id,
     name: row.name,
@@ -102,6 +124,6 @@ function info(row: KeyRow): AgentKeyInfo {
     createdAt: isoMs(row.created_ms),
     ...(row.last_used_ms === null ? {} : { lastUsedAt: isoMs(row.last_used_ms) }),
     ...(row.revoked_ms === null ? {} : { revokedAt: isoMs(row.revoked_ms) }),
-    ...(row.person_id === null ? {} : { person: { personId: row.person_id, name: row.person_name ?? "Owner" } }),
+    ...(row.person_id === null ? {} : { person: { personId: row.person_id, name: cleanName(row.person_name ?? "") ?? OWNER_FALLBACK } }),
   };
 }
