@@ -31,6 +31,7 @@ use crate::hub::auth::{Auth, AuthError};
 use crate::hub::executor::providers::runner_problem;
 use crate::hub::executor::{Executors, NodeSessions};
 use crate::hub::store::{EventLog, HubStore, NewEvent, iso_ms, now_ms};
+use crate::link_frames::{BadFrames, Undecodable};
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
@@ -382,20 +383,20 @@ struct Refused {
     reason: String,
 }
 
-/// What the hub logs of a frame that doesn't decode: its `t` and serde's error, each cut short. Never the payload.
-fn undecodable(text: &str, error: &serde_json::Error) -> (String, String) {
-    fn cut(s: &str, max: usize) -> String {
-        let mut end = s.len().min(max);
-        while !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        s[..end].to_owned()
-    }
-    let tag = serde_json::from_str::<serde_json::Value>(text)
-        .ok()
-        .and_then(|v| v.get("t")?.as_str().map(|t| cut(t, 64)))
-        .unwrap_or_else(|| "(none)".into());
-    (tag, cut(&error.to_string(), 300))
+/// The hub's answer to a node's lead call it couldn't read, so the agent behind it isn't left waiting.
+fn refused_call(bad: &Undecodable) -> Option<HubToNode> {
+    let id = bad.id.as_deref().filter(|_| bad.tag == "lead_call")?;
+    Some(HubToNode::LeadResult(LeadResultFrame {
+        id: fleetd_contracts::prim::NonEmpty::unchecked(id),
+        result: None,
+        error: Some(
+            McpToolError::new(
+                ErrorCode::Invalid,
+                format!("the hub could not read this call: {}", bad.error),
+            )
+            .with_fix("this machine and the hub may run different fleetd versions: carry on without this call and say so in your result"),
+        ),
+    }))
 }
 
 fn refuse<T>(code: u16, reason: impl Into<String>) -> Result<T, Refused> {
@@ -1144,6 +1145,7 @@ impl NodeLinkServer {
         let _progress = progress;
         let mut beats: u32 = 0;
         let mut dark_since = None;
+        let mut bad_frames = BadFrames::default();
 
         loop {
             let text = match next_frame(ws, inflater.as_mut()).await {
@@ -1155,10 +1157,18 @@ impl NodeLinkServer {
                 Ok(f) => f,
                 // An older node's word on a preview it still runs: previews are gone from the hub.
                 Err(_) if retired_frame(&text) => continue,
+                // That frame alone is refused (crate::link_frames): the rest of the link carries on.
                 Err(e) => {
-                    let (tag, error) = undecodable(&text, &e);
-                    tracing::warn!(machine_id = %machine_id, link_id = id, tag = %tag, bytes = text.len(), error = %error, "node link: a frame does not decode; closing the link");
-                    return refuse(close::BAD_FRAME, "frame does not decode");
+                    let bad = Undecodable::of(&text, &e);
+                    if !bad_frames.take(now_ms(self.deps.clock.as_ref())) {
+                        tracing::warn!(machine_id = %machine_id, link_id = id, tag = %bad.tag, bytes = text.len(), error = %bad.error, "node link: too many frames that do not decode; closing the link");
+                        return refuse(close::BAD_FRAME, "too many frames that do not decode");
+                    }
+                    tracing::warn!(machine_id = %machine_id, link_id = id, tag = %bad.tag, bytes = text.len(), error = %bad.error, "node link: a frame does not decode; refused it alone");
+                    if let Some(answer) = refused_call(&bad) {
+                        send(tx, answer);
+                    }
+                    continue;
                 }
             };
             // A replaced or timed-out link must not keep the machine alive.
@@ -1790,19 +1800,5 @@ mod tests {
             .reattach_if_dark(&devbox, sessions(), &mut dark_since);
         subscribed(&hub.executors, &devbox, &mut calls).await;
         assert!(hub.executors.is_connected(&devbox));
-    }
-
-    /// A frame that doesn't decode is logged by its tag, its size and serde's words, never its payload.
-    #[test]
-    fn an_undecodable_frame_is_logged_by_its_tag_and_error() {
-        let text = r#"{"t":"machine_event","seq":"not a number","at":"2026-11-08T16:48:00.000Z","event":{}}"#;
-        let e = serde_json::from_str::<fleetd_contracts::node_link::NodeToHub>(text).unwrap_err();
-        let (tag, error) = super::undecodable(text, &e);
-        assert_eq!(tag, "machine_event");
-        assert!(!error.is_empty());
-        let (tag, _) = super::undecodable("not json", &e);
-        assert_eq!(tag, "(none)");
-        let long = format!(r#"{{"t":"{}"}}"#, "x".repeat(500));
-        assert_eq!(super::undecodable(&long, &e).0.len(), 64);
     }
 }

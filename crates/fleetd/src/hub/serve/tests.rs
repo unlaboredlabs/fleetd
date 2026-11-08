@@ -1238,6 +1238,89 @@ async fn a_node_that_lists_link_deflate_gets_compressed_frames_and_an_older_one_
     }
 }
 
+/// The next lead_result the hub sends a node; a link that closes first fails the test with its close frame.
+async fn next_lead_result(node: &mut NodeSocket) -> Value {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(10), node.next())
+            .await
+            .expect("no lead_result within 10 s")
+        {
+            Some(Ok(Message::Text(text))) => {
+                let frame: Value = serde_json::from_str(&text).unwrap();
+                if frame["t"] == "lead_result" {
+                    return frame;
+                }
+            }
+            Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+            other => panic!("the link ended: {other:?}"),
+        }
+    }
+}
+
+/// One frame from the node that doesn't decode (a newer node's call, a field out of range) is refused alone: the
+/// link stays up, a lead call among them is answered with an error so its agent isn't left waiting, and the good
+/// frames around them are handled. On Nov 8 one such frame closed the devbox's whole link.
+#[tokio::test]
+async fn an_undecodable_node_frame_is_refused_alone_and_the_link_stays_up() {
+    let t = start().await;
+    let devbox = fleetd_contracts::ids::MachineId::unchecked("devbox");
+    let (mut node, welcome) = link_node(&t, &[]).await;
+    assert_eq!(welcome["t"], "welcome");
+    let link = t.hub.link.link_id(&devbox).expect("linked");
+    let frames = [
+        json!({ "t": "hb", "at": "2026-11-08T16:48:00.000Z" }),
+        json!({ "t": "lead_call", "id": "bad-1", "cwd": "/w", "call": { "op": "a_newer_nodes_call" } }),
+        json!({ "t": "machine_event", "seq": "not a number" }),
+        json!({ "t": "lead_call", "id": "good-1", "cwd": "/w", "call": { "op": "task_list" } }),
+        json!({ "t": "hb", "at": "2026-11-08T16:48:15.000Z" }),
+    ];
+    for frame in frames {
+        node.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let refused = next_lead_result(&mut node).await;
+    assert_eq!(refused["id"], "bad-1");
+    assert_eq!(refused["error"]["code"], "invalid", "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not read"),
+        "{refused}"
+    );
+    let answered = next_lead_result(&mut node).await;
+    assert_eq!(answered["id"], "good-1", "{answered}");
+    assert_eq!(
+        t.hub.link.link_id(&devbox),
+        Some(link),
+        "the link was replaced"
+    );
+}
+
+/// A node that sends nothing readable is still cut off: past the minute's limit of bad frames, the link ends.
+#[tokio::test]
+async fn a_flood_of_undecodable_node_frames_ends_the_link() {
+    let t = start().await;
+    let (mut node, _) = link_node(&t, &[]).await;
+    for _ in 0..=crate::link_frames::BAD_FRAMES_PER_MINUTE {
+        let bad = json!({ "t": "machine_event", "seq": "not a number" });
+        node.send(Message::text(bad.to_string())).await.unwrap();
+    }
+    loop {
+        match node.next().await.unwrap().unwrap() {
+            Message::Close(Some(frame)) => {
+                assert_eq!(
+                    u16::from(frame.code),
+                    fleetd_contracts::node_link::close::BAD_FRAME
+                );
+                assert!(frame.reason.contains("too many"), "{}", frame.reason);
+                break;
+            }
+            Message::Text(_) | Message::Ping(_) | Message::Pong(_) => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
 /// A 25 MiB put_file over 1 Mbit/s takes minutes as one frame: bytes still arriving keep the link up, and silence
 /// is timed from the last of them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
