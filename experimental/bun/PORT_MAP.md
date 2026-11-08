@@ -155,9 +155,9 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_settings_get` → `src/hub/projects` (read) <!-- tool:`project_settings_get` -->
 - [x] `project_settings_set` → `src/hub/projects` (operate) <!-- tool:`project_settings_set` -->
 - [ ] `project_env_set` → `src/hub/projects` (operate) <!-- tool:`project_env_set` -->
-- [ ] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
-- [ ] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
-- [ ] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
+- [x] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
+- [x] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
+- [x] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
 - [ ] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
 - [ ] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
 - [x] `profiles_list` → `src/hub/projects` (read) <!-- tool:`profiles_list` -->
@@ -180,15 +180,15 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `project_files` → `src/hub/orders` (read) <!-- tool:`project_files` -->
 - [ ] `orders_board` → `src/hub/orders` (read) <!-- tool:`orders_board` -->
 - [ ] `order_get` → `src/hub/orders` (read) <!-- tool:`order_get` -->
-- [ ] `prompt_get` → `src/hub/prompts` (read) <!-- tool:`prompt_get` -->
-- [ ] `prompt_set` → `src/hub/prompts` (operate) <!-- tool:`prompt_set` -->
-- [ ] `session_prompt_get` → `src/hub/prompts` (read) <!-- tool:`session_prompt_get` -->
-- [ ] `memory_get` → `src/hub/memory` (read) <!-- tool:`memory_get` -->
-- [ ] `memory_set` → `src/hub/memory` (operate) <!-- tool:`memory_set` -->
-- [ ] `memory_undo` → `src/hub/memory` (operate) <!-- tool:`memory_undo` -->
+- [x] `prompt_get` → `src/hub/prompts` (read) <!-- tool:`prompt_get` -->
+- [x] `prompt_set` → `src/hub/prompts` (operate) <!-- tool:`prompt_set` -->
+- [x] `session_prompt_get` → `src/hub/prompts` (read) <!-- tool:`session_prompt_get` -->
+- [x] `memory_get` → `src/hub/memory` (read) <!-- tool:`memory_get` -->
+- [x] `memory_set` → `src/hub/memory` (operate) <!-- tool:`memory_set` -->
+- [x] `memory_undo` → `src/hub/memory` (operate) <!-- tool:`memory_undo` -->
 - [ ] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
-- [ ] `memory_shared_get` → `src/hub/memory` (admin) <!-- tool:`memory_shared_get` -->
-- [ ] `memory_shared_set` → `src/hub/memory` (admin) <!-- tool:`memory_shared_set` -->
+- [x] `memory_shared_get` → `src/hub/memory` (admin) <!-- tool:`memory_shared_get` -->
+- [x] `memory_shared_set` → `src/hub/memory` (admin) <!-- tool:`memory_shared_set` -->
 - [ ] `automation_list` → `src/hub/automations` (read) <!-- tool:`automation_list` -->
 - [ ] `automation_create` → `src/hub/automations` (operate) <!-- tool:`automation_create` -->
 - [ ] `automation_update` → `src/hub/automations` (operate) <!-- tool:`automation_update` -->
@@ -198,12 +198,12 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `automation_run` → `src/hub/automations` (operate) <!-- tool:`automation_run` -->
 - [ ] `automation_runs` → `src/hub/automations` (read) <!-- tool:`automation_runs` -->
 - [ ] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
-- [ ] `checklist_get` → `src/hub/checklist` (read) <!-- tool:`checklist_get` -->
+- [x] `checklist_get` → `src/hub/checklist` (read) <!-- tool:`checklist_get` -->
 - [ ] `navi_asks` → `src/hub/navi` (read) <!-- tool:`navi_asks` -->
 - [ ] `project_asks` → `src/hub/navi` (read) <!-- tool:`project_asks` -->
-- [ ] `checklist_remove` → `src/hub/checklist` (operate) <!-- tool:`checklist_remove` -->
-- [ ] `artifacts_list` → `src/hub/artifacts` (read) <!-- tool:`artifacts_list` -->
-- [ ] `artifact_get` → `src/hub/artifacts` (read) <!-- tool:`artifact_get` -->
+- [x] `checklist_remove` → `src/hub/checklist` (operate) <!-- tool:`checklist_remove` -->
+- [x] `artifacts_list` → `src/hub/artifacts` (read) <!-- tool:`artifacts_list` -->
+- [x] `artifact_get` → `src/hub/artifacts` (read) <!-- tool:`artifact_get` -->
 - [ ] `skills_list` → `src/hub/skills` (read) <!-- tool:`skills_list` -->
 - [ ] `skill_get` → `src/hub/skills` (read) <!-- tool:`skill_get` -->
 - [ ] `skill_set` → `src/hub/skills` (operate) <!-- tool:`skill_set` -->
@@ -605,13 +605,13 @@ every `fleetd` command.
 - [ ] lead call `brief_read` → `src/hub/lead_calls` <!-- lead:lead call `brief_read` -->
 - [ ] lead call `review_read` → `src/hub/lead_calls` <!-- lead:lead call `review_read` -->
 - [ ] lead call `wait_ci` → `src/hub/lead_calls` <!-- lead:lead call `wait_ci` -->
-- [ ] lead call `remember` → `src/hub/lead_calls` <!-- lead:lead call `remember` -->
-- [ ] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
-- [ ] lead call `memory_read` → `src/hub/lead_calls` <!-- lead:lead call `memory_read` -->
+- [x] lead call `remember` → `src/hub/lead_calls` <!-- lead:lead call `remember` -->
+- [x] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
+- [x] lead call `memory_read` → `src/hub/lead_calls` <!-- lead:lead call `memory_read` -->
 - [ ] lead call `nudge` → `src/hub/lead_calls` <!-- lead:lead call `nudge` -->
 - [ ] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
 - [ ] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
-- [ ] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
+- [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
 - [ ] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
 - [ ] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->
 - [ ] lead call `automation_update` → `src/hub/lead_calls` <!-- lead:lead call `automation_update` -->
@@ -620,7 +620,7 @@ every `fleetd` command.
 - [ ] lead call `automation_run` → `src/hub/lead_calls` <!-- lead:lead call `automation_run` -->
 - [ ] lead call `automation_runs` → `src/hub/lead_calls` <!-- lead:lead call `automation_runs` -->
 - [ ] lead call `automation_confirm` → `src/hub/lead_calls` <!-- lead:lead call `automation_confirm` -->
-- [ ] lead call `checklist` → `src/hub/lead_calls` <!-- lead:lead call `checklist` -->
+- [x] lead call `checklist` → `src/hub/lead_calls` <!-- lead:lead call `checklist` -->
 - [ ] lead call `skill_install` → `src/hub/lead_calls` <!-- lead:lead call `skill_install` -->
 - [ ] lead call `usage_resume` → `src/hub/lead_calls` <!-- lead:lead call `usage_resume` -->
 - [ ] lead call `browser_session` → `src/hub/lead_calls` <!-- lead:lead call `browser_session` -->

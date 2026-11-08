@@ -1,4 +1,10 @@
 import type { Hub } from "../api/hub.ts";
+import { registerLeadCalls } from "./calls.ts";
 
-/** Starts this module's loops (Rust: memory::refresh::run); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/**
+ * Registers the memory lead calls (`remember`, `forget`, `memory_read`). The nightly refresh (Rust:
+ * memory::refresh::run) is not ported yet.
+ */
+export function start(hub: Hub): void {
+  registerLeadCalls(hub);
+}
