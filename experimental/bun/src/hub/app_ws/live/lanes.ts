@@ -1,6 +1,6 @@
 // What a live subscription's lanes are made of (crates/fleetd/src/hub/app_ws/live.rs `focus_lanes`, `board_lanes`,
 // `agent_lanes`, `machines`, `slots`, with orders' `live_lane`, phase's lane statuses and agents' task reads). Tasks come
-// through hub/tasks' records; leads are read from their table, read-only, until hub/leads has a store.
+// through hub/tasks' records, leads (their state and parked) through hub/leads.
 import type {
   LaneStatus,
   LeadState,
@@ -17,6 +17,7 @@ import type { Caller } from "../../api/registry.ts";
 import { allows, isoMs } from "../../auth/index.ts";
 import { activity, jsTake, type LiveParts } from "../../executor/activity.ts";
 import { executors } from "../../executor/index.ts";
+import { leads } from "../../leads/index.ts";
 import { link } from "../../link/server.ts";
 import { among, mayUse, others } from "../../navi/owner.ts";
 import { workstreamGet } from "../../orders/workstreams.ts";
@@ -115,27 +116,14 @@ function taskLane(hub: Hub, task: Task, focus: boolean): LaneNow {
   return { lane: liveLane(task.taskId, status, parts), ...(focus && parts?.text ? { text: parts.text } : {}) };
 }
 
-type LeadRow = { machine_id: string; project_id: string; thread_id: string };
-
-/** leads/lead.rs `lead_state`. TODO(usage): a lead parked by the usage layer reads as parked once it is ported. */
-function leadState(hub: Hub, r: ProjectRef, thread: ThreadRef): LeadState {
-  if (store(hub).projectGet(r) === undefined) return "stopped";
-  const status = store(hub).threadGet(thread)?.thread.status;
-  if (status === undefined) return "starting";
-  if (status === "running") return "working";
-  if (status === "waiting" || status === "failed") return "stalled";
-  return "idle";
-}
-
 function leadLanes(hub: Hub, projects: ProjectRef[], focus: boolean): LaneNow[] {
   const out: LaneNow[] = [];
   for (const r of projects) {
-    const row = hub.db.conn
-      .query<LeadRow, [string, string]>("SELECT machine_id, project_id, thread_id FROM leads WHERE machine_id = ? AND project_id = ?")
-      .get(r.machineId, r.projectId);
-    if (!row) continue;
-    const thread = { machineId: r.machineId, threadId: row.thread_id };
-    const status = leadLaneStatus(leadState(hub, r, thread), false, executors(hub).tracked(thread)?.summary.status);
+    // The lead with its state as hub/leads derives it, parked by the usage layer included.
+    const lead = leads(hub).get(r);
+    if (!lead) continue;
+    const thread = { machineId: r.machineId, threadId: lead.threadId };
+    const status = leadLaneStatus(lead.state, lead.parked !== undefined, executors(hub).tracked(thread)?.summary.status);
     const parts = activity(hub).live(thread);
     out.push({ lane: liveLane(leadLaneId(r), status, parts), ...(focus && parts?.text ? { text: parts.text } : {}) });
   }
@@ -185,11 +173,11 @@ export function boardLanes(hub: Hub, caller: Caller): LaneNow[] {
     .filter((t) => t.endedAt !== undefined && t.endedAt >= cutoff);
   lanes.push(...readableTasks(hub, caller, ended).map((t) => taskLane(hub, t, false)));
   const readable = new Set(readableProjects(hub, caller).map(refKey));
-  const working = hub.db
-    .all<LeadRow>("SELECT machine_id, project_id, thread_id FROM leads ORDER BY machine_id, project_id")
-    .map((l) => ({ ref: { machineId: l.machine_id, projectId: l.project_id }, thread: { machineId: l.machine_id, threadId: l.thread_id } }))
-    .filter((l) => readable.has(refKey(l.ref)) && leadState(hub, l.ref, l.thread) === "working")
-    .map((l) => l.ref);
+  // chat/flow.rs `lead_working`: the lead's own state says it works.
+  const working = leads(hub)
+    .list()
+    .filter((l) => readable.has(refKey(l.projectRef)) && l.state === "working")
+    .map((l) => l.projectRef);
   lanes.push(...leadLanes(hub, working, false));
   return lanes;
 }
