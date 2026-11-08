@@ -1,9 +1,12 @@
 //! `artifact_publish`, `artifacts_list` and `artifact_get` over a real in-memory hub: a lead and a task publish
 //! Markdown and HTML, each publish posts its card in the chat, a name published again keeps a new version with the
-//! older one still readable, and one project's artifacts never show in another's.
+//! older one still readable, and one project's artifacts never show in another's. `artifact_read` gives an agent one
+//! of its own project's back, whoever published it.
 use std::sync::Arc;
 
-use fleetd_contracts::artifacts::{ArtifactFormat, ArtifactName, ArtifactPublishResult};
+use fleetd_contracts::artifacts::{
+    ARTIFACT_READ_CAP, ArtifactFormat, ArtifactName, ArtifactPublishResult, ArtifactReadResult,
+};
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::chat::ChatAuthor;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
@@ -93,6 +96,35 @@ async fn publish(
         Ok(LeadCallResult::ArtifactPublish(r)) => Ok(r),
         Ok(other) => panic!("{other:?}"),
         Err(e) => Err((e.code, e.message)),
+    }
+}
+
+/// `artifact_read` from `agent` in project `p`.
+async fn agent_reads(
+    hub: &Hub,
+    p: &str,
+    agent: CallerAgent,
+    call: Value,
+) -> Result<ArtifactReadResult, (ErrorCode, String)> {
+    let mut call = call;
+    call["op"] = "artifact_read".into();
+    let call: LeadCall = serde_json::from_value(call).unwrap();
+    crate::hub::tasks::policy::check_call(&agent, &call).map_err(|e| (e.code, e.message))?;
+    let caller = LeadCaller {
+        project_ref: project(p),
+        by: lead_by(&project(p)),
+        agent,
+    };
+    match hub
+        .lead_calls
+        .handler("artifact_read")
+        .unwrap()
+        .handle(caller, call)
+        .await
+    {
+        Ok(LeadCallResult::ArtifactRead(r)) => Ok(r),
+        Ok(other) => panic!("{other:?}"),
+        Err(e) => Err((e.code, e.message.to_string())),
     }
 }
 
@@ -325,4 +357,118 @@ async fn the_list_carries_the_files_sent_in_the_chat() {
     assert_eq!(first["mime"], "image/png");
     assert_eq!(first["bytes"], 2048);
     assert!(got.artifacts.is_empty());
+}
+
+/// A task reads back a report another task published in its project, newest or one version; a task of another project
+/// can't, and a report past the cap comes cut, with a note saying so.
+#[tokio::test]
+async fn an_agent_reads_its_projects_artifacts_and_only_those() {
+    let (hub, _home) = rig();
+    let writer = CallerAgent::Task(TaskId::unchecked("T1"));
+    for content in [REPORT, "# Sweep\n\nAll current."] {
+        publish(
+            &hub,
+            "app",
+            writer.clone(),
+            json!({ "name": "sweep-report", "title": "Dependency sweep", "content": content }),
+        )
+        .await
+        .unwrap();
+    }
+    let reader = CallerAgent::Task(TaskId::unchecked("T2"));
+    let newest = agent_reads(
+        &hub,
+        "app",
+        reader.clone(),
+        json!({ "name": "sweep-report" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(newest.content.as_str(), "# Sweep\n\nAll current.");
+    assert_eq!(
+        (newest.artifact.version.get(), newest.artifact.by.as_str()),
+        (2, "Sweep the dependencies")
+    );
+    assert_eq!(
+        newest.versions.iter().map(|v| v.get()).collect::<Vec<_>>(),
+        [2, 1]
+    );
+    assert_eq!(newest.truncated, None);
+    let first = agent_reads(
+        &hub,
+        "app",
+        reader.clone(),
+        json!({ "name": "sweep-report", "version": 1 }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(first.content.as_str(), REPORT);
+    // The lead reads it too.
+    let lead = agent_reads(
+        &hub,
+        "app",
+        CallerAgent::Lead,
+        json!({ "name": "sweep-report" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lead.artifact.version.get(), 2);
+
+    // Another project's agent finds none, and is told what its own project has.
+    publish(
+        &hub,
+        "shop",
+        CallerAgent::Lead,
+        json!({ "name": "shop-notes", "title": "Notes", "content": "shop's" }),
+    )
+    .await
+    .unwrap();
+    let (code, message) = agent_reads(
+        &hub,
+        "shop",
+        reader.clone(),
+        json!({ "name": "sweep-report" }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(code, ErrorCode::NotFound);
+    assert!(
+        message.contains("No artifact sweep-report in this project"),
+        "{message}"
+    );
+    let (code, _) = agent_reads(
+        &hub,
+        "app",
+        reader.clone(),
+        json!({ "name": "sweep-report", "version": 3 }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(code, ErrorCode::NotFound);
+
+    // Past the cap: its head, and a last line saying where it was cut.
+    let long = "x".repeat(ARTIFACT_READ_CAP + 5000);
+    publish(
+        &hub,
+        "app",
+        writer,
+        json!({ "name": "big", "title": "Big", "content": long }),
+    )
+    .await
+    .unwrap();
+    let big = agent_reads(&hub, "app", reader, json!({ "name": "big" }))
+        .await
+        .unwrap();
+    assert_eq!(big.truncated, Some(true));
+    let content = big.content.as_str();
+    assert!(
+        content.starts_with(&"x".repeat(ARTIFACT_READ_CAP)),
+        "{}",
+        &content[..40]
+    );
+    assert!(
+        content.ends_with("[cut at 64 KB of 69 KB]"),
+        "{}",
+        &content[content.len() - 80..]
+    );
 }

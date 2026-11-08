@@ -22,6 +22,8 @@ pub const ARTIFACT_VERSIONS_KEPT: usize = 50;
 pub const ARTIFACTS_LISTED: usize = 500;
 /// The files one list returns, newest first.
 pub const CHAT_FILES_LISTED: usize = 200;
+/// What `artifact_read` returns of one artifact's content, in UTF-16 units; a longer one is cut with a note saying so.
+pub const ARTIFACT_READ_CAP: usize = 64 * 1024;
 /// A link's scheme: `[Title](artifact:<name>)`.
 pub const ARTIFACT_SCHEME: &str = "artifact:";
 
@@ -84,6 +86,34 @@ pub struct ArtifactPublishCall {
 pub struct ArtifactPublishResult {
     pub name: ArtifactName,
     pub version: Positive,
+    pub next: Option<String>,
+}
+
+/// `artifact_read`: a lead, task or Navi reads back an artifact published in its own project (its own or another
+/// agent's), the same ones `artifact_publish` writes to.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactReadCall {
+    /// Its name in the project: `sweep-report`, as in a link `artifact:sweep-report`.
+    pub name: ArtifactName,
+    /// One version (`artifact:sweep-report@2`); absent, the newest.
+    pub version: Option<Positive>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactReadResult {
+    pub name: ArtifactName,
+    pub artifact: ArtifactVersion,
+    /// Its Markdown or HTML source as published, at most [`ARTIFACT_READ_CAP`] units: a longer one ends in a line
+    /// saying where it was cut.
+    pub content: Text<0, { ARTIFACT_READ_CAP + 200 }>,
+    /// The content was cut.
+    pub truncated: Option<bool>,
+    /// Every kept version's number, newest first.
+    pub versions: Vec<Positive>,
     pub next: Option<String>,
 }
 
