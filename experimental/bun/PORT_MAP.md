@@ -291,14 +291,14 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] `mcp_settings_set` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_settings_set` -->
 - [x] `mcp_server_test` → `src/hub/mcp_servers` (operate) <!-- tool:`mcp_server_test` -->
 - [x] `mcp_oauth_start` → `src/hub/mcp_oauth` (operate) <!-- tool:`mcp_oauth_start` -->
-- [ ] `cloud_stop` → `src/hub/pool` (admin) <!-- tool:`cloud_stop` -->
-- [ ] `cloud_get` → `src/hub/pool` (read) <!-- tool:`cloud_get` -->
-- [ ] `cloud_set` → `src/hub/pool` (admin) <!-- tool:`cloud_set` -->
-- [ ] `cloud_key_set` → `src/hub/pool` (admin) <!-- tool:`cloud_key_set` -->
-- [ ] `cloud_test` → `src/hub/pool` (admin) <!-- tool:`cloud_test` -->
-- [ ] `cloud_create` → `src/hub/pool` (admin) <!-- tool:`cloud_create` -->
-- [ ] `cloud_reset` → `src/hub/pool` (admin) <!-- tool:`cloud_reset` -->
-- [ ] `cloud_resume` → `src/hub/pool` (admin) <!-- tool:`cloud_resume` -->
+- [x] `cloud_stop` → `src/hub/pool` (admin) <!-- tool:`cloud_stop` -->
+- [x] `cloud_get` → `src/hub/pool` (read) <!-- tool:`cloud_get` -->
+- [x] `cloud_set` → `src/hub/pool` (admin) <!-- tool:`cloud_set` -->
+- [x] `cloud_key_set` → `src/hub/pool` (admin) <!-- tool:`cloud_key_set` -->
+- [x] `cloud_test` → `src/hub/pool` (admin) <!-- tool:`cloud_test` -->
+- [x] `cloud_create` → `src/hub/pool` (admin) <!-- tool:`cloud_create` -->
+- [x] `cloud_reset` → `src/hub/pool` (admin) <!-- tool:`cloud_reset` -->
+- [x] `cloud_resume` → `src/hub/pool` (admin) <!-- tool:`cloud_resume` -->
 - [x] `claude_accounts_get` → `src/hub/claude_accounts` (read) <!-- tool:`claude_accounts_get` -->
 - [x] `claude_hub_api_set` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_set` -->
 - [x] `claude_hub_api_remove` → `src/hub/claude_accounts` (admin) <!-- tool:`claude_hub_api_remove` -->
@@ -328,10 +328,10 @@ approvals, secrets, integrations, updates, cloud machines.
 
 ### Background loops
 
-- [ ] hub loop `cloud::catch_up::run` → `src/hub/cloud` <!-- loop:hub loop `cloud::catch_up::run` -->
+- [x] hub loop `cloud::catch_up::run` → `src/hub/cloud` <!-- loop:hub loop `cloud::catch_up::run` -->
 - [x] hub loop `mcp_oauth::run_renew` → `src/hub/mcp_oauth` <!-- loop:hub loop `mcp_oauth::run_renew` -->
 - [x] hub loop `mcp_servers::tools::run_forget` → `src/hub/mcp_servers` <!-- loop:hub loop `mcp_servers::tools::run_forget` -->
-- [ ] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
+- [x] hub loop `pool::run` → `src/hub/pool` <!-- loop:hub loop `pool::run` -->
 - [x] hub loop `updates.prefetch_loop` → `src/hub/update` <!-- loop:hub loop `updates.prefetch_loop` -->
 - [x] hub loop `updates.resume` → `src/hub/update` <!-- loop:hub loop `updates.resume` -->
 
