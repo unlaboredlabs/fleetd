@@ -10,7 +10,7 @@ public final class ContextMenuModule: Module {
     Name("FleetdContextMenu")
 
     View(ContextMenuView.self) {
-      Events("onAction")
+      Events("onAction", "onClosed")
 
       Prop("actions") { (view: ContextMenuView, actions: [MenuAction]) in
         view.actions = actions
@@ -40,6 +40,8 @@ struct MenuAction: Record {
 
 final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   let onAction = EventDispatcher()
+  /** The menu has gone after an instant action: what waits for it (the keyboard) can come now. */
+  let onClosed = EventDispatcher()
   var actions: [MenuAction] = []
   var menuTitle = ""
   var previewRadius: CGFloat = 0
@@ -47,6 +49,8 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
 
   /** The action picked, sent once the menu has gone. */
   private var chosen: String?
+  /** An instant action ran: the thread under the menu has moved, so the lifted view fades where it is. */
+  private var moved = false
   private var open = false
   /** The menu is up, not just the view pressed. */
   private var lifted = false
@@ -93,6 +97,7 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
     if actions.isEmpty { return nil }
     chosen = nil
+    moved = false
     open = true
     return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
       guard let self else { return nil }
@@ -104,6 +109,7 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
         ) { [weak self] _ in
           guard let self else { return }
           self.chosen = action.id
+          self.moved = action.instant
           if action.instant || !self.open { self.fire() }
         }
       }
@@ -116,7 +122,8 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   }
 
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-    preview()
+    // Flying back to where the view was when the menu began closing would land it there and then jump: none, it fades.
+    moved ? nil : preview()
   }
 
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
@@ -125,6 +132,7 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
       guard let self else { return }
       self.open = false
       self.fire()
+      if self.moved { self.onClosed([:]) }
     }
     if let animator { animator.addCompletion(done) } else { done() }
   }

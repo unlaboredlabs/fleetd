@@ -18,6 +18,7 @@ import { space, type, useTheme } from "../theme";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
 import { haptics } from "./haptics";
+import { afterMenu } from "./HoldMenu";
 import { Icon } from "./Icon";
 import { MenuButton } from "./MenuButton";
 import { grows, quick, useReduceMotion } from "./motion";
@@ -81,10 +82,10 @@ export function Composer({
     if (height !== undefined && height > 0) onHeight?.(height);
   }, [quoting]);
 
-  // A reply picked now brings the keyboard up; one the draft held when the chat opened doesn't.
+  // A reply picked now brings the keyboard up, once its menu has gone; one the draft held when the chat opened doesn't.
   const replyAtOpen = useRef(reply);
   useEffect(() => {
-    if (reply !== undefined && reply !== replyAtOpen.current) input.current?.focus();
+    if (reply !== undefined && reply !== replyAtOpen.current) afterMenu(() => input.current?.focus());
   }, [reply]);
 
   const send = () => {
