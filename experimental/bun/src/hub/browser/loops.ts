@@ -7,6 +7,7 @@ import type { Hub } from "../api/hub.ts";
 import { appWs } from "../app_ws/index.ts";
 import { appBound, bindApp } from "./app.ts";
 import { registerLeadCalls } from "./calls.ts";
+import { registerLeadCalls as registerPurchases } from "./purchases.ts";
 import { live } from "./live.ts";
 import { events } from "../store/events.ts";
 import { link } from "../link/index.ts";
@@ -21,6 +22,7 @@ export function start(hub: Hub): void {
   nodes.onLinked((linked) => live(hub).rewatch(linked.machineId));
   if (!appBound(hub)) bindApp(hub, appWs(hub));
   registerLeadCalls(hub);
+  registerPurchases(hub);
   void runEndOutlived(hub);
   void runPrune(hub);
   void runThumbs(hub, live(hub).thumbs);

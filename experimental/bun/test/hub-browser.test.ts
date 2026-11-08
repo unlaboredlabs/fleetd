@@ -301,7 +301,7 @@ test("a node's browser call decodes as the contract has it before it reaches the
   }
   expect((await t.calls.call(who, report("gone"))).error).toMatchObject({ code: "invalid", message: expect.stringContaining("state") });
   expect((await t.calls.call(who, report("live", { files: [{ file: "dom", bytes: -1 }] }))).error?.code).toBe("invalid");
-});
+}, 30_000);
 
 test("the hub's loops bind the live view to the hub's own /app when nothing else is bound", async () => {
   const { tempHome } = await import("./helpers.ts");
@@ -321,4 +321,48 @@ test("the hub's loops bind the live view to the hub's own /app when nothing else
     hub.db.close();
     home.done();
   }
+});
+
+test("a project's lead pays at a checkout: never a trading site, only with its card, once, and the chat says so", async () => {
+  setup();
+  t.hub.db.conn
+    .query("INSERT INTO project_settings (machine_id, project_id, card_ref) VALUES ('devbox', 'p1', 'op://Personal/Visa/number')")
+    .run();
+  const lead = agent("devbox", "p1");
+  const open = (domain: string) => ({
+    op: "purchase_open",
+    sessionId: S1,
+    page: `https://${domain}/checkout`,
+    purchase: { shop: { domain, name: "A shop" }, total: { amount: "12.50", currency: "EUR" }, items: [{ name: "Coffee" }] },
+  });
+  expect((await t.calls.call(lead, open("www.coinbase.com"))).error).toMatchObject({ code: "forbidden", message: expect.stringContaining("never trades") });
+  expect((await t.calls.call(agent("devbox", "p1", "T3"), open("shop.example"))).error?.code).toBe("forbidden");
+  expect((await t.calls.call(lead, { ...open("shop.example"), sessionId: "nope" })).error?.code).toBe("invalid");
+  // A node that fills without asking (D310): approved as it opens.
+  t.link.link("devbox", ["browser", "no_ask_fill"]);
+  const opened = (await t.calls.call(lead, open("shop.example"))).result as { requestId: string; state: string; next: string };
+  expect(opened).toMatchObject({ state: "approved", next: expect.stringContaining("purchase_fill") });
+  const claimed = (await t.calls.call(lead, { op: "purchase_claim", requestId: opened.requestId, sessionId: S1 })).result;
+  expect(claimed).toEqual({ requestId: opened.requestId, domain: "shop.example", card: "op://Personal/Visa/number" });
+  // Filled once: a second claim is refused.
+  expect((await t.calls.call(lead, { op: "purchase_claim", requestId: opened.requestId, sessionId: S1 })).error?.code).toBe("forbidden");
+  const filled = await t.calls.call(lead, { op: "purchase_filled", requestId: opened.requestId, ok: true, typed: true, message: "card filled" });
+  expect(filled.error).toBeUndefined();
+  const texts = t.hub.db.all<{ data: string }>("SELECT data FROM chat_messages").map((r) => JSON.parse(r.data).text as string);
+  expect(texts.some((x) => x.startsWith("Paid 12.50 EUR at A shop with"))).toBe(true);
+});
+
+test("a lead's secure input waits for the person, and only its asking session claims it", async () => {
+  setup();
+  const lead = agent("devbox", "p1");
+  const open = {
+    op: "secure_input_open",
+    sessionId: S1,
+    input: { site: { domain: "bank.example", name: "A bank" }, target: "#otp", label: "The code", why: "to sign in" },
+  };
+  const opened = (await t.calls.call(lead, open)).result as { requestId: string; state: string };
+  expect(opened.state).toBe("open");
+  const claim = await t.calls.call(lead, { op: "secure_input_claim", requestId: opened.requestId, sessionId: S2 });
+  expect(claim.error?.code).toBeDefined();
+  expect((await t.calls.call(agent("devbox", "p1", "T2"), open)).error?.code).toBe("forbidden");
 });

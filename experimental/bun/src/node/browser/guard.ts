@@ -7,6 +7,8 @@
 // names: the protocol's command names (devtools-protocol's browser_protocol.json and js_protocol.json) found in its
 // binary. Pinning a newer agent-browser means listing its commands again.
 
+import { refusal as scriptRefusal } from "./shapes.ts";
+
 /** The CDP commands agent-browser 0.39.4 sends. */
 export const AGENT_BROWSER_METHODS: ReadonlySet<string> = new Set([
   "Accessibility.enable",
@@ -220,9 +222,12 @@ export function sealedRefusal(method: string, params: Record<string, unknown>): 
     return url.trimStart().toLowerCase().startsWith("javascript:") ? sealed : undefined;
   }
   if (method === "Runtime.evaluate" || method === "Runtime.callFunctionOn") {
-    // TODO(bun): agent-browser's pinned script shapes (shapes.rs, agent_browser_shapes.json: oxc's minified AST,
-    // hashed), so a sealed session runs its own scripts. Until then a sealed session runs none: closed, not open.
-    return `This script is refused: this browser session filled a login from 1Password, so it runs only agent-browser's own scripts, and the Bun node can't tell them apart yet. Use agent-browser's snapshot, click, fill and scroll; start a new session for anything else.`;
+    const [script, kind] =
+      method === "Runtime.evaluate" ? [params.expression, "script" as const] : [params.functionDeclaration, "function" as const];
+    const why = scriptRefusal(typeof script === "string" ? script : "", kind);
+    return why
+      ? `This script is refused: this browser session filled a login from 1Password, so it runs only agent-browser's own scripts, and ${why}. Use agent-browser's snapshot, get, click, fill and scroll; start a new session for anything else.`
+      : undefined;
   }
   return undefined;
 }
