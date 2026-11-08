@@ -50,7 +50,7 @@ import { parsePrUrl } from "../train/records.ts";
 import { parkedOf as parkedOfEvent } from "../usage/classify.ts";
 import { usage } from "../usage/wire.ts";
 import { work } from "../work/index.ts";
-import type { CiGitHub } from "./ci_wait.ts";
+import type { CiGitHub, MergeReads } from "./ci_wait.ts";
 import { type BranchPrError, githubRepo, hostError } from "./pr.ts";
 
 /** How an executor call failed: the machine is not connected, or anything else (ports.rs `PortError`). */
@@ -183,8 +183,11 @@ export type TaskHooks = {
     wake(machine: MachineId | undefined): { machine: MachineId } | { why: string };
     claim(machine: MachineId): boolean;
   };
-  /** The train: a finished task's PR was set after its `task.completed`, and its GitHub reader (`TrainGitHub`). */
-  train?: { onTaskPr(taskId: TaskId): void; github: CiGitHub };
+  /**
+   * The train: a finished task's PR was set after its `task.completed`, its GitHub reader (`TrainGitHub`), and where
+   * an upstream PR stands, for a `wait_ci` with `merged` (absent: such a wait waits).
+   */
+  train?: { onTaskPr(taskId: TaskId): void; github: CiGitHub; merges?: MergeReads };
   /** The reviews area: whether a task is one of the train's reviewers, and a PR's still-open blocking findings. */
   reviews?: { isReviewer(taskId: TaskId): boolean; openBlocking(prUrl: string): string };
   /** hub/steer: a steer held for the task's next run, putting one back, and the steers a cut run never ran. */

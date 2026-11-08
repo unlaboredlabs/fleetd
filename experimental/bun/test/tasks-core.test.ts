@@ -266,7 +266,7 @@ test("wait_ci takes only a run or PR of the task's project, and a finished one w
   expect(ok.url).toBe("https://github.com/acme/shop/actions/runs/42");
   // Not yet finished: nothing happens. Then it fails.
   let read: Parameters<typeof summary>[1] = { kind: "running" };
-  const reads = { read: async () => read };
+  const reads = { read: async () => read, merge: async () => ({ kind: "pending" as const }) };
   expect(await pollCiWaits(k.t, k.hub.db.conn, k.clock.ms, reads)).toBe(0);
   read = { kind: "finished", conclusion: "failure", label: "ci", failing: ["rust", "bun"], total: 5 };
   expect(await pollCiWaits(k.t, k.hub.db.conn, k.clock.ms, reads)).toBe(1);
