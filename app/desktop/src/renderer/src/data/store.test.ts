@@ -60,6 +60,17 @@ describe("connection", () => {
     expect(selectConnection(s).view).toBe("skeleton");
   });
 
+  it("holds the hub's update from its snapshot and each hub.update event, and none for null", () => {
+    const data = { runId: "U1", state: "updating", hub: "restarting", from: "0.9.1", to: "0.9.2", startedAt: "2026-10-19T10:00:00.000Z", machines: [] };
+    const snap = snapshot(10);
+    const withUpdate = (update: unknown): HubFrame => (snap.t === "snapshot" ? { ...snap, snapshot: { ...snap.snapshot, update } as typeof snap.snapshot } : snap);
+    let s = run([live(), withUpdate(data)]);
+    expect(s.update?.state).toBe("updating");
+    s = run([event(11, "hub.update", { ...data, state: "updated", hub: "done", finishedAt: "2026-10-19T10:00:09.000Z" })], s);
+    expect(s.update).toMatchObject({ state: "updated", finishedAt: "2026-10-19T10:00:09.000Z" });
+    expect(run([withUpdate(null)], s).update).toBeUndefined();
+  });
+
   it("says when a link came back on a newer fleetd", () => {
     const on = (version: string): HubFrame => ({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1, version } });
     const down: HubFrame = { t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } };

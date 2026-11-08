@@ -3,7 +3,7 @@ import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer } from "../../src/data/react";
 import { useSettledAdministers } from "../admin/role";
 import { useFlow, useReady, useRun, type FlowDeps } from "./flow";
-import { RESULT_SHOWN_MS, updatesView, type MachineInput, type UpdatesView } from "./model";
+import { FAILED_SHOWN_MS, RESULT_SHOWN_MS, updatesView, type MachineInput, type UpdatesView } from "./model";
 import { quietOf, type Quiet } from "./quiet";
 import { appUpdate, useAppUpdate } from "./state";
 
@@ -52,18 +52,19 @@ export const useFlowDeps = (): FlowDeps => {
 export const useQuiet = (hub: HubState): Quiet | null => {
   const view = useUpdatesView();
   const updated = useData((s) => s.updated);
+  const update = useData((s) => s.update);
   const release = useAppUpdate()?.release;
   const administers = useSettledAdministers();
-  // A render when "Updated" has said it long enough.
+  // A render when "Updated" or "Put back" has said it long enough.
   const [, setExpired] = useState(0);
+  const finished = update?.finishedAt === undefined ? undefined : Date.parse(update.finishedAt) + (update.state === "updated" ? RESULT_SHOWN_MS : FAILED_SHOWN_MS);
   useEffect(() => {
-    if (updated === undefined) return;
-    const left = updated.at + RESULT_SHOWN_MS - Date.now();
-    if (left <= 0) return;
-    const timer = setTimeout(() => setExpired((n) => n + 1), left);
+    const ends = [updated === undefined ? undefined : updated.at + RESULT_SHOWN_MS, finished].filter((t): t is number => t !== undefined && t > Date.now());
+    if (ends.length === 0) return;
+    const timer = setTimeout(() => setExpired((n) => n + 1), Math.min(...ends) - Date.now());
     return () => clearTimeout(timer);
-  }, [updated]);
+  }, [updated, finished]);
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
-  return quietOf({ view, hub, updated, release, administers, now: Date.now() });
+  return quietOf({ view, hub, updated, update, release, administers, now: Date.now() });
 };
