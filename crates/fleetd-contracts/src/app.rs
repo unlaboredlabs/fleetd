@@ -56,6 +56,14 @@ pub const APP_FEATURES: [&str; 9] = [
 /// text. A message inflating past 64 MiB, or not at all, ends the connection.
 pub const APP_DEFLATE: &str = "deflate";
 
+/// The `auth` and the `snapshot` in the upgrade request itself, a round trip sooner: a client sends its key as
+/// `Authorization: Bearer <key>` and its `auth` features comma-separated in this header. A hub that takes the key
+/// sends `ready` and then a `snapshot` right after the 101, and treats the connection's first frame, the same `auth`,
+/// and a `snapshot` right after it as already answered; so the client sends both as before, and an older hub, which
+/// ignores the headers, answers them. A key the hub refuses there is only ignored: the `auth` frame is refused as
+/// always.
+pub const APP_FEATURES_HEADER: &str = "x-fleetd-features";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum AppClientMessage {

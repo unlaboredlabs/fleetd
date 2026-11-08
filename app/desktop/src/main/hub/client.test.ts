@@ -6,13 +6,15 @@ import type { ConnectionEvents, Transport } from "./transport";
 /** A hub on the other end of a fake transport: records what the client sends, lets the test answer. */
 class FakeHub {
   readonly urls: Array<string> = [];
+  readonly headers: Array<Readonly<Record<string, string>> | undefined> = [];
   sent: Array<Record<string, unknown>> = [];
   events: ConnectionEvents | null = null;
   closedByClient = 0;
   pings = 0;
 
-  readonly transport: Transport = (url, events) => {
+  readonly transport: Transport = (url, events, headers) => {
     this.urls.push(url);
+    this.headers.push(headers);
     this.events = events;
     this.sent = [];
     return {
@@ -74,6 +76,8 @@ describe("HubClient", () => {
     const { hub, frames, client, states } = setup();
     client.start();
     expect(hub.urls).toEqual(["ws://devbox:4790/app"]);
+    // The auth rides the upgrade too, for a hub that answers it a round trip sooner.
+    expect(hub.headers).toEqual([{ authorization: "Bearer k1", "x-fleetd-features": "deflate" }]);
     hub.open();
     // The snapshot and the live feed go with the auth, not a round trip after ready.
     expect(hub.sent).toEqual([AUTH, { t: "snapshot" }, { t: "live", board: true }]);

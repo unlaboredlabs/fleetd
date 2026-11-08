@@ -977,6 +977,112 @@ async fn an_app_that_asks_for_deflate_gets_compressed_frames_and_an_older_one_te
     }
 }
 
+/// An /app socket whose upgrade request carries `key` and `features` (`APP_FEATURES_HEADER`).
+async fn app_with_upgrade_auth(
+    t: &TestHub,
+    key: &str,
+    features: &str,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request = format!("ws://{}/app", t.url).into_client_request().unwrap();
+    let headers = request.headers_mut();
+    headers.insert("authorization", format!("Bearer {key}").parse().unwrap());
+    headers.insert(
+        fleetd_contracts::app::APP_FEATURES_HEADER,
+        features.parse().unwrap(),
+    );
+    tokio_tungstenite::connect_async(request).await.unwrap().0
+}
+
+#[tokio::test]
+async fn an_upgrade_that_carries_the_key_gets_ready_and_the_snapshot_before_any_frame() {
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let mut app = app_with_upgrade_auth(&t, &reader, "").await;
+    let mut read = async |app: &mut tokio_tungstenite::WebSocketStream<_>| {
+        serde_json::from_str::<Value>(app.next().await.unwrap().unwrap().to_text().unwrap())
+            .unwrap()
+    };
+    // Nothing sent yet: `ready` and the snapshot come anyway.
+    assert_eq!(read(&mut app).await["t"], "ready");
+    let snapshot = read(&mut app).await;
+    assert_eq!(snapshot["t"], "snapshot");
+    assert!(snapshot["cursor"].is_number());
+    // The client sends its auth and snapshot as it would to any hub: both are taken as answered, so the next frame
+    // is the call's.
+    for frame in [
+        json!({ "t": "auth", "key": reader }),
+        json!({ "t": "snapshot" }),
+        json!({ "t": "call", "id": "c1", "tool": "events_wait", "input": { "timeoutSec": 0 } }),
+        json!({ "t": "snapshot" }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let answer = read(&mut app).await;
+    assert_eq!(
+        (answer["t"].as_str(), answer["id"].as_str()),
+        (Some("result"), Some("c1"))
+    );
+    // A snapshot asked for later (a resync) is answered.
+    assert_eq!(read(&mut app).await["t"], "snapshot");
+
+    // A different key in the frame is a new auth, answered as always.
+    let other = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let mut app = app_with_upgrade_auth(&t, &reader, "").await;
+    for _ in 0..2 {
+        read(&mut app).await;
+    }
+    app.send(Message::text(
+        json!({ "t": "auth", "key": other }).to_string(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(read(&mut app).await["t"], "ready");
+}
+
+#[tokio::test]
+async fn an_upgrade_with_a_refused_key_waits_for_the_auth_frame_and_refuses_it_as_before() {
+    let t = start().await;
+    let mut app = app_with_upgrade_auth(&t, "fld_nope", "deflate").await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), app.next())
+            .await
+            .is_err(),
+        "the hub sent a frame for a refused key"
+    );
+    app.send(Message::text(
+        json!({ "t": "auth", "key": "fld_nope" }).to_string(),
+    ))
+    .await
+    .unwrap();
+    let refused: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(refused["t"], "error");
+    match app.next().await.unwrap().unwrap() {
+        Message::Close(Some(frame)) => assert_eq!(u16::from(frame.code), 4401),
+        other => panic!("expected a close, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_upgrade_that_asks_for_deflate_gets_ready_as_text_and_the_snapshot_compressed() {
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let mut app = app_with_upgrade_auth(&t, &reader, "deflate").await;
+    let ready = app.next().await.unwrap().unwrap();
+    assert!(ready.is_text(), "ready came as {ready:?}");
+    let snapshot = match app.next().await.unwrap().unwrap() {
+        Message::Binary(data) => crate::link_deflate::Inflater::default()
+            .inflate(&data, 64 << 20)
+            .unwrap(),
+        other => panic!("expected the snapshot compressed, got {other:?}"),
+    };
+    assert_eq!(
+        serde_json::from_str::<Value>(&snapshot).unwrap()["t"],
+        "snapshot"
+    );
+}
+
 #[tokio::test]
 async fn a_compressed_app_resumes_from_an_old_cursor_with_every_event_it_may_see_in_order() {
     use crate::link_deflate::Inflater;

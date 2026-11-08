@@ -167,6 +167,47 @@ struct Session {
     budget: Arc<live::ConnBudget>,
     /// The client's `auth` asked for compressed frames (`APP_DEFLATE`): they start after its `ready`.
     deflate: bool,
+    /// What the upgrade's own auth already answered ([`EarlyAuth`]).
+    early: Early,
+}
+
+/// The `auth` an upgrade request carried ([`fleetd_contracts::app::APP_FEATURES_HEADER`]): its key and features.
+pub struct EarlyAuth {
+    key: String,
+    features: Vec<String>,
+}
+
+impl EarlyAuth {
+    pub fn from_headers(headers: &axum::http::HeaderMap) -> Option<Self> {
+        let key = headers
+            .get(axum::http::header::AUTHORIZATION)?
+            .to_str()
+            .ok()?
+            .strip_prefix("Bearer ")?
+            .trim();
+        let features = headers
+            .get(fleetd_contracts::app::APP_FEATURES_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        (!key.is_empty()).then(|| EarlyAuth {
+            key: key.to_owned(),
+            features: features
+                .split(',')
+                .map(str::trim)
+                .filter(|f| !f.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        })
+    }
+}
+
+/// The frames an upgrade's auth answered before they came: the client's `auth`, then a `snapshot` right after it.
+#[derive(Default, PartialEq)]
+enum Early {
+    #[default]
+    None,
+    Auth,
+    Snapshot,
 }
 
 /// What to do with the socket after a frame.
@@ -195,6 +236,45 @@ impl Session {
         }
     }
 
+    /// The upgrade's auth: `ready` and a `snapshot` at once, as for an `auth` and a `snapshot` frame. A refused key is
+    /// only ignored: the client's `auth` frame is refused as always.
+    fn on_early(&mut self, early: EarlyAuth) {
+        let Ok(info) = self.hub.auth.verify(&early.key) else {
+            return;
+        };
+        self.ready(early.key, info, early.features.iter().map(String::as_str));
+        self.early = Early::Auth;
+    }
+
+    fn ready<'a>(&mut self, key: String, info: Caller, mut features: impl Iterator<Item = &'a str>) {
+        self.caller = Some((key, info));
+        self.deflate |= features.any(|f| f == fleetd_contracts::app::APP_DEFLATE);
+        self.send(json!({
+            "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version(),
+            "features": fleetd_contracts::app::APP_FEATURES,
+        }));
+    }
+
+    async fn snapshot(&mut self, info: &Caller) {
+        match self
+            .tools
+            .call(&self.hub, info, "fleetd_status", json!({}))
+            .await
+        {
+            Ok(status) => self.send(json!({
+                "t": "snapshot",
+                "machines": status["machines"],
+                "projects": status["projects"],
+                "attention": status["attention"],
+                "cursor": status["cursor"],
+                "slots": status["slots"],
+                "chats": status["chats"],
+            })),
+            Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
+            Err(other) => tracing::error!(?other, "app snapshot failed"),
+        }
+    }
+
     async fn on_text(&mut self, text: &str) -> After {
         let Ok(message) = serde_json::from_str::<AppClientMessage>(text) else {
             let malformed = ToolError::new(ErrorCode::Invalid, "Unknown or malformed message.")
@@ -207,18 +287,22 @@ impl Session {
             self.send(error_frame(&malformed, id.as_deref()));
             return After::Continue;
         };
+        // The upgrade's auth answered the client's first `auth` with this key, and the `snapshot` right after it.
+        match (std::mem::take(&mut self.early), &message) {
+            (Early::Auth, AppClientMessage::Auth { key, .. })
+                if self.caller.as_ref().is_some_and(|(k, _)| k == key.as_str()) =>
+            {
+                self.early = Early::Snapshot;
+                return After::Continue;
+            }
+            (Early::Snapshot, AppClientMessage::Snapshot {}) => return After::Continue,
+            _ => {}
+        }
         if let AppClientMessage::Auth { key, features } = &message {
             return match self.hub.auth.verify(key.as_str()) {
                 Ok(info) => {
-                    self.caller = Some((key.as_str().to_owned(), info));
-                    self.deflate |= features
-                        .iter()
-                        .flatten()
-                        .any(|f| f.as_str() == fleetd_contracts::app::APP_DEFLATE);
-                    self.send(json!({
-                        "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version(),
-                        "features": fleetd_contracts::app::APP_FEATURES,
-                    }));
+                    let features = features.iter().flatten().map(|f| f.as_str());
+                    self.ready(key.as_str().to_owned(), info, features);
                     After::Continue
                 }
                 Err(error) => {
@@ -422,23 +506,7 @@ impl Session {
                     tracing::warn!(error = %e, "app presence not recorded");
                 }
             }
-            AppClientMessage::Snapshot {} => match self
-                .tools
-                .call(&self.hub, &info, "fleetd_status", json!({}))
-                .await
-            {
-                Ok(status) => self.send(json!({
-                    "t": "snapshot",
-                    "machines": status["machines"],
-                    "projects": status["projects"],
-                    "attention": status["attention"],
-                    "cursor": status["cursor"],
-                    "slots": status["slots"],
-                    "chats": status["chats"],
-                })),
-                Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
-                Err(other) => tracing::error!(?other, "app snapshot failed"),
-            },
+            AppClientMessage::Snapshot {} => self.snapshot(&info).await,
             AppClientMessage::Events { cursor } => {
                 // A new `events` request replaces the running stream.
                 if let Some(old) = self.stream.take() {
@@ -482,7 +550,13 @@ impl Session {
 }
 
 /// Runs one /app connection until the client closes it, its key is refused, or the hub shuts down.
-pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) {
+/// One /app connection; `early`, the auth its upgrade request carried, is answered before any frame is read.
+pub async fn handle(
+    hub: Arc<Hub>,
+    tools: Arc<Registry>,
+    mut socket: WebSocket,
+    early: Option<EarlyAuth>,
+) {
     let (out, mut frames) = outbox::outbox();
     let shutdown = hub.shutdown.clone();
     let mut session = Session {
@@ -501,6 +575,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         live_slot: Arc::default(),
         budget: Arc::default(),
         deflate: false,
+        early: Early::None,
     };
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
@@ -512,6 +587,21 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     let mut revokes = session.hub.auth.revokes();
     let mut recheck = tokio::time::interval(KEY_RECHECK);
     recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    if let Some(early) = early {
+        session.on_early(early);
+        if let Some((_, info)) = session.caller.clone() {
+            // `ready` goes as Text, as after an `auth` frame; the snapshot may come compressed.
+            if session.deflate {
+                while let Some(frame) = frames.try_recv() {
+                    if !wire.send(&mut socket, &behind, frame).await {
+                        break;
+                    }
+                }
+                wire.start();
+            }
+            session.snapshot(&info).await;
+        }
+    }
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),

@@ -24,8 +24,11 @@ export interface Connection {
   close(): void;
 }
 
-/** Opens one connection to a hub's /app socket URL. The real one is a WebSocket; tests use a fake. */
-export type Transport = (url: string, events: ConnectionEvents) => Connection;
+/**
+ * Opens one connection to a hub's /app socket URL, `headers` on its upgrade request. The real one is a WebSocket; tests
+ * use a fake.
+ */
+export type Transport = (url: string, events: ConnectionEvents, headers?: Readonly<Record<string, string>>) => Connection;
 
 /** The most one compressed frame may inflate to, as the hub's own cap. */
 export const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
@@ -70,9 +73,9 @@ export const inflater = (): ((data: Buffer) => Promise<string>) => {
 };
 
 /** Node's built-in WebSocket can't ping, so `ws`. */
-export const webSocketTransport: Transport = (url, events) => {
+export const webSocketTransport: Transport = (url, events, headers) => {
   if (url.startsWith("wss:")) trustSystemCAs();
-  const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024 });
+  const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024, ...(headers === undefined ? {} : { headers: { ...headers } }) });
   let closed = false;
   let error: SocketError | undefined;
   const inflate = inflater();

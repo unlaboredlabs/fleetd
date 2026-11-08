@@ -148,12 +148,14 @@ fn expect_upgrade() -> Response {
 
 async fn app_route(
     State(server): State<Server>,
+    headers: HeaderMap,
     upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Response {
     let Ok(upgrade) = upgrade else {
         return expect_upgrade();
     };
-    upgrade.on_upgrade(move |socket| app_ws::handle(server.hub, server.tools, socket))
+    let early = app_ws::EarlyAuth::from_headers(&headers);
+    upgrade.on_upgrade(move |socket| app_ws::handle(server.hub, server.tools, socket, early))
 }
 
 async fn relay_route(

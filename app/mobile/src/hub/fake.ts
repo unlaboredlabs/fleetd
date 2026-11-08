@@ -3,6 +3,8 @@ import type { ConnectionEvents, Transport } from "./client";
 
 interface FakeLink {
   readonly url: string;
+  /** The upgrade request's headers. */
+  readonly headers: Readonly<Record<string, string>> | undefined;
   readonly sent: Array<Record<string, unknown>>;
   closed: boolean;
   open(): void;
@@ -28,9 +30,10 @@ export interface FakeHub {
 
 export const fakeHub = (): FakeHub => {
   const links: FakeLink[] = [];
-  const transport: Transport = (url, events: ConnectionEvents) => {
+  const transport: Transport = (url, events: ConnectionEvents, headers) => {
     const link: FakeLink = {
       url,
+      headers,
       sent: [],
       closed: false,
       open: () => events.onOpen(),

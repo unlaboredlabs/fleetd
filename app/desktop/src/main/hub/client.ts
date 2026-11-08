@@ -26,6 +26,14 @@ export const STABLE_MS = 30_000;
 export const RESUME_MAX_EVENTS = 200;
 /** What this client reads compressed: the hub then sends frames as permessage-deflate Binary (transport.ts). */
 export const CLIENT_FEATURES = ["deflate"] as const;
+/**
+ * The auth on the upgrade request too: a hub that reads it sends `ready` and the snapshot right after the 101, a round
+ * trip sooner, and takes the `auth` and `snapshot` frames that follow as answered; an older hub ignores the headers.
+ */
+export const upgradeHeaders = (key: string): Record<string, string> => ({
+  authorization: `Bearer ${key}`,
+  "x-fleetd-features": CLIENT_FEATURES.join(","),
+});
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
 /** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
@@ -218,7 +226,8 @@ export class HubClient implements HubSource {
         opened = true;
         this.#heardAt = Date.now();
         // The hub reads frames in order, so the snapshot and the subscriptions every hub reads go with the auth rather
-        // than a round trip after `ready`; refused, the hub closes before it reads them.
+        // than a round trip after `ready`; refused, the hub closes before it reads them. A hub that took the auth on
+        // the upgrade has sent `ready` and the snapshot already, and takes these two as answered.
         this.#send({ t: "auth", key: this.#options.key, features: [...CLIENT_FEATURES] });
         this.#firstSnapshot = true;
         this.#send({ t: "snapshot" });
@@ -238,7 +247,7 @@ export class HubClient implements HubSource {
         this.#connection = null;
         this.#onClose(code, reason, error, opened);
       },
-    });
+    }, upgradeHeaders(this.#options.key));
     this.#connection = connection;
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;

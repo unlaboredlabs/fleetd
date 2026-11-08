@@ -24,9 +24,12 @@ export function ConnectionBanner() {
   // Waiting out a retry: an attempt that is running has nothing to hurry.
   const waiting = reach !== null && reach.reason !== null && reach.retryAt !== null;
   useCommands([{ id: "hub.retry", title: "Reconnect now", group: "actions", enabled: () => waiting, run: () => layer.retryNow() }], []);
-  const live = state.phase === "live" ? state.hub : null;
-  const probe = useHubProbe(live);
-  const behind = probe?.answers === true ? olderNodes(machines, probe.version) : [];
+  // The hub's version comes with its `ready`; only an older hub, whose `ready` doesn't say it, is asked on /healthz,
+  // a connection of its own.
+  const ready = state.phase === "live" ? state.version : undefined;
+  const probe = useHubProbe(state.phase === "live" && ready === undefined ? state.hub : null);
+  const version = ready ?? (probe?.answers === true ? probe.version : undefined);
+  const behind = version === undefined ? [] : olderNodes(machines, version);
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;

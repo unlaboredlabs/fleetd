@@ -7,7 +7,8 @@
 // the client is stopped. React Native's WebSocket can't ping, so a quiet link is probed with a small call (hub_info)
 // and dropped when it goes unanswered: a phone that changed networks must not keep showing as live. Coming back to the
 // front, a live link is asked for a sign of life and kept when one comes, rather than dropped and dialled again: what
-// the screens show (approvals, older pages, an upload) stays. While the app is in front, a quiet link is probed sooner
+// the screens show (approvals, older pages, an upload) stays; back from long behind, a fresh link races that ask and
+// the first to show life is kept (RACE_AFTER_BEHIND_MS). While the app is in front, a quiet link is probed sooner
 // and retries wait less. One screen at a
 // time can be watched (browser_watch, sent again on each ready, as the desktop's main does): its frames come as
 // `browser_frame`s, and a person's touches on a screen they took over go as `browser_input`.
@@ -31,6 +32,12 @@ export const SILENT_DEAD_FRONT_MS = QUIET_FRONT_MS + PROBE_EVERY_MS;
 export const SILENT_DEAD_MS = 35_000;
 /** Back in front, a live link answers a probe within this, or it is dialled again. */
 export const WAKE_PROBE_MS = 2_500;
+/**
+ * Behind longer than this, a link that was live may have died meanwhile (the hub pings a quiet link every 25 s, and a
+ * cellular NAT forgets one in 30): back in front, a fresh link is dialled while the old one is asked for a sign of
+ * life, and the first to show life is kept, so a dead link costs the dial alone rather than WAKE_PROBE_MS first.
+ */
+export const RACE_AFTER_BEHIND_MS = 25_000;
 /** In front, a retry waits at most this long: someone is looking at "Connecting…". */
 export const FRONT_BACKOFF_CAP_MS = 5_000;
 /** A link must stay up this long before the backoff starts over. */
@@ -56,8 +63,11 @@ export interface Connection {
   close(): void;
 }
 
-/** Opens one connection to a hub's /app socket URL: React Native's WebSocket in the app (socket.ts), a fake in tests. */
-export type Transport = (url: string, events: ConnectionEvents) => Connection;
+/**
+ * Opens one connection to a hub's /app socket URL, `headers` on its upgrade request: React Native's WebSocket in the
+ * app (socket.ts), a fake in tests.
+ */
+export type Transport = (url: string, events: ConnectionEvents, headers?: Readonly<Record<string, string>>) => Connection;
 
 /** What the client hands the app. After a `state` with phase `live`, a `snapshot` always precedes events. */
 export type HubFrame =
@@ -98,6 +108,13 @@ const fail = (code: string, message: string, fix?: string): CallOutcome => ({ ok
 interface Pending {
   readonly resolve: (outcome: CallOutcome) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+}
+
+/** A link dialled beside the live one (RACE_AFTER_BEHIND_MS): its frames wait, unread, until it is kept or closed. */
+interface Spare {
+  connection: Connection | null;
+  readonly frames: string[];
+  ready: boolean;
 }
 
 type ServerFrame =
@@ -143,6 +160,9 @@ export class HubClient {
   #tickAt = 0;
   /** Whether the app is in front, where the link is watched closer. */
   #front = true;
+  /** When the app went behind; null in front. */
+  #behindAt: number | null = null;
+  #spare: Spare | null = null;
   /** The newest event seq applied on this connection; the stream resumes after it. */
   #cursor: number | null = null;
   /** The last event applied before the link dropped: the next snapshot's stream may replay from it. */
@@ -185,6 +205,7 @@ export class HubClient {
 
   stop(): void {
     this.#stopped = true;
+    this.#dropSpare();
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -200,9 +221,13 @@ export class HubClient {
    */
   wake(): void {
     if (this.#stopped) return;
+    const behind = this.#behindAt === null ? 0 : Date.now() - this.#behindAt;
+    this.#behindAt = null;
     this.#front = true;
-    if (this.#ready) return this.#askAlive();
-    this.#dialNow();
+    if (!this.#ready) return this.#dialNow();
+    this.#askAlive();
+    // Behind long enough that the link may be gone: a fresh one races the probe.
+    if (behind > RACE_AFTER_BEHIND_MS && this.#spare === null) this.#dialSpare();
   }
 
   /**
@@ -228,11 +253,13 @@ export class HubClient {
   /** The app went behind: its link is watched as before, with the longer silences. */
   sleep(): void {
     this.#front = false;
+    this.#behindAt = Date.now();
   }
 
   /** Drops the link and dials again at once. */
   reconnectNow(): void {
     if (this.#stopped) return;
+    this.#dropSpare();
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -289,44 +316,117 @@ export class HubClient {
 
   #connect(): void {
     this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt });
-    let opened = false;
-    // Each connection's compressed frames are one stream, read with an inflater of its own.
-    const inflater = new FrameInflater();
-    const connection = this.#options.transport(socketUrl(this.#options.hub), {
-      onOpen: () => {
-        if (this.#connection !== connection) return;
-        opened = true;
-        this.#heardAt = Date.now();
-        this.#send(this.#plain ? { t: "auth", key: this.#options.key } : { t: "auth", key: this.#options.key, features: [DEFLATE_FEATURE] });
-        this.#send({ t: "snapshot" });
-        if (this.#chat !== null) this.#sendChat();
-      },
-      onText: (text) => {
-        if (this.#connection !== connection) return;
-        this.#heardAt = Date.now();
-        this.#onFrame(parseFrame(text));
-      },
-      onBinary: (data) => {
-        if (this.#connection !== connection) return;
-        this.#heardAt = Date.now();
-        const text = inflater.text(data);
-        if (text !== null) return this.#onFrame(parseFrame(text));
-        // What follows a frame that won't inflate can't be read either: dial again, plain.
-        this.#plain = true;
-        this.#abandon("A frame from the hub didn't inflate");
-      },
-      onClose: (code, reason) => {
-        if (this.#connection !== connection) return;
-        this.#connection = null;
-        if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
-        else this.#lost(opened ? "The connection to the hub dropped" : `Can't reach ${this.#options.hub}`);
-      },
-    });
-    this.#connection = connection;
+    this.#connection = this.#open();
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;
       this.#abandon(`${this.#options.hub} didn't answer within ${String(READY_TIMEOUT_MS / 1000)} s`);
     }, READY_TIMEOUT_MS);
+  }
+
+  /** A link beside the live one, whose frames wait until it is kept (adoptSpare) or closed (dropSpare). */
+  #dialSpare(): void {
+    const spare: Spare = { connection: null, frames: [], ready: false };
+    this.#spare = spare;
+    spare.connection = this.#open();
+  }
+
+  /** The live link or the spare beside it. */
+  #mine(connection: Connection): boolean {
+    return connection === this.#connection || connection === this.#spare?.connection;
+  }
+
+  /** One connection, the live one or a spare: what it sends on open, and where its frames go. */
+  #open(): Connection {
+    let opened = false;
+    // Each connection's compressed frames are one stream, read with an inflater of its own.
+    const inflater = new FrameInflater();
+    const features = this.#plain ? [] : [DEFLATE_FEATURE];
+    // The auth rides the upgrade too: a hub that reads it sends `ready` and the snapshot right after the 101, a round
+    // trip sooner, and takes the `auth` and `snapshot` below as answered; an older hub ignores the headers.
+    const headers = { authorization: `Bearer ${this.#options.key}`, "x-fleetd-features": features.join(",") };
+    const connection: Connection = this.#options.transport(socketUrl(this.#options.hub), {
+      onOpen: () => {
+        if (!this.#mine(connection)) return;
+        opened = true;
+        if (connection === this.#connection) this.#heardAt = Date.now();
+        const send = (message: Record<string, unknown>) => connection.send(JSON.stringify(message));
+        send(features.length === 0 ? { t: "auth", key: this.#options.key } : { t: "auth", key: this.#options.key, features });
+        send({ t: "snapshot" });
+        if (this.#chat !== null) this.#sendChat(send);
+      },
+      onText: (text) => this.#take(connection, text),
+      onBinary: (data) => {
+        if (!this.#mine(connection)) return;
+        const text = inflater.text(data);
+        if (text !== null) return this.#take(connection, text);
+        // What follows a frame that won't inflate can't be read either: dial again, plain.
+        this.#plain = true;
+        if (connection === this.#connection) this.#abandon("A frame from the hub didn't inflate");
+        else this.#dropSpare();
+      },
+      onClose: (code, reason) => {
+        // A spare that failed: the probe still decides the live link.
+        if (connection === this.#spare?.connection) {
+          this.#spare = null;
+          return;
+        }
+        if (this.#connection !== connection) return;
+        this.#connection = null;
+        if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
+        // The old link ended while a fresh one was on its way: that one is the link now.
+        else if (this.#spare !== null) this.#adoptSpare();
+        else this.#lost(opened ? "The connection to the hub dropped" : `Can't reach ${this.#options.hub}`);
+      },
+    }, headers);
+    return connection;
+  }
+
+  /** A frame from `connection`: read when it is the live link's, held when it is the spare's. */
+  #take(connection: Connection, text: string): void {
+    if (connection === this.#connection) {
+      this.#heardAt = Date.now();
+      // The live link shows life: the spare racing it isn't needed.
+      this.#dropSpare();
+      return this.#onFrame(parseFrame(text));
+    }
+    const spare = this.#spare;
+    if (spare === null || connection !== spare.connection) return;
+    spare.frames.push(text);
+    // The spare is ready before the live link said a word since it was asked: that one is taken as gone.
+    if (parseFrame(text)?.t === "ready") {
+      spare.ready = true;
+      this.#adoptSpare();
+    }
+  }
+
+  /** The spare becomes the link: the old one is closed, and what the spare already brought is read in order. */
+  #adoptSpare(): void {
+    const spare = this.#spare;
+    if (spare === null || spare.connection === null) return;
+    this.#spare = null;
+    const old = this.#connection;
+    this.#connection = null;
+    old?.close();
+    this.#clearTimers();
+    this.#dropLink("The connection to the hub dropped before it answered.");
+    this.#attempt = 0;
+    this.#connection = spare.connection;
+    this.#heardAt = Date.now();
+    if (!spare.ready) {
+      this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: 0 });
+      this.#readyTimer = setTimeout(() => {
+        this.#readyTimer = null;
+        this.#abandon(`${this.#options.hub} didn't answer within ${String(READY_TIMEOUT_MS / 1000)} s`);
+      }, READY_TIMEOUT_MS);
+    }
+    for (const text of spare.frames) this.#onFrame(parseFrame(text));
+  }
+
+  #dropSpare(): void {
+    const spare = this.#spare;
+    if (spare === null) return;
+    this.#spare = null;
+    spare.connection?.close();
   }
 
   #startProbe(): void {
@@ -355,11 +455,15 @@ export class HubClient {
     this.#sendProbe();
     this.#aliveTimer = setTimeout(() => {
       this.#aliveTimer = null;
-      if (this.#heardAt < asked) this.reconnectNow();
+      if (this.#heardAt >= asked) return;
+      // A spare already on its way is the redial.
+      if (this.#spare !== null) this.#adoptSpare();
+      else this.reconnectNow();
     }, WAKE_PROBE_MS);
   }
 
   #abandon(reason: string): void {
+    if (this.#spare !== null) return this.#adoptSpare();
     const connection = this.#connection;
     this.#connection = null;
     connection?.close();
@@ -480,6 +584,7 @@ export class HubClient {
 
   #refuse(message: string): void {
     this.#stopped = true;
+    this.#dropSpare();
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -510,10 +615,10 @@ export class HubClient {
     this.#probe = null;
   }
 
-  #sendChat(): void {
-    this.#send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
+  #sendChat(send = (message: Record<string, unknown>) => this.#send(message)): void {
+    send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
     // One agent's lane, the lead's: no board, which the phone doesn't show.
-    this.#send(this.#chat === null ? { t: "live", board: false } : { t: "live", board: false, agent: leadLaneId(this.#chat) });
+    send(this.#chat === null ? { t: "live", board: false } : { t: "live", board: false, agent: leadLaneId(this.#chat) });
   }
 
   #sendWatch(): void {
