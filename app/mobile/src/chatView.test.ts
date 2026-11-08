@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fitPosition, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { aimOf, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -357,21 +357,29 @@ describe("viewOffsetOf", () => {
   });
 
   it("lands a hit wholly between the bar and the composer, or one taller than that starting just under the bar", () => {
-    // Bars and composers of any height (Dynamic Type), hits of any length: from the screen's top, the hit's first line.
-    for (const [barOver, composerUnder] of [[116, 90], [150, 140], [62, 60]] as const) {
+    // Bars and composers of any height (Dynamic Type), hits of any length, far from the newest end or right at it (its
+    // cell just over the composer's spacer): the offset never goes past the newest end, and from the screen's top, the
+    // hit's first line is under the bar and its last over the composer, or it starts just under the bar.
+    for (const [barOver, composerUnder] of [[113, 90], [150, 140], [62, 60], [113, 200]] as const) {
       const room = visible - barOver - composerUnder;
-      for (const length of [40, room / 2 + 1, room, room + 1, 2000]) {
-        const at = fitPosition(0.5, length, room);
-        const offset = offsetOf(5000, length, visible, at, viewOffsetOf(at, barOver, composerUnder));
-        const hitTop = visible - (5000 + length - offset);
-        const hitBottom = visible - (5000 - offset);
-        expect(hitTop).toBeGreaterThanOrEqual(barOver);
-        if (length <= room) expect(hitBottom).toBeLessThanOrEqual(visible - composerUnder);
-        else expect(hitTop).toBe(barOver);
+      for (const cell of [5000, composerUnder + 4, composerUnder + 200]) {
+        for (const length of [40, room / 2 + 1, room, room + 1, 2000]) {
+          const aim = aimOf(0.5, length, visible, barOver, composerUnder);
+          const offset = offsetOf(cell, length, visible, aim.viewPosition, aim.viewOffset);
+          const hitTop = visible - (cell + length - offset);
+          const hitBottom = visible - (cell - offset);
+          expect(offset).toBeGreaterThanOrEqual(0);
+          if (length <= room) {
+            expect(hitTop).toBeGreaterThanOrEqual(barOver - 1e-9);
+            expect(hitBottom).toBeLessThanOrEqual(visible - composerUnder + 1e-9);
+          } else expect(hitTop).toBeCloseTo(cell === 5000 ? barOver : Math.max(barOver, visible - cell - length));
+          // Far from the newest end, a hit that fits is centred between the two.
+          if (cell === 5000 && length <= room) expect(hitTop - barOver).toBeCloseTo(visible - composerUnder - hitBottom);
+        }
       }
     }
-    // Not measured yet: as asked.
-    expect(fitPosition(0.5, undefined, 400)).toBe(0.5);
+    // Not measured yet: as asked, with the bar and the composer as viewOffset.
+    expect(aimOf(0.5, undefined, visible, 113, 90)).toEqual({ viewPosition: 0.5, viewOffset: viewOffsetOf(0.5, 113, 90) });
   });
 });
 

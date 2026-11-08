@@ -25,7 +25,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fitPosition, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, viewOffsetOf, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, type AttachmentGetOutput, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -253,16 +253,15 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (reading) readSeen();
   }, [reading, readSeen]);
 
-  // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer (chatView viewOffsetOf), or
-  // starting just under the bar if it's the hit and taller than that (fitPosition). A row not drawn yet is gone to
-  // roughly, then again until it is; `done` once it's there.
+  // Scrolling to a row, at `viewPosition` of what shows between the bar and the composer, or starting just under the
+  // bar if it's the hit and taller than that (chatView aimOf). A row not drawn yet is gone to roughly, then again until
+  // it is; `done` once it's there.
   const aim = useRef<{ viewPosition: number; animated: boolean; tries: number; reached: number; done: (() => void) | undefined } | null>(null);
   const aimAt = (index: number, a: NonNullable<typeof aim.current>) => {
     const tries = a.tries;
     const row = newestFirst[index];
     const length = row?.t === "item" && row.item.message?.messageId === hit.current?.id ? hit.current?.length : undefined;
-    const viewPosition = fitPosition(a.viewPosition, length, room);
-    list.current?.scrollToIndex({ index, animated: a.animated, viewPosition, viewOffset: viewOffsetOf(viewPosition, top, composerHeight) });
+    list.current?.scrollToIndex({ index, animated: a.animated, ...aimOf(a.viewPosition, length, height, top, composerHeight) });
     // It didn't fail (onScrollToIndexFailed counts a try): there.
     if (a.tries === tries) requestAnimationFrame(() => a.done?.());
   };
@@ -280,7 +279,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // chat's notification tapped while it's open: its newest. The thread stays hidden for the moment it moves, so the
   // newest end doesn't show first.
   const { messageId, requestId, tap } = route.params;
-  // The message it lands on, measured as it's drawn, for fitPosition.
+  // The message it lands on, measured as it's drawn, for aimOf.
   const hitId = useMemo(() => messageId ?? (requestId === undefined ? undefined : cardOf(items, requestId)), [messageId, requestId, items]);
   const hit = useRef<{ id: string; length: number } | null>(null);
   const landed = useRef<string | null>(null);
