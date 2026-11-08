@@ -13,16 +13,20 @@
 // brings its Claude Code to the version that build was tested with.
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type {
-  AutoUpdateResult,
-  HubChannel,
-  LastAutoUpdate,
-  UpdatePart,
-  UpdatePartKind,
-  UpdateRun,
-  UpdateSettings,
-  UpdateStage,
-  UpdateState,
+import {
+  APP_CLOSE_UPDATING,
+  type AutoUpdateResult,
+  type HubChannel,
+  type HubUpdateData,
+  type HubUpdateMachine,
+  type HubUpdatePhase,
+  type LastAutoUpdate,
+  type UpdatePart,
+  type UpdatePartKind,
+  type UpdateRun,
+  type UpdateSettings,
+  type UpdateStage,
+  type UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
 import { checkedTo, channelOf, type Channel, Failure, type Feed, isBuild, release, replaceFile, restore, sums, swap, verifiedTo } from "../../update/index.ts";
@@ -35,6 +39,8 @@ import { isoMs } from "../store/time.ts";
 export const DRAIN_MINUTES = 10;
 export const DRAIN_MINUTES_MAX = 240;
 export const UPDATE_PARTS_MAX = 401;
+/** Machines `hub.update` names one by one (mcp.rs `HUB_UPDATE_MACHINES_MAX`); past these, `moreMachines` counts the rest. */
+export const HUB_UPDATE_MACHINES_MAX = 10;
 const OFFLINE = "offline: press Update again once it's online, or run `fleetd update` on it";
 /** How the node's answer to a Claude Code install begins when it's left as it is, or already there (install.rs). */
 const CLAUDE_LEFT = "Claude Code is";
@@ -83,6 +89,8 @@ export interface UpdatePorts {
   claudeTarget(): string;
   installClaude(machineId: string, version: string): Promise<NodeActionResult>;
   updateNode(machineId: string, update: NodeUpdate): Promise<NodeAnswer>;
+  /** Tells the apps how the update looks now (the `hub.update` event); called only when that changed. */
+  announce(update: HubUpdateData): void;
 }
 
 /** How long the update waits on things, in ms; tests shorten them. */
@@ -200,6 +208,50 @@ function refusedForGood(p: UpdatePart): boolean {
   return false;
 }
 
+/**
+ * How `run` looks from the hub row (`HubUpdateData`): updating until every part has its result; then put back or
+ * failed by the hub's part, updated when the hub or a machine moved, current when every machine already ran the hub's
+ * build (or was offline), and failed when a machine the hub's build was for didn't get it and none did.
+ */
+export function signal(run: UpdateRun): HubUpdateData {
+  const hub = run.parts.find((p) => p.part === "hub");
+  const hubState: UpdateState = hub?.state ?? "waiting";
+  const nodes = run.parts.filter((p) => p.part === "node");
+  // A machine that didn't get the hub's build: not one that already ran it, nor one offline when the update started.
+  const missed = nodes.find((p) =>
+    p.state === "done" || p.state === "current" ? false : p.state === "skipped" ? p.message === undefined || p.message !== OFFLINE : true,
+  );
+  let state: HubUpdatePhase;
+  if (run.finishedAt === undefined) state = "updating";
+  else if (hubState === "rolled_back") state = "put_back";
+  else if (hubState === "done") state = "updated";
+  else if (hubState === "current" && nodes.some((p) => p.state === "done")) state = "updated";
+  else if (hubState === "current" && missed === undefined) state = "current";
+  else state = "failed";
+  // Failed with the hub current: the machine that missed says why, as `lastAutoOf` words it.
+  let message: string | undefined;
+  if (state === "failed" && hubState === "current") {
+    if (missed) message = head(`${missed.name}: ${missed.message ?? "didn't update"}`, 200);
+  } else if ((state === "put_back" || state === "failed") && hub?.message !== undefined) message = head(hub.message, 200);
+  const machines: HubUpdateMachine[] = nodes
+    .slice(0, HUB_UPDATE_MACHINES_MAX)
+    .flatMap((p) => (p.machineId === undefined ? [] : [{ machineId: p.machineId, name: head(p.name, 64), state: p.state }]));
+  const more = Math.max(0, nodes.length - HUB_UPDATE_MACHINES_MAX);
+  return {
+    runId: run.id,
+    state,
+    hub: hubState,
+    from: hub?.from ?? "",
+    ...(run.to !== undefined ? { to: run.to } : {}),
+    startedAt: run.startedAt,
+    ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
+    ...(run.auto !== undefined ? { auto: run.auto } : {}),
+    machines,
+    ...(more > 0 ? { moreMachines: more } : {}),
+    ...(message !== undefined ? { message } : {}),
+  };
+}
+
 /** How a finished run went, as `lastAuto` keeps it. */
 export function lastAutoOf(run: UpdateRun): LastAutoUpdate {
   const hubOk = run.parts.some((p) => p.part === "hub" && (p.state === "done" || p.state === "current"));
@@ -240,12 +292,14 @@ export class Updates {
   private fetching: Promise<void> = Promise.resolve();
   private nextCheck_: number | undefined;
   private checkFailed: string | undefined;
+  /** What `UpdatePorts.announce` last told the apps, so a write that changes nothing they show sends nothing. */
+  private announced: string | undefined;
 
   constructor(
     readonly dir: string,
     private readonly clock: Clock,
     readonly timing: Timing,
-    private readonly signal?: AbortSignal,
+    private readonly stopSignal?: AbortSignal,
   ) {
     try {
       this.run = JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun;
@@ -361,6 +415,22 @@ export class Updates {
     return this.run ? structuredClone(this.run) : undefined;
   }
 
+  /** The update going now, or the last one, as the hub row shows it: the app snapshot's `update`. */
+  signal(): HubUpdateData | undefined {
+    return this.run ? signal(this.run) : undefined;
+  }
+
+  /**
+   * The close reason of the apps' sockets when the hub stops now: "updating to <version>" while an update restarts it,
+   * else undefined.
+   */
+  restartReason(): string | undefined {
+    const run = this.run;
+    const hub = run?.parts.find((p) => p.part === "hub");
+    if (!run || !hub || run.finishedAt !== undefined || hub.state !== "restarting") return undefined;
+    return `${APP_CLOSE_UPDATING}${run.to ?? ""}`;
+  }
+
   /**
    * The machine's node is in the update going now and has no result yet: waiting its turn, downloading or restarting.
    * Its node being away then is the update's doing (hub/outage pages nobody for it).
@@ -390,7 +460,7 @@ export class Updates {
 
   /** `autoTick` now and every `prefetchEvery`, until the hub stops. */
   async prefetchLoop(): Promise<void> {
-    while (!this.signal?.aborted) {
+    while (!this.stopSignal?.aborted) {
       try {
         const run = await this.autoTick();
         if (run) console.info(`update: started ${run.id} by itself (automatic updates)`);
@@ -398,7 +468,7 @@ export class Updates {
         console.error("update: the automatic look failed:", e);
       }
       this.nextCheck_ = this.now() + this.timing.prefetchEvery;
-      await this.sleep(this.timing.prefetchEvery, this.signal);
+      await this.sleep(this.timing.prefetchEvery, this.stopSignal);
     }
   }
 
@@ -614,11 +684,25 @@ export class Updates {
 
   private save(run: UpdateRun): void {
     if (run.auto === true && run.finishedAt !== undefined) this.saveLastAuto(run);
+    this.announce(run);
     try {
       mkdirSync(this.dir, { recursive: true });
       replaceFile(join(this.dir, "run.json"), runText(run));
     } catch (e) {
       console.warn(`update: couldn't write ${join(this.dir, "run.json")}: ${(e as Error).message}`);
+    }
+  }
+
+  /** Tells the apps how `run` looks now, when that changed since the last time. */
+  private announce(run: UpdateRun): void {
+    const now = signal(run);
+    const text = JSON.stringify(now);
+    if (this.announced === text) return;
+    this.announced = text;
+    try {
+      this.ports_?.announce(now);
+    } catch (e) {
+      console.warn(`hub.update: ${(e as Error).message}`);
     }
   }
 

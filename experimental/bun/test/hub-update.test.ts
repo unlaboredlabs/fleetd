@@ -3,8 +3,9 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { byMachine, defaultTiming, lastAutoOf, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
-import { healthUrl } from "../src/hub/update/ports.ts";
+import { byMachine, defaultTiming, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
+import { healthUrl, updateSummary } from "../src/hub/update/ports.ts";
+import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
 import { sha256Hex } from "../src/update/index.ts";
 import type { Plan } from "../src/update/finish.ts";
 import { atLeast, versionCmp } from "../src/update/version.ts";
@@ -30,6 +31,8 @@ class Fake implements UpdatePorts {
   waiters: (() => void)[] = [];
   answer: (m: string) => NodeActionResult = () => ({ ok: true, message: "in place" });
   exePath: string;
+  /** What the apps were told (`hub.update`), in order. */
+  announced: HubUpdateData[] = [];
 
   constructor(dir: string, nodes: Partial<NodeFacts>[]) {
     require("node:fs").mkdirSync(dir, { recursive: true });
@@ -78,6 +81,9 @@ class Fake implements UpdatePorts {
   }
   nodeChanged() {
     return new Promise<void>((r) => this.waiters.push(r));
+  }
+  announce(update: HubUpdateData) {
+    this.announced.push(structuredClone(update));
   }
   claudeTarget = () => "2.1.314";
   async installClaude(m: string, v: string) {
@@ -215,6 +221,83 @@ test("settings, the automatic update's due time, and its last result", () => {
     }),
   ).toEqual({ at: "2026-11-08T10:00:00.000Z", to: NEW, result: "partial", message: "lab: didn't come back (1 more didn't update)" });
   expect(existsSync(join(dir, "update", "run.json"))).toBe(false);
+});
+
+test("the apps hear updating, each machine coming back, and updated, once per change", async () => {
+  const dir = join(home.dir, "h");
+  const fake = new Fake(dir, [{ name: "builder" }, { name: "nas", liveSince: undefined }]);
+  const u = updatesIn(dir, fake);
+  expect(u.restartReason()).toBeUndefined();
+  expect(u.signal()).toBeUndefined();
+  u.start(undefined, false);
+  await until(() => fake.plans.length === 1);
+  await until(() => byMachine(u.status()!).get("")!.state === "restarting");
+  // The sockets close saying an update restarts the hub.
+  expect(u.restartReason()).toBe(`updating to ${NEW}`);
+  const last = fake.announced.at(-1)!;
+  expect([last.state, last.hub, last.from, last.to]).toEqual(["updating", "restarting", OLD, NEW]);
+  expect(updateSummary(last)).toBe(`Updating fleetd to ${NEW}: the hub restarts`);
+
+  // The hub that comes up tells the apps again: its own state isn't the old process's.
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  fake.version = NEW;
+  const after = updatesIn(dir, fake);
+  await after.resume();
+  const run = after.status()!;
+  expect(run.finishedAt).toBeDefined();
+  const heard = fake.announced;
+  const states = heard.map((d) => [d.state, d.hub, d.machines.map((m) => m.state)]);
+  for (let i = 1; i < heard.length; i++) expect(heard[i]).not.toEqual(heard[i - 1]!);
+  const done = heard.at(-1)!;
+  expect(done).toEqual(signal(run));
+  expect([done.state, done.from, done.to, done.finishedAt !== undefined]).toEqual(["updated", OLD, NEW, true]);
+  expect(done.machines.map((m) => [m.name, m.state])).toEqual([
+    ["builder", "done"],
+    ["nas", "skipped"],
+  ]);
+  expect(updateSummary(done)).toBe(`Updated fleetd to ${NEW}`);
+  // The machine is heard restarting once the hub is back.
+  expect(states).toContainEqual(["updating", "done", ["restarting", "skipped"]]);
+  expect(after.restartReason()).toBeUndefined();
+  expect(after.signal()).toEqual(signal(run));
+});
+
+test("a finished run reads put back, failed, updated or current; past ten machines the rest are counted", () => {
+  const node = (name: string, state: UpdateState, message = "said"): UpdatePart => ({ part: "node", machineId: name, name, from: OLD, state, message });
+  const run = (hub: UpdateState, nodes: UpdatePart[]): UpdateRun => ({
+    id: "U1",
+    channel: "edge",
+    to: NEW,
+    startedAt: "2026-11-08T10:00:00.000Z",
+    finishedAt: "2026-11-08T10:00:05.000Z",
+    parts: [{ part: "hub", name: "the hub", from: OLD, state: hub, message: "the new build didn't answer /healthz" }, ...nodes],
+    auto: true,
+  });
+  const putBack = signal(run("rolled_back", []));
+  expect([putBack.state, putBack.message]).toEqual(["put_back", "the new build didn't answer /healthz"]);
+  expect(updateSummary(putBack)).toBe(`fleetd ${NEW} didn't come up healthy, so ${OLD} was put back`);
+  expect(signal(run("failed", [])).state).toBe("failed");
+  const updated = signal(run("done", [node("a", "failed")]));
+  expect([updated.state, updated.message]).toEqual(["updated", undefined]);
+  expect(signal(run("current", [node("a", "done")])).state).toBe("updated");
+  const offline = node("b", "skipped", "offline: press Update again once it's online, or run `fleetd update` on it");
+  expect(signal(run("current", [node("a", "current"), offline])).state).toBe("current");
+  // An update that brought nothing to a machine left behind isn't "already runs it": the hub row says what failed.
+  for (const missed of ["failed", "rolled_back", "skipped"] as const) {
+    const behind = signal(run("current", [node("a", missed), offline]));
+    expect([behind.state, behind.message]).toEqual(["failed", "a: said"]);
+  }
+  expect(signal(run("current", [node("a", "done"), node("b", "failed")])).state).toBe("updated");
+  const going = run("restarting", []);
+  delete going.finishedAt;
+  expect(signal(going).state).toBe("updating");
+
+  const many = Array.from({ length: 13 }, (_, i) => node(`m${String(i).padStart(2, "0")}`, "restarting"));
+  const crowd = signal(run("done", many));
+  expect(crowd.machines.length).toBe(HUB_UPDATE_MACHINES_MAX);
+  expect(crowd.moreMachines).toBe(3);
+  expect(JSON.stringify(crowd).length).toBeLessThan(2048);
+  expect(updateSummary({ ...crowd, state: "updating", hub: "done" })).toBe(`Updating fleetd to ${NEW}: 10 machines restart`);
 });
 
 test("versions order within a channel only, and the watcher's health URL reaches the hub", () => {

@@ -10,7 +10,7 @@
 // connection that may read it. A connection that falls behind (more than MAX_QUEUED_BYTES unsent) leaves the push and
 // reads from its cursor out of the log once its socket drains, so a slow client still gets every event, in order.
 import type { ServerWebSocket } from "bun";
-import { type AppClientMessage, type HubEvent, PROTOCOL_VERSION } from "../../shared/contracts.ts";
+import { APP_CLOSE_RESTART, type AppClientMessage, type HubEvent, PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";
@@ -20,14 +20,20 @@ import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "../link/deflate.ts";
 import { record as recordPresence } from "../metrics/presence.ts";
 import { register as registerLive } from "./live/index.ts";
 import { events } from "../store/events.ts";
+import type { Updates } from "../update/index.ts";
 import { type Others, others, visible } from "./visible.ts";
 
 /** Close code for a connection whose key was refused. */
 export const CLOSE_UNAUTHORIZED = 4401;
 /** Calls one connection may have running at once; more are refused rather than queued without bound. */
 export const MAX_CALLS_IN_FLIGHT = 32;
-/** "Going Away": the hub is stopping and comes back within a moment (the Rust hub names an update's build). */
-const CLOSE_RESTART = 1001;
+/**
+ * "Going Away" (`APP_CLOSE_RESTART`): the hub is stopping and comes back within a moment; the reason says when an
+ * update restarts it. Not 1012, as node links close: iOS's WebSocket refuses that code, and drops the reason with it.
+ */
+const CLOSE_RESTART = APP_CLOSE_RESTART;
+/** `CLOSE_RESTART`'s reason when no update restarts the hub. */
+const RESTARTING = "hub restarting";
 /** "Try again later": the connection fell too far behind; the app reconnects and reads again. */
 const CLOSE_TOO_FAR_BEHIND = 1013;
 /** "Invalid frame payload data": a compressed frame that doesn't inflate. */
@@ -211,7 +217,9 @@ export class AppWs {
       for (const conn of this.conns) this.recheck(conn);
     });
     hub.shutdown.signal.addEventListener("abort", () => {
-      for (const conn of [...this.conns]) this.close(conn, CLOSE_RESTART, "hub restarting");
+      // A stop an update asked for says so, read as the hub stops: its `hub.update` event may not reach the app first.
+      const reason = this.hub.peek<Updates>("updates")?.restartReason() ?? RESTARTING;
+      for (const conn of [...this.conns]) this.close(conn, CLOSE_RESTART, reason);
     });
     registerLive(hub, this);
   }
@@ -390,6 +398,8 @@ export class AppWs {
           cursor: s.cursor,
           slots: s.slots,
           chats: s.chats,
+          // Absent, not null, when the hub never updated itself.
+          update: this.hub.peek<Updates>("updates")?.signal(),
         }),
       );
     } else if (result.error.kind === "tool") {

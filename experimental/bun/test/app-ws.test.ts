@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { appWs } from "../src/hub/app_ws/index.ts";
+import { updates } from "../src/hub/update/tools.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { events, type NewEvent } from "../src/hub/store/events.ts";
@@ -201,4 +202,55 @@ test("a presence frame with a malformed project is refused as malformed", async 
   await app.send({ t: "presence", focused: true, input: true, project: { machineId: "Dev Box" } });
   expect(await app.tag("error")).toMatchObject({ code: "invalid", message: "Unknown or malformed message." });
   app.close();
+});
+
+/** A hub of its own, with the snapshot's status tool: the test stops it. */
+function ownHub() {
+  const home = hubHome();
+  const built = build(home.dir, { host: "127.0.0.1", port: 0 });
+  built.tools.add("fleetd_status", () => ({ machines: [], projects: [], attention: [], cursor: 0 }) as never);
+  const server = serve(built.hub, built.tools, 0);
+  const done = async () => {
+    built.hub.shutdown.abort();
+    await stop(server);
+    built.hub.db.close();
+    home.done();
+  };
+  return { hub: built.hub, url: `ws://127.0.0.1:${server.port}/app`, done };
+}
+
+test("a hub that stops closes its apps as going away, saying it restarts; with no update, the snapshot has none", async () => {
+  const own = ownHub();
+  updates(own.hub);
+  const app = new FakeApp(own.url);
+  await app.send({ t: "auth", key: insertKey(own.hub.db, all, "desk") });
+  await app.tag("ready");
+  await app.send({ t: "snapshot" });
+  expect("update" in (await app.tag("snapshot"))).toBe(false);
+  await own.done();
+  expect(await app.closed).toEqual({ code: 1001, reason: "hub restarting" });
+});
+
+test("while an update restarts the hub, the snapshot has it and the close names the build the hub comes back on", async () => {
+  const own = ownHub();
+  const from = "0.0.0-nightly.202611070900+aaaaaaa";
+  const to = "0.0.0-nightly.202611081000+bbbbbbb";
+  updates(own.hub).driveForTest({
+    id: "U1",
+    channel: "edge",
+    to,
+    startedAt: "2026-11-08T10:00:00.000Z",
+    parts: [
+      { part: "hub", name: "the hub", from, state: "restarting" },
+      { part: "node", machineId: "devbox", name: "devbox", from, state: "waiting" },
+    ],
+  });
+  const app = new FakeApp(own.url);
+  await app.send({ t: "auth", key: insertKey(own.hub.db, [{ role: "read", machines: "*" }], "phone") });
+  await app.tag("ready");
+  await app.send({ t: "snapshot" });
+  const { update } = (await app.tag("snapshot")) as unknown as { update: { state: string; hub: string; machines: { state: string }[] } };
+  expect([update.state, update.hub, update.machines[0]!.state]).toEqual(["updating", "restarting", "waiting"]);
+  await own.done();
+  expect(await app.closed).toEqual({ code: 1001, reason: `updating to ${to}` });
 });
