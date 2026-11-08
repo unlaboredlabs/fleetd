@@ -99,8 +99,11 @@ export class Router {
     return open?.kind ?? "browser";
   }
 
-  /** A session call for a screen on this machine, of any kind: its answer, or its refusal thrown. */
-  async handle(thread: string, frame: BrowserCallFrame): Promise<Answer> {
+  /**
+   * A session call for a screen on this machine, of any kind: its answer, or its refusal thrown. `secrets` are a
+   * hosted start's, which its recording is scrubbed of.
+   */
+  async handle(thread: string, frame: BrowserCallFrame, secrets: [string, string][] = []): Promise<Answer> {
     const op = frame.call.op;
     const open = this.open(thread);
     const kind = this.kindOf(thread, frame);
@@ -112,7 +115,7 @@ export class Router {
     }
     switch (kind) {
       case "browser":
-        return this.onBrowser(thread, frame);
+        return this.onBrowser(thread, frame, secrets);
       case "android":
         if (!this.android) {
           throw new ToolError(
@@ -145,12 +148,12 @@ export class Router {
     throw new ToolError("invalid", `session kind ${String(kind)} is not one this node knows`, "use browser, android, linux_desktop or mac");
   }
 
-  private async onBrowser(thread: string, frame: BrowserCallFrame): Promise<Answer> {
+  private async onBrowser(thread: string, frame: BrowserCallFrame, secrets: [string, string][]): Promise<Answer> {
     const broker = this.browser;
     if (!broker) throw new ToolError("invalid", "this machine runs no browser sessions", "do without a browser and say so in your result");
     switch (frame.call.op) {
       case "session_start":
-        return { op: "session_start", ...(await broker.open(thread, String(frame.call.purpose ?? "a browser session"))) };
+        return { op: "session_start", ...(await broker.open(thread, String(frame.call.purpose ?? "a browser session"), secrets)) };
       case "session_end":
         return { op: "session_end", ...(await broker.end(thread)) };
       default:
