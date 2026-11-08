@@ -3,8 +3,10 @@
 import { expect, test } from "bun:test";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
 import type { LaunchInput, LaunchOptions } from "../src/hub/executor/sessions.ts";
+import { wireChecker } from "../src/hub/executor/checker.ts";
 import { stop } from "../src/hub/executor/stop.ts";
 import { ExecutorTurn, limitMs, Owner, turn } from "../src/hub/executor/turn.ts";
+import { checkerSeams } from "../src/hub/navi/checker_turn.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import type { SessionLaunch, SessionOutput, SessionSummary } from "../src/shared/sessions.ts";
 import { AT, kit } from "./work-kit.ts";
@@ -160,4 +162,25 @@ test("stop sends the node's stop, removing the worktree when asked", async () =>
   let why = "";
   await unknown.catch((e: Error) => (why = e.message));
   expect(why).toBe("thread nope is not known on machine devbox");
+});
+
+test("the wired checker runs the Navi checker's turn and reads on the executors", async () => {
+  const n = await node();
+  wireChecker(n.hub);
+  const seams = checkerSeams(n.hub);
+  const checked = seams.turn.run(r, undefined, {
+    input: { ...input("check-4"), systemPrompt: "judge it", title: "fleetd approval check" },
+    options: { role: "plain", mcp: { userServers: false, servers: [] }, onlyTools: [], isolated: true, model: ["claude-haiku-5-5", "low"] },
+  });
+  const call = await n.take("launch");
+  const l = call.call as { op: "launch" } & SessionLaunch;
+  expect([l.prompt, l.systemPrompt, l.model, l.effort, l.allowedOnly, l.isolated]).toEqual(["the review", "judge it", "claude-haiku-5-5", "low", true, true]);
+  n.fail(call, "no room");
+  let why = "";
+  await checked.catch((e: Error) => (why = e.message));
+  expect(why).toContain("no room");
+  // The Navi's reads come from its thread's follow.
+  let readWhy = "";
+  await seams.reads({ machineId: "devbox", threadId: "lead-1" }, 60).catch((e: Error) => (readWhy = e.message));
+  expect(readWhy).toBe("thread lead-1 is not known on machine devbox");
 });
