@@ -4,7 +4,11 @@ import { registerAll } from "../src/gen/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
-import { digestLine, onReceipt, RECEIPT_GRACE_MS, sweep } from "../src/hub/steer/index.ts";
+import { digestLine, onReceipt, RECEIPT_GRACE_MS, steerTasks, sweep } from "../src/hub/steer/index.ts";
+import { start } from "../src/hub/steer/loops.ts";
+import { taskHooks } from "../src/hub/tasks/ports.ts";
+import { TaskRecords } from "../src/hub/tasks/records.ts";
+import type { Task } from "../src/shared/contracts.ts";
 import { events } from "../src/hub/store/events.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -101,5 +105,33 @@ test("a steer to an offline machine waits in the write queue, and withdrawing it
   expect(sweep(hub)).toBe(0);
   const back = (await tools.call(hub, person, "steer_withdraw", { steerId: out.output.id })) as { output: any };
   expect(back.output.stage).toBe("withdrawn");
+  done();
+});
+
+test("steer's start gives tasks its held steers: a task's next run takes one, and one that never went out is held again", async () => {
+  const { hub, w, done } = setup();
+  TaskRecords.create(hub.db.conn, {
+    taskId: "T1",
+    projectRef: PROJECT,
+    workstreamId: w,
+    title: "the toggle",
+    kind: "write",
+    prompt: "do it",
+    state: "idle",
+    threadRef: { machineId: "lab-a", threadId: "t1" },
+    attempt: 1,
+    createdAt: "2026-11-08T10:00:00.000Z",
+  } as Task);
+  Object.assign(steerTasks(hub), { message: async () => {} });
+  const out = (await tools.call(hub, person, "steer_send", { target: { taskId: "T1" }, text: "use blue", mode: "queue", clientRequestId: "c1" })) as { output: any; error?: any };
+  if (out.error) throw new Error(JSON.stringify(out.error));
+  expect(out.output.detail).toBe("queued until T1 starts; it gets this with its next run");
+  start(hub);
+  const hook = taskHooks(hub).steer;
+  const thread = { machineId: "lab-a", threadId: "t1" };
+  expect(hook?.takeHeld("T1", thread, "run-1")).toEqual({ id: out.output.id, riders: [] });
+  expect(hook?.takeHeld("T1", thread, "run-1")).toBeUndefined();
+  hook?.rehold(out.output.id);
+  expect(hook?.takeHeld("T1", thread, "run-2")?.id).toBe(out.output.id);
   done();
 });
