@@ -165,17 +165,32 @@ export function selfArgv(): string[] {
   return Bun.main.startsWith("/$bunfs/") ? [process.execPath] : [process.execPath, Bun.main];
 }
 
-/** A fresh process's grants: `fleetd node grants`, run from this node's own binary. */
-function fresh(): Grants | undefined {
+/** How long the fresh process may take to say its grants. */
+const FRESH_TIMEOUT = 15_000;
+
+/** A fresh process's grants: `fleetd node grants`, run from this node's own binary, off the event loop. */
+async function fresh(): Promise<Grants | undefined> {
   const [program, ...args] = selfArgv();
-  const out = spawnSync(program!, [...args, "node", "grants"], { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" });
-  return out.status === 0 ? parse(out.stdout.trim()) : undefined;
+  let proc: Bun.Subprocess<"ignore", "pipe", "ignore">;
+  try {
+    proc = Bun.spawn([program!, ...args, "node", "grants"], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  } catch {
+    return undefined;
+  }
+  const timer = setTimeout(() => proc.kill("SIGKILL"), FRESH_TIMEOUT);
+  const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  clearTimeout(timer);
+  return code === 0 ? parse(out.trim()) : undefined;
 }
 
 /** Asks a fresh process for its grants, and has launchd restart the node when that process holds a grant the node
  * lacks (`fleetd node restart`, outside the node's own process group). What the fresh process had. */
-export function takeUp(home: string, freshGrants: () => Grants | undefined = fresh, restart: () => void = restartNode): Fresh | undefined {
-  const grants = freshGrants();
+export async function takeUp(
+  home: string,
+  freshGrants: () => Promise<Grants | undefined> | Grants | undefined = fresh,
+  restart: () => void = restartNode,
+): Promise<Fresh | undefined> {
+  const grants = await freshGrants();
   if (!grants) return undefined;
   const found: Fresh = { grants, lost: lost(grants, seen(home), VERSION) };
   noteSeen(home, grants, found.lost);

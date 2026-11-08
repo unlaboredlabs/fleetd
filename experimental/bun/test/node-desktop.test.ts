@@ -248,7 +248,12 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   expect(t.node.area("caps").list()).toEqual([CAP_SESSION_DESKTOP]);
   expect(relinks).toBeLessThanOrEqual(1);
 
-  const started = (await t.local.call("session_start", { kind: "linux_desktop", purpose: "check the app" }, "thread-1")) as Record<string, unknown>;
+  // The session starts in the agent's own working directory, as its call's frame names it: its apps start there.
+  const worktree = join(dir, "worktree");
+  mkdirSync(worktree, { recursive: true });
+  const local = (op: string, call: Record<string, unknown>) =>
+    t.node.area("local").answer("thread-1", { id: op, cwd: worktree, call: { ...call, op } }) as Promise<{ result?: Record<string, unknown> }>;
+  const started = (await local("session_start", { kind: "linux_desktop", purpose: "check the app" })).result!;
   expect(started).toMatchObject({ op: "session_start", desktop: "xvfb" });
   const id = String(started.sessionId);
   expect(id).toMatch(/^B[0-9a-f]{32}$/);
@@ -267,6 +272,7 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   await expect(t.local.call("desktop", { action: "mouse_move" }, "thread-1")).rejects.toThrow("mouse_move needs coordinate");
   const launched = (await t.local.call("desktop", { action: "launch", text: "echo $DISPLAY on $HOME; exit 3" }, "thread-1")) as { message: string };
   expect(launched.message).toMatch(/exited at once with code 3: :\d+ on .*\/home/);
+  expect((await local("desktop", { action: "launch", text: "pwd; exit 4" })).result?.message).toBe(`\`pwd; exit 4\` exited at once with code 4: ${worktree}`);
   const running = (await t.local.call("desktop", { action: "launch", text: "sleep 30" }, "thread-1")) as { message: string };
   expect(running.message).toMatch(/^Started `sleep 30` \(pid \d+\)/);
 

@@ -81,8 +81,9 @@ export async function installNode(home: string, fetcher: typeof fetch = fetch, p
   mkdirSync(dir, { recursive: true });
   const file = `${dir}.tgz`;
   writeFileSync(file, tarball);
-  const out = Bun.spawnSync(["tar", "-xzf", file, "-C", dir, "--strip-components=1"], { stdin: "ignore", stderr: "pipe" });
+  const tar = Bun.spawn(["tar", "-xzf", file, "-C", dir, "--strip-components=1"], { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+  const [said, code] = await Promise.all([new Response(tar.stderr).text(), tar.exited]);
   rmSync(file, { force: true });
-  if (!out.success) throw new Error(`unpacking Node.js failed: ${out.stderr.toString().trim()}`);
+  if (code !== 0) throw new Error(`unpacking Node.js failed: ${said.trim()}`);
   writeFileSync(join(dir, "VERSION"), NODE_VERSION);
 }

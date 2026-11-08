@@ -2,7 +2,6 @@
 // as its own user, so each tests what a process of that user can do. Each is a pure verdict on what a `Probe` read;
 // `Live` reads the Mac, tests fake it. A failing check says exactly what the person does, and where: in an admin's
 // Terminal, or at the Mac in the account the node runs in (yours, an admin's, or a user of its own for agents: D309).
-import { spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { VERSION } from "../../shared/version.ts";
 import { versionLabel } from "../../update/version.ts";
@@ -280,59 +279,114 @@ export function keepAwake(why: string | undefined): MacCheck {
   return check("keep_awake", "fail", `fleetd can't keep the Mac awake: ${why}.`, yours("sudo pmset -a sleep 0"));
 }
 
-/** A command's exit code and output, never through a shell. */
-export function ran(program: string, args: string[], env?: NodeJS.ProcessEnv): Ran {
-  const out = spawnSync(program, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", ...(env ? { env } : {}) });
-  if (out.error) return { out: out.error.message };
-  return { ...(out.status === null ? {} : { code: out.status }), out: `${out.stdout ?? ""}${out.stderr ?? ""}` };
+/** How long one command of the checks may run before it is stopped: a wedged xcrun or simctl answers nothing. */
+export const COMMAND_TIMEOUT = 30_000;
+
+/** A command's exit code and output, never through a shell, off the event loop; stopped at `timeoutMs`. */
+export async function ran(program: string, args: string[], env?: Record<string, string | undefined>, timeoutMs = COMMAND_TIMEOUT): Promise<Ran> {
+  let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
+  try {
+    proc = Bun.spawn([program, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", ...(env ? { env } : {}) });
+  } catch (e) {
+    return { out: (e as Error).message };
+  }
+  let stopped = false;
+  const timer = setTimeout(() => {
+    stopped = true;
+    proc.kill("SIGKILL");
+  }, timeoutMs);
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  clearTimeout(timer);
+  if (stopped) return { out: `${program} was stopped after ${Math.round(timeoutMs / 1000)} s` };
+  return { ...(code === null ? {} : { code }), out: `${stdout}${stderr}` };
 }
 
-/** The Mac itself. */
-export class Live implements Probe {
+const key = (program: string, args: string[]) => [program, ...args].join(" ");
+
+/** What the checks read of the Mac, read beforehand (`readMac`), so the checks themselves block nothing. */
+export class Recorded implements Probe {
   constructor(
-    private readonly held: string | undefined,
-    private readonly toolsState: ToolsState,
+    private readonly runs: Map<string, Ran>,
+    private readonly read: {
+      user: string;
+      xcodes: string[];
+      dirs: Set<string>;
+      accessibility: boolean | undefined;
+      screenRecording: boolean | undefined;
+      console: string | undefined;
+      held: string | undefined;
+      tools: ToolsState;
+      pods: Pods;
+    },
   ) {}
-  user(): string {
-    return user();
+  user = () => this.read.user;
+  run = (program: string, args: string[]) => this.runs.get(key(program, args)) ?? { out: "" };
+  xcodes = () => this.read.xcodes;
+  isDir = (path: string) => this.read.dirs.has(path);
+  accessibility = () => this.read.accessibility;
+  screenRecording = () => this.read.screenRecording;
+  consoleUser = () => this.read.console;
+  awake = () => this.read.held;
+  tools = () => this.read.tools;
+  pods = () => this.read.pods;
+}
+
+const isDir = (path: string) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
   }
-  run(program: string, args: string[]): Ran {
-    return ran(program, args);
-  }
-  xcodes(): string[] {
-    return inApplications("/Applications");
-  }
-  isDir(path: string): boolean {
-    try {
-      return statSync(path).isDirectory();
-    } catch {
-      return false;
-    }
-  }
-  accessibility(): boolean | undefined {
-    return tcc.accessibility();
-  }
-  screenRecording(): boolean | undefined {
-    return tcc.screenRecording();
-  }
-  consoleUser(): string | undefined {
-    const r = this.run("stat", ["-f", "%Su", "/dev/console"]);
-    return ok(r) ? r.out.trim() : undefined;
-  }
-  awake(): string | undefined {
-    return this.held;
-  }
-  tools(): ToolsState {
-    return this.toolsState;
-  }
-  pods(): Pods {
-    const has = (name: string) => HOMEBREW_BINS.map((bin) => `${bin}/${name}`).find((p) => existsSync(p));
-    const pod = has("pod");
+};
+
+/**
+ * Reads the Mac for the checks, every command an async spawn with a timeout, so the node's link, heartbeats and the
+ * screens it hosts never wait on one (the Rust node runs them on its blocking threads). As `run` asks: xcodebuild only
+ * once an Xcode is selected, and simctl only once its licence and first launch are done.
+ */
+export async function readMac(held: string | undefined, tools: ToolsState): Promise<Probe> {
+  const who = user();
+  const runs = new Map<string, Ran>();
+  const go = async (program: string, args: string[], env?: Record<string, string | undefined>) => {
+    const r = await ran(program, args, env);
+    runs.set(key(program, args), r);
+    return r;
+  };
+  const has = (name: string) => HOMEBREW_BINS.map((bin) => `${bin}/${name}`).find((p) => existsSync(p));
+  const pod = has("pod");
+  const [selected, , , console, podRan] = await Promise.all([
+    go("xcode-select", ["-p"]),
+    go("dseditgroup", ["-o", "checkmember", "-m", who, "_developer"]),
+    go("DevToolsSecurity", ["-status"]),
+    ran("stat", ["-f", "%Su", "/dev/console"]),
     // CocoaPods refuses to run outside UTF-8, and a launchd service gets no LANG.
-    return {
-      ...(pod ? { pod: ran(pod, ["--version"], { ...process.env, LANG: "en_US.UTF-8" }) } : {}),
+    pod ? ran(pod, ["--version"], { ...process.env, LANG: "en_US.UTF-8" }) : Promise.resolve(undefined),
+  ]);
+  const xcodes = inApplications("/Applications");
+  const dirs = new Set<string>();
+  const path = ok(selected) ? selected.out.trim() : undefined;
+  if (path && isDir(path)) dirs.add(path);
+  if (path && locate(path, xcodes, (p) => dirs.has(p)).kind === "selected") {
+    const [licence, first] = await Promise.all([
+      go("xcodebuild", ["-license", "check"]),
+      go("xcodebuild", ["-checkFirstLaunchStatus"]),
+      go("xcodebuild", ["-version"]),
+    ]);
+    if (ok(licence) && ok(first)) await go("xcrun", ["simctl", "list", "runtimes"]);
+  }
+  return new Recorded(runs, {
+    user: who,
+    xcodes,
+    dirs,
+    accessibility: tcc.accessibility(),
+    screenRecording: tcc.screenRecording(),
+    console: ok(console) ? console.out.trim() : undefined,
+    held,
+    tools,
+    pods: {
+      ...(podRan ? { pod: podRan } : {}),
       ...(has("brew") ? { brew: has("brew")! } : {}),
       brewAt: `${HOMEBREW_BINS[process.arch === "arm64" ? 0 : 1]}/brew`,
-    };
-  }
+    },
+  });
 }

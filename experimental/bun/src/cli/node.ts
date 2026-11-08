@@ -84,7 +84,9 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       }
       const wait = v.str("wait");
       if (ask !== undefined && wait !== undefined && !SECONDS.test(wait)) return usage("--wait takes a number of seconds");
-      throw new NotImplemented("src/node/agents_mac: fleetd node grants");
+      const { grantsCommand } = await import("../node/agents_mac/grants.ts");
+      const { defaultNodeHome } = await import("../node/config.ts");
+      return grantsCommand({ ...(ask !== undefined ? { ask } : {}), ...(wait !== undefined ? { wait } : {}), home: v.str("home") ?? defaultNodeHome() });
     }
     case "restart": {
       const after = v.str("after");
