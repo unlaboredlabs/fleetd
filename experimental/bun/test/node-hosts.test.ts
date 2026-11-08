@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HostCheck } from "../src/shared/contracts.ts";
 import { deviceDir, type KvmCheck } from "../src/node/device/sdk.ts";
-import { android, browser, forget, gate, lines, macScreen, start } from "../src/node/hosts/index.ts";
+import { android, browser, forget, gate, lines, listed, macScreen, start } from "../src/node/hosts/index.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
 
@@ -82,6 +82,18 @@ test("a kind turned on since the node started waits for its restart; a browser o
   expect(gate([ready("android")], now, now)[0]?.ready).toBe(true);
 });
 
+test("the Android line is ready only while the node lists Android sessions, which agents can then drive", () => {
+  const lines = [{ host: "browser", ready: true, detail: "ok" }, { host: "android", ready: true, detail: "ready" }];
+  const held = listed(lines, ["browser"]);
+  expect(held[0]).toEqual(lines[0]!);
+  expect(held[1]).toMatchObject({ ready: false, off: "missing" });
+  expect(held[1]?.detail).toContain("not offered yet");
+  expect(listed(lines, ["browser", "session_android"])).toEqual(lines);
+  // One not ready keeps its own reason.
+  const off = { host: "android", ready: false, off: "off", detail: "Android screens are off in node.json" };
+  expect(listed([off], [])).toEqual([off]);
+});
+
 test("lines are read at most every few minutes, and again once node.json changes", () => {
   const h = home();
   const first = lines(h, { browser: { enabled: false } } as never, kvmOk, 1_000);
@@ -105,12 +117,24 @@ test("each heartbeat carries every kind's line, around the desktop's, in Rust's 
     if (hb.load) hb.load.hosts = [...(hb.load.hosts ?? []), { host: "desktop", ready: true, detail: "Xvfb" }];
   });
   start(t.node, kvmOk);
-  const hb = { load: { cpus: 4, load1: 0, limits: [] }, steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
-  await t.node.area("hb").fill(hb as never);
-  const hosts = (hb.load as { hosts?: HostCheck[] }).hosts ?? [];
+  const fill = async () => {
+    const hb = { load: { cpus: 4, load1: 0, limits: [] }, steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
+    await t.node.area("hb").fill(hb as never);
+    return (hb.load as { hosts?: HostCheck[] }).hosts ?? [];
+  };
+  const hosts = await fill();
   expect(hosts.map((c) => c.host)).toEqual(["browser", "android", "desktop", "mac"]);
   expect(hosts[0]).toMatchObject({ ready: true, on: true, idleMinutes: 20 });
   expect(hosts[3]?.ready).toBe(false);
+  // Opted in where KVM opens, Android still waits for node/device to list its sessions.
+  writeFileSync(join(t.node.home, "node.json"), JSON.stringify({ hub: "http://127.0.0.1:1", machineId: "devbox", name: "devbox", enrolled: true, screenIdleMinutes: 20, device: { enabled: true } }));
+  forget(t.node.home);
+  Object.assign(t.node.config, { device: { enabled: true } });
+  if (linuxX64) {
+    expect((await fill())[1]).toMatchObject({ ready: false, off: "missing" });
+    t.node.area("caps").contribute(() => ["session_android"]);
+    expect((await fill())[1]).toMatchObject({ ready: true, on: true });
+  }
 });
 
 test("the agents' Mac says only its own screen", async () => {
