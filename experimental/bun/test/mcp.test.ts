@@ -149,9 +149,9 @@ test("tools/call: output, a tool's refusal, the role check and a tool not ported
   const refused = await mcp.call("project_add", { machineId: "lab-a", path: "/w" });
   expect(refused.isError).toBe(true);
   expect(refused.value.code).toBe("forbidden");
-  const stub = await mcp.call("doctor_list", {});
+  const stub = await mcp.call("cloud_get", {});
   expect([stub.isError, stub.value.code]).toEqual([true, "failed"]);
-  expect(stub.value.message).toContain("src/hub/doctor");
+  expect(stub.value.message).toContain("src/hub/pool");
   // A revoked key stops on its next request, session or not.
   hub.db.conn.run("UPDATE agent_keys SET revoked_ms = 1 WHERE name = 'reader'");
   const revoked = await post(reader, { jsonrpc: "2.0", id: 1, method: "ping" }, { "mcp-session-id": mcp.session });

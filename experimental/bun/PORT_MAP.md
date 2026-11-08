@@ -46,8 +46,8 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `hub_link_revoke` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_revoke` -->
 - [x] `hub_link_add` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_add` -->
 - [x] `hub_link_remove` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_remove` -->
-- [ ] `doctor_list` → `src/hub/doctor` (read) <!-- tool:`doctor_list` -->
-- [ ] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
+- [x] `doctor_list` → `src/hub/doctor` (read) <!-- tool:`doctor_list` -->
+- [x] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
 - [ ] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
 - [ ] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
