@@ -275,14 +275,14 @@ async fn settle(pool: &Pool, row: Slot) -> Result<(), String> {
 }
 
 /// A create whose node never said hello within the enroll token's life: deleted (billing ends at once), `failed`,
-/// with boat's setup error as its note.
+/// with boat's setup error, cut to its failing line, as its note.
 async fn never_joined(pool: &Pool, mut row: Slot) -> Result<(), String> {
     let mut note = no_hello(pool, &row.slot, "15 minutes of its create");
     if let Some(id) = row.sandbox_id.clone() {
         if let Ok(sb) = pool.boat.get(&id).await
             && let Some(err) = sb.setup_error.filter(|e| !e.is_empty())
         {
-            note = format!("its setup failed: {err}");
+            note = crate::hub::cloud::setup::failure(&err);
         }
         match pool.boat.delete(&id).await {
             Ok(()) => {

@@ -602,3 +602,235 @@ chmod +x "$CARGO_HOME/bin/rustup"
         "the image's own Rust is left as it is"
     );
 }
+
+/// What one run of the setup script said on a VM made of fakes ([`run_setup`]).
+struct SetupRun {
+    ok: bool,
+    stdout: String,
+    stderr: String,
+    home: std::path::PathBuf,
+    _dir: tempfile::TempDir,
+}
+
+/// The whole setup script on a VM made of fakes, but for the agents' user (whose user unit no test can start): `sudo`
+/// runs only `sudo -u` (the agent is the test's own user), `curl` serves stand-in installers, `gh` is one nobody logged
+/// in (it answers git's credential calls from `GH_TOKEN`, as the real one does), and git and bash are real. The image
+/// ships a Rust of its own on the PATH, which the stand-in rustup-init warns about on stderr. `fail` names a stand-in
+/// installer that fails: `claude`. `None` when bash or git can't run here.
+fn run_setup(fail: Option<&str>) -> Option<SetupRun> {
+    let script = render(&SetupScript {
+        hub_url: "http://127.0.0.1:47900".into(),
+        machine_id: m("boat-1"),
+        version: "0.4.0".into(),
+        release_build: true,
+        git_identity: None,
+        claude: "2.1.314".into(),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let image = dir.path().join("image/bin");
+    let bin = dir.path().join("bin");
+    let serve = dir.path().join("serve");
+    for d in [&home, &image, &bin, &serve] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let write = |path: std::path::PathBuf, body: &str| {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let token = dir.path().join("enroll-token");
+    std::fs::write(&token, "pool-enroll-code").unwrap();
+    let agents_user = (
+        script.find("step \"the agents' user\"").unwrap(),
+        script.find("step \"packages\"").unwrap(),
+    );
+    let script = format!(
+        "{}AGENT_UID=$(id -u)\n{}",
+        &script[..agents_user.0],
+        &script[agents_user.1..]
+    )
+    .replace(
+        "TOKEN_FILE=/tmp/fleetd-enroll-token",
+        &format!("TOKEN_FILE={}", token.display()),
+    );
+
+    write(image.join("rustc"), "#!/bin/sh\necho rustc 1.80.0\n");
+    write(
+        bin.join("sudo"),
+        "#!/bin/sh\nif [ \"$1\" = -u ]; then\n  while [ \"$1\" != env ]; do shift; done\n  exec \"$@\"\nfi\n\
+         [ \"$1\" = tee ] && cat >/dev/null\nexit 0\n",
+    );
+    for ok in ["systemctl", "tar", "sha256sum"] {
+        write(bin.join(ok), "#!/bin/sh\ncat >/dev/null\n");
+    }
+    // jq's filter adds keys; the stand-in keeps the file as it is.
+    write(
+        bin.join("jq"),
+        "#!/bin/sh\nfor a; do f=$a; done\ncat \"$f\"\n",
+    );
+    write(
+        bin.join("gh"),
+        r#"#!/bin/sh
+case "$1 $2" in
+  "auth setup-git") echo "You are not logged into any GitHub hosts. Run gh auth login to authenticate." >&2; exit 1;;
+  "auth git-credential")
+    cat >/dev/null
+    [ -n "${GH_TOKEN:-}" ] || exit 1
+    printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n' "$GH_TOKEN";;
+  *) echo "gh: not faked: $*" >&2; exit 1;;
+esac
+"#,
+    );
+    let claude = if fail == Some("claude") {
+        "echo 'Downloading Claude Code 2.1.314...' >&2\necho 'Checksum verification failed' >&2\nexit 1\n"
+    } else {
+        "mkdir -p \"$HOME/.local/bin\"\nprintf '#!/bin/sh\\necho 2.1.314\\n' > \"$HOME/.local/bin/claude\"\n\
+         chmod +x \"$HOME/.local/bin/claude\"\n"
+    };
+    std::fs::write(serve.join("claude"), claude).unwrap();
+    std::fs::write(
+        serve.join("rustup"),
+        r#"echo "warn: It looks like you have an existing installation of Rust" >&2
+echo "error: cannot install while Rust is installed" >&2
+echo "warn: continuing (because the -y flag is set and the error is ignorable)" >&2
+mkdir -p "$CARGO_HOME/bin" "$RUSTUP_HOME"
+printf '%s\n' '#!/bin/sh' 'case "$1" in default) exit 0;; show) echo "$RUSTUP_HOME";; esac' > "$CARGO_HOME/bin/rustup"
+chmod +x "$CARGO_HOME/bin/rustup"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        serve.join("fleetd"),
+        "mkdir -p \"$HOME/.fleetd/node\"\necho '{}' > \"$HOME/.fleetd/node/node.json\"\n",
+    )
+    .unwrap();
+    let s = serve.display();
+    write(
+        bin.join("curl"),
+        &format!(
+            r#"#!/bin/sh
+out=; url=
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; http*) url=$1;; esac; shift; done
+if [ -n "$out" ]; then : > "$out"; exit 0; fi
+case "$url" in
+  */healthz) ;;
+  https://claude.ai/install.sh) cat '{s}/claude';;
+  https://sh.rustup.rs) cat '{s}/rustup';;
+  https://fleetd.sh) cat '{s}/fleetd';;
+  *) echo "curl: (6) Could not resolve host: $url" >&2; exit 6;;
+esac
+"#
+        ),
+    );
+
+    let out = std::process::Command::new("bash")
+        .args(["-c", &script])
+        .env_clear()
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:{}:/usr/bin:/bin", bin.display(), image.display()),
+        )
+        .output()
+        .ok()?;
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .ok()?;
+    Some(SetupRun {
+        ok: out.status.success(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        home,
+        _dir: dir,
+    })
+}
+
+/// boat-1..3 all ended "Not made" on `gh auth setup-git` refusing a machine nobody logged gh into (W502). Orders get
+/// GitHub from their own `GH_TOKEN`, so the whole setup completes with no login, and git then asks gh, which answers
+/// from the order's token. rustup's warnings about the image's own Rust stay in the log, out of boat's error.
+#[test]
+fn the_setup_script_completes_on_a_machine_nobody_logged_gh_into() {
+    let Some(run) = run_setup(None) else {
+        return;
+    };
+    let log = std::fs::read_to_string(run.home.join("fleetd-setup.log")).unwrap_or_default();
+    assert!(run.ok, "{}{}\nlog:\n{log}", run.stdout, run.stderr);
+    assert_eq!(run.stderr, "", "nothing on boat's error");
+    assert!(
+        run.stdout.lines().any(|l| l == "fleetd cloud setup: done"),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        log.contains("cannot install while Rust is installed"),
+        "{log}"
+    );
+    let fill = std::process::Command::new("bash")
+        .args([
+            "-c",
+            "printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill",
+        ])
+        .env_clear()
+        .env("HOME", &run.home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", run._dir.path().join("bin").display()),
+        )
+        .env("GH_TOKEN", "order-token")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&fill.stdout);
+    assert!(
+        said.lines().any(|l| l == "password=order-token"),
+        "{said}{}",
+        String::from_utf8_lossy(&fill.stderr)
+    );
+    assert!(run.home.join(".boat/pre-stop").exists());
+}
+
+/// A failed setup tells boat one line, the failing step and its last line, never the whole log, which stays on the VM.
+#[test]
+fn a_failed_setup_step_says_its_step_and_last_line() {
+    let Some(run) = run_setup(Some("claude")) else {
+        return;
+    };
+    assert!(!run.ok);
+    assert_eq!(
+        run.stderr,
+        "fleetd cloud setup failed at: Claude Code 2.1.314: Checksum verification failed\n"
+    );
+    let log = std::fs::read_to_string(run.home.join("fleetd-setup.log")).unwrap();
+    assert!(log.contains("Downloading Claude Code 2.1.314..."), "{log}");
+    assert!(
+        !run.stdout.contains("fleetd cloud setup: Rust"),
+        "stops at the failing step"
+    );
+}
+
+/// The slot's note for boat's `setupError`: the script's own failure line, or a log from an older script cut to its last
+/// line.
+#[test]
+fn a_setup_error_becomes_one_line() {
+    use super::setup::failure;
+    assert_eq!(
+        failure(
+            "exit code 1: fleetd cloud setup failed at: the node's environment: fatal: unable to write config\n"
+        ),
+        "its setup failed at the node's environment: fatal: unable to write config"
+    );
+    let old = "exit code 1: xist with and adopt your existing Rust.\n\
+               error: cannot install while Rust is installed\n\
+               info: default toolchain set to stable-x86_64-unknown-linux-gnu\n\
+               You are not logged into any GitHub hosts. Run gh auth login to authenticate.\n";
+    assert_eq!(
+        failure(old),
+        "its setup failed: You are not logged into any GitHub hosts. Run gh auth login to authenticate."
+    );
+    assert_eq!(
+        failure("exit 1: fleetd join refused"),
+        "its setup failed: exit 1: fleetd join refused"
+    );
+}
