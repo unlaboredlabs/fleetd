@@ -28,7 +28,7 @@ import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { isoMs } from "../auth/index.ts";
 import { live } from "../browser/live.ts";
-import { ensureOwnerOn, isNavi, personOn } from "../browser/reads.ts";
+import { ensureOwnerOn, isNavi, personOn, projectRepos } from "../browser/reads.ts";
 import { events } from "../store/events.ts";
 import { link } from "../link/index.ts";
 import { seal } from "../../shared/sealed_box.ts";
@@ -36,7 +36,8 @@ import { store } from "../store/hub_store.ts";
 import { changeControl, unknownMachine, unknownProject } from "../browser/tools.ts";
 import { get } from "../browser/store.ts";
 import { sleep } from "../browser/thumbs.ts";
-import { CALL_WAIT, cancel, hostSession, START_WAIT } from "./calls.ts";
+import { type Build, builds, type Found, openDone, PIECE, sealCall } from "./builds.ts";
+import { CALL_WAIT, cancel, DEVICE_WAIT, hostSession, START_WAIT } from "./calls.ts";
 import { isAgentsMac } from "./mac.ts";
 import {
   endPlace,
@@ -57,6 +58,10 @@ import {
 const WAIT_MS = SCREEN_WAIT_MINUTES * 60_000;
 /** How long a start's answer waits for the runner's report of the screen live, which races it over the link. */
 const RECORD_WAIT = 5_000;
+/** How long a PR's build may take to install, the screen's runner starting first included. */
+const INSTALL_WAIT = 300_000;
+/** Between tries while the screen's machine holds a command back. */
+const INSTALL_RETRY = 1_000;
 
 export function register(tools: Registry): void {
   tools.add("screen_open", screenOpen);
@@ -247,13 +252,16 @@ function unable(r: Runner, host: SessionHost): string | undefined {
 type Opener = { person: PersonRef; device: string };
 
 /** A start the hub placed and holds a slot for, to send to its runner (`launch`). */
-type Start = { place: Place; kind: SessionKind; frame: BrowserCallFrame; sealed: string; navi: string | undefined; by: string };
+type Start = { place: Place; kind: SessionKind; frame: BrowserCallFrame; sealed: Sealed; navi: string | undefined; by: string };
+
+/** A person's start as sealed to its runner, and the relay key in it, which seals the hub's install steps. */
+type Sealed = { sealed: string; relayKey: Uint8Array };
 
 /**
  * What the hub seals to the runner for a person's screen, as an agent's node seals its own: no secrets, and a relay
  * key. A Navi's browser names its Navi in the hub's frame, never here.
  */
-function sealedFor(hub: Hub, runner: string): string {
+function sealedFor(hub: Hub, runner: string): Sealed {
   const boxKey = store(hub).machineGet(runner)?.boxPubKey ?? "";
   const publicKey = Buffer.from(boxKey, "base64");
   if (publicKey.length !== 32) {
@@ -262,7 +270,7 @@ function sealedFor(hub: Hub, runner: string): string {
   const relayKey = crypto.getRandomValues(new Uint8Array(32));
   const plain = JSON.stringify({ secrets: [], relayKey: Buffer.from(relayKey).toString("base64") });
   try {
-    return Buffer.from(seal(publicKey, new TextEncoder().encode(plain))).toString("base64");
+    return { sealed: Buffer.from(seal(publicKey, new TextEncoder().encode(plain))).toString("base64"), relayKey };
   } catch (e) {
     throw new ToolError("failed", `${runner} has no key to seal a screen to: ${(e as Error).message}.`);
   }
@@ -275,7 +283,7 @@ function prepare(
   r: ProjectRef,
   kind: SessionKind,
   runner: string,
-  sealed: string,
+  sealed: Sealed,
   kept: boolean,
   pr: ScreenPr | undefined,
   now: number,
@@ -365,9 +373,8 @@ async function screenOpen(
     if (kind !== "android") {
       throw new ToolError("invalid", "A PR's build goes into an Android screen.", "Pick Android, or leave the PR out.");
     }
-    // TODO(bun): PR builds (machine_roles/builds.rs: the PR's CI artifact read with gh, sent and installed).
-    throw new ToolError("failed", "The Bun hub doesn't install PR builds yet.", "Open the screen without a PR.");
   }
+  const found = input.pr ? await findBuild(hub, r, kind, input.pr) : undefined;
   const person = personOf(hub, caller);
   const o: Opener = { person, device: caller.name };
   const now = hub.clock.now();
@@ -379,10 +386,22 @@ async function screenOpen(
       ? undefined
       : hub.db.transaction((c) => {
           if (heldOn(c, runnerId, now) > 0 || liveOn(c, runnerId, now) >= runner.max) return undefined;
-          return prepare(c, o, r, kind, runnerId, sealed, kept, undefined, now);
+          const start = prepare(c, o, r, kind, runnerId, sealed, kept, input.pr, now);
+          // With a PR it opens in the hub's own time, its row saying how far it is.
+          const wait = input.pr ? insertWait(c, o, r, kind, runnerId, input.pr, "starting", start.place.originThread, now) : undefined;
+          return { start, wait };
         });
+  if (start?.wait !== undefined) {
+    const all = waitsOn(hub.db.conn, now);
+    const w = all.find((x) => x.id === start.wait);
+    void opening(hub, start.wait, start.start, input.pr, found);
+    return {
+      ...(w ? { waiting: asWait(w, all) } : {}),
+      next: "Its slot is yours. The hub reads the PR's build, starts the screen and installs it, then hands it to you: screen.wait events follow each step, and browser_sessions lists it under waits (its threadId names its session) until it is yours, or says why it failed.",
+    };
+  }
   if (start) {
-    const session = await launch(hub, start);
+    const session = await launch(hub, start.start);
     return {
       next: "You have control: send browser_input. End it with screen_end when you're done.",
       ...(session ? { session } : {}),
@@ -396,7 +415,7 @@ async function screenOpen(
       "Call screen_open again with wait true to take its next free slot (ahead of agents), or pick another machine.",
     );
   }
-  const id = hub.db.transaction((c) => insertWait(c, o, r, kind, runnerId, undefined, "waiting", undefined, now));
+  const id = hub.db.transaction((c) => insertWait(c, o, r, kind, runnerId, input.pr, "waiting", undefined, now));
   const all = waitsOn(hub.db.conn, now);
   const w = all.find((x) => x.id === id);
   return {
@@ -446,13 +465,16 @@ async function screenEnd(hub: Hub, caller: Caller, input: { sessionId?: string; 
   return { ...(after ? { session: after } : {}), next: "It closes on its machine; its recording goes to the hub." };
 }
 
-/** Starts a placed screen on its runner and hands its control to the person. A start that fails frees its slot. */
-async function launch(hub: Hub, start: Start): Promise<BrowserSession | undefined> {
+/**
+ * Starts a placed screen on its runner, installs the PR's build in it when there is one, and hands its control to the
+ * person. A start that fails frees its slot; a build that doesn't install ends the screen.
+ */
+async function launch(hub: Hub, start: Start, build?: [ScreenPr, Build], wait?: string): Promise<BrowserSession | undefined> {
   const p = start.place;
   let id: string | undefined;
   let why = "it answered something else";
   try {
-    const answer = await hostSession(hub, p.runner, p.key, start.frame, start.sealed, start.navi, START_WAIT);
+    const answer = await hostSession(hub, p.runner, p.key, start.frame, start.sealed.sealed, start.navi, START_WAIT);
     if (answer.result?.op === "session_start") id = String(answer.result.sessionId);
     else if (answer.error) why = answer.error.message;
   } catch (e) {
@@ -464,6 +486,24 @@ async function launch(hub: Hub, start: Start): Promise<BrowserSession | undefine
   }
   const sessionId = id;
   hub.db.transaction((c) => c.query("UPDATE session_places SET session_id = ?2 WHERE place_id = ?1").run(p.key, sessionId));
+  // The build goes in while the screen is still fleetd's: a person's control holds agent-device back.
+  if (build && wait !== undefined) setStage(hub, p.origin, wait, "installing");
+  if (build) {
+    try {
+      await install(hub, start, build[1]);
+    } catch (e) {
+      const why = (e as Error).message;
+      console.warn(`PR #${build[0].number}'s build didn't install in ${sessionId}: ${why}`);
+      const session = get(hub, sessionId);
+      if (session) await end(hub, session).catch(() => {});
+      else await cancel(hub, p);
+      throw new ToolError(
+        "failed",
+        `PR #${build[0].number}'s build didn't install, so the screen was closed: ${why}`,
+        "Try again, or open the screen without a PR.",
+      );
+    }
+  }
   // Theirs from the start, once the hub has it: the runner's report of it live may come after its answer.
   const session = await recorded(hub, sessionId);
   if (!session) console.warn(`a person's screen ${sessionId} started on ${p.runner} but wasn't reported live`);
@@ -531,6 +571,97 @@ async function end(hub: Hub, session: BrowserSession): Promise<void> {
   live(hub).forgetInput(id);
 }
 
+/** Finds PR `pr`'s build for a `kind` screen of project `r`: a PR of one of the project's repos, with a CI build. */
+async function findBuild(hub: Hub, r: ProjectRef, kind: SessionKind, pr: ScreenPr): Promise<Found> {
+  if (kind !== "android") throw new ToolError("invalid", "A PR's build goes into an Android screen.", "Pick Android, or leave the PR out.");
+  // TODO(bun): the repos whose PRs the project lands too (hub/prs `project_repos`), once that area has them.
+  if (!projectRepos(hub.db, r).some((repo) => repo.toLowerCase() === pr.repo.toLowerCase())) {
+    throw new ToolError("invalid", `${pr.repo} isn't a repository of this project.`, "Pick a PR from pr_list for this project.");
+  }
+  try {
+    return await builds(hub).find(pr.repo, pr.number, kind);
+  } catch (e) {
+    throw new ToolError("failed", (e as Error).message, "Pick another PR, or open the screen without one.");
+  }
+}
+
+/** The hub's own sealed device steps for a person's screen, counted up from 1 (session_route.rs `device_step`). */
+class Steps {
+  private count = 0;
+  constructor(
+    private readonly hub: Hub,
+    private readonly place: Place,
+    private readonly key: Uint8Array,
+  ) {}
+
+  async send(call: Record<string, unknown>, waitMs: number): Promise<Record<string, unknown>> {
+    const count = ++this.count;
+    const frame: BrowserCallFrame = { id: `install-${count}`, cwd: "/", call: { op: "device", ...sealCall(this.key, count, call) } };
+    const answer = await hostSession(this.hub, this.place.runner, this.place.key, frame, undefined, undefined, waitMs);
+    if (answer.result?.op === "device") {
+      const { op: _, ...sealed } = answer.result;
+      const opened = openDone(this.key, count, sealed);
+      if (!opened) throw new Error("its answer didn't open with the screen's key");
+      return opened;
+    }
+    if (answer.error) throw new Error(answer.error.message);
+    throw new Error("its machine answered something else");
+  }
+
+  /** An agent-device command on the screen's machine: its exit code and output. */
+  async run(args: string[]): Promise<[number, string]> {
+    const done = await this.send({ step: "run", args }, DEVICE_WAIT);
+    if (done.step !== "run") throw new Error("its machine answered the command with another step's answer");
+    return [Number(done.exitCode), `${String(done.stdout ?? "")}${String(done.stderr ?? "")}`];
+  }
+}
+
+/**
+ * Sends a PR's build to the screen's machine and installs it there with `agent-device install`. A command held back
+ * (exit 75: the screen's runner still starting) is tried again until INSTALL_WAIT.
+ */
+async function install(hub: Hub, start: Start, build: Build): Promise<void> {
+  const steps = new Steps(hub, start.place, start.sealed.relayKey);
+  const until = Date.now() + INSTALL_WAIT;
+  const held = (code: number) => code === 75 && Date.now() < until;
+  for (;;) {
+    for (let offset = 0; offset < build.bytes.length; offset += PIECE) {
+      const piece = build.bytes.subarray(offset, offset + PIECE);
+      await steps.send({ step: "put", name: build.name, offset, dataB64: Buffer.from(piece).toString("base64") }, CALL_WAIT);
+    }
+    const [code, out] = await steps.run(["install", `in/${build.name}`]);
+    if (code === 0) return;
+    if (!held(code)) throw new Error(out.trim() === "" ? `agent-device install exited with ${code}` : clip(out.trim(), 300));
+    await Bun.sleep(INSTALL_RETRY);
+  }
+}
+
+/**
+ * A person's screen past its wait, in the hub's own time: the PR's build read (its slot held meanwhile), the screen
+ * started, the build installed, and the screen handed to them. Its row goes once it is theirs, or says why it failed.
+ */
+async function opening(hub: Hub, wait: string, start: Start, pr: ScreenPr | undefined, found: Found | undefined): Promise<void> {
+  const project = start.place.origin;
+  try {
+    let build: [ScreenPr, Build] | undefined;
+    if (pr) {
+      let f = found;
+      try {
+        f ??= await findBuild(hub, project, start.kind, pr);
+        build = [pr, await builds(hub).fetch(pr.repo, pr.number, start.kind, f)];
+      } catch (e) {
+        await cancel(hub, start.place);
+        throw e instanceof ToolError ? e : new ToolError("failed", (e as Error).message, "Try again, or open the screen without a PR.");
+      }
+    }
+    await launch(hub, start, build, wait);
+    done(hub, project, wait);
+  } catch (e) {
+    console.warn("a person's screen didn't open:", (e as Error).message);
+    setStage(hub, project, wait, "failed", (e as Error).message);
+  }
+}
+
 /** Gives each slot free on a machine to the oldest person waiting for it, and drops waits past their time. */
 export function serveWaits(hub: Hub): number {
   const now = hub.clock.now();
@@ -550,7 +681,7 @@ export function serveWaits(hub: Hub): number {
       hub.db.transaction((c) => c.query("DELETE FROM screen_waits WHERE wait_id = ?").run(w.id));
       continue;
     }
-    let sealed: string;
+    let sealed: Sealed;
     try {
       sealed = sealedFor(hub, w.runner);
     } catch (e) {
@@ -570,13 +701,7 @@ export function serveWaits(hub: Hub): number {
     announce(hub, w.project, w.id, "starting");
     taken.set(w.runner, used + 1);
     served += 1;
-    void launch(hub, start).then(
-      () => done(hub, w.project, w.id),
-      (e: ToolError) => {
-        console.warn("a person's screen didn't open:", e.message);
-        setStage(hub, w.project, w.id, "failed", e.message);
-      },
-    );
+    void opening(hub, w.id, start, w.pr, undefined);
   }
   return served;
 }

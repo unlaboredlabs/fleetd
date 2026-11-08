@@ -356,3 +356,23 @@ test("a person's takeover and input keep a session from idling out", async () =>
   await broker.housekeep();
   expect(broker.live("t6")).toBeUndefined();
 });
+
+
+test("an agent's claude launches with agent-browser at this node's proxy, under a policy that denies other browsers", async () => {
+  const t = testNode();
+  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    t.done();
+  });
+  const launch = t.node.area("launch");
+  const env = Object.fromEntries(launch.env("t7", "/usr/bin"));
+  expect(env).toEqual({
+    PATH: `${join(t.node.home, "browser", "agent-browser", "bin")}:/usr/bin`,
+    AGENT_BROWSER_CDP: broker.proxy.url("t7"),
+    AGENT_BROWSER_SESSION: "fleetd-t7",
+    AGENT_BROWSER_ACTION_POLICY: join(t.node.home, "sessions", "t7", "agent-browser-policy.json"),
+  });
+  await t.local.call("session_start", { purpose: "look" }, "t7");
+  expect(JSON.parse(await Bun.file(env.AGENT_BROWSER_ACTION_POLICY!).text())).toEqual({ default: "allow", deny: ["connect"] });
+});
