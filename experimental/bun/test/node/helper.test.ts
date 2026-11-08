@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HELPER, NO_HELPER, findHelper } from "../../src/node/runner/helper.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
+import { runnerProblem } from "../../src/hub/link/server.ts";
 import { tempHome } from "../helpers.ts";
 
 const script = (path: string, body: string) => {
@@ -57,6 +58,36 @@ test("a node without a session host says so in its runner info, and refuses a la
     expect(launched.result).toMatchObject({ err: { code: "runner_unavailable", message: NO_HELPER } });
   } finally {
     await service.stopAll();
+    home.done();
+  }
+});
+
+test("with claude logged in, a node without a session host still reads as degraded to the hub", async () => {
+  const home = tempHome();
+  const fake = join(home.dir, "fake-claude");
+  script(fake, `exec '${process.execPath}' '${join(import.meta.dir, "../../../../tests/lab/factory/fakeClaude.ts")}' "$@"`);
+  const config = {
+    home: join(home.dir, "node"),
+    claudeEnv: join(home.dir, "claude.env"),
+    baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin" },
+    claudeBin: fake,
+  };
+  const without = await SessionService.start({ ...config, nativeBin: undefined });
+  try {
+    const info = await without.reprobe();
+    expect(info).toMatchObject({ login: "unknown", problem: NO_HELPER });
+    // What both hubs decide a machine's state by: the Bun hub's runnerProblem, as the Rust hub's runner_problem.
+    expect(runnerProblem(info)).toBe(NO_HELPER);
+  } finally {
+    await without.stopAll();
+  }
+  const withHost = await SessionService.start({ ...config, home: join(home.dir, "node2"), nativeBin: join(import.meta.dir, "fake-host.sh") });
+  try {
+    const info = await withHost.reprobe();
+    expect(info.login).toBe("logged_in");
+    expect(runnerProblem(info)).toBeUndefined();
+  } finally {
+    await withHost.stopAll();
     home.done();
   }
 });

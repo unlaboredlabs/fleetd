@@ -1933,8 +1933,13 @@ export class SessionService {
 
   async reprobe(): Promise<RunnerInfo> {
     const info = await claude.probe(this.config.claudeBin, runnerEnv(this.config));
-    // No session host: claude may be fine, but no session starts here, and the hub shows the machine degraded.
-    if (!this.config.nativeBin) info.problem = info.problem ? `${NO_HELPER}. ${info.problem}` : NO_HELPER;
+    // No session host: claude may be fine, but no session starts here. Both hubs read a logged-in runner as able to
+    // take sessions whatever its problem says (runner_problem), so its login goes out as unknown: the hub shows the
+    // machine degraded with this problem, and places no task here.
+    if (!this.config.nativeBin) {
+      info.problem = info.problem ? `${NO_HELPER}. ${info.problem}` : NO_HELPER;
+      info.login = "unknown";
+    }
     const changed = JSON.stringify(info) !== JSON.stringify(this.#runner);
     this.#runner = info;
     if (changed) this.#machine(this.store.appendEvent({ type: "runner_info", ...info }));
