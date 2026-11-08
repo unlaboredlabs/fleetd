@@ -1,0 +1,5 @@
+{
+  "code": 64,
+  "stdout": "",
+  "stderr": "mac: --env needs a variable's name\nmac: see mac --help\n"
+}

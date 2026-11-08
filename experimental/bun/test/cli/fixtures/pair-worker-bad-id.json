@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: 'Bad' is not a machine id ([a-z0-9-]{1,32})\n"
+}

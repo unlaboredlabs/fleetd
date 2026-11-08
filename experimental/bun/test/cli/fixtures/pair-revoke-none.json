@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no open worker code 0123456789ab; `fleetd pair --worker-codes` lists them\n"
+}

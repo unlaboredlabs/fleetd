@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "no hub service at $HOME/.config/systemd/user/fleetd-hub.service\ndeleted $HOME/hub\n"
+}

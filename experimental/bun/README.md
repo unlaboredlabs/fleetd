@@ -68,6 +68,15 @@ port, by area, with its module; each area's writer owns its modules' directories
 
 ## Notes
 
+- The CLI (`src/cli/`) loads each command with a dynamic import, and `bun run compile` builds with `--bytecode` (so
+  `src/main.ts` has no top-level await): `fleetd version` starts in 4.4 ms against 9.3 ms for the eager, parsed
+  binary; an empty compiled Bun binary takes 1.4 ms and the Rust binary 0.2 ms (`bun scripts/startup.ts <binary>`).
+- `test/cli/golden.test.ts` runs the Bun CLI and a Rust `fleetd` on the same inputs: with `FLEETD_RUST_BIN` set, every
+  case live (the hub ones against a Rust hub on a scratch home); without it, the hub-free ones against
+  `test/cli/fixtures/`, recorded with `RECORD=1`. Every call gets a scratch `FLEETD_HOME`, `HOME` and hub URL.
+- `fleetd build-slot` takes the same flock(2) locks as the Rust one (through bun:ffi), so builds started by either wait
+  for each other.
+
 - tsc-rs 0.8.0 checks the whole tree, Bun's types and the 9k-line generated contracts included, with no fallback to
   tsc 7 needed so far.
 - In a compiled binary the read worker is a second entry point (`--root .` keeps its path); `bun run smoke` runs the

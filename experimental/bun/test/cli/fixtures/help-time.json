@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path>]\n             where agents' time went: an order's critical path, agent time by category, the\n             slowest commands and the findings; a project by id or title (<machine>/<project>\n             when two machines have one), the whole fleet with neither. --since takes 1h to\n             400d, a date or an ISO time. Timelines are kept 30 days, daily totals 400. On the\n             hub machine it needs no --hub or --key-file\n",
+  "stderr": ""
+}
