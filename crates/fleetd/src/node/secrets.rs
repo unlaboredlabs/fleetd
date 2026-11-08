@@ -356,6 +356,9 @@ pub fn read_secret(secret_key: &str, ctx: &SecretsContext) -> Result<Zeroizing<S
     }
 }
 
+/// Set for an approved command to its request: it runs as one of the node's own processes.
+pub const APPROVED_RUN_ENV: &str = "FLEETD_APPROVED_RUN";
+
 /// Runs one approved command like a `cmd_check`, with each `secretEnv` value read from this node's sinks and
 /// injected into its environment, then scrubbed from the output. Always answers.
 pub async fn run_gated(frame: GatedRun, ctx: &SecretsContext<'_>) -> GatedResult {
@@ -365,8 +368,13 @@ pub async fn run_gated(frame: GatedRun, ctx: &SecretsContext<'_>) -> GatedResult
         output_tail: Text::unchecked(""),
         timed_out: false,
         error: Some(head_text(&error)),
+        unknown: None,
     };
     let mut env = scrubbed_env();
+    // The command knows it runs as the node's approved command: `fleetd update` restarts the node only once it ended.
+    if let Some(request) = &frame.request_id {
+        env.push((APPROVED_RUN_ENV.to_owned(), request.to_string()));
+    }
     let mut values: Vec<String> = Vec::new();
     for entry in frame.secret_env.iter().flat_map(|entries| entries.iter()) {
         match read_secret(&entry.secret_key, ctx) {
@@ -401,6 +409,7 @@ pub async fn run_gated(frame: GatedRun, ctx: &SecretsContext<'_>) -> GatedResult
         output_tail: Text::unchecked(outcome.output_tail),
         timed_out: outcome.timed_out,
         error: None,
+        unknown: None,
     }
 }
 

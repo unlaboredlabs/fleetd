@@ -389,7 +389,8 @@ async fn ask_hub() -> Result<String, String> {
 }
 
 /// Restarts `services`, saying which did: the hub's at once, a node's once its agents finish their step when `wait`
-/// ([`wait_for_agents`]). What runs on them carries on by itself afterwards.
+/// ([`wait_for_agents`]). What runs on them carries on by itself afterwards. Run as one of the node's approved
+/// commands, the node restarts only once this command ended, so the node reports how it went (`node restart --after`).
 fn restart(services: &[Service], wait: bool) {
     let (hubs, nodes): (Vec<&Service>, Vec<&Service>) = services.iter().partition(|s| s.hub());
     let one = |s: &Service| match service::restart(s) {
@@ -404,7 +405,21 @@ fn restart(services: &[Service], wait: bool) {
             .map_or(default, |home| crate::hub::update::drain_in(&home, default));
         wait_for_agents(deadline);
     }
-    nodes.into_iter().for_each(one);
+    let approved = std::env::var_os(crate::node::secrets::APPROVED_RUN_ENV).is_some();
+    let later = |s: &Service| {
+        let pid = std::process::id().to_string();
+        let exe = crate::update::installed_exe().map_err(|e| e.to_string());
+        match exe
+            .and_then(|exe| service::spawn_outside(&exe, &["node", "restart", "--after", &pid]))
+        {
+            Ok(()) => println!("{} restarts once this command ends", s.name),
+            Err(e) => eprintln!("{e}; restart {} yourself", s.name),
+        }
+    };
+    match approved {
+        true => nodes.into_iter().for_each(later),
+        false => nodes.into_iter().for_each(one),
+    }
     println!(
         "anything that was running carries on by itself: leads and agents resume in their threads, and the merge \
          train takes up what it was merging"

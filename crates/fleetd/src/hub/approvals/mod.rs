@@ -140,16 +140,17 @@ pub fn shown_argv(argv: &[String]) -> String {
         .join(" ")
 }
 
-/// Why an approved command the hub never saw finish goes back to the person after a restart: it never started, or it
-/// was running and its result is unknown.
-pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> String {
-    if evidence.is_some_and(|e| e.starts_with(RUNNING)) {
-        format!(
-            "interrupted, result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again"
-        )
-    } else {
-        NOT_RUN_AFTER_RESTART.to_string()
-    }
+/// How long the hub waits for a node to link again, to ask it for the result of an approved command it lost.
+const RELINK_WAIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+/// How often it looks whether the node is back meanwhile.
+const RELINK_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Why an approved command whose result neither the hub nor its node has goes back to the person: it may have run, so
+/// what to check comes before approving it again.
+fn may_have_run(why: &str, machine_id: &str) -> String {
+    format!(
+        "interrupted, may have run: {why}; check on {machine_id} whether it ran before you approve it again"
+    )
 }
 
 /// A node command's failure.
@@ -174,6 +175,8 @@ pub struct GatedOutcome {
     pub output_tail: String,
     pub timed_out: bool,
     pub error: Option<String>,
+    /// Only from `resume_gated`: why the node has no result for it either. The command may have run.
+    pub unknown: Option<String>,
 }
 
 /// The node link's request/reply commands.
@@ -189,6 +192,15 @@ pub trait ApprovalNodes: Send + Sync {
         &self,
         machine_id: &str,
         input: Value,
+    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
+    /// `gated_resume`: the result of the approved command `request_id` the node ran, whose `gated_run` answer was
+    /// lost, waiting up to `timeout_sec` (and a grace) for one still running. `reason` "old" for a node that keeps no
+    /// result.
+    fn resume_gated(
+        &self,
+        machine_id: &str,
+        request_id: &str,
+        timeout_sec: i64,
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
     /// The machine's node is linked and its session stream subscribed.
     fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
@@ -433,8 +445,8 @@ impl Approvals {
         })
     }
 
-    /// Runs until the hub stops: first the approved commands a stopped hub never finished go back to the person, then
-    /// the threads' follower (tool prompts) and the removed-projects follower.
+    /// Runs until the hub stops: first the approved commands a stopped hub never finished are settled, then the
+    /// threads' follower (tool prompts) and the removed-projects follower.
     pub async fn serve(self: Arc<Self>) {
         self.reopen_unfinished().await;
         tokio::join!(
@@ -444,8 +456,9 @@ impl Approvals {
         );
     }
 
-    /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost.
-    async fn reopen_unfinished(&self) {
+    /// Approved commands the hub never saw finish: one it never sent goes back to the person, never run late; one that
+    /// was running is asked of its node once it links again ([`Self::recover`]), never silently lost.
+    async fn reopen_unfinished(self: &Arc<Self>) {
         let approved = self.deps.requests.list(&RequestFilter {
             states: Some(vec![RequestState::Approved]),
             kind: Some(RequestKind::Approval),
@@ -456,9 +469,17 @@ impl Approvals {
             if r.gated.is_none() {
                 continue;
             }
-            let machine = r.project_ref.machine_id.to_string();
-            let why = restart_reopen_reason(r.evidence.as_ref().map(|e| e.as_str()), &machine);
-            let _ = self.reopen(&r.request_id, &why).await;
+            if r.evidence
+                .as_ref()
+                .is_some_and(|e| e.as_str().starts_with(RUNNING))
+            {
+                let machine = r.project_ref.machine_id.to_string();
+                let lost = format!("the hub restarted while it ran on {machine}");
+                let me = self.clone();
+                tokio::spawn(async move { me.recover(&r, lost).await });
+            } else {
+                let _ = self.reopen(&r.request_id, NOT_RUN_AFTER_RESTART).await;
+            }
         }
     }
 
@@ -1162,7 +1183,7 @@ impl Approvals {
             Some(c) => Some(c.to_string()),
             None => self.deps.hub.workspace_root(&project).await,
         };
-        // Marks it in flight, so a hub restart before the result arrives is reported as interrupted, not "not run".
+        // Marks it in flight, so after a hub restart before the result arrives it is asked of the node, never run again.
         let _ = self
             .note(&id, &format!("{RUNNING} {machine}, approved by {by}"))
             .await;
@@ -1172,14 +1193,14 @@ impl Approvals {
                 ..Default::default()
             }),
             Some(cwd) => {
-                let mut input = json!({ "argv": spec.argv, "cwd": cwd, "timeoutSec": timeout_sec });
+                let mut input = json!({ "argv": spec.argv, "cwd": cwd, "timeoutSec": timeout_sec, "requestId": id });
                 if let Some(env) = &spec.secret_env {
                     input["secretEnv"] = json!(env);
                 }
                 self.deps.nodes.run_gated(&machine, input).await
             }
         };
-        let done = match &ran {
+        let done = match ran {
             Err(e) if e.reason == "offline" => {
                 // Nothing ran, so the person can approve it again once the machine is back.
                 self.reopen(
@@ -1190,23 +1211,79 @@ impl Approvals {
                 )
                 .await
             }
-            // A link that dropped mid-run leaves the result unknown: back to the person, to check before approving again.
+            // A link that dropped mid-run: the node keeps the command going and its result, for when it is back.
             Err(e) => {
-                self.reopen(
-                    &id,
-                    &format!(
-                        "interrupted, result unknown: {}; check on {machine} whether it ran before approving it again",
-                        e.message
-                    ),
-                )
-                .await
+                self.recover(r, e.message).await;
+                return;
             }
-            Ok(GatedOutcome {
-                error: Some(err), ..
-            }) => {
-                let why = format!("not run on {machine}: {err}");
-                let at = self.now();
-                self.change_from(&id, RequestState::Approved, |r| {
+            Ok(o) => self.settle(r, o).await,
+        };
+        if let Ok(done) = done {
+            self.deps.hub.wake_request(&done).await;
+        }
+    }
+
+    /// The approved command `r` was running when its result was lost (`lost`: the link dropped, the hub restarted).
+    /// Once its node is linked again it is asked for that result, which settles it as if it had come in time. Only
+    /// when the node has none either (it restarted while the command ran, or keeps none), or isn't back within
+    /// [`RELINK_WAIT`], does it go back to the person, saying it may have run. The lead is woken with the outcome.
+    async fn recover(&self, r: &HumanRequest, lost: String) {
+        let (id, machine) = (&r.request_id, r.project_ref.machine_id.to_string());
+        let timeout_sec = r.gated.as_ref().map_or(0, |g| g.timeout_sec.get());
+        let deadline = self.deps.clock.now() + RELINK_WAIT;
+        let why = loop {
+            if !self.deps.nodes.is_linked(&machine).await {
+                if self.deps.clock.now() >= deadline {
+                    break format!("{lost}, and {machine}'s node has not linked again since");
+                }
+                self.deps.clock.sleep(RELINK_POLL).await;
+                continue;
+            }
+            match self
+                .deps
+                .nodes
+                .resume_gated(&machine, id.as_str(), timeout_sec)
+                .await
+            {
+                Ok(GatedOutcome {
+                    unknown: Some(unknown),
+                    ..
+                }) => break format!("{lost}, and {unknown}"),
+                Ok(o) => {
+                    if let Ok(done) = self.settle(r, o).await {
+                        self.deps.hub.wake_request(&done).await;
+                    }
+                    return;
+                }
+                // Dropped again while the node answered: it still keeps the result.
+                Err(e)
+                    if matches!(e.reason.as_str(), "lost" | "offline")
+                        && self.deps.clock.now() < deadline =>
+                {
+                    self.deps.clock.sleep(RELINK_POLL).await;
+                }
+                Err(e) => break format!("{lost}, and {}", e.message),
+            }
+        };
+        if let Ok(done) = self.reopen(id, &may_have_run(&why, &machine)).await {
+            self.deps.hub.wake_request(&done).await;
+        }
+    }
+
+    /// Records the node's answer for the approved command `r`: it ran (its exit code and output) or it didn't (why).
+    async fn settle(
+        &self,
+        r: &HumanRequest,
+        o: GatedOutcome,
+    ) -> Result<HumanRequest, ApprovalRefused> {
+        let (id, machine) = (&r.request_id, r.project_ref.machine_id.to_string());
+        let by = r.answered_by.clone().unwrap_or_default();
+        let timeout_sec = r.gated.as_ref().map_or(0, |g| g.timeout_sec.get());
+        if let Some(err) = o.error {
+            let why = format!("not run on {machine}: {err}");
+            let at = self.now();
+            return self
+                .change_from(id, RequestState::Approved, |r| {
                     r.state = RequestState::Failed;
                     r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(clip(
@@ -1214,31 +1291,25 @@ impl Approvals {
                         EVIDENCE_MAX,
                     )));
                 })
-                .await
-            }
-            Ok(o) => {
-                let head = if o.timed_out {
-                    format!("killed after {timeout_sec} s on {machine}, approved by {by}")
-                } else {
-                    let code = o
-                        .exit_code
-                        .map_or_else(|| "none (ended by a signal)".to_string(), |c| c.to_string());
-                    format!("exit {code} on {machine}, approved by {by}")
-                };
-                let tail = clip(o.output_tail.trim_end(), EVIDENCE_MAX);
-                let at = self.now();
-                self.change_from(&id, RequestState::Approved, |r| {
-                    r.state = RequestState::Ran;
-                    r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
-                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(head));
-                    r.exit_code = o.exit_code;
-                    r.output_tail = Some(fleetd_contracts::prim::Text::unchecked(tail));
-                })
-                .await
-            }
-        };
-        if let Ok(done) = done {
-            self.deps.hub.wake_request(&done).await;
+                .await;
         }
+        let head = if o.timed_out {
+            format!("killed after {timeout_sec} s on {machine}, approved by {by}")
+        } else {
+            let code = o
+                .exit_code
+                .map_or_else(|| "none (ended by a signal)".to_string(), |c| c.to_string());
+            format!("exit {code} on {machine}, approved by {by}")
+        };
+        let tail = clip(o.output_tail.trim_end(), EVIDENCE_MAX);
+        let at = self.now();
+        self.change_from(id, RequestState::Approved, |r| {
+            r.state = RequestState::Ran;
+            r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
+            r.evidence = Some(fleetd_contracts::prim::Text::unchecked(head));
+            r.exit_code = o.exit_code;
+            r.output_tail = Some(fleetd_contracts::prim::Text::unchecked(tail));
+        })
+        .await
     }
 }

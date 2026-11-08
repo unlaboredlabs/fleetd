@@ -39,6 +39,19 @@ fn frame<T: DeserializeOwned>(mut input: Value) -> Result<T, NodeCommandError> {
     })
 }
 
+fn gated_outcome(result: fleetd_contracts::node_link::GatedResult) -> GatedOutcome {
+    GatedOutcome {
+        exit_code: result
+            .exit_code
+            .and_then(|c| serde_json::to_value(c).ok())
+            .and_then(|v| v.as_i64()),
+        output_tail: result.output_tail.to_string(),
+        timed_out: result.timed_out,
+        error: result.error.map(|e| e.to_string()),
+        unknown: result.unknown.map(|e| e.to_string()),
+    }
+}
+
 fn machine_id(m: &str) -> Result<fleetd_contracts::ids::MachineId, NodeCommandError> {
     convert(&m).ok_or_else(|| NodeCommandError {
         reason: "invalid".into(),
@@ -83,15 +96,44 @@ impl ApprovalNodes for OpsPorts {
                 .run_gated(&m, input)
                 .await
                 .map_err(node_error)?;
-            Ok(GatedOutcome {
-                exit_code: result
-                    .exit_code
-                    .and_then(|c| serde_json::to_value(c).ok())
-                    .and_then(|v| v.as_i64()),
-                output_tail: result.output_tail.to_string(),
-                timed_out: result.timed_out,
-                error: result.error.map(|e| e.to_string()),
-            })
+            Ok(gated_outcome(result))
+        })
+    }
+
+    fn resume_gated(
+        &self,
+        m: &str,
+        request_id: &str,
+        timeout_sec: i64,
+    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
+        let (m, request_id) = (m.to_owned(), request_id.to_owned());
+        Box::pin(async move {
+            let machine = machine_id(&m)?;
+            let link = &self.hub().link;
+            // Between links, the hub may see the node's sessions before its new hello: it is not back yet.
+            if link.link_id(&machine).is_none() {
+                return Err(NodeCommandError {
+                    reason: "offline".into(),
+                    message: format!("{m}'s node is not linked to the hub"),
+                    fix: None,
+                });
+            }
+            if link.node_lacks(&machine, fleetd_contracts::node_link::CAP_GATED_RESUME) {
+                return Err(NodeCommandError {
+                    reason: "old".into(),
+                    message: format!("{m}'s node is too old to keep a command's result"),
+                    fix: None,
+                });
+            }
+            let input =
+                frame(serde_json::json!({ "requestId": request_id, "timeoutSec": timeout_sec }))?;
+            let result = self
+                .hub()
+                .node_commands
+                .resume_gated(&machine, input)
+                .await
+                .map_err(node_error)?;
+            Ok(gated_outcome(result))
         })
     }
 
