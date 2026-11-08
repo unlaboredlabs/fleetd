@@ -11,8 +11,9 @@ use serde_json::{Value, json};
 
 use super::agent_mcp::{env_deps, send_call, send_to_node};
 
-/// One step: past the node's own wait for the Mac (node/mac_tool/client.rs `SEND_WAIT`).
-const STEP_WAIT: Duration = Duration::from_secs(200);
+/// One step: past the node's own wait for the Mac (node/mac_tool/client.rs `SEND_WAIT`, 180 s) plus its wait for a
+/// restarting hub's link (node/lead.rs `RELINK_WAIT`, 30 s).
+const STEP_WAIT: Duration = Duration::from_secs(230);
 /// A push or pull: many steps in one call.
 const FILES_WAIT: Duration = Duration::from_secs(3600);
 
