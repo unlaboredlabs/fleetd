@@ -1,3 +1,4 @@
+hb:heartbeat `steps`
 link:hub→node `browser_control` handle
 link:hub→node `browser_input` handle
 link:hub→node `browser_watch` handle
