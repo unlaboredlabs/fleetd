@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
+import { executors } from "../src/hub/executor/index.ts";
 import { get } from "../src/hub/browser/store.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
@@ -254,6 +255,17 @@ test("machine_roles lists each machine's roles and slots; machine_roles_set chan
   expect(await t.tools.call(t.hub, caller("admin"), "machine_roles_set", { machineId: "box2", macTool: false })).toMatchObject({
     error: { error: { code: "invalid" } },
   });
+});
+
+test("machine_roles names where a new Navi or project goes: the online machine that takes repos", async () => {
+  setup();
+  const best = async () =>
+    ((await t.tools.call(t.hub, caller("read"), "machine_roles", {})) as { output: { best?: string } }).output.best;
+  expect(await best()).toBeUndefined();
+  // box2's node is up, caught up and takes repos (project_discover's own best).
+  Object.assign(executors(t.hub), { isConnected: (m: string) => m === "box2", isReady: () => true, running: () => [] });
+  t.link.link("box2", ["browser", "repos"]);
+  expect(await best()).toBe("box2");
 });
 
 test("machine_screens_set has the node write it, and takes the node's new host checks", async () => {

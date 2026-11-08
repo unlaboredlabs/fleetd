@@ -6,6 +6,7 @@ import { broker, start as startBrowser } from "./browser/index.ts";
 import { start as startDevices, stop as stopDevices } from "./device/index.ts";
 import { start as startMac, stop as stopMac } from "./mac_tool/index.ts";
 import { start as startDesktop, stop as stopDesktop } from "./desktop/index.ts";
+import { start as startHosts } from "./hosts/index.ts";
 import { start as startScreens } from "./screens/index.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
@@ -18,6 +19,8 @@ export function registerAreas(node: Node): void {
   // After the browser's: the desktops take the hub's live-view frames for their own ids and hand on the rest.
   startDesktop(node);
   startAgentsMac(node);
+  // Last: the heartbeat's `load.hosts` goes around the lines the areas above added (the desktop's).
+  startHosts(node);
 }
 
 /**

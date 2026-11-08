@@ -1,1 +1,2 @@
+hb:heartbeat `load.mac`
 loop:node loop `agents_mac::AgentsMac::start`
