@@ -1,7 +1,7 @@
 //! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in all and in use,
-//! free disk where its worktrees live, the memory and disk to allow per agent, and the claude.ai usage windows its
-//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk is
-//! below its floor.
+//! free disk where its worktrees live, its IPv4 (node/network.rs), the memory and disk to allow per agent, and the
+//! claude.ai usage windows its sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on
+//! a machine whose disk is below its floor.
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -199,6 +199,7 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
         disk_per_agent_bytes: None,
         limits: List::unchecked(limits.into_iter().take(4).collect()),
         disk: disk(home, setting(|c| c.min_free_gb)),
+        network: super::network::read(),
         hosts: Some(super::hosts::checks(home, config.as_ref())),
         android: super::device::health(
             home,
