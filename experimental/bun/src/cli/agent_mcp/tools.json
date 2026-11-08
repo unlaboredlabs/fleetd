@@ -1,0 +1,2627 @@
+{
+ "rust": "fleetd Edge · Nov 8, 13:41 UTC · e4509af (0.0.0-edge.202611081341+e4509af, protocol 1)",
+ "tools": [
+  {
+   "name": "spawn_agent",
+   "op": "task_spawn",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Start a fleetd agent (a task) with its own session, slot and lane. title is what the human sees: a short plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. repo names the project's repo it works in when it has several (its worktree, branch, setup and PR are that repo's); without it, an agent given pr works in the PR's repo, any other in the project's own. profile names one of the profiles your first message lists, the default when left out; one the project doesn't allow is refused, and reviews always run on the default. A full slot board queues it and it starts by itself. A writer is checked against the work in flight on its repo: one that repeats it is refused (taken, or a possible duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is theirs: ask in chat. The result names the other writers running in its repo and the work elsewhere it may overlap. Its result arrives in a later wake: end your turn instead of waiting.",
+   "inputSchema": {
+    "properties": {
+     "kind": {
+      "default": "write",
+      "description": "Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached.",
+      "enum": [
+       "write",
+       "read",
+       "review"
+      ],
+      "type": "string"
+     },
+     "notDuplicateOf": {
+      "description": "A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different\nwork. Needs `notDuplicateWhy`.",
+      "items": {
+       "maxLength": 300,
+       "minLength": 1,
+       "pattern": "^[^\\r\\n]*$",
+       "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "type": "array"
+     },
+     "notDuplicateWhy": {
+      "description": "Why it is different work, in one line; kept in the hub's log.",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "paths": {
+      "description": "The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work\nin flight.",
+      "items": {
+       "maxLength": 500,
+       "minLength": 1,
+       "pattern": "^[^\\r\\n]*$",
+       "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "type": "array"
+     },
+     "pr": {
+      "type": "string"
+     },
+     "profile": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+      "type": "string"
+     },
+     "prompt": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "qa": {
+      "type": "boolean"
+     },
+     "repo": {
+      "description": "The project's repo it works in, by name: its worktree, branch, setup and PR are that repo's. Absent: the\nrepo of `pr` when the project has it, else the project's own repo, or its plain directory.",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+     },
+     "title": {
+      "maxLength": 80,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workstreamId",
+     "title",
+     "prompt"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "message_agent",
+   "op": "task_message",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread.",
+   "inputSchema": {
+    "properties": {
+     "message": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "now": {
+      "default": false,
+      "type": "boolean"
+     },
+     "taskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "taskId",
+     "message"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "agents",
+   "op": "task_list",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream.",
+   "inputSchema": {
+    "properties": {
+     "state": {
+      "enum": [
+       "queued",
+       "running",
+       "idle",
+       "done",
+       "failed",
+       "cancelled"
+      ],
+      "type": "string"
+     },
+     "taskId": {
+      "description": "Just this task.",
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "stop_agent",
+   "op": "task_cancel",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Stop a task: interrupts its thread and releases its slot.",
+   "inputSchema": {
+    "properties": {
+     "reason": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+     },
+     "taskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "taskId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "brief",
+   "op": "brief_create",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for another project's message gives asked, its N<n> handle, so the asker hears when it lands; a later one folded into an open order gives asked with that workstreamId.",
+   "inputSchema": {
+    "properties": {
+     "asked": {
+      "description": "The ask (`project_message`) this order is opened for, so its asker hears when it lands. With workstreamId, a\nlater ask folded into that open order: its asker hears it went there.",
+      "pattern": "^N[1-9][0-9]*$",
+      "type": "string"
+     },
+     "brief": {
+      "properties": {
+       "constraints": {
+        "items": {
+         "maxLength": 500,
+         "minLength": 1,
+         "type": "string"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       "doneWhen": {
+        "description": "At least one.",
+        "items": {
+         "maxLength": 2000,
+         "minLength": 1,
+         "type": "string"
+        },
+        "maxItems": 20,
+        "minItems": 1,
+        "type": "array"
+       },
+       "goal": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+       },
+       "pointers": {
+        "items": {
+         "maxLength": 500,
+         "minLength": 1,
+         "type": "string"
+        },
+        "maxItems": 20,
+        "type": "array"
+       },
+       "why": {
+        "maxLength": 2000,
+        "minLength": 1,
+        "type": "string"
+       }
+      },
+      "required": [
+       "goal",
+       "why",
+       "pointers",
+       "constraints",
+       "doneWhen"
+      ],
+      "type": "object"
+     },
+     "text": {
+      "description": "The order in the human's words, when this opens the workstream.",
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "brief"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "request_secret",
+   "op": "request_secret",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint arrives, in a later wake. For a variable an agent asked for, use sink order:<machine>:<its order>: only that order's agents get it, at their next turn, until the order closes.",
+   "inputSchema": {
+    "properties": {
+     "envName": {
+      "description": "An env: or order: sink's variable, when not the one the key names.",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+     },
+     "key": {
+      "description": "The secret's name, a dotted slug such as \"stripe.test_key\".",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+     },
+     "sink": {
+      "description": "Where the value is written: env:<machine>:<file> (one NAME=value line), file:<machine>:<path>, or\norder:<machine>:<order id> (one variable of that order's agents on the project's machine, until it closes).",
+      "type": "string"
+     },
+     "text": {
+      "description": "One line on why it is needed.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "sink",
+     "text"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "request_withdraw",
+   "op": "request_withdraw",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Take back a secret request or a command approval you no longer need (the human said so in chat).",
+   "inputSchema": {
+    "properties": {
+     "requestId": {
+      "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "requestId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "decide",
+   "op": "decide",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice).",
+   "inputSchema": {
+    "properties": {
+     "key": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+     },
+     "scope": {
+      "default": "workstream",
+      "enum": [
+       "project",
+       "workstream"
+      ],
+      "type": "string"
+     },
+     "value": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "why": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "key",
+     "value"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "close",
+   "op": "close",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "The workstream is done: say why in one line. Its agents still queued, running or waiting are stopped; the merge train's reviewers are left to the train.",
+   "inputSchema": {
+    "properties": {
+     "why": {
+      "description": "One line on why it is done, as the human would read it.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "workstreamId",
+     "why"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "gated_run",
+   "op": "gated_run",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.",
+   "inputSchema": {
+    "properties": {
+     "argv": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "type": "array"
+     },
+     "class": {
+      "enum": [
+       "irreversible",
+       "money",
+       "credential"
+      ],
+      "type": "string"
+     },
+     "cwd": {
+      "pattern": "^/",
+      "type": "string"
+     },
+     "reason": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "secretEnv": {
+      "items": {
+       "properties": {
+        "name": {
+         "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+         "type": "string"
+        },
+        "secretKey": {
+         "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+         "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+         "type": "string"
+        }
+       },
+       "required": [
+        "name",
+        "secretKey"
+       ],
+       "type": "object"
+      },
+      "maxItems": 20,
+      "type": "array"
+     },
+     "timeoutSec": {
+      "default": 1800,
+      "maximum": 14400,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "argv",
+     "class",
+     "reason"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "decisions_search",
+   "op": "decisions_search",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. Another project's decisions are refused.",
+   "inputSchema": {
+    "properties": {
+     "query": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "remember",
+   "op": "remember",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.",
+   "inputSchema": {
+    "properties": {
+     "replaces": {
+      "description": "Words of the entry this one replaces, quoted exactly; it must match one entry of the file.",
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "scope": {
+      "oneOf": [
+       {
+        "const": "user",
+        "description": "The person's own memory: how they work across every project. One shared `user.md` on a hub from before\npeople.",
+        "type": "string"
+       },
+       {
+        "const": "project",
+        "description": "This project's `MEMORY.md`, or one of its topic files.",
+        "type": "string"
+       }
+      ]
+     },
+     "text": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "topic": {
+      "description": "Project scope only: the topic file; absent, `MEMORY.md`.",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "scope",
+     "text"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "forget",
+   "op": "forget",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. For an entry that no longer holds (done, superseded, contradicted); say why in reason. To change an entry, remember with replaces instead. The chat shows the human what you forgot, with Undo.",
+   "inputSchema": {
+    "properties": {
+     "entry": {
+      "description": "Words of the entry to remove, quoted exactly; they must match one entry of the file.",
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "reason": {
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "scope": {
+      "oneOf": [
+       {
+        "const": "user",
+        "description": "The person's own memory: how they work across every project. One shared `user.md` on a hub from before\npeople.",
+        "type": "string"
+       },
+       {
+        "const": "project",
+        "description": "This project's `MEMORY.md`, or one of its topic files.",
+        "type": "string"
+       }
+      ]
+     },
+     "topic": {
+      "description": "Project scope only: the topic file; absent, `MEMORY.md`.",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "scope",
+     "entry"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "memory_read",
+   "op": "memory_read",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Read one of this project's memory topic files (MEMORY.md lists them).",
+   "inputSchema": {
+    "properties": {
+     "topic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "topic"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "nudge",
+   "op": "nudge",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Flag the chat message you just wrote for the human's look, with reason in a few words (\"the Machines page redesign\"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a project keeps only a few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.",
+   "inputSchema": {
+    "properties": {
+     "reason": {
+      "description": "What to look at, in a few words: \"the Machines page redesign\".",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_create",
+   "op": "automation_create",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 * * 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.",
+   "inputSchema": {
+    "properties": {
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "prompt": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "schedule": {
+      "description": "Absent: it runs only on Run now (and a webhook, once a person adds one).",
+      "properties": {
+       "at": {
+        "description": "One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once.",
+        "maxLength": 40,
+        "minLength": 16,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       },
+       "cron": {
+        "description": "Standard 5-field cron (or @daily, @hourly…), for a recurring run.",
+        "maxLength": 100,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       },
+       "tz": {
+        "description": "An IANA zone; leave it out for the person's own.",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     }
+    },
+    "required": [
+     "name",
+     "prompt"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_list",
+   "op": "automation_list",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "This project's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run.",
+   "inputSchema": {
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_update",
+   "op": "automation_update",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: true) or resume it (false); fields left out stay. Paused, its schedule and webhook start nothing; resumed, the schedule goes on from now.",
+   "inputSchema": {
+    "properties": {
+     "automationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "paused": {
+      "description": "true: its schedule and webhook start nothing; false: resume it, its schedule going on from now.",
+      "type": "boolean"
+     },
+     "prompt": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "removeSchedule": {
+      "description": "true: take its schedule off.",
+      "type": "boolean"
+     },
+     "schedule": {
+      "description": "A schedule in the lead's calls: a cron or a one-time at, one of the two. A tz left out is the zone of the person who\nlast wrote in the chat (their app or phone tells the hub), else the hub's `policy.tz`, else the hub machine's.",
+      "properties": {
+       "at": {
+        "description": "One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once.",
+        "maxLength": 40,
+        "minLength": 16,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       },
+       "cron": {
+        "description": "Standard 5-field cron (or @daily, @hourly…), for a recurring run.",
+        "maxLength": 100,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       },
+       "tz": {
+        "description": "An IANA zone; leave it out for the person's own.",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     }
+    },
+    "required": [
+     "automationId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_delete",
+   "op": "automation_delete",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Delete an automation and its run history; orders its runs opened stay.",
+   "inputSchema": {
+    "properties": {
+     "automationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "automationId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_run",
+   "op": "automation_run",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Run an automation now: it opens its order, which reaches you in a later wake. Skipped while its last run's order is still open.",
+   "inputSchema": {
+    "properties": {
+     "automationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "automationId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_runs",
+   "op": "automation_runs",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body.",
+   "inputSchema": {
+    "properties": {
+     "automationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     },
+     "runId": {
+      "pattern": "^ar_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "automationId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "automation_confirm",
+   "op": "automation_confirm",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: ask the person to let one of your automations run on its own. They get a card with its name, prompt and schedule; once they approve it, its runs count as their go-ahead for what the prompt names, so a weekly send doesn't ask each week. Only their approval marks it; changing its prompt or schedule unmarks it. Returns whether it is marked.",
+   "inputSchema": {
+    "properties": {
+     "automationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "automationId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "checklist",
+   "op": "checklist",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. An item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or remove it; replace sets the whole list. Returns the list.",
+   "inputSchema": {
+    "properties": {
+     "items": {
+      "default": [],
+      "items": {
+       "description": "One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets\nthat item's text, state or link, or with `remove` takes it off.",
+       "properties": {
+        "id": {
+         "maximum": 9007199254740991,
+         "minimum": 1,
+         "type": "integer"
+        },
+        "link": {
+         "description": "Replaces the item's link; `{}` clears it.",
+         "properties": {
+          "pr": {
+           "description": "https://github.com/<owner>/<name>/pull/<n>",
+           "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
+           "type": "string"
+          },
+          "taskId": {
+           "pattern": "^T[1-9][0-9]*$",
+           "type": "string"
+          },
+          "workstreamId": {
+           "pattern": "^W[1-9][0-9]*$",
+           "type": "string"
+          }
+         },
+         "type": "object"
+        },
+        "remove": {
+         "type": "boolean"
+        },
+        "state": {
+         "enum": [
+          "todo",
+          "doing",
+          "done"
+         ],
+         "type": "string"
+        },
+        "text": {
+         "maxLength": 200,
+         "minLength": 1,
+         "pattern": "^[^\\r\\n]*$",
+         "type": "string"
+        }
+       },
+       "type": "object"
+      },
+      "maxItems": 50,
+      "type": "array"
+     },
+     "replace": {
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "skill_install",
+   "op": "skill_install",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it on the project's Settings › Agents. Agents list it as fleetd:<name> and run it with the Skill tool. The chat shows what it installed.",
+   "inputSchema": {
+    "properties": {
+     "scope": {
+      "description": "The hub's two scopes, which a person (and a lead's `skill_install`) writes.",
+      "enum": [
+       "project",
+       "global"
+      ],
+      "type": "string"
+     },
+     "skill": {
+      "description": "Only this skill of the source; absent, every skill it has.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+     },
+     "source": {
+      "description": "`owner/repo`, `owner/repo@skill`, a GitHub URL (`/tree/<ref>/<path>` too) or any git URL.",
+      "maxLength": 500,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "source",
+     "scope"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "skill_save",
+   "op": "skill_save",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: save one of your own skills, new or changed, as its whole SKILL.md (frontmatter with name and description, then the steps), with why in one line. No one approves it: the person sees every version in your Skills, with who, when and why, and can edit, revert or turn it off. Your next session lists it as fleetd:<name>; it is yours only. To improve one, save it again whole.",
+   "inputSchema": {
+    "properties": {
+     "name": {
+      "description": "The skill's folder name, also its frontmatter `name`: `weekly-invoices`.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+     },
+     "text": {
+      "description": "The whole `SKILL.md`: frontmatter (`name`, a `description` of what it does and when to use it), then the\nsteps.",
+      "maxLength": 64000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "why": {
+      "description": "One line on why: what it learned, or what the person corrected.",
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "text",
+     "why"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "project_message",
+   "op": "project_message",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: write to another project's lead in its chat, as this project, never as the person: \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this project. It goes through your approval mode like a send, its exact text on the card. Open an order this way only when the person asked for it in this conversation.",
+   "inputSchema": {
+    "properties": {
+     "hub": {
+      "description": "A linked hub, by its label: the project is there. Absent: this hub.",
+      "maxLength": 40,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "project": {
+      "description": "The project: its title, as factory_status names it, or its project id.",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "project",
+     "text"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "factory_status",
+   "op": "factory_status",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this project's asks to it with the orders opened for them, plus the hubs this project is linked to. With hub, the projects the link reaches on that hub instead. Read-only.",
+   "inputSchema": {
+    "properties": {
+     "hub": {
+      "description": "A linked hub, by its label: its projects this project reaches through the link. Absent: this hub.",
+      "maxLength": 40,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "project": {
+      "description": "One project, by title or project id; absent, every project but this one.",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "chat_search",
+   "op": "chat_search",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a page, each with its id, time, author (human is the person, lead is you) and its text around the words; before (the last id of a page) reads the next. Only this chat, never another's. Read-only.",
+   "inputSchema": {
+    "properties": {
+     "before": {
+      "description": "The next page: the hits older than this message, the last one of the page before.",
+      "pattern": "^m[1-9][0-9]*$",
+      "type": "string"
+     },
+     "from": {
+      "description": "From this day (2026-10-20) or time (2026-10-20T09:00:00Z), in UTC. Absent: from the chat's start.",
+      "maxLength": 40,
+      "minLength": 10,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "to": {
+      "description": "Up to this day, all of it, or this time, in UTC. Absent: up to now.",
+      "maxLength": 40,
+      "minLength": 10,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "words": {
+      "description": "The words a message holds, every one of them, in any order and case: \"dentist saturday\".",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "words"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "chat_read",
+   "op": "chat_read",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). With both 0 it reads that one message whole. Read-only.",
+   "inputSchema": {
+    "properties": {
+     "after": {
+      "description": "How many after it; absent, 5.",
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "before": {
+      "description": "How many messages before it; absent, 5.",
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "messageId": {
+      "description": "The message, by its id from chat_search.",
+      "pattern": "^m[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "messageId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "confirm_step",
+   "op": "confirm_step",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_file. It goes through your approval mode like a send: once it returns, click that button, once. Denied, don't click it. A payment, order or trade never goes through here: hand that click to the person with request_takeover.",
+   "inputSchema": {
+    "properties": {
+     "button": {
+      "description": "The button's label, as the page shows it: \"Complete reservation\".",
+      "maxLength": 120,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "does": {
+      "description": "What clicking it does, in one or two plain sentences: \"Books a table for 2 at Lupa, Sat 8 pm, under Sam\".",
+      "maxLength": 500,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "page": {
+      "description": "What the page shows around the button: the details being confirmed.",
+      "maxLength": 4000,
+      "type": "string"
+     },
+     "screenshot": {
+      "description": "A screenshot of the page from `chat_file`, for the person's card.",
+      "pattern": "^F[1-9][0-9]*$",
+      "type": "string"
+     },
+     "site": {
+      "description": "The site the page is on: `opentable.com`.",
+      "maxLength": 253,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "site",
+     "button",
+     "does"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "usage_resume",
+   "op": "usage_resume",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Lift the usage pause on your project's machine now and send every agent parked there \"continue\": only once you know its login has capacity again (the human says so, or a turn of yours just went through). At most once per 10 minutes per machine; an agent whose login is still limited parks again with the real reset. The human can also press Resume in the app or run fleetd usage resume <machine>.",
+   "inputSchema": {
+    "properties": {
+     "machineId": {
+      "description": "The project's machine; absent means it.",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "change_enqueue",
+   "op": "change_enqueue",
+   "lead": true,
+   "worker": false,
+   "browser": false,
+   "description": "Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in this repo or any other, that must merge first: the train holds this one until they have, and tells you when one of them fails. Only PRs of projects your person can see: one of another person's Only me project is refused. A PR on the train that its review's findings block, enqueued again, gets a fresh full review of the same patch: for findings you resolved without a new push (by narrowing the brief).",
+   "inputSchema": {
+    "properties": {
+     "after": {
+      "description": "PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.\nEnqueuing a PR already on the train adds these to it, unless it is already being merged. Only PRs of projects\nyour person can see: one of another person's Only me project is refused.",
+      "items": {
+       "description": "https://github.com/<owner>/<name>/pull/<n>",
+       "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
+       "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array",
+      "uniqueItems": true
+     },
+     "prUrl": {
+      "description": "https://github.com/<owner>/<name>/pull/<n>",
+      "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
+      "type": "string"
+     },
+     "taskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+     },
+     "workstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "prUrl"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "report",
+   "op": "review_verdict",
+   "lead": false,
+   "worker": true,
+   "browser": false,
+   "description": "Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. fleetd fills in your task and the head you reviewed.",
+   "inputSchema": {
+    "properties": {
+     "blocking": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "nonBlocking": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+     },
+     "summary": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "blocking",
+     "nonBlocking",
+     "summary"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "ask_lead",
+   "op": "ask_lead",
+   "lead": false,
+   "worker": true,
+   "browser": false,
+   "description": "Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you can't go on without it, end your turn: the answer continues this thread. For a variable that is not set, name it and say why; never put a secret's value in the question.",
+   "inputSchema": {
+    "properties": {
+     "question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "question"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "brief_read",
+   "op": "brief_read",
+   "lead": false,
+   "worker": true,
+   "browser": false,
+   "description": "Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when.",
+   "inputSchema": {
+    "type": "object"
+   }
+  },
+  {
+   "name": "wait_ci",
+   "op": "wait_ci",
+   "lead": false,
+   "worker": true,
+   "browser": false,
+   "description": "Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (`https://github.com/<owner>/<repo>/actions/runs/<id>`; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: nothing else wakes you.",
+   "inputSchema": {
+    "properties": {
+     "url": {
+      "description": "An Actions run's URL (`…/actions/runs/<id>`, anything after it ignored) or a PR's, in one of the project's repos.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "review_read",
+   "op": "review_read",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. Another project's reviews are refused.",
+   "inputSchema": {
+    "properties": {
+     "pr": {
+      "description": "The PR: its URL or its number. Absent: a task's every PR, a lead's PRs in the merge queue.",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "name": "chat_file",
+   "op": "chat_file",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. path is a file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB: a png, jpeg, webp or gif image, PDF, text or CSV, .docx, .xlsx, .pptx or .zip, its bytes what its name says. Returns its attachmentId and the block that shows it: an image block for an image, shown inline ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}), a file block for anything else, a card the person opens or saves on their computer or phone ({\"v\":1,\"kind\":\"file\",\"attachmentId\":\"F12\"}). A task puts the id and its block kind in its result for its lead to show. Unshown, it is deleted after 24 h.",
+   "inputSchema": {
+    "properties": {
+     "path": {
+      "description": "The file: relative to your working directory, or absolute inside it.",
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "publish_artifact",
+   "op": "artifact_publish",
+   "lead": true,
+   "worker": true,
+   "browser": false,
+   "description": "Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. name is its name in this project (lowercase words with hyphens: sweep-report); title what the human reads. Give content, or path to a file (relative to your working directory, or absolute; .html and .htm are html unless format says otherwise). The chat shows a card that opens it in the Artifacts tab beside it. Publishing the same name again keeps a new version, older ones stay. Link to it in any chat text as `[Title](artifact:name)`, or to one version as `artifact:name@2`. HTML runs sandboxed: its scripts run, but it has no network, so inline any script, style, font and image (data: URLs).",
+   "inputSchema": {
+    "properties": {
+     "content": {
+      "description": "The whole document. Give this or `path`.",
+      "maxLength": 2000000,
+      "minLength": 1,
+      "type": "string"
+     },
+     "format": {
+      "description": "`md` or `html`; absent, `html` for a `.html` or `.htm` path, else `md`.",
+      "oneOf": [
+       {
+        "const": "md",
+        "description": "Markdown, rendered in the app's own style.",
+        "type": "string"
+       },
+       {
+        "const": "html",
+        "description": "A whole HTML page, rendered sandboxed: its scripts run, with no network and no reach into the app.",
+        "type": "string"
+       }
+      ],
+      "x-open": true
+     },
+     "name": {
+      "description": "Its name in the project, which links use: `sweep-report`. The same name again keeps a new version.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+     },
+     "path": {
+      "description": "A file to publish instead of `content`: relative to your working directory, or absolute.",
+      "maxLength": 1000,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "title": {
+      "description": "What the person reads in the chat and the tab: `Dependency sweep, November`.",
+      "maxLength": 120,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "title"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "session_start",
+   "op": "session_start",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a project's lead with no repo keeps its project's profile instead, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. An iOS simulator isn't a session: start one on the agents' Mac with `mac sim start` (mac --help). kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.",
+   "inputSchema": {
+    "properties": {
+     "kind": {
+      "description": "`android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the\n`desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and\nagent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac.",
+      "enum": [
+       "browser",
+       "android",
+       "linux_desktop",
+       "mac"
+      ],
+      "type": "string",
+      "x-open": true
+     },
+     "purpose": {
+      "description": "What you need the browser for, in one line; the person replaying it sees it.",
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "purpose"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "desktop",
+   "op": "desktop",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it; on the Mac in a folder of the session's: `open -a TextEdit`). On the Mac, key takes cmd and option too (cmd+s), and agent_desktop runs one agent-desktop command there, text its arguments with the command first (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`; `skills get platform` first): it reads apps' accessibility trees into refs and acts on them without moving the pointer. Take a screenshot after acting to see what happened.",
+   "inputSchema": {
+    "properties": {
+     "action": {
+      "oneOf": [
+       {
+        "enum": [
+         "screenshot",
+         "left_click",
+         "right_click",
+         "middle_click",
+         "double_click",
+         "triple_click",
+         "mouse_move",
+         "left_click_drag",
+         "type",
+         "key",
+         "scroll",
+         "wait",
+         "cursor_position",
+         "launch"
+        ],
+        "type": "string"
+       },
+       {
+        "const": "agent_desktop",
+        "description": "A Mac screen's only: one agent-desktop command, run by the Mac's node.",
+        "type": "string"
+       }
+      ]
+     },
+     "coordinate": {
+      "description": "`[x, y]`: where to click, move the mouse to, scroll at, or end a drag.",
+      "items": {
+       "maximum": 8192,
+       "minimum": 0,
+       "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+     },
+     "duration": {
+      "description": "`wait`: seconds; absent: 1.",
+      "maximum": 30,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "scroll_amount": {
+      "description": "Wheel clicks; absent: 3.",
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "scroll_direction": {
+      "enum": [
+       "up",
+       "down",
+       "left",
+       "right"
+      ],
+      "type": "string"
+     },
+     "start_coordinate": {
+      "description": "`[x, y]`: where a `left_click_drag` starts.",
+      "items": {
+       "maximum": 8192,
+       "minimum": 0,
+       "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+     },
+     "text": {
+      "description": "`type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`,\n`ctrl+s`, `alt+F4`; on a Mac `cmd+s` too). `launch`: a shell command started on the desktop (`xterm`,\n`./target/debug/app`; on a Mac `open -a TextEdit`). `agent_desktop`: agent-desktop's arguments, its command\nfirst (`snapshot --app Finder -i`, `click @s8f3k2p9:e12`).",
+      "maxLength": 10000,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "session_end",
+   "op": "session_end",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub.",
+   "inputSchema": {
+    "type": "object"
+   }
+  },
+  {
+   "name": "request_takeover",
+   "op": "request_takeover",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands answer that a person has control; after they hand it back, your next command sees the page as they left it.",
+   "inputSchema": {
+    "properties": {
+     "reason": {
+      "description": "What the person should do, in one line.",
+      "maxLength": 500,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "fill_credential",
+   "op": "fill_credential",
+   "lead": true,
+   "worker": true,
+   "browser": true,
+   "description": "Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://<vault>/<item>/<field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.",
+   "inputSchema": {
+    "properties": {
+     "ref": {
+      "description": "A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code.",
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
+      "type": "string"
+     },
+     "submit": {
+      "description": "False to fill without submitting, for a field before the last of its form (a username before its password).\nAbsent: true.",
+      "type": "boolean"
+     },
+     "target": {
+      "description": "The field to fill: a CSS selector (`input[name=password]`, `#otp`).",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "target"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "purchase_request",
+   "op": "purchase_request",
+   "lead": true,
+   "worker": false,
+   "browser": true,
+   "description": "A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. Call it on the checkout page once the basket and total are final: shop is its domain (the page's host) and name, total the amount (`129.90`) and currency (`EUR`) with everything in it, items what is being bought. Nobody is asked: it goes in the person's purchases log, and you call purchase_fill right away. Never type card details yourself. Trading, moving money between accounts and crypto stay refused.",
+   "inputSchema": {
+    "properties": {
+     "items": {
+      "description": "Everything being bought.",
+      "items": {
+       "description": "One thing in the basket.",
+       "properties": {
+        "amount": {
+         "description": "Its price in the total's currency, when the checkout shows one.",
+         "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
+         "type": "string"
+        },
+        "name": {
+         "description": "What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`.",
+         "maxLength": 200,
+         "minLength": 1,
+         "pattern": "^[^\\r\\n]*$",
+         "type": "string"
+        },
+        "quantity": {
+         "description": "How many; absent: 1.",
+         "maximum": 10000,
+         "minimum": 1,
+         "type": "integer"
+        }
+       },
+       "required": [
+        "name"
+       ],
+       "type": "object"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "type": "array"
+     },
+     "shop": {
+      "description": "The shop the lead buys from.",
+      "properties": {
+       "domain": {
+        "description": "The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its\npayment provider's frames.",
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
+        "type": "string"
+       },
+       "name": {
+        "description": "Its name, as the shop calls itself: `Hotel Adlon`.",
+        "maxLength": 120,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "domain",
+       "name"
+      ],
+      "type": "object"
+     },
+     "total": {
+      "description": "The total the checkout shows, with everything in it (taxes, fees, shipping).",
+      "properties": {
+       "amount": {
+        "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
+        "type": "string"
+       },
+       "currency": {
+        "pattern": "^[A-Z]{3}$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "amount",
+       "currency"
+      ],
+      "type": "object"
+     }
+    },
+    "required": [
+     "shop",
+     "total",
+     "items"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "purchase_fill",
+   "op": "purchase_fill",
+   "lead": true,
+   "worker": false,
+   "browser": true,
+   "description": "A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. Call it on that checkout with its card form showing, within 15 minutes of the request; it fills once, and the chat says what was paid. Then check the total and click Pay or Book yourself. A bank's confirmation (3-D Secure, a code, its app) goes to the person with request_takeover. From the fill on the session refuses reading values back.",
+   "inputSchema": {
+    "properties": {
+     "requestId": {
+      "description": "The purchase's request, as purchase_request returned it: `Q12`.",
+      "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "requestId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "request_secure_input",
+   "op": "request_secure_input",
+   "lead": true,
+   "worker": false,
+   "browser": true,
+   "description": "A lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words (\"Passport number\"), why one line. The person types it in a sealed field in the app, and fleetd types it into that field; you are woken once it is in. With ref (an Identity, Passport, Driver License or Social Security item's field in their 1Password) nobody is asked: call secure_input_fill right away. Never ask for such a value in the chat.",
+   "inputSchema": {
+    "properties": {
+     "label": {
+      "description": "What it is, in the person's words: `Passport number`, `The code texted to you`.",
+      "maxLength": 120,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     },
+     "ref": {
+      "description": "Fill it from this 1Password field instead (an Identity, Passport, Driver License or Social Security item's):\nthe person approves, then call secure_input_fill. Absent: the person types it.",
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
+      "type": "string"
+     },
+     "site": {
+      "description": "The site the field is on.",
+      "properties": {
+       "domain": {
+        "description": "The page's host: `passport.gov.example`. The value fills only on it (and its subdomains).",
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
+        "type": "string"
+       },
+       "name": {
+        "description": "Its name, as it calls itself.",
+        "maxLength": 120,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]*$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "domain",
+       "name"
+      ],
+      "type": "object"
+     },
+     "target": {
+      "description": "The field: a CSS selector on the page or one of its frames (`input[name=passport]`, `#otp`).",
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+     },
+     "why": {
+      "description": "Why the page needs it, in one line.",
+      "maxLength": 300,
+      "minLength": 1,
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "site",
+     "target",
+     "label",
+     "why"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "secure_input_fill",
+   "op": "secure_input_fill",
+   "lead": true,
+   "worker": false,
+   "browser": true,
+   "description": "A lead's call: fill a secure input from 1Password into its field: requestId is what request_secure_input returned. Call it on that page within 15 minutes of the request; it fills once, and from then on the session refuses reading values back.",
+   "inputSchema": {
+    "properties": {
+     "requestId": {
+      "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "requestId"
+    ],
+    "type": "object"
+   }
+  }
+ ],
+ "probes": {
+  "spawn_agent": {
+   "/kind": {
+    "variants": [
+     "write",
+     "read",
+     "review"
+    ],
+    "expected": "string or map"
+   },
+   "/notDuplicateOf": {
+    "expected": "a sequence"
+   },
+   "/notDuplicateOf/*": {
+    "expected": "a string"
+   },
+   "/notDuplicateWhy": {
+    "expected": "a string"
+   },
+   "/paths": {
+    "expected": "a sequence"
+   },
+   "/paths/*": {
+    "expected": "a string"
+   },
+   "/pr": {
+    "expected": "a string",
+    "pattern": "expected an absolute http:// or https:// URL, got {got}"
+   },
+   "/profile": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9][a-z0-9._-]{0,31}$, got {got}"
+   },
+   "/prompt": {
+    "expected": "a string"
+   },
+   "/qa": {
+    "expected": "a boolean"
+   },
+   "/repo": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9-]{1,32}$, got {got}"
+   },
+   "/title": {
+    "expected": "a string"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "message_agent": {
+   "/message": {
+    "expected": "a string"
+   },
+   "/now": {
+    "expected": "a boolean"
+   },
+   "/taskId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^T[1-9][0-9]*$, got {got}"
+   }
+  },
+  "agents": {
+   "/state": {
+    "variants": [
+     "queued",
+     "running",
+     "idle",
+     "done",
+     "failed",
+     "cancelled"
+    ],
+    "expected": "string or map"
+   },
+   "/taskId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^T[1-9][0-9]*$, got {got}"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "stop_agent": {
+   "/reason": {
+    "expected": "a string"
+   },
+   "/taskId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^T[1-9][0-9]*$, got {got}"
+   }
+  },
+  "brief": {
+   "/asked": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^N[1-9][0-9]*$, got {got}"
+   },
+   "/brief": {
+    "expected": "struct Brief",
+    "fields": [
+     "goal",
+     "why",
+     "pointers",
+     "constraints",
+     "doneWhen"
+    ]
+   },
+   "/brief/constraints": {
+    "expected": "a sequence"
+   },
+   "/brief/constraints/*": {
+    "expected": "a string"
+   },
+   "/brief/doneWhen": {
+    "expected": "a sequence"
+   },
+   "/brief/doneWhen/*": {
+    "expected": "a string"
+   },
+   "/brief/goal": {
+    "expected": "a string"
+   },
+   "/brief/pointers": {
+    "expected": "a sequence"
+   },
+   "/brief/pointers/*": {
+    "expected": "a string"
+   },
+   "/brief/why": {
+    "expected": "a string"
+   },
+   "/text": {
+    "expected": "a string"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "request_secret": {
+   "/envName": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[A-Za-z_][A-Za-z0-9_]{0,127}$, got {got}"
+   },
+   "/key": {
+    "expected": "a string",
+    "pattern": "expected a lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80, got {got}"
+   },
+   "/sink": {
+    "expected": "a string",
+    "pattern": "expected env:<machine>:<absolute path>, file:<machine>:<absolute path> (with no empty, . or .. path segment) order:<machine>:<order id> or fill:<machine>:<browser session id>, got {got}"
+   },
+   "/text": {
+    "expected": "a string"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "request_withdraw": {
+   "/requestId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^Q[1-9][0-9]*$, got {got}"
+   }
+  },
+  "decide": {
+   "/key": {
+    "expected": "a string",
+    "pattern": "expected a lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80, got {got}"
+   },
+   "/scope": {
+    "variants": [
+     "project",
+     "workstream"
+    ],
+    "expected": "string or map"
+   },
+   "/value": {
+    "expected": "a string"
+   },
+   "/why": {
+    "expected": "a string"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "close": {
+   "/why": {
+    "expected": "a string"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "gated_run": {
+   "/argv": {
+    "expected": "a sequence"
+   },
+   "/argv/*": {
+    "expected": "a string"
+   },
+   "/class": {
+    "variants": [
+     "irreversible",
+     "money",
+     "credential"
+    ],
+    "expected": "string or map"
+   },
+   "/cwd": {
+    "expected": "a string",
+    "pattern": "expected an absolute path of at most 1000 characters, got {got}"
+   },
+   "/reason": {
+    "expected": "a string"
+   },
+   "/secretEnv": {
+    "expected": "a sequence"
+   },
+   "/secretEnv/*": {
+    "expected": "struct SecretEnvEntry",
+    "fields": [
+     "name",
+     "secretKey"
+    ]
+   },
+   "/secretEnv/*/name": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[A-Za-z_][A-Za-z0-9_]{0,127}$, got {got}"
+   },
+   "/secretEnv/*/secretKey": {
+    "expected": "a string",
+    "pattern": "expected a lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80, got {got}"
+   },
+   "/timeoutSec": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 14400"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "decisions_search": {
+   "/query": {
+    "expected": "a string"
+   }
+  },
+  "remember": {
+   "/replaces": {
+    "expected": "a string"
+   },
+   "/scope": {
+    "variants": [
+     "user",
+     "project"
+    ],
+    "expected": "string or map"
+   },
+   "/text": {
+    "expected": "a string"
+   },
+   "/topic": {
+    "expected": "a string",
+    "pattern": "expected a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory, got {got}"
+   }
+  },
+  "forget": {
+   "/entry": {
+    "expected": "a string"
+   },
+   "/reason": {
+    "expected": "a string"
+   },
+   "/scope": {
+    "variants": [
+     "user",
+     "project"
+    ],
+    "expected": "string or map"
+   },
+   "/topic": {
+    "expected": "a string",
+    "pattern": "expected a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory, got {got}"
+   }
+  },
+  "memory_read": {
+   "/topic": {
+    "expected": "a string",
+    "pattern": "expected a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory, got {got}"
+   }
+  },
+  "nudge": {
+   "/reason": {
+    "expected": "a string"
+   }
+  },
+  "automation_create": {
+   "/name": {
+    "expected": "a string"
+   },
+   "/prompt": {
+    "expected": "a string"
+   },
+   "/schedule": {
+    "expected": "struct AutomationScheduleCall",
+    "fields": [
+     "cron",
+     "at",
+     "tz"
+    ]
+   },
+   "/schedule/at": {
+    "expected": "a string"
+   },
+   "/schedule/cron": {
+    "expected": "a string"
+   },
+   "/schedule/tz": {
+    "expected": "a string",
+    "pattern": "expected an IANA time zone name such as Europe/London, got {got}"
+   }
+  },
+  "automation_update": {
+   "/automationId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^au_[A-Za-z0-9_-]{6,40}$, got {got}"
+   },
+   "/name": {
+    "expected": "a string"
+   },
+   "/paused": {
+    "expected": "a boolean"
+   },
+   "/prompt": {
+    "expected": "a string"
+   },
+   "/removeSchedule": {
+    "expected": "a boolean"
+   },
+   "/schedule": {
+    "expected": "struct AutomationScheduleCall",
+    "fields": [
+     "cron",
+     "at",
+     "tz"
+    ]
+   },
+   "/schedule/at": {
+    "expected": "a string"
+   },
+   "/schedule/cron": {
+    "expected": "a string"
+   },
+   "/schedule/tz": {
+    "expected": "a string",
+    "pattern": "expected an IANA time zone name such as Europe/London, got {got}"
+   }
+  },
+  "automation_delete": {
+   "/automationId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^au_[A-Za-z0-9_-]{6,40}$, got {got}"
+   }
+  },
+  "automation_run": {
+   "/automationId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^au_[A-Za-z0-9_-]{6,40}$, got {got}"
+   }
+  },
+  "automation_runs": {
+   "/automationId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^au_[A-Za-z0-9_-]{6,40}$, got {got}"
+   },
+   "/runId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^ar_[A-Za-z0-9_-]{6,40}$, got {got}"
+   }
+  },
+  "automation_confirm": {
+   "/automationId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^au_[A-Za-z0-9_-]{6,40}$, got {got}"
+   }
+  },
+  "checklist": {
+   "/items": {
+    "expected": "a sequence"
+   },
+   "/items/*": {
+    "expected": "struct TodoEdit",
+    "fields": [
+     "id",
+     "text",
+     "state",
+     "link",
+     "remove"
+    ]
+   },
+   "/items/*/id": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 9007199254740991"
+   },
+   "/items/*/link": {
+    "expected": "struct TodoLink",
+    "fields": [
+     "pr",
+     "taskId",
+     "workstreamId"
+    ]
+   },
+   "/items/*/link/pr": {
+    "expected": "a string",
+    "pattern": "expected a PR URL https://github.com/<owner>/<name>/pull/<n>, got {got}"
+   },
+   "/items/*/link/taskId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^T[1-9][0-9]*$, got {got}"
+   },
+   "/items/*/link/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   },
+   "/items/*/remove": {
+    "expected": "a boolean"
+   },
+   "/items/*/state": {
+    "variants": [
+     "todo",
+     "doing",
+     "done"
+    ],
+    "expected": "string or map"
+   },
+   "/items/*/text": {
+    "expected": "a string"
+   },
+   "/replace": {
+    "expected": "a boolean"
+   }
+  },
+  "skill_install": {
+   "/scope": {
+    "variants": [
+     "project",
+     "global"
+    ],
+    "expected": "string or map"
+   },
+   "/skill": {
+    "expected": "a string",
+    "pattern": "expected lowercase letters, digits and single hyphens, at most 64 characters, got {got}"
+   },
+   "/source": {
+    "expected": "a string"
+   }
+  },
+  "skill_save": {
+   "/name": {
+    "expected": "a string",
+    "pattern": "expected lowercase letters, digits and single hyphens, at most 64 characters, got {got}"
+   },
+   "/text": {
+    "expected": "a string"
+   },
+   "/why": {
+    "expected": "a string"
+   }
+  },
+  "project_message": {
+   "/hub": {
+    "expected": "a string"
+   },
+   "/project": {
+    "expected": "a string"
+   },
+   "/text": {
+    "expected": "a string"
+   }
+  },
+  "factory_status": {
+   "/hub": {
+    "expected": "a string"
+   },
+   "/project": {
+    "expected": "a string"
+   }
+  },
+  "chat_search": {
+   "/before": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^m[1-9][0-9]*$, got {got}"
+   },
+   "/from": {
+    "expected": "a string"
+   },
+   "/to": {
+    "expected": "a string"
+   },
+   "/words": {
+    "expected": "a string"
+   }
+  },
+  "chat_read": {
+   "/after": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 10"
+   },
+   "/before": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 10"
+   },
+   "/messageId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^m[1-9][0-9]*$, got {got}"
+   }
+  },
+  "confirm_step": {
+   "/button": {
+    "expected": "a string"
+   },
+   "/does": {
+    "expected": "a string"
+   },
+   "/page": {
+    "expected": "a string"
+   },
+   "/screenshot": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^F[1-9][0-9]*$, got {got}"
+   },
+   "/site": {
+    "expected": "a string"
+   }
+  },
+  "usage_resume": {
+   "/machineId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9-]{1,32}$, got {got}"
+   }
+  },
+  "change_enqueue": {
+   "/after": {
+    "expected": "a sequence"
+   },
+   "/after/*": {
+    "expected": "a string",
+    "pattern": "expected a PR URL https://github.com/<owner>/<name>/pull/<n>, got {got}"
+   },
+   "/prUrl": {
+    "expected": "a string",
+    "pattern": "expected a PR URL https://github.com/<owner>/<name>/pull/<n>, got {got}"
+   },
+   "/taskId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^T[1-9][0-9]*$, got {got}"
+   },
+   "/workstreamId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^W[1-9][0-9]*$, got {got}"
+   }
+  },
+  "review_read": {
+   "/pr": {
+    "expected": "a string"
+   }
+  },
+  "chat_file": {
+   "/path": {
+    "expected": "a string"
+   }
+  },
+  "publish_artifact": {
+   "/content": {
+    "expected": "a string"
+   },
+   "/format": {
+    "variants": [
+     "md",
+     "html"
+    ],
+    "expected": "string or map"
+   },
+   "/name": {
+    "expected": "a string",
+    "pattern": "expected lowercase letters, digits and single hyphens, at most 64 characters, got {got}"
+   },
+   "/path": {
+    "expected": "a string"
+   },
+   "/title": {
+    "expected": "a string"
+   }
+  },
+  "session_start": {
+   "/kind": {
+    "variants": [
+     "browser",
+     "android",
+     "ios",
+     "linux_desktop",
+     "mac"
+    ],
+    "expected": "string or map"
+   },
+   "/purpose": {
+    "expected": "a string"
+   }
+  },
+  "desktop": {
+   "/action": {
+    "variants": [
+     "screenshot",
+     "left_click",
+     "right_click",
+     "middle_click",
+     "double_click",
+     "triple_click",
+     "mouse_move",
+     "left_click_drag",
+     "type",
+     "key",
+     "scroll",
+     "wait",
+     "cursor_position",
+     "launch",
+     "agent_desktop"
+    ],
+    "expected": "string or map"
+   },
+   "/coordinate": {
+    "expected": "an array of length 2"
+   },
+   "/coordinate/*": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 8192"
+   },
+   "/duration": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 30"
+   },
+   "/scroll_amount": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 50"
+   },
+   "/scroll_direction": {
+    "variants": [
+     "up",
+     "down",
+     "left",
+     "right"
+    ],
+    "expected": "string or map"
+   },
+   "/start_coordinate": {
+    "expected": "an array of length 2"
+   },
+   "/start_coordinate/*": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 8192"
+   },
+   "/text": {
+    "expected": "a string"
+   }
+  },
+  "request_takeover": {
+   "/reason": {
+    "expected": "a string"
+   }
+  },
+  "fill_credential": {
+   "/ref": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$, got {got}"
+   },
+   "/submit": {
+    "expected": "a boolean"
+   },
+   "/target": {
+    "expected": "a string"
+   }
+  },
+  "purchase_request": {
+   "/items": {
+    "expected": "a sequence"
+   },
+   "/items/*": {
+    "expected": "struct PurchaseItem",
+    "fields": [
+     "name",
+     "quantity",
+     "amount"
+    ]
+   },
+   "/items/*/amount": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$, got {got}"
+   },
+   "/items/*/name": {
+    "expected": "a string"
+   },
+   "/items/*/quantity": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 1 and 10000"
+   },
+   "/shop": {
+    "expected": "struct PurchaseShop",
+    "fields": [
+     "domain",
+     "name"
+    ]
+   },
+   "/shop/domain": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$, got {got}"
+   },
+   "/shop/name": {
+    "expected": "a string"
+   },
+   "/total": {
+    "expected": "struct PurchaseTotal",
+    "fields": [
+     "amount",
+     "currency"
+    ]
+   },
+   "/total/amount": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$, got {got}"
+   },
+   "/total/currency": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[A-Z]{3}$, got {got}"
+   }
+  },
+  "purchase_fill": {
+   "/requestId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^Q[1-9][0-9]*$, got {got}"
+   }
+  },
+  "request_secure_input": {
+   "/label": {
+    "expected": "a string"
+   },
+   "/ref": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$, got {got}"
+   },
+   "/site": {
+    "expected": "struct SecureInputSite",
+    "fields": [
+     "domain",
+     "name"
+    ]
+   },
+   "/site/domain": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$, got {got}"
+   },
+   "/site/name": {
+    "expected": "a string"
+   },
+   "/target": {
+    "expected": "a string"
+   },
+   "/why": {
+    "expected": "a string"
+   }
+  },
+  "secure_input_fill": {
+   "/requestId": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^Q[1-9][0-9]*$, got {got}"
+   }
+  },
+  "report": {
+   "/blocking": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 9007199254740991"
+   },
+   "/nonBlocking": {
+    "expected": "a JSON number",
+    "fraction": "expected an integer",
+    "range": "expected an integer between 0 and 9007199254740991"
+   },
+   "/summary": {
+    "expected": "a string"
+   }
+  },
+  "ask_lead": {
+   "/question": {
+    "expected": "a string"
+   }
+  },
+  "wait_ci": {
+   "/url": {
+    "expected": "a string"
+   }
+  }
+ }
+}
