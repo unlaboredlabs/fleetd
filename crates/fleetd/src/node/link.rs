@@ -355,7 +355,8 @@ type WsStream = futures_util::stream::SplitStream<Ws>;
 type WsSink = futures_util::stream::SplitSink<Ws, Message>;
 
 /// A hub message read off the link: its frame, or one that doesn't decode, which a live link refuses alone
-/// (crate::link_frames).
+/// (crate::link_frames). A frame isn't boxed: nearly every message is one.
+#[allow(clippy::large_enum_variant)]
 enum Read {
     Frame(HubToNode),
     Undecodable { bytes: usize, bad: Undecodable },
