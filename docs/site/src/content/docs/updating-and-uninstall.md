@@ -69,7 +69,10 @@ the sidebar says **Updated**; hover it for the version.
 
 When a part fails, the others still finish:
 
-- A failed download or a checksum mismatch changes nothing on that machine.
+- A failed download or a checksum mismatch changes nothing on that machine. When GitHub's download link for a release
+  file fails (a server error or no answer), the file comes through GitHub's releases API instead, checked against
+  `SHA256SUMS` the same way. When both fail, the line says **GitHub's downloads are failing right now, try again
+  later**.
 - A build that doesn't come up healthy is put back on its own, and the machine runs its previous build again.
 - A machine that is offline, or runs a fleetd too old to update from the hub, is skipped and says how to update it.
 - If the hub itself didn't update, its machines aren't asked, and **Update** tries the whole update again.

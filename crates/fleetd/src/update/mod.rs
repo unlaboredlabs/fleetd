@@ -10,7 +10,9 @@
 //!
 //! Release assets (built by .github/workflows/build-release.yml) have version-less names next to `SHA256SUMS` and
 //! `release.json`, at `releases/download/edge/` or `releases/latest/download/`. Those are CDN downloads, not the
-//! GitHub API, so there is no token and no rate limit. `FLEETD_BASE_URL` points at another asset directory.
+//! GitHub API, so there is no token and no rate limit. When one answers a server error or doesn't answer, the same
+//! asset comes through the releases API instead, checked the same way. `FLEETD_BASE_URL` points at another asset
+//! directory.
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
@@ -117,11 +119,16 @@ pub trait Feed: Send + Sync {
     }
 }
 
-/// The real feed: plain GETs under `base`.
+/// The real feed: plain GETs under `base`, and for a GitHub release, its `api` when those fail.
 pub struct HttpFeed {
     http: reqwest::Client,
     base: String,
+    api: Option<String>,
 }
+
+/// How a feed's error begins when an asset failed both from its download link and through GitHub's API: shown as it
+/// is, not as a "couldn't download".
+pub const GITHUB_FAILING: &str = "GitHub's downloads are failing right now, try again later";
 
 /// A download that gets no byte for this long stops, and a build's goes on from where it stopped. No limit on the
 /// whole: a build is 50-130 MB, which takes most of an hour at 1 Mbit/s.
@@ -135,14 +142,46 @@ const RESUME_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl HttpFeed {
     pub fn new(base: String) -> Self {
+        let api = release_api(&base);
+        Self::with_api(base, api)
+    }
+
+    /// A feed whose assets come through the releases API at `api` when their download links fail.
+    pub fn with_api(base: String, api: Option<String>) -> Self {
         let http = reqwest::Client::builder()
             .user_agent(format!("fleetd/{}", crate::version()))
             .connect_timeout(std::time::Duration::from_secs(20))
             .read_timeout(STALL)
             .build()
             .unwrap_or_default();
-        Self { http, base }
+        Self { http, base, api }
     }
+}
+
+/// GitHub's API for the release whose download directory is `base`: `releases/download/<tag>` or
+/// `releases/latest/download` under `https://github.com/<owner>/<repo>/`.
+fn release_api(base: &str) -> Option<String> {
+    let (repo, release) = base
+        .strip_prefix("https://github.com/")?
+        .split_once("/releases/")?;
+    let release = match release.trim_end_matches('/') {
+        "latest/download" => "latest".to_owned(),
+        tag => format!("tags/{}", tag.strip_prefix("download/")?),
+    };
+    Some(format!(
+        "https://api.github.com/repos/{repo}/releases/{release}"
+    ))
+}
+
+#[derive(serde::Deserialize)]
+struct ApiRelease {
+    assets: Vec<ApiAsset>,
+}
+
+#[derive(serde::Deserialize)]
+struct ApiAsset {
+    name: String,
+    url: String,
 }
 
 /// Why a GET failed: `Again` for what asking again may fix (the network, a server error), `Final` for the rest.
@@ -151,10 +190,69 @@ enum Fail {
     Final(String),
 }
 
+/// The error when an asset failed from its download link (`link`) and through the API (`api`).
+fn both_failed(link: &str, api: &str) -> String {
+    format!("{GITHUB_FAILING} ({link}; through GitHub's API: {api})")
+}
+
+/// The API's error `e`, after the download link's (`link`) when it came through the API.
+fn after(link: Option<String>, e: String) -> String {
+    match link {
+        Some(link) => both_failed(&link, &e),
+        None => e,
+    }
+}
+
 impl HttpFeed {
-    /// A GET of a build from byte `from`, or with `None` of a small file (within [`SMALL_WAIT`]).
-    async fn send(&self, url: &str, from: Option<u64>) -> Result<reqwest::Response, Fail> {
+    /// `name`'s URL in the release's API, which answers with the asset itself to `Accept: application/octet-stream`.
+    async fn api_url(&self, api: &str, name: &str) -> Result<String, String> {
+        let response = self
+            .http
+            .get(api)
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .timeout(SMALL_WAIT)
+            .send()
+            .await
+            .map_err(|e| format!("GET `{api}`: {e}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("GET `{api}`: {status}"));
+        }
+        let release: ApiRelease = response
+            .json()
+            .await
+            .map_err(|e| format!("GET `{api}`: {e}"))?;
+        release
+            .assets
+            .into_iter()
+            .find(|a| a.name == name)
+            .map(|a| a.url)
+            .ok_or_else(|| format!("`{name}` is not in the release at `{api}`"))
+    }
+
+    /// A small file's bytes from `url`; `api` for an asset URL of the releases API.
+    async fn fetch(&self, url: &str, api: bool) -> Result<Vec<u8>, Fail> {
+        Ok(self
+            .send(url, None, api)
+            .await?
+            .bytes()
+            .await
+            .map_err(|e| Fail::Again(format!("GET `{url}`: {e}")))?
+            .to_vec())
+    }
+
+    /// A GET of a build from byte `from`, or with `None` of a small file (within [`SMALL_WAIT`]); `api` for an asset
+    /// URL of the releases API.
+    async fn send(
+        &self,
+        url: &str,
+        from: Option<u64>,
+        api: bool,
+    ) -> Result<reqwest::Response, Fail> {
         let mut request = self.http.get(url);
+        if api {
+            request = request.header(reqwest::header::ACCEPT, "application/octet-stream");
+        }
         match from {
             None => request = request.timeout(SMALL_WAIT),
             Some(from) if from > 0 => {
@@ -192,14 +290,21 @@ impl Feed for HttpFeed {
     fn get<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Vec<u8>, String>> {
         Box::pin(async move {
             let url = format!("{}/{name}", self.base);
-            Ok(self
-                .send(&url, None)
-                .await
-                .map_err(|(Fail::Again(e) | Fail::Final(e))| e)?
-                .bytes()
-                .await
-                .map_err(|e| format!("GET `{url}`: {e}"))?
-                .to_vec())
+            let link = match self.fetch(&url, false).await {
+                Ok(bytes) => return Ok(bytes),
+                Err(Fail::Final(e)) => return Err(e),
+                Err(Fail::Again(e)) => e,
+            };
+            let Some(api) = &self.api else {
+                return Err(link);
+            };
+            match self.api_url(api, name).await {
+                Ok(url) => self
+                    .fetch(&url, true)
+                    .await
+                    .map_err(|(Fail::Again(e) | Fail::Final(e))| both_failed(&link, &e)),
+                Err(e) => Err(both_failed(&link, &e)),
+            }
         })
     }
 
@@ -209,11 +314,13 @@ impl Feed for HttpFeed {
         sink: &'a mut Sink<'_>,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let url = format!("{}/{name}", self.base);
+            let mut url = format!("{}/{name}", self.base);
+            // The download link's failure once the asset comes through the API instead.
+            let mut link: Option<String> = None;
             let (mut got, mut tries) = (0u64, 0u32);
             loop {
                 let before = got;
-                let cut = match self.send(&url, Some(got)).await {
+                let cut = match self.send(&url, Some(got), link.is_some()).await {
                     Ok(mut response) => loop {
                         match response.chunk().await {
                             Ok(Some(chunk)) => {
@@ -224,12 +331,23 @@ impl Feed for HttpFeed {
                             Err(e) => break format!("GET `{url}`: {e}"),
                         }
                     },
-                    Err(Fail::Final(e)) => return Err(e),
-                    Err(Fail::Again(e)) => e,
+                    Err(Fail::Final(e)) => return Err(after(link, e)),
+                    Err(Fail::Again(e)) => match (&link, &self.api) {
+                        // A download link that answers a server error or doesn't answer: the API from here on.
+                        (None, Some(api)) => {
+                            url = self
+                                .api_url(api, name)
+                                .await
+                                .map_err(|a| both_failed(&e, &a))?;
+                            (link, tries) = (Some(e), 0);
+                            continue;
+                        }
+                        _ => e,
+                    },
                 };
                 tries = if got > before { 1 } else { tries + 1 };
                 if tries > RESUMES {
-                    return Err(cut);
+                    return Err(after(link, cut));
                 }
                 tokio::time::sleep(RESUME_WAIT * tries).await;
             }
@@ -246,12 +364,10 @@ pub struct Release {
 
 /// The channel's release.json.
 pub async fn release(feed: &dyn Feed) -> Result<Release, Failure> {
-    let bytes = feed.get("release.json").await.map_err(|e| {
-        Failure::new(
-            UpdateStage::Download,
-            format!("couldn't read the release: {e}"),
-        )
-    })?;
+    let bytes = feed
+        .get("release.json")
+        .await
+        .map_err(|e| download_failure("couldn't read the release", e))?;
     serde_json::from_slice(&bytes).map_err(|e| {
         Failure::new(
             UpdateStage::Download,
@@ -262,12 +378,10 @@ pub async fn release(feed: &dyn Feed) -> Result<Release, Failure> {
 
 /// The release's SHA256SUMS.
 pub async fn sums(feed: &dyn Feed) -> Result<HashMap<String, String>, Failure> {
-    let sums = feed.get("SHA256SUMS").await.map_err(|e| {
-        Failure::new(
-            UpdateStage::Download,
-            format!("couldn't read the release's checksums: {e}"),
-        )
-    })?;
+    let sums = feed
+        .get("SHA256SUMS")
+        .await
+        .map_err(|e| download_failure("couldn't read the release's checksums", e))?;
     Ok(parse_sums(&String::from_utf8_lossy(&sums)))
 }
 
@@ -322,11 +436,18 @@ fn not_in_release(name: &str) -> Failure {
     )
 }
 
-fn download_failed(name: &str, e: &str) -> Failure {
-    Failure::new(
-        UpdateStage::Download,
-        format!("couldn't download `{name}`: {e}"),
-    )
+fn download_failed(name: &str, e: String) -> Failure {
+    download_failure(&format!("couldn't download `{name}`"), e)
+}
+
+/// A feed's error `e` as `what: e`, or as it is when it says GitHub's downloads are failing.
+fn download_failure(what: &str, e: String) -> Failure {
+    let message = if e.starts_with(GITHUB_FAILING) {
+        e
+    } else {
+        format!("{what}: {e}")
+    };
+    Failure::new(UpdateStage::Download, message)
 }
 
 fn not_kept(path: &Path, e: &std::io::Error) -> Failure {
@@ -340,7 +461,7 @@ fn not_kept(path: &Path, e: &std::io::Error) -> Failure {
 }
 
 async fn download(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
-    feed.get(name).await.map_err(|e| download_failed(name, &e))
+    feed.get(name).await.map_err(|e| download_failed(name, e))
 }
 
 /// Streams `name` into a new file at `part`, hashing it on the way: its SHA-256.
@@ -356,7 +477,7 @@ async fn download_to(feed: &dyn Feed, name: &str, part: &Path) -> Result<String,
             .map_err(|e| format!("couldn't write `{}`: {e}", part.display()))
     })
     .await
-    .map_err(|e| download_failed(name, &e))?;
+    .map_err(|e| download_failed(name, e))?;
     file.set_permissions(fs::Permissions::from_mode(0o755))
         .and_then(|()| file.sync_all())
         .map_err(|e| not_kept(part, &e))?;

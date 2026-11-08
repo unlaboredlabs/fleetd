@@ -489,6 +489,22 @@ describe("the sheet's lines, the notice and the note", () => {
     expect(v.nodes.find((n) => n.key === "builder")?.status).toBe("Put back: it didn't come up healthy within 90 s, so the old build was put back");
   });
 
+  it("says GitHub's downloads are failing when a build came neither from its link nor through its API", () => {
+    const github =
+      "GitHub's downloads are failing right now, try again later (GET `https://github.com/unlaboredlabs/fleetd/releases/download/edge/SHA256SUMS`: 504 Gateway Timeout; through GitHub's API: GET `https://api.github.com/repos/unlaboredlabs/fleetd/releases/tags/edge`: 504 Gateway Timeout)";
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "failed", stage: "download", message: github }),
+        p({ machineId: "mac", name: "mac", state: "failed", stage: "download", message: "couldn't download `fleetd-darwin-arm64`: GET: 404 Not Found" }),
+      ],
+      true,
+    );
+    const v = of({ run, flow: { phase: "finished", updated: false } });
+    expect(v.lines.find((l) => l.key === "builder")?.reason).toBe("GitHub's downloads are failing right now, try again later");
+    expect(v.lines.find((l) => l.key === "mac")?.reason).toBe("Couldn't download the new build");
+  });
+
   it("offers Retry for a skipped machine and a failed Claude Code, but not while a run goes or when the hub didn't update", () => {
     const run = runOf(
       [

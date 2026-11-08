@@ -154,8 +154,6 @@ async fn a_new_agent_under_the_cap_starts_at_high_load_and_full_memory() {
 
     let mut busy = load(500, 70.2);
     busy.mem_used_pct = Some(fleetd_contracts::prim::Int::unchecked(97));
-    busy.swap_used_pct = Some(fleetd_contracts::prim::Int::unchecked(100));
-    busy.mem_pressure_pct = Some(fleetd_contracts::prim::NonNegative::new(40.0).unwrap());
     hub.link.observe_load(&lab_a(), Some(busy), NODE_AT);
     assert_eq!(hub.link.paused(&lab_a()), None);
     start_queued(&hub.tasks).await;

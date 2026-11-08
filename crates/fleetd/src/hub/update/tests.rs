@@ -49,6 +49,8 @@ impl Refusal for Said {
 
 struct Fake {
     feed: Arc<FakeFeed>,
+    /// A real feed over a fake GitHub, given out instead of `feed` when set.
+    github: Option<Arc<dyn Feed>>,
     running: Mutex<String>,
     exe: PathBuf,
     service: Option<Service>,
@@ -79,6 +81,7 @@ impl Fake {
                 &[(ASSET, binary)],
                 &format!(r#"{{"cliVersion":"{NEW}"}}"#),
             )),
+            github: None,
             running: Mutex::new(OLD.into()),
             exe,
             service: Some(Service {
@@ -142,7 +145,7 @@ impl Fake {
 
 impl UpdatePorts for Fake {
     fn feed(&self, _: Channel) -> Arc<dyn Feed> {
-        self.feed.clone()
+        self.github.clone().unwrap_or_else(|| self.feed.clone())
     }
     fn running(&self) -> String {
         self.running.lock().unwrap().clone()
@@ -347,6 +350,49 @@ async fn a_checksum_mismatch_or_a_failed_download_leaves_everything_as_it_was() 
     })
     .await;
     assert_eq!(hub_state(&run), UpdateState::Failed);
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"old");
+}
+
+/// GitHub's download links answering 504: the hub's update comes through GitHub's API, checked against the sums, and
+/// when that fails too the Updates screen says GitHub's downloads are failing.
+#[tokio::test]
+async fn the_hub_updates_through_githubs_api_when_its_download_links_fail() {
+    let files = FakeFeed::with(&[(ASSET, b"new")], &format!(r#"{{"cliVersion":"{NEW}"}}"#))
+        .files
+        .into_inner()
+        .unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut fake = Fake::new(home.path(), b"new");
+    fake.github = Some(Arc::new(
+        crate::update::tests::fake_github(files.clone(), false, true).await,
+    ));
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(Some(HubChannel::Edge), false).unwrap();
+    let run = until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(run.to.as_ref().map(|t| t.as_str()), Some(NEW));
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"new");
+
+    let home = tempfile::tempdir().unwrap();
+    let mut fake = Fake::new(home.path(), b"new");
+    fake.github = Some(Arc::new(
+        crate::update::tests::fake_github(files, false, false).await,
+    ));
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(Some(HubChannel::Edge), false).unwrap();
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(
+        state(&run, None),
+        (UpdateState::Failed, Some(UpdateStage::Download))
+    );
+    let hub = &by_machine(&run)[&None];
+    let said = hub
+        .message
+        .as_ref()
+        .map(|m| m.to_string())
+        .unwrap_or_default();
+    assert!(said.starts_with(crate::update::GITHUB_FAILING), "{said}");
     assert_eq!(fs::read(&fake.exe).unwrap(), b"old");
 }
 

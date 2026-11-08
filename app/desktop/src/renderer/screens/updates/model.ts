@@ -314,8 +314,14 @@ const WHY: Readonly<Record<string, string>> = {
   health: "Didn't start, so it was put back",
 };
 
+/** How the hub's words begin when a download failed both from GitHub's links and through its API
+ * (crates/fleetd/src/update GITHUB_FAILING): said as it is, since GitHub is the problem, not the machine. */
+const GITHUB_FAILING = "GitHub's downloads are failing right now, try again later";
+
 const whyFailed = (p: UpdatePart): string =>
-  WHY[p.stage ?? ""] ?? (p.state === "rolled_back" ? "Put back: its old build runs again" : firstWords(p.message ?? "it stopped"));
+  p.stage === "download" && p.message?.startsWith(GITHUB_FAILING) === true
+    ? GITHUB_FAILING
+    : (WHY[p.stage ?? ""] ?? (p.state === "rolled_back" ? "Put back: its old build runs again" : firstWords(p.message ?? "it stopped")));
 
 type LineSay = Omit<PartLine, "key" | "name">;
 

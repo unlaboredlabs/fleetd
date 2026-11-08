@@ -340,6 +340,156 @@ async fn a_cut_off_download_goes_on_from_where_it_stopped() {
     assert_eq!(got, build[..got.len()]);
 }
 
+/// A fake GitHub serving one release's `files`: download links under `<url>/download`, and the releases API at
+/// `<url>/api/release`, whose assets answer `Accept: application/octet-stream` with a redirect to their bytes as
+/// GitHub's do. Each way is up, or answers every GET `504 Gateway Timeout`, as `links` and `api` say. The feed over it.
+pub(crate) async fn fake_github(
+    files: HashMap<String, Vec<u8>>,
+    links: bool,
+    api: bool,
+) -> HttpFeed {
+    use axum::extract::{Path, State};
+    use axum::http::{HeaderMap, StatusCode, header};
+    use axum::response::{IntoResponse, Redirect};
+    use serde_json::json;
+    type Files = std::sync::Arc<HashMap<String, Vec<u8>>>;
+    let down = || StatusCode::GATEWAY_TIMEOUT.into_response();
+    let serve = |files: &Files, name: &str| match files.get(name) {
+        Some(bytes) => bytes.clone().into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let assets: Vec<_> = files
+        .keys()
+        .map(|name| json!({"name": name, "url": format!("{url}/api/assets/{name}")}))
+        .collect();
+    let release = json!({"tag_name": "edge", "assets": assets});
+    let app = axum::Router::new()
+        .route(
+            "/download/{name}",
+            axum::routing::get(
+                move |State(files): State<Files>, Path(name): Path<String>| async move {
+                    if links { serve(&files, &name) } else { down() }
+                },
+            ),
+        )
+        .route(
+            "/api/release",
+            axum::routing::get(move || async move {
+                if api {
+                    axum::Json(release).into_response()
+                } else {
+                    down()
+                }
+            }),
+        )
+        .route(
+            "/api/assets/{name}",
+            axum::routing::get(
+                move |Path(name): Path<String>, headers: HeaderMap| async move {
+                    let raw = headers
+                        .get(header::ACCEPT)
+                        .is_some_and(|a| a == "application/octet-stream");
+                    match (api, raw) {
+                        (false, _) => down(),
+                        (true, true) => Redirect::to(&format!("/objects/{name}")).into_response(),
+                        (true, false) => axum::Json(json!({"name": name})).into_response(),
+                    }
+                },
+            ),
+        )
+        .route(
+            "/objects/{name}",
+            axum::routing::get(
+                move |State(files): State<Files>, Path(name): Path<String>| async move {
+                    serve(&files, &name)
+                },
+            ),
+        )
+        .with_state(std::sync::Arc::new(files));
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    HttpFeed::with_api(
+        format!("{url}/download"),
+        Some(format!("{url}/api/release")),
+    )
+}
+
+/// GitHub's download links answering 504 while its API answers: the update's files come through the API, and the
+/// build is checked against the release's SHA256SUMS the same way.
+#[tokio::test]
+async fn a_failing_download_link_falls_back_to_githubs_api() {
+    let build: Vec<u8> = (0..300_000u32).map(|n| (n % 251) as u8).collect();
+    let release = r#"{"cliVersion":"0.6.0-edge.202611081200+abcdef0"}"#;
+    let files = FakeFeed::with(&[("fleetd-linux-x64", &build)], release)
+        .files
+        .into_inner()
+        .unwrap();
+    let feed = fake_github(files.clone(), false, true).await;
+    assert_eq!(
+        crate::update::release(&feed)
+            .await
+            .unwrap()
+            .cli_version
+            .as_deref(),
+        Some("0.6.0-edge.202611081200+abcdef0")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd.next");
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), build);
+    assert_eq!(verified(&feed, "fleetd-linux-x64").await.unwrap(), build);
+
+    // Through the API too, a build that doesn't match the sums is refused and nothing lands.
+    let mut tampered = files;
+    tampered.insert("fleetd-linux-x64".into(), b"tampered".to_vec());
+    let feed = fake_github(tampered, false, true).await;
+    let path = dir.path().join("fleetd.tampered");
+    let mismatch = verified_to(&feed, "fleetd-linux-x64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.stage, UpdateStage::Checksum);
+    assert!(!path.exists());
+}
+
+/// Both ways failing: the update says GitHub's downloads are failing, not a generic "couldn't download".
+#[tokio::test]
+async fn githubs_downloads_failing_both_ways_is_said_plainly() {
+    let files = FakeFeed::with(&[("fleetd-linux-x64", b"new")], "{}")
+        .files
+        .into_inner()
+        .unwrap();
+    let feed = fake_github(files, false, false).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd.next");
+    let failures = [
+        crate::update::release(&feed).await.map(drop).unwrap_err(),
+        sums(&feed).await.map(drop).unwrap_err(),
+        verified_to(&feed, "fleetd-linux-x64", &path)
+            .await
+            .unwrap_err(),
+    ];
+    for failure in failures {
+        assert_eq!(failure.stage, UpdateStage::Download);
+        assert!(failure.message.starts_with(GITHUB_FAILING), "{failure}");
+        assert!(failure.message.contains("504 Gateway Timeout"), "{failure}");
+    }
+    assert!(!path.exists());
+}
+
+#[test]
+fn a_github_release_has_its_api() {
+    assert_eq!(
+        release_api("https://github.com/unlaboredlabs/fleetd/releases/download/edge").as_deref(),
+        Some("https://api.github.com/repos/unlaboredlabs/fleetd/releases/tags/edge")
+    );
+    assert_eq!(
+        release_api("https://github.com/unlaboredlabs/fleetd/releases/latest/download").as_deref(),
+        Some("https://api.github.com/repos/unlaboredlabs/fleetd/releases/latest")
+    );
+    assert_eq!(release_api("https://downloads.example.com/fleetd"), None);
+}
+
 #[tokio::test]
 async fn reads_the_channels_newest_cli() {
     let feed = FakeFeed::with(&[], r#"{"cliVersion":"0.6.0-edge.202610261056+1b563d7"}"#);
