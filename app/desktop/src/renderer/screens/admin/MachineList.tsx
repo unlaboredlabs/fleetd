@@ -1,12 +1,13 @@
 // Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state (and, unless online, what
-// it needs), a link to its page (its checklist, role, screens and max agents), Remove, and Repair while it is degraded
-// or offline. A search for a machine's role, screens or max agents lands on this list, since each is on a machine's
+// it needs), opening its page (its checklist, role, screens and max agents) from anywhere on the row, which a trailing
+// chevron marks, Remove, and Repair while it is degraded or offline. A search for a machine's role, screens or max agents lands on this list, since each is on a machine's
 // own page. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
 // machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. A
 // removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
+import { ChevronRight } from "lucide-react";
 import { useState, type RefCallback } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -63,7 +64,7 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
       ) : (
         <div className={a.list} role="list" aria-label="Machines">
           {machines.map((m) => (
-            <div key={m.machineId} className={a.row} role="listitem" aria-label={m.name}>
+            <div key={m.machineId} className={`${a.row} ${a.openRow}`} role="listitem" aria-label={m.name}>
               <div className={a.who}>
                 <div className={a.name}>
                   <a className={a.machineLink} href={toHash({ id: "settings", tab: "hub.machines", machine: m.machineId })}>
@@ -94,6 +95,7 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
                   Remove
                 </Button>
               </div>
+              <ChevronRight className={a.chevron} aria-hidden />
             </div>
           ))}
         </div>

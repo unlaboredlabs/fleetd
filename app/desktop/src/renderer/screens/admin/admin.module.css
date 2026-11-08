@@ -84,14 +84,52 @@
   min-width: 0;
 }
 
+/* A machine's row opens its page: the name's link covers the whole row (its ::after), a chevron trails it, and the
+   row lights on hover, deepens while pressed and takes the focus ring. Repair and Remove sit above the link. The row
+   reaches a step past the column on each side, so its text stays in line with the heading above. */
+.openRow {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+  transition: background-color var(--dur-quick);
+}
+.openRow:has(.machineLink:hover) {
+  background: var(--hover);
+}
+.openRow:has(.machineLink:active) {
+  background: var(--selected);
+}
+.openRow:has(.machineLink:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.openRow .controls {
+  position: relative;
+  z-index: 1;
+}
 .machineLink {
   color: inherit;
   text-decoration: none;
 }
-.machineLink:hover {
-  text-decoration: underline;
-  text-decoration-color: var(--hairline);
-  text-underline-offset: 3px;
+.machineLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+.machineLink:focus-visible {
+  outline: none;
+}
+.chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  transition: color var(--dur-quick);
+}
+.openRow:has(.machineLink:hover) .chevron,
+.openRow:has(.machineLink:focus-visible) .chevron {
+  color: var(--quiet);
 }
 
 /* A machine's checklist: one item per row between hairlines, a still glyph on the title's first line. */
