@@ -11,6 +11,7 @@
 // constant time, and never logs the secret or the body; the body is kept with its run and given to the lead.
 //
 // Runs are checked and recorded synchronously (`open`), so two triggers at once start one run without the Rust lock.
+// Orders open and close through the leads area's intake (`intake(hub)`), and a lead starts with `leads(hub).autoStart`.
 import type {
   Automation,
   AutomationRun,
@@ -28,6 +29,7 @@ import type { Hub } from "../api/hub.ts";
 import { uuidFrom } from "../executor/index.ts";
 import { leads } from "../leads/index.ts";
 import { unknownProject } from "../leads/seams.ts";
+import { intake, type IntakeInput } from "../leads/workstreams.ts";
 import { clip } from "../leads/text.ts";
 import { of as naviOf } from "../navi/store.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
@@ -84,33 +86,6 @@ export type Start =
   | { kind: "webhook"; payload: string }
   /** The schedule, due at `dueMs`. */
   | { kind: "schedule"; dueMs: number };
-
-// ---- the leads' seams (T2255's intake and leads core, D355) ----------------------------------------------------------
-
-/** An order opened for the lead (leads/workstreams.rs `IntakeInput`). */
-export type IntakeInput = { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "automation"; by: string };
-
-/** `hub.peek("intake")`: the orders' intake, which T2255's leads area makes. */
-export type IntakePort = {
-  /** Opens the order, or finds the one `clientRequestId` opened; throws a ToolError when it can't. */
-  intake(input: IntakeInput): { workstreamId: string };
-  /** Closes the project's order `workstreamId`; throws a ToolError when it can't. */
-  close(r: ProjectRef, workstreamId: string, why: string, by: string): Promise<unknown>;
-};
-
-/** leads/lead.rs `AutoStart`: the project had its lead, this call started it, or it waits, with why. */
-export type AutoStart = { kind: "running" } | { kind: "started" } | { kind: "held"; message: string };
-
-export const INTAKE_NOT_PORTED = "the Bun hub can't open orders yet (src/hub/leads: intake)";
-
-const intakePort = (hub: Hub) => hub.peek<IntakePort>("intake");
-
-/** Starts the project's lead if it has none (leads/lead.rs `auto_start`), through the leads area once it can. */
-async function autoStart(hub: Hub, r: ProjectRef): Promise<AutoStart> {
-  const area = leads(hub) as unknown as { autoStart?: (r: ProjectRef) => Promise<AutoStart> };
-  if (typeof area.autoStart !== "function") return { kind: "held", message: "the Bun hub can't start leads yet (src/hub/leads: autoStart)" };
-  return area.autoStart(r);
-}
 
 // ---- helpers --------------------------------------------------------------------------------------------------------
 
@@ -778,10 +753,8 @@ export class Automations {
 
   /** Opens an order through the leads' intake; a refusal's message when it can't. */
   private intake(input: IntakeInput): { workstreamId: string } | { error: string } {
-    const port = intakePort(this.hub);
-    if (!port) return { error: INTAKE_NOT_PORTED };
     try {
-      return { workstreamId: port.intake(input).workstreamId };
+      return { workstreamId: intake(this.hub).intake(input).workstreamId };
     } catch (e) {
       return { error: (e as Error).message };
     }
@@ -1007,10 +980,8 @@ export class Automations {
       const order = this.workstream(ws);
       const seen = order?.state === "open" && order.createdAt <= sent;
       if (!seen || leftovers(hub, r, ws).length > 0) continue;
-      const port = intakePort(hub);
-      if (!port) continue;
       try {
-        await port.close(r, ws, "the lead's turn for this run ended", `automation:${run.automationId}`);
+        await intake(hub).close(r, ws, "the lead's turn for this run ended", `automation:${run.automationId}`);
       } catch (error) {
         console.info(`Navi automation run left open (${ws}): ${(error as Error).message}`);
         continue;
@@ -1034,7 +1005,7 @@ export class Automations {
     if (w === undefined) return;
     let lead: string;
     try {
-      const started = await autoStart(this.hub, a.projectRef);
+      const started = await leads(this.hub).autoStart(a.projectRef);
       lead =
         started.kind === "running" ? "the lead has it" : started.kind === "started" ? "the lead started with it" : `it waits for the lead: ${started.message}`;
     } catch (error) {
