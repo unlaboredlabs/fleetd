@@ -23,7 +23,7 @@ no order, and it is on the project's Instructions & memory, beside the memory it
 
 ## Manage them in the app
 
-Open **Settings → Projects → Automations** and pick a project. There you can:
+Open **Settings → Projects**, pick a project, then its **Automations** tab. There you can:
 
 - **New automation**: a name, the prompt, and its triggers. While you type a cron, the editor shows it in words
   ("At 09:00, Monday to Friday (Europe/Berlin)") or says what's wrong with it.

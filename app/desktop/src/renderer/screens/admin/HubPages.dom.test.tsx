@@ -140,6 +140,16 @@ const button = (text: string, within: ParentNode = document) => {
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };
+/** Picks a tab: Radix's tabs open on a pointer press, not a click. */
+const tab = async (list: HTMLElement | null, name: string) => {
+  const t = [...(list?.querySelectorAll<HTMLElement>("[role='tab']") ?? [])].find((x) => x.textContent === name);
+  if (t === undefined) throw new Error(`no tab ${name}`);
+  await act(async () => {
+    t.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 3; i++) await settle();
+};
 const click = async (el: HTMLElement) => {
   await act(async () => {
     el.click();
@@ -158,19 +168,25 @@ const type = async (el: HTMLTextAreaElement, text: string) => {
 const sent = (tool: string) => calls.filter((c) => c.tool === tool && c.input["dryRun"] !== true).map((c) => c.input);
 const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
 
-it("nests Every project's pages, Setup last saying how many required steps are left, and the prompts only under Every project's Prompts", async () => {
+it("lists the Hub group's pages flat, Setup last saying how many required steps are left, and Every project's four under tabs on its page", async () => {
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Updates", "Every project", "Profiles", "Tools & skills", "Instructions & memory", "Prompts", "Hub accounts", "Setup2 left"]);
-  expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).toBeNull();
+  expect(rows).toEqual(["People", "Machines", "Updates", "Every project", "Hub accounts", "Setup2 left"]);
+  // Nothing nested and nothing to pick in the sidebar.
+  expect(host.querySelector("nav[aria-label='Settings'] [role='group']")).toBeNull();
+  expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
 
   await click(button("Every project", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/hub/profiles");
   expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
-  await click(button("Prompts", nav() ?? document));
+  expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Every project']");
+  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Profiles", "Tools & skills", "Instructions & memory", "Prompts"]);
+  await tab(tabs, "Prompts");
   expect(window.location.hash).toBe("#/settings/hub/prompts");
-  expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.prompts']")?.querySelector("[role='list']")).not.toBeNull();
+  expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
 });
 
 it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub on Hub accounts", async () => {
@@ -206,10 +222,17 @@ it("gathers what reaches every project on Every project's pages, and saves its i
 it("opens a hub-wide prompt from under Every project's Prompts and saves it hub-wide, with no project to pick", async () => {
   window.location.hash = "#/settings/hub/prompts";
   await render(admin);
-  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Prompts']");
-  const first = group?.querySelector<HTMLButtonElement>("button");
+  const first = host.querySelector<HTMLButtonElement>("[data-screen='settings.hub.prompts'] [role='list'] button");
   if (!first) throw new Error("no prompt listed");
   await click(first);
+  expect(window.location.hash).toMatch(/^#\/settings\/hub\/prompts\?prompt=/u);
+  // The way back goes to the list, and the prompt opens from it again.
+  await click(button("← Prompts"));
+  expect(window.location.hash).toBe("#/settings/hub/prompts");
+  expect(host.querySelector("[data-text='code'] textarea")).toBeNull();
+  const again = host.querySelector<HTMLButtonElement>("[data-screen='settings.hub.prompts'] [role='list'] button");
+  if (!again) throw new Error("no prompt listed");
+  await click(again);
   expect(window.location.hash).toMatch(/^#\/settings\/hub\/prompts\?prompt=/u);
   expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
   const editor = host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea");
