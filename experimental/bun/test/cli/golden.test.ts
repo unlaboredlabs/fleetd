@@ -288,6 +288,9 @@ const OFFLINE: Case[] = [
       writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://127.0.0.1:1", machines: { "builder-9": { sshHost: "builder-9.invalid", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 } } }));
     } },
   { name: "machine-remove-bad-id", argv: ["machine", "remove", "Bad_Id"] },
+  // The hub's own wizard, scripted: --yes, --no-service, nothing listening; its claude and gh lines are this machine's.
+  { name: "init-yes-not-started", live: true, argv: ["init", "--yes", "--no-service", "--listen", "127.0.0.1:1", "--git-identity", "Dev <1+dev@users.noreply.github.com>"] },
+  { name: "init-yes-no-identity", live: true, argv: ["init", "--yes", "--no-service", "--listen", "127.0.0.1:1"], env: { PATH: "/usr/bin:/bin" } },
   { name: "hub-key-missing", argv: ["hub", "key"] },
   { name: "hub-key-unknown", argv: ["hub", "key", "frob"] },
   { name: "hub-key-create-no-name", argv: ["hub", "key", "create"] },
