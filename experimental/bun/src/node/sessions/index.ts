@@ -37,6 +37,12 @@ import { CallRefusal } from "../actions/refusal.ts";
 import { forgetSignins, signinsKept } from "../actions/signins.ts";
 import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
+import { Steers } from "./steers.ts";
+import * as setup from "../worktree/setup.ts";
+import * as hooks from "../worktree/hooks.ts";
+import * as warm from "../worktree/warm.ts";
+import { gitCommandEnv } from "../util.ts";
+import type { WorktreeSetup } from "../../shared/contracts.ts";
 import { NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
 import {
   FOLDER_NOT_EMPTY,
@@ -68,6 +74,29 @@ const EXIT_WAIT_MS = 20_000;
 const PROGRESS_EVERY_MS = 10_000;
 const SPANS_PER_FRAME = 256;
 const WITHDRAW_WAIT_MS = 3_000;
+/** How long a mode-`now` send waits for claude's answer to its stop before replying without it. */
+const SEND_NOW_WAIT_MS = 2_000;
+/** After a wake, how long a run's claude may say nothing before the node takes its stream as lost with the network. */
+const WAKE_GRACE_MS = 60_000;
+const REAP_GRACE_MS = 10_000;
+/** A Monitor's deadline when its call names none, and the longest claude gives one; it may fire a minute past it. */
+const MONITOR_DEFAULT_MS = 5 * 60_000;
+const MONITOR_MAX_MS = 30 * 60_000;
+const MONITOR_GRACE_MS = 60_000;
+
+/** What the agent is told when the Monitors it waited on were lost `when` its claude went. */
+export function monitorsLost(lost: { description?: string }[], when: string): string {
+  const named = lost.flatMap((m) => (m.description ? [`"${m.description}"`] : []));
+  const [what, were] = lost.length === 1 ? ["Your Monitor", "was"] : ["Your Monitors", "were"];
+  return `${named.length ? `${what} ${named.join(", ")}` : what} ${were} lost when ${when}. Check what you were waiting for again.`;
+}
+
+const exitWords = (exit: state.ExitInfo) =>
+  exit.signal !== null
+    ? `your claude process was killed (signal ${exit.signal})`
+    : exit.code !== null
+      ? `your claude process exited (code ${exit.code})`
+      : "your claude process exited";
 
 class Refusal extends Error {
   constructor(
@@ -128,7 +157,24 @@ export type SessionConfig = {
   /** The Rust fleetd binary: it runs each session's host, and fleetd's MCP server and hold hook inside sessions. */
   nativeBin: string;
   boxKey?: NodeBoxKey;
+  /** The node's own retries of a run that failed Overloaded or Network, after claude's: 1, 4 and 15 min, ±10%. */
+  retryScheduleMs?: number[];
+  /** Idle processes cost RAM: one without an active run this long is closed; the next send resumes it. */
+  idleReapMs?: number;
 };
+
+/** What a node retry sends, with `--resume`, so claude picks the turn back up. */
+export const RETRY_MESSAGE = "Continue where you left off.";
+export const MAX_RUN_RETRIES = 3;
+
+/** The delay before retry `attempt` (1-based): 1, 4 and 15 minutes, each ±10% by `unit` in [0, 1), whole seconds. */
+export function retryDelayMs(attempt: number, unit = Math.random()): number | undefined {
+  if (attempt < 1 || attempt > MAX_RUN_RETRIES) return undefined;
+  const base = Math.min(60_000 * 4 ** (attempt - 1), 15 * 60_000);
+  return Math.round((base * (0.9 + 0.2 * Math.min(1, Math.max(0, unit)))) / 1000) * 1000;
+}
+
+const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "network";
 
 const expandHome = (dir: string) => (dir === "~" ? homeDir() : dir.startsWith("~/") ? join(homeDir(), dir.slice(2)) : dir);
 
@@ -147,6 +193,8 @@ export function configFor(home: string, fleetdDirPath: string, nativeBin: string
     baseEnv: sessionEnv(),
     claudeBin: claude.claudeBinary(),
     nativeBin,
+    retryScheduleMs: [1, 2, 3].map((a) => retryDelayMs(a)!),
+    idleReapMs: 600_000,
     ...(boxKey ? { boxKey } : {}),
   };
 }
@@ -220,6 +268,15 @@ type Live = {
   exited: Promise<void>;
   markExited: () => void;
   secrets: [string, string][];
+  /** claude's user-message uuid → fleetd run id, for node retries sent under a fresh uuid. */
+  aliases: Map<string, string>;
+  /** The run the node interrupted because claude said nothing after the machine woke: it ends as a network failure,
+   * so the node's retry resumes it. */
+  slept?: string;
+  /** Its tool calls running now, by tool_use id: while there is one, it is mid-step. */
+  tools: Set<string>;
+  /** Until when each Monitor it armed may still fire (epoch ms): it isn't reaped before the last of them. */
+  watching: Map<string, number>;
 };
 
 type Change = {
@@ -247,6 +304,23 @@ export class SessionService {
   #limits = new Map<string, { limitType: string; utilization?: number; resetsAt?: string; status: string; observedAt: string }>();
   #spans = { enabled: false, sent: 0 };
   #onRunning: ((n: number) => void)[] = [];
+  #reaper: ReturnType<typeof setInterval> | undefined;
+  #warmPruner: ReturnType<typeof setInterval> | undefined;
+  /** Called for each step stored as completed or failed (node.area("items")). */
+  onItemEnded: ((sessionId: string, item: ThreadItem) => void) | undefined;
+  /** Sessions whose worktree setup still runs: a send waits for it; true once the brief went to claude. */
+  #settingUp = new Map<string, Promise<boolean>>();
+  /** Ends a session's running setup (its command killed), and the run it is for: only that run's interrupt ends it. */
+  #setupCancel = new Map<string, { runId: string; abort: AbortController }>();
+  /** Node retries done per run; a run in here outlives an exit nobody asked for. */
+  #retries = new Map<string, number>();
+  /** This node's claude refused `--append-system-prompt-file`: until the node restarts, every start passes a session's
+   * standing rules at the head of the message it starts with instead. */
+  #noPromptFile = false;
+  /** Tagged sends (steers), until their receipt is final; each receipt goes on the machine stream. */
+  readonly #steers = new Steers((receipt) => this.#machine(this.store.appendEvent({ type: "steer", ...receipt })));
+  /** Mode-`now` sends waiting on claude's answer to their stop, by run id. */
+  #sendNowWaiters = new Map<string, (outcome: string) => void>();
   /** Withdraws waiting on claude's answer, by run id. */
   #withdrawWaiters = new Map<string, (cancelled: boolean) => void>();
 
@@ -262,6 +336,9 @@ export class SessionService {
     const service = new SessionService(new NodeStore(join(config.home, "sessions.sqlite")), config);
     const hosts = join(config.home, "hosts");
     const adopted = new Set<string>();
+    // Sessions whose claude went with the last node while a Monitor of theirs could still fire: woken once the sweep
+    // below is done, or it would stop the host each wake starts.
+    const lost: [string, { description?: string }[]][] = [];
     for (const row of service.store.sessions()) {
       const id = row.summary.sessionId;
       if (row.local.pid) {
@@ -281,14 +358,24 @@ export class SessionService {
         }
       }
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
+      // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it.
+      const armed = (row.local.monitors ?? []).filter((m) => m.untilMs > Date.now());
+      if (row.local.monitors?.length) service.update(id, (c) => void delete c.row.local.monitors);
+      if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
     }
     await sweep(hosts, adopted);
+    service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
+    // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
+    service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
+    for (const [id, armed] of lost) service.#wakeLost(id, armed, "this machine's fleetd node restarted");
     return service;
   }
 
   #adopt(row: SessionRow, link: HostLink): void {
     const id = row.summary.sessionId;
     const live = this.#newLive(link, this.#secrets(row));
+    // Its Monitors run on with it, and hold it from the reaper as before.
+    for (const m of row.local.monitors ?? []) live.watching.set(m.id, m.untilMs);
     this.#live.set(id, live);
     void this.#pump(id, live, row.summary.activeRunId);
     this.update(id, () => {});
@@ -306,7 +393,16 @@ export class SessionService {
   #newLive(link: HostLink, secrets: [string, string][]): Live {
     let markExited!: () => void;
     const exited = new Promise<void>((r) => (markExited = r));
-    return { generation: ++this.#generation, pid: link.pid, link, lastActive: Date.now(), closing: false, exited, markExited, secrets };
+    return { generation: ++this.#generation, pid: link.pid, link, lastActive: Date.now(), closing: false, exited, markExited, secrets, aliases: new Map(), tools: new Set(), watching: new Map() };
+  }
+
+  /** The node's retry delays: the config's, else 1, 4 and 15 min, each drawn with its jitter. */
+  get #retrySchedule(): number[] {
+    return this.config.retryScheduleMs ?? [1, 2, 3].map((a) => retryDelayMs(a)!);
+  }
+
+  get #idleReapMs(): number {
+    return this.config.idleReapMs ?? 600_000;
   }
 
   get home(): string {
@@ -527,8 +623,15 @@ export class SessionService {
       case "send": {
         if (c.mcp) this.#refreshMcp(c.sessionId, c.mcp);
         if (c.skills) this.#refreshSkills(c.sessionId, c.skills);
-        const queued = await this.#beginRun(c.sessionId, c.runId, c.text, c.mode ?? "plain");
-        return { kind: "sent", runId: c.runId, queued };
+        const mode = c.mode ?? "plain";
+        const answered = mode === "now" ? new Promise<string>((resolve) => this.#sendNowWaiters.set(c.runId, resolve)) : undefined;
+        try {
+          const queued = await this.#beginRun(c.sessionId, c.runId, c.text, mode, c.steer);
+          const sendNow = answered && queued ? await Promise.race([answered, Bun.sleep(SEND_NOW_WAIT_MS).then(() => undefined)]) : undefined;
+          return { kind: "sent", runId: c.runId, queued, ...(sendNow ? { sendNow } : {}) } as SessionOutput;
+        } finally {
+          this.#sendNowWaiters.delete(c.runId);
+        }
       }
       case "withdraw":
         return this.#withdraw(c.sessionId, c.runId);
@@ -684,6 +787,7 @@ export class SessionService {
         worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
       } catch {}
       rmSync(this.#worktreesDir(projectId), { recursive: true, force: true });
+      warm.dropPool(this.home, project.workspaceRoot);
     }
     if (erase) {
       this.store.forgetSessions(projectId);
@@ -761,6 +865,8 @@ export class SessionService {
     const raced = this.store.session(id);
     if (raced) return { kind: "launched", summary: raced.summary };
     const path = join(this.#worktreesDir(launch.projectId), id);
+    let prompt = launch.prompt;
+    let readerPlan: WorktreeSetup | undefined;
     let cwd = root;
     let addDirs: string[] = [];
     let baseRef: string | undefined;
@@ -772,6 +878,9 @@ export class SessionService {
       const sha = (ws.head && worktree.knownCommit(root, ws.head)) || base.sha;
       worktree.ensureDetached(root, path, sha);
       [cwd, addDirs, baseRef] = [path, [root], sha];
+      // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
+      readerPlan = warm.readerSetup(launch.setup, path, base.sha);
+      if (warm.take(this.home, root, path)) prompt = `${prompt.trimEnd()}\n\n${warm.WARM_NOTE}`;
     } else if (launch.isolated) {
       cwd = join(this.home, "isolated");
       mkdirPrivate(cwd);
@@ -817,6 +926,13 @@ export class SessionService {
         ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
       },
     };
+    // Setup applies to a session in a worktree of its own.
+    const chosen = readerPlan ?? launch.setup;
+    const plan = chosen && (chosen.commands ?? []).length && baseRef ? chosen : undefined;
+    if (plan) {
+      row.local.setup = plan;
+      row.local.setupPending = true;
+    }
     this.store.commit(row, [], false);
     const dir = join(this.home, "sessions", id);
     if (launch.mcpRole && launch.mcp) this.#keepMcp(id, { role: launch.mcpRole, config: launch.mcp });
@@ -825,14 +941,28 @@ export class SessionService {
     } catch (error) {
       throw new Refusal("internal", `cannot keep the session's skills: ${(error as Error).message}`);
     }
-    await this.#beginRun(id, launch.runId, launch.prompt, "plain");
+    // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
+    if (plan) {
+      if (this.#recordRun(id, launch.runId, prompt)) this.#setUpThenSend(id, launch.runId, prompt, "plain", plan);
+    } else await this.#beginRun(id, launch.runId, prompt, "plain");
     const reported = base && { ref: base.baseRef, sha: base.sha, ...(base.fetchedAt ? { fetchedAt: base.fetchedAt } : {}), ...(base.error ? { error: base.error } : {}) };
     return { kind: "launched", summary: this.#session(id).summary, ...(reported ? { base: reported } : {}) };
   }
 
   /** Records a run and its user message, then hands it to the session's process. Whether it waits behind an active
    * run. Idempotent on `runId`. */
-  async #beginRun(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now"): Promise<boolean> {
+  /** Records a run and its user message; false when it was recorded before (a retry). */
+  #recordRun(id: string, runId: string, text: string): boolean {
+    return this.update(id, (c) => {
+      if (c.runs.some((r) => r.id === runId)) return false;
+      const queued = c.runs.some((r) => isActive(r.status));
+      c.runs.push({ id: runId, status: queued ? "queued" : "starting", ordinal: c.runs.length + 1, queuedAt: c.at });
+      this.#putMessage(c, { id: runId, runId, role: "user", text, createdAt: c.at });
+      return true;
+    });
+  }
+
+  async #beginRun(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", steer?: { id: string; riders?: string[] }): Promise<boolean> {
     const recorded = this.update(id, (c): { again: boolean } | { queued: boolean } => {
       const known = c.runs.find((r) => r.id === runId);
       if (known) return { again: known.status === "queued" };
@@ -842,11 +972,32 @@ export class SessionService {
       return { queued };
     });
     if ("again" in recorded) return recorded.again;
+    if (steer) for (const steerId of [...(steer.riders ?? []), steer.id]) this.#steers.track(id, runId, steerId, recorded.queued);
+    // The worktree is still being set up: the message goes once that has ended and the brief has gone.
+    const settingUp = this.#settingUp.get(id);
+    if (settingUp) {
+      void settingUp.then(async (started) => {
+        if (started) await this.#dispatch(id, { Send: { run_id: runId, text, mode } }).catch((e) => this.#failRun(id, runId, "other", (e as Error).message));
+        else {
+          const why = "the session did not start: its worktree setup failed or was stopped";
+          this.#failRun(id, runId, "other", why);
+          this.#steers.failed(runId, why);
+        }
+      });
+      return recorded.queued;
+    }
+    // Setup is due (the node stopped before it ended): it runs again first, and the message goes once it has ended.
+    const due = this.#setupDue(id);
+    if (!recorded.queued && due) {
+      this.#setUpThenSend(id, runId, text, mode, due);
+      return recorded.queued;
+    }
     try {
       await this.#dispatch(id, { Send: { run_id: runId, text, mode } });
     } catch (error) {
       const message = error instanceof Refusal ? error.message : (error as Error).message;
       this.#failRun(id, runId, "other", message);
+      this.#steers.failed(runId, message);
       throw error;
     }
     return recorded.queued;
@@ -865,24 +1016,32 @@ export class SessionService {
     } catch {}
   }
 
-  async #dispatch(id: string, command: SessionCommand): Promise<void> {
-    const live = await this.#ensureLive(id);
+  async #dispatch(id: string, command: SessionCommand, alias?: [uuid: string, runId: string]): Promise<void> {
+    const [live, note] = await this.#ensureLive(id);
     live.lastActive = Date.now();
-    if (!live.link.send(command)) throw new Refusal("internal", "the session's claude process ended");
+    if (alias) live.aliases.set(alias[0], alias[1]);
+    // A claude without the system prompt file gets the rules with the message its start sends.
+    const sent = note && typeof command === "object" && "Send" in command ? { Send: { ...command.Send, text: `${note}\n\n${command.Send.text}` } } : command;
+    if (!live.link.send(sent)) throw new Refusal("internal", "the session's claude process ended");
+  }
+
+  /** The fleetd run id of claude's user-message uuid. */
+  #resolve(live: Live, uuid: string): string {
+    return live.aliases.get(uuid) ?? uuid;
   }
 
   /** The live process, spawning (first start) or resuming the session when there is none. One spawn per session at a
    * time, so two sends never start two processes. */
-  #ensureLive(id: string): Promise<Live> {
+  #ensureLive(id: string): Promise<[Live, string | undefined]> {
     const prior = this.#spawning.get(id) ?? Promise.resolve();
     const next = prior.catch(() => {}).then(() => this.#spawn(id));
     this.#spawning.set(id, next);
     return next;
   }
 
-  async #spawn(id: string): Promise<Live> {
+  async #spawn(id: string): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
-    if (current && !current.closing) return current;
+    if (current && !current.closing) return [current, undefined];
     if (current) await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
     const row = this.#session(id);
@@ -895,6 +1054,11 @@ export class SessionService {
     }
     if (!existsSync(row.local.cwd)) throw invalid(`the session's workspace ${row.local.cwd} is missing`);
     const spec = this.#spec(row, resume, env);
+    let note: string | undefined;
+    if (this.#noPromptFile && row.local.systemPrompt) {
+      delete spec.systemPrompt;
+      note = row.local.systemPrompt.trimEnd();
+    }
     const file = claude.sessionFile(claude.configDir(spec.env), spec.cwd, id);
     if (file) spec.resume = existsSync(file);
     const mark = marker(id);
@@ -922,7 +1086,7 @@ export class SessionService {
     const live = this.#newLive(link, this.#secrets(row));
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
-    return live;
+    return [live, note];
   }
 
   /** Writes the session's files and builds its spec (sessions/mod.rs `spec`): MCP config, settings overlay, system
@@ -968,7 +1132,7 @@ export class SessionService {
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    Bun.write(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin, this.home)));
+    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin, this.home)));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
@@ -980,6 +1144,21 @@ export class SessionService {
       env[claude.ORDER_ENV_FILE_ENV] = at;
     }
     env[claude.AUTO_MEMORY_OFF_ENV[0]] = claude.AUTO_MEMORY_OFF_ENV[1];
+    // A writer's commits name its task, so its work merged by hand is found from git alone, and it pushes only a tree
+    // its repo's pre-push check passed on.
+    const task = row.local.branch ? hooks.branchTask(row.local.branch) : undefined;
+    if (task && existsSync(row.local.cwd)) {
+      try {
+        hooks.trailerHooks(row.local.cwd, task);
+      } catch (error) {
+        console.warn(`${nowIso()} WARN commits won't name their task {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
+      }
+      try {
+        hooks.gate(row.local.cwd, env);
+      } catch (error) {
+        console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
+      }
+    }
     const scratch = join(this.home, "tmp", scratchName(id));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
@@ -1055,9 +1234,10 @@ export class SessionService {
             live.markExited();
             return;
           case "RunStarted": {
-            const started = body.run_id as string;
+            const started = this.#resolve(live, body.run_id);
             runId = started;
             masker = new Masker(this.#secrets(this.#session(id)));
+            this.#steers.delivered(started, false);
             this.update(id, (c) => {
               let run = c.runs.find((r) => r.id === started);
               // A turn claude started by itself (a Monitor's notice): a run of the session's from here.
@@ -1074,15 +1254,18 @@ export class SessionService {
           }
           case "Joined":
             this.update(id, (c) => {
-              const run = c.runs.find((r) => r.id === body.run_id);
+              const joined = this.#resolve(live, body.run_id);
+              const run = c.runs.find((r) => r.id === joined);
               if (run && (run.status === "queued" || run.status === "starting")) {
                 run.status = "running";
                 run.startedAt ??= c.at;
               }
             });
+            this.#steers.delivered(this.#resolve(live, body.run_id), true);
             break;
           case "AssistantText":
             if (delta?.messageId === body.message_id) delta = undefined;
+            this.#steers.text(id, body.message_id, body.text);
             this.update(id, (c) => {
               const prior = this.store.message(id, body.message_id);
               const message: ThreadMessage = prior
@@ -1101,20 +1284,50 @@ export class SessionService {
                 c.row.local.queuedPrompts = (c.row.local.queuedPrompts ?? []).filter((p) => p.requestId !== requestId);
                 if (c.row.summary.pendingPermission?.requestId === requestId) this.#nextPrompt(c);
               });
-            } else this.update(id, (c) => this.#putItem(c, item));
+            } else {
+              this.#step(live, item);
+              this.#watching(id, live, item);
+              this.update(id, (c) => this.#putItem(c, item));
+              if (item.status === "completed" || item.status === "failed") this.onItemEnded?.(id, item);
+            }
             break;
           }
+          case "WatchEnded":
+            // Its notice has come, so nothing more of it can wake the session.
+            live.watching.delete(body.tool_use_id);
+            this.update(id, (c) => {
+              c.row.local.monitors = (c.row.local.monitors ?? []).filter((m) => m.id !== body.tool_use_id);
+              if (!c.row.local.monitors.length) delete c.row.local.monitors;
+            });
+            break;
           case "Compacting":
             this.update(id, (c) => void (c.announce = true));
             break;
           case "PermissionRequest":
             this.#permission(id, live, body.request_id, body.tool_name, body.input, body.summary, runId);
             break;
-          case "RunEnded":
-            this.#runEnded(id, live, body.run_id, body.outcome, body.usage);
+          case "RunEnded": {
+            const ended = this.#resolve(live, body.run_id);
+            // A call cut off with its run never reports its end.
+            live.tools.clear();
+            this.#runEnded(id, live, ended, body.outcome, body.usage);
+            // A run the node retries stays active: its steers wait for the retry.
+            if (!this.store.runs(id).some((r) => r.id === ended && isActive(r.status)))
+              this.#steers.ended(ended, typeof body.outcome === "object" && "Failed" in body.outcome ? body.outcome.Failed.message : undefined);
             break;
+          }
+          case "Seen":
+            this.#steers.seen((body.run_ids as string[]).map((r) => this.#resolve(live, r)));
+            break;
+          case "SendNow": {
+            const run = this.#resolve(live, body.run_id);
+            this.#sendNowWaiters.get(run)?.(body.outcome);
+            this.#sendNowWaiters.delete(run);
+            this.#steers.sendNow(run, body.outcome, body.stopped_tool ?? undefined);
+            break;
+          }
           case "Usage":
-            if (this.#followed.has(id)) this.#thread(id, { type: "usage", runId: body.run_id, usage: body.usage });
+            if (this.#followed.has(id)) this.#thread(id, { type: "usage", runId: this.#resolve(live, body.run_id), usage: body.usage });
             break;
           case "RateLimit":
             if (body.limit_type)
@@ -1130,12 +1343,15 @@ export class SessionService {
             this.store.putSpans((body as { sessionId: string; endMs: number }[]).map((s) => ({ ...s, sessionId: s.sessionId ?? id })));
             this.#flushSpans();
             break;
-          case "Withdrawn":
-            this.#withdrawWaiters.get(body.run_id)?.(!!body.cancelled);
-            this.#withdrawWaiters.delete(body.run_id);
+          case "Withdrawn": {
+            const run = this.#resolve(live, body.run_id);
+            this.#withdrawWaiters.get(run)?.(!!body.cancelled);
+            this.#withdrawWaiters.delete(run);
+            this.#steers.withdrawn(run, !!body.cancelled, !!body.by_stop);
             break;
+          }
           default:
-            // Init, Queued, Seen, SendNow, WatchEnded: steer receipts and monitors aren't ported.
+            // Init, Queued: nothing to apply.
             break;
         }
       } catch (error) {
@@ -1179,6 +1395,38 @@ export class SessionService {
   }
 
   #runEnded(id: string, live: Live, runId: string, outcome: state.RunOutcome, usage: unknown): void {
+    // The node cut it after the machine woke: a network failure, which the node's retry resumes.
+    if (live.slept === runId) {
+      live.slept = undefined;
+      live.ending = undefined;
+      if (outcome === "Interrupted" || (typeof outcome === "object" && "Failed" in outcome))
+        outcome = { Failed: { class: "network", message: "the machine slept, and claude's stream did not come back after it woke", retries: 0 } };
+    }
+    let retries = 0;
+    if (typeof outcome === "object" && "Failed" in outcome) {
+      const failure = outcome.Failed;
+      // claude never said `started` and no API call answered: it never took the message in, so a retry sends the
+      // message itself.
+      const unread = failure.apiStatus === undefined && this.store.runs(id).some((r) => r.id === runId && r.status === "starting");
+      if (unread && claude.sessionInUse(failure.message) && this.#resendRefused(id, live, runId)) return;
+      // A claude older than the flag: the start goes again, the rules in the message.
+      if (unread && claude.promptFileUnknown(failure.message)) {
+        this.#noPromptFile = true;
+        if (this.#resendRefused(id, live, runId)) return;
+      }
+      if (this.#fallBack(id, live, runId, failure, unread)) return;
+      if (retryable(failure.class)) {
+        const attempt = (this.#retries.get(runId) ?? 0) + 1;
+        this.#retries.set(runId, attempt);
+        const delay = this.#retrySchedule[attempt - 1];
+        if (delay !== undefined) {
+          this.#scheduleRetry(id, runId, attempt, delay, failure, unread);
+          return;
+        }
+        retries = attempt - 1;
+      }
+    }
+    this.#retries.delete(runId);
     const cause = live.ending ?? (this.#stopping ? ({ kind: "node_stopping" } as const) : undefined);
     live.ending = undefined;
     const end = state.runEnd(outcome, cause, false);
@@ -1197,7 +1445,7 @@ export class SessionService {
           run.supersededBy = outcome.Superseded.by;
         } else {
           run.status = "failed";
-          run.failure = { ...(outcome as { Failed: RunInfo["failure"] }).Failed!, retries: 0 };
+          run.failure = { ...(outcome as { Failed: NonNullable<RunInfo["failure"]> }).Failed, retries };
         }
         run.endedAt = c.at;
         if (usage) run.usage = usage as RunInfo["usage"];
@@ -1212,10 +1460,23 @@ export class SessionService {
   #exited(id: string, live: Live, exit: state.ExitInfo): void {
     if (this.#live.get(id) !== live) return;
     this.#live.delete(id);
+    this.#steers.exited(id, exit.code, (run) => this.#retries.has(run));
     const cause: state.EndCause = live.ending ?? (this.#stopping ? { kind: "node_stopping" } : { kind: "exited", exit });
+    // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session.
+    const requested = state.asked(cause);
+    let closed: string[] = [];
+    let lost: { id: string; description?: string; untilMs: number }[] = [];
     try {
       this.update(id, (c) => {
-        state.closeOut(c.runs, cause, c.at);
+        // The node stopping keeps them for the next node, which wakes the session if one could still fire then.
+        if (cause.kind !== "node_stopping") {
+          const armed = c.row.local.monitors ?? [];
+          delete c.row.local.monitors;
+          if (cause.kind === "exited" && !c.runs.some((r) => isActive(r.status)))
+            lost = armed.filter((m) => (live.watching.get(m.id) ?? 0) > Date.now());
+        }
+        const retried = c.runs.some((r) => isActive(r.status) && this.#retries.has(r.id));
+        if (requested || !retried) closed = state.closeOut(c.runs, cause, c.at).map((i) => c.runs[i]!.id);
         this.#cancelPending(c);
         if (c.row.local.pid === live.pid) {
           delete c.row.local.pid;
@@ -1223,7 +1484,236 @@ export class SessionService {
         }
       });
     } catch {}
+    for (const run of closed) this.#retries.delete(run);
     live.markExited();
+    if (cause.kind === "exited" && lost.length) this.#wakeLost(id, lost, exitWords(cause.exit));
+  }
+
+  /** Keeps Live.tools as the session's tool calls start and end. */
+  #step(live: Live, item: ThreadItem): void {
+    if (item.kind.type !== "command" && item.kind.type !== "file_change" && item.kind.type !== "tool") return;
+    if (item.status === "running") live.tools.add(item.id);
+    else live.tools.delete(item.id);
+  }
+
+  /** A Monitor the agent armed keeps its claude up until its own deadline, and is kept on the session's row, so a
+   * claude lost before then wakes the session to say so. */
+  #watching(id: string, live: Live, item: ThreadItem): void {
+    if (item.kind.type !== "tool" || item.kind.toolName !== "Monitor" || item.status !== "completed") return;
+    const input = (item.kind.input ?? {}) as { timeout_ms?: unknown; description?: unknown };
+    const ms = typeof input.timeout_ms === "number" && Number.isFinite(input.timeout_ms) && input.timeout_ms >= 0 ? Math.round(input.timeout_ms) : MONITOR_DEFAULT_MS;
+    const untilMs = Date.now() + Math.min(ms, MONITOR_MAX_MS) + MONITOR_GRACE_MS;
+    live.watching.set(item.id, untilMs);
+    const armed = { id: item.id, ...(typeof input.description === "string" ? { description: input.description } : {}), untilMs };
+    this.update(id, (c) => {
+      c.row.local.monitors = [...(c.row.local.monitors ?? []).filter((m) => m.id !== armed.id), armed];
+    });
+  }
+
+  /** Wakes a session whose Monitors were lost with its claude, once, with a message as a lead's goes. */
+  #wakeLost(id: string, lost: { description?: string }[], when: string): void {
+    console.log(`${nowIso()} INFO a Monitor was lost when ${when}: waking the session {"sessionId":"${id}"}`);
+    const runId = `${id}-monitor-lost-${Date.now()}`;
+    void this.#beginRun(id, runId, monitorsLost(lost, when), "plain").catch((error) =>
+      console.warn(`${nowIso()} WARN cannot wake a session whose Monitor was lost {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`),
+    );
+  }
+
+  /** Closes the processes idle for idleReapMs; one with a Monitor that may still fire waits for its deadline. */
+  #reap(): void {
+    const now = Date.now();
+    for (const [id, live] of this.#live) {
+      if (live.closing || now - live.lastActive < this.#idleReapMs) continue;
+      if ([...live.watching.values()].some((until) => until > now)) continue;
+      if (this.store.session(id)?.summary.activeRunId) continue;
+      console.log(`${nowIso()} INFO reaping an idle claude process {"sessionId":"${id}"}`);
+      live.closing = true;
+      live.link.send(shutdown(REAP_GRACE_MS));
+    }
+  }
+
+  /** The setup due before the session's claude next starts: one the node stopped in the middle of, or that failed. */
+  #setupDue(id: string): WorktreeSetup | undefined {
+    const row = this.store.session(id);
+    return row?.local.setupPending ? row.local.setup : undefined;
+  }
+
+  /** Ends the session's running setup (only `runId`'s, when given); what to wait on for it to have ended. */
+  #cancelSetup(id: string, runId?: string): Promise<boolean> | undefined {
+    const running = this.#setupCancel.get(id);
+    if (!running || (runId && runId !== running.runId)) return undefined;
+    running.abort.abort();
+    return this.#settingUp.get(id);
+  }
+
+  /** Runs setup in the background, then sends the recorded run's message; sends that come meanwhile wait for it. */
+  #setUpThenSend(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: WorktreeSetup): void {
+    const abort = new AbortController();
+    this.#setupCancel.set(id, { runId, abort });
+    const done = this.#setUp(id, runId, text, mode, plan, abort.signal).finally(() => {
+      this.#settingUp.delete(id);
+      this.#setupCancel.delete(id);
+    });
+    this.#settingUp.set(id, done);
+  }
+
+  /** Runs the setup commands, each shown as an item of the run, then sends the run's message with what setup did;
+   * true once it went to claude. Setup is due again until it has run to its end. */
+  async #setUp(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: WorktreeSetup, signal: AbortSignal): Promise<boolean> {
+    const row = this.store.session(id);
+    if (!row) return false;
+    const first = this.store.runs(id)[0]?.id === runId;
+    const secrets = this.#secrets(row);
+    const masker = new Masker(secrets);
+    const timeoutSec = setup.timeoutOf(plan);
+    const env: Env = { ...gitCommandEnv() };
+    const order = row.local.orderId ? orderVarsForSpawn(this.home, row.summary.projectId, row.local.orderId).vars : [];
+    const vars = [...projectVars(this.home, row.summary.projectId).filter(([n]) => !order.some(([o]) => o === n)), ...order];
+    for (const [k, v] of vars) if (!(k in env) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
+    const scratch = join(this.home, "tmp", scratchName(id));
+    mkdirPrivate(scratch);
+    for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
+    const commands = plan.commands ?? [];
+    const startedAt: string[] = [];
+    const item = (i: number, ran: setup.Ran | undefined, cancelled = false) => {
+      const at = nowIso();
+      const command = masker.text(commands[i] ?? "");
+      this.update(id, (c) =>
+        this.#putItem(c, {
+          id: `setup-${runId}-${i}`,
+          runId,
+          status: cancelled ? "cancelled" : !ran ? "running" : ran.exitCode === 0 ? "completed" : "failed",
+          title: headUtf16(`Setup: ${command}`, 200),
+          startedAt: startedAt[i] ?? at,
+          ...(ran || cancelled ? { completedAt: at } : {}),
+          updatedAt: at,
+          kind: {
+            type: "command",
+            command,
+            timeoutMs: timeoutSec * 1000,
+            ...(ran ? { output: masker.text(ran.outputTail) } : {}),
+            ...(ran?.exitCode !== null && ran?.exitCode !== undefined ? { exitCode: ran.exitCode } : {}),
+          },
+        }),
+      );
+    };
+    const outcome = await setup.run(
+      plan,
+      row.local.cwd,
+      env,
+      secrets.map(([, v]) => v),
+      (i) => {
+        startedAt[i] = nowIso();
+        item(i, undefined);
+      },
+      (i, ran) => item(i, ran),
+      signal,
+    );
+    // An interrupt or stop ended setup: its command was killed, and setup stays due.
+    if (signal.aborted) {
+      if (startedAt.length) item(startedAt.length - 1, undefined, true);
+      console.log(`${nowIso()} INFO worktree setup stopped: the agent does not start {"sessionId":"${id}"}`);
+      return false;
+    }
+    const why = setup.failure(outcome, timeoutSec);
+    if (!plan.runAnyway && why) {
+      this.#failRun(id, runId, "other", masker.text(why));
+      return false;
+    }
+    this.update(id, (c) => void delete c.row.local.setupPending);
+    const said = setup.note(outcome, timeoutSec, !first);
+    let message = text;
+    if (said && first) {
+      // The brief: what setup did goes after it, and the stored message is what claude is sent.
+      message = `${text.trimEnd()}\n\n## Setup\n${masker.text(said)}\n`;
+      const stored = this.store.message(id, runId);
+      if (stored) this.update(id, (c) => this.#putMessage(c, { ...stored, text: message }));
+    } else if (said) message = `${masker.text(said)}\n\n${text}`;
+    if (!this.store.runs(id).some((r) => r.id === runId && isActive(r.status))) return false;
+    try {
+      await this.#dispatch(id, { Send: { run_id: runId, text: message, mode } });
+      return true;
+    } catch (error) {
+      this.#failRun(id, runId, "other", (error as Error).message);
+      return false;
+    }
+  }
+
+  /** How many sessions are mid-step: a tool call of theirs runs that the hold didn't stop from starting. */
+  midStep(): number {
+    let held = new Set<string>();
+    try {
+      held = new Set(readdirSync(join(this.home, "update", "held")));
+    } catch {}
+    return [...this.#live.values()].filter((l) => [...l.tools].some((t) => !held.has(t))).length;
+  }
+
+  /** claude refused a first start because it already has the session: the message goes again, once, to a respawn. */
+  #resendRefused(id: string, live: Live, runId: string): boolean {
+    if (this.#retries.has(runId)) return false;
+    this.#retries.set(runId, 0);
+    live.closing = true;
+    this.#resend(id, runId, 0, true);
+    return true;
+  }
+
+  /** claude refused the model a profile's setting chose: the session goes on on its profile's own model, once, in a
+   * new process, and says so (`modelRefused`). */
+  #fallBack(id: string, live: Live, runId: string, failure: NonNullable<RunInfo["failure"]>, unread: boolean): boolean {
+    const row = this.store.session(id);
+    if (!row) return false;
+    const refused = (failure.class === "invalid_request" || failure.class === "pool_exhausted") && failure.model === row.summary.model;
+    if (!refused || !row.local.profile) return false;
+    const own = claude.profileModel(row.local.profile);
+    if (row.summary.model === own.model || this.#retries.has(runId)) return false;
+    this.#retries.set(runId, 0);
+    live.closing = true;
+    console.warn(`${nowIso()} WARN claude refused the model; the session runs on ${own.model} instead {"sessionId":"${id}","model":"${row.summary.model}"}`);
+    this.update(id, (c) => {
+      c.row.summary.modelRefused = c.row.summary.model;
+      c.row.summary.model = own.model;
+    });
+    live.link.send(shutdown(10_000));
+    this.#scheduleRetry(id, runId, 1, 0, failure, unread);
+    return true;
+  }
+
+  /** The run stays active while the node waits, with a `node_retry` item saying why it is slow. */
+  #scheduleRetry(id: string, runId: string, attempt: number, delayMs: number, failure: NonNullable<RunInfo["failure"]>, unread: boolean): void {
+    this.update(id, (c) =>
+      this.#putItem(c, {
+        id: `node-retry-${runId}-${attempt}`,
+        runId,
+        status: "completed",
+        title: "Node retry",
+        startedAt: c.at,
+        completedAt: c.at,
+        updatedAt: c.at,
+        kind: { type: "node_retry", attempt, of: this.#retrySchedule.length, delayMs, reason: failure },
+      }),
+    );
+    this.#resend(id, runId, delayMs, unread);
+  }
+
+  /** After `delayMs`, unless the run ended meanwhile, the session gets the run's message again (`unread`) or
+   * RETRY_MESSAGE, under a fresh uuid that maps back to the run. */
+  #resend(id: string, runId: string, delayMs: number, unread: boolean): void {
+    setTimeout(async () => {
+      if (!this.store.runs(id).some((r) => r.id === runId && isActive(r.status))) {
+        if (unread) this.#steers.failed(runId, "the run ended before claude took it in");
+        return;
+      }
+      const text = unread ? this.store.message(id, runId)?.text : RETRY_MESSAGE;
+      try {
+        if (text === undefined) throw notFound(`run ${runId} has no message`);
+        const uuid = crypto.randomUUID();
+        await this.#dispatch(id, { Send: { run_id: uuid, text, mode: "plain" } }, [uuid, runId]);
+      } catch (error) {
+        this.#retries.delete(runId);
+        this.#failRun(id, runId, "other", (error as Error).message);
+        if (unread) this.#steers.failed(runId, (error as Error).message);
+      }
+    }, delayMs);
   }
 
   /** Drops a send claude still holds queued; a no-op once it has started. Waits up to WITHDRAW_WAIT_MS for claude. */
@@ -1245,12 +1735,15 @@ export class SessionService {
     const active = this.store.runs(id).find((r) => isActive(r.status));
     if (!active || (runId && runId !== active.id)) return { kind: "done" };
     const why = reason?.trim() ? reason : "interrupted";
+    // A run still in its worktree's setup: the setup ends, its command killed, and no claude starts for it.
+    const settingUp = this.#cancelSetup(id, active.id);
     const live = this.#live.get(id);
     if (!live) {
       this.update(id, (c) => {
         state.closeOut(c.runs, { kind: "requested", why }, c.at);
         this.#cancelPending(c);
       });
+      if (settingUp) await Promise.race([settingUp, Bun.sleep(EXIT_WAIT_MS)]);
       return { kind: "done" };
     }
     live.ending = { kind: "requested", why };
@@ -1266,6 +1759,15 @@ export class SessionService {
   }
 
   async #stop(id: string, removeWorktree: boolean, why = "stopped"): Promise<SessionOutput> {
+    // A run still in its worktree's setup ends with it: its command is killed and no claude starts.
+    const settingUp = this.#cancelSetup(id);
+    if (settingUp) {
+      this.update(id, (c) => {
+        state.closeOut(c.runs, { kind: "requested", why }, c.at);
+        this.#cancelPending(c);
+      });
+      await Promise.race([settingUp, Bun.sleep(EXIT_WAIT_MS)]);
+    }
     if (removeWorktree && this.store.runs(id).some((r) => isActive(r.status))) return { kind: "done" };
     const row = this.#session(id);
     const live = this.#live.get(id);
@@ -1285,7 +1787,10 @@ export class SessionService {
     if (removeWorktree && row.local.baseRef) {
       const deleted = row.local.branch
         ? worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef)
-        : (worktree.removeDetached(row.local.workspaceRoot, row.local.cwd), false);
+        : // Its build goes on to the next reader of the checkout.
+          (warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home)),
+          worktree.removeDetached(row.local.workspaceRoot, row.local.cwd),
+          false);
       this.update(id, (c) => {
         delete c.row.summary.worktreePath;
         if (deleted) delete c.row.summary.branch;
@@ -1370,17 +1875,44 @@ export class SessionService {
     return info;
   }
 
+  /** The machine just woke. A run whose claude has said nothing since, and waits on no tool and no person, lost its
+   * stream with the network: after WAKE_GRACE_MS it is interrupted and retried like a network failure. */
+  woke(graceMs = WAKE_GRACE_MS): void {
+    const since = Date.now();
+    setTimeout(() => this.#recoverAfterSleep(since), graceMs);
+  }
+
+  #recoverAfterSleep(since: number): void {
+    for (const [id, live] of this.#live) {
+      if (live.closing || live.lastActive >= since) continue;
+      const row = this.store.session(id);
+      const run = row?.summary.activeRunId;
+      if (!run || row.summary.pendingPermission) continue;
+      if (this.store.newestItems(id, 20)[0].some((i) => i.status === "running")) continue;
+      console.log(`${nowIso()} INFO claude said nothing since the machine woke; interrupting it to resume the run {"sessionId":"${id}"}`);
+      live.slept = run;
+      live.link.send("Interrupt");
+      setTimeout(() => {
+        if (this.#live.get(id) !== live || live.slept === undefined) return;
+        live.closing = true;
+        live.link.send(shutdown(0));
+      }, INTERRUPT_GRACE_MS);
+    }
+  }
+
   /** Holds every agent's tool call that hasn't started yet (node/hold.rs); how many sessions are mid-step. */
   hold(): number {
     const path = join(this.home, "update", "hold");
     mkdirSync(join(this.home, "update", "held"), { recursive: true });
     writeAtomic(path, String(Date.now() + 60_000));
-    return [...this.#live.keys()].filter((id) => this.store.runs(id).some((r) => isActive(r.status))).length;
+    return this.midStep();
   }
 
   /** The node stops: every host is let go of (its session runs on, and the next node re-adopts it). */
   async shutdown(): Promise<void> {
     this.#stopping = true;
+    clearInterval(this.#reaper);
+    clearInterval(this.#warmPruner);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
@@ -1389,6 +1921,8 @@ export class SessionService {
   /** Ends every session for good (tests, `machine remove`): each host is stopped with its claude. */
   async stopAll(): Promise<void> {
     this.#stopping = true;
+    clearInterval(this.#reaper);
+    clearInterval(this.#warmPruner);
     for (const id of [...this.#live.keys()]) await stopHost(join(this.home, "hosts", id));
   }
 }

@@ -94,7 +94,7 @@ export function ending(runs: RunInfo[], runId: string): number | undefined {
 }
 
 /** claude's words when its context is full (runner/claude/failure.rs `context_full_text`). */
-const contextFull = (text: string) => /prompt is too long|context (window|length)|too many tokens|exceeds? the (maximum|context)/i.test(text);
+export const contextFull = (text: string) => /prompt is too long|context (?:window|length)|maximum context|exceeds? the model's context/i.test(text);
 
 export function failureEnd(failure: RunFailure): RunEnd {
   const limited: FailureClass[] = ["usage_limit", "rate_limit", "pool_exhausted"];
