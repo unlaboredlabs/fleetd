@@ -81,7 +81,7 @@ export async function scheduledPass(t: Train, repo: string, projectRef: ProjectR
     try {
       jobs = await t.github.runJobs(repo, run.id);
     } catch (error) {
-      console.warn(`train: a scheduled run's jobs not read (${repo} run ${run.id}): ${(error as Error).message}`);
+      t.warnHourly([`train: a scheduled run's jobs not read (${repo} run ${run.id})`], (error as Error).message, `train: a scheduled run's jobs not read (${repo} run ${run.id}): ${(error as Error).message}`);
       continue;
     }
     const red = jobs.filter((j) => failed(j.conclusion)).map((j) => j.name);
@@ -124,7 +124,7 @@ async function scheduledFixOrder(
     for (const job of jobs) t.records.putFixOrder(repo, job, sha, order, now);
     return true;
   } catch (error) {
-    console.warn(`train: fix order not opened for ${repo} run ${run.id}; tried again next pass: ${(error as Error).message}`);
+    t.warnHourly([`train: fix order not opened for ${repo} run ${run.id}; tried again next pass`], (error as Error).message, `train: fix order not opened for ${repo} run ${run.id}; tried again next pass: ${(error as Error).message}`);
     return false;
   }
 }
