@@ -69,8 +69,18 @@ describe("a planned restart", () => {
 
   it("back on the same build says nothing", () => {
     const s = step(restartedAt(), { t: "state", state: live("0.9.1") }, T + 3000);
-    expect(s.restart).toBeNull();
+    expect(s.restart?.t).toBe("back");
     expect(hubWord(at(s, T + 4000))).toBeUndefined();
+  });
+
+  it("goes on through a hub that took the fast redial while it was still shutting down, then closed it", () => {
+    let s = step(restartedAt("updating to 0.9.2"), { t: "state", state: live("0.9.1") }, T + 300);
+    s = step(s, { t: "restart", code: 1001, reason: "hub shutting down" }, T + 400);
+    s = step(s, { t: "state", state: retrying }, T + 400);
+    expect(s.restart).toEqual({ t: "down", since: T, planned: true, update: true, from: "0.9.1" });
+    expect(hubWord(at(s, T + 1000))?.text).toBe("Updating…");
+    s = step(s, { t: "state", state: live("0.9.2") }, T + 5000);
+    expect(s.restart).toEqual({ t: "updated", at: T + 5000, from: "0.9.1", to: "0.9.2", took: 5000 });
   });
 });
 

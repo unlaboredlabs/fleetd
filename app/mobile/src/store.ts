@@ -3,7 +3,7 @@
 // open requests (held through a drop, as the chats are), what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
-import type { HubFrame } from "./hub/client";
+import { RESTART_FAST_MS, type HubFrame } from "./hub/client";
 import {
   afterCall,
   applyDelta,
@@ -49,11 +49,13 @@ export const refOf = (key: Key): ProjectRef => {
 
 /**
  * The hub's last restart as this phone saw it (hubWord.ts): down since `since` (epoch ms) from the version it ran,
- * `planned` when the hub closed the link to restart (client.ts `restart`), `update` when it said it was to update; back on another version, updated, `took`
- * ms after it went down. Null while nothing is to say.
+ * `planned` when the hub closed the link to restart (client.ts `restart`), `update` when it said it was to update;
+ * live again on the same version, back, which a drop within RESTART_FAST_MS goes on with (a hub still shutting down
+ * takes the fast redial, then closes it); back on another version, updated, `took` ms after it went down. Null while
+ * nothing is to say.
  */
 export type Restart =
-  | { readonly t: "down"; readonly since: number; readonly planned: boolean; readonly update: boolean; readonly from: string | undefined }
+  | { readonly t: "down" | "back"; readonly since: number; readonly planned: boolean; readonly update: boolean; readonly from: string | undefined; readonly at?: number }
   | { readonly t: "updated"; readonly at: number; readonly from: string; readonly to: string; readonly took: number };
 
 export interface State {
@@ -254,7 +256,7 @@ export const reduce = (s: State, a: Action): State => {
 const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   switch (frame.t) {
     case "restart":
-      return s.hub.phase === "live" ? { ...s, restart: { t: "down", since: nowMs, planned: true, update: /updat/iu.test(frame.reason), from: s.hub.version } } : s;
+      return s.hub.phase === "live" ? { ...s, restart: downFrom(s, nowMs, true, /updat/iu.test(frame.reason)) } : s;
     case "state": {
       const restart = restartAfter(s, frame.state, nowMs);
       // A link that isn't live any more: what it showed stays, held, until the next snapshot and pages replace it. The
@@ -300,6 +302,13 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   }
 };
 
+/** The link went down: a restart of its own, or the one it came back from a moment ago going on. */
+const downFrom = (s: State, nowMs: number, planned: boolean, update: boolean): Restart => {
+  const was = s.restart?.t === "back" && nowMs - (s.restart.at ?? 0) < RESTART_FAST_MS ? s.restart : null;
+  if (was === null) return { t: "down", since: nowMs, planned, update, from: s.hub.phase === "live" ? s.hub.version : undefined };
+  return { t: "down", since: was.since, planned: planned || was.planned, update: update || was.update, from: was.from };
+};
+
 /**
  * The restart after a change of link: a live link that went down without the hub saying why went down unplanned; back
  * live, on another version than it went down on, the hub was updated.
@@ -308,9 +317,9 @@ const restartAfter = (s: State, next: HubState, nowMs: number): Restart | null =
   if (next.phase === "live") {
     const was = s.restart;
     if (was?.t !== "down") return was;
-    return was.from !== undefined && next.version !== undefined && next.version !== was.from ? { t: "updated", at: nowMs, from: was.from, to: next.version, took: nowMs - was.since } : null;
+    return was.from !== undefined && next.version !== undefined && next.version !== was.from ? { t: "updated", at: nowMs, from: was.from, to: next.version, took: nowMs - was.since } : { ...was, t: "back", at: nowMs };
   }
-  if (s.hub.phase === "live" && s.restart?.t !== "down") return { t: "down", since: nowMs, planned: false, update: false, from: s.hub.version };
+  if (s.hub.phase === "live" && s.restart?.t !== "down") return downFrom(s, nowMs, false, false);
   // Stopped or refused: no restart is going on.
   return next.phase === "unpaired" || next.phase === "refused" ? null : s.restart;
 };
