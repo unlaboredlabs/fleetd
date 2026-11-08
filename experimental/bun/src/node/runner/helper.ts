@@ -1,8 +1,10 @@
 // The session-host helper: the Rust binary's `fleetd session-host`, which owns each session's claude so it outlives the
 // node (./host.ts). It ships beside the Bun build as `fleetd-session-host` (`bun run helper` puts one in dist/), and
 // runs fleetd's own MCP server and hold hook inside sessions too. A candidate counts only when it answers
-// `session-host` as the Rust binary does: the Bun build itself, or a script that runs it, answers "not ported", so it
-// is never taken, and a node without a helper reports itself degraded rather than failing every start.
+// `session-host` as the Rust binary does. The Bun build's own `fleetd session-host` (src/cli/session_host.ts) only
+// hands the command to a Rust host it finds, and refuses at once while a lookup runs (LOOKUP), so it is never
+// taken in place of one and two Bun builds never try each other. A node without a helper reports itself degraded
+// rather than failing every start.
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,9 +16,17 @@ export const HELPER = "fleetd-session-host";
 export const NO_HELPER =
   "this machine has no session host, so no agent can start here. Fix: put the Rust fleetd build beside this one as fleetd-session-host (bun run helper), or name it in FLEETD_NATIVE_BIN";
 
+/** Set while a host is looked for: a Bun build asked `session-host` then refuses rather than looking in turn. */
+export const LOOKUP = "FLEETD_SESSION_HOST_LOOKUP";
+
 /** Whether `bin` is the Rust binary's session host: run with no arguments, it prints its usage and exits 2. */
 export function hostsSessions(bin: string): boolean {
-  const out = spawnSync(bin, ["session-host"], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "ignore", "pipe"] });
+  const out = spawnSync(bin, ["session-host"], {
+    encoding: "utf8",
+    timeout: 10_000,
+    stdio: ["ignore", "ignore", "pipe"],
+    env: { ...process.env, [LOOKUP]: "1" },
+  });
   return out.status === 2 && (out.stderr ?? "").includes("session-host <dir> <session id> -- <program>");
 }
 

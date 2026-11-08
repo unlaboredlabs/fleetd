@@ -1,3 +1,4 @@
+cli:`fleetd node flush`
 cli:`fleetd node join`
 cli:`fleetd node restart`
 cli:`fleetd node run`
