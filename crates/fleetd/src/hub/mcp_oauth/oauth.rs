@@ -58,14 +58,18 @@ pub enum TokenError {
     Failed(String),
 }
 
-/// A client that keeps every redirect within its first origin, as the MCP client does.
-fn http() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(TIMEOUT)
-        .user_agent(format!("fleetd/{}", env!("CARGO_PKG_VERSION")))
-        .redirect(crate::cli::mcp_client::same_origin_redirects())
-        .build()
-        .unwrap_or_default()
+/// A client that keeps every redirect within its first origin, as the MCP client does: one for every call, so a
+/// sign-in's knock, discovery, registration and token trade reuse their connections to a service.
+fn http() -> &'static reqwest::Client {
+    static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    HTTP.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(TIMEOUT)
+            .user_agent(format!("fleetd/{}", env!("CARGO_PKG_VERSION")))
+            .redirect(crate::cli::mcp_client::same_origin_redirects())
+            .build()
+            .unwrap_or_default()
+    })
 }
 
 /// The host part of a URL as a message names it, as code: `` `auth.example.com` ``.

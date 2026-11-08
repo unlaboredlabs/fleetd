@@ -21,6 +21,9 @@ Every coding agent has `mac` on its PATH:
 | `mac pull <path> [to]` | A file or folder from the agent's folder on the Mac into its worktree, as `cp -R` would: to `to` (into it, when it's a folder), or the path's last part. Nothing there is deleted: files go over the files of their names. A relative path starts in the pushed worktree there. |
 | `mac sim start` / `mac sim end` | An [iOS simulator](#sim) of the agent's own on the Mac, and ending it. |
 
+A `push` or `pull` cut off by a dropped link (the agent's machine, the hub or the Mac) goes on from where it stopped
+once the link is back, for up to 5 minutes, rather than failing or starting again.
+
 A typical turn:
 
 ```sh

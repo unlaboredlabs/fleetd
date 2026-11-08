@@ -113,6 +113,7 @@ export class Hubs {
   readonly #listeners = new Set<(list: readonly HubEntry[]) => void>();
   /** Said beside each hub until the app quits, e.g. that the list was lost and its hubs found again. */
   #note: string | null = null;
+  #started = false;
 
   constructor(mode: HubsMode) {
     this.#mode = mode;
@@ -144,7 +145,18 @@ export class Hubs {
   #service(id: HubId, loaded: Loaded): HubService {
     if (this.#mode.kind !== "hub") throw new Error("a fixture's hubs are fixed");
     const { credentials, transport, cacheDir } = this.#mode;
-    return new HubService({ kind: "hub", id, credentials, loaded, ephemeral: this.#ephemeral, transport, cache: new HubCacheFile(join(cacheDir, cacheFileName(id))) });
+    const service = new HubService({ kind: "hub", id, credentials, loaded, ephemeral: this.#ephemeral, transport, cache: new HubCacheFile(join(cacheDir, cacheFileName(id))) });
+    if (this.#started) service.start();
+    return service;
+  }
+
+  /**
+   * Dials every hub. Main calls it once the first window shows: reading the OS's CAs and opening sockets (tens of ms)
+   * then happens beside the page, not before the window. A hub paired later dials at once.
+   */
+  start(): void {
+    this.#started = true;
+    for (const service of this.all()) service.start();
   }
 
   /** In sidebar order, each with its label: the person's, else its host name until they pick one. */

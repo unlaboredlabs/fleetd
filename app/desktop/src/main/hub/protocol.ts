@@ -7,7 +7,7 @@ import type { AppServerMessage, BrowserInput } from "../../shared/contracts";
 export const CLOSE_UNAUTHORIZED = 4401;
 
 export type ClientMessage =
-  | { t: "auth"; key: string }
+  | { t: "auth"; key: string; features?: string[] }
   | { t: "snapshot" }
   | { t: "events"; cursor: number }
   | { t: "call"; id: string; tool: string; input: unknown }
@@ -66,8 +66,11 @@ export const parseServerFrame = (text: string): ServerFrame | null => {
   return parsed.success ? (parsed.data as ServerFrame) : null;
 };
 
-/** Delay before reconnect attempt `attempt` (0-based): 0.5 s doubling to a 30 s cap. */
-export const backoff = (attempt: number): number => Math.min(500 * 2 ** Math.min(attempt, 6), 30_000);
+/**
+ * Delay before reconnect attempt `attempt` (0-based): 0.5 s doubling to a 10 s cap. A link back after an outage is
+ * found within the cap; a hub has a handful of apps, whose ±25 % jitter (client.ts) keeps them out of step.
+ */
+export const backoff = (attempt: number): number => Math.min(500 * 2 ** Math.min(attempt, 5), 10_000);
 
 /** `http(s)://host[:port]` or `ws(s)://host[:port][/path]`, no scheme meaning http, to the hub's `/app` socket URL. */
 export const appUrl = (input: string): { ok: true; url: string } | { ok: false; message: string } => {

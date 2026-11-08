@@ -13,6 +13,7 @@ pub use server::NodeLinkServer;
 pub async fn handle(
     hub: std::sync::Arc<crate::hub::api::Hub>,
     socket: axum::extract::ws::WebSocket,
+    read: Option<crate::hub::http::ReadCount>,
 ) {
-    hub.link.handle(socket).await;
+    hub.link.handle_counted(socket, read).await;
 }

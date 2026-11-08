@@ -25,13 +25,18 @@ struct TestHub {
 
 /// The real registry plus an operate tool that counts its calls and a tool that panics.
 async fn start() -> TestHub {
+    start_on(Arc::new(SystemClock)).await
+}
+
+/// [`start`] on `clock`.
+async fn start_on(clock: Arc<dyn crate::clock::Clock>) -> TestHub {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
     };
-    let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
+    let hub = build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     let mut tools: Registry = api::registry();
     let operate_calls = Arc::new(AtomicUsize::new(0));
     let counter = operate_calls.clone();
@@ -414,7 +419,7 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     frames.sort_by_key(|f| f["id"].as_str().unwrap_or("").to_owned());
     assert_eq!(
         frames[0],
-        json!({ "t": "ready", "protocol": 1, "version": crate::version(), "features": ["presence", "browser_sessions", "navi_asks", "screen_open", "navi_skills", "browser_navigate", "screen_thumbs", "artifacts"] })
+        json!({ "t": "ready", "protocol": 1, "version": crate::version(), "features": ["presence", "browser_sessions", "navi_asks", "screen_open", "navi_skills", "browser_navigate", "screen_thumbs", "artifacts", "deflate"] })
     );
     assert_eq!(
         frames[1],
@@ -761,4 +766,316 @@ async fn an_app_connection_that_stops_reading_is_closed_once_too_far_behind() {
         deltas < 4000,
         "the stalled client was sent everything ({deltas} deltas)"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_idle_app_link_is_pinged_and_a_busy_one_is_not() {
+    use crate::hub::app_ws::KEEPALIVE;
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    app.send(Message::text(
+        json!({ "t": "auth", "key": reader }).to_string(),
+    ))
+    .await
+    .unwrap();
+    let ready = app.next().await.unwrap().unwrap();
+    assert!(ready.is_text());
+    // Silence from both ends: the hub pings once KEEPALIVE has passed, and again after as long.
+    let quiet = tokio::time::Instant::now();
+    for n in 1..=2 {
+        let next = app.next().await.unwrap().unwrap();
+        assert!(matches!(next, Message::Ping(_)), "got {next:?}");
+        assert_eq!(quiet.elapsed().as_secs(), KEEPALIVE.as_secs() * n);
+    }
+    // A client that pings on its own (the desktop app) keeps the flow alive: the hub answers and sends no ping.
+    for _ in 0..6 {
+        tokio::time::sleep(KEEPALIVE / 2).await;
+        app.send(Message::Ping(Default::default())).await.unwrap();
+        let next = app.next().await.unwrap().unwrap();
+        assert!(matches!(next, Message::Pong(_)), "got {next:?}");
+    }
+}
+
+#[tokio::test]
+async fn an_app_that_asks_for_deflate_gets_compressed_frames_and_an_older_one_text() {
+    use crate::link_deflate::{Deflater, Inflater};
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    // A call whose answer is long enough to compress.
+    let big = json!({ "t": "call", "id": "c1", "tool": "prompt_get", "input": {} });
+
+    // An older app names no features: every frame is Text, as before.
+    let (mut old, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [json!({ "t": "auth", "key": reader }), big.clone()] {
+        old.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    for _ in 0..2 {
+        let frame = old.next().await.unwrap().unwrap();
+        assert!(frame.is_text(), "an older app got {frame:?}");
+    }
+
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": reader, "features": ["deflate"] }),
+        big.clone(),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    // `ready` is Text and says the hub reads compressed frames too.
+    let ready: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(ready["t"], "ready");
+    assert!(
+        ready["features"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("deflate"))
+    );
+    // What follows is one deflate stream: the same answer twice, the second a fraction of the first on the wire.
+    let mut inflater = Inflater::default();
+    let mut read = async |app: &mut tokio_tungstenite::WebSocketStream<_>| match app
+        .next()
+        .await
+        .unwrap()
+        .unwrap()
+    {
+        Message::Binary(data) => (
+            data.len(),
+            serde_json::from_str::<Value>(&inflater.inflate(&data, 64 << 20).unwrap()).unwrap(),
+        ),
+        other => panic!("expected a compressed frame, got {other:?}"),
+    };
+    let (first, answer) = read(&mut app).await;
+    assert_eq!(
+        (answer["t"].as_str(), answer["id"].as_str()),
+        (Some("result"), Some("c1"))
+    );
+    let plain = answer.to_string().len();
+    assert!(first * 3 < plain, "{first} bytes for {plain}");
+    // The app's own frame, compressed on its stream, is read like Text.
+    let mut deflater = Deflater::default();
+    let again = json!({ "t": "call", "id": "c2", "tool": "prompt_get", "input": {} }).to_string();
+    app.send(Message::Binary(deflater.deflate(&again).into()))
+        .await
+        .unwrap();
+    let (second, answer) = read(&mut app).await;
+    assert_eq!(answer["id"], "c2");
+    assert!(
+        second * 10 < first,
+        "a repeat cost {second} bytes after {first}"
+    );
+
+    // A Binary frame that isn't deflate data ends the connection.
+    app.send(Message::Binary(vec![0xff; 16].into()))
+        .await
+        .unwrap();
+    match app.next().await.unwrap().unwrap() {
+        Message::Close(Some(frame)) => assert_eq!(u16::from(frame.code), 1007),
+        other => panic!("expected a close, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_compressed_app_resumes_from_an_old_cursor_with_every_event_it_may_see_in_order() {
+    use crate::link_deflate::Inflater;
+    let t = start().await;
+    let a_only = key(&t.hub, json!([{ "role": "read", "machines": ["lab-a"] }]));
+    for n in 0..4 {
+        t.hub
+            .events
+            .append(event(if n % 2 == 0 { "lab-a" } else { "lab-b" }))
+            .unwrap();
+    }
+    // The cursor the app last read, before a drop; more happens while it is away.
+    let old = t.hub.events.head();
+    let mut missed = Vec::new();
+    for n in 0..20 {
+        let machine = if n % 3 == 0 { "lab-b" } else { "lab-a" };
+        let seq = t.hub.events.append(event(machine)).unwrap().seq.get();
+        if machine == "lab-a" {
+            missed.push(seq);
+        }
+    }
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": a_only, "features": ["deflate"] }),
+        json!({ "t": "events", "cursor": old }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    assert!(
+        app.next().await.unwrap().unwrap().is_text(),
+        "ready is Text"
+    );
+    let mut inflater = Inflater::default();
+    let mut next_event = async || match app.next().await.unwrap().unwrap() {
+        Message::Binary(data) => {
+            serde_json::from_str::<Value>(&inflater.inflate(&data, 64 << 20).unwrap()).unwrap()
+        }
+        other => panic!("expected a compressed event, got {other:?}"),
+    };
+    let mut seen = Vec::new();
+    while seen.len() < missed.len() {
+        let event = next_event().await;
+        assert_eq!(
+            (event["t"].as_str(), event["machineId"].as_str()),
+            (Some("event"), Some("lab-a"))
+        );
+        seen.push(event["seq"].as_i64().unwrap());
+    }
+    assert_eq!(seen, missed);
+    // Then it carries on live, on the same stream.
+    let live = t.hub.events.append(event("lab-a")).unwrap().seq.get();
+    assert_eq!(next_event().await["seq"].as_i64(), Some(live));
+}
+
+type NodeSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// A node linking as `devbox` with an enroll token, listing `capabilities`: its socket and the hub's welcome.
+async fn link_node(t: &TestHub, capabilities: &[&str]) -> (NodeSocket, Value) {
+    use base64::Engine;
+    use ed25519_dalek::Signer;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let devbox = fleetd_contracts::ids::MachineId::unchecked("devbox");
+    let token = t
+        .hub
+        .auth
+        .create_enroll_token(&devbox, "test")
+        .unwrap()
+        .token;
+    let key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+    let (mut node, _) = tokio_tungstenite::connect_async(format!("ws://{}/node/link", t.url))
+        .await
+        .unwrap();
+    let challenge: Value =
+        serde_json::from_str(node.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    let nonce = challenge["nonce"].as_str().unwrap();
+    let hello = json!({
+        "t": "hello", "machineId": "devbox", "name": "devbox", "nodeVersion": "0.0.0", "protocol": 1,
+        "pubKey": b64.encode(key.verifying_key().to_bytes()),
+        "sig": b64.encode(key.sign(nonce.as_bytes()).to_bytes()),
+        "enrollToken": token, "capabilities": capabilities,
+    });
+    node.send(Message::text(hello.to_string())).await.unwrap();
+    let welcome = match node.next().await.unwrap().unwrap() {
+        Message::Text(text) => serde_json::from_str(&text).unwrap(),
+        other => panic!("the welcome came as {other:?}"),
+    };
+    (node, welcome)
+}
+
+#[tokio::test]
+async fn a_node_that_lists_link_deflate_gets_compressed_frames_and_an_older_one_text() {
+    use crate::link_deflate::{Deflater, Inflater};
+    use fleetd_contracts::node_link::{CAP_LINK_DEFLATE, HUB_CAP_LINK_DEFLATE};
+    let t = start().await;
+
+    // An older node lists nothing: the hub's frames after the welcome are Text, as before.
+    let (mut old, welcome) = link_node(&t, &[]).await;
+    assert_eq!(welcome["t"], "welcome");
+    assert!(
+        welcome["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(HUB_CAP_LINK_DEFLATE))
+    );
+    let next = old.next().await.unwrap().unwrap();
+    assert!(next.is_text(), "an older node got {next:?}");
+    drop(old);
+
+    let (mut node, welcome) = link_node(&t, &[CAP_LINK_DEFLATE]).await;
+    assert_eq!(welcome["t"], "welcome");
+    // The runner check the hub asks every new link: compressed, and it inflates to the same frame.
+    let mut inflater = Inflater::default();
+    let asked: Value = match node.next().await.unwrap().unwrap() {
+        Message::Binary(data) => {
+            serde_json::from_str(&inflater.inflate(&data, 1 << 20).unwrap()).unwrap()
+        }
+        other => panic!("expected a compressed frame, got {other:?}"),
+    };
+    assert!(asked["t"].is_string(), "{asked}");
+    // The node's compressed heartbeat is read like Text; then a frame that won't inflate ends the link.
+    let mut deflater = Deflater::default();
+    let beat = json!({ "t": "hb", "at": "2026-11-07T10:00:00.000Z" }).to_string();
+    node.send(Message::Binary(deflater.deflate(&beat).into()))
+        .await
+        .unwrap();
+    node.send(Message::Binary(vec![0xff; 16].into()))
+        .await
+        .unwrap();
+    loop {
+        match node.next().await.unwrap().unwrap() {
+            Message::Close(Some(frame)) => {
+                assert_eq!(
+                    u16::from(frame.code),
+                    fleetd_contracts::node_link::close::BAD_FRAME
+                );
+                assert!(frame.reason.contains("inflate"), "{}", frame.reason);
+                break;
+            }
+            Message::Binary(_) | Message::Text(_) => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+}
+
+/// A 25 MiB put_file over 1 Mbit/s takes minutes as one frame: bytes still arriving keep the link up, and silence
+/// is timed from the last of them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_frame_still_coming_in_keeps_the_link_alive() {
+    use crate::hub::store::test_clock::ManualClock;
+    use fleetd_contracts::events::HubEventType;
+    use tokio::io::AsyncWriteExt;
+    let clock = ManualClock::at(1_792_000_000_000);
+    let t = start_on(clock.clone()).await;
+    let devbox = fleetd_contracts::ids::MachineId::unchecked("devbox");
+    let (node, _) = link_node(&t, &[]).await;
+    let offline = || {
+        t.hub
+            .events
+            .page(0, Some(&[HubEventType::MachineOffline]), None)
+            .unwrap()
+            .events
+            .len()
+    };
+    // One masked Text frame (a zero mask leaves the payload as it is), its header now and its body bit by bit.
+    let mut tcp = match node.into_inner() {
+        tokio_tungstenite::MaybeTlsStream::Plain(tcp) => tcp,
+        _ => unreachable!("plain ws"),
+    };
+    let body = 1u64 << 20;
+    let mut header = vec![0x81, 0x80 | 127];
+    header.extend_from_slice(&body.to_be_bytes());
+    header.extend_from_slice(&[0; 4]);
+    tcp.write_all(&header).await.unwrap();
+    let step = Duration::from_secs(5);
+    // Twice the silence timeout, a little of the frame every 5 s.
+    for _ in 0..18 {
+        tcp.write_all(&[b' '; 1024]).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        clock.advance(step);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        offline(),
+        0,
+        "a link whose frame is still coming in went offline"
+    );
+    assert!(t.hub.link.link_id(&devbox).is_some());
+    // The bytes stop: once the timeout passes with none, the machine is offline.
+    for _ in 0..10 {
+        clock.advance(step);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(offline(), 1);
 }

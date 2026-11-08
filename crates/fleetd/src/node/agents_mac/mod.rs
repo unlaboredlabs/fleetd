@@ -38,9 +38,9 @@ use std::time::Duration;
 
 use super::config::NodeConfig;
 use fleetd_contracts::node_link::{
-    CAP_AGENTS_MAC, CAP_BROWSER, CAP_MAC_TOOL, CAP_PROJECT_SETTINGS, CAP_SCREEN_SETTINGS,
-    CAP_SELF_UPDATE, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_IOS, CAP_SESSION_SEAL,
-    CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacCheckId, MacHealth,
+    CAP_AGENTS_MAC, CAP_BROWSER, CAP_LINK_DEFLATE, CAP_MAC_TOOL, CAP_PROJECT_SETTINGS,
+    CAP_SCREEN_SETTINGS, CAP_SELF_UPDATE, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_IOS,
+    CAP_SESSION_SEAL, CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacCheckId, MacHealth,
 };
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::SessionCall;
@@ -82,12 +82,13 @@ pub fn ios_config(
 }
 
 /// The calls the agents' Mac lists at its hello: updates, screens it hosts for agents elsewhere, and a project's
-/// removal (a project that lived on the Mac before it became the agents' Mac goes cleanly). Nothing that carries a
+/// removal (a project that lived on the Mac before it became the agents' Mac goes cleanly), and compressed link frames
+/// ([`CAP_LINK_DEFLATE`]: its mac push/pull pieces are the link's largest). Nothing that carries a
 /// secret, a claude or a Navi, which the hub then never sends. `others` are the session kinds the node found it can
 /// host. `tool`: the Mac's tool is on (macOS),
 /// so it lists [`CAP_MAC_TOOL`] too, once.
 pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec<String> {
-    const KEPT: [&str; 11] = [
+    const KEPT: [&str; 12] = [
         CAP_MAC_TOOL,
         CAP_SELF_UPDATE,
         CAP_UPDATE_FETCH,
@@ -99,6 +100,7 @@ pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec
         CAP_SESSION_SEAL,
         CAP_BROWSER,
         CAP_SESSION_IOS,
+        CAP_LINK_DEFLATE,
     ];
     let mut caps = vec![CAP_AGENTS_MAC.to_owned()];
     caps.extend(

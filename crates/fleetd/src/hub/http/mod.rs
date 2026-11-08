@@ -12,10 +12,14 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use fleetd_contracts::hello::PROTOCOL_VERSION;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
+
+mod counted;
+mod gzip;
+
+pub use counted::ReadCount;
 
 /// Node links, /app sessions and events_wait long-polls never end on their own, so after a stop is asked for they
 /// get this long before the server returns anyway (writes retry by clientRequestId).
@@ -61,7 +65,8 @@ async fn mcp_route(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    mcp::handle(
+    let accept = headers.clone();
+    let answer = mcp::handle(
         &server.hub,
         &server.tools,
         &server.mcp,
@@ -69,7 +74,8 @@ async fn mcp_route(
         headers,
         body,
     )
-    .await
+    .await;
+    gzip::negotiate(&accept, answer).await
 }
 
 async fn pair_route(State(server): State<Server>, request: Request) -> Response {
@@ -85,8 +91,8 @@ async fn trade_code(server: Server, request: Request, mac: bool) -> Response {
     let (parts, body) = request.into_parts();
     let remote = parts
         .extensions
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ConnectInfo(addr)| addr.ip());
+        .get::<ConnectInfo<counted::Peer>>()
+        .map(|ConnectInfo(peer)| peer.addr.ip());
     let host = parts
         .headers
         .get(axum::http::header::HOST)
@@ -130,7 +136,10 @@ async fn hub_link_route(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    crate::hub::hub_links::serve::handle(server.hub, &op, method, &headers, &query, &body).await
+    let answer =
+        crate::hub::hub_links::serve::handle(server.hub, &op, method, &headers, &query, &body)
+            .await;
+    gzip::negotiate(&headers, answer).await
 }
 
 fn expect_upgrade() -> Response {
@@ -160,12 +169,14 @@ async fn relay_route(
 
 async fn node_link_route(
     State(server): State<Server>,
+    peer: Option<axum::Extension<ConnectInfo<counted::Peer>>>,
     upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Response {
     let Ok(upgrade) = upgrade else {
         return expect_upgrade();
     };
-    upgrade.on_upgrade(move |socket| crate::hub::link::handle(server.hub, socket))
+    let read = peer.map(|axum::Extension(ConnectInfo(peer))| peer.read);
+    upgrade.on_upgrade(move |socket| crate::hub::link::handle(server.hub, socket, read))
 }
 
 /// Serves until `hub.shutdown` fires, then gives open connections [`SHUTDOWN_GRACE`] before returning.
@@ -177,15 +188,11 @@ pub async fn serve(
     let shutdown = hub.shutdown.clone();
     let app = router(hub, tools);
     let stop = shutdown.clone();
-    // Nagle off, as on the node's end of its link: small frames that answer each other (a screen's start, its control,
-    // its first frame; the app's calls) would each wait out a delayed ack.
-    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
-        let _ = tcp.set_nodelay(true);
-    });
+    let listener = counted::Counted(listener);
     let mut server = tokio::spawn(async move {
         axum::serve(
             listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
+            app.into_make_service_with_connect_info::<counted::Peer>(),
         )
         .with_graceful_shutdown(async move { stop.wait().await })
         .await
