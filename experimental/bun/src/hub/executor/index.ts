@@ -165,13 +165,18 @@ type Slot = {
   /** Machine events waiting for the supervisor, applied in order. */
   inbox: MachineEventFrame[];
   wake?: () => void;
-  live: boolean;
+  /** The link whose subscription the node accepted, while its supervisor runs: live only while it is `link`'s. */
+  liveLink?: number;
+  /** When `liveLink` was last set, in ms. */
   liveSinceMs: number;
   caughtUp?: CaughtUp;
   shell: ShellState;
   /** Calls in flight on the current link, by frame id. */
   pending: Map<string, Pending>;
 };
+
+/** Whether the slot's link is the one its node accepted the subscription on. */
+const slotLive = (s: Slot) => s.liveLink !== undefined && s.link?.linkId === s.liveLink;
 
 /** A watcher of one boolean per machine (the Rust executor's `watch` channels). */
 class Flags {
@@ -258,7 +263,7 @@ export class Executors {
   private slot(machineId: MachineId): Slot {
     let slot = this.machines.get(machineId);
     if (!slot) {
-      slot = { inbox: [], live: false, liveSinceMs: 0, shell: newShellState(), pending: new Map() };
+      slot = { inbox: [], liveSinceMs: 0, shell: newShellState(), pending: new Map() };
       this.machines.set(machineId, slot);
     }
     return slot;
@@ -271,9 +276,22 @@ export class Executors {
 
   /** Takes over the machine's link and (re)subscribes. Idempotent for the same link. */
   attach(machineId: MachineId, sessions: NodeSessions): void {
+    this.takeLink(machineId, sessions, false);
+  }
+
+  /**
+   * Subscribes again on a link that is up but not live (its heartbeats arrive, `hub/link`): its supervisor is replaced
+   * by a new one. Does nothing once the link is live, or after a newer link took over.
+   */
+  reattach(machineId: MachineId, sessions: NodeSessions): void {
+    this.takeLink(machineId, sessions, true);
+  }
+
+  private takeLink(machineId: MachineId, sessions: NodeSessions, again: boolean): void {
     const slot = this.slot(machineId);
     // Two links of one machine can get here in either order: an older one coming late must not take over.
-    if (slot.link && slot.link.linkId >= sessions.linkId) return;
+    const current = slot.link?.linkId;
+    if (current !== undefined && (current > sessions.linkId || (current === sessions.linkId && (!again || slot.liveLink === current)))) return;
     slot.stop?.abort();
     this.endLive(machineId, slot);
     slot.link = sessions;
@@ -282,7 +300,7 @@ export class Executors {
     this.dropPending(slot);
     const stop = new AbortController();
     slot.stop = stop;
-    void this.supervise(machineId, slot, stop.signal);
+    void this.supervise(machineId, slot, sessions.linkId, stop.signal);
   }
 
   /** Drops the link. The machine's shell state is kept, so a later attach resumes from its cursor. */
@@ -303,9 +321,9 @@ export class Executors {
     if (this.machines.get(machineId)?.link?.linkId === linkId) this.detach(machineId);
   }
 
-  /** Clears the slot's live flag when a supervisor ends, however it ends. */
+  /** Clears the slot's live link, and ends its thread follows, when its link is replaced or dropped. */
   private endLive(machineId: MachineId, slot: Slot): void {
-    slot.live = false;
+    slot.liveLink = undefined;
     slot.wake?.();
     this.views.dropMachine(machineId);
     this.live.set(machineId, false);
@@ -313,7 +331,14 @@ export class Executors {
 
   isConnected(machineId: MachineId): boolean {
     const slot = this.machines.get(machineId);
-    return slot !== undefined && slot.live && slot.link !== undefined;
+    return slot !== undefined && slotLive(slot);
+  }
+
+  /** What the 2026-11-08 outage left: the link up and heartbeating, its executor not live. */
+  goDarkForTest(machineId: MachineId): void {
+    const slot = this.machines.get(machineId);
+    if (slot) slot.liveLink = undefined;
+    this.live.set(machineId, false);
   }
 
   /** When the machine's current link went live, in ms; undefined while it has no live link. */
@@ -476,7 +501,7 @@ export class Executors {
   }
 
   /** One link's lifetime: subscribe after the stored cursor, then apply the machine stream until detached. */
-  private async supervise(machineId: MachineId, slot: Slot, signal: AbortSignal): Promise<void> {
+  private async supervise(machineId: MachineId, slot: Slot, linkId: number, signal: AbortSignal): Promise<void> {
     const cursor = store(this.hub).cursorGet(machineId);
     // A replay only carries changed rows, and project counts need every row, so the first stream in this process
     // starts from a snapshot; it is diffed against the stored summaries, so nothing is missed.
@@ -502,8 +527,8 @@ export class Executors {
         await sleep(delay, signal);
       }
     }
-    if (signal.aborted) return;
-    slot.live = true;
+    if (signal.aborted || slot.link?.linkId !== linkId) return;
+    slot.liveLink = linkId;
     slot.liveSinceMs = this.hub.clock.now();
     slot.caughtUp = undefined;
     this.live.set(machineId, true);
@@ -511,6 +536,8 @@ export class Executors {
     const wake = () => slot.wake?.();
     signal.addEventListener("abort", wake, { once: true });
     while (!signal.aborted) {
+      // A supervisor slow to stop applies nothing once a newer link took over: its subscription replays it.
+      if (slot.link?.linkId !== linkId) break;
       const frame = slot.inbox.shift();
       if (!frame) {
         await new Promise<void>((resolve) => {
@@ -678,7 +705,7 @@ export class Executors {
   running(): { thread: ThreadRef; projectId: string; runId?: string }[] {
     const out: { thread: ThreadRef; projectId: string; runId?: string }[] = [];
     for (const [machineId, slot] of this.machines) {
-      if (!slot.live) continue;
+      if (!slotLive(slot)) continue;
       for (const [id, t] of slot.shell.threads) {
         if (t.summary.status !== "running" && t.summary.status !== "waiting") continue;
         out.push({ thread: threadRef(machineId, id), projectId: t.summary.projectId, ...(t.activeRunId ? { runId: t.activeRunId } : {}) });

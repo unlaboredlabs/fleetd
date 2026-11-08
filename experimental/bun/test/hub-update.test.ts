@@ -15,6 +15,7 @@ afterAll(home.done);
 
 const NEW = "1.2.0";
 const OLD = "1.1.0";
+const NEWER = "1.3.0";
 const build = new TextEncoder().encode("new fleetd");
 
 /** A hub on OLD, its channel on NEW, and nodes that come back on what they're told to run. */
@@ -30,6 +31,8 @@ class Fake implements UpdatePorts {
   waiters: (() => void)[] = [];
   answer: (m: string) => NodeActionResult = () => ({ ok: true, message: "in place" });
   exePath: string;
+  /** The channel's newest build and its bytes. */
+  published: [string, Uint8Array] = [NEW, build];
 
   constructor(dir: string, nodes: Partial<NodeFacts>[]) {
     require("node:fs").mkdirSync(dir, { recursive: true });
@@ -51,12 +54,13 @@ class Fake implements UpdatePorts {
   }
 
   feed() {
+    const [version, bytes] = this.published;
     return {
       get: async (name: string) =>
         new TextEncoder().encode(
-          name === "release.json" ? JSON.stringify({ cliVersion: NEW }) : name === "SHA256SUMS" ? `${sha256Hex(build)}  fleetd-linux-x64\n` : "",
+          name === "release.json" ? JSON.stringify({ cliVersion: version }) : name === "SHA256SUMS" ? `${sha256Hex(bytes)}  fleetd-linux-x64\n` : "",
         ),
-      stream: async (name: string, sink: (c: Uint8Array) => void) => sink(name === "fleetd-linux-x64" ? build : new Uint8Array()),
+      stream: async (name: string, sink: (c: Uint8Array) => void) => sink(name === "fleetd-linux-x64" ? bytes : new Uint8Array()),
     };
   }
   running = () => this.version;
@@ -215,6 +219,80 @@ test("settings, the automatic update's due time, and its last result", () => {
     }),
   ).toEqual({ at: "2026-11-08T10:00:00.000Z", to: NEW, result: "partial", message: "lab: didn't come back (1 more didn't update)" });
   expect(existsSync(join(dir, "update", "run.json"))).toBe(false);
+});
+
+/** Automatic updates on, and a finished update to `to` that started `ago` ms before the fake's now. */
+function autoAfter(dir: string, fake: Fake, ago: number, to = OLD) {
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  const at = new Date(fake.now - ago).toISOString();
+  const hub = { part: "hub", name: "the hub", from: OLD, state: "current" };
+  writeFileSync(join(dir, "update", "run.json"), JSON.stringify({ id: "U0", channel: "edge", to, startedAt: at, finishedAt: at, parts: [hub] }));
+  const u = new Updates(join(dir, "update"), { now: () => fake.now }, { ...timing(), autoGap: defaultTiming().autoGap });
+  u.setPorts(fake);
+  u.setSettings(true, undefined);
+  return u;
+}
+
+test("two builds within 10 minutes of an update install once, at the window's end, as the newer one", async () => {
+  const gap = defaultTiming().autoGap;
+  expect(gap).toBe(600_000);
+  const dir = join(home.dir, "e");
+  const fake = new Fake(dir, []);
+  const start = fake.now;
+  // A person's update opens the window as an automatic one does.
+  const u = autoAfter(dir, fake, 0);
+  // The first build, minutes after it.
+  fake.now += 3 * 60_000;
+  expect(await u.autoTick()).toBeUndefined();
+  expect(u.ready()).toBe(NEW);
+  const due = u.autoAt()!;
+  expect(due).toBe(start + 600_000);
+  // The second build replaces it.
+  fake.published = [NEWER, new TextEncoder().encode("newer fleetd")];
+  expect(await u.autoTick()).toBeUndefined();
+  expect(u.ready()).toBe(NEWER);
+  expect(u.autoAt()).toBe(due);
+  expect(fake.plans).toEqual([]);
+
+  fake.now += 7 * 60_000;
+  const run = await u.autoTick();
+  expect(run?.auto).toBe(true);
+  await until(() => fake.plans.length === 1);
+  expect(await u.autoTick()).toBeUndefined();
+  expect(fake.plans.map((p) => p.to)).toEqual([NEWER]);
+  expect(u.status()!.id).toBe(run!.id);
+});
+
+test("a build ready with no update in the last 10 minutes installs at the look that found it, every 2 minutes", async () => {
+  expect(defaultTiming().prefetchEvery).toBe(120_000);
+  const dir = join(home.dir, "f");
+  const fake = new Fake(dir, []);
+  const u = autoAfter(dir, fake, 11 * 60_000);
+  expect(await u.autoTick()).toBeDefined();
+});
+
+test("the look wakes at the window's end for a build due, else every 2 minutes", async () => {
+  const sleeps = async (u: Updates) => {
+    const stop = new AbortController();
+    const slept: number[] = [];
+    // The loop's own signal: a fresh Updates over the same home, stopped after its first sleep.
+    const v = new Updates(u.dir, { now: () => fake.now }, { ...timing(), prefetchEvery: 120_000, autoGap: 600_000 }, stop.signal);
+    v.setPorts(fake);
+    v.sleep = async (ms: number) => {
+      slept.push(ms);
+      stop.abort();
+    };
+    await v.prefetchLoop();
+    return [slept, v.nextCheck()];
+  };
+  const dir = join(home.dir, "g");
+  const fake = new Fake(dir, []);
+  // An update 9 minutes ago and a build ready: due a minute from now.
+  const u = autoAfter(dir, fake, 9 * 60_000);
+  expect(await sleeps(u)).toEqual([[60_000], fake.now + 60_000]);
+  // Nothing newer out: the next look, 2 minutes on.
+  fake.published = [OLD, new TextEncoder().encode("old fleetd")];
+  expect(await sleeps(u)).toEqual([[120_000], fake.now + 120_000]);
 });
 
 test("versions order within a channel only, and the watcher's health URL reaches the hub", () => {
