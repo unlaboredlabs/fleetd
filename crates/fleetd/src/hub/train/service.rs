@@ -1471,11 +1471,16 @@ impl Train {
             };
             let runs = runs.map(|runs| proven_runs(runs, &skips));
             let skipped_by_batch: Vec<String> = skips.into_iter().map(|b| b.name).collect();
+            // A check the train re-ran for failing is waited for until that re-run is done, in the fast set or not:
+            // queued or running, it isn't red, and `gated` would let the PR merge past it.
             let judge = |runs: &[CheckRun]| {
                 let mut judged = gated(runs, fast.as_ref());
                 judged.extend(
                     runs.iter()
-                        .filter(|r| skipped_by_batch.iter().any(|n| gated_name(n, &r.name)))
+                        .filter(|r| {
+                            skipped_by_batch.iter().any(|n| gated_name(n, &r.name))
+                                || flaky.iter().any(|f| f.check == r.name)
+                        })
                         .filter(|r| !judged.iter().any(|j| j.name == r.name))
                         .cloned()
                         .collect::<Vec<_>>(),
