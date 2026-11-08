@@ -2,13 +2,13 @@
 // (`browser::end_outlived` on the hub), which ends it whatever its kind, and `node_action` `screens`, a kind of screen
 // turned on or off or its idle timeout, written into node.json.
 //
-// TODO(bun): devices and desktops end here too once they are ported; the restart that applies a changed kind once the
-// screens live here end (`schedule`, `when_idle`) is node-core's service handling.
+// The restart that applies a changed kind once the screens live here end (`schedule`, `when_idle`) is node-core's
+// service handling.
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ScreenSettings, SessionEndFrame } from "../../shared/screens_wire.ts";
-import { broker } from "../browser/index.ts";
 import { type Node, onHub } from "../browser/node.ts";
+import { router } from "../device/router.ts";
 import { edited, macRefuses } from "./settings.ts";
 
 /** Why this machine can't host `host` at all, whatever node.json says (screens.rs `unsupported`). */
@@ -59,5 +59,8 @@ export function apply(home: string, settings: ScreenSettings): string {
 
 /** Wires the hub's `session_end` to whichever kind of screen holds it. */
 export function start(node: Node): void {
-  onHub(node, "session_end", (f) => broker(node).sessionEnd(f as unknown as SessionEndFrame));
+  onHub(node, "session_end", (f) => {
+    const end = f as unknown as SessionEndFrame;
+    router(node).endScreen(end.threadId, end.sessionId);
+  });
 }
