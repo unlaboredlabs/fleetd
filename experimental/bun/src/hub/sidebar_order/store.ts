@@ -30,18 +30,3 @@ export function putRefs(db: Database, table: "sidebar_orders" | "chat_pins", per
     `INSERT INTO ${table} (person_id, refs) VALUES (?, ?) ON CONFLICT (person_id) DO UPDATE SET refs = excluded.refs`,
   ).run(person, JSON.stringify(refs.map((r) => ({ machineId: r.machineId, projectId: r.projectId }))));
 }
-
-/** The project is gone: it leaves every person's list in `table`, so a project made later never takes its place. */
-export function forget(db: Database, table: "sidebar_orders" | "chat_pins", r: ProjectRef): void {
-  for (const { person_id, refs } of db.query<{ person_id: string; refs: string }, []>(`SELECT person_id, refs FROM ${table}`).all()) {
-    let list: ProjectRef[];
-    try {
-      list = JSON.parse(refs) as ProjectRef[];
-    } catch {
-      continue;
-    }
-    const kept = list.filter((o) => o.machineId !== r.machineId || o.projectId !== r.projectId);
-    if (kept.length === list.length) continue;
-    db.query(`UPDATE ${table} SET refs = ? WHERE person_id = ?`).run(JSON.stringify(kept), person_id);
-  }
-}

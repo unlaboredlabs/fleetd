@@ -19,7 +19,7 @@ import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
-import type { NodeToHubSession } from "../executor/index.ts";
+import { type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
 import { pausedText, why as guardWhy } from "./guard.ts";
 import {
@@ -688,6 +688,11 @@ export class Link {
   }
 
   private setReady(machineId: string, ready: boolean): void {
+    try {
+      executorsOf(this.hub).setRunnerReady(machineId, ready);
+    } catch (error) {
+      console.error("node link: the executor did not take the runner's readiness:", error);
+    }
     if ((this.readyBy.get(machineId) ?? false) === ready) return;
     this.readyBy.set(machineId, ready);
     for (const hook of this.readyHooks) {
@@ -701,13 +706,12 @@ export class Link {
 
   /** Asks the node how its runner is, and announces the machine online or degraded by the answer. */
   private checkRunner(machineId: string): void {
-    this.commands
-      .sessionCall(machineId, { op: "runner_info" })
-      .then((reply) => {
-        const result = reply.result as { ok?: { kind?: string } & Record<string, unknown>; err?: { message?: string } };
-        if (result.ok?.kind === "runner_info") return runnerProblem(result.ok as never);
-        return result.err?.message ?? `${machineId}'s node answered runner_info with something else`;
-      })
+    // Through the executor, as the Rust hub's `executors.runner_info`: its session call, and its read timeout.
+    executorsOf(this.hub)
+      .call(machineId, "read", { op: "runner_info" }, READ_TIMEOUT_MS)
+      .then((output) =>
+        output.kind === "runner_info" ? runnerProblem(output as never) : `${machineId}'s node answered runner_info with something else`,
+      )
       .catch((error: Error) => error.message)
       .then((problem) => this.applyRunner(machineId, problem));
   }

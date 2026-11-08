@@ -51,9 +51,12 @@ export class Wakes {
     this.#pending.splice(0, Math.max(0, this.#pending.length - PENDING_MAX));
     for (const w of this.#waiters.splice(0)) w();
   }
-  /** Resolves at the next wake. */
-  next(): Promise<void> {
-    return new Promise((resolve) => this.#waiters.push(resolve));
+  /** Resolves at the next wake; an aborted `signal` (its link ended) drops the wait, so none piles up. */
+  next(signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      this.#waiters.push(resolve);
+      signal?.addEventListener("abort", () => (this.#waiters = this.#waiters.filter((w) => w !== resolve)), { once: true });
+    });
   }
   /** The sleeps to report, once. */
   take(): Slept[] {

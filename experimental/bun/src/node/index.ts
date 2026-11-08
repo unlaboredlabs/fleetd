@@ -17,7 +17,13 @@ import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
-import { configFor, SessionService } from "./sessions/index.ts";
+import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
+import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
+import { LOGINS } from "./runner/login.ts";
+import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
+import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
+import { rmSync } from "node:fs";
+import { configDir } from "./runner/claude.ts";
 import { homeDir } from "./util.ts";
 import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliver } from "./wire.ts";
 import { fleetdDir } from "../shared/home.ts";
@@ -33,10 +39,10 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
              keep the link up for a machine that has joined
 `;
 
-/** Every capability the Bun node lists in its hello: what its modules take. Self-update, Claude Code's install and
- * login and screens aren't ported, so their capabilities aren't listed. */
+/** Every capability the Bun node lists in its hello: what its modules take. Screen settings aren't taken yet, so
+ * `screen_settings` isn't listed. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -44,6 +50,11 @@ export const CAPABILITIES = [
 ];
 
 /** A hash of the OS's id for this computer (fingerprint.rs): the hub never enrolls a second computer under one id. */
+/** Ends the hold (node/hold.rs `clear`): every tool call waiting on it starts. */
+function clearHold(home: string): void {
+  for (const f of ["hold", "hold.screens", "hold.update", "held"]) rmSync(join(home, "update", f), { recursive: true, force: true });
+}
+
 export function machineFingerprint(): string | undefined {
   for (const file of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
     try {
@@ -166,13 +177,24 @@ export type RunningNode = { node: Node; sessions: SessionService; stop: () => Pr
 
 /** Starts the node: its sessions, its lead socket and its link. */
 export async function startNode(home: string, config: NodeConfig, enrollToken?: string, exitWhenEnrolled = false): Promise<RunningNode> {
+  // The hold the node before this one kept for its update ends with it: what it held goes on now.
+  clearHold(home);
   const identity = loadOrCreateIdentity(home);
   const boxKey = loadOrCreateBoxKey(home);
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
   const sessions = await SessionService.start(configFor(home, fleetdDir(), nativeBin(), boxKey));
+  // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
+  // claude on this machine too.
+  const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");
+  try {
+    if (turnAutoupdaterOff(settings)) console.log(`${new Date().toISOString()} INFO turned Claude Code's own update off {"settings":"${settings}"}`);
+  } catch (error) {
+    console.warn(`${new Date().toISOString()} WARN couldn't turn Claude Code's own update off: ${(error as Error).message}`);
+  }
   const relay = new LeadRelay();
   relay.hold = () => sessions.hold();
   const node = new Node(home, config, relay);
+  sessions.onItemEnded = (session, item) => node.area("items").ended(session, item);
   registerAreas(node);
   const link = node.area("link");
   const local = node.area("local");
@@ -184,7 +206,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   });
   const shutdown = new AbortController();
   const wakes = new Wakes();
-  runPower({ running: () => sessions.running(), wakes, onWake: () => {}, signal: shutdown.signal });
+  runPower({ running: () => sessions.running(), wakes, onWake: () => sessions.woke(), signal: shutdown.signal });
   const roots = config.cmdRoots ?? [homeDir()];
   const secretsCtx: SecretsContext = { machineId: config.machineId, roots, home, boxKey };
   const gated = new GatedRuns(home, config.machineId);
@@ -221,7 +243,17 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         void gated.resume(frame as unknown as GatedResume, ctx.hubId).then((r) => ctx.send({ t: "gated_result", ...r }));
         return;
       case "node_action":
-        void runNodeAction(frame as unknown as NodeAction, { hold: () => sessions.hold() }).then((r) => ctx.send({ t: "node_action_result", ...r }));
+        if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx);
+        void runNodeAction(frame as unknown as NodeAction, {
+          hold: () => sessions.hold(),
+          claude: {
+            installer: new RealClaude(sessions.config.claudeBin, runnerEnv(sessions.config)),
+            binary: sessions.config.claudeBin,
+            env: () => runnerEnv(sessions.config),
+            logins: LOGINS,
+            reprobe: () => sessions.reprobe(),
+          },
+        }).then((r) => ctx.send({ t: "node_action_result", ...r }));
         return;
       case "session_call":
         // Not the link's: a call that started finishes even if the link drops, and only its reply is lost.
@@ -234,6 +266,33 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         // that take them; without one they are dropped, as a node without the capability never gets them.
         return;
     }
+  };
+
+  /** `update` and `fetch`: answered before the restart, which waits for the answer to be on the link. */
+  const nodeUpdate = async (frame: NodeAction, ctx: LinkContext) => {
+    const failed = (f: Error & { stage?: string }) =>
+      ({ t: "node_action_result", id: frame.id, ok: false, message: f.message.slice(0, 500), stage: f.stage ?? "install" }) as const;
+    if (!frame.update) return ctx.send(failed(Object.assign(new Error(`the hub named no build to ${frame.action === "fetch" ? "fetch" : "update to"}`), { stage: "download" })));
+    if (frame.action === "fetch") {
+      ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: "fetching" });
+      return void runFetch(frame.update, home);
+    }
+    let answer: Awaited<ReturnType<typeof runUpdate>>;
+    try {
+      answer = await runUpdate(frame.update, home);
+    } catch (error) {
+      // No restart follows: what the hold stopped goes on now.
+      clearHold(home);
+      return ctx.send(failed(error as Error));
+    }
+    ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: answer.message });
+    if (!answer.watch) return;
+    // The answer is on the link: the watcher restarts this node now.
+    await Promise.race([ctx.flush(), Bun.sleep(ANSWER_WAIT_MS)]);
+    markAnswered(answer.watch.answered);
+    // Still running once the watcher decided: the restart was refused, and the hub hears so now.
+    const refused = await notRestarted(answer.watch.verdict, (HEALTH_WAIT_SECS + 10) * 1000);
+    if (refused) ctx.send(failed(refused));
   };
 
   const hb = node.area("hb");
@@ -252,6 +311,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     },
     attach: (ctx) => {
       link.linked(ctx);
+      // For the watcher of an update's restart: this build came up and its hub took it.
+      markUp(home, VERSION);
       for (const slept of wakes.take()) ctx.send({ t: "slept", ...slept });
       const detachLead = relay.attach(ctx.send, ctx.hubCaps);
       const detachSessions = sessions.attach(ctx.send);
@@ -262,7 +323,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       };
     },
     handle,
-    woke: () => wakes.next(),
+    woke: (signal) => wakes.next(signal),
     signal: shutdown.signal,
   });
   void fatal.then((refused) => {

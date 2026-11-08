@@ -21,6 +21,7 @@ import { workstreamGet } from "../orders/workstreams.ts";
 import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
 import { others } from "./owner.ts";
+import { register as registerPurchases } from "./purchases.ts";
 import { pasted, siteOf } from "./sites.ts";
 import * as navis from "./store.ts";
 
@@ -78,6 +79,7 @@ const refOf = (input: { machineId: string; projectId: string }): ProjectRef => (
 export const NAVI_ASKS_MAX = 100;
 
 export function register(tools: Registry): void {
+  registerPurchases(tools);
   // The app's read of what a project asked other projects for (`project_message`), with each order opened for it.
   for (const name of ["project_asks", "navi_asks"] as const) {
     tools.add(name, (hub, caller, input) => {
