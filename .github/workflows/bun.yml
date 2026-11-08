@@ -1,8 +1,8 @@
 # The Bun/TypeScript fleetd experiment (experimental/bun, D342/D343): its generated files, its type check with tsc-rs,
 # its tests, and the `bun build --compile` binary, run end to end; then the binary against the Rust one's black-box
-# tests (experimental/compare's cargo:session_host, the lab's self-healing scenario on a Rust hub). Only when the
-# experiment changes; not a required check, and nothing else in CI reads it. Pull requests only, so a red run never
-# counts as main's.
+# tests (experimental/compare's cargo:session_host, the lab's lead-wake scenario, and its self-healing one on a Rust
+# hub). Only when the experiment changes; not a required check, and nothing else in CI reads it. Pull requests only, so
+# a red run never counts as main's.
 name: Bun experiment
 
 on:
@@ -78,6 +78,22 @@ jobs:
           cache-dependency-path: tests/lab/package-lock.json
       - run: npm ci --prefix tests/lab --no-audit --no-fund
         working-directory: ${{ github.workspace }}
+      - name: Lead-wake lab scenario, all Bun
+        id: lead-wake
+        working-directory: ${{ github.workspace }}
+        # Hub, node, CLI and the agents' `fleetd` are the Bun binary: a writer's ask_lead wakes the lead through the
+        # hub's write queue (the executor's sendWith, #1278).
+        run: node tests/lab/factory/run.ts lead-wake
+        env:
+          FLEETD_BIN: ${{ github.workspace }}/experimental/bun/dist/fleetd
+          FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory-lead-wake
+      - if: failure() && steps.lead-wake.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bun-lead-wake-logs
+          path: ${{ runner.temp }}/factory-lead-wake/*/logs/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Self-healing lab scenario, a Rust hub with the Bun node (non-blocking until T2248)
         id: self-healing
         continue-on-error: true

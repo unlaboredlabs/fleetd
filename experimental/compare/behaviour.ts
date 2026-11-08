@@ -18,7 +18,7 @@ interface Suite {
   readonly command: (bin: string, dir: string, impl: string) => string;
 }
 const SUITES: ReadonlyArray<Suite> = [
-  ...["throughput", "self-healing"].map((s) => ({ name: `factory:${s}`, command: (_: string, dir: string) => `FLEETD_FACTORY_DIR='${dir}/r' node '${REPO}/tests/lab/factory/run.ts' ${s}` })),
+  ...["throughput", "self-healing", "lead-wake"].map((s) => ({ name: `factory:${s}`, command: (_: string, dir: string) => `FLEETD_FACTORY_DIR='${dir}/r' node '${REPO}/tests/lab/factory/run.ts' ${s}` })),
   ...CARGO_TESTS.map((t) => ({ name: `cargo:${t}`, command: () => `cargo test -q -p fleetd --test ${t}` })),
   { name: "contract", command: (bin, dir, impl) => `node '${path.join(HERE, "contract.ts")}' --impl ${impl} --bin '${bin}' --json '${dir}/contract.json'` },
 ];

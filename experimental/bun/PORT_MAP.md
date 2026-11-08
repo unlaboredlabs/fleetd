@@ -92,7 +92,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub→node `gated_resume` send → `src/hub/link` <!-- link:hub→node `gated_resume` send -->
 - [x] hub→node `node_action` send → `src/hub/link` <!-- link:hub→node `node_action` send -->
 - [x] hub→node `session_call` send → `src/hub/link` <!-- link:hub→node `session_call` send -->
-- [ ] hub→node `spans_ack` send → `src/hub/link` <!-- link:hub→node `spans_ack` send -->
+- [x] hub→node `spans_ack` send → `src/hub/link` <!-- link:hub→node `spans_ack` send -->
 
 ### Background loops
 
@@ -102,7 +102,7 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `outage::run` → `src/hub/outage` <!-- loop:hub loop `outage::run` -->
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
-- [ ] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
+- [x] hub loop `queue::start_loops` → `src/hub/queue` <!-- loop:hub loop `queue::start_loops` -->
 - [x] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
@@ -134,7 +134,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
 - [x] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
 - [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
-- [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
+- [x] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
 - [x] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
 - [x] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
 - [x] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
@@ -148,15 +148,15 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_approvals` → `src/hub/navi` (read) <!-- tool:`project_approvals` -->
 - [x] `navi_approvals_set` → `src/hub/navi` (operate) <!-- tool:`navi_approvals_set` -->
 - [x] `project_approvals_set` → `src/hub/navi` (operate) <!-- tool:`project_approvals_set` -->
-- [ ] `navi_signins_forget` → `src/hub/navi` (operate) <!-- tool:`navi_signins_forget` -->
-- [ ] `project_signins_forget` → `src/hub/navi` (operate) <!-- tool:`project_signins_forget` -->
+- [x] `navi_signins_forget` → `src/hub/navi` (operate) <!-- tool:`navi_signins_forget` -->
+- [x] `project_signins_forget` → `src/hub/navi` (operate) <!-- tool:`project_signins_forget` -->
 - [x] `navi_purchases` → `src/hub/navi` (read) <!-- tool:`navi_purchases` -->
 - [x] `project_purchases` → `src/hub/navi` (read) <!-- tool:`project_purchases` -->
 - [x] `navi_card_set` → `src/hub/navi` (operate) <!-- tool:`navi_card_set` -->
 - [x] `project_card_set` → `src/hub/navi` (operate) <!-- tool:`project_card_set` -->
 - [x] `project_settings_get` → `src/hub/projects` (read) <!-- tool:`project_settings_get` -->
 - [x] `project_settings_set` → `src/hub/projects` (operate) <!-- tool:`project_settings_set` -->
-- [ ] `project_env_set` → `src/hub/projects` (operate) <!-- tool:`project_env_set` -->
+- [x] `project_env_set` → `src/hub/projects` (operate) <!-- tool:`project_env_set` -->
 - [x] `wake_set` → `src/hub/wakes` (operate) <!-- tool:`wake_set` -->
 - [x] `wake_list` → `src/hub/wakes` (read) <!-- tool:`wake_list` -->
 - [x] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
@@ -535,7 +535,7 @@ every `fleetd` command.
 - [x] `fleetd hub key create` → `src/cli/hub_key` <!-- cli:`fleetd hub key create` -->
 - [x] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
 - [x] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
-- [ ] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
+- [x] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
 - [x] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
 - [x] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
 - [x] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
@@ -662,8 +662,8 @@ every `fleetd` command.
 - [ ] lead call `mac` → `src/hub/lead_calls` <!-- lead:lead call `mac` -->
 - [x] lead call `mac_where` → `src/hub/lead_calls` <!-- lead:lead call `mac_where` -->
 - [x] lead call `mac_send` → `src/hub/lead_calls` <!-- lead:lead call `mac_send` -->
-- [ ] lead call `project_message` → `src/hub/lead_calls` <!-- lead:lead call `project_message` -->
-- [ ] lead call `factory_status` → `src/hub/lead_calls` <!-- lead:lead call `factory_status` -->
+- [x] lead call `project_message` → `src/hub/lead_calls` <!-- lead:lead call `project_message` -->
+- [x] lead call `factory_status` → `src/hub/lead_calls` <!-- lead:lead call `factory_status` -->
 - [x] lead call `chat_search` → `src/hub/lead_calls` <!-- lead:lead call `chat_search` -->
 - [x] lead call `chat_read` → `src/hub/lead_calls` <!-- lead:lead call `chat_read` -->
 - [x] lead call `skill_save` → `src/hub/lead_calls` <!-- lead:lead call `skill_save` -->

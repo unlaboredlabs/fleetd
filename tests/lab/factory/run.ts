@@ -11,12 +11,14 @@ import os from "node:os";
 import path from "node:path";
 import { log, ok } from "../harness.ts";
 import { withFactory } from "./kit.ts";
+import { leadWake } from "./leadWake.ts";
 import { selfHealing } from "./selfHealing.ts";
 import { throughput } from "./throughput.ts";
 
 const SCENARIOS = [
   { name: "throughput", run: throughput },
   { name: "self-healing", run: selfHealing },
+  { name: "lead-wake", run: leadWake },
 ] as const;
 
 async function main() {
