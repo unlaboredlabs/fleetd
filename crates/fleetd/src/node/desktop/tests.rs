@@ -586,6 +586,15 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         live: Default::default(),
     };
 
+    // The pool's one display, by its folder: the session's home is in it. (Not by how fast it started, which a busy
+    // machine slows past any limit.)
+    let warm: Vec<String> =
+        std::fs::read_dir(super::desktop_dir(node_home.path()).join("displays"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+    assert_eq!(warm.len(), 1, "{warm:?}");
+
     let started = call(
         &router,
         json!({ "op": "session_start", "purpose": "Try the terminal", "kind": "linux_desktop" }),
@@ -598,9 +607,10 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         "desktop session ({}) started in {} ms",
         result["desktop"], result["startMs"]
     );
+    let home = read_back(&router, "echo \"$HOME\"").await;
     assert!(
-        result["startMs"].as_u64().unwrap() < 1000,
-        "from the warm pool: {started}"
+        home.contains(&format!("/displays/{}/home", warm[0])),
+        "from the warm pool: {home}"
     );
     // One session of any kind at a time.
     let second = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
@@ -752,10 +762,13 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
     assert_eq!(recorded["kind"], "linux_desktop");
-    assert!(
-        !super::recordings_dir(node_home.path()).join(&id).exists(),
-        "the node let it go"
-    );
+    // The node lets its copy go once the hub has said so.
+    let kept = super::recordings_dir(node_home.path()).join(&id);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while kept.exists() {
+        assert!(Instant::now() < deadline, "the node never let it go");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
     assert!(
         !actions.contains(SECRET),
@@ -929,7 +942,7 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     .await;
     let id = started["result"]["sessionId"]
         .as_str()
-        .expect("started")
+        .unwrap_or_else(|| panic!("not started: {started}"))
         .to_owned();
     assert!(
         started["result"]["worktree"].is_null(),
@@ -941,21 +954,21 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     );
 
     let act = |action: Value| via_host(&router, &hosted, &box_key, key, action, None);
+    let screenshot = async || {
+        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
+        B64.decode(shot["result"]["jpegB64"].as_str().unwrap())
+            .unwrap()
+            .len()
+    };
+    // Against the empty screen, whose JPEG alone is some 16 KB: a fixed size passed before xterm's window was up, and
+    // what was typed then went nowhere.
+    let blank = screenshot().await;
     let launched =
         act(json!({ "op": "desktop", "action": "launch", "text": "xterm -geometry 100x30+0+0" }))
             .await;
     assert!(launched["result"].is_object(), "{launched}");
     let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
-        if B64
-            .decode(shot["result"]["jpegB64"].as_str().unwrap())
-            .unwrap()
-            .len()
-            > 8000
-        {
-            break;
-        }
+    while screenshot().await <= blank + 500 {
         assert!(Instant::now() < deadline, "xterm's window never showed");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
