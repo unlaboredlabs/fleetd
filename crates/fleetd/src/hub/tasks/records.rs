@@ -137,16 +137,28 @@ impl TaskRecords {
         Self::write(db, stored)
     }
 
-    /// An ended task, with its PR lookup marked pending (D67) or not, in one write.
+    /// An ended task, with its PR lookup marked pending (D67) or not, and its whole result when its tail cuts it
+    /// (`None` clears an earlier run's), in one write.
     pub fn put_ended(
         db: &Connection,
         stored: &StoredTask,
         pr_lookup: bool,
+        full_result: Option<&str>,
     ) -> rusqlite::Result<()> {
         let tx = db.unchecked_transaction()?;
         Self::write(&tx, stored)?;
         Self::set_pr_lookup(&tx, &stored.task.task_id, pr_lookup)?;
+        tx.prepare_cached("UPDATE tasks SET full_result = ? WHERE n = ?")?
+            .execute(params![full_result, number_of(&stored.task.task_id)])?;
         tx.commit()
+    }
+
+    /// The task's whole final result, kept when its tail cuts it.
+    pub fn full_result(db: &Connection, task_id: &TaskId) -> rusqlite::Result<Option<String>> {
+        db.prepare_cached("SELECT full_result FROM tasks WHERE n = ?")?
+            .query_row([number_of(task_id)], |r| r.get(0))
+            .optional()
+            .map(Option::flatten)
     }
 
     /// Marks the task's PR lookup pending (D67), or settled.

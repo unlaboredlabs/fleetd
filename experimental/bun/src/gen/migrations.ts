@@ -146,6 +146,7 @@ import m142 from "../../../../crates/fleetd/src/hub/store/migrations/20261108021
 import m143 from "../../../../crates/fleetd/src/hub/store/migrations/202611081200_attachment_uploads_stored.sql" with { type: "text" };
 import m144 from "../../../../crates/fleetd/src/hub/store/migrations/202611081314_telegram_gone.sql" with { type: "text" };
 import m145 from "../../../../crates/fleetd/src/hub/store/migrations/202611081900_train_watch_checks.sql" with { type: "text" };
+import m146 from "../../../../crates/fleetd/src/hub/store/migrations/202611082000_task_full_results.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -294,4 +295,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611081200_attachment_uploads_stored", sql: m143 },
   { name: "202611081314_telegram_gone", sql: m144 },
   { name: "202611081900_train_watch_checks", sql: m145 },
+  { name: "202611082000_task_full_results", sql: m146 },
 ];
