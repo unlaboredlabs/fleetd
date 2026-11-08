@@ -352,7 +352,7 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] node→hub `thread_event` send → `src/node/sessions` <!-- link:node→hub `thread_event` send -->
 - [x] node→hub `slept` send → `src/node/power` <!-- link:node→hub `slept` send -->
 - [x] node→hub `spans` send → `src/node/sessions` <!-- link:node→hub `spans` send -->
-- [ ] node→hub `clone_progress` send → `src/node/sessions` <!-- link:node→hub `clone_progress` send -->
+- [x] node→hub `clone_progress` send → `src/node/sessions` <!-- link:node→hub `clone_progress` send -->
 - [x] hub→node `challenge` handle → `src/node/link` <!-- link:hub→node `challenge` handle -->
 - [x] hub→node `welcome` handle → `src/node/link` <!-- link:hub→node `welcome` handle -->
 - [x] hub→node `hb` handle → `src/node/link` <!-- link:hub→node `hb` handle -->
@@ -371,17 +371,17 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] session call `project_remove` → `src/node/sessions` <!-- session:session call `project_remove` -->
 - [x] session call `project_env` → `src/node/sessions` <!-- session:session call `project_env` -->
 - [x] session call `project_env_copy` → `src/node/sessions` <!-- session:session call `project_env_copy` -->
-- [ ] session call `mcp_secrets` → `src/node/sessions` <!-- session:session call `mcp_secrets` -->
-- [ ] session call `mcp_test` → `src/node/sessions` <!-- session:session call `mcp_test` -->
-- [ ] session call `navi_signins_forget` → `src/node/sessions` <!-- session:session call `navi_signins_forget` -->
+- [x] session call `mcp_secrets` → `src/node/sessions` <!-- session:session call `mcp_secrets` -->
+- [x] session call `mcp_test` → `src/node/sessions` <!-- session:session call `mcp_test` -->
+- [x] session call `navi_signins_forget` → `src/node/sessions` <!-- session:session call `navi_signins_forget` -->
 - [x] session call `order_env_drop` → `src/node/sessions` <!-- session:session call `order_env_drop` -->
-- [ ] session call `claude_account_secret` → `src/node/sessions` <!-- session:session call `claude_account_secret` -->
-- [ ] session call `claude_account_reseal` → `src/node/sessions` <!-- session:session call `claude_account_reseal` -->
-- [ ] session call `claude_account_test` → `src/node/sessions` <!-- session:session call `claude_account_test` -->
-- [ ] session call `one_password_token` → `src/node/sessions` <!-- session:session call `one_password_token` -->
-- [ ] session call `one_password_test` → `src/node/sessions` <!-- session:session call `one_password_test` -->
-- [ ] session call `one_password_cards` → `src/node/sessions` <!-- session:session call `one_password_cards` -->
-- [ ] session call `claude_models` → `src/node/sessions` <!-- session:session call `claude_models` -->
+- [x] session call `claude_account_secret` → `src/node/sessions` <!-- session:session call `claude_account_secret` -->
+- [x] session call `claude_account_reseal` → `src/node/sessions` <!-- session:session call `claude_account_reseal` -->
+- [x] session call `claude_account_test` → `src/node/sessions` <!-- session:session call `claude_account_test` -->
+- [x] session call `one_password_token` → `src/node/sessions` <!-- session:session call `one_password_token` -->
+- [x] session call `one_password_test` → `src/node/sessions` <!-- session:session call `one_password_test` -->
+- [x] session call `one_password_cards` → `src/node/sessions` <!-- session:session call `one_password_cards` -->
+- [x] session call `claude_models` → `src/node/sessions` <!-- session:session call `claude_models` -->
 - [x] session call `project_worktrees` → `src/node/sessions` <!-- session:session call `project_worktrees` -->
 - [x] session call `launch` → `src/node/sessions` <!-- session:session call `launch` -->
 - [x] session call `send` → `src/node/sessions` <!-- session:session call `send` -->
@@ -401,14 +401,14 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] session call `list_files` → `src/node/sessions` <!-- session:session call `list_files` -->
 - [x] session call `repo_scan` → `src/node/sessions` <!-- session:session call `repo_scan` -->
 - [x] session call `repo_inspect` → `src/node/sessions` <!-- session:session call `repo_inspect` -->
-- [ ] session call `repo_clone` → `src/node/sessions` <!-- session:session call `repo_clone` -->
+- [x] session call `repo_clone` → `src/node/sessions` <!-- session:session call `repo_clone` -->
 - [x] session call `folder_make` → `src/node/sessions` <!-- session:session call `folder_make` -->
-- [ ] session call `gh_repo_list` → `src/node/sessions` <!-- session:session call `gh_repo_list` -->
-- [ ] session call `landed_log` → `src/node/sessions` <!-- session:session call `landed_log` -->
-- [ ] session call `skills_list` → `src/node/sessions` <!-- session:session call `skills_list` -->
+- [x] session call `gh_repo_list` → `src/node/sessions` <!-- session:session call `gh_repo_list` -->
+- [x] session call `landed_log` → `src/node/sessions` <!-- session:session call `landed_log` -->
+- [x] session call `skills_list` → `src/node/sessions` <!-- session:session call `skills_list` -->
 - [x] session call `put_file` → `src/node/sessions` <!-- session:session call `put_file` -->
 - [x] session call `has_file` → `src/node/sessions` <!-- session:session call `has_file` -->
-- [ ] session call `read_image` → `src/node/sessions` <!-- session:session call `read_image` -->
+- [x] session call `read_image` → `src/node/sessions` <!-- session:session call `read_image` -->
 
 ### CLI commands
 

@@ -1,7 +1,7 @@
 // The Bun node against the Rust hub, over the real link: enrollment, the machine online with its load, a project added
 // (repo_inspect, project_upsert) and a lead's session run end to end under the Rust `session-host`, with the lab's
-// offline claude (tests/lab/factory/fakeClaude.ts). Needs the Rust binary: FLEETD_NATIVE_BIN names it, else the test
-// is skipped. Everything lives in a fresh dir under $TMPDIR: the hub, the machine's HOME and the node's home.
+// offline claude (tests/lab/factory/fakeClaude.ts), then its checkout's skills listed. Needs the Rust binary:
+// FLEETD_NATIVE_BIN names it, else the test is skipped. Everything lives in a fresh dir under $TMPDIR: the hub, the machine's HOME and the node's home.
 import { afterAll, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -64,6 +64,8 @@ test.skipIf(!native)(
     mkdirSync(repo, { recursive: true });
     spawnSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
     spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"]);
+    mkdirSync(join(repo, ".claude/skills/triage"), { recursive: true });
+    writeFileSync(join(repo, ".claude/skills/triage/SKILL.md"), "---\nname: triage\ndescription: Sorts new issues.\n---\n");
     const fake = join(home.dir, "fake-claude");
     writeFileSync(fake, `#!/bin/sh\nexec '${process.execPath}' '${join(import.meta.dir, "../../../../tests/lab/factory/fakeClaude.ts")}' "$@"\n`);
     chmodSync(fake, 0o755);
@@ -100,6 +102,10 @@ test.skipIf(!native)(
     });
     expect(tail.thread).toMatchObject({ endCause: "completed", latestMessageTail: "lab-ok", model: "claude-opus-5-5" });
     expect(tail.items.map((i: { role: string }) => i.role)).toEqual(["assistant", "user"]);
+    // The hub asks the node for the checkout's skills (`skills_list`, CAP_SKILLS).
+    const skills = await mcp(hubUrl, key, "skills_list", { projectRef: { machineId: "devbox-b", projectId: added.projectId } });
+    expect(skills.repoUnavailable).toBeUndefined();
+    expect(skills.skills).toContainEqual(expect.objectContaining({ name: "triage", origin: "repo_claude", description: "Sorts new issues.", path: ".claude/skills/triage/SKILL.md" }));
   },
   90_000,
 );
