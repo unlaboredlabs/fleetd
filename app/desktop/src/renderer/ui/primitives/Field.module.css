@@ -164,7 +164,7 @@
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 .switch[data-state="checked"] {
-  background: var(--accent-fill);
+  background: var(--switch-on);
 }
 .switch:disabled {
   background: var(--hairline);

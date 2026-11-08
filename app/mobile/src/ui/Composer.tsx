@@ -205,6 +205,7 @@ export function Composer({
               <TextInput
                 ref={input}
                 style={[type.body, styles.input, { color: t.label }]}
+                selectionColor={t.accent}
                 value={text}
                 onChangeText={setText}
                 placeholder={placeholder}
@@ -225,7 +226,7 @@ export function Composer({
                   hitSlop={8}
                   style={({ pressed }) => [styles.send, { backgroundColor: stop ? t.label : t.accentFill }, pressed && styles.pressed]}
                 >
-                  {stop ? <View style={[styles.stopMark, { backgroundColor: t.bg }]} /> : <Icon name="send" size={16} color="#FFFFFF" weight="bold" />}
+                  {stop ? <View style={[styles.stopMark, { backgroundColor: t.bg }]} /> : <Icon name="send" size={16} color={t.onAccent} weight="bold" />}
                 </Pressable>
               </Animated.View>
             </View>

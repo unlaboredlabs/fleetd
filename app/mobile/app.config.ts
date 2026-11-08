@@ -100,7 +100,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
     // A signed build is a store's (TestFlight, the App Store), whose APNs is production; the relay picks the matching one.
-    ["expo-notifications", { mode: "production", icon: "./assets/notification-icon.png", color: "#6ea8fe", defaultChannel: "other" }],
+    ["expo-notifications", { mode: "production", icon: "./assets/notification-icon.png", color: "#8E8E93", defaultChannel: "other" }],
     // The mark on a plain ground, white or black as the phone is.
     ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 112, backgroundColor: "#ffffff", dark: { image: "./assets/splash-icon.png", backgroundColor: "#000000" } }],
     // Scans the hub's pairing QR code (D232); no recording, so no microphone.

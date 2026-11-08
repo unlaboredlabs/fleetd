@@ -348,7 +348,7 @@ function Filters({ choices, value, onChange, counts }: { choices: readonly Filte
               <Text style={[type.subhead, styles.filterText, { color: on ? t.onAccent : t.label }]}>{f.label}</Text>
               {count > 0 ? (
                 <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : tone }]}>
-                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accentFill : t.onAccent }]}>{count}</Text>
+                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accentFill : f.id === "needsYou" ? "#FFFFFF" : t.onAccent }]}>{count}</Text>
                 </View>
               ) : null}
             </>
