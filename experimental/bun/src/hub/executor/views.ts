@@ -261,6 +261,11 @@ export class Views {
     return { rows: this.refreshed(w, rows), more, running: summary.status === "running" };
   }
 
+  /** The thread's latest assistant message whole, read from its followed view (the summary keeps only its ends). */
+  async latestText(r: ThreadRef): Promise<string | undefined> {
+    return latestAssistantText((await this.view(r)).view);
+  }
+
   /** The session's messages as its view holds them, oldest first. */
   async messages(r: ThreadRef): Promise<ThreadMessage[]> {
     this.summaryOf(r);
