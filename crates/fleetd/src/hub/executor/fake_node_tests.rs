@@ -972,3 +972,89 @@ async fn thread_frames_alone_move_the_watchdogs_progress_clock() {
         );
     }
 }
+
+/// The 2026-11-08 outage: an update restarted the devbox's node while the old link's supervisor was still busy with
+/// what that link sent. The new link went live, then the old supervisor stopped and cleared the machine's live state,
+/// so the devbox read offline with a healthy link and every task queued until a manual node restart. An old
+/// supervisor slow to stop leaves the new link live, and applies nothing more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_old_links_supervisor_slow_to_stop_leaves_the_new_link_live() {
+    use std::time::{Duration, Instant};
+
+    use tokio::time::timeout;
+
+    const WAIT: Duration = Duration::from_secs(10);
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([])).await;
+    // The old supervisor is part way through an event as its link drops: here, telling the tasks area of a catch-up.
+    let (entered, is_entered) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let released = Mutex::new(Some(released));
+    let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = told.clone();
+    node.executors.set_caught_up_sink(Arc::new(move |_| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some(released) = released.lock().unwrap().take() {
+            entered.send(()).unwrap();
+            released.recv().unwrap();
+        }
+    }));
+    node.push(json!({ "type": "caught_up" }));
+    node.push(json!({ "type": "caught_up" }));
+    is_entered
+        .recv_timeout(WAIT)
+        .expect("the old supervisor applies the event");
+
+    // The old link ends, as its DetachSessions does: off to the side, waiting for the busy supervisor to stop.
+    let detached = {
+        let (executors, machine) = (node.executors.clone(), node.machine.clone());
+        tokio::spawn(async move { executors.detach_link(&machine, 1).await })
+    };
+    let deadline = Instant::now() + WAIT;
+    while node
+        .executors
+        .machines
+        .lock()
+        .unwrap()
+        .get(&node.machine)
+        .is_some_and(|s| s.link.is_some())
+    {
+        assert!(Instant::now() < deadline, "the old link is dropped");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    // The node links again, and its subscription is accepted.
+    let (send, calls) = mpsc::unbounded_channel();
+    node.executors
+        .attach(&node.machine, NodeSessions { link_id: 2, send })
+        .await;
+    node.rx = calls;
+    let mut live = node.executors.live_watch(&node.machine);
+    let (id, call) = timeout(WAIT, node.call_after_follows())
+        .await
+        .expect("the new link subscribes");
+    assert!(matches!(call, SessionCall::Subscribe { .. }), "{call:?}");
+    node.reply(&id, json!({ "ok": { "kind": "done" } }));
+    timeout(WAIT, live.changed())
+        .await
+        .expect("the new link goes live")
+        .unwrap();
+    assert!(node.executors.is_connected(&node.machine));
+
+    // Now the old supervisor stops.
+    release.send(()).unwrap();
+    timeout(WAIT, detached)
+        .await
+        .expect("the old supervisor stops")
+        .unwrap();
+    assert!(
+        node.executors.is_connected(&node.machine),
+        "the old supervisor cleared the new link's live state"
+    );
+    assert!(node.executors.live_since(&node.machine).is_some());
+    assert_eq!(
+        told.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the old supervisor applied its link's next event after the new link took over"
+    );
+}
