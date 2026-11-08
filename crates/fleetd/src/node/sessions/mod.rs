@@ -1875,15 +1875,18 @@ impl SessionService {
         self.inner.config.home.clone()
     }
 
-    /// The claude.ai usage windows sessions last reported, for the heartbeat.
+    /// The claude.ai usage windows sessions last reported, for the heartbeat. A window past its reset is no longer
+    /// reported: what claude said of it (a limit hit, 100% used) ended then, though no session has run since to say so.
     pub fn login_limits(&self) -> Vec<fleetd_contracts::node_link::LoginLimit> {
         use fleetd_contracts::node_link::LoginLimit;
         use fleetd_contracts::prim::{NonNegative, Text};
+        let now_s = chrono::Utc::now().timestamp();
         self.inner
             .limits
             .lock()
             .unwrap()
             .iter()
+            .filter(|(_, (l, _))| l.resets_at.is_none_or(|at| at > now_s))
             .filter_map(|(kind, (l, observed_at))| {
                 Some(LoginLimit {
                     limit_type: Text::new(super::util::head_utf16(kind, 40)).ok()?,

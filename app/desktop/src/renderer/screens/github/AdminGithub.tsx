@@ -11,11 +11,13 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Segmented, Separator, Text } from "../../ui";
+import { useNow } from "../live";
 import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PagePart } from "../settings/parts";
 import { ConfirmRemove } from "../settings/claudeParts";
 import { Part } from "../setup/Guide";
+import { when } from "../status/view";
 import { dayWords, listWords } from "./words";
 import s from "./github.module.css";
 import settings from "../settings/settings.module.css";
@@ -98,6 +100,13 @@ function NoApp({ removed }: { removed: string | null }) {
 
 type Tested = { ok: boolean; text: string };
 
+/** The last Test, or the hub's later read of where the App is installed, and when it was. */
+export const testWords = (test: NonNullable<GithubApp["lastTest"]>, nowMs: number): Tested => {
+  const at = when(test.at, nowMs);
+  const said = test.said.trim();
+  return test.ok ? { ok: true, text: `${said} Checked ${at}.` } : { ok: false, text: `Failed ${at}: ${said}` };
+};
+
 /** The App as the hub keeps it: where it is installed, Install, Test and Remove. */
 function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: string) => void }) {
   const hubCall = useHubCall();
@@ -119,7 +128,8 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
       },
     );
   };
-  const last: Tested | null = app.lastTest === undefined ? null : { ok: app.lastTest.ok, text: app.lastTest.said };
+  const nowMs = useNow(true, 60_000);
+  const last: Tested | null = app.lastTest === undefined ? null : testWords(app.lastTest, nowMs);
   const installs = app.installations ?? [];
   return (
     <section aria-label="GitHub App" className={s.status}>

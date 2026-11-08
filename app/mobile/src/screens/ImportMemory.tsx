@@ -50,6 +50,7 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
       live = false;
     };
   }, [client, s.prompt.t]);
+  useEffect(() => session.onLive(() => send({ t: "live" })), [session]);
   useEffect(() => {
     if (!s.copied) return;
     const timer = setTimeout(() => send({ t: "copiedShown" }), COPIED_MS);

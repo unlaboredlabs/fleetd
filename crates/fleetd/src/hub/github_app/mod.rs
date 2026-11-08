@@ -621,7 +621,11 @@ impl GithubApps {
         // One read at a time; the others go on with what the cache holds, or the machine's login.
         if due && let Ok(_one) = self.refreshing.try_lock() {
             match self.read_installs(&app, &pem).await {
-                Ok((installs, read, _)) => self.keep(app.app_id, installs, &read).await,
+                Ok((installs, mut read, skipped)) => {
+                    // A read that works is as good as a Test: a failed one before it no longer stands.
+                    read.last_test = Some(read_test(&read, &skipped, self.now_ms()));
+                    self.keep(app.app_id, installs, &read).await;
+                }
                 Err(e) => {
                     tracing::warn!("github app: installations not read: {e}");
                     self.cache.lock().await.failed_ms = Some(now);
@@ -700,30 +704,21 @@ impl GithubApps {
             self.read_installs(&app, &pem).await
         }
         .await;
-        let at = Timestamp(iso_ms(self.now_ms()));
-        let (mut app, ok, said) = match checked {
-            Ok((installs, read, skipped)) => {
+        let now = self.now_ms();
+        let app = match checked {
+            Ok((installs, mut read, skipped)) => {
+                read.last_test = Some(read_test(&read, &skipped, now));
                 self.keep(app.app_id, installs, &read).await;
-                let mut line = installed_line(&read);
-                if !skipped.is_empty() {
-                    line.push_str(&format!(
-                        " GitHub refused its installation on {}.",
-                        skipped.join(", ")
-                    ));
-                }
-                let ok = !read.installations.is_empty() && skipped.is_empty();
-                (read, ok, line)
+                read
             }
             Err(e) => {
-                self.cache.lock().await.failed_ms = Some(self.now_ms());
-                (app, false, format!("{e}."))
+                self.cache.lock().await.failed_ms = Some(now);
+                GithubApp {
+                    last_test: Some(test_said(false, format!("{e}."), now)),
+                    ..app
+                }
             }
         };
-        app.last_test = Some(GithubAppTest {
-            at,
-            ok,
-            said: Line::unchecked(said.chars().take(1000).collect::<String>()),
-        });
         self.db
             .github_app()
             .update(&app)
@@ -746,6 +741,27 @@ impl GithubApps {
             })
             .map_err(|e| e.to_string())?;
         self.db.github_app().remove().map_err(|e| e.to_string())
+    }
+}
+
+/// What a read of the App's installations says as its last Test: where it is installed, and any GitHub refused.
+fn read_test(read: &GithubApp, skipped: &[String], now_ms: i64) -> GithubAppTest {
+    let mut line = installed_line(read);
+    if !skipped.is_empty() {
+        line.push_str(&format!(
+            " GitHub refused its installation on {}.",
+            skipped.join(", ")
+        ));
+    }
+    let ok = !read.installations.is_empty() && skipped.is_empty();
+    test_said(ok, line, now_ms)
+}
+
+fn test_said(ok: bool, said: String, now_ms: i64) -> GithubAppTest {
+    GithubAppTest {
+        at: Timestamp(iso_ms(now_ms)),
+        ok,
+        said: Line::unchecked(said.chars().take(1000).collect::<String>()),
     }
 }
 

@@ -1,6 +1,7 @@
 // A project's Telegram setup (Telegram.tsx), as plain functions: which step the person is on, the names to give
 // @BotFather, and the bridge's status in words.
 import type { TelegramBridge } from "../../../shared/contracts";
+import { when } from "../status/view";
 
 /** @BotFather, Telegram's bot for making bots. */
 export const BOTFATHER = "https://t.me/BotFather";
@@ -40,7 +41,7 @@ const clock = (at: string | undefined): string | undefined => {
 };
 
 /** The bridge's status as a chip and, when something is wrong, one line on what and when it tries again. */
-export const statusWords = (bridge: TelegramBridge, machine: string): StatusWords => {
+export const statusWords = (bridge: TelegramBridge, machine: string, nowMs = Date.now()): StatusWords => {
   if (bridge.offline === true) return { tone: "quiet", word: "Offline", line: `${machine} is offline: nothing goes through until it's back.` };
   const status = bridge.status;
   if (bridge.paused || status?.state === "paused") return { tone: "quiet", word: "Paused", line: "Nothing is read or sent until you resume. What the lead says meanwhile stays here." };
@@ -56,7 +57,7 @@ export const statusWords = (bridge: TelegramBridge, machine: string): StatusWord
       return { tone: "warning", word: "Retrying", line: `${error ?? "Telegram didn't answer"}.${again === undefined ? "" : ` Trying again at ${again}.`}` };
     }
     case "stopped":
-      return { tone: "danger", word: "Stopped", line: `${error ?? "It stopped"}.` };
+      return { tone: "danger", word: "Stopped", line: `${error ?? "It stopped"}. Since ${when(status.since, nowMs)}.` };
     default:
       return { tone: "quiet", word: status.state };
   }

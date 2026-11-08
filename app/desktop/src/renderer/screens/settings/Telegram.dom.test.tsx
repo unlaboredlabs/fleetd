@@ -227,5 +227,8 @@ it("names the step, the username to ask for, and what is wrong in words", () => 
   expect(retrying.line).toContain("Telegram asked to slow down for 30 s. Trying again at");
   const stopped = statusWords({ ...saved, status: { state: "stopped", since: AT, error: "Telegram refused the token: it is wrong or was revoked." } }, "devbox");
   expect(stopped).toMatchObject({ tone: "danger", word: "Stopped" });
+  // Said with when it stopped: a stop stays until someone acts, maybe days later.
+  const later = Date.parse("2026-11-07T12:00:00.000Z");
+  expect(statusWords({ ...saved, status: { state: "stopped", since: AT, error: "Telegram refused the token: it is wrong or was revoked." } }, "devbox", later).line).toBe("Telegram refused the token: it is wrong or was revoked. Since Oct 31.");
   expect(statusWords({ ...saved, offline: true }, "devbox").line).toBe("devbox is offline: nothing goes through until it's back.");
 });

@@ -66,10 +66,12 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let sealed: ClaudeAccountRequest[];
+let testWorks: boolean;
 
 beforeEach(() => {
   calls = [];
   sealed = [];
+  testWorks = true;
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -121,7 +123,7 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
                       ],
                     }
                 : tool === "claude_account_test"
-                  ? { test: { at: AT, machineId: "devbox", ok: true } }
+                  ? { test: testWorks ? { at: AT, machineId: "devbox", ok: true } : { at: AT, machineId: "devbox", ok: false, error: "the gateway refused it" } }
                   : tool === "claude_settings_set"
                     ? { settings: { membersUseHubApi: false } }
                     : undefined;
@@ -253,6 +255,19 @@ it("changes the endpoint alone, keeping the saved key, and removes the key once 
   if (!(confirm instanceof HTMLElement)) throw new Error("no confirm");
   await click(confirm);
   expect(sent("claude_hub_api_remove")).toEqual([{}]);
+});
+
+it("drops a failed Test once the setting it tried is changed", async () => {
+  await render(withKey);
+  testWorks = false;
+  await click(button("Test"));
+  expect(section("Hub API key").textContent).toContain("Failed on devbox");
+  // Back to Anthropic's own endpoint: the hub forgets the Test, so the screen does too.
+  await click(button("Change"));
+  await type("Endpoint", "");
+  await click(button("Save and test"));
+  expect(sealed).toEqual([{ account: "hub_api", boxes: expect.any(Array) as unknown }]);
+  expect(section("Hub API key").textContent).not.toContain("Failed on devbox");
 });
 
 it("shows a member who follows the link none of it, and reads nothing", async () => {

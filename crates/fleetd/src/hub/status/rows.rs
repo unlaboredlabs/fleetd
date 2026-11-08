@@ -300,10 +300,15 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             .usage
             .gate_for(r.machine_id.as_str(), lead_account.as_deref())
             .map(|why| why.strip_prefix("usage: ").unwrap_or(&why).to_owned());
-        let usage_hit = hub
-            .link
-            .load(&r.machine_id)
-            .is_some_and(|l| l.limits.iter().any(|x| x.status.as_str() == "rejected"));
+        // A window claude rejected, until it resets: an older node keeps reporting it after.
+        let usage_hit = hub.link.load(&r.machine_id).and_then(|l| {
+            l.limits
+                .iter()
+                .filter(|x| x.status.as_str() == "rejected")
+                .map(|x| x.resets_at.as_ref().and_then(|at| parse_ms(at.as_str())))
+                .filter(|resets| resets.is_none_or(|at| at > now))
+                .max()
+        });
         // A red main stops nothing (the train keeps merging): a warning, never a block.
         let warning = repos.iter().find_map(|repo| {
             let note = hub.train.main_ci_note(repo)?;
@@ -330,8 +335,14 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             }
             Some(MachineStatus::Degraded) => Some(cant),
             _ if usage_paused.is_some() => usage_paused.clone(),
-            _ if usage_hit => Some(format!("usage limit reached on {mname}")),
-            _ => hub.link.paused(&r.machine_id),
+            _ => match usage_hit {
+                Some(Some(resets)) => Some(format!(
+                    "usage limit reached on {mname} until {}",
+                    clock(resets, now, tz)
+                )),
+                Some(None) => Some(format!("usage limit reached on {mname}")),
+                None => hub.link.paused(&r.machine_id),
+            },
         };
         // The lead chat's own rule, so the row and the chat's needs-you dot never disagree; the side-effect-free
         // read, since a status read must not announce chat state.

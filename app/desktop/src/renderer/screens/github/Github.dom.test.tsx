@@ -206,6 +206,15 @@ describe("Hub accounts › GitHub", () => {
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it("says when its last Test failed, beside the App", async () => {
+    const at = new Date();
+    const hm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    app = { ...installed, lastTest: { at: at.toISOString(), ok: false, said: "GitHub can't be reached: connection refused." } };
+    await render();
+    const section = document.querySelector('[aria-label="GitHub App"]');
+    expect(section?.querySelector('[role="alert"]')?.textContent).toBe(`Failed today ${hm}: GitHub can't be reached: connection refused.`);
+  });
+
   it("tests the App and shows where it is installed; Remove forgets it", async () => {
     app = made;
     await render();

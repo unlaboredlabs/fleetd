@@ -595,3 +595,88 @@ async fn cloud_create_mints_no_enroll_code_while_starts_are_held() {
     }
     assert!(hub.auth.open_enroll_tokens().unwrap().is_empty());
 }
+
+/// A machine back online gets its checks again at the doctor's next minute, not its next 15-minute run: until then its
+/// checklist and the Machines step said it was still offline.
+#[tokio::test]
+async fn a_machine_back_online_is_checked_again_before_the_next_full_run() {
+    let (hub, _home) = hub();
+    let put = |status: &str| {
+        let machine = serde_json::from_value(json!({
+            "machineId": "studio", "name": "studio", "tags": [], "status": status,
+            "lastSeenAt": "2026-10-26T10:00:00.000Z", "nodeVersion": "0.1.0", "agentsMac": true,
+        }))
+        .unwrap();
+        hub.store.machine_upsert(&machine, None).unwrap();
+    };
+    let online = |checks: Vec<DoctorCheck>| {
+        checks
+            .into_iter()
+            .find(|c| c.id == "studio/online")
+            .map(|c| (c.status, c.message))
+    };
+    put("offline");
+    let before = online(hub.doctor.list(false).await.checks).unwrap();
+    assert_eq!(before.0, DoctorStatus::Fail, "{before:?}");
+    put("online");
+    hub.doctor.run_if_due().await;
+    let after = online(hub.doctor.list(false).await.checks).unwrap();
+    assert_eq!(after.0, DoctorStatus::Ok, "{after:?}");
+}
+
+/// Each machine's checks carry when that machine's own ran: a later run of the hub's own checks (or another machine's)
+/// moves the answer's checkedAt, never theirs.
+#[tokio::test]
+async fn a_machines_checks_say_when_its_own_ran() {
+    let home = tempfile::tempdir().unwrap();
+    let clock = ManualClock::at(1_792_000_000_000);
+    let hub = crate::hub::serve::build_on(
+        HubDb::open_memory().unwrap(),
+        HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen {
+                host: "127.0.0.1".into(),
+                port: 9,
+            },
+            url: Some(HUB.into()),
+        },
+        clock.clone(),
+    )
+    .unwrap();
+    hub.ops.bind(&hub);
+    let machine = serde_json::from_value(json!({
+        "machineId": "studio", "name": "studio", "tags": [], "status": "offline",
+        "lastSeenAt": "2026-10-26T10:00:00.000Z", "nodeVersion": "0.1.0", "agentsMac": true,
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&machine, None).unwrap();
+    let ran = "2026-10-14T17:46:40.000Z";
+    let list = || async {
+        call(&hub, &caller("admin"), "doctor_list", json!({}))
+            .await
+            .unwrap()
+    };
+    let first = list().await;
+    clock.advance(std::time::Duration::from_secs(600));
+    hub.doctor.rerun_hub().await;
+    let later = list().await;
+    assert_eq!(later["checkedAt"], "2026-10-14T17:56:40.000Z", "{later}");
+    let studio: Vec<&Value> = later["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["machineId"] == "studio")
+        .collect();
+    assert!(!studio.is_empty(), "{later}");
+    for c in studio {
+        assert_eq!(c["checkedAt"], ran, "{c}");
+    }
+    assert_eq!(first["checkedAt"], ran);
+    let hub_own = later["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["scope"] == "hub")
+        .unwrap();
+    assert!(hub_own.get("checkedAt").is_none(), "{hub_own}");
+}
