@@ -27,6 +27,12 @@ test("the helper beside the build, or the one named, hosts sessions; a fleetd th
     mkdirSync(other);
     script(join(other, "fleetd"), `exec '${own}' "$@"`);
     expect(findHelper({ PATH: `${other}:${bin}` }, own)).toBeUndefined();
+    // A Bun build that hands `session-host` on to a Rust host it finds, as src/cli/session_host.ts does: while a
+    // lookup runs it refuses, so it isn't taken in place of the host.
+    const handsOn = join(home.dir, "hands-on");
+    mkdirSync(handsOn);
+    script(join(handsOn, "fleetd"), `[ -n "$FLEETD_SESSION_HOST_LOOKUP" ] && exit 1\nexec '${join(import.meta.dir, "fake-host.sh")}' "$@"`);
+    expect(findHelper({ PATH: `${handsOn}:${bin}`, BUN_BIN: process.execPath }, own)).toBeUndefined();
     // The Rust build beside it, as `bun run helper` puts it there.
     script(join(bin, HELPER), `exec '${join(import.meta.dir, "fake-host.sh")}' "$@"`);
     expect(findHelper({ PATH: "/usr/bin:/bin", BUN_BIN: process.execPath }, own)).toBe(join(bin, HELPER));
