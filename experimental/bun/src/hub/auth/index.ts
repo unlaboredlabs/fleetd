@@ -6,6 +6,7 @@ import type { Clock } from "../../shared/clock.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { HubDb } from "../store/db.ts";
 import { capped, cleanName, OWNER_FALLBACK, roleCap, roleOf } from "../people/roles.ts";
+import { Keys } from "./keys.ts";
 import { NodeKeys } from "./nodes.ts";
 
 const CREATE_KEY_FIX = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
@@ -68,6 +69,8 @@ export const isoMs = (ms: number) => new Date(ms).toISOString();
 export class Auth {
   /** Node enroll tokens and node keys. */
   readonly nodes: NodeKeys;
+  /** Creating, listing and revoking agent and human keys. */
+  readonly keys: Keys;
   private readonly revokeListeners = new Set<() => void>();
 
   constructor(
@@ -75,6 +78,7 @@ export class Auth {
     private readonly clock: Clock,
   ) {
     this.nodes = new NodeKeys(db, clock);
+    this.keys = new Keys(db, clock, () => this.revokedSome());
   }
 
   /** Calls `fn` on each key this hub revokes (an open app connection checks its key again); returns the unsubscribe. */

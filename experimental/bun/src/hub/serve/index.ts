@@ -10,6 +10,7 @@ import { Hub, type Listen } from "../api/hub.ts";
 import { Registry } from "../api/registry.ts";
 import { serve, stop } from "../http/index.ts";
 import { HubDb } from "../store/db.ts";
+import { people } from "../people/store.ts";
 
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
@@ -95,6 +96,8 @@ export function build(home: string, listen: Listen): { hub: Hub; tools: Registry
   }
   const url = configuredUrl(home);
   const hub = new Hub({ home, listen, ...(url === undefined ? {} : { url }) }, db, systemClock);
+  // An older hub's human keys all become its owner's devices; a new hub gets its owner here.
+  people(hub).ensureOwner();
   const tools = new Registry();
   registerAll(tools);
   return { hub, tools };

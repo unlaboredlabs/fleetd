@@ -1,4 +1,7 @@
 import type { Hub } from "../api/hub.ts";
+import { SWEEP_EVERY_MS, sweep } from "./index.ts";
 
-/** Starts this module's loops (Rust: sweep.start); each stops on `hub.shutdown`. Not ported yet. */
-export function start(_hub: Hub): void {}
+/** Starts the sweep (Rust: sweep.start): every 5 min, until the hub stops. */
+export function start(hub: Hub): void {
+  sweep(hub).start(SWEEP_EVERY_MS);
+}
