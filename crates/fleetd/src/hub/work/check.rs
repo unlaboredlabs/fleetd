@@ -11,9 +11,7 @@ use fleetd_contracts::work::{
     ClaimState, MatchStrength, WorkItem, WorkItemKind, WorkKey, WorkMatch, WorkScope,
 };
 
-use super::Work;
 use super::matcher::{self, Candidate, Key, Scope, Strength};
-use crate::hub::store::StoreError;
 
 /// Who holds a project's tasks and Changes, as the matcher compares owners: `<machineId>/<projectId>`.
 pub fn project_owner(project: &ProjectRef) -> String {
@@ -85,7 +83,7 @@ fn strength(s: Strength) -> MatchStrength {
     }
 }
 
-/// The items `intent` may repeat, strongest first, weak ones included. Pure: `Work::check` reads the items.
+/// The items `intent` may repeat, strongest first, weak ones included. Pure: its callers read the items.
 pub fn matches_in(items: &[WorkItem], intent: &matcher::Work, scope: &WorkScope) -> Vec<WorkMatch> {
     let scope = matcher_scope(scope);
     let candidates: Vec<Candidate> = items.iter().map(|i| candidate(i, &scope)).collect();
@@ -100,16 +98,4 @@ pub fn matches_in(items: &[WorkItem], intent: &matcher::Work, scope: &WorkScope)
             })
         })
         .collect()
-}
-
-impl Work {
-    /// What `intent` may repeat among the scope's work in flight, strongest first, weak ones included.
-    pub async fn check(
-        &self,
-        scope: &WorkScope,
-        intent: &matcher::Work,
-    ) -> Result<Vec<WorkMatch>, StoreError> {
-        let items = self.in_flight(scope).await?;
-        Ok(matches_in(&items, intent, scope))
-    }
 }

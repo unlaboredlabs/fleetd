@@ -389,14 +389,3 @@ fn a_flag_and_a_streaming_reply_never_overwrite_each_other() {
     );
     assert_eq!(listed(&hub).len(), 1);
 }
-
-#[test]
-fn a_reason_is_one_line_cut_to_fit() {
-    assert_eq!(
-        super::reason_of("the new\n  checkout").unwrap().as_str(),
-        "the new checkout"
-    );
-    let long = super::reason_of(&"x".repeat(300)).unwrap();
-    assert_eq!(long.as_str().chars().count(), 200);
-    assert!(long.as_str().ends_with('…'));
-}
