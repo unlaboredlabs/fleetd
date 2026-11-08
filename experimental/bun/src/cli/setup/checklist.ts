@@ -4,7 +4,8 @@
 export type State = "done" | "failed" | "skipped" | "warn";
 export type Item = { title: string; state: State; detail: string; fix?: string };
 
-const colored = () => !process.env.NO_COLOR;
+/** As the Rust CLI's console crate colors stderr: only a terminal, and never with NO_COLOR. */
+const colored = () => process.stderr.isTTY === true && !process.env.NO_COLOR;
 const paint = (code: string, text: string) => (colored() ? `\x1b[${code}m${text}\x1b[0m` : text);
 const dim = (t: string) => paint("2", t);
 const bold = (t: string) => paint("1", t);

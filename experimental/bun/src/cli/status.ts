@@ -261,14 +261,25 @@ async function run(args: StatusArgs, target: Target): Promise<number> {
     if (line !== undefined) process.stdout.write(`${line}\n`);
   }
   if (!args.watch) return 0;
+  // SIGINT or SIGTERM ends the watch at once, mid-wait too, as the Rust CLI selects its waits against them.
   let stopped = false;
-  const stop = () => void (stopped = true);
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  const STOP = Symbol("stop");
+  const stopSignal = new Promise<typeof STOP>((resolve) => {
+    const stop = () => {
+      stopped = true;
+      resolve(STOP);
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  const untilStop = <T>(p: Promise<T>) => Promise.race([p, stopSignal]);
   while (!stopped) {
     let reason: string;
     try {
-      const got = await call(client, "events_wait", { cursor, types: CHANGES_A_ROW, timeoutSec: WAIT_SEC }, (WAIT_SEC + 15) * 1000);
+      const got = await untilStop(
+        call(client, "events_wait", { cursor, types: CHANGES_A_ROW, timeoutSec: WAIT_SEC }, (WAIT_SEC + 15) * 1000),
+      );
+      if (got === STOP) break;
       cursor = got?.cursor ?? null;
       if (!Array.isArray(got?.events) || got.events.length === 0) continue;
       const next = await read(client, only);
@@ -283,8 +294,7 @@ async function run(args: StatusArgs, target: Target): Promise<number> {
     }
     banner(notLiveBanner(rows, zone, reason));
     for (let attempt = 0; !stopped; attempt++) {
-      await sleep(BACKOFF[Math.min(attempt, BACKOFF.length - 1)]! * 1000);
-      if (stopped) break;
+      if ((await untilStop(sleep(BACKOFF[Math.min(attempt, BACKOFF.length - 1)]! * 1000))) === STOP) break;
       try {
         const fresh = await connect(target);
         const c = await head(fresh);

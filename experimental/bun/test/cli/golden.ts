@@ -14,6 +14,8 @@ const SRC = join(import.meta.dir, "../../src/main.ts");
 const FIXTURES = join(import.meta.dir, "fixtures");
 /** The version both report, so `version` and the doctor's versions line read the same. */
 export const SAME_VERSION = "0.0.0-edge.202611081341+e4509af";
+/** An env value that leaves the variable out. */
+export const UNSET = "\u0000unset";
 
 export type Run = { code: number; stdout: string; stderr: string };
 
@@ -40,7 +42,10 @@ export class Fleet {
     delete env.FLEETD_THREAD_ID;
     // Units go under the scratch home: `uninstall` never finds the machine's own.
     delete env.XDG_RUNTIME_DIR;
-    return { ...env, FLEETD_HOME: this.home, HOME: this.home, XDG_CONFIG_HOME: join(this.home, ".config"), TZ: "UTC", NO_COLOR: "1", FLEETD_VERSION: SAME_VERSION, ...extra };
+    const merged: Record<string, string> = { ...env, FLEETD_HOME: this.home, HOME: this.home, XDG_CONFIG_HOME: join(this.home, ".config"), TZ: "UTC", NO_COLOR: "1", FLEETD_VERSION: SAME_VERSION, ...extra };
+    // A case gives UNSET to leave a variable out: `NO_COLOR: UNSET` runs as a person's shell does.
+    for (const [k, v] of Object.entries(merged)) if (v === UNSET) delete merged[k];
+    return merged;
   }
 
   /** Starts the Rust hub on this home and writes the setup.json the CLI reads its address from. */

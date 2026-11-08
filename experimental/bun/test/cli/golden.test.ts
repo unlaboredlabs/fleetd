@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Fleet, fixture, record, RECORD, RUST } from "./golden.ts";
+import { Fleet, fixture, record, RECORD, RUST, UNSET } from "./golden.ts";
 
 type Case = { name: string; argv: string[]; cwd?: string; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void> };
 
@@ -179,6 +179,7 @@ const OFFLINE: Case[] = [
   { name: "node-restart-after", argv: ["node", "restart", "--after", "x"] },
   { name: "update-bad-flag", argv: ["update", "--frob"] },
   { name: "update-positional", argv: ["update", "now"] },
+  { name: "doctor-no-hub-color", argv: ["doctor"], env: { NO_COLOR: UNSET } },
   { name: "hub-key-missing", argv: ["hub", "key"] },
   { name: "hub-key-unknown", argv: ["hub", "key", "frob"] },
   { name: "hub-key-create-no-name", argv: ["hub", "key", "create"] },
@@ -233,6 +234,8 @@ const ONLINE: Case[] = [
   { name: "time-order", argv: ["time", "W9", "--since", "2d"] },
   { name: "time-project-unknown", argv: ["time", "nope"] },
   { name: "doctor", argv: ["doctor"] },
+  // Piped stderr, no NO_COLOR: plain text all the same, as a person's shell or an agent's sees it.
+  { name: "doctor-piped-color", argv: ["doctor"], env: { NO_COLOR: UNSET } },
   { name: "push-relay-off", argv: ["push-relay", "set", "off"] },
   { name: "push-relay-default", argv: ["push-relay", "set", "https://push.fleetd.sh"] },
   { name: "push-relay-own-key", argv: ["push-relay", "set", "https://relay.devbox.example", "--relay-key-file", "bad.key"] },
