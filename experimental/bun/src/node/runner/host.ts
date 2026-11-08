@@ -9,6 +9,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, 
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Env } from "../util.ts";
+import { agentSpawn } from "../oom.ts";
 
 /** Bumped when the lines between a host and a node change incompatibly (host.rs PROTOCOL). */
 export const PROTOCOL = 1;
@@ -247,7 +248,9 @@ export async function launch(l: Launch): Promise<HostLink> {
   const log = openSync(join(l.dir, "host.log"), "w");
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(l.exe, [COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args], {
+    // A session's whole tree goes before the node and the hub when memory runs out.
+    const [exe, argv] = agentSpawn(l.exe, [COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args]);
+    child = spawn(exe, argv, {
       cwd: l.cwd,
       env: l.env,
       stdio: ["ignore", "ignore", log],
