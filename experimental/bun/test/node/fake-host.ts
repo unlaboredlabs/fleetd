@@ -3,7 +3,7 @@
 // ({"seq","event"} out, {"ack"} / {"command"} / "stop" in), and plays a claude that answers each Send with one run:
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
 // Bash first and ends its run once answered. Shutdown exits.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const argv = process.argv.slice(2);
@@ -14,7 +14,8 @@ const flag = (name: string) => {
 };
 const model = flag("--model") ?? "";
 if (!dir || !session) process.exit(2);
-mkdirSync(dir, { recursive: true });
+// As the Rust host: its dir is the node's to make (launch makes it); one swept away is no host.
+if (!existsSync(dir)) process.exit(1);
 const kept: [number, string][] = [];
 let seq = 0;
 let conn: Bun.Socket<undefined> | undefined;

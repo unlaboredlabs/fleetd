@@ -336,6 +336,9 @@ export class SessionService {
     const service = new SessionService(new NodeStore(join(config.home, "sessions.sqlite")), config);
     const hosts = join(config.home, "hosts");
     const adopted = new Set<string>();
+    // Sessions whose claude went with the last node while a Monitor of theirs could still fire: woken once the sweep
+    // below is done, or it would stop the host each wake starts.
+    const lost: [string, { description?: string }[]][] = [];
     for (const row of service.store.sessions()) {
       const id = row.summary.sessionId;
       if (row.local.pid) {
@@ -358,12 +361,13 @@ export class SessionService {
       // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it.
       const armed = (row.local.monitors ?? []).filter((m) => m.untilMs > Date.now());
       if (row.local.monitors?.length) service.update(id, (c) => void delete c.row.local.monitors);
-      if (armed.length && !row.summary.activeRunId) service.#wakeLost(id, armed, "this machine's fleetd node restarted");
+      if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
     }
     await sweep(hosts, adopted);
     service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
     // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
     service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
+    for (const [id, armed] of lost) service.#wakeLost(id, armed, "this machine's fleetd node restarted");
     return service;
   }
 
