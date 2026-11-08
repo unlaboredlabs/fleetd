@@ -42,10 +42,12 @@ describe("the link's indicator", () => {
     expect(hook).toMatch(/\): void => \{/u);
   });
 
-  it("is the chat list's title, which has none while live; its avatar's dot shows the link in place of the spinner", () => {
+  it("is the chat list's title, which has none while there is nothing to say (hubWord.ts); its avatar's dot shows the link in place of the spinner", () => {
     const chats = files.find(([name]) => name === "screens/Chats.tsx")?.[1] ?? "";
-    expect(chats).toMatch(/useLinkHeader\(navigation, "", \{ spinner: false \}\)/u);
-    expect(chats).toContain('meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase)');
+    expect(chats).toContain('title: text ?? ""');
+    // A tap on the word opens Settings, where Update says what happened.
+    expect(chats).toMatch(/headerTitle: \(\) =>\s+text === undefined \? null : \(\s+<Pressable onPress=\{openSettings\}/u);
+    expect(chats).toContain('meAvatar(state.meName, paired.hubName, link === undefined ? "live" : state.hub.phase, link?.restart === true ? link.text : undefined)');
   });
 });
 

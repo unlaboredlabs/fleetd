@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, RESTART_FAST_MS, RESTART_RETRY_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 import { Deflate, Z_SYNC_FLUSH } from "pako";
 import { MAX_FPS } from "../screen";
@@ -269,6 +269,43 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(WAKE_PROBE_MS);
     expect(first.closed).toBe(false);
     expect(hub.links).toHaveLength(1);
+  });
+
+  it.each([1012, 1001])("says a hub that closes with %i is restarting, redials it every 250 ms for 60 s, then backs off as usual", (code) => {
+    const { hub, client, frames, states } = setup();
+    client.start();
+    hub.ready();
+    hub.link.close(code, "service restart");
+    expect(frames.at(-2)).toEqual({ t: "restart", code, reason: "service restart" });
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: `${HUB} is restarting` });
+    for (let i = 0; i < 20; i++) {
+      const retrying = states().at(-1);
+      expect(retrying?.phase === "retrying" ? retrying.retryAt - Date.now() : 0).toBe(RESTART_RETRY_MS);
+      vi.advanceTimersByTime(RESTART_RETRY_MS);
+      expect(hub.links).toHaveLength(i + 2);
+      hub.link.close(1006);
+    }
+    vi.advanceTimersByTime(RESTART_FAST_MS);
+    const links = hub.links.length;
+    hub.link.close(1006);
+    // Past the fast minute: the backoff starts where it would have, not where 20 fast tries would put it.
+    const retrying = states().at(-1);
+    expect(retrying?.phase === "retrying" ? retrying.retryAt - Date.now() : 0).toBe(backoff(0));
+    expect(hub.links).toHaveLength(links);
+  });
+
+  it("backs off as before after any other close, and after a 1012 before ready", () => {
+    const { hub, client, frames, states } = setup();
+    client.start();
+    hub.ready();
+    hub.link.close(1006);
+    expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The connection to the hub dropped" });
+    vi.advanceTimersByTime(backoff(0) * 1.25);
+    hub.link.open();
+    hub.link.close(1012, "service restart");
+    expect(frames.some((f) => f.t === "restart")).toBe(false);
+    const retrying = states().at(-1);
+    expect(retrying?.phase === "retrying" ? retrying.retryAt - Date.now() : 0).toBe(backoff(1));
   });
 
   it("dials at once on waking while it waits out a backoff, and waits less in front", () => {

@@ -3,7 +3,7 @@
 // open requests (held through a drop, as the chats are), what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
-import type { HubFrame } from "./hub/client";
+import { RESTART_FAST_MS, type HubFrame } from "./hub/client";
 import {
   afterCall,
   applyDelta,
@@ -47,8 +47,50 @@ export const refOf = (key: Key): ProjectRef => {
   return { machineId: key.slice(0, at), projectId: key.slice(at + 1) };
 };
 
+/**
+ * The hub's last restart as this phone saw it (hubWord.ts): down since `since` (epoch ms) from the version it ran,
+ * `planned` when the hub closed the link to restart (client.ts `restart`), `update` when it said it was to update;
+ * live again on the same version, back, which a drop within RESTART_FAST_MS goes on with (a hub still shutting down
+ * takes the fast redial, then closes it); back on another version, updated, `took` ms after it went down. Null while
+ * nothing is to say.
+ */
+export type Restart =
+  | { readonly t: "down" | "back"; readonly since: number; readonly planned: boolean; readonly update: boolean; readonly from: string | undefined; readonly at?: number }
+  | { readonly t: "updated"; readonly at: number; readonly from: string; readonly to: string; readonly took: number };
+
+/**
+ * The hub's update as its row says it, for everyone: the `hub.update` event's data, and the app snapshot's `update`
+ * (contracts HubUpdateData), the update going on or the last one; undefined from a hub before them, or one that never
+ * updated itself.
+ */
+export interface HubUpdate {
+  readonly runId: string;
+  /** `updating`, `updated`, `put_back`, `failed` or `current` (HubUpdatePhase), or a newer hub's. */
+  readonly state: string;
+  readonly from: string;
+  readonly to?: string | undefined;
+  readonly startedAt: string;
+  readonly finishedAt?: string | undefined;
+  /** With `failed` or `put_back`: what happened, in one sentence. */
+  readonly message?: string | undefined;
+}
+
+/** A HubUpdate from the wire, or undefined: absent, null (an older hub's snapshot) or not one. */
+export const hubUpdateOf = (v: unknown): HubUpdate | undefined => {
+  if (typeof v !== "object" || v === null) return undefined;
+  const u = v as Record<string, unknown>;
+  const str = (x: unknown): string | undefined => (typeof x === "string" ? x : undefined);
+  const runId = str(u.runId);
+  const state = str(u.state);
+  const startedAt = str(u.startedAt);
+  if (runId === undefined || state === undefined || startedAt === undefined) return undefined;
+  return { runId, state, from: str(u.from) ?? "", to: str(u.to), startedAt, finishedAt: str(u.finishedAt), message: str(u.message) };
+};
+
 export interface State {
   readonly hub: HubState;
+  readonly restart: Restart | null;
+  readonly hubUpdate: HubUpdate | undefined;
   /** Undefined until the first snapshot. */
   readonly projects: Readonly<Record<Key, ProjectSummary>> | undefined;
   readonly chatStates: Readonly<Record<Key, ProjectChatState>>;
@@ -98,6 +140,8 @@ export interface State {
 
 export const initial = (hub: HubState): State => ({
   hub,
+  restart: null,
+  hubUpdate: undefined,
   projects: undefined,
   chatStates: {},
   machines: [],
@@ -242,13 +286,16 @@ export const reduce = (s: State, a: Action): State => {
 
 const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   switch (frame.t) {
+    case "restart":
+      return s.hub.phase === "live" ? { ...s, restart: downFrom(s, nowMs, true, /updat/iu.test(frame.reason)) } : s;
     case "state": {
+      const restart = restartAfter(s, frame.state, nowMs);
       // A link that isn't live any more: what it showed stays, held, until the next snapshot and pages replace it. The
       // open requests too, so approvals keep their cards and their chats their place, till requests_list says again.
-      if (frame.state.phase === "live" || s.hub.phase !== "live") return { ...s, hub: frame.state };
+      if (frame.state.phase === "live" || s.hub.phase !== "live") return { ...s, hub: frame.state, restart };
       const chats: Record<Key, Chat> = {};
       for (const [key, chat] of Object.entries(s.chats)) chats[key] = heldChat(chat) ?? emptyChat;
-      return { ...s, hub: frame.state, chats, leadActivity: {} };
+      return { ...s, hub: frame.state, restart, chats, leadActivity: {} };
     }
     case "snapshot": {
       const snap = frame.snapshot;
@@ -257,6 +304,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
         ...s,
         projects: Object.fromEntries(snap.projects.map((p) => [keyOf(p), p])),
         machines: snap.machines,
+        hubUpdate: hubUpdateOf((snap as { update?: unknown }).update),
         chatStates,
         turnSince: Object.fromEntries(Object.entries(s.turnSince).filter(([key]) => chatStates[key]?.leadWorking === true)),
       };
@@ -286,6 +334,28 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
   }
 };
 
+/** The link went down: a restart of its own, or the one it came back from a moment ago going on. */
+const downFrom = (s: State, nowMs: number, planned: boolean, update: boolean): Restart => {
+  const was = s.restart?.t === "back" && nowMs - (s.restart.at ?? 0) < RESTART_FAST_MS ? s.restart : null;
+  if (was === null) return { t: "down", since: nowMs, planned, update, from: s.hub.phase === "live" ? s.hub.version : undefined };
+  return { t: "down", since: was.since, planned: planned || was.planned, update: update || was.update, from: was.from };
+};
+
+/**
+ * The restart after a change of link: a live link that went down without the hub saying why went down unplanned; back
+ * live, on another version than it went down on, the hub was updated.
+ */
+const restartAfter = (s: State, next: HubState, nowMs: number): Restart | null => {
+  if (next.phase === "live") {
+    const was = s.restart;
+    if (was?.t !== "down") return was;
+    return was.from !== undefined && next.version !== undefined && next.version !== was.from ? { t: "updated", at: nowMs, from: was.from, to: next.version, took: nowMs - was.since } : { ...was, t: "back", at: nowMs };
+  }
+  if (s.hub.phase === "live" && s.restart?.t !== "down") return downFrom(s, nowMs, false, false);
+  // Stopped or refused: no restart is going on.
+  return next.phase === "unpaired" || next.phase === "refused" ? null : s.restart;
+};
+
 /** A machine's status as each event says, as the desktop's store patches it: the next snapshot may be a while off. */
 const MACHINE_STATUS: Readonly<Record<string, Machine["status"]>> = { "machine.online": "online", "machine.offline": "offline", "machine.degraded": "degraded" };
 
@@ -297,6 +367,8 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     const known = s.machines.some((m) => m.machineId === event.machineId && m.status !== status);
     return known ? { ...s, machines: s.machines.map((m) => (m.machineId === event.machineId ? { ...m, status } : m)) } : s;
   }
+  // Missed while the link was down: the snapshot before it has the update as it is now.
+  if (event.type === "hub.update") return replayed ? s : { ...s, hubUpdate: hubUpdateOf(event.data) ?? s.hubUpdate };
   if (event.type === "chat.waiting") {
     // What a chat waits for, missed while the link was down: the snapshot before it says it as it is now.
     if (replayed) return s;

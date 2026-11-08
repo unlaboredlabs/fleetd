@@ -32,6 +32,8 @@ export const filterChoices = (counts: { readonly unread: number; readonly needsY
 export const filterLabel = (filter: Filter): string => (filter === "all" ? "Filter Chats" : `Filter Chats, ${CHOICES.find((c) => c.id === filter)?.title ?? ""}`);
 
 export type LinkTone = "live" | "busy" | "down";
+/** The avatar's dot: the link's tone, or a ring while the hub restarts for an update. */
+export type MeTone = LinkTone | "restarting";
 
 /** How the link to the hub is, in the avatar's dot: green live, orange while it dials, grey once it can't. */
 export const linkTone = (phase: HubState["phase"]): LinkTone => (phase === "live" ? "live" : phase === "connecting" || phase === "retrying" ? "busy" : "down");
@@ -41,10 +43,12 @@ export const linkWords = (phase: HubState["phase"]): string =>
 
 /**
  * The avatar at the top left: the person's first initial (the hub's before it says who they are, and on a hub before
- * people), and VoiceOver's words for it, which say it opens Settings and how the link is.
+ * people), and VoiceOver's words for it, which say it opens Settings and how the link is. `restarting`: the bar's
+ * word for a planned restart (hubWord.ts), whose dot is a ring rather than the orange of a link that dropped.
  */
-export const meAvatar = (meName: string | undefined, hubName: string, phase: HubState["phase"]): { readonly initial: string; readonly tone: LinkTone; readonly label: string } => {
+export const meAvatar = (meName: string | undefined, hubName: string, phase: HubState["phase"], restarting?: string): { readonly initial: string; readonly tone: MeTone; readonly label: string } => {
   const name = (meName ?? "").trim() === "" ? hubName : (meName ?? "");
   const initial = [...name.trim()][0]?.toLocaleUpperCase() ?? "";
+  if (restarting !== undefined) return { initial, tone: "restarting", label: `Settings, ${restarting}` };
   return { initial, tone: linkTone(phase), label: `Settings, ${linkWords(phase)}` };
 };
