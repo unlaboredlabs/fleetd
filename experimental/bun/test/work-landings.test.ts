@@ -15,6 +15,7 @@ import {
   closes,
   cutLines,
   issueRefs,
+  type Landing,
   type LandingPorts,
   landingStore,
   lsRemoteSha,
@@ -530,4 +531,43 @@ test("a commit is read whole even when the node kept only its tail", () => {
   expect(cutLines(long.slice(-2000)).every((l) => l === "a/b.ts")).toBe(true);
   expect(lsRemoteSha("0123456789ABCDEF0123456789abcdef01234567\trefs/heads/main\n", "refs/heads/main")).toBe("0123456789abcdef0123456789abcdef01234567");
   expect(remoteHead("ref: refs/heads/trunk\tHEAD\nabc\tHEAD\n")).toBe("trunk");
+});
+
+test("a landing row the Rust hub wrote, its absent fields as null, reads as one the Bun hub wrote; the Bun hub writes the Rust form", () => {
+  const { hub } = rig();
+  const s = scope(GITHUB);
+  const sha = "abcdef1".padEnd(40, "0");
+  // As serde writes the Rust `Landing`: no skip_serializing_none, so every absent field is there as null.
+  const rust = {
+    repoKey: s.repoKey,
+    base: "main",
+    sha,
+    at: "2026-10-25T09:59:00.000Z",
+    seenAt: AT,
+    route: "direct_push",
+    prNumber: null,
+    prUrl: null,
+    headBranch: null,
+    subject: "fix: x",
+    authorEmail: null,
+    paths: [],
+    changeId: null,
+    taskId: null,
+    claimIds: [],
+  };
+  hub.db.conn
+    .query("INSERT INTO landings (repo_key, base, sha, at_ms, route, pr_number, rewrite_key, data) VALUES (?, ?, ?, ?, ?, NULL, 'k', ?)")
+    .run(s.repoKey, "main", sha, Date.parse(rust.at), "direct_push", JSON.stringify(rust));
+  const [landed] = landingStore(hub.db.conn).outside(s, 0, 5);
+  expect(landed).toEqual({ sha, atMs: Date.parse(rust.at), route: "direct_push", subject: "fix: x", covers: [] });
+  work(hub).setLandings(landingStore(hub.db.conn));
+  expect(work(hub).landings(s, 0, 5)[0]).toEqual({ repoKey: s.repoKey, base: "main", sha, at: rust.at, seenAt: AT, route: "direct_push", subject: "fix: x", paths: [], claimIds: [] });
+
+  // Written by the Bun hub, a landing's row is byte for byte the Rust hub's.
+  const { claimIds: _c, ...plain } = rust;
+  const other = { ...plain, sha: "1234567".padEnd(40, "0"), claimIds: [] as string[] };
+  const fromBun = Object.fromEntries(Object.entries(other).filter(([, v]) => v !== null)) as unknown as Landing;
+  work(hub).recordLanding(fromBun, "k2", { machineId: "devbox", projectId: "shop" });
+  const row = hub.db.conn.query<{ data: string }, [string]>("SELECT data FROM landings WHERE sha = ?").get(other.sha)!;
+  expect(row.data).toBe(JSON.stringify(other));
 });
