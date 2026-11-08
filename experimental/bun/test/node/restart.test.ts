@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { startOf } from "../../src/node/runner/host.ts";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -51,6 +52,9 @@ test("a session whose Monitor died with the last node is woken after the restart
     // The node stops (its hosts run on), then the lost session's claude dies with no node to see it.
     await service.shutdown();
     process.kill(lostPid, "SIGKILL");
+    // Gone before the node starts again: a kill lands a moment after it is sent, and a host still dying takes the new
+    // node's connection, is re-adopted, and its exit then reads as claude's own.
+    await until("the lost session's host to be gone", () => startOf(lostPid) === undefined);
     service = await SessionService.start(config);
     const woken = await until("the wake to complete", () =>
       service.store.runs("a-lost").find((r) => r.id.startsWith("a-lost-monitor-lost-") && r.status === "completed"),
@@ -63,4 +67,4 @@ test("a session whose Monitor died with the last node is woken after the restart
     await service.stopAll();
     home.done();
   }
-});
+}, 20_000);
