@@ -23,12 +23,14 @@ lead:lead call `close`
 lead:lead call `confirm_step`
 lead:lead call `decide`
 lead:lead call `decisions_search`
+lead:lead call `factory_status`
 lead:lead call `forget`
 lead:lead call `gated_run`
 lead:lead call `mac_send`
 lead:lead call `mac_where`
 lead:lead call `memory_read`
 lead:lead call `nudge`
+lead:lead call `project_message`
 lead:lead call `purchase_claim`
 lead:lead call `purchase_filled`
 lead:lead call `purchase_open`
