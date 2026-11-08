@@ -9,14 +9,24 @@ import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
 import { cleanName, OWNER_FALLBACK, roleOf } from "./roles.ts";
 
-const COLUMNS = "person_id, name, role, created_ms, removed_ms";
+/** Read from `people`; the last, their picture's id, from `person_avatars`. */
+const COLUMNS =
+  "person_id, name, role, created_ms, removed_ms, (SELECT avatar FROM person_avatars a WHERE a.person_id = people.person_id) AS avatar";
 
-type PersonRow = { person_id: string; name: string; role: string; created_ms: number; removed_ms: number | null };
+type PersonRow = {
+  person_id: string;
+  name: string;
+  role: string;
+  created_ms: number;
+  removed_ms: number | null;
+  avatar: string | null;
+};
 
 const newId = () => `p_${base32(crypto.getRandomValues(new Uint8Array(5)))}`;
 
 function readRow(row: PersonRow): Person {
   return {
+    ...(row.avatar === null ? {} : { avatar: row.avatar }),
     createdAt: isoMs(row.created_ms),
     name: cleanName(row.name) ?? OWNER_FALLBACK,
     personId: row.person_id,
@@ -143,7 +153,8 @@ export class People {
   }
 
   /**
-   * Removes a person: their devices are revoked, their open invites closed, and their Only-me projects archived.
+   * Removes a person: their devices are revoked, their open invites closed, their picture forgotten, and their Only-me
+   * projects archived.
    * Returns the person and how many devices it revoked; undefined when there is no such person.
    */
   remove(id: PersonId): { person: Person; revoked: number } | undefined {
@@ -156,6 +167,7 @@ export class People {
       c.query(
         "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
       ).run(id, now);
+      c.query("DELETE FROM person_avatars WHERE person_id = ?1").run(id);
       // crates/fleetd/src/hub/navi/store.rs `archive_of`.
       c.query(
         "UPDATE project_settings SET archived_ms = ?2 WHERE only_me = 1 AND owner_person = ?1 AND archived_ms IS NULL",
