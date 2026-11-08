@@ -62,6 +62,25 @@
       ],
       "type": "object"
     },
+    "ArtifactReadCall": {
+      "description": "`artifact_read`: a lead, task or Navi reads back an artifact published in its own project (its own or another\nagent's), the same ones `artifact_publish` writes to.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ArtifactName",
+          "description": "Its name in the project: `sweep-report`, as in a link `artifact:sweep-report`."
+        },
+        "version": {
+          "description": "One version (`artifact:sweep-report@2`); absent, the newest.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "AskHandle": {
       "pattern": "^N[1-9][0-9]*$",
       "type": "string"
@@ -1830,6 +1849,20 @@
           "properties": {
             "op": {
               "const": "artifact_publish",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ArtifactReadCall",
+          "description": "Reads one back, a lead's, task's or Navi's, from its own project only.",
+          "properties": {
+            "op": {
+              "const": "artifact_read",
               "type": "string"
             }
           },

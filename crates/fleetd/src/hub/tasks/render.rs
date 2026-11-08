@@ -3,6 +3,7 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::lead_calls::FULL_RESULT_CAP;
 use fleetd_contracts::ledger::{Brief, Decision, DecisionState};
 use fleetd_contracts::sessions::WorktreeSource;
 use fleetd_contracts::tasks::{
@@ -137,6 +138,25 @@ pub fn result_text(text: &str, max: usize) -> String {
     let head = js_prefix(t, room / 2).trim_end();
     let tail = js_suffix(t, room - js_len(head)).trim_start();
     format!("{head}\n…\n{tail}{line}")
+}
+
+/// A finished task's whole result, as `agents` with its taskId returns it: `None` when [`result_text`] keeps it whole
+/// in `TAIL_MAX`, else its first [`FULL_RESULT_CAP`] units, then a last line saying where it was cut.
+pub fn full_result_text(text: &str) -> Option<String> {
+    let t = text.trim();
+    let units = js_len(t);
+    if units <= TAIL_MAX {
+        return None;
+    }
+    if units <= FULL_RESULT_CAP {
+        return Some(t.to_owned());
+    }
+    Some(format!(
+        "{}\n\n[cut at {} KB of {} KB]",
+        js_prefix(t, FULL_RESULT_CAP).trim_end(),
+        FULL_RESULT_CAP / 1024,
+        units.div_ceil(1024)
+    ))
 }
 
 /// A token of letters, digits, `_` and `-`: an attachment id or a commit SHA is one whole, a UUID's part is not.
@@ -405,9 +425,18 @@ pub fn task_result_lines(
         },
         title,
         place: &place,
-        result: result.tail.as_str(),
+        result: &with_whole_hint(task_id, result.tail.as_str()),
     }
     .render()
+}
+
+/// A result tail [`result_text`] cut, with a last line on reading it whole.
+fn with_whole_hint(task_id: &str, tail: &str) -> String {
+    if tail.contains("\n…\n") {
+        format!("{tail}\n(Cut: `agents` with taskId {task_id} has it whole, in fullResult.)")
+    } else {
+        tail.to_owned()
+    }
 }
 
 /// `" [branch]"`, or nothing.
