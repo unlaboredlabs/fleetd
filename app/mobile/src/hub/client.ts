@@ -15,14 +15,14 @@ import { leadLaneId, type BrowserFrame, type BrowserInput, type CallOutcome, typ
 import type { Navigation } from "../screen";
 import { DEFLATE_FEATURE, FrameInflater } from "./inflate";
 
-export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
+const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`. */
 export const READY_TIMEOUT_MS = 15_000;
 /** How often a live link's silence is looked at. */
 export const PROBE_EVERY_MS = 5_000;
 /** Quiet this long, the link is probed: in front (no sooner, so a cellular radio can still idle), and behind. */
 export const QUIET_FRONT_MS = 10_000;
-export const QUIET_BEHIND_MS = 15_000;
+const QUIET_BEHIND_MS = 15_000;
 /**
  * Nothing heard for this long, the link is dead: in front, and behind. In front that is one probe gone unanswered for
  * a whole tick (PROBE_EVERY_MS), which on a link with any life takes well under a second.
@@ -34,11 +34,11 @@ export const WAKE_PROBE_MS = 2_500;
 /** In front, a retry waits at most this long: someone is looking at "Connecting…". */
 export const FRONT_BACKOFF_CAP_MS = 5_000;
 /** A link must stay up this long before the backoff starts over. */
-export const STABLE_MS = 30_000;
+const STABLE_MS = 30_000;
 /** Back from a drop, the stream replays from the last event applied when the snapshot is at most this many past it. */
 export const REPLAY_MAX = 200;
 /** The hub's close code for a refused key. */
-export const CLOSE_UNAUTHORIZED = 4401;
+const CLOSE_UNAUTHORIZED = 4401;
 /** Probe calls' ids: `h1`, `h2`… (calls' are `c1`, `c2`…); their answers are only proof of life. */
 const PROBE_ID = "h";
 
@@ -116,10 +116,10 @@ const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_de
 export const INPUT_REFUSAL_MS = 3000;
 
 /** The `ready` feature that says the hub reads browser_watch and browser_input (contracts app.rs APP_FEATURES). */
-export const SCREENS_FEATURE = "browser_sessions";
+const SCREENS_FEATURE = "browser_sessions";
 
 /** A frame this client reads, or null: not JSON, or a `t` it has no use for (a newer hub's). */
-export const parseFrame = (text: string): ServerFrame | null => {
+const parseFrame = (text: string): ServerFrame | null => {
   try {
     const json: unknown = JSON.parse(text);
     if (typeof json !== "object" || json === null) return null;

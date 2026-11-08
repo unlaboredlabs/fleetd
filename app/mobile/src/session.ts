@@ -13,12 +13,12 @@ import { registerDevice, signOut, type PushDeps } from "./push";
 import { cachedOf, parseCached, withCached, type Cached } from "./cache";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
-export const CHAT_PAGE = 50;
+const CHAT_PAGE = 50;
 /** A chat's screens read at once: its live ones are among its newest. */
-export const SCREENS_PAGE = 20;
+const SCREENS_PAGE = 20;
 const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
 /** Chats whose newest messages are read at once after a snapshot. */
-export const LATEST_AT_ONCE = 4;
+const LATEST_AT_ONCE = 4;
 
 export interface SessionOptions {
   readonly hub: string;
@@ -41,7 +41,7 @@ export interface CacheStore {
 }
 
 /** How long after a change what the cache keeps is written: a burst of events writes once. */
-export const CACHE_SAVE_MS = 1000;
+const CACHE_SAVE_MS = 1000;
 
 const randomId = (): string => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 

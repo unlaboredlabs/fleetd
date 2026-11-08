@@ -4,7 +4,7 @@ import type { ChatRow, Filter } from "./lists";
 import type { Key } from "./store";
 
 /** Three to a row, as in Messages; the avatars as big as a third of the screen leaves room for, up to 84 pt. */
-export const PER_ROW = 3;
+const PER_ROW = 3;
 const MOST = 84;
 
 /** A cell's width and its avatar's, for a screen `width` points across with an 8 pt inset on each side. */
@@ -24,7 +24,7 @@ export const pinnedSplit = (rows: readonly ChatRow[], pinned: readonly Key[], fi
 };
 
 /** What rises out of the avatar: its lead's typing bubble while it works, else the newest message when unread. */
-export type PinBubble = { readonly t: "typing" } | { readonly t: "said"; readonly text: string } | undefined;
+type PinBubble = { readonly t: "typing" } | { readonly t: "said"; readonly text: string } | undefined;
 
 export interface PinFace {
   readonly bubble: PinBubble;

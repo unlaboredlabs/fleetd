@@ -18,7 +18,7 @@ import { Icon, type IconName } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
 /** A message's file, read from the hub; undefined while it comes, null when it couldn't be. */
-export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
+const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
   const session = useSession();
   const [got, setGot] = useState<AttachmentGetOutput | null | undefined>(undefined);
   useEffect(() => {

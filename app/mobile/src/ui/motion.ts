@@ -33,10 +33,10 @@ export const dur = {
 } as const;
 
 /** --enter-rise and --row-rise. */
-export const rise = { enter: 6, row: 3 } as const;
+const rise = { enter: 6, row: 3 } as const;
 
 /** A reply's bubbles enter a step apart, up to this many: a long one doesn't keep you waiting for its last. */
-export const MAX_STEP = 5;
+const MAX_STEP = 5;
 
 /** The phone's Reduce Motion, followed while the app runs. */
 export const useReduceMotion = (): boolean => {

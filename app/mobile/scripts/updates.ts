@@ -27,7 +27,7 @@ export const KEY_ID = "main";
 export const ALG = "rsa-v1_5-sha256";
 
 export type Platform = "ios" | "android";
-export type Asset = { hash: string; key: string; contentType: string; fileExtension: string; url: string };
+type Asset = { hash: string; key: string; contentType: string; fileExtension: string; url: string };
 export type Manifest = {
   id: string;
   createdAt: string;
@@ -73,7 +73,7 @@ function asset(dist: string, path: string, ext: string, launch: boolean, base: s
 }
 
 /** A platform's manifest and the export's files it needs (source in dist, destination under the channel). */
-export function manifest(opts: {
+function manifest(opts: {
   dist: string;
   platform: Platform;
   runtimeVersion: string;
@@ -106,7 +106,7 @@ export function manifest(opts: {
 
 /** The manifest as a multipart/mixed body whose manifest part carries its expo-signature (RSA-SHA256 over the part's
  * bytes, as a structured-field dictionary). */
-export function signedBody(m: Manifest, privateKeyPem: string): string {
+function signedBody(m: Manifest, privateKeyPem: string): string {
   const json = JSON.stringify(m);
   if (json.includes(`--${BOUNDARY}`)) throw new Error("the manifest contains the multipart boundary");
   const sig = sign("sha256", Buffer.from(json, "utf8"), privateKeyPem).toString("base64");
