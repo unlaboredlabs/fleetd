@@ -1,18 +1,19 @@
 // Automations (src/hub/automations), after crates/fleetd/src/hub/automations/tests.rs: schedules on a fake clock, runs
-// one at a time, kept webhook calls, the webhook route, the lead's calls and approvals' confirm hooks. The orders'
-// intake is the leads area's (T2255); these tests give the hub one over the leads' own records.
+// one at a time, kept webhook calls, the webhook route, the lead's calls and approvals' confirm hooks. Orders open and
+// close through the leads area's own intake.
 import { afterEach, expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import type { Registry } from "../src/hub/api/registry.ts";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { answer } from "../src/hub/automations/calls.ts";
-import { automations, type IntakeInput, type IntakePort, type NewAutomation, orderText, QUEUED_MAX } from "../src/hub/automations/index.ts";
+import { automations, type NewAutomation, orderText, QUEUED_MAX } from "../src/hub/automations/index.ts";
 import { start } from "../src/hub/automations/loops.ts";
 import { register } from "../src/hub/automations/tools.ts";
 import { hook } from "../src/hub/automations/webhook.ts";
 import type { RouteContext } from "../src/hub/http/route.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { LeadRecords } from "../src/hub/leads/records.ts";
+import { intake } from "../src/hub/leads/workstreams.ts";
 import { standing } from "../src/hub/navi/checker_turn.ts";
 import { put as putNavi } from "../src/hub/navi/store.ts";
 import { workstreamGet, workstreamsList } from "../src/hub/orders/workstreams.ts";
@@ -32,47 +33,26 @@ afterEach(() => {
   cleanup = undefined;
 });
 
-/** A hub at 10:00 UTC on 17 Oct 2026 with an intake over the leads' records, as T2255's opens orders. */
+/** A hub at 10:00 UTC on 17 Oct 2026, its orders opened by the leads area's intake. */
 function setup(at = START) {
   const t = testHub(at);
   cleanup = t.done;
-  const records = new LeadRecords(t.hub.db);
-  const opened: IntakeInput[] = [];
-  t.hub.area<IntakePort>("intake", () => ({
-    intake(input) {
-      opened.push(input);
-      const { workstream } = records.workstreamCreate({
-        projectRef: input.projectRef,
-        title: input.text.split("\n")[0] ?? "",
-        text: input.text,
-        channel: input.channel,
-        by: input.by,
-        at: isoMs(t.clock.now()),
-        clientRequestId: input.clientRequestId,
-      });
-      return { workstreamId: workstream.workstreamId };
-    },
-    async close(_r, id) {
-      close(t.hub, id);
-    },
-  }));
   const advance = async (ms: number) => {
     t.clock.ms += ms;
     automations(t.hub).signal();
     await settle(t.hub);
   };
-  return { ...t, records, opened, advance };
+  return { ...t, advance };
 }
 
-/** Closes order `id` as done, as the leads area does: its row and its `workstream.done`. */
-function close(hub: Hub, id: string): void {
-  const records = new LeadRecords(hub.db);
-  const w = records.workstreamGet(id);
-  if (!w) throw new Error(`no ${id}`);
-  const at = isoMs(hub.clock.now());
-  records.workstreamPut({ ...w, state: "done", updatedAt: at });
-  events(hub).append({ at, type: "workstream.done", machineId: w.projectRef.machineId, projectId: w.projectRef.projectId, summary: `${id} done`, data: { workstreamId: id } });
+/** Closes order `id` as its lead's `close` does. */
+function close(hub: Hub, id: string): Promise<unknown> {
+  return intake(hub).close(PROJECT, id, "done", `lead:${PROJECT.machineId}/${PROJECT.projectId}`);
 }
+
+/** The client request ids of the project's orders, oldest first. */
+const requestIds = (hub: Hub) =>
+  hub.db.all<{ id: string }>("SELECT client_request_id AS id FROM workstreams ORDER BY n").map((r) => r.id);
 
 async function settle(hub: Hub): Promise<void> {
   for (let i = 0; i < 5; i++) {
@@ -162,7 +142,7 @@ test("a trigger while a run is open is skipped and recorded", async () => {
   expect((await autos.run(id, { kind: "manual", by: "human" })).state).toBe("skipped");
   expect(workstreamsList(hub.db.conn, { limit: 100 }).length).toBe(1);
 
-  close(hub, w);
+  await close(hub, w);
   const third = await autos.run(id, { kind: "manual", by: "human" });
   expect(third.state).toBe("running");
   const runs = autos.runs(id, 10);
@@ -278,7 +258,7 @@ test("webhook calls while a run is open go in one follow-up order once it ends",
   await settle(hub);
   expect(workstreamsList(hub.db.conn, { limit: 100 }).length).toBe(1);
 
-  close(hub, w1);
+  await close(hub, w1);
   await settle(hub);
   const runs = autos.runs(id, 10);
   expect(runs.map((r) => r.state)).toEqual(["skipped", "running", "running", "done"]);
@@ -307,7 +287,7 @@ test("kept webhook calls are bounded, and every one is named in the follow-up", 
   const over = await autos.run(id, { kind: "webhook", payload: "one too many" });
   expect(over.state).toBe("skipped");
   expect(over.why).toContain(`${QUEUED_MAX} webhook calls already wait for it`);
-  close(hub, first.workstreamId!);
+  await close(hub, first.workstreamId!);
   await settle(hub);
   const follow = autos.runs(id, 100).find((r) => r.runId === kept[0]!.runId)!;
   const text = workstreamGet(hub.db.conn, follow.workstreamId!)!.source.text;
@@ -371,7 +351,7 @@ test("a one-time run due while another run is open waits and runs once that ends
   expect(runs[0]!.why).toContain("this one-time run goes once that ends");
   expect(autos.get(a.automationId)!.doneAt).toBeUndefined();
   await advance(10 * MIN);
-  close(hub, first.workstreamId!);
+  await close(hub, first.workstreamId!);
   await settle(hub);
   const after = autos.runs(a.automationId, 10);
   expect(after[0]!.state).toBe("running");
@@ -460,7 +440,7 @@ test("a removed project's automations go, and their webhook URL is refused", asy
 });
 
 test("a run a stop left without its order opens it at start, once", async () => {
-  const { hub, opened } = setup();
+  const { hub } = setup();
   const [a] = automations(hub).create(fresh(PROJECT, undefined, false));
   const run = { runId: "ar_leftover1", automationId: a.automationId, trigger: "manual", at: isoMs(START), state: "running", by: "human" };
   hub.db.conn
@@ -470,17 +450,20 @@ test("a run a stop left without its order opens it at start, once", async () => 
   await settle(hub);
   const [recovered] = automations(hub).runs(a.automationId, 10);
   expect(recovered!.workstreamId).toBeDefined();
-  expect(opened.map((o) => o.clientRequestId)).toEqual(["ar_leftover1"]);
+  expect(requestIds(hub)).toEqual(["ar_leftover1"]);
   expect(eventsOf(hub, "automation.run")[0]!.summary).toContain("after a hub restart");
 });
 
-test("without the leads' intake a run fails and says why", async () => {
-  const t = testHub(START);
-  cleanup = t.done;
-  const [a] = automations(t.hub).create(fresh(PROJECT, undefined, false));
-  const run = await automations(t.hub).run(a.automationId, { kind: "manual", by: "human" });
-  expect(run.state).toBe("failed");
-  expect(run.why).toContain("can't open orders yet");
+test("a run's order is the leads area's, and a lead that can't start says why", async () => {
+  const { hub } = setup();
+  const [a] = automations(hub).create(fresh(PROJECT, undefined, false));
+  const run = await automations(hub).run(a.automationId, { kind: "manual", by: "human" });
+  expect(run.state).toBe("running");
+  const order = workstreamGet(hub.db.conn, run.workstreamId!)!;
+  expect([order.source.channel, order.source.by]).toEqual(["automation", `automation:${a.automationId}`]);
+  expect(requestIds(hub)).toEqual([run.runId]);
+  // No node is linked, so the lead waits; the run's event says why.
+  expect(eventsOf(hub, "automation.run").at(-1)!.summary).toContain("it waits for the lead: ");
 });
 
 test("the tools: grants, the webhook URL shown once, rotate", async () => {

@@ -391,6 +391,9 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: steps.scope.outputs.run == 'true'
+        # Electron fetches its binary on first launch; fetch it here, where a failed download is tried again.
+        run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
+      - if: steps.scope.outputs.run == 'true'
         run: pnpm typecheck
       - if: steps.scope.outputs.run == 'true'
         run: pnpm lint
@@ -469,7 +472,7 @@ jobs:
         # PR that renames or removes a screen breaks only the edge build. Headless, so no virtual display.
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - name: Packaged recording (Linux)
         # FLEETD_RECORD in the packed app, which loads the recorder page from the asar; Demo recording below runs out/.
@@ -531,6 +534,9 @@ jobs:
         uses: ./.github/actions/electron-cache
       - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.run == 'true'
+        # Electron fetches its binary on first launch; fetch it here, where a failed download is tried again.
+        run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
       - name: Test build (DevTools-driven perf and recording)
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
         if: steps.scope.outputs.run == 'true'
@@ -607,6 +613,6 @@ jobs:
       - name: Pack and check the mac app
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
           node scripts/mac-layout-check.ts dist-test/mac-arm64/fleetd.app
           ../../.github/release/desktop-fuses-check.sh dist-test/mac-arm64/fleetd.app

@@ -194,3 +194,20 @@ test("live frames carry the slot board, cut to what the key may see", async () =
   expect(cut?.perProject as unknown).toEqual([{ projectRef: { machineId: "devbox", projectId: "p1" } }]);
   expect(cut?.perMachine as unknown).toEqual([{ machineId: "devbox" }]);
 });
+
+test("a lead's lane takes its state from hub/leads, parked by the usage layer included", async () => {
+  const { agentLanes } = await import("../src/hub/app_ws/live/lanes.ts");
+  const { leads } = await import("../src/hub/leads/index.ts");
+  hub.db.conn.run(
+    "INSERT OR REPLACE INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'p1', 'lt1', '2026-11-08T00:00:00.000Z', 0)",
+  );
+  const owner = { keyId: "k", name: "o", prefix: "fld_aaaaaa", createdAt: "2026-11-08T00:00:00.000Z", grants: [{ role: "read" as const, machines: "*" as const }] };
+  const lane = () => agentLanes(hub, owner, "lead:devbox/p1")[0]?.lane;
+  // No thread row yet: the lead is starting.
+  expect(lane()?.status).toBe("starting");
+  const area = leads(hub);
+  const before = area.parkedOf;
+  area.parkedOf = () => ({ since: "2026-11-08T00:00:00.000Z" }) as never;
+  expect(lane()?.status).toBe("parked");
+  area.parkedOf = before;
+});
