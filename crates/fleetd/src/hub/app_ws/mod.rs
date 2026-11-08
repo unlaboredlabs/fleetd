@@ -484,16 +484,19 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
-            // A revoked key's connection streams nothing more: it closes as refused, as at `auth`.
+            // A revoked key's connection streams nothing more: it closes as refused, as at `auth`. A check is no
+            // traffic, so it leaves the keepalive's clock alone.
             Ok(()) = revokes.changed() => {
                 if session.key_refused() {
                     break Some(refuse(&mut wire, &mut socket, &behind, &mut frames).await);
                 }
+                continue;
             }
             _ = recheck.tick() => {
                 if session.key_refused() {
                     break Some(refuse(&mut wire, &mut socket, &behind, &mut frames).await);
                 }
+                continue;
             }
             () = behind.wait() => break Some(too_far_behind(&behind)),
             _ = keepalive.tick() => {
