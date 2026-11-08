@@ -51,6 +51,18 @@ test("a session whose Monitor died with the last node is woken after the restart
     // The node stops (its hosts run on), then the lost session's claude dies with no node to see it.
     await service.shutdown();
     process.kill(lostPid, "SIGKILL");
+    // Gone before the node starts again, reaped: a kill lands a moment after it is sent, and a many-threaded host's
+    // first thread shows as a zombie while the rest still hold its socket. A host still dying takes the new node's
+    // connection, is re-adopted, and its exit then reads as claude's own.
+    const reaped = () => {
+      try {
+        process.kill(lostPid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    await until("the lost session's host to be reaped", reaped);
     service = await SessionService.start(config);
     const woken = await until("the wake to complete", () =>
       service.store.runs("a-lost").find((r) => r.id.startsWith("a-lost-monitor-lost-") && r.status === "completed"),
@@ -63,4 +75,4 @@ test("a session whose Monitor died with the last node is woken after the restart
     await service.stopAll();
     home.done();
   }
-});
+}, 20_000);
