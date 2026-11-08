@@ -956,6 +956,11 @@ pub struct BrowserTakeoverCall {
 pub struct BrowserWatchFrame {
     pub session_id: BrowserSessionId,
     pub on: bool,
+    /// The hub's estimate of what its slowest watcher of the session takes, in kbit/s of frames: each kind's encoder
+    /// fits its quality, size and rate to it. Absent from an older hub, or while the hub has no estimate yet: the
+    /// encoder's best for a good link. Sent again (with `on`) when the estimate moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kbps: Option<u32>,
 }
 
 /// Hub -> node: a person's input, or a change of control, for a session.

@@ -585,6 +585,9 @@ async fn run_link_once(
             frame @ (HubToNode::BrowserWatch(_)
             | HubToNode::BrowserInput(_)
             | HubToNode::BrowserControl(_)) => {
+                if let HubToNode::BrowserWatch(watch) = &frame {
+                    frames.set_budget(watch.session_id.as_str(), watch.kbps.filter(|_| watch.on));
+                }
                 if let Some(router) = &shared.sessions {
                     router.from_hub(frame, &frames);
                 }
