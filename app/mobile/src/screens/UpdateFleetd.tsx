@@ -13,7 +13,8 @@ import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { ListRow, ListSection } from "../ui/List";
 import { FAILED_FOR_MS, UPDATED_FOR_MS } from "../hubWord";
-import type { HubUpdate, Restart } from "../store";
+import type { HubUpdateData } from "../desktop";
+import type { Restart } from "../store";
 import { UPDATE_NOTE, shortVersion, updateSection } from "../updates";
 
 const ink = (t: Palette, tone: Line["tone"]): string => (tone === "danger" ? t.danger : tone === "warning" ? t.warning : tone === "accent" ? t.accent : t.secondary);
@@ -117,7 +118,7 @@ const clock = (at: number): string => new Date(at).toLocaleTimeString(undefined,
  * A put-back or failed update for an hour (the hub's sentence for it), else "Updated to …" for a while after: with how
  * long the hub was away when this phone saw it come back (store.ts Restart), else when it ended.
  */
-const toldOf = (restart: Restart | null, update: HubUpdate | undefined, now: number): Told | null => {
+const toldOf = (restart: Restart | null, update: HubUpdateData | undefined, now: number): Told | null => {
   const ended = update?.finishedAt === undefined ? undefined : Date.parse(update.finishedAt);
   const to = update?.to === undefined ? "" : `${shortVersion(update.to)} `;
   if (update !== undefined && ended !== undefined && now - ended < FAILED_FOR_MS && (update.state === "put_back" || update.state === "failed")) {

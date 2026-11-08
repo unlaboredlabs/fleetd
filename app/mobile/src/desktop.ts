@@ -28,6 +28,7 @@ export type {
   FleetStatus,
   HubRole,
   HubEvent,
+  HubUpdateData,
   HumanRequest,
   ProjectChatState,
   ProjectRef,

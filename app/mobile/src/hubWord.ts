@@ -6,8 +6,8 @@
 // RESTART_HOLD_MS (a restart that isn't an update says nothing at all till then), and one calm line under the bar
 // says an update is taking a while only past SLOW_RESTART_MS. Members see the same words; the run (an admin's) only
 // adds to them. Pure, so tested (hubWord.test.ts).
-import type { HubState, UpdateRun } from "./desktop";
-import type { HubUpdate, Restart } from "./store";
+import type { HubState, HubUpdateData, UpdateRun } from "./desktop";
+import type { Restart } from "./store";
 
 /** After a planned restart, this long before the screens fall back to saying the hub can't be reached. */
 export const RESTART_HOLD_MS = 10_000;
@@ -37,7 +37,7 @@ export interface WordInput {
   /** An admin's update run (Settings › Update); null for members and when there is none. */
   readonly run: UpdateRun | null;
   /** The hub's update as it tells everyone (`hub.update`, the snapshot's `update`); undefined from a hub before it. */
-  readonly update?: HubUpdate | undefined;
+  readonly update?: HubUpdateData | undefined;
   readonly now: number;
 }
 
@@ -45,7 +45,7 @@ const going = (run: UpdateRun | null): boolean => run !== null && run.finishedAt
 /** Whether an update goes on: the hub says so, or an admin's run hasn't ended. */
 const updating = ({ run, update }: WordInput): boolean => update?.state === "updating" || going(run);
 /** When the hub's last update ended (epoch ms), with how it ended. */
-const endedUpdate = (update: HubUpdate | undefined): { readonly state: string; readonly at: number } | undefined =>
+const endedUpdate = (update: HubUpdateData | undefined): { readonly state: string; readonly at: number } | undefined =>
   update?.finishedAt === undefined ? undefined : { state: update.state, at: Date.parse(update.finishedAt) };
 
 /** A planned restart that hasn't run long enough to be an outage, and whether it is an update. */
