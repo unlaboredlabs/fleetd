@@ -3,7 +3,8 @@
 # hours and failed every desktop job that fetched one. A cached zip is still checked, against the sums Electron's npm
 # package ships (app/desktop/electron-builder.yml's electronDownload). Keyed on the versions, so a bump fetches anew.
 # The jobs that only run Electron for Linux share one key; a job that packs names what it packs (`packs`), since the
-# first job to save a key fixes what it holds.
+# first job to save a key fixes what it holds. A key's first run starts from the newest cache of the same OS (another
+# key's, or an older version's) and downloads only what that lacks; a cache saves only when its job passes.
 name: Electron downloads
 description: Restores and saves Electron's and electron-builder's downloads, keyed on their versions.
 inputs:
@@ -30,3 +31,4 @@ runs:
           ~/Library/Caches/electron
           ~/Library/Caches/electron-builder
         key: electron-${{ runner.os }}-${{ steps.versions.outputs.key }}
+        restore-keys: electron-${{ runner.os }}-
