@@ -16,6 +16,9 @@ import { link } from "../link/server.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { trainChanges } from "../orders/sources.ts";
+import { workstreamGet } from "../orders/workstreams.ts";
+import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
 import { others } from "./owner.ts";
 import { pasted, siteOf } from "./sites.ts";
@@ -71,7 +74,51 @@ export function allowPasted(hub: Hub, r: ProjectRef, text: string, by: string): 
 
 const refOf = (input: { machineId: string; projectId: string }): ProjectRef => ({ machineId: input.machineId, projectId: input.projectId });
 
+/** The most asks navi_asks lists. */
+export const NAVI_ASKS_MAX = 100;
+
 export function register(tools: Registry): void {
+  // The app's read of what a project asked other projects for (`project_message`), with each order opened for it.
+  for (const name of ["project_asks", "navi_asks"] as const) {
+    tools.add(name, (hub, caller, input) => {
+      const r = input.project ?? input.navi;
+      if (!r) throw new ToolError("invalid", "Name the project.", "Pass project with its machineId and projectId.");
+      requireRole(caller, "read", r.machineId);
+      if (!store(hub).projectGet(r)) throw unknownProject(r);
+      // Any project's asks read (D310), an archived one's too.
+      const all = asksFrom(hub.db.conn, r);
+      const truncated = all.length > NAVI_ASKS_MAX;
+      const asks = all.slice(0, NAVI_ASKS_MAX).map((a) => {
+        // An ask may go to a project on another machine: the caller reads its title and orders only with read there.
+        const shown = allows(caller, "read", a.to.machineId);
+        const orders = shown
+          ? a.orders.flatMap((id) => {
+              const w = workstreamGet(hub.db.conn, id);
+              if (!w || !allows(caller, "read", w.projectRef.machineId)) return [];
+              const merged = trainChanges(hub, { projectRef: w.projectRef, state: "merged", limit: 500 }).some((c) => c.workstreamId === w.workstreamId);
+              return [
+                {
+                  workstreamId: w.workstreamId,
+                  title: w.title,
+                  state: w.state,
+                  ...(w.headline ? { headline: w.headline } : {}),
+                  ...(merged ? { merged: true } : {}),
+                },
+              ];
+            })
+          : [];
+        return { toTitle: shown ? projectTitle(hub, a.to) : a.to.projectId, handle: a.handle, to: a.to, text: a.text, at: isoMs(a.atMs), orders };
+      });
+      const next =
+        asks.length === 0
+          ? "This project has asked no other project for anything yet."
+          : truncated
+            ? `These are its newest ${NAVI_ASKS_MAX} asks; older ones aren't listed.`
+            : undefined;
+      return { navi: r, asks, ...(next !== undefined ? { next } : {}), ...(truncated ? { truncated: true } : {}) };
+    });
+  }
+
   tools.add("navi_list", (hub, caller, input) => {
     const archived = input.archived === true;
     const hidden = others(hub.db, caller);
