@@ -237,7 +237,7 @@ export const freshTrain = (repo: string) => `train:${repo}`;
 const NO_FRESH: FreshLike = { expect() {}, forget() {}, touch() {}, fail() {} };
 
 /**
- * The status area's freshness registry, which it makes as `hub.area("status_fresh", …)`: peeked at each call, never
+ * The status area's freshness registry, which it makes itself under the name status_fresh: peeked at each call, never
  * made here (D355), so a call before the status area exists goes nowhere and every call after reaches it.
  */
 export function fresh(hub: Hub): FreshLike {
