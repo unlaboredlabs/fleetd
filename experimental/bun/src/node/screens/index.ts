@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { ScreenSettings, SessionEndFrame } from "../../shared/screens_wire.ts";
 import { type Node, onHub } from "../browser/node.ts";
 import { router } from "../device/router.ts";
+import { forget } from "../hosts/index.ts";
 import { edited, macRefuses } from "./settings.ts";
 
 /** Why this machine can't host `host` at all, whatever node.json says (screens.rs `unsupported`). */
@@ -54,6 +55,7 @@ export function apply(home: string, settings: ScreenSettings): string {
     writeFileSync(next, out, { mode: 0o600 });
     renameSync(next, file);
   }
+  forget(home);
   return "Saved. The node restarts to apply it once its agents finish the step they're on.";
 }
 

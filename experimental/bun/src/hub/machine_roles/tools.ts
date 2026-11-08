@@ -11,6 +11,7 @@ import { readable, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
 import { link } from "../link/index.ts";
+import { bestWorker } from "../projects/discover.ts";
 import { store } from "../store/hub_store.ts";
 import { retentionOn } from "../browser/store.ts";
 import { request } from "./calls.ts";
@@ -57,9 +58,10 @@ function machineRoles(hub: Hub, caller: Caller) {
   const machines = runners(hub)
     .filter((r) => readable(caller, r.runner.machineId))
     .map((r) => forCaller(hub, caller, entry(r)));
+  const best = bestWorker(hub);
   return {
     machines,
-    // TODO(bun): `best` is hub/projects' best_worker, once that area has it.
+    ...(best ? { best } : {}),
     retention: retentionOn(hub.db.conn),
     ...(machines.length === 0 ? { next: "No machine has joined yet: add one with fleetd machine add." } : {}),
   };
