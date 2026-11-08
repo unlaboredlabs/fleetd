@@ -1341,7 +1341,8 @@ mod tests {
         let (ws, heard, _hub) = linked().await;
         let (_sink, mut stream) = ws.split();
         let pinged = std::sync::atomic::AtomicUsize::new(0);
-        let started = tokio::time::Instant::now();
+        // Quiet counts from the last byte the handshake read, which comes a little before this line: time it from there.
+        let started = heard.at();
         let end = next_live_frame(
             &mut stream,
             &mut Inflater::default(),
