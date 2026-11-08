@@ -512,7 +512,7 @@ every `fleetd` command.
 - [x] `fleetd hub key list` → `src/cli/hub_key` <!-- cli:`fleetd hub key list` -->
 - [x] `fleetd hub key revoke` → `src/cli/hub_key` <!-- cli:`fleetd hub key revoke` -->
 - [ ] `fleetd hub start` → `src/hub/serve` <!-- cli:`fleetd hub start` -->
-- [ ] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
+- [x] `fleetd init` → `src/cli/setup` <!-- cli:`fleetd init` -->
 - [x] `fleetd instructions` → `src/cli/prompts` <!-- cli:`fleetd instructions` -->
 - [x] `fleetd invite` → `src/cli/people` <!-- cli:`fleetd invite` -->
 - [x] `fleetd invite list` → `src/cli/people` <!-- cli:`fleetd invite list` -->

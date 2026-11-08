@@ -1,6 +1,6 @@
 // `machine add` and `machine remove` through the API the hub's machine_setup calls: a fake Runner stands in for SSH,
 // so nothing runs on any machine; the hub's database is a scratch home's.
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HubDb } from "../../src/hub/store/db.ts";
@@ -18,6 +18,9 @@ import {
   resolve,
   type Runner,
 } from "../../src/cli/setup/machine.ts";
+
+// Each add hashes the binary it copies (here bun's own, ~100 MB): slow on a loaded machine.
+setDefaultTimeout(30_000);
 
 let home: string;
 let hubHome: string;
