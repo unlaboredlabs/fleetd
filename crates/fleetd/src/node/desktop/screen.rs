@@ -46,7 +46,7 @@ pub fn jpeg(bgra: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
         jpeg_encoder::QuantizationTableType::Default,
         jpeg_encoder::QuantizationTableType::Custom(Box::new(chroma)),
     );
-    encoder.set_optimized_huffman_tables(true);
+    // Standard Huffman tables: optimized ones need a second pass, +20% CPU a frame for 9% fewer bytes.
     encoder
         .encode(
             bgra,
