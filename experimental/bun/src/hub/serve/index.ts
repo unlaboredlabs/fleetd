@@ -1,5 +1,6 @@
 // `fleetd hub start` (crates/fleetd/src/hub/serve/mod.rs): parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { startAll } from "../../gen/loops.ts";
 import { registerAll } from "../../gen/areas.ts";
@@ -62,6 +63,26 @@ function parsed(values: { home?: string; listen?: string }): HubOptions | string
   return { ...(values.home === undefined ? {} : { home: values.home }), listen };
 }
 
+/**
+ * The URL `fleetd init` saved in `<home>/setup.json` (crates/fleetd/src/hub/serve/mod.rs `configured_url`): undefined
+ * without one, when the file isn't valid, or for a wildcard address no device can dial.
+ */
+export function configuredUrl(home: string): string | undefined {
+  let state: unknown;
+  try {
+    state = JSON.parse(readFileSync(join(home, "setup.json"), "utf8"));
+  } catch {
+    return undefined;
+  }
+  const s = state as { listen?: unknown; url?: unknown; machines?: unknown } | null;
+  if (!s || typeof s.listen !== "string" || typeof s.url !== "string" || !s.machines || typeof s.machines !== "object") {
+    return undefined;
+  }
+  if (Object.keys(s.machines).some((id) => !/^[a-z0-9-]{1,32}$/.test(id))) return undefined;
+  const url = s.url;
+  return url === "" || url.includes("0.0.0.0") || url.includes("[::]") ? undefined : url;
+}
+
 /** Builds the hub over `<home>/hub.sqlite` and its tool registry, every module's tools registered. */
 export function build(home: string, listen: Listen): { hub: Hub; tools: Registry } {
   const db = HubDb.open(home);
@@ -72,7 +93,8 @@ export function build(home: string, listen: Listen): { hub: Hub; tools: Registry
         : `hub db: migration ${d.name} was run by a newer fleetd`,
     );
   }
-  const hub = new Hub({ home, listen }, db, systemClock);
+  const url = configuredUrl(home);
+  const hub = new Hub({ home, listen, ...(url === undefined ? {} : { url }) }, db, systemClock);
   const tools = new Registry();
   registerAll(tools);
   return { hub, tools };
