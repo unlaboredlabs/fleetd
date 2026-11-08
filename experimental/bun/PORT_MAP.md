@@ -426,64 +426,64 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 
 ### HTTP routes
 
-- [ ] GET `/relay/{token}` → `src/hub/machine_roles` (relay) <!-- http:GET `/relay/{token}` -->
+- [x] GET `/relay/{token}` → `src/hub/machine_roles` (relay) <!-- http:GET `/relay/{token}` -->
 
 ### /app websocket messages
 
-- [ ] /app client `browser_watch` → `src/hub/browser` <!-- app:/app client `browser_watch` -->
-- [ ] /app client `browser_frame_ack` → `src/hub/browser` <!-- app:/app client `browser_frame_ack` -->
-- [ ] /app client `browser_input` → `src/hub/browser` <!-- app:/app client `browser_input` -->
-- [ ] /app client `screen_thumbs` → `src/hub/machine_roles` <!-- app:/app client `screen_thumbs` -->
-- [ ] /app server `browser_frame` → `src/hub/browser` <!-- app:/app server `browser_frame` -->
-- [ ] /app server `screen_thumb` → `src/hub/machine_roles` <!-- app:/app server `screen_thumb` -->
+- [x] /app client `browser_watch` → `src/hub/browser` <!-- app:/app client `browser_watch` -->
+- [x] /app client `browser_frame_ack` → `src/hub/browser` <!-- app:/app client `browser_frame_ack` -->
+- [x] /app client `browser_input` → `src/hub/browser` <!-- app:/app client `browser_input` -->
+- [x] /app client `screen_thumbs` → `src/hub/machine_roles` <!-- app:/app client `screen_thumbs` -->
+- [x] /app server `browser_frame` → `src/hub/browser` <!-- app:/app server `browser_frame` -->
+- [x] /app server `screen_thumb` → `src/hub/machine_roles` <!-- app:/app server `screen_thumb` -->
 
 ### MCP tools (/mcp and /app `call`)
 
-- [ ] `browser_sessions` → `src/hub/browser` (read) <!-- tool:`browser_sessions` -->
-- [ ] `browser_recording_get` → `src/hub/browser` (read) <!-- tool:`browser_recording_get` -->
-- [ ] `screens_count` → `src/hub/browser` (read) <!-- tool:`screens_count` -->
-- [ ] `browser_control` → `src/hub/browser` (operate) <!-- tool:`browser_control` -->
-- [ ] `screen_open` → `src/hub/machine_roles` (operate) <!-- tool:`screen_open` -->
-- [ ] `screen_end` → `src/hub/machine_roles` (operate) <!-- tool:`screen_end` -->
-- [ ] `browser_retention_set` → `src/hub/browser` (admin) <!-- tool:`browser_retention_set` -->
-- [ ] `machine_roles` → `src/hub/machine_roles` (read) <!-- tool:`machine_roles` -->
-- [ ] `machine_roles_set` → `src/hub/machine_roles` (admin) <!-- tool:`machine_roles_set` -->
-- [ ] `machine_screens_set` → `src/hub/machine_roles` (admin) <!-- tool:`machine_screens_set` -->
+- [x] `browser_sessions` → `src/hub/browser` (read) <!-- tool:`browser_sessions` -->
+- [x] `browser_recording_get` → `src/hub/browser` (read) <!-- tool:`browser_recording_get` -->
+- [x] `screens_count` → `src/hub/browser` (read) <!-- tool:`screens_count` -->
+- [x] `browser_control` → `src/hub/browser` (operate) <!-- tool:`browser_control` -->
+- [x] `screen_open` → `src/hub/machine_roles` (operate) <!-- tool:`screen_open` -->
+- [x] `screen_end` → `src/hub/machine_roles` (operate) <!-- tool:`screen_end` -->
+- [x] `browser_retention_set` → `src/hub/browser` (admin) <!-- tool:`browser_retention_set` -->
+- [x] `machine_roles` → `src/hub/machine_roles` (read) <!-- tool:`machine_roles` -->
+- [x] `machine_roles_set` → `src/hub/machine_roles` (admin) <!-- tool:`machine_roles_set` -->
+- [x] `machine_screens_set` → `src/hub/machine_roles` (admin) <!-- tool:`machine_screens_set` -->
 
 ### Node link messages
 
-- [ ] node→hub `browser_frame` send → `src/node/browser` <!-- link:node→hub `browser_frame` send -->
-- [ ] node→hub `browser_frame` handle → `src/hub/browser` <!-- link:node→hub `browser_frame` handle -->
-- [ ] node→hub `session_host_result` send → `src/node/session_route` <!-- link:node→hub `session_host_result` send -->
-- [ ] node→hub `session_host_result` handle → `src/hub/machine_roles` <!-- link:node→hub `session_host_result` handle -->
+- [x] node→hub `browser_frame` send → `src/node/browser` <!-- link:node→hub `browser_frame` send -->
+- [x] node→hub `browser_frame` handle → `src/hub/browser` <!-- link:node→hub `browser_frame` handle -->
+- [x] node→hub `session_host_result` send → `src/node/session_route` <!-- link:node→hub `session_host_result` send -->
+- [x] node→hub `session_host_result` handle → `src/hub/machine_roles` <!-- link:node→hub `session_host_result` handle -->
 - [ ] node→hub `mac_result` send → `src/node/mac_tool` <!-- link:node→hub `mac_result` send -->
-- [ ] node→hub `mac_result` handle → `src/hub/mac_tool` <!-- link:node→hub `mac_result` handle -->
-- [ ] hub→node `browser_watch` send → `src/hub/browser` <!-- link:hub→node `browser_watch` send -->
-- [ ] hub→node `browser_watch` handle → `src/node/browser` <!-- link:hub→node `browser_watch` handle -->
-- [ ] hub→node `browser_input` send → `src/hub/browser` <!-- link:hub→node `browser_input` send -->
-- [ ] hub→node `browser_input` handle → `src/node/browser` <!-- link:hub→node `browser_input` handle -->
-- [ ] hub→node `browser_control` send → `src/hub/browser` <!-- link:hub→node `browser_control` send -->
-- [ ] hub→node `browser_control` handle → `src/node/browser` <!-- link:hub→node `browser_control` handle -->
-- [ ] hub→node `session_host` send → `src/hub/machine_roles` <!-- link:hub→node `session_host` send -->
-- [ ] hub→node `session_host` handle → `src/node/session_route` <!-- link:hub→node `session_host` handle -->
-- [ ] hub→node `mac_call` send → `src/hub/mac_tool` <!-- link:hub→node `mac_call` send -->
+- [x] node→hub `mac_result` handle → `src/hub/mac_tool` <!-- link:node→hub `mac_result` handle -->
+- [x] hub→node `browser_watch` send → `src/hub/browser` <!-- link:hub→node `browser_watch` send -->
+- [x] hub→node `browser_watch` handle → `src/node/browser` <!-- link:hub→node `browser_watch` handle -->
+- [x] hub→node `browser_input` send → `src/hub/browser` <!-- link:hub→node `browser_input` send -->
+- [x] hub→node `browser_input` handle → `src/node/browser` <!-- link:hub→node `browser_input` handle -->
+- [x] hub→node `browser_control` send → `src/hub/browser` <!-- link:hub→node `browser_control` send -->
+- [x] hub→node `browser_control` handle → `src/node/browser` <!-- link:hub→node `browser_control` handle -->
+- [x] hub→node `session_host` send → `src/hub/machine_roles` <!-- link:hub→node `session_host` send -->
+- [x] hub→node `session_host` handle → `src/node/session_route` <!-- link:hub→node `session_host` handle -->
+- [x] hub→node `mac_call` send → `src/hub/mac_tool` <!-- link:hub→node `mac_call` send -->
 - [ ] hub→node `mac_call` handle → `src/node/mac_tool` <!-- link:hub→node `mac_call` handle -->
-- [ ] hub→node `relay_dial` send → `src/hub/machine_roles` <!-- link:hub→node `relay_dial` send -->
-- [ ] hub→node `relay_dial` handle → `src/node/session_route` <!-- link:hub→node `relay_dial` handle -->
-- [ ] hub→node `session_step` send → `src/hub/machine_roles` <!-- link:hub→node `session_step` send -->
+- [x] hub→node `relay_dial` send → `src/hub/machine_roles` <!-- link:hub→node `relay_dial` send -->
+- [x] hub→node `relay_dial` handle → `src/node/session_route` <!-- link:hub→node `relay_dial` handle -->
+- [x] hub→node `session_step` send → `src/hub/machine_roles` <!-- link:hub→node `session_step` send -->
 - [ ] hub→node `session_step` handle → `src/node/session_route` <!-- link:hub→node `session_step` handle -->
-- [ ] hub→node `session_end` send → `src/hub/machine_roles` <!-- link:hub→node `session_end` send -->
-- [ ] hub→node `session_end` handle → `src/node/screens` <!-- link:hub→node `session_end` handle -->
+- [x] hub→node `session_end` send → `src/hub/machine_roles` <!-- link:hub→node `session_end` send -->
+- [x] hub→node `session_end` handle → `src/node/screens` <!-- link:hub→node `session_end` handle -->
 
 ### Background loops
 
-- [ ] hub loop `browser::run_end_outlived` → `src/hub/browser` <!-- loop:hub loop `browser::run_end_outlived` -->
-- [ ] hub loop `browser::run_prune` → `src/hub/browser` <!-- loop:hub loop `browser::run_prune` -->
-- [ ] hub loop `browser::thumbs::run` → `src/hub/browser` <!-- loop:hub loop `browser::thumbs::run` -->
-- [ ] hub loop `machine_roles::run_prune` → `src/hub/machine_roles` <!-- loop:hub loop `machine_roles::run_prune` -->
-- [ ] hub loop `machine_roles::screens::run` → `src/hub/machine_roles` <!-- loop:hub loop `machine_roles::screens::run` -->
+- [x] hub loop `browser::run_end_outlived` → `src/hub/browser` <!-- loop:hub loop `browser::run_end_outlived` -->
+- [x] hub loop `browser::run_prune` → `src/hub/browser` <!-- loop:hub loop `browser::run_prune` -->
+- [x] hub loop `browser::thumbs::run` → `src/hub/browser` <!-- loop:hub loop `browser::thumbs::run` -->
+- [x] hub loop `machine_roles::run_prune` → `src/hub/machine_roles` <!-- loop:hub loop `machine_roles::run_prune` -->
+- [x] hub loop `machine_roles::screens::run` → `src/hub/machine_roles` <!-- loop:hub loop `machine_roles::screens::run` -->
 - [ ] node loop `agents_mac::AgentsMac::start` → `src/node/agents_mac` <!-- loop:node loop `agents_mac::AgentsMac::start` -->
-- [ ] node loop `browser::Broker::start` → `src/node/browser` <!-- loop:node loop `browser::Broker::start` -->
+- [x] node loop `browser::Broker::start` → `src/node/browser` <!-- loop:node loop `browser::Broker::start` -->
 - [ ] node loop `desktop::Desktops::start` → `src/node/desktop` <!-- loop:node loop `desktop::Desktops::start` -->
 - [ ] node loop `device::Devices::start` → `src/node/device` <!-- loop:node loop `device::Devices::start` -->
 - [ ] node loop `device::ios::Simulators::start` → `src/node/device` <!-- loop:node loop `device::ios::Simulators::start` -->
@@ -623,20 +623,20 @@ every `fleetd` command.
 - [x] lead call `checklist` → `src/hub/lead_calls` <!-- lead:lead call `checklist` -->
 - [x] lead call `skill_install` → `src/hub/lead_calls` <!-- lead:lead call `skill_install` -->
 - [ ] lead call `usage_resume` → `src/hub/lead_calls` <!-- lead:lead call `usage_resume` -->
-- [ ] lead call `browser_session` → `src/hub/lead_calls` <!-- lead:lead call `browser_session` -->
-- [ ] lead call `browser_recording_part` → `src/hub/lead_calls` <!-- lead:lead call `browser_recording_part` -->
-- [ ] lead call `browser_takeover` → `src/hub/lead_calls` <!-- lead:lead call `browser_takeover` -->
+- [x] lead call `browser_session` → `src/hub/lead_calls` <!-- lead:lead call `browser_session` -->
+- [x] lead call `browser_recording_part` → `src/hub/lead_calls` <!-- lead:lead call `browser_recording_part` -->
+- [x] lead call `browser_takeover` → `src/hub/lead_calls` <!-- lead:lead call `browser_takeover` -->
 - [ ] lead call `purchase_open` → `src/hub/lead_calls` <!-- lead:lead call `purchase_open` -->
 - [ ] lead call `purchase_claim` → `src/hub/lead_calls` <!-- lead:lead call `purchase_claim` -->
 - [ ] lead call `purchase_filled` → `src/hub/lead_calls` <!-- lead:lead call `purchase_filled` -->
 - [ ] lead call `secure_input_open` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_open` -->
 - [ ] lead call `secure_input_claim` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_claim` -->
 - [ ] lead call `secure_input_filled` → `src/hub/lead_calls` <!-- lead:lead call `secure_input_filled` -->
-- [ ] lead call `session_route` → `src/hub/lead_calls` <!-- lead:lead call `session_route` -->
-- [ ] lead call `session_step` → `src/hub/lead_calls` <!-- lead:lead call `session_step` -->
+- [x] lead call `session_route` → `src/hub/lead_calls` <!-- lead:lead call `session_route` -->
+- [x] lead call `session_step` → `src/hub/lead_calls` <!-- lead:lead call `session_step` -->
 - [ ] lead call `mac` → `src/hub/lead_calls` <!-- lead:lead call `mac` -->
-- [ ] lead call `mac_where` → `src/hub/lead_calls` <!-- lead:lead call `mac_where` -->
-- [ ] lead call `mac_send` → `src/hub/lead_calls` <!-- lead:lead call `mac_send` -->
+- [x] lead call `mac_where` → `src/hub/lead_calls` <!-- lead:lead call `mac_where` -->
+- [x] lead call `mac_send` → `src/hub/lead_calls` <!-- lead:lead call `mac_send` -->
 - [ ] lead call `project_message` → `src/hub/lead_calls` <!-- lead:lead call `project_message` -->
 - [ ] lead call `factory_status` → `src/hub/lead_calls` <!-- lead:lead call `factory_status` -->
 - [ ] lead call `chat_search` → `src/hub/lead_calls` <!-- lead:lead call `chat_search` -->

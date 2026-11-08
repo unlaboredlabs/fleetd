@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
 import { Node } from "./api.ts";
-import { registerAreas } from "./areas.ts";
+import { registerAreas, stopAreas } from "./areas.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
@@ -272,6 +272,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const stop = async () => {
     shutdown.abort();
     stopSocket();
+    await stopAreas(node);
     await sessions.shutdown();
   };
   return { node, sessions, stop, done };
