@@ -1,0 +1,6 @@
+loop:hub loop `mcp_servers::tools::run_forget`
+tool:`mcp_server_remove`
+tool:`mcp_server_set`
+tool:`mcp_server_test`
+tool:`mcp_servers_get`
+tool:`mcp_settings_set`

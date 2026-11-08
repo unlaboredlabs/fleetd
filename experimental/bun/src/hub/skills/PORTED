@@ -1,0 +1,8 @@
+tool:`skill_delete`
+tool:`skill_get`
+tool:`skill_install`
+tool:`skill_off`
+tool:`skill_revert`
+tool:`skill_set`
+tool:`skill_update`
+tool:`skills_list`

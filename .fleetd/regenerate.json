@@ -4,12 +4,15 @@
     "app/desktop/src/shared/contracts/generated/",
     "docs/site/src/content/docs/reference/cli.md",
     "docs/site/src/content/docs/reference/agent-tools.md",
-    "app/desktop/fixtures/setup/steps.json"
+    "app/desktop/fixtures/setup/steps.json",
+    "experimental/bun/PORT_MAP.md",
+    "experimental/bun/src/gen/"
   ],
   "run": [
     "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p fleetd-contracts --bin fleetd-schema",
     "FLEETD_WRITE_FIXTURES=1 CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo test --locked -q -p fleetd --lib -- hub::setup::fixtures",
-    "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p docsgen"
+    "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p docsgen",
+    "cd experimental/bun && bun scripts/gen.ts --leave-hand-ticks"
   ],
   "migrations": "crates/fleetd/src/hub/store/migrations/",
   "timeoutMinutes": 30

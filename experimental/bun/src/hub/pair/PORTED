@@ -1,0 +1,6 @@
+http:POST `/pair/mac`
+http:POST `/pair`
+loop:hub loop `pair::prune_on_sweep`
+tool:`mac_code_create`
+tool:`mac_code_status`
+tool:`pair_code_create`

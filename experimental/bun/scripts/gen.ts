@@ -2,11 +2,13 @@
 //   src/gen/tools.ts       every MCP tool in crates/fleetd-contracts' `tools!` table: its role and owning module
 //   src/gen/migrations.ts  every hub migration in crates/fleetd/src/hub/store/migrations, in order, as text imports
 //   src/gen/wire.ts        the node link's message tags, session call ops, lead call ops and agent-mcp's tools
-//   PORT_MAP.md            the port checklist, by area; ticks already in it are kept
+//   PORT_MAP.md            the port checklist, by area, ticked from each module's src/<module>/PORTED
+//   src/**/PORTED          kept sorted; a hand tick left in PORT_MAP.md moves into its module's (not with --check
+//                          or --leave-hand-ticks, which keep it in PORT_MAP.md)
 //
 //   bun scripts/gen.ts           writes them
 //   bun scripts/gen.ts --check   writes nothing, fails when one is out of date (CI)
-//   bun scripts/gen.ts --status  writes nothing, prints how many items each area has ticked (bun run progress)
+//   bun scripts/gen.ts --status  writes nothing, prints how many items each area has done (bun run progress)
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -141,10 +143,10 @@ const snake = (name: string) => name.replace(/(?<!^)([A-Z])/g, "_$1").toLowerCas
 
 // --- What there is to port -------------------------------------------------------------------------------------
 
-type Item = { key: string; text: string; area: Area };
+type Item = { key: string; text: string; area: Area; module: string };
 const items: Item[] = [];
 const add = (section: string, label: string, module: string, note = "", area = areaOf(module)) =>
-  items.push({ key: `${section}:${label}`, area, text: `${label} → \`src/${module}\`${note ? ` (${note})` : ""}` });
+  items.push({ key: `${section}:${label}`, area, module, text: `${label} → \`src/${module}\`${note ? ` (${note})` : ""}` });
 
 // HTTP routes and the websockets they upgrade to: crates/fleetd/src/hub/http/mod.rs's router.
 const ROUTE_MODULES: Record<string, string> = {
@@ -346,11 +348,50 @@ ${agentTools.map((t) => `  { name: "${t.name}", op: "${t.op}" },`).join("\n")}
 ] as const;
 `;
 
+// The ticks: each module's src/<module>/PORTED lists the keys of its items that it does, one per line, sorted, so
+// parallel PRs tick in their own files and PORT_MAP.md is all generated (the train regenerates it on a conflict).
+// A `- [x]` line in PORT_MAP.md that no PORTED file has (a tick from before PORTED, or a branch still ticking by hand)
+// is a tick too, and `bun run gen` moves it into its module's PORTED; --check and --leave-hand-ticks (the train's
+// regeneration, which may only write generated files) leave it in PORT_MAP.md. gen keeps each PORTED sorted, unrepeated.
+const SRC = join(BUN, "src");
 const PORT_MAP = join(BUN, "PORT_MAP.md");
-const ticked = new Set<string>();
-if (existsSync(PORT_MAP)) {
-  for (const m of read(PORT_MAP).matchAll(/^- \[x\] .*<!-- (.+?) -->$/gm)) ticked.add(m[1] ?? "");
+const itemModule = new Map(items.map((i) => [i.key, i.module]));
+const ported = new Map<string, Set<string>>();
+const portedFiles = (dir: string): string[] =>
+  readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry);
+    return statSync(path).isDirectory() ? portedFiles(path) : entry === "PORTED" ? [path] : [];
+  });
+const wrong: string[] = [];
+for (const path of portedFiles(SRC)) {
+  const module = relative(SRC, dirname(path));
+  const keys = new Set<string>();
+  ported.set(module, keys);
+  for (const key of read(path).split("\n").filter((line) => line.trim() !== "")) {
+    const owner = itemModule.get(key);
+    if (owner === module) keys.add(key);
+    else wrong.push(`${relative(BUN, path)}: ${key} is ${owner ? `src/${owner}'s item, not this module's` : "no item of PORT_MAP.md"}`);
+  }
 }
+if (wrong.length > 0) {
+  for (const line of wrong) console.error(line);
+  console.error("fix: each line of a module's PORTED is the <!-- key --> of one of its PORT_MAP.md items");
+  process.exit(1);
+}
+const ticked = new Set([...ported.values()].flatMap((keys) => [...keys]));
+const moveHandTicks = !process.argv.includes("--check") && !process.argv.includes("--leave-hand-ticks");
+if (existsSync(PORT_MAP)) {
+  for (const m of read(PORT_MAP).matchAll(/^- \[x\] .*<!-- (.+?) -->$/gm)) {
+    const key = m[1] ?? "";
+    const module = itemModule.get(key);
+    if (!module) continue;
+    ticked.add(key);
+    if (moveHandTicks) ported.set(module, (ported.get(module) ?? new Set()).add(key));
+  }
+}
+const portedOutputs: [string, string][] = [...ported]
+  .filter(([, keys]) => keys.size > 0)
+  .map(([module, keys]) => [join(SRC, module, "PORTED"), `${[...keys].sort().join("\n")}\n`]);
 const SECTIONS: Record<string, string> = {
   http: "HTTP routes",
   app: "/app websocket messages",
@@ -362,15 +403,16 @@ const SECTIONS: Record<string, string> = {
   cli: "CLI commands",
   loop: "Background loops",
 };
-let portMap = `# Bun port map
+let portMap = `<!-- Generated by experimental/bun/scripts/gen.ts from the Rust tree and src/**/PORTED. Don't edit: run \`bun run gen\`. -->
+# Bun port map
 
-Generated by \`bun run gen\` (scripts/gen.ts) from the Rust tree: every HTTP route, /app message, MCP tool, node link
-message, session and lead call, agent-mcp tool, CLI command and background loop, with the Bun module that ports it
-(the Rust module's path under \`src/\`). Tick an item (\`- [x]\`) when its module does it and a test covers it;
-\`bun run gen\` keeps the ticks. Don't add items by hand: a new one comes from the Rust code.
+Every HTTP route, /app message, MCP tool, node link message, session and lead call, agent-mcp tool, CLI command and
+background loop in the Rust tree, with the Bun module that ports it (the Rust module's path under \`src/\`). To tick an
+item when its module does it and a test covers it, add its \`<!-- key -->\` as a line of \`src/<module>/PORTED\`
+(sorted), then run \`bun run gen\`.
 
 `;
-// No done counts in the file: parallel PRs each tick their own area, and a shared count would make them conflict.
+// No done counts in the file: parallel PRs each tick their own module, and a shared count would make them conflict.
 // `bun run progress` prints them instead.
 const total = items.length;
 const done = items.filter((i) => ticked.has(i.key)).length;
@@ -439,6 +481,7 @@ const outputs: [string, string][] = [
   [join(BUN, "src/gen/tools.ts"), toolsTs],
   [join(BUN, "src/gen/migrations.ts"), migrationsTs],
   [join(BUN, "src/gen/wire.ts"), wireTs],
+  ...portedOutputs,
   [PORT_MAP, portMap],
 ];
 if (process.argv.includes("--status")) {

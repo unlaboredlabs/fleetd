@@ -1,0 +1,6 @@
+cli:`fleetd navi archive`
+cli:`fleetd navi create`
+cli:`fleetd navi list`
+cli:`fleetd navi rename`
+cli:`fleetd navi unarchive`
+cli:`fleetd navi`

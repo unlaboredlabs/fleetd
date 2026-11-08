@@ -1,0 +1,6 @@
+loop:hub loop `push::run`
+tool:`push_badge`
+tool:`push_device_register`
+tool:`push_device_remove`
+tool:`push_devices_list`
+tool:`push_relay_set`

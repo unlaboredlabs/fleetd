@@ -1,0 +1,3 @@
+http:GET `/oauth/callback`
+loop:hub loop `mcp_oauth::run_renew`
+tool:`mcp_oauth_start`

@@ -1,0 +1,5 @@
+loop:hub loop `updates.prefetch_loop`
+loop:hub loop `updates.resume`
+tool:`hub_update_settings`
+tool:`hub_update_status`
+tool:`hub_update`

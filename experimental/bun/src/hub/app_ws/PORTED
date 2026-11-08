@@ -1,0 +1,13 @@
+app:/app client `auth`
+app:/app client `call`
+app:/app client `events`
+app:/app client `live`
+app:/app client `presence`
+app:/app client `snapshot`
+app:/app server `error`
+app:/app server `event`
+app:/app server `live`
+app:/app server `ready`
+app:/app server `result`
+app:/app server `snapshot`
+http:GET `/app`

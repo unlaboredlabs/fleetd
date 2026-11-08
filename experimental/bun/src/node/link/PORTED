@@ -1,0 +1,6 @@
+link:hub→node `challenge` handle
+link:hub→node `hb` handle
+link:hub→node `welcome` handle
+link:node→hub `hb` send
+link:node→hub `hello` send
+loop:node loop `link::run_node`

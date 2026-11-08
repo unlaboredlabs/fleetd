@@ -1,0 +1,7 @@
+http:ANY `/link/v1/{op}`
+loop:hub loop `hub_links::client::run`
+tool:`hub_link_add`
+tool:`hub_link_mint`
+tool:`hub_link_remove`
+tool:`hub_link_revoke`
+tool:`hub_links_get`

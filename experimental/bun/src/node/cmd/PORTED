@@ -1,0 +1,2 @@
+link:hub→node `cmd_check` handle
+link:node→hub `cmd_result` send
