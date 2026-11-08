@@ -430,6 +430,56 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     );
 }
 
+/// A key revoked while its app is connected (its person removed from the hub, the device signed out) ends the
+/// connection with 4401, which the app reads as signed out. The socket used to stay open and keep streaming events
+/// (and chat and live frames) to the removed person's app, refusing only its calls, until it reconnected.
+#[tokio::test]
+async fn app_socket_closes_once_its_key_is_revoked_and_streams_nothing_after() {
+    let t = start().await;
+    let grants: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "read", "machines": "*" }])).unwrap();
+    let desk = t
+        .hub
+        .auth
+        .create_key("desk", &grants, KeyKind::Human)
+        .unwrap();
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": desk.key }),
+        json!({ "t": "events", "cursor": 0 }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let mut next = async || match tokio::time::timeout(Duration::from_secs(10), app.next())
+        .await
+        .expect("a frame or a close within 10 s")
+        .unwrap()
+        .unwrap()
+    {
+        Message::Text(text) => Ok(serde_json::from_str::<Value>(&text).unwrap()),
+        Message::Close(frame) => Err(frame.map(|f| u16::from(f.code))),
+        other => panic!("unexpected {other:?}"),
+    };
+    assert_eq!(next().await.unwrap()["t"], "ready");
+    t.hub.events.append(event("lab-a")).unwrap();
+    assert_eq!(next().await.unwrap()["machineId"], "lab-a");
+
+    t.hub.auth.revoke(desk.info.key_id.as_str()).unwrap();
+    t.hub.events.append(event("lab-b")).unwrap();
+    let close = loop {
+        match next().await {
+            Ok(frame) => assert_ne!(
+                frame["t"], "event",
+                "streamed after its key was revoked: {frame}"
+            ),
+            Err(code) => break code,
+        }
+    };
+    assert_eq!(close, Some(4401));
+}
+
 #[tokio::test]
 async fn app_presence_is_recorded_for_a_human_key_and_never_answered() {
     let t = start().await;

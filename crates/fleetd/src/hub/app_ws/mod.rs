@@ -30,6 +30,9 @@ const CLOSE_GOING_AWAY: u16 = 1001;
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 /// How long a closing frame may take: a socket too far behind may never take it.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+/// How often an open connection's key is checked again: one revoked (its person removed, its device signed out) ends
+/// the connection by then, its chat and live frames with it.
+const KEY_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn error_frame(error: &ToolError, id: Option<&str>) -> Value {
     let mut frame = json!({ "t": "error" });
@@ -89,13 +92,15 @@ async fn call(
     }
 }
 
-/// Streams events after `from` until the socket ends or a newer `events` replaces it.
+/// Streams events after `from` until the socket ends or a newer `events` replaces it. Each page goes out only while
+/// `key` is still good, with the grants it has now: a revoked one gets a refusal, and `revoked` closes the connection.
 async fn stream_events(
     hub: Arc<Hub>,
     tools: Arc<Registry>,
-    caller: Caller,
+    (key, mut caller): (String, Caller),
     from: i64,
     out: Outbox,
+    revoked: Arc<tokio::sync::Notify>,
 ) {
     let mut cursor = from;
     loop {
@@ -109,6 +114,17 @@ async fn stream_events(
             .await
         {
             Ok(page) => {
+                match hub.auth.verify(&key) {
+                    Ok(now) => caller = now,
+                    Err(error @ AuthError::Unauthorized(_)) => {
+                        out.push(error_frame(&refused(error), None).to_string());
+                        revoked.notify_one();
+                        return;
+                    }
+                    Err(other) => {
+                        tracing::error!(error = %other, "app event stream: key check failed")
+                    }
+                }
                 if let Some(events) = page["events"].as_array() {
                     for event in events {
                         let mut frame = json!({ "t": "event" });
@@ -155,6 +171,8 @@ struct Session {
     input_refused: Option<String>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
+    /// The event stream found the key revoked: the connection closes.
+    revoked: Arc<tokio::sync::Notify>,
 }
 
 /// What to do with the socket after a frame.
@@ -166,6 +184,24 @@ enum After {
 impl Session {
     fn send(&self, frame: Value) {
         self.out.push(frame.to_string());
+    }
+
+    /// Whether the key this connection authenticated with was refused since: sends the refusal when it was.
+    fn key_revoked(&self) -> bool {
+        let Some((key, _)) = &self.caller else {
+            return false;
+        };
+        match self.hub.auth.verify(key) {
+            Ok(_) => false,
+            Err(error @ AuthError::Unauthorized(_)) => {
+                self.send(error_frame(&refused(error), None));
+                true
+            }
+            Err(other) => {
+                tracing::error!(error = %other, "app connection: key check failed");
+                false
+            }
+        }
     }
 
     async fn on_text(&mut self, text: &str) -> After {
@@ -385,9 +421,10 @@ impl Session {
                 let task = stream_events(
                     self.hub.clone(),
                     self.tools.clone(),
-                    info,
+                    (key, info),
                     cursor.get(),
                     self.out.clone(),
+                    self.revoked.clone(),
                 );
                 self.stream = Some(tokio::spawn(task));
             }
@@ -438,13 +475,28 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         input_refused: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
+        revoked: Arc::default(),
     };
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
+    let revoked = session.revoked.clone();
+    let mut key_check = tokio::time::interval(KEY_CHECK_EVERY);
+    key_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let behind = frames.behind();
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
+            // A revoked key: its refusal goes out, then the close the app reads as signed out.
+            () = revoked.notified() => {
+                flush(&mut socket, &behind, &mut frames).await;
+                break Some((CLOSE_UNAUTHORIZED, "unauthorized"));
+            }
+            _ = key_check.tick() => {
+                if session.key_revoked() {
+                    flush(&mut socket, &behind, &mut frames).await;
+                    break Some((CLOSE_UNAUTHORIZED, "unauthorized"));
+                }
+            }
             () = behind.wait() => break Some(too_far_behind(&behind)),
             Some(frame) = frames.recv() => {
                 if !send(&mut socket, &behind, frame).await {
@@ -479,11 +531,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 };
                 if let After::Close(code, reason) = session.on_text(&text).await {
                     // Flush what this frame produced (the refusal) before closing.
-                    while let Some(frame) = frames.try_recv() {
-                        if !send(&mut socket, &behind, frame).await {
-                            break;
-                        }
-                    }
+                    flush(&mut socket, &behind, &mut frames).await;
                     break Some((code, reason));
                 }
             }
@@ -511,6 +559,15 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
             reason: reason.into(),
         })));
         let _ = tokio::time::timeout(CLOSE_WAIT, closing).await;
+    }
+}
+
+/// Sends what is queued, as a connection closes: the refusal that closes it.
+async fn flush(socket: &mut WebSocket, behind: &Behind, frames: &mut outbox::Frames) {
+    while let Some(frame) = frames.try_recv() {
+        if !send(socket, behind, frame).await {
+            break;
+        }
     }
 }
 
