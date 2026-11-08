@@ -344,7 +344,7 @@ export interface HubLink {
   readonly transport: Transport;
 }
 
-/** One connection for a few calls: dials, waits for the link, runs `use`, hangs up; an error when it never comes up. */
+/** One connection for a few calls: dials, waits for the link, runs `use`, hangs up; an error when it doesn't come up in time. */
 export const withHub = <T>(link: HubLink, use: (client: HubClient) => Promise<T>): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError }> =>
   new Promise((resolve) => {
     let started = false;
@@ -365,6 +365,8 @@ export const withHub = <T>(link: HubLink, use: (client: HubClient) => Promise<T>
         if (f.state.phase === "refused") finish({ ok: false, error: { code: "unauthorized", message: f.state.message } });
         if (f.state.phase !== "live" || started) return;
         started = true;
+        // Up: the calls' own timeouts bound them from here, so an answer the hub took on a slow link is never cut off.
+        clearTimeout(timer);
         void use(client).then((value) => finish({ ok: true, value }));
       },
     });
