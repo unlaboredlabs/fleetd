@@ -13,6 +13,7 @@ lead:lead call `brief_read`
 lead:lead call `browser_recording_part`
 lead:lead call `browser_session`
 lead:lead call `browser_takeover`
+lead:lead call `change_enqueue`
 lead:lead call `chat_file`
 lead:lead call `chat_image`
 lead:lead call `chat_read`
@@ -34,6 +35,8 @@ lead:lead call `purchase_open`
 lead:lead call `remember`
 lead:lead call `request_secret`
 lead:lead call `request_withdraw`
+lead:lead call `review_read`
+lead:lead call `review_verdict`
 lead:lead call `secure_input_claim`
 lead:lead call `secure_input_filled`
 lead:lead call `secure_input_open`
