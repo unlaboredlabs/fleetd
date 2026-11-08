@@ -74,3 +74,14 @@ test("changes_list filters by grant and leaves out another person's Only me proj
   const bad = await tools.call(hub, owner, "changes_list", { limit: 500 });
   expect("error" in bad && bad.error.kind === "tool" && bad.error.error.code).toBe("invalid");
 });
+
+test("other areas read the train through trainChanges and trainOf", async () => {
+  const { trainChanges, trainOf } = await import("../src/hub/train/index.ts");
+  const { hub, records } = lab();
+  records.ensureTrain("acme/web", { machineId: "devbox", projectId: "web" }, 5);
+  records.create(change("web", 7));
+  records.create(change("other", 8));
+  expect(trainChanges(hub, { projectRef: { machineId: "devbox", projectId: "web" }, limit: 10 }).map((c) => [c.changeId, c.position])).toEqual([["X1", 0]]);
+  expect(trainOf(hub, "ACME/web")).toEqual({ repo: "acme/web", projectRef: { machineId: "devbox", projectId: "web" }, watchSinceMs: 5 });
+  expect(trainOf(hub, "acme/none")).toBeUndefined();
+});
