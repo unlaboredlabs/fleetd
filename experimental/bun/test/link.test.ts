@@ -348,3 +348,57 @@ test("no IPv4 and no GitHub degrade the machine with the fix; sessions still sta
   node.close();
   await node.closed;
 });
+
+/** A hub of its own: its stop ends lead calls for good. */
+async function stoppingHub() {
+  const home = hubHome();
+  const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
+  const server = serve(hub, tools, 0);
+  const linkNode = async (machineId: string) => {
+    const { token } = hub.auth.nodes.createEnrollToken(machineId, "test");
+    const node = new FakeNode(`ws://127.0.0.1:${server.port}/node/link`, { machineId, enrollToken: token });
+    await node.tag("welcome");
+    return node;
+  };
+  const done = async () => {
+    hub.shutdown.abort();
+    await stop(server);
+    hub.db.close();
+    home.done();
+  };
+  return { links: link(hub), linkNode, done };
+}
+
+test("a lead call in flight at the stop is answered, then the link closes as a restart (1012)", async () => {
+  const t = await stoppingHub();
+  const node = await t.linkNode("worker-40");
+  // A call the hub is still answering, held open by the test.
+  const inFlight = t.links.callStarted()!;
+  expect(inFlight).toBeDefined();
+  let stopped = false;
+  const stopping = t.links.stop(2000).then(() => (stopped = true));
+  await Bun.sleep(50);
+  node.send({ t: "lead_call", id: "late-1", cwd: "/w", call: { op: "task_list" } });
+  const refused = await node.next((f) => f.t === "lead_result");
+  expect(refused.id).toBe("late-1");
+  expect(refused.error).toMatchObject({ code: "failed", message: expect.stringContaining("restarting, so this call didn't run") });
+  await Bun.sleep(200);
+  expect(stopped).toBe(false);
+  const started = Date.now();
+  inFlight.end();
+  await stopping;
+  expect(Date.now() - started).toBeLessThan(500);
+  expect(await node.closed).toEqual({ code: 1012, reason: "hub restarting" });
+  await t.done();
+});
+
+test("the stop waits for lead calls only so long", async () => {
+  const t = await stoppingHub();
+  const node = await t.linkNode("worker-41");
+  t.links.callStarted();
+  const started = Date.now();
+  await t.links.stop(300);
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect((await node.closed).code).toBe(1012);
+  await t.done();
+});
