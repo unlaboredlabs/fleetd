@@ -1108,3 +1108,35 @@ fn a_desktops_frames_keep_coloured_text_sharp() {
         "red {red:?}, black {black:?}"
     );
 }
+
+/// An app on a Linux desktop keeps its temp files in the desktop's own dir on disk, gone when the desktop ends (an
+/// AppImage left 300 MB in a /tmp held in memory each time), and goes before the node when memory runs out.
+#[test]
+fn a_desktop_app_gets_the_desktops_temp_dir_and_the_agent_oom_score() {
+    let Some(config) = test_config() else { return };
+    let home = tempfile::tempdir().unwrap();
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    if settings.backend != DesktopBackend::Xvfb {
+        return;
+    }
+    let display = super::display::Display::start(&settings, None).unwrap();
+    let launched = display
+        .launch(
+            r#"test -d "$TMPDIR" && echo "$TMPDIR $TMP $(cat /proc/self/oom_score_adj)""#,
+            home.path(),
+        )
+        .unwrap();
+    let (code, out) = launched.exited.expect("it exited at once");
+    assert_eq!(code, Some(0), "{out}");
+    let [tmpdir, tmp, score]: [&str; 3] = out
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    assert!(Path::new(tmpdir).starts_with(&settings.root), "{tmpdir}");
+    assert_eq!(tmp, tmpdir);
+    assert_eq!(score, crate::oom::AGENT.to_string());
+    let dir = Path::new(tmpdir).to_owned();
+    drop(display);
+    assert!(!dir.exists(), "{} is left", dir.display());
+}

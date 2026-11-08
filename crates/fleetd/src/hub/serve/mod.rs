@@ -120,6 +120,8 @@ pub fn hub_start(argv: &[String]) -> ExitCode {
         .with_ansi(ansi)
         .with_target(false)
         .try_init();
+    crate::oom::protect("hub");
+    crate::update::service::refresh_own_unit();
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let result = runtime.block_on(run(options));
     // Blocking work still running (a SQLite call, a child process wait) must not hold the exit past the grace.
