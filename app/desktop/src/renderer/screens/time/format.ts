@@ -251,8 +251,6 @@ export const markedDur = (ms: number, mark: Mark | undefined): string => {
   return d;
 };
 
-export const spanMs = (span: Span, nowMs: number): number => (span.endMs ?? nowMs) - span.startMs;
-
 /**
  * The command, the path, the check, the ask, or the kind's word. An ask's key is internal, so screens pass the
  * design system's humanizeKey; this file stays free of UI imports because the fixture build runs it under Node.

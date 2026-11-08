@@ -43,13 +43,6 @@ export interface CredentialEnv {
 /** The GPUI app's bundle identifier; its keychain item opens without a prompt only for the same one. */
 export const GPUI_BUNDLE_ID = "sh.fleetd.app";
 
-/**
- * Whether to encrypt with safeStorage. On macOS the Team-ID check comes first: asking safeStorage anything reads or
- * creates its keychain item, whose trust an ad-hoc build loses at every update, and then every launch prompts (#143).
- * A relocated home (FLEETD_HOME) never touches the OS store.
- */
-export const useOsEncryption = (os: OsFacts): boolean => osEncryption(os) === null;
-
 interface OsFacts {
   readonly platform: NodeJS.Platform;
   readonly relocated: boolean;
@@ -61,6 +54,8 @@ interface OsFacts {
 /** Why the key can't be encrypted by the OS here, or null when it is. */
 export type NoOsStore = "relocated" | "unsigned" | "no-keyring" | "unavailable";
 
+// The Team-ID check comes before safeStorage: an ad-hoc Mac build would prompt for its keychain item at every
+// launch (#143).
 export const osEncryption = (os: OsFacts): NoOsStore | null => {
   if (os.relocated) return "relocated";
   if (os.platform === "darwin" && !os.teamSigned()) return "unsigned";

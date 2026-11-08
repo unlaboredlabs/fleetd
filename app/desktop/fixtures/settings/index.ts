@@ -315,45 +315,6 @@ function machines(from: Fixture): Fixture {
 }
 
 /**
- * Settings → Projects → Repos: storefront holds two repos. Its own runs with the project's setup; billing, checked out
- * on another machine, has a setup of its own.
- */
-function repos(from: Fixture): Fixture {
-  const f = Fixture.from(from, "settings-repos", "storefront holds two repos: its own on the project's setup, and billing with its own setup");
-  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
-  const [storefront, billing] = projects;
-  if (storefront === undefined || billing === undefined) return f;
-  const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
-  storefront["repos"] = [
-    { repoId: "R1", name: "storefront", checkout: ref(storefront), repoKey: "github.com/acme/storefront", base: "main" },
-    { repoId: "R2", name: "billing", checkout: ref(billing), repoKey: "github.com/acme/billing", base: "main" },
-  ];
-  const settings: JsonObject = {
-    ...ref(storefront),
-    title: asText(storefront["title"]),
-    workspaceRoot: asText(storefront["workspaceRoot"]),
-    env: [],
-    setup: { commands: ["pnpm install --frozen-lockfile"], timeoutSec: 600, runAnyway: false, inputs: ["pnpm-lock.yaml"] },
-    worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${asText(storefront["projectId"])}`, baseBranch: "main", worktrees: [] },
-  };
-  // Main matches an answer's input as a subset, so the repo's own answer goes first; storefront's repo gets the project's.
-  f.answer(
-    "project_settings_get",
-    { ...ref(storefront), repo: "billing" },
-    {
-      settings: {
-        ...settings,
-        repo: "billing",
-        setup: { commands: ["pnpm install --frozen-lockfile", "pnpm db:migrate"], timeoutSec: 600, runAnyway: false, inputs: [] },
-      },
-    },
-  );
-  f.answer("project_settings_get", ref(storefront), { settings });
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
-  return f;
-}
-
-/**
  * Settings › Hub › Machines › Screens with the fleet's second machine as the agents' Mac, ready and on a current
  * fleetd: the hub lists only its own screen there, so its row has that one switch.
  */
@@ -411,6 +372,6 @@ export default defineGroup({
     const off = Fixture.from(withAgents, "settings-default-profile-only", "Max agents as in settings-agents, with storefront allowing only the default profile");
     const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
     projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
-    return [f, withAgents, off, machines(base("typical")), repos(base("typical")), agentsMac(base("typical"))];
+    return [f, withAgents, off, machines(base("typical")), agentsMac(base("typical"))];
   },
 });

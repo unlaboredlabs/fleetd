@@ -210,72 +210,6 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   return f;
 }
 
-/**
- * Hub accounts › GitHub (github/AdminGithub.tsx): no App yet, with the button that creates one; one created but not
- * installed; one installed on acme's chosen repositories and all of Sam's, tested; and one whose key GitHub refused.
- * The App is acme's, so its pages are under acme's settings.
- */
-function github(
-  from: Fixture,
-  name: string,
-  note: string,
-  app: "none" | "created" | "installed" | "refused",
-  me: "none" | "connected" | "lapsed" = "none",
-): Fixture {
-  const f = hub(from, name, note, sam, true);
-  const made = {
-    appId: 1048576,
-    slug: "fleetd-on-devbox",
-    name: "fleetd on devbox",
-    clientId: "Iv23liQ4fXk8w2ZsT0aB",
-    owner: "acme",
-    htmlUrl: "https://github.com/apps/fleetd-on-devbox",
-    settingsUrl: "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox",
-    createdAt: "2026-10-18T09:00:00.000Z",
-  };
-  const installations = [
-    { installationId: 51234567, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/storefront", "acme/api"] },
-    { installationId: 51234568, account: "sam-rivera", allRepositories: true, repositoryCount: 14, repositories: [] },
-  ];
-  const tested = {
-    at: "2026-10-19T08:30:00.000Z",
-    ok: true,
-    said: '"fleetd on devbox" is installed on acme (2 repositories), sam-rivera (all 14 repositories), and its tokens work.',
-  };
-  const refused = { at: "2026-10-19T08:30:00.000Z", ok: false, said: "GitHub refused (401): A JSON web token could not be decoded." };
-  const kept =
-    app === "none"
-      ? undefined
-      : app === "created"
-        ? made
-        : app === "installed"
-          ? { ...made, installations, lastTest: tested }
-          : { ...made, installations, lastTest: refused };
-  const permissions = [
-    ["contents", "write"],
-    ["pull_requests", "write"],
-    ["issues", "write"],
-    ["workflows", "write"],
-    ["statuses", "write"],
-    ["actions", "write"],
-    ["checks", "read"],
-    ["metadata", "read"],
-  ];
-  const account = { login: "sam-rivera", userId: 583231, connectedAt: "2026-10-18T09:20:00.000Z", ...(me === "lapsed" ? { lapsed: true } : {}) };
-  f.answer("github_app_get", undefined, {
-    ...(kept === undefined ? {} : { app: kept }),
-    permissions,
-    ...(me === "none" ? {} : { me: account }),
-    authorizeUrl: "https://github.com/login/oauth/authorize",
-  });
-  f.answer("github_disconnect", undefined, { revoked: true });
-  if (kept !== undefined) {
-    f.answer("github_app_test", undefined, { app: kept });
-    f.answer("github_app_remove", undefined, { settingsUrl: made.settingsUrl });
-  }
-  return f;
-}
-
 /** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches the Hub group, and People and Invites ask for an update");
@@ -316,13 +250,6 @@ export default defineGroup({
     hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
-    github(base("chat-empty"), "admin-github-none", "Hub accounts › GitHub on a hub with no App yet: Create GitHub App", "none"),
-    github(base("chat-empty"), "admin-github-created", "Hub accounts › GitHub with the App created and not installed yet", "created"),
-    github(base("chat-empty"), "admin-github-installed", "Hub accounts › GitHub with the App installed on acme and Sam's account, tested", "installed"),
-    github(base("chat-empty"), "admin-github-refused", "Hub accounts › GitHub with an App whose key GitHub refused", "refused"),
-    github(base("chat-empty"), "admin-github-me-none", "Settings › GitHub: the hub has its App, and Sam hasn't connected yet", "installed"),
-    github(base("chat-empty"), "admin-github-me-connected", "Settings › GitHub: Sam connected as sam-rivera", "installed", "connected"),
-    github(base("chat-empty"), "admin-github-me-lapsed", "Settings › GitHub: GitHub no longer takes Sam's connection", "installed", "lapsed"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Hub group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),

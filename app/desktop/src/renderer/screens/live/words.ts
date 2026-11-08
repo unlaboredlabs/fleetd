@@ -7,10 +7,6 @@ export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
 export const isFinal = (s: LaneStatus): boolean => s === "done" || s === "failed" || s === "cancelled";
 
-/** Statuses with a clock running. */
-export const isRunning = (s: LaneStatus): boolean =>
-  s === "starting" || s === "working" || s === "waiting" || s === "stalled" || s === "parked" || s === "idle";
-
 export const isWorking = (s: LaneStatus): boolean => s === "starting" || s === "working";
 
 export const isChecker = (role: AgentRole): boolean => role === "reviewer" || role === "verifier" || role === "qa";

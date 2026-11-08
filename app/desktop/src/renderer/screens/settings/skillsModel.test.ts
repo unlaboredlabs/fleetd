@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SkillSummary } from "../../../shared/contracts";
 import { searchSettings } from "./search";
-import { editable, groups, installLine, isSkillName, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
+import { groups, installLine, isSkillName, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
 
 const skill = (over: Partial<SkillSummary>): SkillSummary => ({ name: "release", origin: "global", description: "", files: [], ...over });
 
 describe("Settings → Projects → Agents", () => {
-  it("edits the hub's skills only; the repo's change in the repo", () => {
-    expect(editable("project")).toBe(true);
-    expect(editable("global")).toBe(true);
-    expect(editable("repo_agents")).toBe(false);
-    expect(editable("repo_claude")).toBe(false);
-  });
-
   it("takes the Agent Skills spec's names, and turns a typed one into one", () => {
     expect(isSkillName("pr-review")).toBe(true);
     for (const bad of ["", "PR", "-a", "a-", "a--b", "a_b", "a".repeat(65)]) expect(isSkillName(bad)).toBe(false);
