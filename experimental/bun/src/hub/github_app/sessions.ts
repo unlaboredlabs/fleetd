@@ -381,13 +381,10 @@ async function withdrawAt(hub: Hub, checkout: ProjectRef, order: WorkstreamId): 
 
 /** The node drops one of the order's variables (`SessionCall::OrderEnvDrop`). */
 async function orderEnvDrop(hub: Hub, r: ProjectRef, order: WorkstreamId, name: string, fingerprint: string): Promise<void> {
-  const request = seams.link(hub).request;
-  if (!request) throw new Error(`machine ${r.machineId} is not connected`);
-  const reply = await request(r.machineId, {
+  const reply = (await seams.link(hub).request(r.machineId, {
     t: "session_call",
-    id: crypto.randomUUID(),
     call: { op: "order_env_drop", projectId: r.projectId, orderId: order, name, fingerprint },
-  });
+  } as never)) as unknown as Record<string, unknown>;
   const error = reply.error as { message?: string } | string | undefined;
   if (error !== undefined && error !== null) throw new Error(typeof error === "string" ? error : (error.message ?? JSON.stringify(error)));
 }
@@ -458,21 +455,18 @@ async function put(hub: Hub, r: ProjectRef, order: WorkstreamId, token: string):
     );
   }
   if (seams.nodeLacks(hub, m, CAP_ORDER_ENV)) throw new Error(`${m}'s node is too old to hand agents a GitHub token: update fleetd there`);
-  const request = seams.link(hub).request;
-  if (!seams.nodeCan(hub, m, CAP_ORDER_ENV) || !request) {
+  if (!seams.nodeCan(hub, m, CAP_ORDER_ENV)) {
     throw new Error(`${m}'s node is offline: it gets the token at the first sweep after it links again`);
   }
   let result: Record<string, unknown>;
   try {
-    result = await request(m, {
-      t: "secret_deliver",
-      id: REQUEST_ID,
+    result = (await seams.link(hub).commands.deliverSecret(m, {
       sink: `order:${m}:${order}`,
       sealed: sealedTo(hub, m, token),
       secretKey: "github.token",
       envName: GITHUB_TOKEN_ENV,
       projectId: r.projectId,
-    });
+    })) as unknown as Record<string, unknown>;
   } catch (error) {
     throw new Error(`${m}'s node didn't take the GitHub token: ${(error as Error).message}`);
   }

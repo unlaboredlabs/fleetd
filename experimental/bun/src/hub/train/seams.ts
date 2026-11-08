@@ -17,23 +17,14 @@ import type {
   WorkstreamId,
 } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
+import { events, type NewEvent } from "../store/events.ts";
+import { isoMs } from "../store/time.ts";
+import { link } from "../link/index.ts";
+import * as repoStore from "../repos/store.ts";
 
 // --- time ---
 
-/** `2026-10-17T10:00:00.000Z`: UTC with milliseconds, the form of every timestamp the hub stores. */
-export function isoMs(ms: number): string {
-  const date = new Date(ms);
-  return Number.isNaN(date.getTime()) ? "1970-01-01T00:00:00.000Z" : date.toISOString();
-}
-
-const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
-
-/** Milliseconds of an RFC 3339 timestamp (finer digits dropped); undefined for anything else. */
-export function parseMs(text: string): number | undefined {
-  if (!RFC3339.test(text)) return undefined;
-  const ms = Date.parse(text.replace(/(\.\d{3})\d+/, "$1"));
-  return Number.isNaN(ms) ? undefined : ms;
-}
+export { isoMs, parseMs } from "../store/time.ts";
 
 /** The first `max` UTF-16 units of `text`, never splitting a surrogate pair (api/grants.rs `clip`). */
 export function clip(text: string, max: number): string {
@@ -64,129 +55,34 @@ export const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener("abort", done, { once: true });
   });
 
-// --- the event log (T2246's src/hub/store/events.ts, `hub.area("events")`) ---
+// --- the event log (src/hub/store/events.ts) ---
 
-export type NewEvent = Omit<HubEvent, "seq">;
-export type WaitResult = { events: HubEvent[]; cursor: number; more: boolean };
-export type WaitInput = { cursor?: number; types?: HubEventType[]; machineId?: MachineId; timeoutSec: number };
-
-export interface EventLogLike {
-  append(event: NewEvent): HubEvent;
-  head(): number;
-  wait(input: WaitInput, signal?: AbortSignal): Promise<WaitResult>;
-  subscribe(listener: (event: HubEvent) => void): () => void;
-}
-
-/** The stand-in: the same rows as the Rust log writes, without trimming or retention. */
-class EventLogStandIn implements EventLogLike {
-  private headSeq: number;
-  private readonly listeners = new Set<(event: HubEvent) => void>();
-
-  constructor(private readonly hub: Hub) {
-    const row = hub.db.conn.query<{ seq: number }, []>("SELECT seq FROM sqlite_sequence WHERE name = 'events'").get();
-    this.headSeq = row?.seq ?? 0;
-  }
-
-  head(): number {
-    return this.headSeq;
-  }
-
-  subscribe(listener: (event: HubEvent) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  append(event: NewEvent): HubEvent {
-    const row = this.hub.db.conn
-      .query<{ seq: number }, [number, string, string | null, string]>(
-        "INSERT INTO events (created_ms, type, machine_id, data) VALUES (?, ?, ?, ?) RETURNING seq",
-      )
-      .get(this.hub.clock.now(), event.type, event.machineId ?? null, JSON.stringify(event));
-    this.headSeq = row?.seq ?? this.headSeq + 1;
-    const stored = { ...event, seq: this.headSeq } as HubEvent;
-    for (const l of this.listeners) {
-      try {
-        l(stored);
-      } catch (error) {
-        console.error("event listener failed:", error);
-      }
-    }
-    return stored;
-  }
-
-  private page(after: number, types?: HubEventType[]): WaitResult {
-    const rows = this.hub.db.all<{ seq: number; data: string }>(
-      `SELECT seq, data FROM events WHERE seq > $after
-         AND ($types IS NULL OR type IN (SELECT value FROM json_each($types))) ORDER BY seq LIMIT 101`,
-      { after, types: types ? JSON.stringify(types) : null },
-    );
-    const more = rows.length > 100;
-    const events = rows.slice(0, 100).map((r) => ({ ...(JSON.parse(r.data) as NewEvent), seq: r.seq }) as HubEvent);
-    return { events, cursor: more ? (events[99]?.seq ?? after) : Math.max(after, this.headSeq), more };
-  }
-
-  async wait(input: WaitInput, signal?: AbortSignal): Promise<WaitResult> {
-    const deadline = this.hub.clock.now() + input.timeoutSec * 1000;
-    let after = Math.min(input.cursor ?? this.headSeq, this.headSeq);
-    for (;;) {
-      const page = this.page(after, input.types);
-      const remaining = deadline - this.hub.clock.now();
-      if (page.events.length > 0 || remaining <= 0 || signal?.aborted) return page;
-      after = page.cursor;
-      await new Promise<void>((resolve) => {
-        const off = this.subscribe(() => done());
-        const timer = setTimeout(done, remaining);
-        signal?.addEventListener("abort", done, { once: true });
-        function done() {
-          clearTimeout(timer);
-          off();
-          signal?.removeEventListener("abort", done);
-          resolve();
-        }
-      });
-    }
-  }
-}
-
-export const events = (hub: Hub): EventLogLike => hub.area<EventLogLike>("events", (h) => new EventLogStandIn(h));
+export { events, type NewEvent } from "../store/events.ts";
 
 /** EventLog.append at now, on a project: the Rust hosts' `append_event`. */
-export function emit(hub: Hub, r: ProjectRef | undefined, type: string, summary: string, data?: unknown): void {
+export function emit(hub: Hub, r: ProjectRef | undefined, type: string, summary: string, data?: unknown, threadId?: string): void {
   const event: Record<string, unknown> = { at: isoMs(hub.clock.now()), type };
   if (r) {
     event.machineId = r.machineId;
     event.projectId = r.projectId;
   }
+  if (threadId !== undefined) event.threadId = threadId;
   event.summary = summary;
   if (data !== undefined && data !== null) event.data = data;
   events(hub).append(event as NewEvent);
 }
 
-// --- lead wakes (T2246's src/hub/api/leads.ts, D348) ---
+// --- lead wakes (src/hub/api/leads.ts, D348) ---
 
-export type LineKind = "task_result" | "task_waiting" | "train" | "human" | "cap_raised" | "request" | "recovery" | "quiet" | "cut_off" | "factory";
-export type Trigger = { kind: "intent"; workstreamId: WorkstreamId; text: string } | { kind: "line"; line: LineKind; text: string };
-export type LeadWakes = { trigger(r: ProjectRef, trigger: Trigger): void };
+export { leadWakes, type LineKind, type Trigger } from "../api/leads.ts";
 
-export const leadWakes = (hub: Hub): LeadWakes => hub.area<LeadWakes>("lead_wakes", () => ({ trigger: () => {} }));
+// --- the node link (src/hub/link) ---
 
-// --- the node link (T2253's src/hub/link, D346) ---
+export { link } from "../link/index.ts";
 
-export interface LinkLike {
-  /** Sends `frame` and resolves with the node's `*_result` for it; rejects when the node is offline or times out. */
-  request?(machineId: MachineId, frame: Record<string, unknown>): Promise<Record<string, unknown>>;
-  /** The node is linked and its hello lists `cap`. */
-  can?(machineId: MachineId, cap: string): boolean;
-  /** The node's link, while it is linked. */
-  linkId?(machineId: MachineId): string | undefined;
-}
-
-export const link = (hub: Hub): LinkLike => hub.area<LinkLike>("link", () => ({}));
-
-export const nodeCan = (hub: Hub, m: MachineId, capName: string) => link(hub).can?.(m, capName) ?? false;
+export const nodeCan = (hub: Hub, m: MachineId, capName: string) => link(hub).can(m, capName);
 /** Linked, and its hello says it lacks `cap`: too old. Never for a node not linked, which said nothing. */
-export const nodeLacks = (hub: Hub, m: MachineId, capName: string) =>
-  link(hub).linkId?.(m) !== undefined && !nodeCan(hub, m, capName);
+export const nodeLacks = (hub: Hub, m: MachineId, capName: string) => link(hub).lacks(m, capName);
 
 // --- the sweep (src/hub/sweep: every 5 minutes, each check registered by its area) ---
 
@@ -288,48 +184,19 @@ export function otherNavis(db: Database, me: PersonId | undefined): ProjectRef[]
     .map((r) => ({ machineId: r.machine_id, projectId: r.project_id }));
 }
 
-const REPO_COLUMNS = `n, name, checkout_machine_id, checkout_project_id, repo_key, base, machine_id, project_id,
-     (SELECT json_extract(p.data, '$.workspaceRoot') FROM projects p
-      WHERE p.machine_id = repos.checkout_machine_id AND p.project_id = repos.checkout_project_id) AS path`;
-
-type RepoRow = {
-  n: number;
-  name: string;
-  checkout_machine_id: string;
-  checkout_project_id: string;
-  repo_key: string | null;
-  base: string | null;
-  machine_id: string;
-  project_id: string;
-  path: string | null;
-};
-
-function repoOf(row: RepoRow): ProjectRepo {
-  const repo: ProjectRepo = {
-    repoId: `R${row.n}`,
-    name: row.name,
-    checkout: { machineId: row.checkout_machine_id, projectId: row.checkout_project_id },
-  };
-  if (row.repo_key !== null) repo.repoKey = row.repo_key;
-  if (row.base !== null) repo.base = row.base;
-  if (row.path !== null) repo.path = row.path;
-  return repo;
-}
-
-/** The project's repos, oldest first (repos/store.rs `of`). */
+/** The project's repos, oldest first, its own made first when it has none (repos/mod.rs `repos_of`). */
 export function reposOf(db: Database, project: ProjectRef): ProjectRepo[] {
-  return db
-    .query<RepoRow, [string, string]>(`SELECT ${REPO_COLUMNS} FROM repos WHERE machine_id = ? AND project_id = ? ORDER BY n`)
-    .all(project.machineId, project.projectId)
-    .map(repoOf);
+  return db.transaction(() => {
+    repoStore.ensureOwn(db, project);
+    return repoStore.of(db, project);
+  })();
 }
 
 /** The projects with a repo whose key is `repoKey` (`github.com/owner/name`), and each repo. */
 export function reposWithKey(db: Database, repoKey: string): { project: ProjectRef; repo: ProjectRepo }[] {
-  return db
-    .query<RepoRow, [string]>(`SELECT ${REPO_COLUMNS} FROM repos WHERE lower(repo_key) = lower(?) ORDER BY n`)
-    .all(repoKey)
-    .map((row) => ({ project: { machineId: row.machine_id, projectId: row.project_id }, repo: repoOf(row) }));
+  return repoStore
+    .withKey(db, repoKey)
+    .flatMap((project) => repoStore.of(db, project).filter((r) => r.repoKey?.toLowerCase() === repoKey.toLowerCase()).map((repo) => ({ project, repo })));
 }
 
 export function machine(db: Database, m: MachineId): Machine | undefined {

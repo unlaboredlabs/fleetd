@@ -262,11 +262,11 @@ merge train, reviews, PRs, checks, GitHub App.
 - [x] `github_app_remove` → `src/hub/github_app` (admin) <!-- tool:`github_app_remove` -->
 - [x] `github_connect` → `src/hub/github_app` (operate) <!-- tool:`github_connect` -->
 - [x] `github_disconnect` → `src/hub/github_app` (operate) <!-- tool:`github_disconnect` -->
-- [ ] `changes_list` → `src/hub/train` (read) <!-- tool:`changes_list` -->
-- [ ] `pr_list` → `src/hub/prs` (read) <!-- tool:`pr_list` -->
-- [ ] `pr_get` → `src/hub/prs` (read) <!-- tool:`pr_get` -->
-- [ ] `pr_files` → `src/hub/prs` (read) <!-- tool:`pr_files` -->
-- [ ] `pr_diff` → `src/hub/prs` (read) <!-- tool:`pr_diff` -->
+- [x] `changes_list` → `src/hub/train` (read) <!-- tool:`changes_list` -->
+- [x] `pr_list` → `src/hub/prs` (read) <!-- tool:`pr_list` -->
+- [x] `pr_get` → `src/hub/prs` (read) <!-- tool:`pr_get` -->
+- [x] `pr_files` → `src/hub/prs` (read) <!-- tool:`pr_files` -->
+- [x] `pr_diff` → `src/hub/prs` (read) <!-- tool:`pr_diff` -->
 
 ### Background loops
 

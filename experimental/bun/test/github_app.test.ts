@@ -378,18 +378,20 @@ function node(l: Lab, machineId: string) {
   l.hub.db.conn.query("INSERT INTO machines (machine_id, data) VALUES (?, ?)").run(machineId, JSON.stringify(machine));
   const got: { sink: string; token: string }[] = [];
   const state = { online: true, drops: 0 };
+  const deliver = async (_m: string, frame: Record<string, unknown>) => {
+    const token = new TextDecoder().decode(openSealed(box, new Uint8Array(Buffer.from(String(frame.sealed), "base64")))!);
+    got.push({ sink: String(frame.sink), token });
+    return { id: "1", fingerprint: `sha256:${got.length}` };
+  };
   l.hub.area("link", () => ({
     can: (m: string) => state.online && m === machineId,
-    linkId: (m: string) => (state.online && m === machineId ? "L1" : undefined),
+    lacks: () => false,
+    linkId: (m: string) => (state.online && m === machineId ? 1 : undefined),
     request: async (_m: string, frame: Record<string, unknown>) => {
-      if (frame.t === "session_call") {
-        state.drops++;
-        return { output: {} };
-      }
-      const token = new TextDecoder().decode(openSealed(box, new Uint8Array(Buffer.from(String(frame.sealed), "base64")))!);
-      got.push({ sink: String(frame.sink), token });
-      return { id: frame.id, fingerprint: `sha256:${got.length}` };
+      if (frame.t === "session_call") state.drops++;
+      return { id: "1", output: {} };
     },
+    commands: { deliverSecret: deliver },
   }));
   return { got, state };
 }
@@ -400,6 +402,8 @@ function order(l: Lab, machineId: string, repo: string, starter?: string): { r: 
   l.hub.db.conn
     .query("INSERT INTO repos (name, checkout_machine_id, checkout_project_id, repo_key, machine_id, project_id) VALUES ('web', ?, 'p1', ?, ?, 'p1')")
     .run(machineId, `github.com/${repo}`, machineId);
+  // The project's work is bound to the repo, as adding it from a GitHub checkout does.
+  l.hub.db.conn.query("INSERT INTO work_projects (machine_id, project_id, repo_key, base, updated_ms) VALUES (?, 'p1', ?, 'main', 0)").run(machineId, `github.com/${repo}`);
   const data = {
     workstreamId: "W1",
     projectRef: r,

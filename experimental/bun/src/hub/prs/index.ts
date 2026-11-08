@@ -1,12 +1,12 @@
 // The PR views (crates/fleetd/src/hub/prs/mod.rs): a project's PRs (`pr_list`) and one PR in detail (`pr_get`,
 // `pr_files`, `pr_diff`). Joins the merge queue's Changes, the review gate's verdicts and the task that wrote each PR
 // with what GitHub says, read through `PrsGitHub`'s short cache. Read-only; owns no table and runs no loop.
-import type { Change, ChangeState, PrQueueStep, PrReviewEntry, ProjectRef, ReviewVerdict, Task } from "../../shared/contracts.ts";
+import type { Change, ChangeState, PrQueueStep, PrReviewEntry, ProjectRef, Task } from "../../shared/contracts.ts";
 import { redact } from "../../shared/redact.ts";
 import type { Hub } from "../api/hub.ts";
 import { AppGh } from "../github_app/gh.ts";
 import { githubApps } from "../github_app/index.ts";
-import { prKey } from "../reviews/verdicts.ts";
+import { prKey, type ReviewVerdict } from "../reviews/verdicts.ts";
 import { ChangeRecords } from "../train/records.ts";
 import { clip, isoMs, tasks } from "../train/seams.ts";
 import { type GhReview, PrsGitHub } from "./github.ts";
