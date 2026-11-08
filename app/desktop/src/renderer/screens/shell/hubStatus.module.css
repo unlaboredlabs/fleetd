@@ -1,6 +1,6 @@
 /* The sidebar's hub chip (HubStatus.tsx) and its popover. One row as tall as the sidebar's rows, its dot in their icon
    column, no divider and no background at rest: it takes a fill only under the pointer, or while its popover is open.
-   Any update sits at the row's end (UpdatesLine). */
+   Any update says a word at the row's end (updates/UpdateWord). */
 .row {
   flex: 1;
   display: flex;
@@ -144,3 +144,12 @@ span.down {
   padding-top: var(--space-1);
 }
 
+
+/* The hub restarting: the dot opened to a ring of the same size, filled again when it answers. */
+.ring {
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+}

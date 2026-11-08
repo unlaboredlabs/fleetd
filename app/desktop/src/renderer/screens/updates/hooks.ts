@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer } from "../../src/data/react";
 import { useSettledAdministers } from "../admin/role";
 import { useFlow, useReady, useRun, type FlowDeps } from "./flow";
-import { updatesView, type MachineInput, type UpdatesView } from "./model";
+import { RESULT_SHOWN_MS, updatesView, type MachineInput, type UpdatesView } from "./model";
+import { quietOf, type Quiet } from "./quiet";
 import { appUpdate, useAppUpdate } from "./state";
 
 /** Everything the updates surfaces say, from main's update state, the hub's ready frame, its machines, its run, the
@@ -41,4 +43,25 @@ export const useFlowDeps = (): FlowDeps => {
     }),
     [layer],
   );
+};
+
+/** The hub row's word and its popover's note (quiet.ts): read against the clock as the hub's state changes (each
+ * redial while it restarts), and again when "Updated" has said it long enough. */
+export const useQuiet = (hub: HubState): Quiet | null => {
+  const view = useUpdatesView();
+  const updated = useData((s) => s.updated);
+  const release = useAppUpdate()?.release;
+  const administers = useSettledAdministers();
+  // A render when "Updated" has said it long enough.
+  const [, setExpired] = useState(0);
+  useEffect(() => {
+    if (updated === undefined) return;
+    const left = updated.at + RESULT_SHOWN_MS - Date.now();
+    if (left <= 0) return;
+    const timer = setTimeout(() => setExpired((n) => n + 1), left);
+    return () => clearTimeout(timer);
+  }, [updated]);
+  // Small and cheap: read on every render, against the clock.
+  // eslint-disable-next-line react-hooks/purity
+  return quietOf({ view, hub, updated, release, administers, now: Date.now() });
 };

@@ -10,7 +10,7 @@ import { HubStatus } from "./HubStatus";
 import { parseHash } from "./routes";
 
 const fleetd = vi.hoisted(() => {
-  const f = { fixture: null as string | null, platform: "linux" };
+  const f = { fixture: null as string | null, platform: "linux", updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) } };
   (window as unknown as { fleetd: typeof f }).fleetd = f;
   return f;
 });
@@ -72,6 +72,21 @@ it("shows only the actions that apply to each state", () => {
     "Disconnect…",
   ]);
   expect(open({ phase: "unpaired" })).toEqual(["Pair with a hub"]);
+});
+
+it("keeps the hub's name through a restart, says it is updating, and calls it offline only after 2 minutes", () => {
+  const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms });
+  expect(open(away(1_000))).toEqual(["Settings › Hubs", "Disconnect…"]);
+  const chip = () => host.querySelector<HTMLElement>("[data-hub-status]");
+  expect(chip()?.dataset["tone"]).toBe("restarting");
+  expect(chip()?.textContent).toBe("devboxUpdating…");
+  expect(popover()).toContain("Updating fleetd…");
+  expect(popover()).not.toContain("Nothing is listening");
+  // Long: the line in the main area has Try now, and so does the popover.
+  expect(open(away(40_000))).toEqual(["Retry now", "Settings › Hubs", "Disconnect…"]);
+  expect(open(away(130_000))).toEqual(["Retry now", "Settings › Hubs", "Disconnect…"]);
+  expect(chip()?.textContent).toBe("Offline");
+  expect(popover()).toContain("Nothing is listening");
 });
 
 it("offers nothing to do on sample data", () => {

@@ -8,7 +8,18 @@
 import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
-import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
+import {
+  appUrl,
+  backoff,
+  CLOSE_GOING_AWAY,
+  CLOSE_RESTART,
+  CLOSE_UNAUTHORIZED,
+  parseServerFrame,
+  RESTART_REDIAL_EVERY_MS,
+  RESTART_REDIAL_MS,
+  type ClientMessage,
+  type ServerFrame,
+} from "./protocol";
 import type { PresenceFrame } from "../presence";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
@@ -64,6 +75,8 @@ export class HubClient implements HubSource {
   #connection: Connection | null = null;
   #ready = false;
   #attempt = 0;
+  /** When the hub closed the link to restart, epoch ms, until a link is ready again: it redials quickly meanwhile. */
+  #restarting: number | null = null;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #stopped = true;
   /** The newest event seq applied on this connection; the stream resumes after it. */
@@ -120,6 +133,7 @@ export class HubClient implements HubSource {
 
   stop(): void {
     this.#stopped = true;
+    this.#restarting = null;
     this.#clearTimers();
     const connection = this.#connection;
     this.#connection = null;
@@ -224,7 +238,7 @@ export class HubClient implements HubSource {
       this.#setState({ phase: "refused", hub: this.#options.hub, message: url.message });
       return;
     }
-    this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt });
+    this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt, ...this.#restartingField() });
     let opened = false;
     const connection = this.#options.transport(url.url, {
       onOpen: () => {
@@ -290,6 +304,7 @@ export class HubClient implements HubSource {
       case "ready": {
         this.#ready = true;
         this.#readyAt = Date.now();
+        this.#restarting = null;
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
@@ -397,6 +412,7 @@ export class HubClient implements HubSource {
       this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
       return;
     }
+    if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) this.#restarting ??= Date.now();
     this.#lost(explainLoss(this.#options.hub, code, reason, error, opened));
   }
 
@@ -405,9 +421,12 @@ export class HubClient implements HubSource {
     this.#clearTimers();
     if (this.#stopped) return;
     if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
-    // ±25 %, so many apps behind one restarting hub don't come back in lockstep.
-    const retryIn = Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
-    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: Date.now() + retryIn });
+    // Restarting, every RESTART_REDIAL_EVERY_MS until RESTART_REDIAL_MS, then the backoff from its start. Otherwise ±25 %,
+    // so many apps behind one hub that dropped them don't come back in lockstep.
+    const quick = this.#restarting !== null && Date.now() - this.#restarting < RESTART_REDIAL_MS;
+    if (quick) this.#attempt = 0;
+    const retryIn = quick ? RESTART_REDIAL_EVERY_MS : Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: Date.now() + retryIn, ...this.#restartingField() });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
       this.#connect();
@@ -478,6 +497,10 @@ export class HubClient implements HubSource {
   #send(message: ClientMessage): void {
     const text = JSON.stringify(message);
     this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
+  }
+
+  #restartingField(): { restarting?: number } {
+    return this.#restarting === null ? {} : { restarting: this.#restarting };
   }
 
   #setState(state: HubState): void {

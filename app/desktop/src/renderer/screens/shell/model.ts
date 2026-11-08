@@ -111,7 +111,22 @@ export const stepProject = <P extends SidebarProject>(projects: ReadonlyArray<P>
 export const homeProject = <P extends SidebarProject>(projects: ReadonlyArray<P>, last: string | null): P | null =>
   projects.find((x) => x.key === last) ?? projects[0] ?? null;
 
-export type ConnTone = "success" | "warning" | "danger" | "quiet";
+/** `restarting`: the hub closed to restart, and its dot opens to a ring until it answers. */
+export type ConnTone = "success" | "warning" | "danger" | "quiet" | "restarting";
+
+/** A restart that runs longer than this gets the main area's one line (updates/RestartLine). */
+export const LONG_RESTART_MS = 30_000;
+/** And one longer than this is an outage: the offline banner, as for any lost link. */
+export const OUTAGE_MS = 120_000;
+
+export type RestartPhase = "quiet" | "long" | "outage";
+
+/** Where a restart stands: null when the hub didn't close to restart (connected, or any other drop). */
+export const restartOf = (hub: HubState, now: number): { readonly phase: RestartPhase; readonly since: number } | null => {
+  if ((hub.phase !== "connecting" && hub.phase !== "retrying") || hub.restarting === undefined) return null;
+  const away = now - hub.restarting;
+  return { phase: away < LONG_RESTART_MS ? "quiet" : away < OUTAGE_MS ? "long" : "outage", since: hub.restarting };
+};
 
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "");
@@ -149,9 +164,22 @@ export interface ConnLine {
  * marked with the time they were last current (`asOf`, "as of 09:02"); the popover says it too, and the banner
  * counts down.
  */
-export const connLine = (state: HubState, fixture = false, asOf?: string): ConnLine => {
+export const connLine = (state: HubState, fixture = false, asOf?: string, now = Date.now()): ConnLine => {
   const none = { detail: null, fix: null, hub: null, retry: false };
   if (fixture) return { ...none, label: "Sample data", tone: "quiet", status: "Sample data", detail: "Sample data, no hub" };
+  // A planned restart isn't an outage until it has run for minutes: the hub keeps its name, its dot opens to a ring.
+  const restart = restartOf(state, now);
+  if (restart !== null && restart.phase !== "outage" && state.phase !== "live" && state.phase !== "unpaired" && state.phase !== "refused") {
+    return {
+      ...none,
+      label: hubName(state.hub),
+      tone: "restarting",
+      status: "Updating fleetd…",
+      detail: "The hub is restarting into a new build. Agents keep working on their machines, and anything you send goes once it's back",
+      hub: state.hub,
+      retry: restart.phase === "long",
+    };
+  }
   switch (state.phase) {
     // The first attempt is the usual start: quiet. Amber once it is trying again.
     case "connecting": {

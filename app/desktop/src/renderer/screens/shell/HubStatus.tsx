@@ -6,7 +6,9 @@
 // row per hub, each under its name and with its own state: one offline never hides another. While any of the hub's
 // machines is down the row says how many ("1 down"), which opens Machines, as the popover's Machines line always does:
 // the sidebar has no Machines entry. For a member, who can't open Machines, both are plain text. A cloud machine
-// asleep is at rest, not down.
+// asleep is at rest, not down. Any update says one word at the row's end ("Updating…", "Updated", "Put back", or
+// "Update" with one to take), and what goes with it leads the popover (updates/quiet.ts). While the hub restarts it
+// keeps its name, and its dot opens to a ring until it answers.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
@@ -19,16 +21,17 @@ import { ForgetHubDialog, OPTIONS, openOption } from "../settings";
 import { connLine, type ConnTone } from "./model";
 import { navigate } from "./navigation";
 import { useOfflineAsOf } from "./offline";
+import { UpdateNote, UpdateWord, useQuiet } from "../updates";
 import h from "./hubStatus.module.css";
 
-const TONE: Record<ConnTone, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
+const TONE: Record<ConnTone, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)", restarting: "var(--faint)" };
 
 const HUB_OPTION = OPTIONS.find((o) => o.key === "hubs.hub");
 
-/** A dot with a faint ring of its own color. */
+/** A dot with a faint ring of its own color; while the hub restarts, the dot opened to a ring. */
 const SoftDot = ({ tone }: { tone: ConnTone }) => (
   <span className={h.dot} style={{ color: TONE[tone] }}>
-    <Dot color={TONE[tone]} />
+    {tone === "restarting" ? <span className={h.ring} aria-hidden /> : <Dot color={TONE[tone]} />}
   </span>
 );
 
@@ -56,9 +59,11 @@ export function HubStatus({ hub }: { hub: HubState }) {
   // stays shut while the popover is open.
   const [tip, setTip] = useState(false);
   const [forget, setForget] = useState(false);
+  const quiet = useQuiet(hub);
   const live = hub.phase === "live" ? hub : null;
   const paired = hub.phase !== "unpaired" && window.fleetd.fixture === null;
-  const name = several ? `${self.label}, ${conn.status.toLowerCase()}` : conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
+  const said = several ? `${self.label}, ${conn.status.toLowerCase()}` : conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
+  const name = quiet === null || quiet.kind === "restarting" ? said : `${said}, ${quiet.word.text.toLowerCase()}`;
 
   return (
     <div className={h.row}>
@@ -68,12 +73,22 @@ export function HubStatus({ hub }: { hub: HubState }) {
             <button type="button" className={h.chip} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
               <SoftDot tone={conn.tone} />
               <span className={h.label}>{label}</span>
-              {aside === null ? null : <span className={h.aside}>{aside}</span>}
+              {aside === null || conn.tone === "restarting" ? null : <span className={h.aside}>{aside}</span>}
+              {quiet === null ? null : <UpdateWord quiet={quiet} />}
             </button>
           </PopoverTrigger>
         </Tooltip>
         <PopoverContent side="top" align="start" aria-label="Hub">
           <div className={h.card}>
+            {quiet?.note == null ? null : (
+              <UpdateNote
+                note={quiet.note}
+                onDetails={() => {
+                  setOpen(false);
+                  navigate({ id: "settings", tab: "hub.updates", at: self.id });
+                }}
+              />
+            )}
             <div className={h.head}>
               <SoftDot tone={conn.tone} />
               <Text size="sm" strong>
