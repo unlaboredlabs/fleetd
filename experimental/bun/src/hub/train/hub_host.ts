@@ -10,6 +10,7 @@ import { workstreamGet } from "../orders/workstreams.ts";
 import { time as timeArea } from "../time/index.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "./host.ts";
 import * as seams from "./seams.ts";
+import { Repeats, warnHourly } from "./repeats.ts";
 import { TRAIN_BY } from "./service.ts";
 
 /** The caller a task operation is made as: the project, and `by` on whatever it writes. */
@@ -33,6 +34,8 @@ export type WorkPort = { watches(scope: { repoKey: string; base: string }): bool
 export type MachineRolesPort = { agents(machineId: string): boolean };
 
 const DEFAULT_BRANCH_PREFIX = "fleetd/";
+/** The most open orders, and tasks of each, `writers` reads: far past any project's real count. */
+const WRITERS_MAX = 1_000;
 
 const notPorted = (what: string) => new Error(`${what} is not ported to Bun yet`);
 
@@ -46,8 +49,8 @@ export function taskView(task: Task): TaskView {
 }
 
 export class HubHost implements TrainHost {
-  /** The projects whose policy couldn't be read, each with the error last warned about. */
-  private readonly policyUnread = new Map<string, string>();
+  /** The projects whose policy the train couldn't read: each error warns once, then at most hourly. */
+  private readonly policyUnread = new Repeats();
 
   constructor(private readonly hub: Hub) {}
 
@@ -60,19 +63,17 @@ export class HubHost implements TrainHost {
   }
 
   async branchPrefix(r: ProjectRef): Promise<string | undefined> {
+    // A project removed while its train or PRs were in flight has no policy left to read: nothing to warn of.
+    if (this.projectRemoved(r)) return undefined;
     const policy = this.hub.peek<PolicyPort>("policy");
     if (!policy) return DEFAULT_BRANCH_PREFIX;
     const key = seams.refKey(r);
     try {
       const prefix = (await policy.get(r)).branchPrefix;
-      if (this.policyUnread.delete(key)) console.info(`train: policy of ${key} read again for the branch prefix`);
+      if (this.policyUnread.clear(key)) console.info(`train: policy of ${key} read again for the branch prefix`);
       return prefix ?? DEFAULT_BRANCH_PREFIX;
     } catch (error) {
-      const message = (error as Error).message;
-      if (this.policyUnread.get(key) !== message) {
-        this.policyUnread.set(key, message);
-        console.warn(`train: policy of ${key} not read for the branch prefix: ${message}`);
-      }
+      warnHourly(this.policyUnread, this.hub.clock.now(), [key], (error as Error).message, `train: policy of ${key} not read for the branch prefix: ${(error as Error).message}`);
       return undefined;
     }
   }
@@ -93,16 +94,29 @@ export class HubHost implements TrainHost {
     }
   }
 
+  /**
+   * The write tasks of the project's open orders that are running, idle, done or failed, with their branches: every
+   * one of a long-running order, not only the newest hundred of the project.
+   */
   writers(r: ProjectRef): [string, string][] {
+    let orders: string[];
     try {
-      return seams
-        .tasks<Task>(this.hub.db.conn, { projectRef: r, limit: 100 })
-        .filter((t) => t.kind === "write" && ["running", "idle", "done"].includes(t.state) && t.branch !== undefined)
-        .map((t) => [t.taskId, t.branch!]);
+      orders = seams.openWorkstreams(this.hub.db.conn, r, WRITERS_MAX);
     } catch (error) {
-      console.warn(`train: writers not read: ${error}`);
+      console.warn(`train: open orders not read: ${error}`);
       return [];
     }
+    const writers: [string, string][] = [];
+    for (const workstreamId of orders) {
+      try {
+        for (const t of seams.tasks<Task>(this.hub.db.conn, { projectRef: r, workstreamId, limit: WRITERS_MAX })) {
+          if (t.kind === "write" && ["running", "idle", "done", "failed"].includes(t.state) && t.branch !== undefined) writers.push([t.taskId, t.branch]);
+        }
+      } catch (error) {
+        console.warn(`train: writers not read: ${error}`);
+      }
+    }
+    return writers;
   }
 
   private tasks(): TasksPort {
@@ -158,6 +172,15 @@ export class HubHost implements TrainHost {
       console.warn(`train: events not read: ${error}`);
       await seams.sleep(1000, this.hub.shutdown.signal);
       return { events: [], cursor };
+    }
+  }
+
+  projectRemoved(r: ProjectRef): boolean {
+    try {
+      return seams.project(this.hub.db.conn, r) === undefined;
+    } catch (error) {
+      console.debug(`train: project ${seams.refKey(r)} not read; taken as still there: ${error}`);
+      return false;
     }
   }
 

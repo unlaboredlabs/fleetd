@@ -58,6 +58,11 @@ export interface TrainHost {
   eventsWait(cursor: number, types: string[], timeoutSec: number, signal?: AbortSignal): Promise<{ events: EventView[]; cursor: number }>;
   /** The project's checkout (`workspaceRoot`) on its machine; undefined once the project is removed. */
   projectRoot(projectRef: ProjectRef): string | undefined;
+  /**
+   * Whether the project is known to be removed: never when its lookup fails, so a store error can't take a live
+   * project's work off the train (it is looked at again on the next pass). Absent: it has no checkout left.
+   */
+  projectRemoved?(projectRef: ProjectRef): boolean;
   /** The project's repos on GitHub, each `owner/name` lowercased, with the node checkout holding its files. */
   githubRepos(projectRef: ProjectRef): [string, ProjectRef][];
   /** The projects still on their machines that have `repo` as one of their repos. */

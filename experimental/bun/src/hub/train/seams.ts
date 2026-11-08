@@ -125,6 +125,16 @@ export const people = {
 /** `W12` → 12, as leads/records.rs numbers workstreams; tasks are `T<n>`, changes `X<n>`. */
 export const numberOf = (id: string) => Number.parseInt(id.slice(1), 10) || 0;
 
+/** The project's open workstreams' ids, newest first (leads/records.rs `workstreams_list` with state open). */
+export function openWorkstreams(db: Database, r: ProjectRef, limit: number): WorkstreamId[] {
+  return db
+    .query<{ n: number }, [string, string, number]>(
+      "SELECT n FROM workstreams WHERE machine_id = ? AND project_id = ? AND state = 'open' ORDER BY n DESC LIMIT ?",
+    )
+    .all(r.machineId, r.projectId, limit)
+    .map((row) => `W${row.n}`);
+}
+
 export function workstream(db: Database, id: WorkstreamId): Workstream | undefined {
   const row = db.query<{ data: string }, [number]>("SELECT data FROM workstreams WHERE n = ?").get(numberOf(id));
   return row ? (JSON.parse(row.data) as Workstream) : undefined;
