@@ -1,26 +1,31 @@
-// navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name (D310) and its
-// old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). navi_create and the asks come
-// with the projects and bridge ports.
+// navi_create, navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name
+// (D310) and its old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). The asks come with
+// the bridge port.
 import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import { CAP_NAVI_SIGNINS } from "../../shared/node_link.ts";
+import { CAP_ASSISTANT, CAP_NAVI_SIGNINS } from "../../shared/node_link.ts";
+import { FOLDER_TAKEN } from "../../shared/sessions.ts";
+import { jsPrefix } from "../../shared/text.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import { offline, unknownProject } from "../api/refusals.ts";
-import type { Registry } from "../api/registry.ts";
+import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { executors } from "../executor/index.ts";
-import { interruptNow, naviSigninsForget, projectUpsert, stop } from "../executor/projects.ts";
+import { ExecutorError, executors, newUuid } from "../executor/index.ts";
+import { interruptNow, naviSigninsForget, projectFolder, projectUpsert, stop } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
+import { anyMerged } from "../orders/sources.ts";
+import { workstreamGet } from "../orders/workstreams.ts";
+import { slugOr } from "../projects/add.ts";
+import { targetMachine } from "../projects/discover.ts";
+import { fitAdded, folder as folderInspect } from "../projects/inspect.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { anyMerged } from "../orders/sources.ts";
-import { workstreamGet } from "../orders/workstreams.ts";
 import { asksFrom, projectTitle } from "./bridge.ts";
 import * as checker from "./checker.ts";
-import { others } from "./owner.ts";
+import { others, who } from "./owner.ts";
 import { register as registerPurchases } from "./purchases.ts";
 import { pasted, siteOf } from "./sites.ts";
 import * as navis from "./store.ts";
@@ -78,7 +83,89 @@ const refOf = (input: { machineId: string; projectId: string }): ProjectRef => (
 /** The most asks navi_asks lists. */
 export const NAVI_ASKS_MAX = 100;
 
+/** Where Navis' folders go, under the node's home. */
+export const FOLDER = "navi";
+/** How many free names `navi_create` tries before it gives up. */
+const FOLDER_TRIES = 50;
+
+/** A folder name from a Navi's name: lowercase letters, digits and dashes, at most 40; "navi" when nothing is left. */
+export const slug = (name: string) => slugOr(name, FOLDER);
+
+/**
+ * `navi/<slug>`, then `navi/<slug>-2` and on, skipping the folders of the machine's projects. The node also refuses a
+ * folder that is already there (`FOLDER_TAKEN`), and the next one is tried.
+ */
+function freeFolders(hub: Hub, m: string, base: string): string[] {
+  const taken = store(hub)
+    .projectsList(m)
+    .map((p) => p.workspaceRoot.replace(/\/+$/, ""));
+  const used = (name: string) => taken.some((root) => root.endsWith(`/${FOLDER}/${name}`));
+  const out: string[] = [];
+  for (let n = 1; out.length < FOLDER_TRIES; n++) {
+    const name = n === 1 ? base : `${base}-${n}`;
+    if (!used(name)) out.push(`${FOLDER}/${name}`);
+  }
+  return out;
+}
+
+/**
+ * `navi_create` (navi/mod.rs `create`): a new Only me project in a folder of its own under its node's home, its
+ * owner the person whose key made it. Marked first, so the node's report of it already reads as a Navi.
+ */
+async function create(hub: Hub, caller: Caller, input: { name: string; machineId?: string }): Promise<{ navi: ProjectSummary; next: string }> {
+  if (input.machineId !== undefined) requireRole(caller, "operate", input.machineId);
+  const m = targetMachine(hub, input.machineId);
+  requireRole(caller, "operate", m);
+  if (!link(hub).can(m, CAP_ASSISTANT)) {
+    throw new ToolError("invalid", `${m}'s node is too old to hold a project`, `Run fleetd update on ${m}, or pass another machineId`);
+  }
+  const name = input.name.trim();
+  const folders = freeFolders(hub, m, slug(name));
+  const r = { machineId: m, projectId: newUuid() };
+  const atMs = hub.clock.now();
+  navis.put(hub.db.conn, r, { keyId: caller.keyId, name: caller.name }, who(hub.db.conn, caller), atMs);
+  let path: string | undefined;
+  let failed: ToolError | undefined;
+  for (const folder of folders) {
+    try {
+      path = await projectFolder(hub, m, r.projectId, name, folder);
+      break;
+    } catch (error) {
+      if (error instanceof ExecutorError && error.kind === "node_failed" && (error.extra.nodeMessage ?? "").includes(FOLDER_TAKEN)) continue;
+      failed = fromExecutor(error);
+      break;
+    }
+  }
+  if (path === undefined) {
+    navis.remove(hub.db.conn, r);
+    throw failed ?? new ToolError("failed", `every free folder name for ${name} on ${m} is taken`, "Give it another name");
+  }
+  // In the cache now, so navi_list shows it before the node's report of it arrives.
+  if (!store(hub).projectGet(r)) {
+    store(hub).projectsUpsertMany(m, [
+      {
+        machineId: m,
+        projectId: r.projectId,
+        title: name,
+        workspaceRoot: path,
+        threads: { running: 0, waiting: 0, idle: 0, failed: 0 } as ProjectSummary["threads"],
+        lastActivityAt: isoMs(atMs),
+      },
+    ]);
+  }
+  events(hub).append({
+    at: isoMs(atMs),
+    type: "project.added",
+    machineId: m,
+    projectId: r.projectId,
+    summary: jsPrefix(`${name} made on ${m}`, 200),
+    data: fitAdded({ title: name, path, created: true, inspect: folderInspect() }),
+  });
+  return { navi: naviOf(hub, r), next: "Write to it with chat_send; its lead starts with the first message." };
+}
+
 export function register(tools: Registry): void {
+  tools.add("navi_create", (hub, caller, input) => create(hub, caller, input));
   registerPurchases(tools);
   // The app's read of what a project asked other projects for (`project_message`), with each order opened for it.
   for (const name of ["project_asks", "navi_asks"] as const) {
