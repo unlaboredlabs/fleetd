@@ -35,6 +35,7 @@ import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { DraftReply } from "../drafts";
 import { changeDraft } from "../draftsStore";
 import { refOf, type Key } from "../store";
+import { parseInline } from "../markdown";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
@@ -1213,7 +1214,7 @@ function BubbleView({
       return (
         <Card style={styles.blockCard}>
           {bubble.title === undefined ? null : <Text style={[type.subhead, styles.strong, { color: t.label }]}>{bubble.title}</Text>}
-          <Grid header={bubble.columns} rows={bubble.rows} ink={t.label} rule={t.separator} />
+          <Grid header={bubble.columns.map(parseInline)} rows={bubble.rows.map((r) => r.map(parseInline))} ink={t.label} rule={t.separator} ground={t.surface} bleed={space.lg} />
         </Card>
       );
     case "block":

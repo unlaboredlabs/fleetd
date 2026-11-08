@@ -118,7 +118,7 @@ export function Skill({ navigation, route }: ChatInfoProps<"Skill">) {
       </View>
 
       <View style={[styles.page, { backgroundColor: t.cell }]}>
-        {body.trim() === "" ? <Text style={[type.body, { color: t.tertiary }]}>No steps written yet.</Text> : <Markdown text={body} ink={t.label} holdsBlocks={false} />}
+        {body.trim() === "" ? <Text style={[type.body, { color: t.tertiary }]}>No steps written yet.</Text> : <Markdown text={body} ink={t.label} holdsBlocks={false} ground={t.cell} />}
       </View>
 
       {s.shadowedBy === undefined ? null : <Problem text={`${p.title} uses another skill called ${s.name} instead, from its folder.`} />}
