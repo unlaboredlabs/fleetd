@@ -1,6 +1,7 @@
 // A chat's or a person's avatar, a circle as iOS draws a contact's: its picture once one was given (project_avatar_set,
-// person_avatar_set), else its built-in icon (a glass being on a field of a color: the hub's pick or one it derived),
-// else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a person's. A
+// person_avatar_set), else its built-in icon (Being: a soft-black being on a pale field of a color, the hub's pick or
+// one it derived), else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps
+// draw a person's. A
 // picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
 // the next launch; one not seen before fades in over the icon.
 import { File, Paths } from "expo-file-system";
@@ -8,10 +9,10 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
 import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { initials, tintIndex } from "../avatar";
-import { ICON_FILES } from "../botIconFiles";
 import type { ProjectIcon } from "../desktop";
 import { SessionContext } from "../hubContext";
 import { useTheme } from "../theme";
+import { Being } from "./Being";
 
 /** "#RRGGBB" mixed toward white by `amount` (0 to 1). */
 const lighter = (hex: string, amount: number): string => {
@@ -24,13 +25,6 @@ const lighter = (hex: string, amount: number): string => {
 export type Pictured =
   | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly icon?: ProjectIcon | undefined }
   | { readonly personId: string; readonly avatar?: string | undefined; readonly icon?: undefined };
-
-/** The image of `icon` for a circle `size` points across (Metro picks the screen's scale); undefined for one this build doesn't have. */
-export const iconSource = (icon: ProjectIcon | undefined, size: number): number | undefined => {
-  if (icon === undefined) return undefined;
-  const files = ICON_FILES[`${icon.face}-${icon.color}`];
-  return files === undefined ? undefined : size <= 32 ? files[0] : files[1];
-};
 
 const fileOf = (avatar: string): File => new File(Paths.cache, `avatar-${avatar}.jpg`);
 
@@ -116,11 +110,11 @@ export function Avatar({
   const shown = usePicture(picture);
   const box = { width: size, height: size, borderRadius: size / 2 };
   // `icon` over the summary's: the picker's choice before it is sent.
-  const glass = iconSource(icon ?? picture?.icon, size);
-  if (glass !== undefined) {
+  const drawn = icon ?? picture?.icon;
+  if (drawn !== undefined) {
     return (
       <View accessible={false} style={[styles.base, box]}>
-        <Image source={glass} style={{ width: size, height: size }} fadeDuration={0} accessibilityIgnoresInvertColors />
+        <Being face={drawn.face} color={drawn.color} size={size} />
         {shown.uri === undefined || icon !== undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
       </View>
     );

@@ -254,22 +254,18 @@ async fn a_reader_cant_pick_one_nor_anyone_for_an_unknown_project_nor_a_face_tha
     assert!(settings_events(&hub).is_empty());
 }
 
-/// The faces and colors the hub names are the ones app/shared/bot-icons builds images of, in the same order.
+/// The faces and colors the hub names are the ones the apps draw (app/desktop/src/shared/botAvatar.ts), in the same
+/// order.
 #[test]
 fn its_faces_and_colors_are_the_shipped_ones() {
-    let beings: Value = serde_json::from_str(include_str!(
-        "../../../../../app/shared/bot-icons/glass/beings.json"
-    ))
-    .unwrap();
-    let palette: Value = serde_json::from_str(include_str!(
-        "../../../../../app/shared/bot-icons/palette.json"
-    ))
-    .unwrap();
-    let ids = |list: &Value| -> Vec<String> {
-        list.as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v["id"].as_str().unwrap().to_owned())
+    let drawn = include_str!("../../../../../app/desktop/src/shared/botAvatar.ts");
+    // The ids in order of the list `export const <name>` opens, up to its closing `];`.
+    let ids = |name: &str| -> Vec<String> {
+        let from = drawn.find(&format!("export const {name}")).unwrap();
+        let list = &drawn[from..from + drawn[from..].find("\n];").unwrap()];
+        list.split("{ id: \"")
+            .skip(1)
+            .map(|rest| rest[..rest.find('"').unwrap()].to_owned())
             .collect()
     };
     let names = |all: Vec<Value>| -> Vec<String> {
@@ -284,7 +280,7 @@ fn its_faces_and_colors_are_the_shipped_ones() {
                 .map(|f| serde_json::to_value(f).unwrap())
                 .collect()
         ),
-        ids(&beings["beings"])
+        ids("ICON_FACES")
     );
     assert_eq!(
         names(
@@ -293,6 +289,6 @@ fn its_faces_and_colors_are_the_shipped_ones() {
                 .map(|c| serde_json::to_value(c).unwrap())
                 .collect()
         ),
-        ids(&palette["colors"])
+        ids("ICON_COLORS")
     );
 }

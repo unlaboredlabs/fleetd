@@ -1,0 +1,24 @@
+/* A built-in avatar's paint (BotFace.tsx): its light colors, or in the dark theme its dark ones. */
+.face {
+  display: block;
+  --field: var(--l-field);
+  --bodyHi: var(--l-bodyHi);
+  --body: var(--l-body);
+  --bodyLo: var(--l-bodyLo);
+  --hi: var(--l-hi);
+  --hiA: var(--l-hiA);
+  --shadow: var(--l-shadow);
+  --shadowA: var(--l-shadowA);
+  --eye: var(--l-eye);
+}
+:global([data-theme="dark"]) .face {
+  --field: var(--d-field);
+  --bodyHi: var(--d-bodyHi);
+  --body: var(--d-body);
+  --bodyLo: var(--d-bodyLo);
+  --hi: var(--d-hi);
+  --hiA: var(--d-hiA);
+  --shadow: var(--d-shadow);
+  --shadowA: var(--d-shadowA);
+  --eye: var(--d-eye);
+}

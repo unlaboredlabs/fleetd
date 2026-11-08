@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
 import { initials, tintIndex } from "../../../shared/avatar";
+import type { ProjectIcon } from "../../../shared/contracts";
 import { cx } from "../lib/cx";
 import s from "./Avatar.module.css";
+import { BotFace } from "./BotFace";
 
 /** How many tints Avatar.module.css has. */
 const TINTS = 10;
@@ -12,8 +14,8 @@ export interface AvatarProps {
   readonly size?: number | undefined;
   /** Its picture (a data: URL), over the letters; none: the letters. */
   readonly src?: string | undefined;
-  /** Its built-in icon's images, shown when it has no picture, in place of the letters. */
-  readonly icon?: { readonly src: string; readonly srcSet: string } | undefined;
+  /** Its built-in icon (BotFace), shown when it has no picture, in place of the letters. */
+  readonly icon?: ProjectIcon | undefined;
   readonly className?: string | undefined;
 }
 
@@ -39,7 +41,7 @@ export function Avatar({ name, size = 20, src, icon, className }: AvatarProps) {
       {src !== undefined ? (
         <img className={s.picture} src={src} alt="" draggable={false} />
       ) : icon !== undefined ? (
-        <img className={s.picture} src={icon.src} srcSet={icon.srcSet} alt="" draggable={false} />
+        <BotFace face={icon.face} color={icon.color} size={size} />
       ) : null}
     </span>
   );
