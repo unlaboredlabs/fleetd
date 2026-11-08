@@ -1,40 +1,16 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
-// the three groups (D211). You: General, Your accounts, Your memory, Your devices, Hubs. Projects: the project picker and that project's pages,
-// with its prompts under Prompts. Hub, for the hub's owners and admins only: People, Machines, Updates, Every project's four
-// pages (the hub-wide prompts under its Prompts), Hub accounts, and Setup, always, saying how many required steps are
-// left. With several hubs the Hub group switches between the hubs this person administers.
-import {
-  ArrowLeft,
-  BookText,
-  Brain,
-  Bot,
-  CircleArrowUp,
-  FolderGit2,
-  KeyRound,
-  Layers,
-  ListChecks,
-  MessageSquareText,
-  Network,
-  Server,
-  SlidersHorizontal,
-  Smartphone,
-  UserRound,
-  Users,
-  Workflow,
-} from "lucide-react";
+// one flat list of pages in three groups (D211), with nothing to pick or unfold. You: General, Your accounts, Your
+// memory, Your devices, Hubs. Projects: the list of projects, each opening its pages under tabs (Frames.tsx). Hub, for
+// the hub's owners and admins only: People, Machines, Updates, Every project (its four pages under tabs), Hub accounts,
+// and Setup, always, saying how many required steps are left.
+import { ArrowLeft, Brain, CircleArrowUp, FolderGit2, KeyRound, Layers, ListChecks, Network, Server, SlidersHorizontal, Smartphone, UserRound, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
-import { sections } from "./catalog";
-import type { PromptSummary } from "./contracts";
-import { HUB, parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
-import { HubScope, useHub, useHubs, useToolQuery } from "../../src/data/react";
-import { HubChoice } from "../admin/HubPages";
+import { useHub, useToolQuery } from "../../src/data/react";
 import { useSettledAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
-import { errorText, useLive } from "./hub";
-import { ScopeSelect, useProjects } from "./parts";
-import { formatRoute, isHubTab, projectFor, promptHref, tabHref, useSettingsRoute, type SettingsRoute, type Tab } from "./route";
+import { formatRoute, isEveryProject, isProjectTab, tabHref, useSettingsRoute, type SettingsRoute, type Tab } from "./route";
 import { openOption, optionsFor, PAGE_LABEL, pagePath, searchSettings } from "./search";
 import s from "./settings.module.css";
 
@@ -47,18 +23,15 @@ const YOU: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "hubs", icon: <Network /> },
 ];
 
-/** The picked project's pages. */
-const PROJECT_PAGES: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
-  { tab: "projects", icon: <FolderGit2 /> },
-  { tab: "agents", icon: <Bot /> },
-  { tab: "instructions", icon: <BookText /> },
-  { tab: "automations", icon: <Workflow /> },
-  { tab: "prompts", icon: <MessageSquareText /> },
+/** The Hub group's pages; Every project opens on its first tab. */
+const HUB_PAGES: ReadonlyArray<{ tab: HubTab; icon: ReactNode; label?: string }> = [
+  { tab: "hub.people", icon: <Users /> },
+  { tab: "hub.machines", icon: <Server /> },
+  { tab: "hub.updates", icon: <CircleArrowUp /> },
+  { tab: "hub.profiles", icon: <Layers />, label: "Every project" },
+  { tab: "hub.accounts", icon: <KeyRound /> },
+  { tab: "hub.setup", icon: <ListChecks /> },
 ];
-
-/** Every project's pages, nested under it as a project's are under Projects. */
-const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.tools", "hub.instructions", "hub.prompts"];
-const isEveryProject = (tab: Tab): tab is HubTab => EVERY_PROJECT.some((t) => t === tab);
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -127,7 +100,9 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
               <SidebarItem key={p.tab} label={PAGE_LABEL[p.tab]} icon={p.icon} current={route.tab === p.tab} onClick={() => go(tabHref(p.tab))} />
             ))}
           </SidebarSection>
-          <ProjectsGroup route={route} />
+          <SidebarSection label="Projects">
+            <SidebarItem label="Projects" icon={<FolderGit2 />} current={isProjectTab(route.tab)} onClick={() => go(formatRoute({ tab: "projects" }))} />
+          </SidebarSection>
           {administers ? <HubGroup route={route} /> : null}
         </>
       )}
@@ -135,149 +110,28 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** The project the project pages are of, picked here, and its pages; its prompts under Prompts while that is open. */
-function ProjectsGroup({ route }: { route: SettingsRoute }) {
-  const projects = useProjects();
-  const project = projectFor(route, projects);
-  const scope = project === null ? null : parseScope(project);
-  // Picking another project keeps the page you are on; from a page that isn't a project's, it opens Project.
-  const here = PROJECT_PAGES.some((p) => p.tab === route.tab) ? route.tab : "projects";
-  return (
-    <SidebarSection title="Projects">
-      <div role="group" aria-label="Project">
-        <div className={s.navPick}>
-          <ScopeSelect
-            id="settings-project"
-            className={s.navPicker}
-            value={scope?.kind === "project" ? scope : null}
-            projects={projects}
-            onChange={(next) => go(formatRoute({ tab: here, for: scopeKey(next) }))}
-          />
-        </div>
-        {PROJECT_PAGES.map((p) => (
-          <div key={p.tab} className={s.navGroup}>
-            <SidebarItem
-              label={PAGE_LABEL[p.tab]}
-              icon={p.icon}
-              current={route.tab === p.tab && route.prompt === null}
-              onClick={() => go(formatRoute({ tab: p.tab, for: project }))}
-            />
-            {p.tab === "prompts" && route.tab === "prompts" && scope !== null ? <PromptNav selected={route.prompt} scope={scope} onOpen={(id) => go(promptHref(id))} /> : null}
-          </div>
-        ))}
-      </div>
-    </SidebarSection>
-  );
-}
-
 /**
- * The Hub group, for an owner or admin of the hub on screen: its pages, Every project's nested under it, and Setup,
- * always listed, with how many required steps are left while some are.
+ * The Hub group, for an owner or admin of the hub on screen: its pages in one flat list, Every project's under tabs on
+ * its page, and Setup, always listed, with how many required steps are left while some are. With several hubs, which
+ * one they manage is picked on the page (admin/HubPages.tsx).
  */
 function HubGroup({ route }: { route: SettingsRoute }) {
   const { id } = useHub();
-  const hubs = useHubs();
   const setup = useToolQuery("setup_list", noInput);
   const left = setup.data?.requiredLeft ?? 0;
-  const open = (tab: HubTab, prompt?: string) => navigate({ id: "settings", tab, ...(prompt === undefined ? {} : { prompt }), at: id });
-  const row = (tab: HubTab, icon: ReactNode, trailing?: ReactNode) => (
-    <SidebarItem
-      key={tab}
-      label={PAGE_LABEL[tab]}
-      icon={icon}
-      current={route.tab === tab}
-      trailing={trailing}
-      onClick={() => open(tab)}
-    />
-  );
+  const open = (tab: HubTab) => navigate({ id: "settings", tab, at: id });
   return (
     <SidebarSection title="Hub" label="Hub">
-      {hubs.length > 1 ? (
-        <div role="group" aria-label="Hub to manage">
-          {hubs.map((hub) => (
-            <HubScope key={hub.id} hub={hub}>
-              <HubChoice hub={hub} current={hub.id === id} onPick={() => navigate({ id: "settings", tab: isHubTab(route.tab) ? route.tab : "hub.people", at: hub.id })} />
-            </HubScope>
-          ))}
-        </div>
-      ) : null}
-      {row("hub.people", <Users />)}
-      {row("hub.machines", <Server />)}
-      {row("hub.updates", <CircleArrowUp />)}
-      <div role="group" aria-label="Every project" className={s.navGroup}>
-        <SidebarItem label="Every project" icon={<Layers />} current={false} onClick={() => open(isEveryProject(route.tab) ? route.tab : "hub.profiles")} />
-        {EVERY_PROJECT.map((tab) => (
-          <div key={tab} className={s.navGroup}>
-            <SidebarItem indent label={PAGE_LABEL[tab]} current={route.tab === tab && route.prompt === null} onClick={() => open(tab)} />
-            {tab === "hub.prompts" && route.tab === "hub.prompts" ? <PromptNav selected={route.prompt} scope={HUB} onOpen={(p) => open("hub.prompts", p)} /> : null}
-          </div>
-        ))}
-      </div>
-      {row("hub.accounts", <KeyRound />)}
-      {row("hub.setup", <ListChecks />, left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : undefined)}
-    </SidebarSection>
-  );
-}
-
-function badge(summary: PromptSummary, scope: Scope): { label: string; update?: true } | null {
-  if (summary.stale) return { label: "update", update: true };
-  if (summary.scope === "project") return { label: "edited" };
-  if (summary.scope === "global") return { label: scope.kind === "project" ? "hub-wide edit" : "edited" };
-  return null;
-}
-
-/**
- * The prompts under a project's Prompts (and under Every project's, hub-wide), grouped, each with its edited or
- * update mark for the scope on screen.
- */
-export function PromptNav({ selected, scope, onOpen }: { selected: string | null; scope: Scope; onOpen: (id: string) => void }) {
-  const live = useLive();
-  const projectRef = projectRefOf(scope);
-  // The same read as the page's list: one query, shared.
-  const list = useToolQuery("prompt_get", projectRef ? { projectRef } : {}, { enabled: live });
-  if (!live) return null;
-  if (list.data === undefined) {
-    return (
-      <div className={s.navNested}>
-        {!list.isError ? (
-          <Text size="xs" tone="quiet">
-            Loading prompts…
-          </Text>
-        ) : (
-          <>
-            <Text size="xs" tone="danger">
-              {errorText(list.error)}
-            </Text>
-            <SidebarItem label="Try again" indent onClick={() => void list.refetch()} />
-          </>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div role="group" aria-label="Prompts">
-      {sections(list.data.prompts ?? []).map(({ group, rows }) => (
-        <div key={group.key}>
-          <div className={s.navNested}>
-            <Text size="xs" tone="quiet">
-              {group.title}
-            </Text>
-          </div>
-          {rows.map((row) => {
-            const b = badge(row.summary, scope);
-            return (
-              <SidebarItem
-                key={row.summary.id}
-                indent
-                label={row.name}
-                current={row.summary.id === selected}
-                trailing={b ? <Text size="xs" tone={b.update ? "warning" : "quiet"}>{b.label}</Text> : undefined}
-                onClick={() => onOpen(row.summary.id)}
-              />
-            );
-          })}
-        </div>
+      {HUB_PAGES.map((p) => (
+        <SidebarItem
+          key={p.tab}
+          label={p.label ?? PAGE_LABEL[p.tab]}
+          icon={p.icon}
+          current={p.tab === "hub.profiles" ? isEveryProject(route.tab) : route.tab === p.tab}
+          trailing={p.tab === "hub.setup" && left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : undefined}
+          onClick={() => open(p.tab)}
+        />
       ))}
-    </div>
+    </SidebarSection>
   );
 }
