@@ -174,10 +174,10 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
 - [ ] `usage_status` → `src/hub/usage` (read) <!-- tool:`usage_status` -->
 - [ ] `usage_resume` → `src/hub/usage` (operate) <!-- tool:`usage_resume` -->
-- [ ] `attachment_part` → `src/hub/orders` (operate) <!-- tool:`attachment_part` -->
-- [ ] `attachment_put` → `src/hub/orders` (operate) <!-- tool:`attachment_put` -->
-- [ ] `attachment_get` → `src/hub/orders` (read) <!-- tool:`attachment_get` -->
-- [ ] `project_files` → `src/hub/orders` (read) <!-- tool:`project_files` -->
+- [x] `attachment_part` → `src/hub/orders` (operate) <!-- tool:`attachment_part` -->
+- [x] `attachment_put` → `src/hub/orders` (operate) <!-- tool:`attachment_put` -->
+- [x] `attachment_get` → `src/hub/orders` (read) <!-- tool:`attachment_get` -->
+- [x] `project_files` → `src/hub/orders` (read) <!-- tool:`project_files` -->
 - [x] `orders_board` → `src/hub/orders` (read) <!-- tool:`orders_board` -->
 - [x] `order_get` → `src/hub/orders` (read) <!-- tool:`order_get` -->
 - [x] `prompt_get` → `src/hub/prompts` (read) <!-- tool:`prompt_get` -->
@@ -233,7 +233,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 - [ ] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
-- [ ] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
+- [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
 - [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
 - [ ] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
@@ -609,8 +609,8 @@ every `fleetd` command.
 - [x] lead call `forget` → `src/hub/lead_calls` <!-- lead:lead call `forget` -->
 - [x] lead call `memory_read` → `src/hub/lead_calls` <!-- lead:lead call `memory_read` -->
 - [ ] lead call `nudge` → `src/hub/lead_calls` <!-- lead:lead call `nudge` -->
-- [ ] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
-- [ ] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
+- [x] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
+- [x] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
 - [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
 - [ ] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
 - [ ] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->

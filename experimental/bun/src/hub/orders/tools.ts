@@ -6,6 +6,7 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
+import { register as registerIntake } from "../intake/tools.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -32,6 +33,7 @@ function steersOf(hub: Hub, workstreamId: string, limit: number): Steer[] {
 }
 
 export function register(tools: Registry): void {
+  registerIntake(tools);
   tools.add("orders_board", (hub, caller, input) => {
     if (input.projectRef) requireRole(caller, "read", input.projectRef.machineId);
     const orders = ordersInScope(hub, caller, input.projectRef, input.includeDoneSince);
