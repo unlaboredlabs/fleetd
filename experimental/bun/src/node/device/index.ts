@@ -10,8 +10,7 @@
 //
 // TODO(bun): `device` steps for an Android screen hosted for another machine (remote.rs `Work`: the hub's install of
 // a PR's build into a person's screen); a session's secrets for scrubbing (node.area("sessions") gives a masker, not
-// the values the recording's Scrub takes); the agent's environment and plugin (env, pluginDirs) once the node core
-// asks the screens for them.
+// the values the recording's Scrub takes).
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AndroidHealth, BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
@@ -518,9 +517,13 @@ export function start(node: Node, options?: DevicesOptions): Devices | undefined
   node.area("items").on((thread, item) => d.item(thread, item));
   const config = (node.config.device ?? {}) as DeviceConfig;
   const kvmCheck = options?.kvm ?? kvm;
-  // TODO(bun): list `capabilities(home)` in node.area("caps") (and caps.changed() from d.onReady) once the node core
-  // gives an agent's claude the screens' env and plugin dirs (env, pluginDirs): without agent-device's wrapper on
-  // its PATH, pointed at its emulator, a session the hub placed here could start but never be driven.
+  // An agent's claude gets agent-device's wrapper first on its PATH, pointed at its emulator, and its skill.
+  node.area("launch").contribute({ env: (thread, path) => d.env(thread, path), pluginDirs: () => d.pluginDirs() });
+  // Listed only while a start really answers here: the pool is made and KVM opens. An install that finishes later
+  // links again with it.
+  const caps = node.area("caps");
+  caps.contribute(() => (d.usable() ? [CAP_SESSION_ANDROID] : []));
+  d.onReady = () => caps.changed();
   node.area("hb").contribute((hb) => {
     hb.steps.push(...d.stepsNow());
     hb.busy.screens = (hb.busy.screens ?? 0) + d.count();
