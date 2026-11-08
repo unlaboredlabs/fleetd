@@ -5,6 +5,7 @@
 //! never answered (see `metrics::presence`). What waits for the socket is bounded (see `outbox`).
 pub mod live;
 pub mod outbox;
+pub mod pace;
 
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
 use crate::hub::auth::AuthError;
@@ -147,7 +148,9 @@ struct Session {
     chat: Option<tokio::task::JoinHandle<()>>,
     /// The browser watch's forwarder, which holds the watch, and the slot for its newest frame.
     browser: Option<tokio::task::JoinHandle<()>>,
-    browser_slot: Arc<live::LiveSlot>,
+    browser_slot: Arc<pace::ScreenSlot>,
+    /// The watch's pacing, while its client acks frames (`browser_watch`'s `acks`), and its say in the screen's budget.
+    pace: Option<(pace::Pace, crate::hub::browser::live::WatchBudget)>,
     /// The Screens page's pictures' forwarder, which holds the page's showing (browser/thumbs.rs).
     thumbs: Option<tokio::task::JoinHandle<()>>,
     /// The last reason a person's `browser_input` was refused, logged once until it changes: a refused drag would
@@ -208,26 +211,43 @@ impl Session {
         };
         match message {
             AppClientMessage::Auth { .. } => unreachable!("handled above"),
-            AppClientMessage::BrowserWatch { session } => {
+            AppClientMessage::BrowserWatch { session, acks, fps } => {
                 // A new watch replaces the running one; none stops it.
                 if let Some(old) = self.browser.take() {
                     old.abort();
                 }
                 self.browser_slot.clear();
+                self.pace = None;
                 let Some(session) = session else {
                     return After::Continue;
                 };
                 match crate::hub::browser::live::start_watch(&self.hub, &info, &session) {
                     Ok(mut watch) => {
+                        if acks {
+                            let fps = fps.and_then(|f| u32::try_from(f.get()).ok());
+                            self.pace = Some((pace::Pace::new(fps), watch.budget()));
+                        }
                         let slot = self.browser_slot.clone();
                         self.browser = Some(tokio::spawn(async move {
+                            // The node sends its newest frame again for each `on` (another watcher, a budget): not
+                            // again to a connection that has it, where it would cost a slow link a frame's time.
+                            let mut last = None;
                             loop {
                                 match watch.frames.recv().await {
                                     Ok(frame) if frame.session_id == session => {
+                                        if last.replace(frame.seq) == Some(frame.seq) {
+                                            continue;
+                                        }
+                                        let (seq, bytes) =
+                                            (frame.seq, frame.jpeg_b64.len() / 4 * 3);
                                         let mut value =
                                             serde_json::to_value(&frame).unwrap_or_default();
                                         value["t"] = json!("browser_frame");
-                                        slot.replace(value.to_string());
+                                        slot.replace(pace::Outgoing {
+                                            text: value.to_string(),
+                                            seq,
+                                            bytes,
+                                        });
                                     }
                                     Ok(_) => {}
                                     // Behind: the next frame is the newest anyway.
@@ -238,6 +258,16 @@ impl Session {
                         }));
                     }
                     Err(refused) => self.send(error_frame(&refused, None)),
+                }
+            }
+            AppClientMessage::BrowserFrameAck { seq } => {
+                if let Some((pace, budget)) = self.pace.as_mut() {
+                    pace.acked(seq, std::time::Instant::now());
+                    budget.set(pace.kbps());
+                    // Room again, maybe, for the frame that waited.
+                    if self.browser_slot.pending() {
+                        self.browser_slot.notify.notify_one();
+                    }
                 }
             }
             AppClientMessage::ScreenThumbs { on } => {
@@ -434,6 +464,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         chat: None,
         browser: None,
         browser_slot: Arc::default(),
+        pace: None,
         thumbs: None,
         input_refused: None,
         live_slot: Arc::default(),
@@ -442,6 +473,8 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     let live_slot = session.live_slot.clone();
     let browser_slot = session.browser_slot.clone();
     let behind = frames.behind();
+    // A paced watch's frame held back for its client's frame rate or the link, until when.
+    let mut deferred: Option<std::time::Instant> = None;
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
@@ -458,10 +491,39 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                     break stopped(&behind);
                 }
             }
+            () = tokio::time::sleep_until(tokio::time::Instant::from_std(deferred.unwrap_or_else(std::time::Instant::now))), if deferred.is_some() => {
+                deferred = None;
+                browser_slot.notify.notify_one();
+                continue;
+            }
             () = browser_slot.notify.notified() => {
-                if let Some(frame) = browser_slot.take()
-                    && !send(&mut socket, &behind, frame).await
-                {
+                let now = std::time::Instant::now();
+                if let Some((pace, _)) = session.pace.as_mut() {
+                    // It waits in the slot, replaced by any newer, until its time or an ack's room.
+                    if let Some(at) = pace.not_before(now) {
+                        deferred = Some(at);
+                        continue;
+                    }
+                    if let Err(at) = pace.room(now) {
+                        pace.waited(now);
+                        if let Some(at) = at {
+                            deferred = Some(deferred.map_or(at, |d| d.min(at)));
+                        }
+                        continue;
+                    }
+                }
+                let Some(frame) = browser_slot.take() else {
+                    continue;
+                };
+                if let Some((pace, _)) = session.pace.as_mut() {
+                    if pace.ping(now)
+                        && socket.send(Message::Ping(pace::PING.into())).await.is_err()
+                    {
+                        break stopped(&behind);
+                    }
+                    pace.sent(frame.seq, frame.bytes, now);
+                }
+                if !send(&mut socket, &behind, frame.text).await {
                     break stopped(&behind);
                 }
             }
@@ -469,7 +531,15 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
                 let text = match incoming {
                     Some(Ok(Message::Text(text))) => text.to_string(),
                     Some(Ok(Message::Binary(bytes))) => String::from_utf8_lossy(&bytes).into_owned(),
-                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+                    Some(Ok(Message::Pong(payload))) => {
+                        if let Some((pace, _)) = session.pace.as_mut()
+                            && payload.as_ref() == pace::PING
+                        {
+                            pace.pong(std::time::Instant::now());
+                        }
+                        continue;
+                    }
+                    Some(Ok(Message::Ping(_))) => continue,
                     Some(Ok(Message::Close(_))) => {
                         // Complete the closing handshake so the client sees its own code, not 1006.
                         let _ = socket.send(Message::Close(None)).await;

@@ -71,6 +71,8 @@ export class HubClient implements HubSource {
   #browser = false;
   /** The browser session whose frames to forward; sent again on each connection. */
   #watch: string | null = null;
+  /** The hub paces frames to their acks (ready's `frame_acks`): the watch asks for it, and each frame is acked. */
+  #frameAcks = false;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
   #thumbsServed = false;
   /** A window shows the Screens page; sent again on each connection. */
@@ -254,6 +256,7 @@ export class HubClient implements HubSource {
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
+        this.#frameAcks = frame.features?.includes("frame_acks") ?? false;
         this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
@@ -302,7 +305,10 @@ export class HubClient implements HubSource {
       case "browser_frame": {
         const { t: _t, ...browser } = frame;
         // Only the watched session's: one that was watched before a change can still be on its way.
-        if (browser.sessionId === this.#watch) this.#options.emit({ t: "browser_frame", frame: browser });
+        if (browser.sessionId !== this.#watch) return;
+        // As it comes: the hub sends the next frames as these arrive, so a slow link shows the newest, not a backlog.
+        if (this.#frameAcks) this.#send({ t: "browser_frame_ack", seq: browser.seq });
+        this.#options.emit({ t: "browser_frame", frame: browser });
         return;
       }
       case "screen_thumb": {
@@ -412,7 +418,7 @@ export class HubClient implements HubSource {
   }
 
   #sendWatch(): void {
-    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch });
+    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch, ...(this.#frameAcks ? { acks: true as const } : {}) });
   }
 
   #sendChat(): void {

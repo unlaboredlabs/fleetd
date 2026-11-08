@@ -32,9 +32,12 @@ pub type AppCallId = Text<1, 64>;
 /// - `screen_thumbs`: the Screens page's pictures: `screen_thumbs` is read, the hub sends `screen_thumb`s,
 ///   `browser_sessions` names each screen's machine and latest step, and the `screens_count` tool exists.
 /// - `artifacts`: the `artifacts_list` and `artifact_get` tools and the `artifacts.changed` event: a chat's Artifacts.
+/// - `frame_acks`: `browser_watch`'s `acks` and `browser_frame_ack` are read: a client that acks each `browser_frame`
+///   has only a few in flight, so on a slow link it sees the newest screen rather than one queued seconds ago, and the
+///   hub fits the screen's encoding to what the link carries.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 8] = [
+pub const APP_FEATURES: [&str; 9] = [
     "presence",
     "browser_sessions",
     "navi_asks",
@@ -43,6 +46,7 @@ pub const APP_FEATURES: [&str; 8] = [
     "browser_navigate",
     "screen_thumbs",
     "artifacts",
+    "frame_acks",
 ];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -100,6 +104,20 @@ pub enum AppClientMessage {
     BrowserWatch {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<crate::browser::BrowserSessionId>,
+        /// Sent only to a hub whose `ready` names `frame_acks`. True: the client sends a `browser_frame_ack` for each
+        /// `browser_frame` it gets, and the hub sends the next ones only as the earlier are acked. Absent: frames go
+        /// as fast as the socket takes them.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        acks: bool,
+        /// Sent only to a hub whose `ready` names `frame_acks`, with `acks`. The most frames a second the client
+        /// draws: the hub sends no more, always the newest, and the last of a burst once its gap is up.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fps: Option<crate::prim::Int<1, 60>>,
+    },
+    /// Sent only to a hub whose `ready` names `frame_acks`, while a `browser_watch` with `acks` runs.
+    /// A `browser_frame` came: its `seq`.
+    BrowserFrameAck {
+        seq: u64,
     },
     /// Sent only to a hub whose `ready` names `browser_sessions` in its features.
     /// A person's mouse or keys for a session they took over (`browser_control` human): a human key with operate on
