@@ -1,1 +1,2 @@
+hb:heartbeat `load.desktop`
 loop:node loop `desktop::Desktops::start`
