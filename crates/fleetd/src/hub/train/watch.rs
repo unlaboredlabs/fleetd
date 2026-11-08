@@ -1,6 +1,8 @@
 //! The watch after a merge. The train waits only for its fast set, so the repo's other checks finish after it merged:
 //! it watches them on the commit it put on the base, and the checks a batch skips (`batch_skipped`), which never ran on
-//! the merged tree before. A check there that fails is re-run once, its own job only: a flake or a GitHub blip passes
+//! the merged tree before. Its fast checks too: they passed on the batch, but the base's own run of them can still
+//! fail (a check scoped to some paths runs there on a change it skipped on the batch). A check there that fails is
+//! re-run once, its own job only: a flake or a GitHub blip passes
 //! then, and opens nothing. One that fails again opens a fix order for the project's lead (channel `train`), plainly
 //! worded with the run's link, once per failure: the same check failing on later merges, while its order is still
 //! open, is that order's, not a new one, and isn't re-run. Runs a person or a schedule started on the commit (a manual
@@ -30,28 +32,25 @@ const RERAN: &str = "reran";
 const RECOVERED: &str = "recovered";
 const MANUAL: &str = "manual";
 
-/// The checks on a merged commit that failed outside its fast set, or that a batch skips (`batch`): the ones a fix
+/// The checks on a merged commit that failed, in its fast set or not, or that a batch skips (`batch`): the ones a fix
 /// order is for. Outside the checks a batch skips, none for an empty fast set: the train then waited for every check
-/// before the merge.
+/// before the merge. Each with whether it passed on the batch: a fast check the batch doesn't skip.
 pub(super) fn failed_after(
     runs: &[CheckRun],
     fast: &super::service::Fast,
     batch: &[String],
-) -> Vec<CheckRun> {
+) -> Vec<(CheckRun, bool)> {
     let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
     runs.iter()
-        .filter(|r| {
-            skipped_by_batch(r)
-                || (!fast.set.is_empty() && r.name != TRAIN_CONTEXT && !fast.holds(&r.name))
-        })
+        .filter(|r| skipped_by_batch(r) || (!fast.set.is_empty() && r.name != TRAIN_CONTEXT))
         .filter(|r| is_red(r) && r.conclusion.as_deref() != Some("cancelled"))
-        .cloned()
+        .map(|r| (r.clone(), fast.holds(&r.name) && !skipped_by_batch(r)))
         .collect()
 }
 
 /// The fix order's text: what failed, where, the run's link, and what to do.
-/// `reran`: the train re-ran it once, and it failed again.
-pub(super) fn fix_order_text(w: &Watch, check: &CheckRun, reran: bool) -> String {
+/// `reran`: the train re-ran it once, and it failed again. `on_batch`: it passed on the batch before the merge.
+pub(super) fn fix_order_text(w: &Watch, check: &CheckRun, reran: bool, on_batch: bool) -> String {
     let link = check
         .html_url
         .as_deref()
@@ -62,10 +61,20 @@ pub(super) fn fix_order_text(w: &Watch, check: &CheckRun, reran: bool) -> String
     } else {
         ""
     };
+    let why = if on_batch {
+        format!(
+            "It passed on the merge train's batch, but failed on {}'s own run: look at what that run does differently \
+             (a check scoped to some paths runs there on changes the batch's run skipped it for).",
+            w.base
+        )
+    } else {
+        "The train doesn't wait for this check on what it merges, or its batches skip it, so it ran there only after \
+         the merge."
+            .to_string()
+    };
     format!(
-        "Fix the check `{}` on {}: it failed after the merge train merged {} as {}{again}.{link} The train doesn't wait \
-         for this check on what it merges, or its batches skip it, so it ran there only after the merge. Find why it \
-         fails on {} and make it pass again there.",
+        "Fix the check `{}` on {}: it failed after the merge train merged {} as {}{again}.{link} {why} Find why it fails \
+         on {} and make it pass again there.",
         check.name,
         w.base,
         w.pr_url,
@@ -91,7 +100,7 @@ impl Train {
         });
     }
 
-    /// Each pass: every watched commit's checks read, each new failure outside the fast set re-run once or given its
+    /// Each pass: every watched commit's checks read, each new failure re-run once or given its
     /// fix order (`failed_check`), and the watch ended once they all finished and no re-run is still to show.
     pub(super) async fn watch_pass(&self, repo: &str) {
         for w in self.records.watches(repo) {
@@ -120,9 +129,9 @@ impl Train {
             // The workflow runs it re-ran a job of in this pass: going again, though `runs` read them done.
             let mut reran_now = std::collections::HashSet::new();
             let mut waiting = false;
-            for check in failed_after(&runs, &fast, &batch) {
+            for (check, on_batch) in failed_after(&runs, &fast, &batch) {
                 waiting |= self
-                    .failed_check(&w, &check, &runs, &mut events, &mut reran_now)
+                    .failed_check(&w, &check, on_batch, &runs, &mut events, &mut reran_now)
                     .await;
             }
             let done = runs.iter().all(|r| r.status == "completed");
@@ -163,7 +172,8 @@ impl Train {
         }
     }
 
-    /// What the watch does about `check` failing on `w`'s commit (`runs`, its checks): nothing more once its failure
+    /// What the watch does about `check` failing on `w`'s commit (`runs`, its checks; `on_batch`, whether it passed on
+    /// the batch): nothing more once its failure
     /// there has a fix order, or it is a manual or scheduled run (`events`, the commit's workflow runs, read once a
     /// pass). Otherwise the open fix order of the same check takes it; failed again after the train re-ran it, it opens
     /// one; failed the first time, its job is re-run once, when its workflow run is done (GitHub re-runs none before,
@@ -173,6 +183,7 @@ impl Train {
         &self,
         w: &Watch,
         check: &CheckRun,
+        on_batch: bool,
         runs: &[CheckRun],
         events: &mut Option<Vec<(u64, String)>>,
         reran_now: &mut std::collections::HashSet<u64>,
@@ -202,7 +213,7 @@ impl Train {
                 check = name,
                 "train: a re-run after the merge never showed; opening its fix order"
             );
-            self.fix_order(w, check, true).await;
+            self.fix_order(w, check, true, on_batch).await;
             return false;
         }
         let reran = seen.iter().any(|(_, _, did, _)| did == RERAN);
@@ -249,12 +260,12 @@ impl Train {
             return false;
         }
         if reran {
-            self.fix_order(w, check, true).await;
+            self.fix_order(w, check, true, on_batch).await;
             return false;
         }
         // A check no Actions job reports: nothing re-runs it.
         let Some(job) = check.job() else {
-            self.fix_order(w, check, false).await;
+            self.fix_order(w, check, false, on_batch).await;
             return false;
         };
         match self.github.rerun_job(repo, job).await {
@@ -273,7 +284,7 @@ impl Train {
             }
             Err(e) => {
                 tracing::warn!(repo, sha, check = name, job, error = %e.message, "train: a check failed after the merge and GitHub refused its re-run; opening its fix order");
-                self.fix_order(w, check, false).await;
+                self.fix_order(w, check, false, on_batch).await;
                 false
             }
         }
@@ -305,13 +316,18 @@ impl Train {
         names
     }
 
-    /// Opens the fix order for `check` failing on `w`'s commit (`reran`: again, after its re-run), and records it.
-    async fn fix_order(&self, w: &Watch, check: &CheckRun, reran: bool) {
+    /// Opens the fix order for `check` failing on `w`'s commit (`reran`: again, after its re-run; `on_batch`: it passed
+    /// on the batch), and records it.
+    async fn fix_order(&self, w: &Watch, check: &CheckRun, reran: bool, on_batch: bool) {
         let repo = w.repo.as_str();
         let request = format!("train-fix:{repo}:{}:{}", w.sha, check.name);
         match self
             .host
-            .open_order(&w.project_ref, fix_order_text(w, check, reran), request)
+            .open_order(
+                &w.project_ref,
+                fix_order_text(w, check, reran, on_batch),
+                request,
+            )
             .await
         {
             Ok(order) => {
