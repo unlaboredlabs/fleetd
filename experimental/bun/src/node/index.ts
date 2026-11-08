@@ -17,7 +17,10 @@ import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
-import { configFor, SessionService } from "./sessions/index.ts";
+import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
+import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
+import { LOGINS } from "./runner/login.ts";
+import { configDir } from "./runner/claude.ts";
 import { homeDir } from "./util.ts";
 import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliver } from "./wire.ts";
 import { fleetdDir } from "../shared/home.ts";
@@ -33,10 +36,10 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
              keep the link up for a machine that has joined
 `;
 
-/** Every capability the Bun node lists in its hello: what its modules take. Self-update, Claude Code's install and
- * login and screens aren't ported, so their capabilities aren't listed. */
+/** Every capability the Bun node lists in its hello: what its modules take. Self-update and screens aren't ported, so
+ * their capabilities aren't listed. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -170,6 +173,14 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const boxKey = loadOrCreateBoxKey(home);
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
   const sessions = await SessionService.start(configFor(home, fleetdDir(), nativeBin(), boxKey));
+  // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
+  // claude on this machine too.
+  const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");
+  try {
+    if (turnAutoupdaterOff(settings)) console.log(`${new Date().toISOString()} INFO turned Claude Code's own update off {"settings":"${settings}"}`);
+  } catch (error) {
+    console.warn(`${new Date().toISOString()} WARN couldn't turn Claude Code's own update off: ${(error as Error).message}`);
+  }
   const relay = new LeadRelay();
   relay.hold = () => sessions.hold();
   const node = new Node(home, config, relay);
@@ -222,7 +233,16 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         void gated.resume(frame as unknown as GatedResume, ctx.hubId).then((r) => ctx.send({ t: "gated_result", ...r }));
         return;
       case "node_action":
-        void runNodeAction(frame as unknown as NodeAction, { hold: () => sessions.hold() }).then((r) => ctx.send({ t: "node_action_result", ...r }));
+        void runNodeAction(frame as unknown as NodeAction, {
+          hold: () => sessions.hold(),
+          claude: {
+            installer: new RealClaude(sessions.config.claudeBin, runnerEnv(sessions.config)),
+            binary: sessions.config.claudeBin,
+            env: () => runnerEnv(sessions.config),
+            logins: LOGINS,
+            reprobe: () => sessions.reprobe(),
+          },
+        }).then((r) => ctx.send({ t: "node_action_result", ...r }));
         return;
       case "session_call":
         // Not the link's: a call that started finishes even if the link drops, and only its reply is lost.

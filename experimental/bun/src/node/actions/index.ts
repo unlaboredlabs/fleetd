@@ -1,8 +1,9 @@
 // `node_action` frames from the hub (crates/fleetd/src/node/actions.rs): the doctor's probe of the commit identity,
-// the hold ahead of an update, and the rest. Each always answers, in plain words. Self-update, Claude Code's install
-// and login, and screen settings are the Rust binary's own release machinery: the Bun node answers them as not done
-// (`ok: false`, nothing changed), and lists none of their capabilities, so a hub sends them only by mistake.
-import { exec, headUtf16 } from "../util.ts";
+// the hold ahead of an update, Claude Code's install and its login from the app. Each always answers, in plain words.
+// Screen settings are the screens' areas' (node/browser and the rest) and answer as not done until they take them.
+import { exec, headUtf16, type Env } from "../util.ts";
+import { ALREADY, bringTo, type Claude } from "../runner/install.ts";
+import type { Logins } from "../runner/login.ts";
 import type { NodeAction, NodeActionResult } from "../wire.ts";
 
 /** `git config --global user.email`, absent when unset or git is missing. */
@@ -23,6 +24,10 @@ export async function probeHost(): Promise<NonNullable<NodeActionResult["probe"]
 export type ActionHooks = {
   /** Holds every agent's tool call that hasn't started yet; how many sessions are still mid-step. */
   hold?: () => number;
+  /** The machine's Claude Code, and its login, with the runner's environment. */
+  claude?: { installer: Claude; binary: string; env: () => Env; logins: Logins; reprobe: () => Promise<{ login: string }> };
+  /** A self-update: install `update` and restart (node/update). */
+  update?: (frame: NodeAction) => Promise<NodeActionResult>;
 };
 
 const answer = (id: string, ok: boolean, message: string, extra: Partial<NodeActionResult> = {}): NodeActionResult => ({
@@ -42,16 +47,50 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
     }
     case "update":
     case "fetch":
-      return answer(frame.id, false, "this machine runs the Bun node, which doesn't update itself: update it by hand", {
-        stage: frame.action === "fetch" ? "download" : "install",
-      });
-    case "claude":
-      return answer(frame.id, false, "the Bun node doesn't install Claude Code: run `claude install` on the machine", {
-        stage: "install",
-      });
-    case "claude_login":
-    case "claude_login_code":
-      return answer(frame.id, false, "the Bun node doesn't log Claude Code in: run `claude auth login` on the machine");
+      if (hooks.update) return hooks.update(frame);
+      return answer(frame.id, false, "this node doesn't update itself", { stage: frame.action === "fetch" ? "download" : "install" });
+    case "claude": {
+      if (!frame.claude) return answer(frame.id, false, "the hub named no Claude Code version", { stage: "install" });
+      if (!hooks.claude) return answer(frame.id, false, "this node doesn't install Claude Code", { stage: "install" });
+      try {
+        const installed = await bringTo(hooks.claude.installer, frame.claude);
+        // The runner's version as the hub sees it, at once rather than at the next probe.
+        if (installed.kind === "done") await hooks.claude.reprobe();
+        return answer(
+          frame.id,
+          true,
+          installed.kind === "current"
+            ? `${ALREADY} ${installed.version}`
+            : installed.kind === "done"
+              ? `Claude Code ${installed.from} -> ${installed.to}: new sessions start on ${installed.to}, running ones finish on ${installed.from}`
+              : installed.said,
+        );
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message, { stage: "install" });
+      }
+    }
+    case "claude_login": {
+      if (!hooks.claude) return answer(frame.id, false, "this node doesn't log Claude Code in");
+      try {
+        const url = await hooks.claude.logins.start(hooks.claude.binary, hooks.claude.env());
+        return answer(frame.id, true, "sign in at the URL, then give the code it shows", { login_url: headUtf16(url, 4000) });
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message);
+      }
+    }
+    case "claude_login_code": {
+      if (!frame.code) return answer(frame.id, false, "the hub sent no code");
+      if (!hooks.claude) return answer(frame.id, false, "this node doesn't log Claude Code in");
+      try {
+        const said = await hooks.claude.logins.finish(frame.code);
+        // Logged in as the hub sees it, at once: the login is the probe's to judge.
+        const info = await hooks.claude.reprobe();
+        if (info.login === "logged_out") return answer(frame.id, false, `${said}; but claude still reports no login`);
+        return answer(frame.id, true, said);
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message);
+      }
+    }
     case "screens":
       return answer(frame.id, false, "the Bun node keeps its screen settings in node.json: edit them there");
     default:
