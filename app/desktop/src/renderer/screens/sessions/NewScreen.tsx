@@ -32,7 +32,7 @@ import {
   adminNames,
   askLine,
   fixLabel,
-  fixReveal,
+  fixPlace,
   hostsFor,
   idleFor,
   idleWords,
@@ -434,11 +434,11 @@ function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReaso
   const label = administers ? fixLabel(reason.fix) : null;
   const ask = administers ? null : askLine(reason, kind, adminNames(people.data?.people ?? []));
   const act = async () => {
-    const reveal = fixReveal(reason.fix);
+    const { tab, reveal } = fixPlace(reason.fix);
     if (reason.fix !== "turn_on" || reason.machine === undefined) {
       onLeave();
       revealNext(reveal);
-      navigate({ id: "settings", tab: "hub.machines" });
+      navigate({ id: "settings", tab });
       return;
     }
     setTurning(true);

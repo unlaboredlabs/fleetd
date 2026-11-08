@@ -211,9 +211,12 @@ export const fixLabel = (fix: OffFix): string | null => {
   }
 };
 
-/** Where an admin's action that isn't Turn on goes: the option it reveals on Settings › Hub › Machines. */
-export const fixReveal = (fix: OffFix): string | null =>
-  fix === "update" ? "hub.updates" : fix === "roles" ? "hub.roles" : fix === "add" ? "hub.add-machine" : null;
+/** Where an admin's action that isn't Turn on goes: Settings › Hub › Updates for an update, else the option it reveals
+ * on Settings › Hub › Machines. */
+export const fixPlace = (fix: OffFix): { readonly tab: "hub.machines" | "hub.updates"; readonly reveal: string | null } =>
+  fix === "update"
+    ? { tab: "hub.updates", reveal: null }
+    : { tab: "hub.machines", reveal: fix === "roles" ? "hub.roles" : fix === "add" ? "hub.add-machine" : null };
 
 /** The machine the picker starts on: the one picked, while it still can; else the first online one with a free slot. */
 export const pickHost = (hosts: readonly HostChoice[], picked: string | null): HostChoice | undefined =>

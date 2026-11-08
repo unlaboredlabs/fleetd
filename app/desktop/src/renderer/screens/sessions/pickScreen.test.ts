@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { KINDS, adminNames, askLine, canOpen, fixLabel, fixReveal, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
+import { KINDS, adminNames, askLine, canOpen, fixLabel, fixPlace, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -161,7 +161,8 @@ describe("why a kind can't open", () => {
     const reason = whyOff([off("devbox", { linux_desktop: "off", desktop: "off" }, { screenSettings: false })], "linux_desktop");
     expect(reason?.fix).toBe("update");
     expect(reason?.why).toBe("Linux desktops are turned off on devbox, and its fleetd is too old to turn them on from here.");
-    expect(fixReveal("update")).toBe("hub.updates");
+    expect(fixPlace("update")).toEqual({ tab: "hub.updates", reveal: null });
+    expect(fixPlace("roles")).toEqual({ tab: "hub.machines", reveal: "hub.roles" });
     expect(askLine(must(reason), "linux_desktop", ["Ana", "Bo"])).toBe("Ask Ana or Bo to update fleetd on devbox.");
   });
 

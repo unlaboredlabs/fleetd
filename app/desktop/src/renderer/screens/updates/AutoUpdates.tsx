@@ -30,8 +30,8 @@ export function AutoUpdates() {
       </Text>
     );
   }
-  // An older hub, or one not answered yet: nothing to switch.
-  if (auto === null) return null;
+  // Not known yet to administer the hub (never a member's flash of the switch), or an older hub: nothing to switch.
+  if (!role.administers || auto === null) return null;
   const turn = async (on: boolean) => {
     setSaving(true);
     const refused = await setAutoUpdates(layer, on);
