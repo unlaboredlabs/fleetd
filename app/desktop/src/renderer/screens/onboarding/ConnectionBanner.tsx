@@ -3,6 +3,7 @@ import { olderNodes } from "../../../shared/pairing";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { useCommands } from "../palette";
+import { restartOf } from "../shell/model";
 import { useOfflineAsOf } from "../shell/offline";
 import { sentence, type Reaching } from "./form";
 import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
@@ -11,7 +12,8 @@ import s from "./onboarding.module.css";
 
 
 /**
- * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update.
+ * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update. A
+ * planned restart isn't out of reach until it has run 2 minutes.
  * Offline, the project list and the chats stay on screen marked with the time they were last current (this banner
  * names it too); every other screen shows its skeleton, so nothing held is presented as live.
  */
@@ -30,6 +32,11 @@ export function ConnectionBanner() {
   const probe = useHubProbe(state.phase === "live" && ready === undefined ? state.hub : null);
   const version = ready ?? (probe?.answers === true ? probe.version : undefined);
   const behind = version === undefined ? [] : olderNodes(machines, version);
+  // A hub that closed to restart is said by the hub row, then the restart line (shell/RestartLine), until it has
+  // been away 2 minutes: an outage from then on. Read against the clock at each redial's state.
+  // eslint-disable-next-line react-hooks/purity
+  const restart = useMemo(() => restartOf(state, Date.now()), [state]);
+  if (restart !== null && restart.phase !== "outage") return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;

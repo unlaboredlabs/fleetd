@@ -1,4 +1,4 @@
-// Update automatically, its switch and its status lines, the same on Hub › Updates and in the updates sheet: the hub's
+// Update automatically, its switch and its status lines, on Hub › Updates: the hub's
 // owners and admins turn it on or off; a member, whom the hub doesn't tell, is told whom to ask.
 import { useState } from "react";
 import { Switch, Text, toast } from "../../ui";

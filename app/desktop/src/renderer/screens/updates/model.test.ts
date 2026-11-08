@@ -92,12 +92,11 @@ describe("the hub and its machines", () => {
     expect(appOnly.update?.label).toBe("Update");
   });
 
-  it("are a member's to read, not to update: no Update, no ready notice, no sidebar line for them (D211)", () => {
+  it("are a member's to read, not to update: no Update and no line for them (D211)", () => {
     // The hub refuses hub_update to anyone but an admin everywhere; a member pressing Update only got "Forbidden".
     const behind = updatesView({ app: { current: MINE, app: current, release }, hub: hubOf({ version: OLDER }), machines: [machine("builder", OLDER)], ready: NEXT, administers: false });
     expect(behind.hub?.status).toBe("Edge · Oct 22, 10:30 UTC · abc1234 is available");
     expect(behind.update).toBeNull();
-    expect(behind.notice).toBeNull();
     expect(behind.line).toBeNull();
     expect(hubStanding(behind)).toEqual({ tone: "accent", text: "An update is ready for the hub and its machines." });
 
@@ -336,13 +335,15 @@ describe("an update of everything", () => {
     const at = (now: number) =>
       updatesView({ app: { current: MINE, app: { kind: "current" }, release }, hub: hubOf({ version: OLDER }), machines, run: old, flow: { phase: "idle" }, now });
     expect(at(finished + 60_000).progress?.tone).toBe("danger");
-    const later = at(finished + 60 * 60_000);
+    // One that didn't come through stays a day, for an admin who was away; one that did, 15 minutes.
+    expect(at(finished + 60 * 60_000).progress?.tone).toBe("danger");
+    const later = at(finished + 25 * 60 * 60_000);
     expect(later.progress).toBeNull();
     expect(later.hub?.tone).toBe("accent");
   });
 });
 
-describe("the sheet's lines, the notice and the note", () => {
+describe("the sheet's lines and the note", () => {
   const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "waiting", ...over });
   const runOf = (parts: UpdatePart[], finished = false): UpdateRun => ({
     id: "U1",
@@ -366,14 +367,12 @@ describe("the sheet's lines, the notice and the note", () => {
     });
   const says = (v: ReturnType<typeof of>) => v.lines.map((l) => [l.name, l.state, l.reason ?? "", l.retry === undefined ? "" : (l.label ?? "Retry")]);
 
-  it("names the build the hub has ready, with what's new in a few lines, and one notice for it", () => {
+  it("names the build the hub has ready, with what's new in a few lines", () => {
     const v = of({ ready: NEXT });
     expect(v.update).toMatchObject({ title: "fleetd Edge · Oct 23, 10:30 UTC · def5678 is ready", label: "Update" });
     expect(v.update?.note).toMatch(/^Downloaded and checked already/u);
     // The hub's build is older than changes.json reaches, so there is more.
     expect(v.update?.notes).toEqual({ lines: ["Status loads faster", "The hub says its version"], more: true });
-    // Without the build commit: the notice is also read aloud.
-    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Edge · Oct 23, 10:30 UTC is ready", notes: v.update?.notes });
     expect(says(v)).toEqual([
       ["The hub", "Update ready", "", ""],
       ["builder", "Update ready", "", ""],
@@ -382,13 +381,8 @@ describe("the sheet's lines, the notice and the note", () => {
     ]);
   });
 
-  it("shows no notice for a build still to download, nor while an update runs", () => {
-    expect(of({}).notice).toBeNull();
+  it("offers a build still to download as available", () => {
     expect(of({}).update?.title).toBe("fleetd Edge · Oct 23, 10:30 UTC · def5678 is available");
-    const going = runOf([p({ part: "hub", name: "the hub", state: "downloading" })]);
-    expect(of({ ready: NEXT, run: going, flow: { phase: "following", reconnecting: false } }).notice).toBeNull();
-    // This app's own download, once in, is ready too.
-    expect(of({ app: { kind: "ready", version: NEXT } }).notice?.version).toBe(NEXT);
   });
 
   it("gives each part one line while a run goes: waiting, updating, done, and why a busy machine waits", () => {
@@ -544,7 +538,6 @@ describe("the sheet's lines, the notice and the note", () => {
     const v = updatesView({ app: { current: NEXT, app: { kind: "current" }, release }, hub: hubOf({ version: NEXT }), machines: [machine("builder", NEXT), machine("mac", NEXT)], run, now: at });
     expect(v.progress).toEqual({ tone: "quiet", text: "Updated to Edge · Oct 23, 10:30 UTC · def5678" });
     expect(v.line).toEqual({ tone: "quiet", text: "Updated to Edge · Oct 23, 10:30 UTC · def5678", done: true });
-    expect(v.notice).toBeNull();
   });
 
   it("says why this app's update failed, with Retry, and shows its download while it updates last", () => {
@@ -555,7 +548,7 @@ describe("the sheet's lines, the notice and the note", () => {
     expect(says(updating).at(-1)).toEqual(["This app", "Updating…", "Downloading 40%", ""]);
   });
 
-  it("offers Update and the notice for a newer build once ready, after a run that left a machine out", () => {
+  it("offers Update for a newer build once ready, after a run that left a machine out", () => {
     const NEWER = "0.0.0-edge.202610241030+fff9999";
     const run = runOf(
       [
@@ -573,7 +566,6 @@ describe("the sheet's lines, the notice and the note", () => {
 
     const v = of({ run, flow, ready: NEWER });
     expect(v.update?.title).toBe("fleetd Edge · Oct 24, 10:30 UTC · fff9999 is ready");
-    expect(v.notice?.version).toBe(NEWER);
     expect(v.progress).toBeNull();
     expect(v.lines.some((l) => l.retry !== undefined)).toBe(false);
     // A newer build on the channel, not downloaded yet, also ends the old run's Retry.

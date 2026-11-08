@@ -19,6 +19,13 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  transition: opacity var(--dur-base) var(--ease-snap);
+}
+/* Held through a hub restart: dimmed only once it has lasted a moment, so the usual sub-second restart never
+   flickers; back at full strength the moment the hub answers. */
+.screen[data-held] {
+  opacity: 0.6;
+  transition-delay: 600ms;
 }
 
 .sidebarNote {

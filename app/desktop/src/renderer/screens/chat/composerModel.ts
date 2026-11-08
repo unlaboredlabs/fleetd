@@ -16,8 +16,9 @@ export interface KeyLike {
 /** Enter sends; Shift+Enter (or Alt+Enter) is a newline. */
 export const sendsOn = (e: KeyLike): boolean => e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing;
 
-export const placeholder = (working: boolean | undefined, who = "the lead"): string =>
-  working === true ? `Message ${who}. It reads this at its next step.` : `Message ${who}`;
+/** `away`: the hub restarting, by name; what is sent waits for it. */
+export const placeholder = (working: boolean | undefined, who = "the lead", away?: string): string =>
+  away !== undefined ? `Message ${who} · sends when ${away} is back` : working === true ? `Message ${who}. It reads this at its next step.` : `Message ${who}`;
 
 /** ↑ with nothing in the box (no words, no files) brings back your last message, as in a shell. */
 export const recallsOn = (e: KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean }, box: { readonly text: string; readonly attached: readonly unknown[] }): boolean =>

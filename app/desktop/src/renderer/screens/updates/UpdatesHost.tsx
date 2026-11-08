@@ -1,20 +1,15 @@
-// Mounted once by the shell: the updates sheet, the one "ready" notice, and the commands that reach the sheet (the
-// palette, the app menu's "Check for Updates…"). It asks the hub on connect and every few minutes whether a newer
-// build is downloaded and ready. The sheet's one Update button updates the hub, then every machine, then this app,
-// and closes itself once everything came through, leaving "Updated to …" in the sidebar. Update automatically sits in
-// it too, as on Hub › Updates.
-import { useEffect, useRef } from "react";
-import { Dialog, toast } from "../../ui";
-import { useData } from "../../src/data/react";
+// Mounted once by the shell: it asks the hub on connect and every few minutes about its update run and the build it
+// has downloaded and ready, which the hub row's word says (quiet.ts), and it holds the commands that reach updates
+// (the palette, the app menu's "Check for Updates…"), which open Settings › Hub › Updates for an admin and General,
+// with this app's own, for anyone else.
+import { useEffect } from "react";
+import { useData, useDataLayer } from "../../src/data/react";
+import { useSettledAdministers } from "../admin/role";
 import { useCommands } from "../palette";
-import { useFlowDeps, useUpdatesView } from "./hooks";
-import { loadRun, READY_EVERY_MS, retryMachine, startOver, startUpdate, updateNow, useFlow } from "./flow";
-import type { AppAction, Notice, Retry } from "./model";
-import { noticeOnce, storedNotice } from "./notice";
-import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
-import { Notes, UpdatesSheet } from "./UpdatesSheet";
-import { Boundary } from "../../src/Boundary";
-import { AutoUpdates } from "./AutoUpdates";
+import { useFlowDeps } from "./hooks";
+import { loadRun, READY_EVERY_MS } from "./flow";
+import type { AppAction } from "./model";
+import { appUpdate, openUpdates, useAppUpdate } from "./state";
 
 export const runApp = (action: AppAction): void => {
   if (action === "check") void window.fleetd.updates.check();
@@ -30,15 +25,12 @@ const settled = (): boolean => {
 };
 
 export function UpdatesHost() {
-  const open = useUpdatesOpen();
-  const view = useUpdatesView();
   const ready = useAppUpdate()?.app.kind === "ready";
   const deps = useFlowDeps();
-  // The hub's last run: one going on (the app restarted mid-update, or another window started it) is followed.
-  useEffect(() => {
-    if (open) void loadRun(deps);
-  }, [open, deps]);
-  // And the build it has ready, on connect and every few minutes: what the notice and the sheet say.
+  const admin = useSettledAdministers();
+  const { hub } = useDataLayer();
+  // The hub's last run and the build it has ready, on connect and every few minutes; a run going on (another window
+  // started it, or the hub's own automatic update) is followed from there.
   const live = useData((d) => d.hub.phase === "live");
   useEffect(() => {
     if (!live) return;
@@ -46,47 +38,6 @@ export function UpdatesHost() {
     const every = setInterval(() => void loadRun(deps), READY_EVERY_MS);
     return () => clearInterval(every);
   }, [live, deps]);
-
-  // "fleetd <version> is ready", once per version; gone once an update starts.
-  const dismiss = useRef<(() => void) | null>(null);
-  const update = () => {
-    setUpdatesOpen(true);
-    void startUpdate(deps);
-  };
-  const shown = view.notice;
-  useEffect(() => {
-    if (shown === null) {
-      dismiss.current?.();
-      dismiss.current = null;
-      return;
-    }
-    noticeOnce(shown, open, {
-      ...storedNotice,
-      show: (n: Notice) => {
-        dismiss.current = toast({
-          key: "update-ready",
-          title: n.title,
-          description: <Notes notes={n.notes} />,
-          action: { label: "Update", onClick: update },
-          duration: 0,
-        });
-      },
-    });
-    // Once per version: the rest of the view changing doesn't show it again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown?.version]);
-
-  // Everything came through: the sheet closes itself, and the sidebar says "Updated to …".
-  const flow = useFlow();
-  useEffect(() => {
-    if (flow.phase === "finished" && flow.updated) setUpdatesOpen(false);
-  }, [flow]);
-
-  const retry = (r: Retry) => {
-    if (r.kind === "machine") void retryMachine(deps, r.machineId);
-    else if (r.kind === "update") void startUpdate(deps);
-    else runApp(r.run);
-  };
 
   useCommands(
     [
@@ -97,29 +48,13 @@ export function UpdatesHost() {
         group: "actions",
         keywords: ["update", "upgrade", "version", "what's new"],
         run: () => {
-          setUpdatesOpen(true);
+          openUpdates(admin, hub);
           if (!settled()) runApp("check");
         },
       },
       { id: "app.restartToUpdate", title: "Restart to update", group: "actions", keywords: ["update", "install"], enabled: () => ready, run: () => runApp("install") },
     ],
-    [ready],
+    [ready, admin, hub],
   );
-
-  if (!open) return null;
-  return (
-    <Boundary part="the updates sheet" overlay={{ onError: () => setUpdatesOpen(false) }}>
-      <Dialog open onOpenChange={setUpdatesOpen} title="Updates">
-        <UpdatesSheet
-          view={view}
-          onUpdate={() => void startUpdate(deps)}
-          onStartOver={() => void startOver(deps)}
-          onUpdateNow={() => void updateNow(deps)}
-          onRetry={retry}
-          onApp={(a: AppAction) => runApp(a)}
-          auto={<AutoUpdates />}
-        />
-      </Dialog>
-    </Boundary>
-  );
+  return null;
 }

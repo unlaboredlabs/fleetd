@@ -36,7 +36,6 @@ import {
 } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { revealNext } from "../settings/reveal";
-import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
@@ -252,13 +251,12 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
   );
 }
 
-/** A hub's row in the footer, and any update to it at its end. */
+/** A hub's row in the footer; any update to it says a word at the row's end. */
 function HubFooter() {
   const hub = useHubState();
   return (
     <div className={s.footer}>
       <HubStatus hub={hub} />
-      <UpdatesLine />
     </div>
   );
 }
