@@ -117,7 +117,9 @@ back to its agent to push again. If GitHub refuses a re-run, the train asks agai
 the third refusal sends the PR back the same way. A new push starts over as usual.
 
 When the hub restarts while a PR's CI runs, alone or in a batch, the new hub keeps watching the same run on the same
-commit, and merges once it is green. It doesn't rebase the PR or run its CI again.
+commit, and merges once it is green. It doesn't rebase the PR or run its CI again. Its other waits carry on too: the
+15 minutes for a PR's checks to start, the 30 minutes a blocked PR sits before the lead hears, and a regeneration that
+failed, which isn't tried again. A regeneration the hub was running when it stopped runs again.
 
 The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
 refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it

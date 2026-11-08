@@ -432,6 +432,75 @@ async fn another_repos_pass_keeps_this_repos_regenerations() {
     assert_eq!(kit.host.node_runs.lock().unwrap().len(), runs);
 }
 
+/// PR 7 adds a migration that sorts before one main added after it: the train renames it by regenerating.
+async fn early_migration(kit: &Kit) -> ChangeId {
+    let pr = kit.open_pr(
+        7,
+        "migrate",
+        &[("migrations/202605010000_mine.sql", Some("-- mine\n"))],
+    );
+    let (_, change) = kit.author_task(Some(&pr)).await;
+    kit.commit(
+        "main",
+        &[("migrations/202610270000_theirs.sql", Some("-- theirs\n"))],
+        None,
+    );
+    change
+}
+
+/// A regeneration that failed stays failed across a hub restart: the new train doesn't run it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_regeneration_is_not_tried_again_after_a_restart() {
+    let kit = regen_kit(MAKE);
+    let change = early_migration(&kit).await;
+    *kit.host.node_refusal.lock().unwrap() = Some("devbox is offline".into());
+    kit.train.step(REPO).await;
+    kit.train.regenerations_done().await;
+    let failed = kit.get(&change);
+    assert_eq!(
+        kit.train.regen(&failed),
+        Some(super::super::regen::Regen::Failed)
+    );
+    let runs = kit.host.node_runs.lock().unwrap().len();
+
+    // Its node is back: a run tried again would show.
+    *kit.host.node_refusal.lock().unwrap() = None;
+    let train = kit.restarted();
+    assert_eq!(
+        train.regen(&failed),
+        Some(super::super::regen::Regen::Failed)
+    );
+    train.step(REPO).await;
+    train.regenerations_done().await;
+    assert_eq!(kit.host.node_runs.lock().unwrap().len(), runs);
+}
+
+/// A regeneration running when the hub stopped stopped with it, as the hub runs each of its steps: the new train
+/// runs it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_regeneration_the_hub_stopped_in_is_run_again() {
+    let kit = regen_kit(MAKE);
+    let change = kit.get(&early_migration(&kit).await);
+    kit.train.records.start_wait(
+        &change,
+        crate::hub::train::records::WAIT_REGEN,
+        change.head_sha.as_str(),
+        0,
+        super::super::regen::Regen::RUNNING,
+    );
+    assert!(kit.host.node_runs.lock().unwrap().is_empty());
+
+    let train = kit.restarted();
+    assert_eq!(train.regen(&change), None);
+    train.step(REPO).await;
+    train.regenerations_done().await;
+    assert!(
+        kit.file_on("migrate", "migrations/202605010000_mine.sql")
+            .is_none(),
+        "renamed"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_program_missing_from_the_nodes_path_is_named_plainly() {
     let kit = regen_kit("no-such-tool-fleetd --build");
