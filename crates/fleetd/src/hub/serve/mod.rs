@@ -276,12 +276,7 @@ pub fn build_on_with(
         events.clone(),
         clock.clone(),
     );
-    let sweep = crate::hub::sweep::Sweep::new(
-        store.clone(),
-        events.clone(),
-        watchdog.clone(),
-        clock.clone(),
-    );
+    let sweep = crate::hub::sweep::Sweep::new(watchdog.clone(), clock.clone());
     let queue = crate::hub::queue::WriteQueue::over(&db, &events, &clock, &executors);
     let ops = crate::hub::usage::wire::build(&config, clock.clone(), requests.clone());
     let wakes = crate::hub::wakes::Wakes::new(
@@ -526,6 +521,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::navi::bridge::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::push::run(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::outage::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::navi::erase::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::mcp_servers::tools::run_forget(
         hub.clone(),

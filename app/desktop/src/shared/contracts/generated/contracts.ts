@@ -2850,6 +2850,8 @@ export type KnownHubEventType =
   | "machine.guard"
   | "machine.recovery_paused"
   | "machine.removed"
+  | "machine.down"
+  | "machine.back"
   | "thread.orphaned"
   | "project.removed"
   | "project.added"
