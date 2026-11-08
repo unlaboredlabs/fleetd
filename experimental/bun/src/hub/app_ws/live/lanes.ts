@@ -20,6 +20,7 @@ import { executors } from "../../executor/index.ts";
 import { link } from "../../link/server.ts";
 import { among, mayUse, others } from "../../navi/owner.ts";
 import { workstreamGet } from "../../orders/workstreams.ts";
+import { state as slotState } from "../../slots/index.ts";
 import { store } from "../../store/hub_store.ts";
 import { type TaskFilter, TaskRecords } from "../../tasks/records.ts";
 import type { LaneNow } from "./pump.ts";
@@ -236,9 +237,15 @@ export function machines(hub: Hub, caller: Caller): MachineLive[] {
 }
 
 /**
- * The slot board, cut to the machines and projects the key may see. TODO(slots): the board isn't ported to Bun
- * yet; until hub/slots has a `state()`, a live frame carries no slots, as a hub without the board sends.
+ * The slot board, its per-project and per-machine rows cut to the machines the key may read, and its per-project
+ * rows to the projects it may see (another person's Only me project is theirs alone, D310).
  */
-export function slots(_hub: Hub, _caller: Caller): SlotState | undefined {
-  return undefined;
+export function slots(hub: Hub, caller: Caller): SlotState | undefined {
+  const board = slotState(hub);
+  const navis = others(hub.db, caller);
+  return {
+    ...board,
+    perProject: board.perProject.filter((p) => allows(caller, "read", p.projectRef.machineId) && !navis.has(p.projectRef)),
+    ...(board.perMachine ? { perMachine: board.perMachine.filter((m) => allows(caller, "read", m.machineId)) } : {}),
+  };
 }

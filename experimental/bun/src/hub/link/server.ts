@@ -21,6 +21,7 @@ import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
 import { type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
+import { brake, brakeText } from "../usage/state.ts";
 import { pausedText, why as guardWhy } from "./guard.ts";
 import {
   CAP_AGENTS_MAC,
@@ -594,7 +595,7 @@ export class Link {
     const busy = frame.busy as NodeBusy | undefined;
     if (busy) this.busyBy.set(machineId, busy);
     else this.busyBy.delete(machineId);
-    this.observeLoad(machineId, (frame.load as NodeLoad | undefined) ?? undefined);
+    this.observeLoad(machineId, (frame.load as NodeLoad | undefined) ?? undefined, typeof frame.at === "string" ? frame.at : "");
     const status: MachineStatus = this.announced.get(machineId) === "degraded" ? "degraded" : "online";
     try {
       store(this.hub).machineSetStatus(machineId, status, this.nowIso());
@@ -606,26 +607,31 @@ export class Link {
   }
 
   /**
-   * Keeps a heartbeat's load and runs the disk guard over it: `machine.guard` marks each pause and resume.
-   * `machine.hosts` marks what the node can host when it first says it, or says something else.
-   * TODO(hub-approvals): the usage soft brake (hub/usage/state.rs `brake`) joins the guard here.
+   * Keeps a heartbeat's load, and runs the disk guard and the usage soft brake over it: `machine.guard` marks each
+   * pause and resume. The guard's line goes first, as a full disk outlasts a usage window; the line's figure updates
+   * with every heartbeat. `machine.hosts` marks what the node can host when it first says it, or says something
+   * else. `nodeAt` is the heartbeat's time on the node's clock: the brake ages a usage reading by it.
    */
-  observeLoad(machineId: string, load: NodeLoad | undefined): void {
+  observeLoad(machineId: string, load: NodeLoad | undefined, nodeAt = ""): void {
+    const now = this.hub.clock.now();
+    const parsed = Date.parse(nodeAt);
+    const nodeNow = Number.isNaN(parsed) ? now : parsed;
     const was = this.pausedBy.get(machineId);
     const hostsChanged =
       load?.hosts !== undefined && JSON.stringify(this.loads.get(machineId)?.hosts) !== JSON.stringify(load.hosts);
     const why = load ? guardWhy(load, was?.guard ?? false) : undefined;
+    const braked = load ? brake(load.limits ?? [], was?.brake ?? false, now, nodeNow) : undefined;
     if (load) this.loads.set(machineId, load);
     else this.loads.delete(machineId);
     if (hostsChanged) this.append("machine.hosts", machineId, `${machineId} said what it can host`);
-    if (why === undefined && !was) return;
+    if (why === undefined && braked === undefined && !was) return;
     let name = machineId;
     try {
       name = store(this.hub).machineGet(machineId)?.name ?? machineId;
     } catch {}
-    const text = why === undefined ? undefined : pausedText(why, name);
+    const text = why !== undefined ? pausedText(why, name) : braked !== undefined ? brakeText(braked, name) : undefined;
     if (text === undefined) this.pausedBy.delete(machineId);
-    else this.pausedBy.set(machineId, { text, guard: true, brake: false });
+    else this.pausedBy.set(machineId, { text, guard: why !== undefined, brake: braked !== undefined });
     if ((was !== undefined) !== (text !== undefined)) {
       this.append("machine.guard", machineId, text ?? `New agents start again on ${name}`, { paused: !was });
     }
