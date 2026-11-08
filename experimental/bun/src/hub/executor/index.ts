@@ -44,7 +44,7 @@ export type NodeToHubSession =
   | ({ t: "clone_progress" } & CloneProgressFrame);
 
 /** A sender over one welcomed node link, which the link builds per socket. `linkId` tells a newer link from the one it replaced. */
-export type NodeSessions = { linkId: number; send(frame: HubToNodeSession): void };
+export type NodeSessions = { linkId: number; send(frame: HubToNodeSession): boolean | void };
 
 /** Resubscribe delay: doubles from 1 s to a 30 s cap, ±25 % jitter so machines don't retry in step. */
 export function backoffMs(attempt: number, random: number): number {
@@ -311,7 +311,13 @@ export class Executors {
   /** Live, and announced online: what the offline queue waits for before it delivers anything. */
   async awaitReady(machineId: MachineId, signal?: AbortSignal): Promise<void> {
     while (!(this.isConnected(machineId) && this.isReady(machineId)) && !signal?.aborted) {
-      await Promise.race([this.live.changed(machineId, signal), this.ready.changed(machineId, signal)]);
+      // One wait per flag; the one that doesn't fire is taken back, so no waiter outlives its turn.
+      const turn = new AbortController();
+      const stop = () => turn.abort();
+      signal?.addEventListener("abort", stop, { once: true });
+      await Promise.race([this.live.changed(machineId, turn.signal), this.ready.changed(machineId, turn.signal)]);
+      turn.abort();
+      signal?.removeEventListener("abort", stop);
     }
   }
 
@@ -368,9 +374,14 @@ export class Executors {
     if (!slot || !link) throw ExecutorError.notConnected(machineId);
     const id = newUuid();
     const reply = new Promise<SessionReplyFrame["result"]>((resolve, reject) => slot.pending.set(id, { resolve, reject }));
+    let sent: boolean | void;
     try {
-      link.send({ t: "session_call", id, call });
+      sent = link.send({ t: "session_call", id, call });
     } catch {
+      sent = false;
+    }
+    // A link that refuses the frame (its socket closed) is no live link, as Rust's failed `send` is.
+    if (sent === false) {
       slot.pending.delete(id);
       throw ExecutorError.notConnected(machineId);
     }
@@ -426,12 +437,14 @@ export class Executors {
     slot.liveSinceMs = this.hub.clock.now();
     slot.caughtUp = undefined;
     this.live.set(machineId, true);
+    // One abort listener for the link's life, waking whichever wait is current.
+    const wake = () => slot.wake?.();
+    signal.addEventListener("abort", wake, { once: true });
     while (!signal.aborted) {
       const frame = slot.inbox.shift();
       if (!frame) {
         await new Promise<void>((resolve) => {
           slot.wake = resolve;
-          signal.addEventListener("abort", () => resolve(), { once: true });
         });
         slot.wake = undefined;
         continue;
@@ -442,6 +455,7 @@ export class Executors {
         console.error(`executor: machine event from ${machineId} failed:`, error);
       }
     }
+    signal.removeEventListener("abort", wake);
   }
 
   /** Applies one machine stream event: caches, the event log, the cursor. */
@@ -564,15 +578,13 @@ export class Executors {
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
   });
 }
 

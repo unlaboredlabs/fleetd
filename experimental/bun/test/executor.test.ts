@@ -105,7 +105,7 @@ test("an older link never takes over, and a dropped one leaves the machine stale
   const node = fakeNode(k, 2);
   await node.ex.awaitLive("devbox");
   const late: HubToNodeSession[] = [];
-  node.ex.attach("devbox", { linkId: 1, send: (f) => late.push(f) });
+  node.ex.attach("devbox", { linkId: 1, send: (f) => void late.push(f) });
   expect(late).toEqual([]);
   node.ex.detachLink("devbox", 1);
   expect(node.ex.isConnected("devbox")).toBe(true);
@@ -118,7 +118,7 @@ test("a call is answered by the reply with its id, or fails with the node's word
   const k = kit();
   const ex = executors(k.hub);
   const sent: HubToNodeSession[] = [];
-  ex.attach("devbox", { linkId: 1, send: (f) => sent.push(f) });
+  ex.attach("devbox", { linkId: 1, send: (f) => void sent.push(f) });
   // The subscribe goes first; answer it so the link is live.
   await settle();
   ex.handleFrame("devbox", { t: "session_reply", id: sent[0]!.id, result: { ok: { kind: "done" } } });
@@ -182,4 +182,42 @@ test("quiet hours end at the next local end, across midnight and in the policy's
   ]);
   expect(quietWindows(t0, "Europe/Berlin", quiet)).toEqual([w("2026-10-17T21:00:00Z", "2026-10-18T06:00:00Z")]);
   expect(quietWindows(t0, "UTC", undefined)).toEqual([]);
+});
+
+test("a busy link holds no more abort listeners than an idle one", async () => {
+  const k = kit();
+  store(k.hub).machineUpsert(machine());
+  let net = 0;
+  const add = AbortSignal.prototype.addEventListener;
+  const remove = AbortSignal.prototype.removeEventListener;
+  AbortSignal.prototype.addEventListener = function (this: AbortSignal, ...args: Parameters<typeof add>) {
+    if (args[0] === "abort") net++;
+    return add.apply(this, args);
+  };
+  AbortSignal.prototype.removeEventListener = function (this: AbortSignal, ...args: Parameters<typeof remove>) {
+    if (args[0] === "abort") net--;
+    return remove.apply(this, args);
+  };
+  try {
+    const node = fakeNode(k);
+    await node.ex.awaitLive("devbox");
+    await settle();
+    const idle = net;
+    for (let i = 0; i < 200; i++) {
+      node.event({ type: "project_upserted", projectId: "app", title: "App", workspaceRoot: "/w", updatedAt: AT });
+      await Bun.sleep(0);
+    }
+    await settle();
+    expect(net).toBe(idle);
+  } finally {
+    AbortSignal.prototype.addEventListener = add;
+    AbortSignal.prototype.removeEventListener = remove;
+  }
+});
+
+test("a link that refuses the frame fails the call at once as offline", async () => {
+  const k = kit();
+  const ex = executors(k.hub);
+  ex.attach("devbox", { linkId: 1, send: () => false });
+  await expect(ex.call("devbox", "read", { op: "runner_info" }, 5000)).rejects.toThrow("has no live node link");
 });

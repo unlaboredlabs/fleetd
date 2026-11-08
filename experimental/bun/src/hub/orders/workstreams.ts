@@ -5,8 +5,8 @@ import type { ProjectRef, Workstream, WorkstreamId, WorkstreamState } from "../.
 
 /** `W12` → 12; 0 for anything else, as the Rust hub reads it. */
 export function workstreamNumber(id: WorkstreamId): number {
-  const n = Number.parseInt(id.slice(1), 10);
-  return Number.isNaN(n) ? 0 : n;
+  const digits = id.slice(1);
+  return /^\+?\d+$/.test(digits) ? Number(digits) : 0;
 }
 
 export function workstreamGet(c: Database, id: WorkstreamId): Workstream | undefined {
