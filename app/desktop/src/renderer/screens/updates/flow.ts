@@ -4,7 +4,7 @@
 // Retry updates one machine of the last run again (hub_update with its machine); Start over ends a run that stopped
 // moving and starts a new one (hub_update with startOver). The hub downloads the channel's
 // newest build ahead and says so (`ready`), read on connect and every few minutes. A tiny external store, so the
-// sidebar line, the notice and the sheet show the same run; the steps take their effects as deps, so they are
+// hub row and Hub › Updates show the same run; the steps take their effects as deps, so they are
 // unit-tested.
 import { useSyncExternalStore } from "react";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
@@ -141,7 +141,7 @@ export const updateNow = async (deps: FlowDeps): Promise<void> => {
   if (out.ok && out.output.run !== undefined) set({ run: out.output.run });
 };
 
-/** Automatic updates on or off (Hub › Updates and the updates sheet): the hub keeps it. The hub's words when it refused. */
+/** Automatic updates on or off (Hub › Updates): the hub keeps it. The hub's words when it refused. */
 export const setAutoUpdates = async (deps: Pick<FlowDeps, "call">, on: boolean): Promise<string | null> => {
   const out = await deps.call("hub_update_settings", { auto: on });
   if (!out.ok) return out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}`;

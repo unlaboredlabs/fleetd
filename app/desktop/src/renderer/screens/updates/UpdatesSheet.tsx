@@ -1,4 +1,4 @@
-// The updates sheet's content, laid out from the view: one overall state with the Update button and what's new (or a
+// Hub › Updates' content, laid out from the view: one overall state with the Update button and what's new (or a
 // quiet Start over beside a run that stopped moving), one line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed,
 // Update automatically, and every part's steps behind Details. Hairlines between lines, no boxes; still, never an animation.
 import { ChevronRight } from "lucide-react";
@@ -261,9 +261,11 @@ export interface SheetProps {
   readonly auto?: ReactNode;
   /** Details shown at first; a test opens them. */
   readonly details?: boolean;
+  /** In place of Details: a page's own part with each one's version (Hub › Updates). */
+  readonly versions?: ReactNode;
 }
 
-export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry, onApp, auto, details = false }: SheetProps) {
+export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry, onApp, auto, details = false, versions }: SheetProps) {
   const [open, setOpen] = useState(details);
   return (
     <div className={s.parts} data-screen="updates">
@@ -276,17 +278,21 @@ export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry
         </ul>
       )}
       {auto}
-      <div>
-        <Button variant="quiet" aria-expanded={open} icon={<ChevronRight className={s.chevron} data-open={open} />} onClick={() => setOpen(!open)}>
-          Details
-        </Button>
-      </div>
-      {open ? (
-        <div className={s.details} data-updates-details>
-          {view.hub === null ? null : <HubSection part={view.hub} nodes={view.nodes} />}
-          {view.app === null ? null : <AppSection part={view.app} onApp={onApp} />}
-        </div>
-      ) : null}
+      {versions ?? (
+        <>
+          <div>
+            <Button variant="quiet" aria-expanded={open} icon={<ChevronRight className={s.chevron} data-open={open} />} onClick={() => setOpen(!open)}>
+              Details
+            </Button>
+          </div>
+          {open ? (
+            <div className={s.details} data-updates-details>
+              {view.hub === null ? null : <HubSection part={view.hub} nodes={view.nodes} />}
+              {view.app === null ? null : <AppSection part={view.app} onApp={onApp} />}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

@@ -25,8 +25,7 @@ import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
-import { UpdatesHost } from "../updates";
-import { useUpdatesHub } from "../updates/state";
+import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
@@ -115,6 +114,8 @@ const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> |
 function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
   const hub = useHubState();
   const features = useData((st) => st.features);
+  // A restart's held view (data/store.ts RESTART_HOLD_MS): what shows is as it was, so it steps back a little.
+  const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
   // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's left out.
@@ -337,8 +338,9 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
               Sample data, not connected
             </div>
           ) : null}
+          {chrome ? <RestartLine /> : null}
           {chrome ? <ConnectionBanner /> : null}
-          <div className={s.screen}>
+          <div className={s.screen} data-held={held || undefined}>
             {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
                 <Suspense fallback={null}>
@@ -361,10 +363,9 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   );
 }
 
-/** The updates sheet of the hub whose status row opened it, else of the screen's hub. */
+/** The screen's hub's updates, followed in this window. */
 function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
-  const from = useUpdatesHub();
-  const hub = hubs.find((h) => h.id === from) ?? hubs.find((h) => h.id === on);
+  const hub = hubs.find((h) => h.id === on);
   return hub === undefined ? null : (
     <HubScope key={hub.id} hub={hub}>
       <UpdatesHost />

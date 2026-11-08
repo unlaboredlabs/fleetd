@@ -9,7 +9,7 @@ import { projectKey } from "../../src/data/store";
 import { Button, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { when } from "../live/when";
-import { setUpdatesOpen } from "../updates/state";
+import { openUpdates } from "../updates/state";
 import { projectsLine, whoOf } from "./model";
 import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
@@ -21,7 +21,7 @@ export function LinksNeedUpdate() {
   return (
     <div className={s.inline}>
       <Text tone="quiet">This hub needs updating to link hubs.</Text>
-      <Button size="sm" onClick={() => setUpdatesOpen(true)}>
+      <Button size="sm" onClick={() => openUpdates(true)}>
         Update the hub
       </Button>
     </div>

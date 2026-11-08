@@ -29,6 +29,49 @@ describe("connection", () => {
     expect(work(s)).toBeUndefined();
   });
 
+  it("keeps the screens on what they held for 10 s after the hub closed to restart, then shows skeletons", () => {
+    const T = Date.parse("2026-10-19T10:00:00.000Z");
+    const at = (s: DataState, frame: HubFrame, ms: number) => applyFrame(s, frame, T + ms)[0];
+    const restarting = (ms: number): HubFrame => ({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "restarting", retryAt: T + ms + 250, restarting: T } });
+    const start = withBoard(run([live(), snapshot(10)]));
+    let s = at(start, restarting(0), 0);
+    expect(selectConnection(s).view).toBe("live");
+    expect(work(s)?.orders).toEqual(["W1"]);
+    s = at(s, { t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 0, restarting: T } }, 9_000);
+    expect(selectConnection(s).view).toBe("live");
+    expect(s.live.stale).toBe(true);
+    s = at(s, restarting(10_000), 10_000);
+    expect(selectConnection(s).view).toBe("skeleton");
+    expect(work(s)).toBeUndefined();
+    // Marked as of the close, not as of the hold's end.
+    expect(s.asOf).toBe(T);
+    // Not held again once it went: a held view never comes back mid-outage.
+    expect(selectConnection(at(s, restarting(10_250), 10_250)).view).toBe("skeleton");
+
+    // Back within the hold: still fresh, and the resumed snapshot keeps the board.
+    s = at(at(start, restarting(0), 0), live(), 400);
+    expect(selectConnection(s).view).toBe("live");
+    s = run([snapshot(10, true)], s);
+    expect(work(s)?.orders).toEqual(["W1"]);
+  });
+
+  it("shows skeletons at once for a drop that isn't a restart", () => {
+    const s = run([{ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } }], withBoard(run([live(), snapshot(10)])));
+    expect(selectConnection(s).view).toBe("skeleton");
+  });
+
+  it("says when a link came back on a newer fleetd", () => {
+    const on = (version: string): HubFrame => ({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1, version } });
+    const down: HubFrame = { t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } };
+    let s = run([on("0.9.1"), snapshot(10), down, on("0.9.1")]);
+    expect(s.updated).toBeUndefined();
+    s = run([down, on("0.9.2")], s);
+    expect(s.updated).toEqual({ from: "0.9.1", to: "0.9.2", at: Date.parse("2026-10-19T10:00:00.000Z") });
+    expect(s.version).toBe("0.9.2");
+    // Put back to an older build isn't an update.
+    expect(run([down, on("0.9.1")], s).updated?.to).toBe("0.9.2");
+  });
+
   it("keeps what the hub serves while the link retries, takes it fresh on each connection, and drops it with the pairing", () => {
     let s = run([live(["presence", "browser_sessions"])]);
     expect(s.features).toEqual(["presence", "browser_sessions"]);
