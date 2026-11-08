@@ -382,3 +382,56 @@ export const orderEnv = {
     );
   },
 };
+
+// --- the status view's freshness registry (src/hub/status, the Rust `hub/status/fresh.rs`) ---
+
+export interface FreshLike {
+  expect(source: string, staleAfterMs: number, nowMs: number): void;
+  forget(source: string): void;
+  touch(source: string, atMs: number): void;
+  fail(source: string, reason: string): void;
+}
+
+/** GitHub answers for a repo, from any `gh api` call. */
+export const GITHUB_STALE_MS = 180_000;
+/** The end of a train pass for a repo. */
+export const TRAIN_STALE_MS = 120_000;
+export const freshGithub = (repo: string) => `github:${repo}`;
+export const freshTrain = (repo: string) => `train:${repo}`;
+
+/** Until the status area serves it, freshness goes nowhere. */
+export const fresh = (hub: Hub): FreshLike =>
+  hub.area<FreshLike>("status_fresh", () => ({ expect() {}, forget() {}, touch() {}, fail() {} }));
+
+// --- tasks (tasks/records.rs over `tasks`) ---
+
+export type TaskFilter = { projectRef?: ProjectRef; state?: string; workstreamId?: WorkstreamId; limit: number };
+
+/** Newest first, as `TaskRecords::list`. */
+export function tasks<T = import("../../shared/contracts.ts").Task>(db: Database, filter: TaskFilter): T[] {
+  let sql = "SELECT data FROM tasks WHERE 1";
+  const args: (string | number)[] = [];
+  if (filter.projectRef) {
+    sql += " AND machine_id = ? AND project_id = ?";
+    args.push(filter.projectRef.machineId, filter.projectRef.projectId);
+  }
+  if (filter.state !== undefined) {
+    sql += " AND state = ?";
+    args.push(filter.state);
+  }
+  if (filter.workstreamId !== undefined) {
+    sql += " AND workstream_id = ?";
+    args.push(filter.workstreamId);
+  }
+  sql += " ORDER BY n DESC LIMIT ?";
+  args.push(filter.limit);
+  return db
+    .query<{ data: string }, (string | number)[]>(sql)
+    .all(...args)
+    .map((r) => JSON.parse(r.data) as T);
+}
+
+export function task<T = import("../../shared/contracts.ts").Task>(db: Database, taskId: string): T | undefined {
+  const row = db.query<{ data: string }, [number]>("SELECT data FROM tasks WHERE n = ?").get(numberOf(taskId));
+  return row ? (JSON.parse(row.data) as T) : undefined;
+}
