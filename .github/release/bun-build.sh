@@ -33,7 +33,8 @@ if [ -n "$own" ]; then
   said="$("$own" --version)"
   echo "$own: $said"
   case "$said" in
-    *"($FLEETD_VERSION,"*) ;;
+    # An edge build says `fleetd <label> (<version>, protocol 1)`, a tagged one `fleetd <version> (protocol 1)`.
+    *"($FLEETD_VERSION,"* | *" $FLEETD_VERSION ("*) ;;
     *) echo "::error::$own doesn't say it is $FLEETD_VERSION"; exit 1 ;;
   esac
 fi
