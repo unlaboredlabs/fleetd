@@ -54,7 +54,8 @@ test("websocket routes want an upgrade; unknown paths and methods are refused", 
   expect((await fetch(`${base}/pair`)).status).toBe(405);
   // An empty body is no pairing request (test/pair.test.ts).
   expect((await fetch(`${base}/pair`, { method: "POST" })).status).toBe(400);
-  expect((await fetch(`${base}/hooks/a1/s3cret`, { method: "POST" })).status).toBe(501);
+  // An unknown automation and a wrong secret look the same (test/automations.test.ts).
+  expect((await fetch(`${base}/hooks/a1/s3cret`, { method: "POST" })).status).toBe(404);
 });
 
 test("a malformed escape is a 400 and a crash is JSON, never Bun's error page", async () => {

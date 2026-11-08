@@ -111,7 +111,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### HTTP routes
 
-- [ ] POST `/hooks/{automation_id}/{secret}` → `src/hub/automations` (hook) <!-- http:POST `/hooks/{automation_id}/{secret}` -->
+- [x] POST `/hooks/{automation_id}/{secret}` → `src/hub/automations` (hook) <!-- http:POST `/hooks/{automation_id}/{secret}` -->
 
 ### /app websocket messages
 
@@ -189,14 +189,14 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
 - [x] `memory_shared_get` → `src/hub/memory` (admin) <!-- tool:`memory_shared_get` -->
 - [x] `memory_shared_set` → `src/hub/memory` (admin) <!-- tool:`memory_shared_set` -->
-- [ ] `automation_list` → `src/hub/automations` (read) <!-- tool:`automation_list` -->
-- [ ] `automation_create` → `src/hub/automations` (operate) <!-- tool:`automation_create` -->
-- [ ] `automation_update` → `src/hub/automations` (operate) <!-- tool:`automation_update` -->
-- [ ] `automation_pause` → `src/hub/automations` (operate) <!-- tool:`automation_pause` -->
-- [ ] `automation_rotate` → `src/hub/automations` (operate) <!-- tool:`automation_rotate` -->
-- [ ] `automation_delete` → `src/hub/automations` (operate) <!-- tool:`automation_delete` -->
-- [ ] `automation_run` → `src/hub/automations` (operate) <!-- tool:`automation_run` -->
-- [ ] `automation_runs` → `src/hub/automations` (read) <!-- tool:`automation_runs` -->
+- [x] `automation_list` → `src/hub/automations` (read) <!-- tool:`automation_list` -->
+- [x] `automation_create` → `src/hub/automations` (operate) <!-- tool:`automation_create` -->
+- [x] `automation_update` → `src/hub/automations` (operate) <!-- tool:`automation_update` -->
+- [x] `automation_pause` → `src/hub/automations` (operate) <!-- tool:`automation_pause` -->
+- [x] `automation_rotate` → `src/hub/automations` (operate) <!-- tool:`automation_rotate` -->
+- [x] `automation_delete` → `src/hub/automations` (operate) <!-- tool:`automation_delete` -->
+- [x] `automation_run` → `src/hub/automations` (operate) <!-- tool:`automation_run` -->
+- [x] `automation_runs` → `src/hub/automations` (read) <!-- tool:`automation_runs` -->
 - [ ] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
 - [x] `checklist_get` → `src/hub/checklist` (read) <!-- tool:`checklist_get` -->
 - [x] `navi_asks` → `src/hub/navi` (read) <!-- tool:`navi_asks` -->
@@ -231,7 +231,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### Background loops
 
-- [ ] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
+- [x] hub loop `automations.start` → `src/hub/automations` <!-- loop:hub loop `automations.start` -->
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
 - [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
@@ -612,14 +612,14 @@ every `fleetd` command.
 - [x] lead call `chat_image` → `src/hub/lead_calls` <!-- lead:lead call `chat_image` -->
 - [x] lead call `chat_file` → `src/hub/lead_calls` <!-- lead:lead call `chat_file` -->
 - [x] lead call `artifact_publish` → `src/hub/lead_calls` <!-- lead:lead call `artifact_publish` -->
-- [ ] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
-- [ ] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->
-- [ ] lead call `automation_update` → `src/hub/lead_calls` <!-- lead:lead call `automation_update` -->
-- [ ] lead call `automation_pause` → `src/hub/lead_calls` <!-- lead:lead call `automation_pause` -->
-- [ ] lead call `automation_delete` → `src/hub/lead_calls` <!-- lead:lead call `automation_delete` -->
-- [ ] lead call `automation_run` → `src/hub/lead_calls` <!-- lead:lead call `automation_run` -->
-- [ ] lead call `automation_runs` → `src/hub/lead_calls` <!-- lead:lead call `automation_runs` -->
-- [ ] lead call `automation_confirm` → `src/hub/lead_calls` <!-- lead:lead call `automation_confirm` -->
+- [x] lead call `automation_create` → `src/hub/lead_calls` <!-- lead:lead call `automation_create` -->
+- [x] lead call `automation_list` → `src/hub/lead_calls` <!-- lead:lead call `automation_list` -->
+- [x] lead call `automation_update` → `src/hub/lead_calls` <!-- lead:lead call `automation_update` -->
+- [x] lead call `automation_pause` → `src/hub/lead_calls` <!-- lead:lead call `automation_pause` -->
+- [x] lead call `automation_delete` → `src/hub/lead_calls` <!-- lead:lead call `automation_delete` -->
+- [x] lead call `automation_run` → `src/hub/lead_calls` <!-- lead:lead call `automation_run` -->
+- [x] lead call `automation_runs` → `src/hub/lead_calls` <!-- lead:lead call `automation_runs` -->
+- [x] lead call `automation_confirm` → `src/hub/lead_calls` <!-- lead:lead call `automation_confirm` -->
 - [x] lead call `checklist` → `src/hub/lead_calls` <!-- lead:lead call `checklist` -->
 - [x] lead call `skill_install` → `src/hub/lead_calls` <!-- lead:lead call `skill_install` -->
 - [ ] lead call `usage_resume` → `src/hub/lead_calls` <!-- lead:lead call `usage_resume` -->
