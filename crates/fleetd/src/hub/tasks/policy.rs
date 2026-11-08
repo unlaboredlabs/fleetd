@@ -118,6 +118,16 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
             "ask_lead is a task's question for its lead, and this call comes from no task.",
         )
         .with_fix("A lead asks the human with ask.")),
+        // A verdict binds the train's review of the lead's own work: only the review task records it.
+        CallerAgent::Lead if op == "review_verdict" => Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            "review_verdict is a review task's own verdict, and a lead records none: the train's review checks the \
+             lead's own work.",
+        )
+        .with_fix(
+            "Let the review task report its verdict. To act on its findings, have a writer fix them, or resolve them \
+             with change_enqueue.",
+        )),
         CallerAgent::Person | CallerAgent::Lead if op == "brief_read" => Err(McpToolError::new(
             ErrorCode::Invalid,
             "brief_read reads a task's own brief, and this call comes from no task.",
@@ -221,6 +231,21 @@ mod tests {
                 ErrorCode::Invalid
             );
         }
+    }
+
+    /// The train's review checks the lead's own work, so a lead can't record (or overwrite) a reviewer's verdict; the
+    /// review task can, and a person's own shell still names one.
+    #[test]
+    fn only_a_review_task_or_a_person_records_a_verdict_never_a_lead() {
+        let refused = check(&CallerAgent::Lead, "review_verdict").unwrap_err();
+        assert_eq!(refused.code, ErrorCode::Forbidden);
+        assert!(
+            refused.message.contains("a lead records none"),
+            "{}",
+            refused.message
+        );
+        assert_eq!(check(&task(), "review_verdict"), Ok(()));
+        assert_eq!(check(&CallerAgent::Person, "review_verdict"), Ok(()));
     }
 
     #[test]

@@ -3391,6 +3391,16 @@ impl Train {
         let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));
         let held = enqueue_lock.lock().await;
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
+            // Another project's Change is its lead's alone: no `after` added to it, no findings resolved on it.
+            if existing.project_ref != *project_ref {
+                return Err(TrainError::new(
+                    "invalid",
+                    format!("{pr_url} is already on the merge train for another project."),
+                    Some(
+                        "leave it to that project's lead; enqueue a PR of your own project's work",
+                    ),
+                ));
+            }
             if HEAD_STATES.contains(&existing.state)
                 && after.iter().any(|u| !existing.after.contains(u))
             {

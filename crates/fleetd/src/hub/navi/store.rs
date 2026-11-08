@@ -152,6 +152,17 @@ pub fn set_archived(db: &Connection, r: &ProjectRef, at_ms: Option<i64>) -> rusq
     Ok(())
 }
 
+/// Whether `r` is archived.
+pub fn archived(db: &Connection, r: &ProjectRef) -> rusqlite::Result<bool> {
+    Ok(db
+        .prepare_cached(
+            "SELECT 1 FROM project_settings WHERE machine_id = ? AND project_id = ? AND archived_ms IS NOT NULL",
+        )?
+        .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
 /// Every Navi, oldest first.
 pub fn all(db: &Connection) -> rusqlite::Result<Vec<ProjectRef>> {
     let mut stmt = db.prepare_cached(

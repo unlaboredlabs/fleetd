@@ -535,3 +535,33 @@ async fn a_navi_starts_agents_like_any_lead() {
     .unwrap();
     assert_eq!(spawned.task.title.as_str(), "Book the dentist");
 }
+
+/// An archived project starts no agents: a lead that outlived its stop is refused, and once the project is back the
+/// same spawn goes through.
+#[tokio::test]
+async fn an_archived_project_spawns_nothing() {
+    let (hub, app, _web, _home) = hub();
+    let archive = |at: Option<i64>| {
+        hub.db
+            .with(|c| Ok(crate::hub::navi::store::set_archived(c, &app, at)?))
+            .unwrap()
+    };
+    archive(Some(1_792_922_400_000));
+    let refused = spawn(&hub, &app, call("Read the logs", json!({ "kind": "read" })))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.message,
+        "This project is archived: it starts no agents."
+    );
+    assert_eq!(
+        hub.tasks.get(&super::TaskId::unchecked("T1")).unwrap(),
+        None
+    );
+
+    archive(None);
+    let spawned = spawn(&hub, &app, call("Read the logs", json!({ "kind": "read" })))
+        .await
+        .unwrap();
+    assert_eq!(spawned.task.task_id.as_str(), "T1");
+}

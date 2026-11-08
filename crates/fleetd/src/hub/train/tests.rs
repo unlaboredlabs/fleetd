@@ -3646,6 +3646,37 @@ async fn a_pr_read_github_fails_with_a_503_is_read_again_and_goes_on_the_train()
     assert!(wakes.is_empty(), "{wakes:?}");
 }
 
+/// A PR already on the train for one project is that project's: another project's lead enqueuing it is refused, and
+/// its Change gains no `after` from that call.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_projects_change_is_not_a_leads_to_enqueue_again() {
+    let kit = Kit::new();
+    let held = kit
+        .enqueue_held(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
+        .await;
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: ProjectId::unchecked("p2"),
+    };
+    let upstream = format!("https://github.com/{REPO}/pull/9");
+    let mut call = enqueue_call(held.pr_url.to_string());
+    call.after = Some(fleetd_contracts::prim::UniqueList::unchecked(vec![
+        GitHubPrUrl::unchecked(upstream),
+    ]));
+    let e = kit.train.enqueue(&other, call).await.unwrap_err();
+    assert_eq!(
+        (e.code, e.message),
+        (
+            "invalid",
+            format!(
+                "{} is already on the merge train for another project.",
+                held.pr_url
+            )
+        )
+    );
+    assert!(kit.get(&held.change_id).after.is_empty());
+}
+
 /// A PR GitHub doesn't have is refused on the first read, with the message it always had.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_github_answers_404_for_is_refused_at_once() {
