@@ -304,13 +304,12 @@ test("a node's browser call decodes as the contract has it before it reaches the
 }, 30_000);
 
 test("the hub's loops bind the live view to the hub's own /app when nothing else is bound", async () => {
-  const { tempHome } = await import("./helpers.ts");
+  const { openHubDb, tempHome } = await import("./helpers.ts");
   const { Hub } = await import("../src/hub/api/hub.ts");
-  const { HubDb } = await import("../src/hub/store/db.ts");
   const { appWs: realAppWs } = await import("../src/hub/app_ws/index.ts");
   const { appBound, appWs: boundApp } = await import("../src/hub/browser/app.ts");
   const home = tempHome();
-  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, HubDb.open(home.dir), t?.clock ?? { now: () => Date.now() });
+  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 } }, openHubDb(home.dir), t?.clock ?? { now: () => Date.now() });
   try {
     expect(appBound(hub)).toBe(false);
     startBrowser(hub);

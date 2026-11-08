@@ -5,8 +5,7 @@ import { ENTRIES, entry, placeholdersOf } from "../src/hub/prompts/entry.ts";
 import { gitBlobSha, merge, placeholdersIn, render } from "../src/hub/prompts/render.ts";
 import { RETIRED } from "../src/hub/prompts/retired.ts";
 import { prompts, promptsDir } from "../src/hub/prompts/store.ts";
-import { HubDb } from "../src/hub/store/db.ts";
-import { tempHome } from "./helpers.ts";
+import { openHubDb, tempHome } from "./helpers.ts";
 
 test("refs are git blob SHAs, as the Rust hub makes them", () => {
   expect(gitBlobSha("hello\n")).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
@@ -41,7 +40,7 @@ test("a line merge keeps both sides' changes and marks a clash", () => {
 test("a project id never steers where an override is written", () => {
   const home = tempHome();
   const outside = tempHome();
-  const db = HubDb.open(home.dir);
+  const db = openHubDb(home.dir);
   const p = prompts(db);
   const e = entry("lead.start");
   p.save(e, "global", undefined, "hub-wide");
@@ -61,7 +60,7 @@ test("a project id never steers where an override is written", () => {
 
 test("a reflowed default is not a changed default", () => {
   const home = tempHome();
-  const db = HubDb.open(home.dir);
+  const db = openHubDb(home.dir);
   const p = prompts(db);
   const e = entry("lead.start");
   const wrapped = e.default.replace(" and tell them only", "\nand tell them only");
@@ -84,7 +83,7 @@ test("a reflowed default is not a changed default", () => {
 
 test("a renamed prompt's edit under its old id still applies until reset", () => {
   const home = tempHome();
-  const db = HubDb.open(home.dir);
+  const db = openHubDb(home.dir);
   const dir = promptsDir(db) as string;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "navi.start.md"), "---\nbase: navi.start@0123456789\n---\nYou are {{project}}, mine.");

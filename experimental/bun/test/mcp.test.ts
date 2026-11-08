@@ -4,9 +4,9 @@ import { clip, INSTRUCTIONS, sortedJson } from "../src/hub/mcp/endpoint.ts";
 import { DESCRIPTIONS } from "../src/hub/mcp/descriptions.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { NotImplemented, ToolError } from "../src/shared/errors.ts";
-import { insertKey, tempHome } from "./helpers.ts";
+import { hubHome, insertKey } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 tools.add("hub_info", () => ({ version: "9.9.9" }) as never);
 tools.add("people_list", () => {

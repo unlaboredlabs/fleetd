@@ -12,11 +12,10 @@ import { Registry, type Caller } from "../src/hub/api/registry.ts";
 import { AppGh, repoOf } from "../src/hub/github_app/gh.ts";
 import { githubApps, manifest } from "../src/hub/github_app/index.ts";
 import { BLOCKED_TOKEN, deliver, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
-import { HubDb } from "../src/hub/store/db.ts";
 import { isoMs } from "../src/hub/train/seams.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import type { Grant } from "../src/shared/contracts.ts";
-import { tempHome } from "./helpers.ts";
+import { openHubDb, tempHome } from "./helpers.ts";
 
 const KEY = readFileSync(join(import.meta.dir, "../../../crates/fleetd/src/hub/github_app/testdata/app-test-key.pem"), "utf8");
 const CLIENT_SECRET = "client-secret-never-shown";
@@ -160,7 +159,7 @@ afterAll(() => cleanups.forEach((c) => c()));
 function lab(home = tempHome()): Lab {
   cleanups.push(home.done);
   const clock = new ManualClock(1_792_000_000_000);
-  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 }, url: "http://devbox.example.ts.net:4790" }, HubDb.open(home.dir), clock);
+  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 0 }, url: "http://devbox.example.ts.net:4790" }, openHubDb(home.dir), clock);
   cleanups.push(() => hub.db.close());
   const tools = new Registry();
   registerAll(tools);

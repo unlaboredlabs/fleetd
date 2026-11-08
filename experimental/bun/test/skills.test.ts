@@ -107,4 +107,5 @@ test("a person installs from a local repo, pinned; a lead may not; a link is ref
   symlinkSync("/etc/hostname", join(repo, "skills", "deploy", "host"));
   expect(() => find(repo, { url: `file://${repo}`, gitRef: "HEAD", path: "" })).toThrow("holds a link, host");
   done();
-});
+  // Git runs a process for each step and the install clones: a loaded machine takes longer than bun's 5 s default.
+}, 30_000);

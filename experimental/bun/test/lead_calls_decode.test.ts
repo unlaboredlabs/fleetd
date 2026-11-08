@@ -4,9 +4,9 @@ import { LEAD_CALL_DEFS } from "../src/hub/api/decode.ts";
 import { LEAD_CALLS } from "../src/gen/wire.ts";
 import { leadCalls, type LeadCall, type LeadResultFrame } from "../src/hub/lead_calls/index.ts";
 import { build } from "../src/hub/serve/index.ts";
-import { tempHome } from "./helpers.ts";
+import { hubHome } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub } = build(home.dir, { host: "127.0.0.1", port: 0 });
 afterAll(() => {
   hub.db.close();
