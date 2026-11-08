@@ -27,7 +27,7 @@ export type MacCall =
   | { step: "ps" }
   | { step: "kill"; job: number }
   | { step: "pull"; path: string; to?: string }
-  | { step: "sim_start"; device?: string }
+  | { step: "sim_start"; device?: string; wait?: boolean }
   | { step: "sim_end" };
 
 type Mac = { machineId: string; key: Uint8Array };
@@ -215,8 +215,14 @@ export class MacClient {
       case "pull":
         return this.pull(thread, worktree, mac, call.path, call.to);
       case "sim_start": {
-        const done = await one({ step: "sim_start", ...(call.device ? { device: call.device } : {}) }, "sim_start");
-        return { step: "sim_start", udid: done.udid, device: done.device };
+        const [done] = await this.send(thread, worktree, mac, {
+          step: "sim_start",
+          ...(call.device ? { device: call.device } : {}),
+          ...(call.wait ? { wait: true } : {}),
+        });
+        if (done.step === "sim_start") return { step: "sim_start", udid: done.udid, device: done.device };
+        if (done.step === "sim_queued") return { step: "sim_queued", place: done.place, secs: done.secs ?? null, why: done.why };
+        throw failed("the Mac answered sim start with another step's");
       }
       case "sim_end":
         return { step: "sim_end", ended: (await one({ step: "sim_end" }, "sim_end")).ended };

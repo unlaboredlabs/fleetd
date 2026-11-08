@@ -33,6 +33,8 @@ class Fake {
   resumeReply: (id: string) => Promise<GatedOutcome> = async () => ({ outputTail: "", timedOut: false, unknown: "it has no result" });
   secretReply: () => Promise<SecretOutcome> = async () => ({ fingerprint: "ab12cd34" });
   linked = true;
+  /** Whether the node is linked when the hub looks. */
+  isLinked = () => this.linked;
   pending: PendingPermission | undefined;
   hooks: ApprovalHooks = { ...defaultHooks(), naviLead: async () => true };
   private wakers: (() => void)[] = [];
@@ -57,7 +59,7 @@ class Fake {
           return this.gatedReply();
         },
         resumeGated: async (_m, id) => this.resumeReply(id),
-        isLinked: async () => this.linked,
+        isLinked: async () => this.isLinked(),
         answerPermission: async (machine, thread, request, decision, by) => {
           this.answers.push({ machine, thread, request, decision, by });
         },
@@ -150,7 +152,7 @@ test("approve runs the stored command and wakes the lead with its outcome", asyn
   expect(evs[0]!.data).toEqual({ requestId: "Q1", kind: "approval", state: "open", workstreamId: null, by: null });
 });
 
-test("deny never runs the command and an offline node puts it back to the person", async () => {
+test("deny never runs the command", async () => {
   const fake = new Fake();
   const a = fake.approvals();
   await a.gatedRun(p1, migration());
@@ -161,17 +163,46 @@ test("deny never runs the command and an offline node puts it back to the person
   expect(requestOutcome(denied).outcome).toBe(
     "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead",
   );
+});
 
+const offline = async (): Promise<GatedOutcome> => {
+  throw new NodeCommandError("offline", "lab-a's node is not linked to the hub");
+};
+
+// An approval given while its node restarts (an update) waits for the node to link again, then runs, once.
+test("an approval given while its node restarts runs once the node links again", async () => {
+  const fake = new Fake();
+  const a = fake.approvals();
   await a.gatedRun(p1, migration());
-  fake.gatedReply = async () => {
-    throw new NodeCommandError("offline", "lab-a's node is not linked to the hub");
-  };
-  await a.answer(person, "Q2", true);
-  await fake.wokenTimes(2);
-  const back = fake.request("Q2");
+  // The node is back 3 s after the approval.
+  const back = fake.now + 3000;
+  fake.isLinked = () => fake.now >= back;
+  fake.gatedReply = async () => (fake.isLinked() ? { exitCode: 0, outputTail: "migrated 3 tables\n", timedOut: false } : offline());
+  await a.answer(person, "Q1", true);
+  await fake.wokenTimes(1);
+  const done = fake.request("Q1");
+  expect([done.state, done.exitCode]).toEqual(["ran", 0]);
+  // Sent once while unlinked, and once when back: never again while unlinked.
+  expect(fake.runs).toHaveLength(2);
+  expect(fake.woken).toEqual(["Q1 ran"]);
+});
+
+// A node that doesn't link again within 30 s: nothing ran, so the approval goes back to the person.
+test("an approval whose node stays offline goes back to the person after 30 s", async () => {
+  const fake = new Fake();
+  const a = fake.approvals();
+  await a.gatedRun(p1, migration());
+  fake.linked = false;
+  fake.gatedReply = offline;
+  const approvedAt = fake.now;
+  await a.answer(person, "Q1", true);
+  await fake.wokenTimes(1);
+  expect(fake.now - approvedAt).toBeGreaterThanOrEqual(30_000);
+  const back = fake.request("Q1");
   expect(back.state).toBe("open");
   expect(back.answeredBy).toBeUndefined();
   expect(back.evidence!.startsWith("not run: lab-a's node was offline when human:desk approved it")).toBe(true);
+  expect(fake.runs).toHaveLength(1);
 });
 
 test("a secret is entered by request id and only its fingerprint is kept", async () => {
