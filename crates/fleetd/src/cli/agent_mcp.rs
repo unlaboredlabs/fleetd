@@ -485,7 +485,7 @@ static TOOLS: &[Tool] = &[
          linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
          tool. kind mac lends you the agents' Mac's own screen, one agent at a time, driven with the desktop tool \
          and agent-desktop; while another holds it you only observe, and it ends after 5 idle minutes.",
-        inline_schema::<SessionStartCall>,
+        session_start_schema,
     ),
     browser(
         "desktop",
@@ -578,6 +578,28 @@ static TOOLS: &[Tool] = &[
 ];
 
 /// A verdict without what the hub fills in from the session: its task and the head it reviewed.
+/// session_start's schema without `ios`: a new iOS session is always refused ([`IOS_GONE`]), so it isn't offered. The
+/// kind stays in the contract for past sessions' rows and an older lead's call.
+///
+/// [`IOS_GONE`]: fleetd_contracts::browser::IOS_GONE
+fn session_start_schema() -> Value {
+    fn drop_ios(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                if let Some(Value::Array(values)) = map.get_mut("enum") {
+                    values.retain(|k| k != "ios");
+                }
+                map.values_mut().for_each(drop_ios);
+            }
+            Value::Array(items) => items.iter_mut().for_each(drop_ios),
+            _ => {}
+        }
+    }
+    let mut schema = inline_schema::<SessionStartCall>();
+    drop_ios(&mut schema["properties"]["kind"]);
+    schema
+}
+
 fn report_schema() -> Value {
     let mut schema = inline_schema::<ReviewVerdict>();
     if let Some(props) = schema["properties"].as_object_mut() {
@@ -1102,6 +1124,28 @@ mod tests {
             checklist.contains("text is a short plain outcome")
                 && checklist.contains("never a status, id or PR number"),
             "{checklist}"
+        );
+    }
+
+    #[test]
+    fn session_start_offers_every_kind_but_ios_and_still_takes_an_older_leads_ios() {
+        let schema = session_start_schema();
+        let kind = schema["properties"]["kind"].to_string();
+        for offered in ["browser", "android", "linux_desktop", "mac"] {
+            assert!(
+                kind.contains(&format!("\"{offered}\"")),
+                "{offered}: {kind}"
+            );
+        }
+        assert!(!kind.contains("\"ios\""), "{kind}");
+        // The node answers it with IOS_GONE.
+        assert!(
+            call_of(
+                Role::Lead,
+                "session_start",
+                json!({ "purpose": "p", "kind": "ios" })
+            )
+            .is_ok()
         );
     }
 

@@ -2730,8 +2730,8 @@ export type HostCheck = {
   fix?: string;
   host: SessionHost;
   /**
-   * Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node
-   * before it.
+   * Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a
+   * node before it.
    */
   idleMinutes?: number;
   /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */

@@ -62,21 +62,19 @@ pub struct BrowserConfig {
     /// starts, where it isn't already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// A Chrome or headless shell to use instead of the node's pinned install.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A Chrome or headless shell to use instead of the node's pinned install: `FLEETD_CHROME`, for development.
+    #[serde(skip)]
     pub chrome: Option<String>,
-    /// An ffmpeg to encode the video with instead of the pinned one (it needs matroska and mjpeg in, and libvpx-vp9 out).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// An ffmpeg to encode the video with instead of the pinned one (it needs matroska and mjpeg in, and libvpx-vp9
+    /// out): `FLEETD_FFMPEG`, for development.
+    #[serde(skip)]
     pub ffmpeg: Option<String>,
-    /// Browsers kept launched for the next sessions. Absent: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pool: Option<usize>,
     /// Chrome's own sandbox: true requires it, false turns it off. Absent: on wherever this host allows it, else off
     /// (a host without unprivileged user namespaces, such as Ubuntu 24.04 with its AppArmor default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<bool>,
-    /// A session no tool call touched for this long is ended. Absent: 30.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A session no tool call touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30.
+    #[serde(skip)]
     pub idle_minutes: Option<u64>,
 }
 
@@ -500,7 +498,7 @@ impl Broker {
                 profiles: self.home.join("browser").join("profiles"),
                 sandbox: self.config.sandbox,
             },
-            self.config.pool.unwrap_or(1),
+            1,
         );
         // Profiles a node left behind when it stopped.
         let _ = std::fs::remove_dir_all(&pool.launch_settings().profiles);

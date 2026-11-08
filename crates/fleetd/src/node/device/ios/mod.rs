@@ -58,11 +58,8 @@ pub struct IosConfig {
     /// the golden is made already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// Clones kept booted for the next sessions. Absent: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pool: Option<usize>,
-    /// A session no tool call touched for this long is ended. Absent: 30.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A session no tool call touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30.
+    #[serde(skip)]
     pub idle_minutes: Option<u64>,
     /// The simulator's device type by name ("iPhone 17 Pro"); absent, the newest plain iPhone of the newest iOS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -526,7 +523,7 @@ impl Simulators {
             Simctl::new(set_dir(&self.home)),
             self.home.clone(),
             golden,
-            self.config.pool.unwrap_or(1),
+            1,
         );
         pool.refill();
         *lock(&self.prep) = Prep::Ready(pool);

@@ -85,7 +85,7 @@ fn browser_check(home: &Path, config: &BrowserConfig) -> HostCheck {
             false => check(
                 host,
                 Some(HostOff::Missing),
-                format!("node.json names Chrome at {chrome}, which is not there"),
+                format!("FLEETD_CHROME names Chrome at {chrome}, which is not there"),
             ),
         };
     }
@@ -213,11 +213,7 @@ pub fn mac_screen(config: &MacConfig) -> HostCheck {
             ),
         }
     };
-    with(
-        checked,
-        config.enabled(),
-        Some(config.idle_minutes.unwrap_or(mac::IDLE_MINUTES)),
-    )
+    with(checked, config.enabled(), Some(mac::IDLE_MINUTES))
 }
 
 /// What this machine can host now, read at most every few minutes, from node.json's screen sections (`config`). A
@@ -252,15 +248,15 @@ fn cached(home: &Path, config: Option<&NodeConfig>) -> Vec<HostCheck> {
         false => vec![
             browser(
                 home,
-                &config.and_then(|c| c.browser.clone()).unwrap_or_default(),
+                &config.map(NodeConfig::browser_screen).unwrap_or_default(),
             ),
             android(
                 home,
-                &config.and_then(|c| c.device.clone()).unwrap_or_default(),
+                &config.map(NodeConfig::device_screen).unwrap_or_default(),
             ),
             desktop(
                 home,
-                &config.and_then(|c| c.desktop.clone()).unwrap_or_default(),
+                &config.map(NodeConfig::desktop_screen).unwrap_or_default(),
             ),
             mac,
         ],

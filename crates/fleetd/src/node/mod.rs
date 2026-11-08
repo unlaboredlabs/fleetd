@@ -144,6 +144,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         min_free_gb: None,
         warm_builds: None,
         build_slots: None,
+        screen_idle_minutes: None,
         enrolled: false,
         browser: None,
         device: None,
@@ -151,7 +152,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         desktop: None,
         mac: args.mac.then_some(desktop::mac::MacConfig {
             enabled: Some(true),
-            idle_minutes: None,
             simulators: None,
         }),
         agents_mac: args.mac.then_some(true),
@@ -278,7 +278,7 @@ async fn run_node(
         let sessions = node_sessions.clone();
         hosted.secrets_for(Arc::new(move |session| sessions.call_secrets(session)))
     };
-    let browser_config = config.browser.clone().unwrap_or_default();
+    let browser_config = config.browser_screen();
     let broker = match browser_config.enabled() && !agents_mac {
         true => {
             let broker = browser::Broker::start(
@@ -292,7 +292,7 @@ async fn run_node(
         }
         false => None,
     };
-    let device_config = config.device.clone().unwrap_or_default();
+    let device_config = config.device_screen();
     let devices = match device_config.enabled() && !agents_mac {
         true => Some(
             device::Devices::start(
@@ -305,7 +305,7 @@ async fn run_node(
         ),
         false => None,
     };
-    let ios_config = agents_mac::ios_config(config.ios.clone(), tool);
+    let ios_config = agents_mac::ios_config(Some(config.ios_screen()), tool);
     let ios = match ios_config.enabled() {
         true => Some(
             device::ios::Simulators::start(
@@ -327,7 +327,7 @@ async fn run_node(
             enabled: Some(false),
             ..Default::default()
         },
-        false => config.desktop.clone().unwrap_or_default(),
+        false => config.desktop_screen(),
     };
     let mac_config = config.mac.clone().unwrap_or_default();
     let desktops = match desktop_config.enabled() || mac_config.enabled() {

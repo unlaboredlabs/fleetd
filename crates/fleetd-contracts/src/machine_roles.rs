@@ -112,8 +112,8 @@ pub struct HostCheck {
     /// Absent from a node before it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on: Option<bool>,
-    /// Minutes without a command before a screen of this kind ends (node.json's `idleMinutes`). Absent from a node
-    /// before it.
+    /// Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a
+    /// node before it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_minutes: Option<IdleMinutes>,
     /// The command that clears what stands in the way, for a person to run in a terminal on the machine

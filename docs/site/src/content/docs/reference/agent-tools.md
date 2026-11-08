@@ -922,7 +922,7 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
+| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -1316,7 +1316,7 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `ios`, `linux_desktop`, `mac`. |
+| `kind` | string | no | `android` for an Android emulator, driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; `mac` for the agents' Mac's screen, one agent at a time, driven with the `desktop` tool and agent-desktop; absent for a browser. An iOS simulator is `mac sim start` on the agents' Mac. One of `browser`, `android`, `linux_desktop`, `mac`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
