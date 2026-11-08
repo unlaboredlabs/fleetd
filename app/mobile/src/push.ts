@@ -11,7 +11,7 @@ import { fromBase64, openSealed, toBase64, utf8, type KeyPair } from "./seal";
 import { keyOf, refOf, type Key } from "./store";
 import { deviceZone } from "./zone";
 
-export type Platform = "ios" | "android";
+type Platform = "ios" | "android";
 
 /** What the phone's OS and storage give the registration: real ones in notifications.ts and vault.ts, fakes in tests. */
 export interface PushDeps {
@@ -117,7 +117,7 @@ export const openPayload = (sealed: string, keys: KeyPair): PushPayload | null =
 };
 
 /** An opened payload's JSON, as this app reads it; null when it isn't version 1. */
-export const readPayload = (value: unknown): PushPayload | null => {
+const readPayload = (value: unknown): PushPayload | null => {
   if (typeof value !== "object" || value === null) return null;
   const json = value as Record<string, unknown>;
   if (json.v !== 1 || typeof json.title !== "string" || typeof json.body !== "string") return null;
@@ -218,7 +218,7 @@ export interface Shown {
   readonly payload: PushPayload;
 }
 
-export const routeOf = (p: PushPayload): Route | undefined => {
+const routeOf = (p: PushPayload): Route | undefined => {
   const key = p.machineId !== undefined && p.projectId !== undefined ? keyOf({ machineId: p.machineId, projectId: p.projectId }) : undefined;
   if (p.kind === "approval" && p.requestId !== undefined) return key === undefined ? { t: "approval", requestId: p.requestId } : { t: "approval", requestId: p.requestId, key };
   if (key !== undefined && p.sessionId !== undefined && /^B[0-9a-f]{32}$/u.test(p.sessionId)) return { t: "screen", key, sessionId: p.sessionId };
@@ -297,7 +297,7 @@ const routeFrom = (v: unknown): Route | undefined => {
 };
 
 /** The sealed `c` of a raw push, wherever the OS put it (APNs userInfo, FCM data). */
-export const sealedOf = (raw: unknown): string | undefined => {
+const sealedOf = (raw: unknown): string | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
   return str(r.c) ?? sealedOf(r.data);

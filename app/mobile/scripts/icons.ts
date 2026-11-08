@@ -5,7 +5,7 @@
 //   (the chevrons on transparent, over the system's dark) and tinted (grey levels on black, which iOS tints).
 // - android-icon-foreground.png, -background.png and -monochrome.png: the adaptive icon, its chevrons inside the
 //   middle two thirds that every launcher's mask keeps; notification-icon.png: the chevrons in white, for the status bar.
-// - splash-icon.png: the desktop's tile as it is, on the splash screen's plain ground; favicon.png for the web.
+// - splash-icon.png: the desktop's tile as it is, on the splash screen's plain ground.
 //
 //   npm run icons
 import { Resvg } from "@resvg/resvg-js";
@@ -67,7 +67,6 @@ const IOS = 1.12;
 write("icon.png", opaquePng(svg(chevrons("#6ea8fe", IOS), BG), 1024));
 write("icon-dark.png", render(svg(chevrons("#6ea8fe", IOS)), 1024).asPng());
 write("icon-tinted.png", opaquePng(svg(chevrons("#ffffff", IOS), "#000000"), 1024));
-write("favicon.png", opaquePng(svg(chevrons("#6ea8fe", IOS), BG), 48));
 // Android: inside the middle two thirds of the 108 dp layer.
 const ANDROID = 0.82;
 write("android-icon-foreground.png", render(svg(chevrons("#6ea8fe", ANDROID)), 1024).asPng());

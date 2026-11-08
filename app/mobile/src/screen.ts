@@ -89,13 +89,13 @@ export interface View {
 }
 
 /** Points per frame pixel at zoom 1: the whole frame fits the box. */
-export const fitScale = (box: Size, frame: Size): number => {
+const fitScale = (box: Size, frame: Size): number => {
   "worklet";
   return Math.min(box.width / Math.max(1, frame.width), box.height / Math.max(1, frame.height));
 };
 
 /** The farthest the frame's centre moves from the box's, each way, at `zoom`: it never leaves a gap it could fill. */
-export const reachOf = (box: Size, frame: Size, zoom: number): { x: number; y: number } => {
+const reachOf = (box: Size, frame: Size, zoom: number): { x: number; y: number } => {
   "worklet";
   const s = fitScale(box, frame) * zoom;
   return { x: Math.max(0, (frame.width * s - box.width) / 2), y: Math.max(0, (frame.height * s - box.height) / 2) };
@@ -130,7 +130,7 @@ export const pixelsPerPoint = (box: Size, frame: Size, v: View): number => 1 / M
 /** Moving this far (points) before the hold makes a touch a scroll. */
 export const SLOP = 8;
 /** Held this long without moving, a touch presses: what follows drags with the button down. */
-export const HOLD_MS = 350;
+const HOLD_MS = 350;
 /** A second tap this soon after the first lifted, and this near, is a double click. */
 export const DOUBLE_MS = 300;
 const DOUBLE_NEAR = 24;
@@ -236,7 +236,7 @@ export const ENTER: readonly BrowserInput[] = key("Enter");
 // ---- frames: the newest drawn at most so often, the last one always ----
 
 /** The most frames a second the phone draws: a page's screencast can send 25, more than a phone needs to follow it. */
-export const MAX_FPS = 12;
+const MAX_FPS = 12;
 
 /**
  * Paces the frames drawn: one at once, then at most one each `gapMs`, always the newest, and the last of a burst once

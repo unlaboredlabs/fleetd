@@ -37,7 +37,7 @@ export type Drafts = Readonly<Record<Key, Draft>>;
 
 export const emptyDraft: Draft = { text: "", files: [], reply: undefined };
 
-export const isEmpty = (d: Draft): boolean => d.text === "" && d.files.length === 0 && d.reply === undefined;
+const isEmpty = (d: Draft): boolean => d.text === "" && d.files.length === 0 && d.reply === undefined;
 
 /**
  * The composer's round button: Send once there's something to send and nothing still uploading; Stop while the lead
