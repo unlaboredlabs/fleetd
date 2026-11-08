@@ -567,9 +567,12 @@ pub fn join_line(hub: &str, code: &str, machine: &str, identity: Option<&str>) -
 /// What `fleetd pair` prints: with `qr`, the link a phone can open as a QR above the code, or why there is none.
 fn describe(minted: &Minted, qr: bool) -> String {
     let mut out = String::new();
-    if qr {
-        out += &phone_qr(minted);
-    }
+    let (shown, scan) = if qr {
+        phone_qr(minted)
+    } else {
+        (String::new(), false)
+    };
+    out += &shown;
     out += &format!(
         "Pairing code: {}  (single use, valid until {})\nGrants:       {} on every machine\nHub address:  {}\n",
         minted.code,
@@ -580,26 +583,35 @@ fn describe(minted: &Minted, qr: bool) -> String {
     if minted.urls.len() > 1 {
         out += &format!("  or:         {}\n", minted.urls[1..].join(", "));
     }
+    // Only a QR that was printed is one to scan (--no-qr, or a hub no phone reaches, prints none).
+    let phone = match scan {
+        true => "On a phone, scan the QR with the\nfleetd app. On another device, enter",
+        false => "On a phone or another device,\nenter",
+    };
     out += &format!(
-        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. On a phone, scan the QR with the\nfleetd app. On another device, enter the code and hub address above in the app, or open the link there.\n",
+        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. {phone} the code and hub address above in the app, or open the link there.\n",
         minted.deep_link
     );
     out
 }
 
 /// The QR of the pairing link for a phone, with the hub at an address a phone reaches; or, when the hub has none,
-/// why there is no QR and how to give it one.
-fn phone_qr(minted: &Minted) -> String {
+/// why there is no QR and how to give it one. True when it has the QR.
+fn phone_qr(minted: &Minted) -> (String, bool) {
     let Some(hub) = phone_url(minted.urls.iter().map(String::as_str)) else {
-        return format!(
+        let why = format!(
             "No QR for a phone: the hub is only at {}, which a phone can't reach. {}\n\n",
             minted.urls.join(", "),
             phone_loopback_fix()
         );
+        return (why, false);
     };
     match terminal_qr(&deep_link(hub, &minted.code)) {
-        Some(qr) => format!("Scan with the fleetd app on your phone:\n\n{qr}\n\n"),
-        None => String::new(),
+        Some(qr) => (
+            format!("Scan with the fleetd app on your phone:\n\n{qr}\n\n"),
+            true,
+        ),
+        None => (String::new(), false),
     }
 }
 
@@ -913,6 +925,13 @@ mod tests {
         );
         assert!(plain.starts_with("Pairing code: ABCD-EFGH"), "{plain}");
         assert!(!plain.contains('█'));
+        // Bug hunt: --no-qr still said to scan the QR it left out.
+        assert!(out.contains("On a phone, scan the QR"), "{out}");
+        assert!(!plain.contains("QR"), "{plain}");
+        assert!(
+            plain.contains("On a phone or another device,\nenter the code"),
+            "{plain}"
+        );
     }
 
     #[test]
@@ -926,6 +945,7 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("Pairing code: ABCD-EFGH"));
+        assert!(!out.contains("scan the QR"), "{out}");
     }
 
     #[test]
