@@ -27,9 +27,10 @@ use super::sessions::SessionService;
 use super::util::now_iso;
 use super::wire::{
     GatedResult, Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION,
-    ProtocolVersion, SecretResult, Text, Timestamp, close, decode_hub_frame, to_json,
+    ProtocolVersion, SecretResult, Text, Timestamp, close, decode_hub_frame, head_text, to_json,
 };
 use crate::link_deflate::{Deflater, Inflater, MIN_DEFLATE_BYTES};
+use crate::link_frames::{BadFrames, Undecodable};
 use fleetd_contracts::model::SleptSpan;
 use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
 use fleetd_contracts::sessions::{
@@ -353,9 +354,16 @@ type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<S
 type WsStream = futures_util::stream::SplitStream<Ws>;
 type WsSink = futures_util::stream::SplitSink<Ws, Message>;
 
+/// A hub message read off the link: its frame, or one that doesn't decode, which a live link refuses alone
+/// (crate::link_frames).
+enum Read {
+    Frame(HubToNode),
+    Undecodable { bytes: usize, bad: Undecodable },
+}
+
 /// One hub message as a frame: `Ok(None)` for what isn't one (a ping, a pong, a frame over its cap), `Err` for how
 /// the link ends. A Binary message is `link_deflate` data, which only a hub this node told it inflates sends.
-fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<HubToNode>, LinkEnd> {
+fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<Read>, LinkEnd> {
     let raw = match message {
         Message::Text(text) => text.to_string(),
         Message::Binary(bytes) => inflater
@@ -382,8 +390,16 @@ fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<Hu
         // Pings are answered by tungstenite; neither counts as a frame.
         Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => return Ok(None),
     };
-    let frame = decode_hub_frame(&raw)
-        .ok_or_else(|| LinkEnd::Lost("hub sent a frame that does not decode".into()))?;
+    let frame = match decode_hub_frame(&raw) {
+        Ok(frame) => frame,
+        Err(e) => {
+            let bad = Undecodable::of(&raw, &e);
+            return Ok(Some(Read::Undecodable {
+                bytes: raw.len(),
+                bad,
+            }));
+        }
+    };
     if !size_allowed(&frame, raw.len()) {
         // Never acted on: its sender's wait runs out, and the link stays up for the rest.
         tracing::warn!(
@@ -393,7 +409,82 @@ fn decode_message(message: Message, inflater: &mut Inflater) -> Result<Option<Hu
         );
         return Ok(None);
     }
-    Ok(Some(frame))
+    Ok(Some(Read::Frame(frame)))
+}
+
+/// A hub frame that doesn't decode on a live link: logged, and answered when it was a request the node can answer;
+/// the link's end once the minute's limit is past.
+fn refused(
+    bad_frames: &mut BadFrames,
+    now_ms: i64,
+    bytes: usize,
+    bad: &Undecodable,
+) -> Result<Option<NodeToHub>, LinkEnd> {
+    if !bad_frames.take(now_ms) {
+        tracing::warn!(tag = %bad.tag, bytes, error = %bad.error, "too many hub frames that do not decode; dropping the link");
+        return Err(LinkEnd::Lost(
+            "the hub sent too many frames that do not decode".into(),
+        ));
+    }
+    tracing::warn!(tag = %bad.tag, bytes, error = %bad.error, "a hub frame does not decode; refused it alone");
+    Ok(refusal(bad))
+}
+
+/// The error answer to a hub request the node couldn't read, so the hub's wait ends now. A `gated_resume` gets none:
+/// the node can't say whether its command ran, and the hub asks again on its own.
+fn refusal(bad: &Undecodable) -> Option<NodeToHub> {
+    use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+    use fleetd_contracts::node_link::{CmdResult, NodeActionResult};
+    let id = fleetd_contracts::prim::NonEmpty::unchecked(bad.id.as_deref()?);
+    let why = format!(
+        "the node could not read this {} (it and the hub may run different fleetd versions): {}",
+        bad.tag, bad.error
+    );
+    Some(match bad.tag.as_str() {
+        "cmd_check" => NodeToHub::CmdResult(CmdResult {
+            id,
+            exit_code: None,
+            output_tail: head_text(&why),
+            timed_out: false,
+        }),
+        "secret_deliver" => NodeToHub::SecretResult(SecretResult {
+            id,
+            fingerprint: None,
+            error: Some(head_text(&why)),
+        }),
+        "gated_run" => NodeToHub::GatedResult(GatedResult {
+            id,
+            exit_code: None,
+            output_tail: Text::unchecked(""),
+            timed_out: false,
+            error: Some(head_text(&why)),
+            unknown: None,
+        }),
+        "node_action" => NodeToHub::NodeActionResult(NodeActionResult {
+            id,
+            ok: false,
+            message: head_text(&why),
+            probe: None,
+            stage: None,
+            login_url: None,
+            steps: None,
+            hosts: None,
+        }),
+        "session_call" => NodeToHub::SessionReply(SessionReplyFrame {
+            id,
+            result: SessionResult::Err(SessionError {
+                code: SessionErrorCode::Invalid,
+                message: head_text(&why),
+                fix: None,
+            }),
+        }),
+        "mac_call" => NodeToHub::MacResult(fleetd_contracts::mac::MacResultFrame {
+            id,
+            sealed: None,
+            error: Some(McpToolError::new(ErrorCode::Invalid, why)),
+        }),
+        _ => return None,
+    })
 }
 
 fn read_end(
@@ -421,8 +512,16 @@ async fn next_frame(
                 timeout.as_secs()
             )));
         };
-        if let Some(frame) = decode_message(read_end(next)?, inflater)? {
-            return Ok(frame);
+        match decode_message(read_end(next)?, inflater)? {
+            Some(Read::Frame(frame)) => return Ok(frame),
+            // The handshake has no room for a frame it can't read.
+            Some(Read::Undecodable { bad, .. }) => {
+                return Err(LinkEnd::Lost(format!(
+                    "hub sent a {} frame that does not decode: {}",
+                    bad.tag, bad.error
+                )));
+            }
+            None => {}
         }
     }
 }
@@ -443,7 +542,7 @@ async fn next_live_frame(
     quiet: Quiet,
     pinged: &mut Option<tokio::time::Instant>,
     ping: &dyn Fn(),
-) -> Result<HubToNode, LinkEnd> {
+) -> Result<Read, LinkEnd> {
     loop {
         let last = heard.at();
         let now = tokio::time::Instant::now();
@@ -464,8 +563,8 @@ async fn next_live_frame(
         };
         tokio::select! {
             next = stream.next() => {
-                if let Some(frame) = decode_message(read_end(next)?, inflater)? {
-                    return Ok(frame);
+                if let Some(read) = decode_message(read_end(next)?, inflater)? {
+                    return Ok(read);
                 }
             }
             () = tokio::time::sleep_until(wake) => {}
@@ -756,11 +855,22 @@ async fn run_link_once(
     let ping = move || {
         let _ = pings.send(());
     };
+    let linked_at = tokio::time::Instant::now();
+    let mut bad_frames = BadFrames::default();
     loop {
         while tasks.try_join_next().is_some() {}
         let frame = tokio::select! {
             next = next_live_frame(&mut stream, &mut inflater, &heard, quiet, &mut pinged, &ping) => match next {
-                Ok(frame) => frame,
+                Ok(Read::Frame(frame)) => frame,
+                Ok(Read::Undecodable { bytes, bad }) => {
+                    let now_ms = i64::try_from(linked_at.elapsed().as_millis()).unwrap_or(i64::MAX);
+                    match refused(&mut bad_frames, now_ms, bytes, &bad) {
+                        Ok(Some(answer)) => send(answer),
+                        Ok(None) => {}
+                        Err(end) => return end,
+                    }
+                    continue;
+                }
                 Err(end) => return end,
             },
             _ = woke.changed() => return LinkEnd::Woke,
@@ -1264,17 +1374,113 @@ mod tests {
         let binary = Message::Binary(deflater.deflate(ACK).into());
         assert!(matches!(
             decode_message(binary, &mut inflater),
-            Ok(Some(HubToNode::SpansAck(_)))
+            Ok(Some(Read::Frame(HubToNode::SpansAck(_))))
         ));
         assert!(matches!(
             decode_message(Message::Text(ACK.into()), &mut inflater),
-            Ok(Some(HubToNode::SpansAck(_)))
+            Ok(Some(Read::Frame(HubToNode::SpansAck(_))))
         ));
         let garbage = Message::Binary(vec![0xff; 16].into());
         assert!(matches!(
             decode_message(garbage, &mut Inflater::default()),
             Err(LinkEnd::Lost(_))
         ));
+    }
+
+    /// One hub frame that doesn't decode (a newer hub's request, a field out of range) is refused alone on a live
+    /// link: the frames around it still read, and a request among them is answered with an error so the hub's wait
+    /// ends. Only a flood of them within a minute drops the link.
+    #[tokio::test]
+    async fn an_undecodable_hub_frame_is_refused_alone_and_the_link_stays_up() {
+        let (ws, heard, mut hub) = linked().await;
+        let (_sink, mut stream) = ws.split();
+        // An argv must hold at least one word.
+        let bad = serde_json::json!({ "t": "cmd_check", "id": "c1", "cwd": "/w", "argv": [], "timeoutSec": 5 })
+            .to_string();
+        for frame in [ACK.to_owned(), bad.clone(), ACK.to_owned()] {
+            hub.send(Message::Text(frame.into())).await.unwrap();
+        }
+        let mut bad_frames = BadFrames::default();
+        let mut read = Vec::new();
+        for _ in 0..3 {
+            match next_live_frame(
+                &mut stream,
+                &mut Inflater::default(),
+                &heard,
+                QUICK,
+                &mut None,
+                &|| {},
+            )
+            .await
+            {
+                Ok(Read::Frame(frame)) => read.push(tag(&frame).to_owned()),
+                Ok(Read::Undecodable {
+                    bytes,
+                    bad: refused_frame,
+                }) => {
+                    assert_eq!(
+                        (bytes, refused_frame.tag.as_str()),
+                        (bad.len(), "cmd_check")
+                    );
+                    let Ok(Some(NodeToHub::CmdResult(answer))) =
+                        refused(&mut bad_frames, 0, bytes, &refused_frame)
+                    else {
+                        panic!("the cmd_check went unanswered")
+                    };
+                    assert_eq!(answer.id.as_str(), "c1");
+                    assert_eq!(answer.exit_code, None);
+                    assert!(
+                        answer
+                            .output_tail
+                            .as_str()
+                            .contains("could not read this cmd_check")
+                    );
+                    read.push("refused".into());
+                }
+                Err(_) => panic!("the link ended on one bad frame"),
+            }
+        }
+        assert_eq!(read, ["spans_ack", "refused", "spans_ack"]);
+
+        // A frame that names no request is refused without an answer; past the minute's limit, the link ends.
+        let e = decode_hub_frame(r#"{"t":"spans_ack"}"#).unwrap_err();
+        let unasked = Undecodable::of(r#"{"t":"spans_ack"}"#, &e);
+        for _ in 1..crate::link_frames::BAD_FRAMES_PER_MINUTE {
+            assert!(matches!(
+                refused(&mut bad_frames, 1_000, 17, &unasked),
+                Ok(None)
+            ));
+        }
+        assert!(matches!(
+            refused(&mut bad_frames, 2_000, 17, &unasked),
+            Err(LinkEnd::Lost(_))
+        ));
+    }
+
+    /// Each hub request the node can answer gets its own reply kind back, which the hub's wait for it takes.
+    #[test]
+    fn every_request_the_node_cannot_read_is_answered_in_its_reply_kind() {
+        let e = decode_hub_frame("{}").unwrap_err();
+        for (asked, reply) in [
+            ("cmd_check", "cmd_result"),
+            ("secret_deliver", "secret_result"),
+            ("gated_run", "gated_result"),
+            ("node_action", "node_action_result"),
+            ("session_call", "session_reply"),
+            ("mac_call", "mac_result"),
+        ] {
+            let text = serde_json::json!({ "t": asked, "id": "r1" }).to_string();
+            let answer = refusal(&Undecodable::of(&text, &e)).expect(asked);
+            let json: serde_json::Value = serde_json::from_str(&to_json(&answer)).unwrap();
+            assert_eq!(
+                (json["t"].as_str(), json["id"].as_str()),
+                (Some(reply), Some("r1"))
+            );
+            // It decodes as the hub reads it.
+            serde_json::from_value::<NodeToHub>(json).expect(reply);
+        }
+        let text = serde_json::json!({ "t": "gated_resume", "id": "r1" }).to_string();
+        assert!(refusal(&Undecodable::of(&text, &e)).is_none());
     }
 
     const QUICK: Quiet = Quiet {
@@ -1315,7 +1521,7 @@ mod tests {
             },
         )
         .await;
-        assert!(matches!(frame, Ok(HubToNode::SpansAck(_))));
+        assert!(matches!(frame, Ok(Read::Frame(HubToNode::SpansAck(_)))));
         assert!(started.elapsed() > Duration::from_millis(1500));
         assert_eq!(pings.load(Ordering::Relaxed), 0);
     }

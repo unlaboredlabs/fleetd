@@ -6,6 +6,7 @@ pub mod fingerprint;
 pub mod home;
 pub mod hub;
 pub mod link_deflate;
+pub mod link_frames;
 pub mod node;
 pub mod push_relay;
 pub mod stages;
