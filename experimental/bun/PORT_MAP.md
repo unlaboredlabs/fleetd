@@ -136,8 +136,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `navi_archive` → `src/hub/navi` (operate) <!-- tool:`navi_archive` -->
 - [ ] `project_archive` → `src/hub/navi` (operate) <!-- tool:`project_archive` -->
 - [ ] `project_avatar_set` → `src/hub/projects` (operate) <!-- tool:`project_avatar_set` -->
-- [ ] `project_avatar_get` → `src/hub/projects` (read) <!-- tool:`project_avatar_get` -->
-- [ ] `project_icon_set` → `src/hub/projects` (operate) <!-- tool:`project_icon_set` -->
+- [x] `project_avatar_get` → `src/hub/projects` (read) <!-- tool:`project_avatar_get` -->
+- [x] `project_icon_set` → `src/hub/projects` (operate) <!-- tool:`project_icon_set` -->
 - [ ] `navi_sites` → `src/hub/navi` (read) <!-- tool:`navi_sites` -->
 - [ ] `project_sites` → `src/hub/navi` (read) <!-- tool:`project_sites` -->
 - [ ] `navi_site_revoke` → `src/hub/navi` (operate) <!-- tool:`navi_site_revoke` -->
@@ -160,17 +160,17 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `wake_cancel` → `src/hub/wakes` (operate) <!-- tool:`wake_cancel` -->
 - [ ] `lead_start` → `src/hub/leads` (operate) <!-- tool:`lead_start` -->
 - [ ] `project_set` → `src/hub/leads` (operate) <!-- tool:`project_set` -->
-- [ ] `profiles_list` → `src/hub/projects` (read) <!-- tool:`profiles_list` -->
-- [ ] `profile_create` → `src/hub/projects` (admin) <!-- tool:`profile_create` -->
-- [ ] `profile_update` → `src/hub/projects` (admin) <!-- tool:`profile_update` -->
-- [ ] `profile_delete` → `src/hub/projects` (admin) <!-- tool:`profile_delete` -->
+- [x] `profiles_list` → `src/hub/projects` (read) <!-- tool:`profiles_list` -->
+- [x] `profile_create` → `src/hub/projects` (admin) <!-- tool:`profile_create` -->
+- [x] `profile_update` → `src/hub/projects` (admin) <!-- tool:`profile_update` -->
+- [x] `profile_delete` → `src/hub/projects` (admin) <!-- tool:`profile_delete` -->
 - [ ] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
 - [x] `decisions_search` → `src/hub/ledger` (read) <!-- tool:`decisions_search` -->
 - [x] `decisions_record` → `src/hub/ledger` (operate) <!-- tool:`decisions_record` -->
 - [x] `decisions_list` → `src/hub/ledger` (read) <!-- tool:`decisions_list` -->
 - [x] `decisions_overturn` → `src/hub/ledger` (operate) <!-- tool:`decisions_overturn` -->
-- [ ] `tasks_list` → `src/hub/tasks` (read) <!-- tool:`tasks_list` -->
-- [ ] `task_get` → `src/hub/tasks` (read) <!-- tool:`task_get` -->
+- [x] `tasks_list` → `src/hub/tasks` (read) <!-- tool:`tasks_list` -->
+- [x] `task_get` → `src/hub/tasks` (read) <!-- tool:`task_get` -->
 - [ ] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
 - [ ] `usage_status` → `src/hub/usage` (read) <!-- tool:`usage_status` -->
 - [ ] `usage_resume` → `src/hub/usage` (operate) <!-- tool:`usage_resume` -->
