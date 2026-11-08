@@ -14,7 +14,7 @@ import { landing, pkce } from "./loopback";
 /** How long the browser has to come back: signing in to GitHub and reading its page. */
 export const WAIT_MS = 10 * 60_000;
 
-/** The path the App's manifest names for people's sign-in (github_app.rs GITHUB_CALLBACK_PATH). */
+/** The path the App's manifest names for people's sign-in (github_app.rs GithubLoopback). */
 export const CALLBACK_PATH = "/github/callback";
 
 type Call = <T extends "github_app_get" | "github_connect">(tool: T, input: ToolInput<T>) => Promise<CallOutcome>;

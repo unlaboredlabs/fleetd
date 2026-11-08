@@ -227,7 +227,6 @@ impl AgentsMac {
             }
             loop {
                 let probe = checks::Live {
-                    home: home.clone(),
                     awake: awake.as_ref().map(|_| ()).map_err(Clone::clone),
                     tools: tools.state(),
                 };

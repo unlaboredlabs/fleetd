@@ -22,9 +22,6 @@ pub const FLEETD_SERVER: &str = "fleetd";
 /// Servers one scope (the hub, or a project) may have.
 pub const MCP_SERVERS_MAX: usize = 50;
 
-/// Values (env or headers) one server may have.
-pub const MCP_VALUES_MAX: usize = 50;
-
 brand!(
     /// A server's name, as claude shows its tools (`mcp__<name>__<tool>`): letters, digits, `_` and `-`, at most 64.
     McpServerName,

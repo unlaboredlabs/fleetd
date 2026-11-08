@@ -89,11 +89,6 @@ impl Guide {
     pub fn denied_tools(&self) -> &'static [&'static str] {
         ALWAYS_DISALLOWED
     }
-
-    /// The model and effort a profile runs on when no setting chose them ([`Runner::profile`]).
-    pub fn profile(&self, p: &ProfileName) -> ProfileModel {
-        profile(p)
-    }
 }
 
 #[cfg(test)]
