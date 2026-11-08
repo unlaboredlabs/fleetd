@@ -1,5 +1,6 @@
 // What `fleetd init` finds on its own (crates/fleetd/src/cli/setup/detect.rs): Tailscale, the LAN address, SSH hosts,
 // local git repos, and the install command for a missing tool. Every probe here only reads.
+import { createSocket } from "node:dgram";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Peer } from "./machine.ts";
@@ -172,9 +173,24 @@ export function noreplyIdentity(ghUserJson: string): string | undefined {
   }
 }
 
-/** The private IPv4 address of the interface the default route leaves by. */
-export function lanIpv4(): string | undefined {
-  const out = Bun.spawnSync(["ip", "-o", "route", "get", "192.0.2.1"], { stderr: "ignore" }).stdout.toString();
-  const ip = /\bsrc (\d+\.\d+\.\d+\.\d+)/.exec(out)?.[1];
-  return ip !== undefined && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) ? ip : undefined;
+/** The private IPv4 address of the interface the default route leaves by: a UDP socket "connected" to a documentation
+ * address (nothing is sent) has it as its local address. Undefined when there is none, or no route. */
+export async function lanIpv4(): Promise<string | undefined> {
+  let socket: ReturnType<typeof createSocket> | undefined;
+  try {
+    socket = createSocket("udp4");
+    const s = socket;
+    await new Promise<void>((resolve, reject) => {
+      s.once("error", reject);
+      s.connect(9, "192.0.2.1", () => resolve());
+    });
+    const ip = s.address().address;
+    return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) ? ip : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    try {
+      socket?.close();
+    } catch {}
+  }
 }

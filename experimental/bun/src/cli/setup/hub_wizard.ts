@@ -141,7 +141,11 @@ export async function offerApp(ui: Ui, list: Checklist): Promise<number | undefi
       .replace(/%20/g, "+");
   const link = `fleetd://setup?v=1&cli=${enc(cli)}&home=${enc(resolveHome())}`;
   const opener = process.platform === "darwin" ? "open" : "xdg-open";
-  if (Bun.spawnSync([opener, link], { stdout: "ignore", stderr: "ignore" }).exitCode === 0) {
+  let opened = false;
+  try {
+    opened = Bun.spawnSync([opener, link], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  } catch {}
+  if (opened) {
     list.outro([], "Opened the fleetd app; it takes it from here.");
     return 0;
   }
@@ -291,8 +295,9 @@ async function commitIdentity(opts: InitOptions, ui: Ui, list: Checklist, ghOk: 
   if (identity === undefined) {
     asked = ui.interactive;
     const fromGh = ghOk ? noreplyIdentity((await runLocal("gh", ["api", "user"])).stdout) : undefined;
-    const git = (key: string) => Bun.spawnSync(["git", "config", "--global", key], { stderr: "ignore" }).stdout.toString().trim();
-    const [name, email] = [git("user.name"), git("user.email")];
+    // No git on this machine yet is no identity from it.
+    const git = async (key: string) => (await runLocal("git", ["config", "--global", key])).stdout.trim();
+    const [name, email] = [await git("user.name"), await git("user.email")];
     const fromGit = name && email ? `${name} <${email}>` : undefined;
     const text = await ui.input(list, "Commit author for your agents", fromGh ?? fromGit ?? "", "Name <id+user@users.noreply.github.com>", (s) =>
       parseGitIdentity(s) ? undefined : "like: Name <id+user@users.noreply.github.com>",
@@ -612,7 +617,7 @@ function finish(list: Checklist, summary: Summary, paired: boolean) {
 /** The hub machine's setup, from where it listens to the summary. */
 export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Promise<number> {
   const net = await tailnet();
-  const [listen, url] = await reachability(opts, ui, list, net, lanIpv4());
+  const [listen, url] = await reachability(opts, ui, list, net, await lanIpv4());
   const summary: Summary = { hub: url, workers: [] };
   list.sectionHeader("Logins");
   const claudeHere = which("claude") !== undefined;
