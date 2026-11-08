@@ -9,7 +9,6 @@ use std::time::Duration;
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use fleetd_contracts::events::Attention;
 use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadResultFrame};
@@ -669,27 +668,15 @@ impl NodeLinkServer {
         let at = self.now_iso();
         let seconds = self.silence_timeout.as_secs();
         self.write_status(machine_id, &at, MachineStatus::Offline, None);
-        // It needs the human only while runs were going there: nobody is watching them now.
-        let running = match self.deps.store.threads_running() {
-            Ok(threads) => threads.iter().any(|t| &t.machine_id == machine_id),
-            Err(e) => {
-                tracing::error!(error = %e, "node link: running threads read failed");
-                false
-            }
-        };
-        let mut offline = event(
+        // No attention: a node back within minutes (a restart, an update) needs nobody. One still away after
+        // hub/outage's 10 minutes pages the admins then, once.
+        self.append(event(
             &at,
             "machine.offline",
             machine_id,
             format!("{machine_id} went offline: no word from its node for {seconds} s"),
             None,
-        );
-        if let Some(e) = offline.as_mut()
-            && running
-        {
-            e.attention = Some(Attention::Loud);
-        }
-        self.append(offline);
+        ));
         // Only the silent link's sessions: a node that linked again while this ran keeps its new link's. Detaching
         // the machine's left that link up with no sessions on it, so every task queued as offline until a restart.
         if let Some((id, tx)) = live {

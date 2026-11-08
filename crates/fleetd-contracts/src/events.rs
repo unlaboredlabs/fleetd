@@ -47,6 +47,13 @@ pub enum HubEventType {
     /// still linked at its removal may bring a second one.
     #[serde(rename = "machine.removed")]
     MachineRemoved,
+    /// The machine has been offline 10 minutes with nothing to explain it (an update restarting its node, a cloud
+    /// machine the hub put to sleep): the hub's admins are paged, once per outage. `data.offlineMs`.
+    #[serde(rename = "machine.down")]
+    MachineDown,
+    /// A machine paged as down (machine.down) linked again: the admins are told, once. `data.offlineMs`.
+    #[serde(rename = "machine.back")]
+    MachineBack,
     /// The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.
     #[serde(rename = "thread.orphaned")]
     ThreadOrphaned,
@@ -319,6 +326,8 @@ impl HubEventType {
             Self::MachineGuard => "machine.guard",
             Self::MachineRecoveryPaused => "machine.recovery_paused",
             Self::MachineRemoved => "machine.removed",
+            Self::MachineDown => "machine.down",
+            Self::MachineBack => "machine.back",
             Self::ThreadOrphaned => "thread.orphaned",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",

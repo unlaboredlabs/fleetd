@@ -4,7 +4,8 @@ description: Phone notifications work out of the box through push.fleetd.sh, end
 ---
 
 The fleetd phone app shows full notifications: a lead's message, an approval waiting for you, an
-order that landed or stopped. They are end-to-end encrypted. The hub seals each one to your phone's own key, and only
+order that landed or stopped, and, for the hub's owners and admins, a [machine down](/docs/machines#down) for 10
+minutes. They are end-to-end encrypted. The hub seals each one to your phone's own key, and only
 the phone can open it.
 
 Apple and Google deliver a push only for the app's publisher, so a hub can't reach your phone directly. It goes
