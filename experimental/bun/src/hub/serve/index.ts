@@ -111,13 +111,14 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
-  // One task's failure never takes the hub down, as a tokio task's panic doesn't: it is logged and the hub carries on.
-  process.on("unhandledRejection", (reason) => console.error("fleetd hub: a task failed:", reason));
-  process.on("uncaughtException", (error) => console.error("fleetd hub: a task failed:", error));
   const { hub, tools } = build(home, options.listen);
   const server = serve(hub, tools);
   console.error(`fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
   startAll(hub);
+  // From here on one task's failure never takes the hub down, as a tokio task's panic doesn't: it is logged and the
+  // hub carries on. A failure to start (above) still ends it.
+  process.on("unhandledRejection", (reason) => console.error("fleetd hub: a task failed:", reason));
+  process.on("uncaughtException", (error) => console.error("fleetd hub: a task failed:", error));
   // The read worker is a separate entry point of the compiled binary: a build that left it out says so at start,
   // not at the first long read.
   hub.db.read("SELECT 1").catch((error: Error) => console.error(`fleetd hub: ${error.message}`));
