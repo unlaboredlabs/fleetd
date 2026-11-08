@@ -13,6 +13,7 @@ pub mod main_ci;
 pub mod next;
 pub mod records;
 pub mod regen;
+pub mod repeats;
 pub mod repo_checks;
 pub mod reverts;
 pub mod rules;

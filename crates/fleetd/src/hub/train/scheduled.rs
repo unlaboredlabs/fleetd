@@ -7,6 +7,7 @@
 //! ones. Same for every repo: nothing here knows a workflow by name.
 use super::contract::ProjectRef;
 use super::github::WorkflowRun;
+use super::repeats::warn_hourly;
 use super::service::{Train, lock, short};
 use crate::hub::store::parse_ms;
 
@@ -141,7 +142,7 @@ impl Train {
             let jobs = match self.github.run_jobs(repo, run.id).await {
                 Ok(jobs) => jobs,
                 Err(e) => {
-                    tracing::warn!(repo, run = run.id, error = %e.message, "train: a scheduled run's jobs not read");
+                    warn_hourly!(self, [repo, run.id], e.message; repo, run = run.id, error = %e.message, "train: a scheduled run's jobs not read");
                     continue;
                 }
             };
@@ -211,7 +212,7 @@ impl Train {
                 true
             }
             Err(e) => {
-                tracing::warn!(repo, run = run.id, error = %e, "train: fix order not opened; tried again next pass");
+                warn_hourly!(self, [repo, run.id], e; repo, run = run.id, error = %e, "train: fix order not opened; tried again next pass");
                 false
             }
         }
