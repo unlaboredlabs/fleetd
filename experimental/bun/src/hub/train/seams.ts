@@ -1,8 +1,8 @@
-// What the train, reviews, PRs and the GitHub App take from other areas, in one place: the shared seams (D346) by
-// their area names, each with a stand-in until its owner's module serves it, and reads of other areas' tables with the
-// Rust hub's own SQL (people, workstreams, tasks, Navis, repos, machines, order variables). When an owner's module
-// lands, its area replaces the stand-in here by name: `hub.area(name, …)` keeps whichever was made first, and each
-// stand-in has the owner's shape.
+// What the train, reviews, PRs and the GitHub App take from other areas, in one place: the shared seams (D346), each
+// re-exported from its owner's module once it lands (a stand-in under the area's name until then), and reads of other
+// areas' tables with the Rust hub's own SQL (people, workstreams, tasks, Navis, repos, machines, order variables).
+// When an owner lands, drop its stand-in: `hub.area(name, …)` keeps whichever was made first, so a stand-in made before
+// the owner's area hides it, and test/areas.test.ts fails on an area name with two makers.
 import type { Database } from "bun:sqlite";
 import type {
   HubEvent,
