@@ -1,6 +1,6 @@
-// A chat's avatar, a circle as iOS draws a contact's: its picture once a person gave it one (project_avatar_set), else
-// its built-in icon (a glass being on a field of a color: the hub's pick or one it derived), else, from an older hub,
-// its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a person's. A
+// A chat's or a person's avatar, a circle as iOS draws a contact's: its picture once one was given (project_avatar_set,
+// person_avatar_set), else its built-in icon (a glass being on a field of a color: the hub's pick or one it derived),
+// else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a person's. A
 // picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
 // the next launch; one not seen before fades in over the icon.
 import { File, Paths } from "expo-file-system";
@@ -20,13 +20,10 @@ const lighter = (hex: string, amount: number): string => {
   return `rgb(${String(mix((n >> 16) & 255))},${String(mix((n >> 8) & 255))},${String(mix(n & 255))})`;
 };
 
-/** Whose picture: a project's summary has these. */
-export interface Pictured {
-  readonly machineId: string;
-  readonly projectId: string;
-  readonly avatar?: string | undefined;
-  readonly icon?: ProjectIcon | undefined;
-}
+/** Whose picture: a project's summary has these, or a person (hub_info's me). */
+export type Pictured =
+  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly icon?: ProjectIcon | undefined }
+  | { readonly personId: string; readonly avatar?: string | undefined; readonly icon?: undefined };
 
 /** The image of `icon` for a circle `size` points across (Metro picks the screen's scale); undefined for one this build doesn't have. */
 export const iconSource = (icon: ProjectIcon | undefined, size: number): number | undefined => {
@@ -69,25 +66,50 @@ const keep = (avatar: string, dataB64: string): string => {
 export const usePicture = (of: Pictured | undefined): { uri: string | undefined; fresh: boolean } => {
   const session = useContext(SessionContext);
   const avatar = of?.avatar;
-  const machineId = of?.machineId;
-  const projectId = of?.projectId;
+  const personId = of !== undefined && "personId" in of ? of.personId : undefined;
+  const machineId = of !== undefined && "machineId" in of ? of.machineId : undefined;
+  const projectId = of !== undefined && "projectId" in of ? of.projectId : undefined;
   const [read, setRead] = useState<{ avatar: string; uri: string } | undefined>(undefined);
   const cached = avatar === undefined ? undefined : kept(avatar);
   useEffect(() => {
-    if (avatar === undefined || cached !== undefined || session === null || machineId === undefined || projectId === undefined) return;
+    if (avatar === undefined || cached !== undefined || session === null) return;
+    const whose = personId !== undefined ? { personId } : machineId !== undefined && projectId !== undefined ? { machineId, projectId } : undefined;
+    if (whose === undefined) return;
     let live = true;
-    void session.picture({ machineId, projectId }, avatar).then((b64) => {
+    void session.picture(whose, avatar).then((b64) => {
       if (b64 !== null && live) setRead({ avatar, uri: keep(avatar, b64) });
     });
     return () => {
       live = false;
     };
-  }, [session, machineId, projectId, avatar, cached]);
+  }, [session, personId, machineId, projectId, avatar, cached]);
   if (cached !== undefined) return { uri: cached, fresh: false };
   return { uri: read !== undefined && read.avatar === avatar ? read.uri : undefined, fresh: true };
 };
 
-export function Avatar({ name, size = 52, picture, icon }: { name: string; size?: number; picture?: Pictured | undefined; icon?: ProjectIcon | undefined }) {
+/**
+ * A person's letters, quieter than a chat's: a soft grey dome lit from above with dark letters, or in dark a deep grey
+ * with light ones, and a hairline rim so it holds its edge on a card of a near color.
+ */
+const NEUTRAL = {
+  light: { top: "#F4F4F7", bottom: "#D9D9DF", ink: "#3C3C43", rim: "rgba(0,0,0,0.07)" },
+  dark: { top: "#5C5C62", bottom: "#38383C", ink: "#F2F2F7", rim: "rgba(255,255,255,0.09)" },
+} as const;
+
+export function Avatar({
+  name,
+  size = 52,
+  picture,
+  icon,
+  person = false,
+}: {
+  name: string;
+  size?: number;
+  picture?: Pictured | undefined;
+  icon?: ProjectIcon | undefined;
+  /** A person's: neutral letters (NEUTRAL) rather than a color from their name. */
+  person?: boolean;
+}) {
   const t = useTheme();
   const tint = t.tints[tintIndex(name, t.tints.length)] ?? t.accent;
   const text = initials(name);
@@ -103,12 +125,14 @@ export function Avatar({ name, size = 52, picture, icon }: { name: string; size?
       </View>
     );
   }
+  const neutral = person ? NEUTRAL[t.dark ? "dark" : "light"] : undefined;
   return (
-    <View accessible={false} style={[styles.base, box, { backgroundColor: tint }]}>
-      <LinearGradient colors={[lighter(tint, 0.32), tint]} style={StyleSheet.absoluteFill} />
+    <View accessible={false} style={[styles.base, box, { backgroundColor: neutral?.bottom ?? tint }]}>
+      <LinearGradient colors={neutral === undefined ? [lighter(tint, 0.32), tint] : [neutral.top, neutral.bottom]} style={StyleSheet.absoluteFill} />
+      {neutral === undefined ? null : <View pointerEvents="none" style={[StyleSheet.absoluteFill, box, { borderWidth: StyleSheet.hairlineWidth, borderColor: neutral.rim }]} />}
       <Text
         allowFontScaling={false}
-        style={{ color: "#FFFFFF", fontSize: size * (text.length > 1 ? 0.36 : 0.42), fontWeight: "600", letterSpacing: 0.2 }}
+        style={{ color: neutral?.ink ?? "#FFFFFF", fontSize: size * (text.length > 1 ? 0.36 : 0.42), fontWeight: neutral === undefined ? "600" : "500", letterSpacing: 0.2 }}
       >
         {text}
       </Text>

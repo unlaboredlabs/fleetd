@@ -1,8 +1,8 @@
-// A picked or taken photo moved and scaled in a circle before it becomes a project's picture, as iOS's own
-// Move and Scale: black, the circle clear, the rest dimmed; pinch to zoom about the fingers, drag to move, and it
-// springs back so the circle stays covered (the desktop's shared/crop.ts). Cancel goes back; Choose sends the photo as
-// it was picked with the square under the circle (setPicture), and the hub keeps that square alone, small and without
-// its metadata.
+// A picked or taken photo moved and scaled in a circle before it becomes a project's picture, or with no project the
+// person's own (Settings), as iOS's own Move and Scale: black, the circle clear, the rest dimmed; pinch to zoom about
+// the fingers, drag to move, and it springs back so the circle stays covered (the desktop's shared/crop.ts). Cancel
+// goes back; Choose sends the photo as it was picked with the square under the circle (setPicture, setMyPicture), and
+// the hub keeps that square alone, small and without its metadata.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { File } from "expo-file-system";
@@ -15,7 +15,7 @@ import { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../
 import { useHub, type RootParams } from "../../hubContext";
 import { space, type } from "../../theme";
 import { haptics } from "../../ui/haptics";
-import { setPicture } from "./api";
+import { setMyPicture, setPicture } from "./api";
 import { errorWords } from "./parts";
 
 const SETTLE = { damping: 26, stiffness: 260, mass: 1 } as const;
@@ -25,7 +25,7 @@ const OVERZOOM = 1.25;
 export function Photo({ navigation, route }: NativeStackScreenProps<RootParams, "Photo">) {
   const { key, uri, width, height, mime } = route.params;
   const { session, state } = useHub();
-  const project = state.projects?.[key];
+  const project = key === undefined ? undefined : state.projects?.[key];
   const win = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
@@ -75,11 +75,12 @@ export function Photo({ navigation, route }: NativeStackScreenProps<RootParams, 
   const moved = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { translateY: y.value }, { scale: zoom.value }] }));
 
   const choose = async () => {
-    if (project === undefined) return navigation.goBack();
+    if (key !== undefined && project === undefined) return navigation.goBack();
     setSaving(true);
     try {
       const bytes = await new File(uri).bytes();
-      const r = await setPicture(session, project, bytes, mime, cropOf(picture, circle, zoom.value, x.value, y.value));
+      const crop = cropOf(picture, circle, zoom.value, x.value, y.value);
+      const r = project === undefined ? await setMyPicture(session, bytes, mime, crop) : await setPicture(session, project, bytes, mime, crop);
       if (!r.ok) {
         setSaving(false);
         haptics.warning();

@@ -282,13 +282,14 @@ export class Session {
   readonly #pictures = new Map<string, Promise<string | null>>();
 
   /**
-   * A project's picture by its id (its summary's `avatar`), base64 JPEG, read once (project_avatar_get) and
-   * kept while the app runs; null when the hub can't give it.
+   * A project's or a person's picture by its id (its summary's or person's `avatar`), base64 JPEG, read once
+   * (project_avatar_get, person_avatar_get) and kept while the app runs; null when the hub can't give it.
    */
-  picture(ref: ProjectRef, avatar: string): Promise<string | null> {
+  picture(of: ProjectRef | { readonly personId: string }, avatar: string): Promise<string | null> {
     const known = this.#pictures.get(avatar);
     if (known !== undefined) return known;
-    const read = this.#client.call("project_avatar_get", { machineId: ref.machineId, projectId: ref.projectId }).then((r) => (r.ok && r.output.avatar === avatar ? r.output.dataB64 : null));
+    const call = "personId" in of ? this.#client.call("person_avatar_get", { personId: of.personId }) : this.#client.call("project_avatar_get", { machineId: of.machineId, projectId: of.projectId });
+    const read = call.then((r) => (r.ok && r.output.avatar === avatar ? r.output.dataB64 : null));
     this.#pictures.set(avatar, read);
     void read.then((out) => {
       if (out === null) this.#pictures.delete(avatar);
@@ -426,7 +427,8 @@ export class Session {
   async #readInfo(): Promise<void> {
     const r = await this.#client.call("hub_info", {});
     if (!r.ok) return;
-    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: r.output.me?.personId, meName: r.output.me?.name });
+    const me = r.output.me;
+    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: me?.personId, meName: me?.name, meAvatar: me?.avatar, meRole: me?.role });
     if (r.output.admin === true) void loadRun(this.updates);
   }
 
@@ -490,6 +492,7 @@ export class Session {
       if (effects.requests) void this.#readRequests();
       if (effects.snapshot) this.#client.resync();
       if (effects.pins) void this.#pins.read();
+      if (effects.info) void this.#readInfo();
       if (effects.screens !== undefined && (effects.screens === this.#open || this.#state.screens[effects.screens] !== undefined)) void this.readScreens(effects.screens);
     }
     const open = this.#open === null ? undefined : this.#state.chats[this.#open];

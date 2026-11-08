@@ -24,6 +24,7 @@ import {
   type FleetStatus,
   type HubError,
   type HubEvent,
+  type HubRole,
   type HubState,
   type HumanRequest,
   type ProjectChatState,
@@ -59,6 +60,10 @@ export interface State {
   readonly me: string | undefined;
   /** That person's name, which the chats list's avatar shows the initial of; undefined as `me` is. */
   readonly meName: string | undefined;
+  /** Their picture's id (person_avatar_get), shown in place of that initial; undefined while they have none. */
+  readonly meAvatar: string | undefined;
+  /** Their role on the hub, which Settings says under their name; undefined as `me` is. */
+  readonly meRole: HubRole | undefined;
   readonly chats: Readonly<Record<Key, Chat>>;
   /** Why a chat's older page didn't come, which the top of its thread says, until a page of it does. */
   readonly olderErrors: Readonly<Record<Key, HubError>>;
@@ -99,6 +104,8 @@ export const initial = (hub: HubState): State => ({
   admin: undefined,
   me: undefined,
   meName: undefined,
+  meAvatar: undefined,
+  meRole: undefined,
   chats: {},
   olderErrors: {},
   sends: {},
@@ -125,7 +132,7 @@ export type Action =
   | { readonly t: "loading_older"; readonly key: Key }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
-  | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined }
+  | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined; readonly meAvatar?: string | undefined; readonly meRole?: HubRole | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
   /** A failed send deleted: it never goes. */
@@ -179,7 +186,9 @@ export const reduce = (s: State, a: Action): State => {
     case "corpus":
       return { ...s, corpus: { ...s.corpus, [a.key]: a.messages } };
     case "admin":
-      return s.admin === a.admin && s.me === a.me && s.meName === a.meName ? s : { ...s, admin: a.admin, me: a.me, meName: a.meName };
+      return s.admin === a.admin && s.me === a.me && s.meName === a.meName && s.meAvatar === a.meAvatar && s.meRole === a.meRole
+        ? s
+        : { ...s, admin: a.admin, me: a.me, meName: a.meName, meAvatar: a.meAvatar, meRole: a.meRole };
     case "send": {
       const sends = upsertSend(s.sends[a.key] ?? [], a.row);
       return { ...s, sends: { ...s.sends, [a.key]: sends } };
@@ -327,16 +336,18 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
 
 /**
  * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed (a
- * machine removed too), the pinned chats when this person changed them on another device, or a chat's screens when one
- * of them started, changed hands or ended.
+ * machine removed too), the pinned chats when this person changed them on another device, who the person is when the
+ * hub's people changed (a new picture), or a chat's screens when one of them started, changed hands or ended.
  */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly screens?: Key } => {
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly info: boolean; readonly screens?: Key } => {
   const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
   return {
     requests: event.type.startsWith("request."),
     // A removed machine's projects went with it.
     snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings" || event.type === "machine.removed",
     pins: event.type === "chat.pins",
+    // Who the person is: their name, role or picture may have changed.
+    info: event.type === "people.changed",
     ...(screen === undefined ? {} : { screens: keyOf(screen) }),
   };
 };

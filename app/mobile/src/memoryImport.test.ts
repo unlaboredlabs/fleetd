@@ -180,7 +180,7 @@ describe("the screen", () => {
   const screen = src("screens/ImportMemory.tsx");
 
   it("is pushed from Settings, with a small title over the Settings stack", () => {
-    expect(src("screens/Settings.tsx")).toMatch(/<ListRow icon="import"[^\n]*title="Import Memory" onPress=\{\(\) => navigation\.navigate\("ImportMemory"\)\}/u);
+    expect(src("screens/Settings.tsx")).toMatch(/<ListRow title="Import Memory"[^\n]*onPress=\{\(\) => navigation\.navigate\("ImportMemory"\)\}/u);
     expect(src("../App.tsx")).toMatch(/<SettingsStack\.Screen name="ImportMemory" component=\{ImportMemory\} options=\{\{ \.\.\.pushed\(t, "Import Memory"\), headerLargeTitleEnabled: false \}\}/u);
   });
 
