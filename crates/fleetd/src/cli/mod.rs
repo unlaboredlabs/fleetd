@@ -197,6 +197,37 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
+/// The daemons, which serve until stopped (`node join` without `--enroll-only` goes on to run the node): their output
+/// failing stays what it was.
+fn is_daemon(argv: &[String]) -> bool {
+    match argv.first().map(String::as_str) {
+        Some("hub") => argv.get(1).map(String::as_str) == Some("start"),
+        Some("node") => match argv.get(1).map(String::as_str) {
+            Some("run") => true,
+            Some("join") => !argv.iter().any(|a| a == "--enroll-only"),
+            _ => false,
+        },
+        Some("push-relay") => !argv.iter().any(|a| a == "set"),
+        Some("agent-mcp" | "update-finish") => true,
+        _ => false,
+    }
+}
+
+/// A one-shot command whose reader goes away (`fleetd project list | head -1`) ends quietly with 0, instead of std's
+/// "failed printing to stdout: Broken pipe" panic and exit 101. SIGPIPE stays ignored, so a write to a child (the
+/// binary streamed into ssh) or a socket still reports its error.
+fn quiet_on_closed_output() {
+    let report = std::panic::take_hook();
+    let broken_pipe = format!("(os error {})", nix::errno::Errno::EPIPE as i32);
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info.payload_as_str().unwrap_or_default();
+        if message.starts_with("failed printing to std") && message.ends_with(&broken_pipe) {
+            std::process::exit(0);
+        }
+        report(info);
+    }));
+}
+
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`, `chat --follow`) or wait on other processes
 /// or the hub (setup, `update`, `status`, `steer`, `chat`, `work`).
 fn is_long_running(argv: &[String]) -> bool {
@@ -303,7 +334,11 @@ pub fn main() -> ExitCode {
         return crate::node::runner::host::main(&argv[1..]);
     }
     crate::home::init_from_argv(&argv);
-    if let Some(text) = help_for(&argv) {
+    let help = help_for(&argv);
+    if help.is_some() || !is_daemon(&argv) {
+        quiet_on_closed_output();
+    }
+    if let Some(text) = help {
         print!("{text}");
         return ExitCode::SUCCESS;
     }
@@ -405,6 +440,39 @@ mod tests {
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn only_one_shot_commands_end_quietly_on_a_closed_pipe() {
+        for daemon in [
+            &["hub", "start", "--listen", "127.0.0.1:4790"][..],
+            &["node", "run"],
+            &[
+                "node",
+                "join",
+                "--hub",
+                "http://devbox:4790",
+                "--token-file",
+                "t",
+            ],
+            &["push-relay"],
+            &["push-relay", "--listen", "127.0.0.1:4791"],
+            &["agent-mcp"],
+            &["update-finish", "plan.json"],
+        ] {
+            assert!(is_daemon(&argv(daemon)), "{daemon:?}");
+        }
+        for one_shot in [
+            &["status"][..],
+            &["hub", "key", "list"],
+            &["node", "restart"],
+            &["node", "join", "--enroll-only", "--token-file", "t"],
+            &["push-relay", "set", "off"],
+            &["project", "set", "P1"],
+            &["chat", "--follow"],
+        ] {
+            assert!(!is_daemon(&argv(one_shot)), "{one_shot:?}");
+        }
     }
 
     #[test]
