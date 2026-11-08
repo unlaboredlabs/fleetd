@@ -902,7 +902,7 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     };
     let input = MachineAddInput {
         machine_id: machine_id.clone(),
-        hub_url,
+        hub_url: hub_url.clone(),
         git_identity: a
             .git_identity
             .clone()
