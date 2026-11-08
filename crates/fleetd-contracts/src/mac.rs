@@ -42,10 +42,14 @@ pub enum MacCall {
     Pull { path: String, to: Option<String> },
     /// `mac sim start [--device <type>]`: an iOS simulator of the agent's own on the Mac, booted, which `agent-device`
     /// drives from then on. One per agent; the same one again while it holds it. `device` names a device type
-    /// ("iPad Pro 13-inch (M5)"); absent, the Mac's plain iPhone.
+    /// ("iPad Pro 13-inch (M5)"); absent, the Mac's plain iPhone. `wait`: while none is free, the agent joins the
+    /// Mac's line of agents waiting for one and hears its place ([`MacDone::SimQueued`]); asking again keeps it, and
+    /// the agents ahead get theirs first. Without it (`--no-wait`, an older `mac`) the Mac says why there is none.
     SimStart {
         #[serde(default)]
         device: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        wait: bool,
     },
     /// `mac sim end`: the simulator goes. Nothing touched for 30 minutes, it goes on its own.
     SimEnd,
@@ -94,6 +98,13 @@ pub enum MacDone {
         udid: String,
         /// Its device and iOS version.
         device: String,
+    },
+    /// No simulator for the agent yet: its place in the Mac's line (1 is next), about how long until its simulator
+    /// is ready while one can be (none while every one the Mac allows is in use), and why it waits.
+    SimQueued {
+        place: u32,
+        secs: Option<u64>,
+        why: String,
     },
     SimEnd {
         ended: bool,
@@ -212,8 +223,20 @@ mod tests {
         ] {
             assert_eq!(
                 serde_json::from_value::<MacCall>(sent).unwrap(),
-                MacCall::SimStart { device }
+                MacCall::SimStart {
+                    device,
+                    wait: false
+                }
             );
         }
+        // An older `mac` waits for nothing; this one waits its turn in the Mac's line.
+        assert_eq!(
+            serde_json::from_value::<MacCall>(json!({ "step": "sim_start", "wait": true }))
+                .unwrap(),
+            MacCall::SimStart {
+                device: None,
+                wait: true
+            }
+        );
     }
 }

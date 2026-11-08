@@ -10,6 +10,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
 
 use super::agent_mcp::{env_deps, send_call, send_to_node};
+use crate::node::mac_tool::queue::ASK_EVERY;
 
 /// One step: past the node's own wait for the Mac (node/mac_tool/client.rs `SEND_WAIT`, 180 s) plus its wait for a
 /// restarting hub's link (node/lead.rs `RELINK_WAIT`, 30 s).
@@ -34,13 +35,18 @@ mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and 
   mac ps                           your jobs
   mac kill <job>                   ends a job
   mac pull <path> [to]             a file or folder from your folder on the Mac into your worktree
-  mac sim start [--device <type>]  an iOS simulator of your own on the Mac, booted (a plain iPhone; --device \"iPad
+  mac sim start [--device <type>] [--no-wait]
+                                   an iOS simulator of your own on the Mac, booted (a plain iPhone; --device \"iPad
                                    Pro 13-inch (M5)\" another type, as xcrun simctl list devicetypes names it, booted
-                                   from nothing: a minute or two). From then on agent-device drives it, running on
+                                   from nothing: a minute or two). While none is free it waits its turn: agents get
+                                   simulators in the order they asked, it prints its place as it changes (\"2nd in
+                                   line, about 90 s\") and returns once yours is booted, so run it with your longest
+                                   timeout; cut off, run it again within 2 minutes to keep your place. --no-wait
+                                   says why there is none instead. From then on agent-device drives it, running on
                                    the Mac (its files land in your folder there: mac pull them). In
                                    mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
                                    simctl needs: xcrun simctl --set \"$FLEETD_MAC_SIM_SET\" <command> \"$FLEETD_MAC_SIM\"
-  mac sim end                      ends it (30 minutes with no mac command ends it too)
+  mac sim end                      ends it, or leaves the line (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own
 $FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent; pod (CocoaPods) and the Mac's other
@@ -82,15 +88,12 @@ pub fn run(args: &[String]) -> u8 {
             None => usage("mac pull <path> [to]"),
         },
         Some("sim") => match args.get(1).map(String::as_str) {
-            Some("start") => match sim_device(&args[2..]) {
-                Ok(device) => print_done(call(
-                    json!({ "step": "sim_start", "device": device }),
-                    STEP_WAIT,
-                )),
+            Some("start") => match sim_start_args(&args[2..]) {
+                Ok((device, wait)) => sim_start(device, wait),
                 Err(why) => usage(why),
             },
             Some("end") => print_done(call(json!({ "step": "sim_end" }), STEP_WAIT)),
-            _ => usage("mac sim start [--device <type>] | mac sim end"),
+            _ => usage("mac sim start [--device <type>] [--no-wait] | mac sim end"),
         },
         // The forwarding agent-device's while the session holds a simulator on the Mac (node/mac_tool/client.rs).
         Some("agent-device") => {
@@ -102,10 +105,41 @@ pub fn run(args: &[String]) -> u8 {
     }
 }
 
-/// `mac sim start`'s arguments: nothing, or `--device <type>` (`--device=<type>`).
+/// `mac sim start`'s arguments: the device type, and whether it waits its turn (all but `--no-wait`).
+pub fn sim_start_args(args: &[String]) -> Result<(Option<String>, bool), &'static str> {
+    let wait = !args.iter().any(|a| a == "--no-wait");
+    let rest: Vec<String> = args.iter().filter(|a| *a != "--no-wait").cloned().collect();
+    Ok((sim_device(&rest)?, wait))
+}
+
+/// `mac sim start`'s simulator: asked for again every [`ASK_EVERY`] while it waits in the Mac's line, its place
+/// printed each time it changes.
+fn sim_start(device: Option<String>, wait: bool) -> u8 {
+    let mut said = None;
+    loop {
+        let result = call(
+            json!({ "step": "sim_start", "device": device, "wait": wait }),
+            STEP_WAIT,
+        );
+        match &result {
+            Ok(queued) if queued["step"] == "sim_queued" => {
+                let now = (queued["place"].as_u64(), queued["why"].clone());
+                if said.as_ref() != Some(&now) {
+                    print!("{}", shown(queued));
+                    let _ = std::io::stdout().flush();
+                    said = Some(now);
+                }
+                std::thread::sleep(ASK_EVERY);
+            }
+            _ => return print_done(result),
+        }
+    }
+}
+
+/// `mac sim start --device`'s type: nothing, or `--device <type>` (`--device=<type>`).
 pub fn sim_device(args: &[String]) -> Result<Option<String>, &'static str> {
-    const USAGE: &str =
-        "mac sim start [--device <type>], a type as xcrun simctl list devicetypes names it";
+    const USAGE: &str = "mac sim start [--device <type>] [--no-wait], a type as xcrun simctl list devicetypes \
+                         names it";
     match args {
         [] => Ok(None),
         [flag, device] if flag == "--device" && !device.trim().is_empty() => {
@@ -258,12 +292,36 @@ pub fn shown(result: &Value) -> String {
             result["device"].as_str().unwrap_or("?"),
             result["udid"].as_str().unwrap_or("?")
         ),
+        Some("sim_queued") => {
+            let place = result["place"].as_u64().unwrap_or(0);
+            let about = result["secs"]
+                .as_u64()
+                .map(|s| format!(", about {s} s"))
+                .unwrap_or_default();
+            format!(
+                "{} in line for a simulator{about}: {}\n",
+                ordinal(place),
+                result["why"].as_str().unwrap_or("waiting")
+            )
+        }
         Some("sim_end") => match result["ended"].as_bool() {
             Some(true) => "your simulator ended\n".into(),
             _ => "you had no simulator on the Mac\n".into(),
         },
         _ => format!("{result}\n"),
     }
+}
+
+/// 1st, 2nd, 3rd, 4th, ..., 11th, 12th, 13th, 21st.
+pub fn ordinal(n: u64) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
 }
 
 fn print_done(result: Result<Value, (String, u8)>) -> u8 {
@@ -372,6 +430,58 @@ mod tests {
         ] {
             assert!(sim_device(&strings(wrong)).is_err(), "{wrong:?}");
         }
+    }
+
+    #[test]
+    fn sim_start_waits_its_turn_unless_told_not_to() {
+        assert_eq!(sim_start_args(&[]), Ok((None, true)));
+        assert_eq!(sim_start_args(&strings(&["--no-wait"])), Ok((None, false)));
+        assert_eq!(
+            sim_start_args(&strings(&["--no-wait", "--device", "iPad Air 11-inch"])),
+            Ok((Some("iPad Air 11-inch".to_owned()), false))
+        );
+        assert_eq!(
+            sim_start_args(&strings(&["--device=iPad Air 11-inch", "--no-wait"])),
+            Ok((Some("iPad Air 11-inch".to_owned()), false))
+        );
+        assert!(sim_start_args(&strings(&["--wait"])).is_err());
+    }
+
+    #[test]
+    fn a_waiting_sim_start_says_its_place_in_line() {
+        let queued = |place: u64, secs: Option<u64>, why: &str| {
+            shown(&json!({ "step": "sim_queued", "place": place, "secs": secs, "why": why }))
+        };
+        assert_eq!(
+            queued(2, Some(90), "the agents ahead of you get theirs first"),
+            "2nd in line for a simulator, about 90 s: the agents ahead of you get theirs first\n"
+        );
+        assert_eq!(
+            queued(
+                1,
+                None,
+                "all 2 of the Mac's iOS simulators are in use by other agents"
+            ),
+            "1st in line for a simulator: all 2 of the Mac's iOS simulators are in use by other agents\n"
+        );
+        let ordinals: Vec<String> = [1, 2, 3, 4, 11, 12, 13, 21, 22, 103].map(ordinal).into();
+        assert_eq!(
+            ordinals,
+            [
+                "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "103rd"
+            ]
+        );
+        // `--no-wait`, or a Mac before the line: the Mac's refusal, as before.
+        let refused = json!({ "t": "lead_result", "id": "cli-1", "error": {
+            "code": "failed", "message": "All 2 of the Mac's iOS simulators are in use by other agents.",
+            "fix": "mac sim start without --no-wait waits its turn, or carry on without one",
+        }});
+        let (text, code) = answer(Ok(refused)).unwrap_err();
+        assert_eq!(code, 1);
+        assert!(
+            text.starts_with("mac: All 2 of the Mac's iOS simulators are in use"),
+            "{text}"
+        );
     }
 
     #[test]

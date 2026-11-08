@@ -11,6 +11,7 @@ pub mod client;
 pub mod host;
 pub mod jobs;
 pub mod push;
+pub mod queue;
 
 #[cfg(test)]
 mod tests;
@@ -93,9 +94,12 @@ pub enum Step {
         raw: bool,
     },
     /// `device`: a device type of the agent's choosing; absent, the golden's (an older agent's node sends none).
+    /// `wait`: none free, the agent joins the line ([`queue`]) and hears its place; an older node sends none.
     SimStart {
         #[serde(default)]
         device: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        wait: bool,
     },
     SimEnd,
 }
@@ -143,6 +147,12 @@ pub enum Done {
     SimStart {
         udid: String,
         device: String,
+    },
+    SimQueued {
+        place: u32,
+        #[serde(default)]
+        secs: Option<u64>,
+        why: String,
     },
     SimEnd {
         ended: bool,
