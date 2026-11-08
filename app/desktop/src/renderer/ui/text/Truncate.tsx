@@ -27,8 +27,8 @@ export interface TruncateProps extends TextStyleProps {
 /**
  * A single-line (or clamped) slot. When the text does not fit it ends in an ellipsis, the full text shows in a
  * tooltip on hover, and the text becomes a focusable button whose click or Enter expands or copies it. When it
- * fits, it is plain text with no affordances. Memoized: its props are a string and a few flags, and each one is a
- * tooltip and a popover, so a row or a list that renders again leaves its truncated text alone.
+ * fits, it is plain text with no affordances, and no tooltip or popover is mounted for it. Memoized: its props are a
+ * string and a few flags, so a row or a list that renders again leaves its truncated text alone.
  */
 export const Truncate = memo(function Truncate({ children, as: As = "span", lines = 1, expand = "popover", inline, className, ...style }: TruncateProps) {
   // The element lives in state (a callback ref), so the observer follows it when React swaps the node.
@@ -120,6 +120,10 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
     </As>
   );
 
+  // Text that fits is the bare element: a long list mounts no tooltip or popover for the rows that don't need one. Once
+  // cut, the element moves into them (React swaps the node, and the callback ref measures the new one).
+  if (!cut) return node;
+
   const tipped = (
     <Tooltip content={children} open={tipOpen} onOpenChange={(o) => setTipOpen(o && !popOpen && el !== null && isCut(el))}>
       {expand === "popover" ? <PopoverAnchor asChild>{node}</PopoverAnchor> : node}
@@ -127,7 +131,6 @@ export const Truncate = memo(function Truncate({ children, as: As = "span", line
   );
   if (expand !== "popover") return tipped;
 
-  // One stable tree whether or not the text is cut; only `open` depends on it.
   return (
     <Popover open={popOpen && cut} onOpenChange={setPopOpen}>
       {tipped}
