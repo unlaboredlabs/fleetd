@@ -21,7 +21,7 @@ import type {
 } from "../../shared/screens_wire.ts";
 import { type Broker, broker as brokerOf, drivesBrowser } from "../browser/index.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
-import { hubCall, type Node, onHub, onLocal, toHub } from "../browser/node.ts";
+import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { dial, relayUrl } from "./relay.ts";
@@ -190,9 +190,16 @@ export function start(node: Node, given?: Router): Router {
   const r = router(node, given);
   const agentOnly = () => new ToolError("forbidden", "A browser session belongs to an agent's session, and this call comes from none.");
   for (const op of ["session_start", "session_end"]) {
-    onLocal(node, op, async (thread, call) => {
-      if (!thread) throw agentOnly();
-      return r.route(thread, { id: op, cwd: "/", call: { ...call, op } });
+    // The call's own working directory (its frame's `cwd`, the agent's worktree): a desktop launches its apps there.
+    node.area("local").on(op, async (thread, frame) => {
+      try {
+        if (!thread) throw agentOnly();
+        const cwd = typeof frame.cwd === "string" && frame.cwd.startsWith("/") ? frame.cwd : "/";
+        return { result: await r.route(thread, { id: op, cwd, call: { ...((frame.call ?? {}) as Record<string, unknown>), op } }) };
+      } catch (e) {
+        if (e instanceof ToolError) return { error: e.toJSON() };
+        return { error: { code: "failed", message: (e as Error).message } };
+      }
     });
   }
   onHub(node, "session_host", (f) => {

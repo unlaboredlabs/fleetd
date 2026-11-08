@@ -14,7 +14,7 @@ import {
   toolOnly,
   TOOL_ONLY,
 } from "../src/node/agents_mac/index.ts";
-import { blocksSimulators, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, run } from "../src/node/agents_mac/checks.ts";
+import { blocksSimulators, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run } from "../src/node/agents_mac/checks.ts";
 import { healthFile, type MacCheckId, toolsDir } from "../src/node/agents_mac/common.ts";
 import {
   answer,
@@ -331,7 +331,7 @@ test("grants: the ask names a grant, and the node takes it", () => {
   expect(existsSync(askFile(home))).toBe(false);
 });
 
-test("grants: a restart once for a grant the running node lacks, forgotten once it goes", () => {
+test("grants: a restart once for a grant the running node lacks, forgotten once it goes", async () => {
   const l = restartFor(g(yes, no), g(yes, yes), undefined)!;
   expect(l).toBe("accessibility yes screen_recording yes");
   expect(restartFor(g(yes, yes), g(yes, yes), l)).toBeUndefined();
@@ -347,17 +347,17 @@ test("grants: a restart once for a grant the running node lacks, forgotten once 
   // Off macOS this process has no grant to read: a fresh one with Screen Recording restarts the node, once.
   const home = scratch();
   let restarts = 0;
-  const found = takeUp(home, () => g(yes, yes), () => restarts++);
+  const found = await takeUp(home, () => g(yes, yes), () => restarts++);
   expect(found).toEqual({ grants: g(yes, yes), lost: [] });
   expect(restarts).toBe(1);
-  takeUp(home, () => g(yes, yes), () => restarts++);
+  await takeUp(home, () => g(yes, yes), () => restarts++);
   expect(restarts).toBe(1);
   // Another answer is another restart (this process holds none of them), and so is the first one again.
-  takeUp(home, () => g(yes, no), () => restarts++);
+  await takeUp(home, () => g(yes, no), () => restarts++);
   expect(restarts).toBe(2);
-  takeUp(home, () => g(yes, yes), () => restarts++);
+  await takeUp(home, () => g(yes, yes), () => restarts++);
   expect(restarts).toBe(3);
-  expect(takeUp(home, () => undefined, () => restarts++)).toBeUndefined();
+  expect(await takeUp(home, () => undefined, () => restarts++)).toBeUndefined();
 });
 
 test("`fleetd node grants` prints this process's grants, and --ask waits for the node to ask", async () => {
@@ -411,4 +411,36 @@ test("the agents' Mac's hello says so, and lists its tool only while it is on", 
   mac.start = async () => {};
   startMac(t.node, mac);
   expect(t.node.area("caps").list()).toEqual(["agents_mac", "mac_tool"]);
+});
+
+test("the Mac's commands run off the event loop and are stopped when they hang", async () => {
+  const stopped = await ranCommand("sleep", ["5"], undefined, 100);
+  expect(stopped.code).toBeUndefined();
+  expect(stopped.out).toContain("stopped after");
+  expect((await ranCommand("fleetd-no-such-program", [])).code).toBeUndefined();
+  // Off a Mac its commands are missing: the checks still read, and the loop ticks on meanwhile.
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 1);
+  const h = run(await readMac(undefined, { kind: "installing" }));
+  clearInterval(timer);
+  expect(h.checks.map((c) => c.id)).toEqual(ALL);
+  expect(ticks).toBeGreaterThan(0);
+});
+
+test("`fleetd node grants` is the CLI's", async () => {
+  const home = scratch();
+  const cli = (args: string[]) =>
+    Bun.spawn([process.execPath, join(import.meta.dir, "../src/main.ts"), "node", "grants", ...args], {
+      env: { ...process.env, FLEETD_HOME: home },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  const plain = cli([]);
+  const [out, code] = await Promise.all([new Response(plain.stdout).text(), plain.exited]);
+  expect(code).toBe(0);
+  expect(parse(out.trim())).toBeDefined();
+  const asking = cli(["--ask", "accessibility", "--wait", "0", "--home", home]);
+  const [err, failed] = await Promise.all([new Response(asking.stderr).text(), asking.exited]);
+  expect(failed).toBe(1);
+  expect(err).toContain("the node didn't ask macOS for Accessibility");
 });
