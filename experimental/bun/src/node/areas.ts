@@ -27,7 +27,7 @@ export function registerAreas(node: Node): void {
 export async function stopAreas(node: Node): Promise<void> {
   await broker(node).shutdown();
   await stopDevices(node);
-  stopMac(node);
+  await stopMac(node);
   await stopDesktop(node);
   stopAgentsMac(node);
 }
