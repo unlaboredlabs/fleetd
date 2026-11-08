@@ -28,6 +28,7 @@ pub mod mac_tool;
 pub mod mask;
 pub mod mcp_probe;
 pub mod mcp_servers;
+pub mod network;
 pub mod onepassword_tokens;
 pub mod order_env;
 pub mod power;

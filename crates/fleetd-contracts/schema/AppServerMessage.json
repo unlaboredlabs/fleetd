@@ -1836,11 +1836,34 @@
           "maximum": 100,
           "minimum": 0,
           "type": "integer"
+        },
+        "network": {
+          "$ref": "#/$defs/NodeNetwork",
+          "description": "Whether the machine's own network hardware holds an IPv4 address; absent off Linux, on a machine with no network\nhardware of its own (a container), and from older nodes."
         }
       },
       "required": [
         "cpus",
         "load1"
+      ],
+      "type": "object"
+    },
+    "NodeNetwork": {
+      "description": "The machine's IPv4, as its node reads its network interfaces (node/network.rs): only those of its own hardware\ncount, not loopback, tunnels (Tailscale), bridges or containers' veths.",
+      "properties": {
+        "iface": {
+          "description": "While `ipv4` is false, the interface to bring back: the one holding a link-local address, else the first.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ipv4": {
+          "description": "One of them holds a routable IPv4 address: not 169.254.x link-local, which is what's left when DHCP times out.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ipv4"
       ],
       "type": "object"
     },

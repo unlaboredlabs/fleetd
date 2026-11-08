@@ -1,8 +1,9 @@
 //! One node link per machine: challenge, hello (signature, enroll token or enrolled key), welcome, then heartbeats,
 //! session frames, lead calls and command replies until the socket ends. 45 s of silence takes the machine offline.
 //! A linked machine is online while its node's runner is usable (`runner_info`: a supported version, logged in) and
-//! degraded with the runner's problem otherwise.
-use std::collections::HashMap;
+//! degraded with the runner's problem otherwise, or with its network's when it has no IPv4 and GitHub doesn't answer it
+//! (link/network.rs).
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -92,6 +93,19 @@ struct State {
     paused: HashMap<MachineId, Paused>,
     /// What each live link's node said it understands in its hello.
     capabilities: HashMap<MachineId, Vec<String>>,
+    /// The runner's problem as its link's last check found it (None: usable); absent until that check answers.
+    runner: HashMap<MachineId, Option<String>>,
+    /// Machines git can't reach GitHub from, as the landing scanner last found.
+    github_down: HashSet<MachineId>,
+}
+
+impl State {
+    fn network_problem(&self, machine_id: &MachineId) -> Option<String> {
+        super::network::problem(
+            self.loads.get(machine_id).and_then(|l| l.network.as_ref()),
+            self.github_down.contains(machine_id),
+        )
+    }
 }
 
 /// Why a machine takes no new agents: the line that says so, and which of the two holds it (each resumes past its own
@@ -141,6 +155,29 @@ impl NodeLinkServer {
         }
     }
 
+    /// Why the machine is degraded for its network ("no IPv4 network on enp3s0, …"), with the fix; None while it has
+    /// IPv4 or GitHub answers it.
+    pub fn network_problem(&self, machine_id: &MachineId) -> Option<String> {
+        self.state.lock().unwrap().network_problem(machine_id)
+    }
+
+    /// What the landing scanner found of git on the machine reaching GitHub: with no IPv4 there too, the machine is
+    /// degraded until either is back.
+    pub fn github_reached(&self, machine_id: &MachineId, reached: bool) {
+        let changed = {
+            let mut state = self.state.lock().unwrap();
+            let before = state.network_problem(machine_id);
+            match reached {
+                true => state.github_down.remove(machine_id),
+                false => state.github_down.insert(machine_id.clone()),
+            };
+            state.network_problem(machine_id) != before
+        };
+        if changed {
+            self.settle(machine_id);
+        }
+    }
+
     /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on builder-1"; None while they start.
     pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
         let state = self.state.lock().unwrap();
@@ -178,8 +215,9 @@ impl NodeLinkServer {
                 tracing::warn!(error = %e, "node link: machine facts not applied to the slot board");
             }
         }
-        let (was, why, brake, hosts_changed) = {
+        let (was, why, brake, hosts_changed, network_changed) = {
             let mut state = self.state.lock().unwrap();
+            let network = state.network_problem(machine_id);
             let was = state.paused.get(machine_id).cloned();
             let hosts_changed = load
                 .as_ref()
@@ -202,8 +240,12 @@ impl NodeLinkServer {
                 Some(load) => state.loads.insert(machine_id.clone(), load),
                 None => state.loads.remove(machine_id),
             };
-            (was.is_some(), why, brake, hosts_changed)
+            let network_changed = state.network_problem(machine_id) != network;
+            (was.is_some(), why, brake, hosts_changed, network_changed)
         };
+        if network_changed {
+            self.settle(machine_id);
+        }
         if hosts_changed {
             self.append(event(
                 &self.now_iso(),
@@ -663,6 +705,7 @@ impl NodeLinkServer {
             state.loads.remove(machine_id);
             state.busy.remove(machine_id);
             state.paused.remove(machine_id);
+            state.runner.remove(machine_id);
             state.links.remove(machine_id)
         };
         let at = self.now_iso();
@@ -945,28 +988,55 @@ impl NodeLinkServer {
         })
     }
 
-    /// Online when `problem` is None, else degraded with it.
+    /// Keeps the runner's verdict (`problem`: None when usable) and announces the machine by it.
     fn apply_runner(&self, machine_id: &MachineId, problem: Option<String>) {
-        // A link that went away meanwhile must not announce anything.
-        if !self.state.lock().unwrap().links.contains_key(machine_id) {
-            return;
-        }
-        let at = self.now_iso();
         // The agents' Mac runs no claude: it is online whatever its runner says.
         let problem = problem
             .filter(|_| !self.node_can(machine_id, fleetd_contracts::node_link::CAP_AGENTS_MAC));
-        match problem {
-            None => {
+        {
+            let mut state = self.state.lock().unwrap();
+            // A link that went away meanwhile must not announce anything.
+            if !state.links.contains_key(machine_id) {
+                return;
+            }
+            state.runner.insert(machine_id.clone(), problem);
+        }
+        self.settle(machine_id);
+    }
+
+    /// Online while the runner is usable and the network is fine, else degraded with the runner's problem, or the
+    /// network's. Only the runner decides whether sessions start there: without IPv4, claude may still reach its API
+    /// over IPv6. Nothing before the link's first runner check answers.
+    fn settle(&self, machine_id: &MachineId) {
+        let (runner, network) = {
+            let state = self.state.lock().unwrap();
+            if !state.links.contains_key(machine_id) {
+                return;
+            }
+            let Some(runner) = state.runner.get(machine_id).cloned() else {
+                return;
+            };
+            (runner, state.network_problem(machine_id))
+        };
+        let at = self.now_iso();
+        match (runner, network) {
+            (None, None) => {
                 self.write_status(machine_id, &at, MachineStatus::Online, None);
                 self.announce(machine_id, &at, Announced::Online, None);
                 // After machine.online is logged, so no queued write reaches the machine before it.
                 self.deps.executors.set_runner_ready(machine_id, true);
             }
-            Some(reason) => {
+            (Some(reason), _) => {
                 self.deps.executors.set_runner_ready(machine_id, false);
                 let status = MachineStatus::Degraded;
                 self.write_status(machine_id, &at, status, Some(&reason));
                 self.announce(machine_id, &at, Announced::Degraded, Some(&reason));
+            }
+            (None, Some(reason)) => {
+                let status = MachineStatus::Degraded;
+                self.write_status(machine_id, &at, status, Some(&reason));
+                self.announce(machine_id, &at, Announced::Degraded, Some(&reason));
+                self.deps.executors.set_runner_ready(machine_id, true);
             }
         }
     }
@@ -987,6 +1057,8 @@ impl NodeLinkServer {
             state
                 .capabilities
                 .insert(machine_id.clone(), hello.capabilities.clone());
+            // Until this link's runner check answers.
+            state.runner.remove(&machine_id);
             (id, state.links.insert(machine_id.clone(), (id, tx.clone())))
         };
         if let Some((_, previous)) = previous {
@@ -1497,6 +1569,72 @@ mod tests {
             event["summary"],
             "devbox's node linked again, on fleetd 0.2.0"
         );
+    }
+
+    /// The Nov 8 outage: DHCP timed out and the machine kept only a link-local IPv4, so git there couldn't reach
+    /// GitHub. Both at once degrade it with the fix naming its interface; sessions still start there. Its address
+    /// coming back clears it at the next heartbeat.
+    #[tokio::test]
+    async fn a_machine_with_no_ipv4_and_no_github_is_degraded_until_its_address_is_back() {
+        use fleetd_contracts::model::{Machine, MachineStatus};
+
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        let devbox = MachineId::unchecked("devbox");
+        let machine: Machine = serde_json::from_value(serde_json::json!({
+            "machineId": "devbox", "name": "devbox", "status": "online",
+            "lastSeenAt": "2026-11-08T06:00:00.000Z", "nodeVersion": "0.1.0",
+        }))
+        .unwrap();
+        hub.store
+            .machine_upsert(&machine, Some("node-key"))
+            .unwrap();
+        let _link = hub.link.test_link(&devbox, &[]);
+        hub.link.apply_runner(&devbox, None);
+        let beat = |addrs: &[(&str, &str)]| {
+            let addrs: Vec<_> = addrs
+                .iter()
+                .map(|(n, ip)| ((*n).to_owned(), ip.parse().unwrap()))
+                .collect();
+            let mut load = super::super::guard::tests::load(500, 1.0);
+            load.network = crate::node::network::verdict(&addrs, &["enp3s0".to_owned()]);
+            hub.link
+                .observe_load(&devbox, Some(load), "2026-11-08T06:30:00.000Z");
+        };
+        let status = || {
+            let m = hub.store.machine_get(&devbox).unwrap().unwrap();
+            (m.status, m.degraded_reason)
+        };
+
+        beat(&[("enp3s0", "169.254.77.12"), ("tailscale0", "100.64.0.7")]);
+        assert_eq!(
+            status(),
+            (MachineStatus::Online, None),
+            "GitHub not found down yet"
+        );
+        hub.link.github_reached(&devbox, false);
+        let reason = "no IPv4 network on enp3s0, so GitHub can't be reached. Fix: run \
+                      `sudo networkctl reconfigure enp3s0` or `sudo netplan apply`";
+        assert_eq!(status(), (MachineStatus::Degraded, Some(reason.into())));
+        assert!(
+            hub.executors.runner_ready(&devbox),
+            "sessions still start there"
+        );
+        assert_eq!(hub.link.network_problem(&devbox).as_deref(), Some(reason));
+
+        beat(&[("enp3s0", "192.168.1.20"), ("tailscale0", "100.64.0.7")]);
+        assert_eq!(status(), (MachineStatus::Online, None));
+        assert_eq!(hub.link.network_problem(&devbox), None);
     }
 
     /// `fleetd machine remove` of a node that is still linked: the hub revokes its key and forgets its rows, then the

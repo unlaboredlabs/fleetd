@@ -336,6 +336,9 @@ pub struct NodeLoad {
     pub limits: List<LoginLimit, 0, 4>,
     /// The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read.
     pub disk: Option<NodeDisk>,
+    /// Whether the machine's own network hardware holds an IPv4 address; absent off Linux, on a machine with no network
+    /// hardware of its own (a container), and from older nodes.
+    pub network: Option<NodeNetwork>,
     /// What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
     /// from older nodes.
     pub hosts: Option<crate::machine_roles::HostChecks>,
@@ -538,6 +541,18 @@ pub struct NodeDisk {
     /// Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,
     /// whichever is larger.
     pub min_free_bytes: Count,
+}
+
+/// The machine's IPv4, as its node reads its network interfaces (node/network.rs): only those of its own hardware
+/// count, not loopback, tunnels (Tailscale), bridges or containers' veths.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeNetwork {
+    /// One of them holds a routable IPv4 address: not 169.254.x link-local, which is what's left when DHCP times out.
+    pub ipv4: bool,
+    /// While `ipv4` is false, the interface to bring back: the one holding a link-local address, else the first.
+    pub iface: Option<Text<1, 64>>,
 }
 
 /// One claude.ai usage window, as claude's `rate_limit_event` last reported it.
