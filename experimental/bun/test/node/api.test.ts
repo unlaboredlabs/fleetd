@@ -18,3 +18,13 @@ test("node.area(\"items\") hands each ended step to every handler, and one that 
   expect(node.area("browser", () => ({ made: 1 }))).toEqual({ made: 1 });
   expect(() => node.area("nope" as never)).toThrow("no node area nope");
 });
+
+test("node.area(\"caps\") lists every contributed capability once, a part that throws left out", () => {
+  const node = new Node("/nowhere", { hub: "http://devbox:4790", machineId: "devbox", name: "devbox", enrolled: true }, new LeadRelay());
+  node.area("caps").contribute(() => ["browser", "session_host"]);
+  node.area("caps").contribute(() => {
+    throw new Error("a broken area");
+  });
+  node.area("caps").contribute(() => ["browser", "session_android"]);
+  expect(node.area("caps").list()).toEqual(["browser", "session_host", "session_android"]);
+});
