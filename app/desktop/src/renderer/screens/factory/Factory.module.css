@@ -35,15 +35,6 @@
   max-height: 360px;
   overflow-y: auto;
 }
-.customForm {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.customForm > * {
-  flex: 1 1 180px;
-}
-
 .scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -300,15 +291,9 @@
   background: var(--series-5);
 }
 /* The texture channel, where hue can't carry identity: forced colours and print. Estimated segments hatch. */
-.hatch {
-  display: none;
-}
 @media (forced-colors: active), print {
   .estimated {
     fill: url(#factory-hatch);
-  }
-  .hatch {
-    display: inline;
   }
 }
 

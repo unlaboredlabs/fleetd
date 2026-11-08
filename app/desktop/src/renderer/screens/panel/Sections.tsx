@@ -95,8 +95,6 @@ export const shownSections = (features: readonly string[], extra: readonly strin
 
 export const sectionOf = (tab: PanelTab): Section => (tab === "skills" ? SKILL : (SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? AGENTS));
 
-export const isSection = (id: string): boolean => SECTIONS.some((g) => g.id === id);
-
 /** `section` with only the views the hub serves (always its first), and the line that fits them. */
 export const servedSection = (section: Section, features: readonly string[]): Section => {
   const views = section.views.filter(([tab], i) => i === 0 || served(tab, features));

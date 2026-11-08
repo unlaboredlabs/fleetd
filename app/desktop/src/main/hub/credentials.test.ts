@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearCredentials, fromEnv, keyStoreOf, loadCredentials, osEncryption, PAIR_AGAIN, saveCredentials, useOsEncryption, type CredentialEnv } from "./credentials";
+import { clearCredentials, fromEnv, keyStoreOf, loadCredentials, osEncryption, PAIR_AGAIN, saveCredentials, type CredentialEnv } from "./credentials";
 
 let dir: string;
 let keychainReads: Array<string>;
@@ -124,17 +124,17 @@ describe("credentials", () => {
   });
 });
 
-describe("useOsEncryption", () => {
-  const ask = (over: Partial<Parameters<typeof useOsEncryption>[0]>) => {
+describe("osEncryption", () => {
+  const ask = (over: Partial<Parameters<typeof osEncryption>[0]>) => {
     const asked: Array<string> = [];
-    const use = useOsEncryption({
+    const use = osEncryption({
       platform: "darwin",
       relocated: false,
       teamSigned: () => (asked.push("teamSigned"), true),
       available: () => (asked.push("available"), true),
       linuxBackend: () => (asked.push("backend"), "gnome_libsecret"),
       ...over,
-    });
+    }) === null;
     return { use, asked };
   };
 

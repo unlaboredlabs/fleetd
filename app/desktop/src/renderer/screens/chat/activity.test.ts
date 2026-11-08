@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
 import { createDataStore, type DataState } from "../../src/data/store";
 import { leadLaneId } from "../../src/data/selectors";
-import { doingWords, leadActivity, leadTurnSince, leadTurnUntil, turnLine, turnTally, workedFor } from "./activity";
+import { doingWords, leadDid, leadDoing, leadTurnSince, leadTurnUntil, turnLine, turnTally, workedFor } from "./activity";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -38,9 +38,12 @@ describe("the lead's activity line", () => {
     };
     const s = state({ chatStates: { [KEY]: working(true) }, events, live: { ...createDataStore().getState().live, lanes } });
     // Only this project's events since it started working: the task before the turn and the other project's don't count.
-    expect(leadActivity(s, KEY)).toBe("planning · planned a piece of work · started 2 agents");
+    expect(leadDoing(s, KEY)).toBe("planning");
+    expect(leadDid(s, KEY)).toBe("planned a piece of work · started 2 agents");
     // No lane yet (an older hub) and nothing done: the hub's word that it works.
-    expect(leadActivity(state({ chatStates: { [KEY]: working(true) } }), KEY)).toBe("working");
+    const bare = state({ chatStates: { [KEY]: working(true) } });
+    expect(leadDoing(bare, KEY)).toBe("working");
+    expect(leadDid(bare, KEY)).toBe("");
   });
 
   it("counts from the turn's start, not from the hub saying again mid-turn that the lead works", () => {
@@ -73,8 +76,10 @@ describe("the lead's activity line", () => {
   });
 
   it("is gone once the turn ends or the link is not fresh", () => {
-    expect(leadActivity(state({ chatStates: { [KEY]: working(false) } }), KEY)).toBeUndefined();
-    expect(leadActivity(state({ fresh: false, chatStates: { [KEY]: working(true) } }), KEY)).toBeUndefined();
+    for (const s of [state({ chatStates: { [KEY]: working(false) } }), state({ fresh: false, chatStates: { [KEY]: working(true) } })]) {
+      expect(leadDoing(s, KEY)).toBeUndefined();
+      expect(leadDid(s, KEY)).toBe("");
+    }
   });
 
   it("speaks in plain words, never a raw tool name or command", () => {
