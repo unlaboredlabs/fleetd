@@ -214,6 +214,21 @@ const render = async (open?: { view: View; at: number }) => {
 };
 
 const button = (text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === text);
+/** Presses `text`, which starts a read the hub refuses three times, and runs its backoff of 1 s and then 2 s on the
+ * fake clock: waited out for real, those 3 s took most of the test's time. */
+const giveUp = async (text: string) => {
+  const b = button(text);
+  if (b === undefined) throw new Error(`no button "${text}" in: ${host.textContent}`);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    act(() => b.click());
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+  } finally {
+    vi.useRealTimers();
+  }
+  await settle();
+};
+
 const click = async (text: string) => {
   const b = button(text);
   if (b === undefined) throw new Error(`no button "${text}" in: ${host.textContent}`);
@@ -332,8 +347,8 @@ it("gives a host the hub can't log in to the command to run on the hub's machine
   planRefusals = 3;
   await render();
   await click("Choose…");
-  await click("Plan…");
-  await vi.waitFor(() => expect(button("Try again")).toBeDefined(), { timeout: 8000 });
+  await giveUp("Plan…");
+  expect(button("Try again")).toBeDefined();
   expect(host.textContent).toContain("Cannot read builder-1 over SSH");
   // The values row of the hub's setup guide: where, the command, and Copy.
   expect(host.querySelector("dt")?.textContent).toBe("Run on devbox");
@@ -342,20 +357,20 @@ it("gives a host the hub can't log in to the command to run on the hub's machine
   await click("Try again");
   await vi.waitFor(() => expect(button("Add builder-1")).toBeDefined());
   expect(host.textContent).toContain("Install fleetd 0.9.0");
-}, 15_000);
+});
 
 it("says a host that didn't answer is down or unreachable, and offers no key to copy", async () => {
   planRefusals = 3;
   sshSaid = "ssh: connect to host builder-1 port 22: Connection timed out";
   await render();
   await click("Choose…");
-  await click("Plan…");
-  await vi.waitFor(() => expect(button("Try again")).toBeDefined(), { timeout: 8000 });
+  await giveUp("Plan…");
+  expect(button("Try again")).toBeDefined();
   expect(host.querySelector("[data-ssh]")?.getAttribute("data-ssh")).toBe("unreachable");
   expect(host.querySelector("dd [data-text='code']")?.textContent).toBe("ssh builder-1 true");
   expect(host.textContent).not.toContain("ssh-copy-id");
   expect(host.textContent).toContain("check it is on and awake");
-}, 15_000);
+});
 
 it("opens on a run still going, step by step", async () => {
   runs = [RUNNING];
