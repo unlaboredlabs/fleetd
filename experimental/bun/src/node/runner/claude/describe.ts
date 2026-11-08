@@ -4,10 +4,12 @@
 // and from reading files: nothing calls the proxy or the Anthropic API. `fleetd init`'s Logins step and
 // `update-claude` show it.
 import type { RunnerInfo } from "../../sessions/types.ts";
-import { sessionEnv } from "../../sessions/index.ts";
+import { configFor, runnerEnv } from "../../sessions/index.ts";
+import { defaultNodeHome } from "../../config.ts";
+import { fleetdDir } from "../../../shared/home.ts";
 import type { Env } from "../../util.ts";
 import { claudeBinary, probe } from "../claude.ts";
-import { configDir, isDefaultDir, tilde } from "./setup.ts";
+import { isDefaultDir, tilde } from "./setup.ts";
 
 export type ClaudeSetup = {
   /** `2.1.302`: the first word of `claude --version`; undefined when claude is missing or didn't answer. */
@@ -46,9 +48,9 @@ export function setupLine(s: ClaudeSetup): string {
   return line;
 }
 
-/** Probes `binary` (default: claude on PATH) with `env` (default: what a session here would get) and describes it. */
+/** Probes `binary` (default: claude on PATH) with `env` and describes it. The default `env` is what a session here
+ * gets, as the node probes and starts them (`runnerEnv(configFor(…))`, as the Rust wizard's `session_env`): the
+ * user's own setup, `~/.fleetd/claude.env`, and node.json's `claudeConfigDir`. */
 export async function describe(binary: string = claudeBinary(), env?: Env): Promise<ClaudeSetup> {
-  const e = env ?? { ...sessionEnv(), ...(process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR } : {}) };
-  const setup = fromInfo(await probe(binary, e));
-  return { ...setup, configDir: setup.configDir ?? configDir(e) };
+  return fromInfo(await probe(binary, env ?? runnerEnv(configFor(defaultNodeHome(), fleetdDir(), ""))));
 }
