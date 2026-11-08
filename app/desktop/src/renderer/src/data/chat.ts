@@ -290,7 +290,7 @@ const kindOf = (m: ChatMessage): ChatItemKind => {
   return m.history !== undefined || authorOf(m.author) === "system" ? "event" : "message";
 };
 
-const messageItem = (m: ChatMessage, chat: Chat): ChatItem => ({
+const messageItem = (m: ChatMessage, chat: Chat, answered = false): ChatItem => ({
   id: m.messageId,
   author: authorOf(m.author),
   kind: kindOf(m),
@@ -300,7 +300,7 @@ const messageItem = (m: ChatMessage, chat: Chat): ChatItem => ({
   state: streaming(m) ? "streaming" : "sent",
   clientRequestId: sentAs(m),
   delivery: m.delivery,
-  leadWaiting: chat.leadWaiting[m.messageId],
+  leadWaiting: answered ? undefined : chat.leadWaiting[m.messageId],
   message: m,
 });
 
@@ -321,7 +321,10 @@ const sendItem = (r: ChatSend): ChatItem => ({
  * while its `chat.message` event can wait behind a burst of events or a reconnect's backlog), then the person's sends.
  */
 export const chatItems = (chat: Chat, sends: readonly ChatSend[]): readonly ChatItem[] => {
-  const items = chat.messages.map((m) => messageItem(m, chat));
+  // chat_send's word on why the lead didn't have a message holds until the lead writes after it: one held for an
+  // offline machine goes in once it is back, and the hub's copy never says so.
+  const lastLead = chat.messages.findLastIndex((m) => authorOf(m.author) === "lead");
+  const items = chat.messages.map((m, i) => messageItem(m, chat, i < lastLead));
   const known = new Set(chat.messages.map((m) => m.messageId));
   for (const [id, s] of Object.entries(chat.streams)) {
     if (known.has(id)) continue;
