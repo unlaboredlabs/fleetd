@@ -283,7 +283,10 @@ migration that sorts at or before the base's newest, the train:
 
 1. Picks the node holding the repo's checkout. It must be online and take agent work; the hub's own machine runs
    none of this. With no such node, the PR goes back to its agent as before.
-2. Fetches the base and the PR there, and rebases the PR onto `origin/<base>` in a scratch worktree.
+2. Fetches the base and the PR there, and rebases the PR onto `origin/<base>` in a scratch worktree. A branch with
+   merge commits, such as an integrator's that merged several writers' branches, instead goes on `origin/<base>` as
+   one commit of its whole diff, titled with the PR's title: an old merged-in commit that no longer replays on its own
+   then doesn't stop a branch that merges cleanly.
 3. Takes the base's side of each conflict in a generated file. A conflict in any other file stops it.
 4. Gives the PR's new migrations fresh UTC stamps, in order, when one sorts too early.
 5. Runs every `run` line, commits what changed as its own commit, then runs them all again: the second run must change
@@ -291,7 +294,8 @@ migration that sorts at or before the base's newest, the train:
 6. Pushes the result to the PR's branch, only if the branch is still where it was.
 
 The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
-directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
+directory, git under them has no credential helper, no hooks and no recorded conflict resolutions (rerere), and they
+get no SSH agent. The fetch and the push are
 separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
 reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory in the node's own home kept between runs
 (`~/.fleetd/node/cache/regenerate/<owner>-<name>`, or under the node's `--home`), for build caches such as
