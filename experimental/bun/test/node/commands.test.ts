@@ -1,7 +1,7 @@
 // What the hub has a node run: cmd checks confined to its roots, sealed secrets written to their sinks, approved
 // commands that read them back (scrubbed from their output) and keep their result for a gated_resume, node actions,
 // and lead calls relayed over the link with the calling process's session named by the kernel.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runNodeAction } from "../../src/node/actions/index.ts";
@@ -14,6 +14,10 @@ import { deliverSecret, envFileWith, parseSecretSink, secretEnvName, type Secret
 import { orderEnvFile, orderVarsForSpawn } from "../../src/node/secrets/env.ts";
 import type { NodeFrame } from "../../src/node/wire.ts";
 import { tempHome } from "../helpers.ts";
+
+// Each command is a process of its own, given up to its timeoutSec: a loaded machine (CI, or a busy devbox) takes
+// longer than bun's 5 s default.
+setDefaultTimeout(30_000);
 
 test("a cmd check runs in its roots only, its whole group killed at the timeout", async () => {
   const home = tempHome();

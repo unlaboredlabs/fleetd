@@ -5,9 +5,9 @@ import { build } from "../src/hub/serve/index.ts";
 import { events, type NewEvent } from "../src/hub/store/events.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 import { FakeApp } from "./fake-app.ts";
-import { insertKey, tempHome } from "./helpers.ts";
+import { hubHome, insertKey } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 tools.add("fleetd_status", () => ({ machines: [], projects: [], attention: [], cursor: events(hub).head() }) as never);
 const server = serve(hub, tools, 0);

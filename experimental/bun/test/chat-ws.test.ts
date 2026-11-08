@@ -5,9 +5,9 @@ import { chat } from "../src/hub/chat/index.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { FakeApp } from "./fake-app.ts";
-import { insertKey, tempHome } from "./helpers.ts";
+import { hubHome, insertKey } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 start(hub);
 const server = serve(hub, tools, 0);

@@ -1,6 +1,6 @@
 // The session-host helper: found beside the Bun build or named, never the Bun build or a script that runs it, and a
 // node without one is degraded and starts no session.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HELPER, NO_HELPER, findHelper } from "../../src/node/runner/helper.ts";
@@ -12,6 +12,10 @@ const script = (path: string, body: string) => {
   writeFileSync(path, `#!/bin/sh\n${body}\n`);
   chmodSync(path, 0o755);
 };
+
+// A probe runs claude, here a bun process, and a session host is one too: a loaded machine (CI, or a busy devbox) takes
+// longer than bun's 5 s default.
+setDefaultTimeout(30_000);
 
 test("the helper beside the build, or the one named, hosts sessions; a fleetd that is the Bun build never counts", () => {
   const home = tempHome();

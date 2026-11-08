@@ -60,7 +60,13 @@ describe("the slots, against another build-slot", () => {
       const { home, env } = setup();
       try {
         const a = Bun.spawn(cmd(first, home), { env, stdout: "pipe", stderr: "pipe" });
-        await Bun.sleep(first === "bun" ? 400 : 150);
+        // The first holds the slot once its cargo has started.
+        const out = a.stdout.getReader();
+        for (let seen = ""; !seen.includes("cargo build"); ) {
+          const chunk = await out.read();
+          if (chunk.done) break;
+          seen += new TextDecoder().decode(chunk.value);
+        }
         const b = Bun.spawn(cmd(second, home), { env, stdout: "pipe", stderr: "pipe" });
         const [aCode, bCode] = await Promise.all([a.exited, b.exited]);
         const bErr = await new Response(b.stderr).text();
@@ -70,6 +76,7 @@ describe("the slots, against another build-slot", () => {
       } finally {
         rmSync(home, { recursive: true, force: true });
       }
-    });
+      // Two fleetd processes start cold, one after the other: a loaded machine takes longer than bun's 5 s default.
+    }, 30_000);
   }
 });
