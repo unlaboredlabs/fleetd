@@ -80,3 +80,22 @@ test("hub start's flags, with the Rust hub's messages", () => {
   expect(parseHubArgs(["--listen"])).toBe("Option '--listen <value>' argument missing");
   expect(parseHubArgs(["--listen", "nope"])).toBe("--listen must be host:port, got 'nope'");
 });
+
+test("hub.url() is the URL setup saved, unless it is a wildcard address", async () => {
+  const { configuredUrl } = await import("../src/hub/serve/index.ts");
+  const { writeFileSync } = await import("node:fs");
+  const dir = tempHome();
+  const save = (url: string, machines: Record<string, unknown> = {}) =>
+    writeFileSync(`${dir.dir}/setup.json`, JSON.stringify({ listen: "0.0.0.0:4790", url, machines }));
+  expect(configuredUrl(dir.dir)).toBeUndefined();
+  save("http://devbox:4790");
+  expect(configuredUrl(dir.dir)).toBe("http://devbox:4790");
+  const built = build(dir.dir, { host: "127.0.0.1", port: 0 });
+  expect(built.hub.url()).toBe("http://devbox:4790");
+  built.hub.db.close();
+  save("http://0.0.0.0:4790");
+  expect(configuredUrl(dir.dir)).toBeUndefined();
+  save("http://devbox:4790", { "Not An Id": {} });
+  expect(configuredUrl(dir.dir)).toBeUndefined();
+  dir.done();
+});
