@@ -322,3 +322,52 @@ test("a slot's script carries the git identity the hub's setup.json holds", () =
     home.done();
   }
 });
+
+test("the pool's start fills the tasks area's cloud hooks: the room, a wake for work, and a claim", async () => {
+  const { Hub } = await import("../src/hub/api/hub.ts");
+  const { start, taskRoom } = await import("../src/hub/pool/loops.ts");
+  const { NO_ROOM, taskHooks } = await import("../src/hub/tasks/ports.ts");
+  const dir = `${home.dir}/hub-hooks`;
+  let now = T;
+  const hub = new Hub({ home: dir, listen: { host: "127.0.0.1", port: 4796 } }, HubDb.memory(), { now: () => now });
+  const boat = new FakeBoat();
+  const seen = new Map<string, number>();
+  const fleet: Fleet = { lastSeen: (m) => seen.get(m), busy: () => undefined, ready: () => true, othersHeard: () => true };
+  const pool = hub.area("pool", (h) => new Pool(h.db, dir, boat, new FakeTunnels(), fleet, h.clock, "UTC"));
+  // No loop: only the hooks.
+  hub.shutdown.abort();
+  expect(taskHooks(hub).pool).toBeUndefined();
+  start(hub);
+  const hooks = taskHooks(hub).pool!;
+  const project = { machineId: "lab-a", projectId: "shop" };
+  const task = { projectRef: project } as never;
+
+  // Off: no room and nothing to say, as before the pool filled the hooks.
+  expect(hooks.room(task, project)).toEqual(NO_ROOM);
+  expect(hooks.wake(undefined)).toEqual({ why: "the cloud machines are busy (0 of 0 awake)" });
+  expect(hooks.claim("boat-1")).toBe(false);
+
+  pool.setKey("boat_test_key");
+  pool.apply({ enabled: true, poolSize: 1, machineType: "large", dayBudget: 3, projects: [project], environment: "fleetd-devbox" });
+  // On, before the hub's first check of boat.dev: eligible, and closed for now.
+  expect(hooks.room(task, project)).toEqual({ eligible: true, awake: [], warm: 0, closed: "cloud machines wait for the hub's first check of boat.dev" });
+  pool.setReady();
+  await pool.create("boat-1", spec(now));
+  // The one being created is the one coming; one that isn't a slot says so.
+  expect(hooks.wake(undefined)).toEqual({ machine: "boat-1" });
+  expect(hooks.wake("boat-9")).toEqual({ why: "boat-9 is no longer a cloud machine" });
+  // Not awake yet: no claim on it.
+  expect(hooks.claim("boat-1")).toBe(false);
+  // Its node says hello: awake, and claimed for a launch.
+  seen.set("boat-1", now + 1);
+  now += 5_000;
+  await pool.tick();
+  expect(pool.ledger.slot("boat-1")!.state).toBe("awake");
+  expect(hooks.claim("boat-1")).toBe(true);
+  expect(hooks.wake("boat-1")).toEqual({ machine: "boat-1" });
+  expect(taskRoom({ eligible: { no: "not for cloud: its project's secret variables are only on its own machine" }, awake: [], warm: 0 })).toEqual({
+    eligible: { why: "not for cloud: its project's secret variables are only on its own machine" },
+    awake: [],
+    warm: 0,
+  });
+});
