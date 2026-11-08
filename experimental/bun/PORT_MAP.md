@@ -120,8 +120,8 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 
 ### MCP tools (/mcp and /app `call`)
 
-- [ ] `fleetd_status` → `src/hub/executor` (read) <!-- tool:`fleetd_status` -->
-- [ ] `project_get` → `src/hub/executor` (read) <!-- tool:`project_get` -->
+- [x] `fleetd_status` → `src/hub/executor` (read) <!-- tool:`fleetd_status` -->
+- [x] `project_get` → `src/hub/executor` (read) <!-- tool:`project_get` -->
 - [ ] `thread_tail` → `src/hub/executor` (read) <!-- tool:`thread_tail` -->
 - [ ] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
 - [ ] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
@@ -165,10 +165,10 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] `profile_update` → `src/hub/projects` (admin) <!-- tool:`profile_update` -->
 - [ ] `profile_delete` → `src/hub/projects` (admin) <!-- tool:`profile_delete` -->
 - [ ] `workstream_list` → `src/hub/leads` (read) <!-- tool:`workstream_list` -->
-- [ ] `decisions_search` → `src/hub/ledger` (read) <!-- tool:`decisions_search` -->
-- [ ] `decisions_record` → `src/hub/ledger` (operate) <!-- tool:`decisions_record` -->
-- [ ] `decisions_list` → `src/hub/ledger` (read) <!-- tool:`decisions_list` -->
-- [ ] `decisions_overturn` → `src/hub/ledger` (operate) <!-- tool:`decisions_overturn` -->
+- [x] `decisions_search` → `src/hub/ledger` (read) <!-- tool:`decisions_search` -->
+- [x] `decisions_record` → `src/hub/ledger` (operate) <!-- tool:`decisions_record` -->
+- [x] `decisions_list` → `src/hub/ledger` (read) <!-- tool:`decisions_list` -->
+- [x] `decisions_overturn` → `src/hub/ledger` (operate) <!-- tool:`decisions_overturn` -->
 - [ ] `tasks_list` → `src/hub/tasks` (read) <!-- tool:`tasks_list` -->
 - [ ] `task_get` → `src/hub/tasks` (read) <!-- tool:`task_get` -->
 - [ ] `cap_set` → `src/hub/tasks` (operate) <!-- tool:`cap_set` -->
