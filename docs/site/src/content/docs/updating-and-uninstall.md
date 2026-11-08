@@ -10,7 +10,9 @@ Keep fleetd up to date, or remove it.
 ### From the app {#everything}
 
 The hub looks for a newer build on its channel every 10 minutes. When it finds one, it downloads it ahead, checks it
-against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. Nothing is installed yet. The app then
+against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. Each downloads the build packed, about
+a third of its size, and checks it once unpacked; a cut-off download goes on from where it stopped. Nothing is installed
+yet. The app then
 shows one quiet notice, **fleetd *version* is ready**, with a few lines on what's new and an **Update** button. It shows
 once per version and never again for it; the sidebar keeps a small **Update** until you do.
 
@@ -31,7 +33,8 @@ it in and restarts, in order:
    its line says which build it runs.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
-   fails, the machine keeps the version it had and the rest of the update goes on. See
+   fails, the machine keeps the version it had and the rest of the update goes on. The install downloads about 200 MB
+   and gets 45 minutes, enough for a 1 Mbit/s link. See
    [Claude Code's version](/docs/machines#claude-version).
 4. **The app** installs its own update and restarts, once every machine is done. It downloads that update in the
    background, so it is usually ready by then. A message you were typing is still there after the restart. Only the
@@ -121,7 +124,9 @@ also copies the hub's binary to a worker.
 ### The desktop app {#app}
 
 The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
-in the background; a newer build than one already downloaded replaces it. It has its own line in the update sheet, and
+in the background; a newer build than one already downloaded replaces it. It downloads only the parts that changed since
+the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
+as it keeps the previous download to compare with). It has its own line in the update sheet, and
 its own **Update and restart** under **Details**. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.

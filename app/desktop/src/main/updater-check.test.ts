@@ -4,7 +4,12 @@ import type { UpdatesState } from "../shared/updates";
 const { fake } = vi.hoisted(() => ({
   // How the fake updater behaves, and the last one made, so a test can drive its download.
   fake: {
-    last: null as null | { emit: (event: string, info: unknown) => boolean; quitAndInstall: () => void },
+    last: null as null | {
+      emit: (event: string, info: unknown) => boolean;
+      quitAndInstall: () => void;
+      options: unknown;
+      disableDifferentialDownload: boolean;
+    },
     /** The feed's version, and how many checks read it. */
     feed: "0.6.0",
     checks: 0,
@@ -25,7 +30,7 @@ vi.mock("electron-updater", async () => {
     autoDownload = true;
     autoInstallOnAppQuit = true;
     quitAndInstall = vi.fn();
-    constructor() {
+    constructor(readonly options: unknown) {
       super();
       fake.last = this;
     }
@@ -75,6 +80,16 @@ describe("updates()", () => {
     fake.last?.emit("update-downloaded", { version: "0.6.0" });
     expect(fake.last?.quitAndInstall).toHaveBeenCalledOnce();
     expect(seen.map((s) => s.app.kind)).toEqual(["checking", "checking", "available", "available", "ready"]);
+  });
+
+  // A slow link brings down only what changed: the release's blockmaps, one range per request (GitHub's asset store
+  // answers a multipart range with 501).
+  it("downloads differentially, one range per request", async () => {
+    const handle = updates(null);
+    handle.check();
+    await flush();
+    expect(fake.last?.disableDifferentialDownload).toBe(false);
+    expect(fake.last?.options).toMatchObject({ provider: "generic", useMultipleRangeRequest: false });
   });
 
   // The cause of missed nightlies: the app checked at launch and then on a 4-hour timer, whose clock stops while the

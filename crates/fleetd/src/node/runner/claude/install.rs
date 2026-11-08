@@ -24,8 +24,9 @@ pub const ALREADY: &str = "already runs Claude Code";
 /// the update leaves it as it is, and says how to update it.
 pub const LEFT: &str = "Claude Code is";
 
-/// The longest `claude install` gets: it downloads about 200 MB.
-const INSTALL_WAIT: Duration = Duration::from_secs(600);
+/// The longest `claude install` gets: it downloads about 200 MB, which takes 27 minutes at 1 Mbit/s (10 minutes, as it
+/// was, failed every install below 3 Mbit/s). The hub waits a minute longer (`hub::link::commands`).
+pub const INSTALL_WAIT: Duration = Duration::from_secs(45 * 60);
 
 /// What the install does to the machine; tests stand in a fake.
 pub trait Claude: Sync {

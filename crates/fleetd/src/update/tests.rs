@@ -192,6 +192,96 @@ async fn a_streamed_build_that_doesnt_match_the_sums_is_deleted_and_refused() {
     assert_eq!(names(dir.path()), ["fleetd"]);
 }
 
+/// `bytes` packed as publish.sh packs a build (`xz --format=lzma`).
+fn packed(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    lzma_rs::lzma_compress(&mut &bytes[..], &mut out).unwrap();
+    out
+}
+
+/// A release with a build's packed copy beside it: SHA256SUMS lists both, as publish.sh writes it.
+fn with_packed(build: &[u8]) -> Chunked {
+    let feed = chunked(build);
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("fleetd-linux-x64.lzma".into(), packed(build));
+    let sums = format!(
+        "{}  fleetd-linux-x64\n{}  fleetd-linux-x64.lzma\n",
+        sha256_hex(build),
+        sha256_hex(&packed(build))
+    );
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("SHA256SUMS".into(), sums.into_bytes());
+    feed
+}
+
+#[tokio::test]
+async fn a_release_with_a_packed_build_is_downloaded_packed_and_lands_unpacked() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd.next");
+    let build: Vec<u8> = (0..200_000u32).map(|n| (n % 7) as u8).collect();
+    let feed = with_packed(&build);
+    // Only the packed copy can be read: the download can't have been the plain one.
+    feed.feed.files.lock().unwrap().remove("fleetd-linux-x64");
+
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), build);
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    assert_eq!(names(dir.path()), ["fleetd.next"]);
+    let sums = sums(&feed).await.unwrap();
+    assert!(is_build(&path, &sums, "fleetd-linux-x64"));
+}
+
+#[tokio::test]
+async fn a_packed_build_that_fails_falls_back_to_the_plain_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fleetd");
+    fs::write(&path, b"old").unwrap();
+
+    // Not lzma at all.
+    let feed = with_packed(b"new build");
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("fleetd-linux-x64.lzma".into(), b"not packed".to_vec());
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"new build");
+
+    // Unpacks, but to another build than the sums name: the plain one is checked on its own, and lands.
+    fs::write(&path, b"old").unwrap();
+    let feed = with_packed(b"new build");
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("fleetd-linux-x64.lzma".into(), packed(b"evil build"));
+    verified_to(&feed, "fleetd-linux-x64", &path).await.unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"new build");
+
+    // Both wrong: refused, and nothing changed.
+    fs::write(&path, b"old").unwrap();
+    feed.feed
+        .files
+        .lock()
+        .unwrap()
+        .insert("fleetd-linux-x64".into(), b"evil build".to_vec());
+    let mismatch = verified_to(&feed, "fleetd-linux-x64", &path)
+        .await
+        .unwrap_err();
+    assert_eq!(mismatch.stage, UpdateStage::Checksum);
+    assert_eq!(fs::read(&path).unwrap(), b"old");
+    assert_eq!(names(dir.path()), ["fleetd"]);
+}
+
 #[tokio::test]
 async fn a_download_cut_off_midway_leaves_nothing_behind() {
     let dir = tempfile::tempdir().unwrap();

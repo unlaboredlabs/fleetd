@@ -33,6 +33,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
 if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-linux-* fleetd-darwin-*; fi
 shopt -s nullglob
+# Each CLI build also goes up packed, <asset>.lzma (`xz --format=lzma`, about a third of the size), which hubs and nodes
+# download instead once the SHA256SUMS list it (src/update). The darwin builds are signed by now; what unpacks is them.
+packing=()
+for bin in fleetd-linux-x64 fleetd-darwin-arm64 fleetd-darwin-x64; do
+  if [ -f "$bin" ]; then
+    xz --format=lzma -9e -c "$bin" > "$bin.lzma" &
+    packing+=("$!")
+  fi
+done
+for pid in ${packing[@]+"${packing[@]}"}; do wait "$pid"; done
 assets=(fleetd-*)
 if [ ${#assets[@]} -eq 0 ]; then
   echo "nothing was built; the release stays as it is"

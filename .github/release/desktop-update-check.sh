@@ -2,7 +2,8 @@
 # Launches a packaged desktop app against a local update feed that offers the release asset as version 99.0.0, and
 # requires the app to stay up and take the update. On macOS Squirrel.Mac must accept the download, which it only does
 # when the update is signed like the running app; on Linux the AppImage updater must download it and match the
-# sha512 in the feed. So it proves the hardened runtime's entitlements (without allow-jit the app dies at its first
+# sha512 in the feed, differentially (its blockmap, the feed's blockMapSize and range requests, which the feed
+# answers as GitHub does). So it proves the hardened runtime's entitlements (without allow-jit the app dies at its first
 # script), the feed update-yml.sh writes, and the signature chain an update needs. Nothing is installed: the app and
 # its helpers are killed, not quit (a normal quit installs the update and relaunches it). Run it on a copy anyway.
 #
@@ -32,7 +33,7 @@ done_marker="${DONE_MARKER:-$done_marker}"
 cp "$asset" "$feed/"
 "$here/update-yml.sh" "$feed/$(basename "$asset")" 99.0.0 > "$feed/$yml"
 
-(cd "$feed" && exec python3 -I -m http.server "$port" --bind 127.0.0.1) > "$feed/http.log" 2>&1 &
+python3 -I "$here/feed-server.py" "$feed" "$port" > "$feed/http.log" 2>&1 &
 server=$!
 # Serving this feed, not an older one still on the port (a server that can't bind exits within the first second).
 sleep 1
@@ -76,6 +77,11 @@ done
 show
 echo "feed requests:"
 cat "$feed/http.log"
+# The AppImage's update went block by block (electron-updater logs the plan), not the whole file after a failure.
+if [ "$result" = ok ] && [ -z "${DONE_MARKER:-}" ] && grep -q '^    blockMapSize:' "$feed/$yml" &&
+  { ! grep -q '^Full: .*To download: ' "$log" || grep -q 'Cannot download differentially' "$log"; }; then
+  result="the update didn't download differentially"
+fi
 case "$result" in
 ok) echo "the app is running and took the update from the local feed ($done_marker)" ;;
 "") echo "::error::the app didn't take the update within ${CHECK_WAIT:-180}s" && exit 1 ;;

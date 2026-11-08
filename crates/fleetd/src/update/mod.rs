@@ -10,6 +10,10 @@
 //! Release assets (built by .github/workflows/build-release.yml) have version-less names next to `SHA256SUMS` and
 //! `release.json`, at `releases/download/edge/` or `releases/latest/download/`. Those are CDN downloads, not the
 //! GitHub API, so there is no token and no rate limit. `FLEETD_BASE_URL` points at another asset directory.
+//!
+//! A CLI build also has a packed copy beside it, `<asset>.lzma` (publish.sh), about a third of its size. A release whose
+//! SHA256SUMS lists it is downloaded packed and unpacked as it streams in, and what lands is checked against the plain
+//! asset's line, as ever. Releases from before have only the plain asset, which older fleetd keeps reading.
 use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
@@ -283,20 +287,14 @@ pub async fn verified(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
 }
 
 /// [`verified`] straight into `path`: the asset streams into a file beside it while it is hashed, and lands at `path`
-/// only when it matches; otherwise that file is deleted and `path` is as it was.
+/// only when it matches; otherwise that file is deleted and `path` is as it was. The sums come first, as they say
+/// whether the release has the asset packed.
 pub async fn verified_to(feed: &dyn Feed, name: &str, path: &Path) -> Result<(), Failure> {
-    let part = staging(path);
-    let (sums, actual) = tokio::join!(sums(feed), download_to(feed, name, &part));
-    let landed = sums.and_then(|sums| {
-        if !sums.contains_key(name) {
-            return Err(not_in_release(name));
-        }
-        land(&sums, name, &actual?, &part, path)
-    });
-    landed.inspect_err(|_| _ = fs::remove_file(&part))
+    checked_to(feed, &sums(feed).await?, name, path).await
 }
 
-/// [`verified_to`] against sums already read.
+/// [`verified_to`] against sums already read. The packed copy when the sums list it; if that one fails (cut off for
+/// good, not unpacking, not matching), the plain asset.
 pub async fn checked_to(
     feed: &dyn Feed,
     sums: &HashMap<String, String>,
@@ -307,12 +305,28 @@ pub async fn checked_to(
         return Err(not_in_release(name));
     }
     let part = staging(path);
-    let landed = match download_to(feed, name, &part).await {
+    let packed = format!("{name}{PACKED}");
+    if sums.contains_key(&packed) {
+        match download_to(feed, name, true, &part)
+            .await
+            .and_then(|actual| land(sums, name, &actual, &part, path))
+        {
+            Ok(()) => return Ok(()),
+            Err(f) => tracing::warn!("update: `{packed}` didn't land ({f}); downloading `{name}`"),
+        }
+    }
+    let landed = match download_to(feed, name, false, &part).await {
         Ok(actual) => land(sums, name, &actual, &part, path),
         Err(f) => Err(f),
     };
     landed.inspect_err(|_| _ = fs::remove_file(&part))
 }
+
+/// The suffix of an asset's packed copy: `xz --format=lzma`, which streams through one small decoder.
+pub const PACKED: &str = ".lzma";
+
+/// More than any build unpacks to: a packed download that goes past it stops.
+const MAX_BUILD: u64 = 1 << 30;
 
 fn not_in_release(name: &str) -> Failure {
     Failure::new(
@@ -342,24 +356,66 @@ async fn download(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
     feed.get(name).await.map_err(|e| download_failed(name, &e))
 }
 
-/// Streams `name` into a new file at `part`, hashing it on the way: its SHA-256.
-async fn download_to(feed: &dyn Feed, name: &str, part: &Path) -> Result<String, Failure> {
+/// Streams `name` into a new file at `part`, hashing it on the way: its SHA-256. `packed` downloads `name`'s packed
+/// copy instead and unpacks it on the way, so the file and the hash are the plain asset's.
+async fn download_to(
+    feed: &dyn Feed,
+    name: &str,
+    packed: bool,
+    part: &Path,
+) -> Result<String, Failure> {
     if let Some(dir) = part.parent() {
         fs::create_dir_all(dir).map_err(|e| not_kept(part, &e))?;
     }
-    let mut file = fs::File::create(part).map_err(|e| not_kept(part, &e))?;
-    let mut sha = Sha256::new();
-    feed.stream(name, &mut |chunk| {
-        sha.update(chunk);
-        file.write_all(chunk)
-            .map_err(|e| format!("couldn't write `{}`: {e}", part.display()))
-    })
-    .await
-    .map_err(|e| download_failed(name, &e))?;
-    file.set_permissions(fs::Permissions::from_mode(0o755))
-        .and_then(|()| file.sync_all())
+    let file = fs::File::create(part).map_err(|e| not_kept(part, &e))?;
+    let mut out = Hashed {
+        file,
+        sha: Sha256::new(),
+        len: 0,
+    };
+    let wrote = |e: std::io::Error| format!("couldn't write `{}`: {e}", part.display());
+    if packed {
+        let asset = format!("{name}{PACKED}");
+        let mut unpack = lzma_rs::decompress::Stream::new(out);
+        feed.stream(&asset, &mut |chunk| unpack.write_all(chunk).map_err(wrote))
+            .await
+            .map_err(|e| download_failed(&asset, &e))?;
+        out = unpack
+            .finish()
+            .map_err(|e| download_failed(&asset, &format!("it doesn't unpack: {e}")))?;
+    } else {
+        feed.stream(name, &mut |chunk| out.write_all(chunk).map_err(wrote))
+            .await
+            .map_err(|e| download_failed(name, &e))?;
+    }
+    out.file
+        .set_permissions(fs::Permissions::from_mode(0o755))
+        .and_then(|()| out.file.sync_all())
         .map_err(|e| not_kept(part, &e))?;
-    Ok(hex(&sha.finalize()))
+    Ok(hex(&out.sha.finalize()))
+}
+
+/// A download's file, and the SHA-256 and length of what was written to it.
+struct Hashed {
+    file: fs::File,
+    sha: Sha256,
+    len: u64,
+}
+
+impl Write for Hashed {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.len += bytes.len() as u64;
+        if self.len > MAX_BUILD {
+            return Err(std::io::Error::other("it unpacks to more than any build"));
+        }
+        self.file.write_all(bytes)?;
+        self.sha.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
 }
 
 /// Moves the download at `part` to `path` when `actual` is what the sums name for `name`.
