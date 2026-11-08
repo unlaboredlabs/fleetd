@@ -364,15 +364,26 @@ impl Socket {
 /// The project `given` names, as `fleetd status` finds one: its id, title or folder, `<machine>/` first when two
 /// machines have one.
 async fn project_ref(socket: &mut Socket, given: &str) -> Result<Value, Failure> {
-    let listed = socket.call("project_get", json!({})).await?;
+    let machine = given
+        .split_once('/')
+        .map(|(m, _)| m)
+        .filter(|m| super::is_machine_id(m));
+    let listed = socket
+        .call("project_get", json!({ "machineId": machine }))
+        .await?;
     let projects = listed["projects"].as_array().cloned().unwrap_or_default();
-    pick_project(given, &projects).map_err(Failure::Refused)
+    pick_project(given, &projects, listed["truncated"] == true).map_err(Failure::Refused)
 }
 
-fn pick_project(given: &str, projects: &[Value]) -> Result<Value, String> {
-    super::time::resolve_project(given, projects).map_err(|why| match projects {
-        [] => format!("no project {given}: the hub has none yet"),
-        _ => why.replacen("no order or project", "no project", 1),
+/// `truncated`: the hub listed only its first projects, so a `<machine>/<id>` not among them goes as given, for the
+/// hub to find.
+fn pick_project(given: &str, projects: &[Value], truncated: bool) -> Result<Value, String> {
+    super::time::resolve_project(given, projects).or_else(|why| match given.split_once('/') {
+        Some((machine_id, project_id)) if truncated && super::is_machine_id(machine_id) => {
+            Ok(json!({ "machineId": machine_id, "projectId": project_id }))
+        }
+        _ if projects.is_empty() => Err(format!("no project {given}: the hub has none yet")),
+        _ => Err(why.replacen("no order or project", "no project", 1)),
     })
 }
 
@@ -671,23 +682,36 @@ mod tests {
         ];
         let at = |m: &str, p: &str| Ok(json!({ "machineId": m, "projectId": p }));
         assert_eq!(
-            pick_project("devbox/storefront", &projects),
+            pick_project("devbox/storefront", &projects, false),
             at("devbox", "f0d0d1a4")
         );
         assert_eq!(
-            pick_project("devbox/f0d0d1a4", &projects),
+            pick_project("devbox/f0d0d1a4", &projects, false),
             at("devbox", "f0d0d1a4")
         );
-        assert_eq!(pick_project("Docs site", &projects), at("devbox", "77ab"));
-        assert_eq!(pick_project("docs", &projects), at("devbox", "77ab"));
+        assert_eq!(
+            pick_project("Docs site", &projects, false),
+            at("devbox", "77ab")
+        );
+        assert_eq!(pick_project("docs", &projects, false), at("devbox", "77ab"));
         assert!(
-            pick_project("storefront", &projects)
+            pick_project("storefront", &projects, false)
                 .unwrap_err()
                 .contains("devbox/storefront, buildbox/storefront")
         );
-        let none = pick_project("devbox/nope", &projects).unwrap_err();
+        let none = pick_project("devbox/nope", &projects, false).unwrap_err();
         assert!(none.starts_with("no project 'devbox/nope'"), "{none}");
-        assert!(pick_project("app", &[]).unwrap_err().contains("none yet"));
+        assert!(
+            pick_project("app", &[], false)
+                .unwrap_err()
+                .contains("none yet")
+        );
+        // A hub with more projects than one list holds: an id past them goes as given, as it always did.
+        assert_eq!(
+            pick_project("devbox/5e2a", &projects, true),
+            at("devbox", "5e2a")
+        );
+        assert!(pick_project("nope", &projects, true).is_err());
     }
 
     #[test]
@@ -747,5 +771,102 @@ mod tests {
         assert_eq!(rest_of("", "On it."), "On it.");
         assert_eq!(app_url("http://127.0.0.1:4795/"), "ws://127.0.0.1:4795/app");
         assert_eq!(app_url("https://hub.example"), "wss://hub.example/app");
+    }
+}
+
+#[cfg(test)]
+mod against_a_hub {
+    use std::sync::Arc;
+
+    use crate::clock::SystemClock;
+    use crate::hub::api::{self, HubConfig, Listen};
+    use crate::hub::store::{HubDb, HubStore};
+    use fleetd_contracts::auth::{Grant, KeyKind};
+    use fleetd_contracts::ids::MachineId;
+    use serde_json::json;
+
+    /// Bug hunt: `fleetd chat devbox/storefront "…"`, as the docs write it, was refused ("No project storefront on
+    /// devbox"), and `chat history` of it said "No messages yet": project ids are generated, and chat sent the title
+    /// on as the id.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_chat_names_its_project_by_title() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+        };
+        let db = HubDb::open_memory().unwrap();
+        HubStore::new(db.clone())
+            .projects_upsert_many(
+                &MachineId::new("devbox").unwrap(),
+                &[serde_json::from_value(json!({
+                    "machineId": "devbox", "projectId": "f0d0d1a4", "title": "storefront", "workspaceRoot": "/w/shop",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                    "lastActivityAt": "2026-11-08T00:00:00.000Z",
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let hub = crate::hub::serve::build_on(db, config, Arc::new(SystemClock)).unwrap();
+        let grants: Vec<Grant> =
+            serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+        let key = hub
+            .auth
+            .create_key("tester", &grants, KeyKind::Agent)
+            .unwrap()
+            .key;
+        let key_file = home.path().join("agent.key");
+        std::fs::write(&key_file, format!("{key}\n")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let served = tokio::spawn(crate::hub::http::serve(
+            listener,
+            hub.clone(),
+            Arc::new(api::registry()),
+        ));
+        let chat = |args: &[&str]| {
+            let mut argv: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+            argv.extend(
+                ["--key-file", key_file.to_str().unwrap(), "--hub", &url].map(str::to_owned),
+            );
+            async move { super::chat_command(&argv).await }
+        };
+        assert_eq!(
+            chat(&["devbox/storefront", "ship it"]).await,
+            0,
+            "by its title"
+        );
+        assert_eq!(
+            chat(&["devbox/f0d0d1a4", "and the docs"]).await,
+            0,
+            "by its id"
+        );
+        let texts: Vec<String> = hub
+            .db
+            .with(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT project_id, json_extract(data, '$.text') FROM chat_messages ORDER BY n",
+                )?;
+                let rows = stmt
+                    .query_map([], |r| {
+                        Ok(format!(
+                            "{}: {}",
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .unwrap();
+        assert_eq!(texts, ["f0d0d1a4: ship it", "f0d0d1a4: and the docs"]);
+        assert_eq!(chat(&["history", "devbox/storefront"]).await, 0);
+        assert_eq!(
+            chat(&["history", "devbox/nope"]).await,
+            3,
+            "no such project"
+        );
+        served.abort();
     }
 }
