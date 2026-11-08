@@ -315,13 +315,13 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] `requests_list` → `src/hub/approvals` (read) <!-- tool:`requests_list` -->
 - [x] `secret_submit` → `src/hub/approvals` (operate) <!-- tool:`secret_submit` -->
 - [x] `approval_answer` → `src/hub/approvals` (operate) <!-- tool:`approval_answer` -->
-- [ ] `machine_add_plan` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_plan` -->
-- [ ] `machine_add` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add` -->
-- [ ] `machine_add_status` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_status` -->
-- [ ] `machine_hosts` → `src/hub/machine_setup` (admin) <!-- tool:`machine_hosts` -->
-- [ ] `machine_remove` → `src/hub/machine_setup` (admin) <!-- tool:`machine_remove` -->
-- [ ] `machine_join` → `src/hub/machine_setup` (admin) <!-- tool:`machine_join` -->
-- [ ] `machine_claude_login` → `src/hub/machine_setup` (admin) <!-- tool:`machine_claude_login` -->
+- [x] `machine_add_plan` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_plan` -->
+- [x] `machine_add` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add` -->
+- [x] `machine_add_status` → `src/hub/machine_setup` (admin) <!-- tool:`machine_add_status` -->
+- [x] `machine_hosts` → `src/hub/machine_setup` (admin) <!-- tool:`machine_hosts` -->
+- [x] `machine_remove` → `src/hub/machine_setup` (admin) <!-- tool:`machine_remove` -->
+- [x] `machine_join` → `src/hub/machine_setup` (admin) <!-- tool:`machine_join` -->
+- [x] `machine_claude_login` → `src/hub/machine_setup` (admin) <!-- tool:`machine_claude_login` -->
 - [x] `hub_update` → `src/hub/update` (admin) <!-- tool:`hub_update` -->
 - [x] `hub_update_status` → `src/hub/update` (read) <!-- tool:`hub_update_status` -->
 - [x] `hub_update_settings` → `src/hub/update` (admin) <!-- tool:`hub_update_settings` -->
