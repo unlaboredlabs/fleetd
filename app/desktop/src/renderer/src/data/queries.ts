@@ -27,6 +27,9 @@ export class CallError extends Error {
 /** The hub refused the input or the key: asking again won't help. */
 const FINAL_CODES = new Set(["invalid", "forbidden", "not_found"]);
 
+/** How long a file's bytes stay cached once nothing shows them. */
+export const ATTACHMENT_GC_MS = 10_000;
+
 export const callKey = <T extends ToolName>(tool: T, input: ToolInput<T>) => ["call", tool, input] as const;
 
 /** The slice of `window.fleetd.hub` the data layer uses, for one hub (`bindHub`). */
@@ -157,6 +160,10 @@ export const createDataLayer = (
       },
     },
   });
+
+  // A file's bytes (base64, up to 25 MiB each) leave memory soon after nothing shows them, rather than the default
+  // five minutes: scrolled through, a chat of screenshots held every one. Shown again, it is read again.
+  queryClient.setQueryDefaults(["call", "attachment_get"], { gcTime: ATTACHMENT_GC_MS });
 
   let reads = 0;
   /** By query hash: the newest read that answered. A read a reset made moot can land after; it never wins. */
