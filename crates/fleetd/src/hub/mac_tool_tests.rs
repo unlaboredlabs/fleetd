@@ -119,7 +119,7 @@ async fn a_sealed_step_goes_to_the_mac_as_it_is_with_who_sent_it_and_its_answer_
     let (hub, _home) = hub();
     hub.link.set_capabilities(&mid("mac1"), &[CAP_MAC_TOOL]);
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
-    let _link = hub.node_commands.attach(&mid("mac1"), tx);
+    let _link = hub.node_commands.attach(&mid("mac1"), 1, tx);
     let node = hub.clone();
     tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {

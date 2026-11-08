@@ -805,14 +805,12 @@ impl Executors {
     /// Takes over the machine's link and (re)subscribes. Idempotent for the same link.
     pub async fn attach(self: &Arc<Self>, machine_id: &MachineId, sessions: NodeSessions) {
         let (tx, rx) = mpsc::unbounded_channel();
+        let link_id = sessions.link_id;
         let old = {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines.entry(machine_id.clone()).or_default();
-            if slot
-                .link
-                .as_ref()
-                .is_some_and(|l| l.link_id == sessions.link_id)
-            {
+            // Two links of one machine can get here in either order: an older one coming late must not take over.
+            if slot.link.as_ref().is_some_and(|l| l.link_id >= link_id) {
                 return;
             }
             slot.link = Some(sessions);
@@ -825,11 +823,14 @@ impl Executors {
             old.abort();
             let _ = old.await;
         }
-        let this = self.clone();
-        let id = machine_id.clone();
-        let task = tokio::spawn(async move { this.supervise(id, rx).await });
-        if let Some(slot) = self.machines.lock().unwrap().get_mut(machine_id) {
-            slot.supervisor = Some(task);
+        // A newer link that attached while this one waited for the old supervisor runs its own.
+        let mut machines = self.machines.lock().unwrap();
+        if let Some(slot) = machines.get_mut(machine_id)
+            && slot.link.as_ref().is_some_and(|l| l.link_id == link_id)
+        {
+            let this = self.clone();
+            let id = machine_id.clone();
+            slot.supervisor = Some(tokio::spawn(async move { this.supervise(id, rx).await }));
         }
     }
 

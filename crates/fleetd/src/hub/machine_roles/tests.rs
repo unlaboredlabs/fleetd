@@ -188,7 +188,7 @@ pub(super) fn remote(hub: &Arc<Hub>) -> crate::hub::link::commands::AttachedLink
     hub.db.transaction(|c| super::set_remote(c, true)).unwrap();
     let (tx, rx) = mpsc::unbounded_channel::<HubToNode>();
     std::mem::forget(rx);
-    hub.node_commands.attach(&mid("devbox"), tx)
+    hub.node_commands.attach(&mid("devbox"), 1, tx)
 }
 
 /// mac1's node: answers each hosted call it gets with `answer(call)`, and says which key it hosted under.
@@ -199,7 +199,7 @@ fn mac1_node(
     mpsc::UnboundedReceiver<(String, String)>,
 ) {
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
-    let link = hub.node_commands.attach(&mid("mac1"), tx);
+    let link = hub.node_commands.attach(&mid("mac1"), 1, tx);
     let (seen_tx, seen) = mpsc::unbounded_channel();
     let hub = hub.clone();
     tokio::spawn(async move {
@@ -954,7 +954,7 @@ async fn a_remote_start_with_no_answer_is_cancelled_and_holds_no_slot() {
     let _devbox = remote(&hub);
     // mac1's node takes the start and never answers it; it answers the cancel.
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
-    let _mac1 = hub.node_commands.attach(&mid("mac1"), tx);
+    let _mac1 = hub.node_commands.attach(&mid("mac1"), 1, tx);
     let (ends_tx, mut ends) = mpsc::unbounded_channel::<String>();
     {
         let hub = hub.clone();
@@ -1445,7 +1445,7 @@ async fn screen_settings_go_to_the_machines_node_and_its_answer_shows_at_once() 
 
     // A node too old to take them, then one that's gone.
     let (tx, rx) = mpsc::unbounded_channel::<HubToNode>();
-    let link = hub.node_commands.attach(&mid("devbox"), tx);
+    let link = hub.node_commands.attach(&mid("devbox"), 1, tx);
     let old = tool(
         &hub,
         "machine_screens_set",
@@ -1485,7 +1485,7 @@ async fn screen_settings_go_to_the_machines_node_and_its_answer_shows_at_once() 
         ],
     );
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
-    let _link = hub.node_commands.attach(&mid("devbox"), tx);
+    let _link = hub.node_commands.attach(&mid("devbox"), 1, tx);
     let node = {
         let hub = hub.clone();
         tokio::spawn(async move {

@@ -47,3 +47,12 @@ unsafe_code = "forbid"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Dev and test builds keep file and line for the workspace's own crates (backtraces still name them), and no debug
+# info for dependencies: rustc peaks lower, and the build, its incremental cache and its link are smaller and quicker.
+# CI drops it for the workspace too (CARGO_PROFILE_DEV_DEBUG in ci.yml).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0

@@ -65,7 +65,7 @@ fn runner_reporting(hub: &Arc<Hub>, m: &str, late: bool) -> mpsc::UnboundedRecei
     .unwrap();
     hub.store.machine_upsert(&machine, None).unwrap();
     let (tx, mut calls) = mpsc::unbounded_channel::<HubToNode>();
-    std::mem::forget(hub.node_commands.attach(&mid(m), tx));
+    std::mem::forget(hub.node_commands.attach(&mid(m), 1, tx));
     let mut link = hub
         .link
         .test_link(&mid(m), &[CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_BROWSER]);
