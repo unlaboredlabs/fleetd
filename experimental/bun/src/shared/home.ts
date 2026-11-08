@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 /** `~` expanded, absolute against the cwd (crates/fleetd/src/hub/store/db.rs `expand_home`). */
 export function expandHome(raw: string, userHome = homedir()): string {
@@ -7,8 +7,32 @@ export function expandHome(raw: string, userHome = homedir()): string {
   return isAbsolute(expanded) ? expanded : resolve(expanded);
 }
 
-/** `$FLEETD_HOME`, else `~/.fleetd` (crates/fleetd/src/home.rs). */
+/** The parent of the `--home` this process was started with (crates/fleetd/src/home.rs `BESIDE_HOME`). */
+let besideHome: string | undefined;
+
+/** `$FLEETD_HOME`, else the directory beside `--home`, else `~/.fleetd` (crates/fleetd/src/home.rs). */
 export function fleetdDir(): string {
   const env = process.env.FLEETD_HOME;
-  return env ? expandHome(env) : join(homedir(), ".fleetd");
+  return env ? expandHome(env) : (besideHome ?? join(homedir(), ".fleetd"));
+}
+
+/** The fleetd dir when it isn't `~/.fleetd`: then files that otherwise live elsewhere go in it too. */
+export function relocated(): string | undefined {
+  const dir = fleetdDir();
+  return dir === join(homedir(), ".fleetd") ? undefined : dir;
+}
+
+/** The `--home` in a command line (`--home <dir>` or `--home=<dir>`, before any `--`). */
+export function homeFlag(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length && argv[i] !== "--"; i++) {
+    if (argv[i] === "--home") return argv[i + 1] === "--" ? undefined : argv[i + 1];
+    if (argv[i]!.startsWith("--home=")) return argv[i]!.slice(7);
+  }
+  return undefined;
+}
+
+/** Called once by main, before the command runs: a command given `--home <dir>` keeps its state beside it. */
+export function initFromArgv(argv: string[]) {
+  const home = homeFlag(argv);
+  if (home) besideHome = dirname(expandHome(home));
 }

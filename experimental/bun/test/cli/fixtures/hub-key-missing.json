@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: missing hub key command\n\nusage:\n  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>]\n             create an agent key for the MCP endpoint; prints the key once, or with --out writes it\n             to a new file (0600) and prints the file's path\n  hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>]\n             a named agent's key, to write in a project's chat (fleetd chat --key-file): its\n             messages show as that agent's, never yours. Operate on every machine unless\n             --machines. Written to a new file (0600), <hub home>/keys/<name>.key unless --out;\n             prints only the file's path\n  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>]\n             a key for a person's device (the desktop app): what it answers is recorded as the\n             human's; role defaults to operate on every machine\n  hub key list\n  hub key revoke <keyId>\n             takes effect at once, also on a running hub; the hub links made on that device\n             are revoked with it\n\n"
+}

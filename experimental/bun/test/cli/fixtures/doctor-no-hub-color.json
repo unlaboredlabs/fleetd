@@ -1,0 +1,5 @@
+{
+  "code": 4,
+  "stdout": "",
+  "stderr": "✗  doctor $HOME/hub has no hub set up. Fix: fleetd init (it starts the hub and repairs its setup)\n"
+}

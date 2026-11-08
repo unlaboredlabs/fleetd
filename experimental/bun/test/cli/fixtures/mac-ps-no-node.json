@@ -1,0 +1,5 @@
+{
+  "code": 69,
+  "stdout": "",
+  "stderr": "mac: fleetd hub unreachable: no fleetd node is listening at /nonexistent/node.sock (set FLEETD_NODE_SOCK if it is elsewhere) — tell the human the node is down and carry on\n"
+}

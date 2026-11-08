@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: 'x' is not a person id (p_…); `fleetd people` lists them\n"
+}

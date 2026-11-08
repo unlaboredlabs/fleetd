@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "hub home $HOME/hub\nno commit identity yet: add one with --git-identity \"Name <id+user@users.noreply.github.com>\" before adding machines\nthe hub not started; run it yourself with: fleetd hub start --home $HOME/hub --listen 127.0.0.1:1\nnext: run fleetd init in a terminal to add workers, a first project and the desktop app (fleetd init --yes takes every default)\n"
+}

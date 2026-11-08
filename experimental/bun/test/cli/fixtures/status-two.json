@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: give one project, got 'a b'\n\nusage:\n  status [<project>] [--watch] [--json] [--hub <url> --key-file <path>]\n             one row per project, as the app's Status screen shows it: what it is doing\n             (working, waiting on you, blocked and why, idle), its work in groups (waiting on\n             you, in review, working, landing, idle, done), agents running and the last merge;\n             one project by id or title (<machine>/<project> when two machines have one).\n             --watch prints the rows again after each change; a stale row says so. On the hub\n             machine it needs no --hub or --key-file\n"
+}

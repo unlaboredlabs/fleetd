@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  hub start [--home <dir>] [--listen <host:port>]\n             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,\n             writes to an offline machine wait 24 h)\n",
+  "stderr": ""
+}

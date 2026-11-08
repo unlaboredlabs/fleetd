@@ -256,10 +256,15 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
     out
 }
 
-/// File name -> file contents.
+/// File name -> file contents. `LeadCall.json` too, which the app never sends: the Bun hub decodes the node's lead
+/// calls against it (experimental/bun), so it stays out of the app's TypeScript.
 pub fn render_json_schemas() -> BTreeMap<String, String> {
     json_schemas()
         .into_iter()
+        .chain([(
+            "LeadCall",
+            document::<crate::lead_calls::LeadCall>("LeadCall"),
+        )])
         .map(|(name, doc)| {
             (
                 format!("{name}.json"),

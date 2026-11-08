@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no agent key key_nope; run `fleetd hub key list` to see key ids\n"
+}

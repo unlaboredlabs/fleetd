@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "usage:\n  steer T<n> \"<text>\" [--now] [--wait] --key-file <human key> [--hub <url>]\n             steer one agent (T88) mid-run. Plain: it lands at the agent's next step, after the\n             tool it is running returns. --now stops that step and delivers at once. --wait\n             follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed.\n             Without --hub it uses the hub on this machine. To reach a project's lead, use\n             fleetd chat\n  steer withdraw S<n> --key-file <human key> [--hub <url>]\n             take back a steer the agent has not taken in yet\n  steers <W|T> --key-file <human key> [--hub <url>]\n             an order's (or one agent's) recent steers and their receipts\n",
+  "stderr": ""
+}

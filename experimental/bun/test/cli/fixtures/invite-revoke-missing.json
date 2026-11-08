@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd: no invite inv_ID; `fleetd invite list` lists the open ones\n"
+}

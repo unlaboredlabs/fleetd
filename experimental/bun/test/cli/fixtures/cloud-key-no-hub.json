@@ -1,0 +1,5 @@
+{
+  "code": 2,
+  "stdout": "",
+  "stderr": "fleetd: --key-file needs --hub\n\nusage:\n  cloud stop [--json] [--hub <url> --key-file <path>]\n             the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev\n             lists with this hub's label, whether the hub's ledger knows it or not. They stay off\n             until turned on again in Settings › Hub › Machines. On the hub machine it needs neither --hub\n             nor --key-file\n"
+}
