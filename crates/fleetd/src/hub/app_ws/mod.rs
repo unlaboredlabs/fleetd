@@ -227,6 +227,10 @@ impl Session {
                 }
             };
         }
+        // Every frame goes on the key as it is now: one revoked from the CLI since the last recheck reads nothing more.
+        if self.key_refused() {
+            return After::Close(CLOSE_UNAUTHORIZED, "unauthorized");
+        }
         let Some((key, info)) = self.caller.clone() else {
             let id = match &message {
                 AppClientMessage::Call { id, .. } => Some(id.as_str().to_owned()),

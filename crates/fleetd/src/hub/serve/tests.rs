@@ -1273,3 +1273,72 @@ async fn a_removed_person_s_open_app_connections_are_closed_at_once() {
     assert!(!failed, "{out}");
     assert_eq!(closed_with(&mut app).await, 4401);
 }
+
+/// A person's device on an open /app socket, authenticated and streaming the event log.
+async fn streaming_device(
+    t: &TestHub,
+    person: Option<&fleetd_contracts::people::PersonId>,
+) -> (
+    String,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+) {
+    let grants: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap();
+    let created = t
+        .hub
+        .auth
+        .create_key_for("phone", &grants, KeyKind::Human, person)
+        .unwrap();
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": created.key }),
+        json!({ "t": "events", "cursor": 0 }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let ready: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(ready["t"], "ready");
+    (created.info.key_id.to_string(), app)
+}
+
+/// A key revoked outside this hub's process (`fleetd hub key revoke` writes the database itself) is refused at the
+/// socket's next frame, whatever it is: a snapshot reads the whole fleet.
+#[tokio::test]
+async fn a_key_revoked_elsewhere_is_refused_at_the_sockets_next_frame() {
+    let t = start().await;
+    let (key_id, mut app) = streaming_device(&t, None).await;
+    t.hub
+        .db
+        .with(|c| {
+            c.execute(
+                "UPDATE agent_keys SET revoked_ms = 1 WHERE key_id = ?",
+                [&key_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    app.send(Message::text(json!({ "t": "snapshot" }).to_string()))
+        .await
+        .unwrap();
+    let mut got_snapshot = false;
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match app.next().await {
+                Some(Ok(Message::Text(text))) if text.contains("\"snapshot\"") => {
+                    got_snapshot = true
+                }
+                Some(Ok(Message::Close(frame))) => return frame.map(|f| u16::from(f.code)),
+                Some(Ok(_)) => {}
+                Some(Err(_)) | None => return None,
+            }
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    assert!(!got_snapshot, "a revoked key read the snapshot");
+    assert_eq!(closed, Some(crate::hub::app_ws::CLOSE_UNAUTHORIZED));
+}
