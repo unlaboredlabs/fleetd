@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { ContextMenu as C } from "radix-ui";
-import { useRef, useState, type ComponentProps, type KeyboardEvent, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
 import { copyText } from "../lib/clipboard";
 import { cx } from "../lib/cx";
 import { toast } from "./Toast";
@@ -78,6 +78,17 @@ export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
   const trigger = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState("");
   const [open, setOpen] = useState(false);
+  // Where an item sent the focus while the menu was open: its focus trap takes it back, and it closes onto the page.
+  const wanted = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    wanted.current = null;
+    const onFocusIn = (e: FocusEvent) => {
+      if (e.target instanceof HTMLElement && e.target.closest("[role='menu']") === null) wanted.current = e.target;
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => document.removeEventListener("focusin", onFocusIn, true);
+  }, [open]);
   // The last press or right-click began inside an inner element's menu. A right-click there never reaches this one,
   // but a touch's long press opens every menu it is inside, so this one stays shut.
   const inner = useRef(false);
@@ -109,7 +120,17 @@ export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
           end, which never comes when its start went unseen. */}
       {open ? (
         <C.Portal>
-          <C.Content className={s.surface} collisionPadding={8}>
+          <C.Content
+            className={s.surface}
+            collisionPadding={8}
+            onCloseAutoFocus={(e) => {
+              // An item that sent the focus somewhere (Reply, to the composer) while the menu held it gets it there.
+              const to = wanted.current;
+              if (to === null || !to.isConnected) return;
+              e.preventDefault();
+              to.focus();
+            }}
+          >
             {selected !== "" ? (
               <>
                 <ContextMenuCopy text={selected}>Copy selection</ContextMenuCopy>
