@@ -30,13 +30,12 @@ pub const DOWN_AFTER_MS: i64 = 10 * 60_000;
 /// How often the sweep looks.
 const SWEEP_EVERY: Duration = Duration::from_secs(30);
 
-/// The newest of a machine's outage events: seqs (0 when none), and when it last went offline.
+/// The newest of a machine's outage events: seqs (0 when none), and when it last linked.
 #[derive(Default)]
 struct Marks {
     linked: i64,
     down: i64,
     back: i64,
-    offline_ms: Option<i64>,
     linked_ms: Option<i64>,
 }
 
@@ -59,9 +58,19 @@ fn marks(c: &Connection, machine: &str) -> Result<Marks, StoreError> {
         linked: seq("machine.online").max(seq("machine.degraded")),
         down: seq("machine.down"),
         back: seq("machine.back"),
-        offline_ms: at("machine.offline"),
         linked_ms: at("machine.online").max(at("machine.degraded")),
     })
+}
+
+/// When the outage that `before` (a seq) falls in began: the machine's first machine.offline after its newest link
+/// before then. Later ones (a hub restart's, say) don't move it.
+fn outage_from(c: &Connection, machine: &str, before: i64) -> Result<Option<i64>, StoreError> {
+    Ok(c.prepare_cached(
+        "SELECT MIN(created_ms) FROM events WHERE machine_id = ?1 AND type = 'machine.offline'
+           AND seq > (SELECT COALESCE(MAX(seq), 0) FROM events WHERE machine_id = ?1
+                        AND type IN ('machine.online', 'machine.degraded') AND seq < ?2)",
+    )?
+    .query_row(params![machine, before], |r| r.get(0))?)
 }
 
 /// Whether something explains the machine being away, so it needs nobody.
@@ -106,8 +115,9 @@ pub fn sweep(hub: &Hub) -> Result<(), StoreError> {
             if paged {
                 continue;
             }
-            let since = marks
-                .offline_ms
+            let since = hub
+                .db
+                .with(|c| outage_from(c, m.machine_id.as_str(), i64::MAX))?
                 .or_else(|| parse_ms(m.last_seen_at.as_str()))
                 .unwrap_or(now);
             let away = now - since;
@@ -124,9 +134,12 @@ pub fn sweep(hub: &Hub) -> Result<(), StoreError> {
             ))?;
             tracing::warn!(machine_id = %m.machine_id, away_ms = away, "outage: machine down, admins paged");
         } else if marks.down > marks.back && marks.linked > marks.down {
+            let from = hub
+                .db
+                .with(|c| outage_from(c, m.machine_id.as_str(), marks.down))?;
             let away = marks
                 .linked_ms
-                .zip(marks.offline_ms)
+                .zip(from)
                 .map_or(0, |(linked, offline)| (linked - offline).max(0));
             let summary = format!("{} is back online after {}", m.name, duration_text(away));
             hub.events.append(event(
