@@ -17,7 +17,11 @@ import type {
 import { openSealed, seal as sealBox } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { quietPolicy, quietUntil } from "../attention/index.ts";
+import { openRequests } from "../approvals/index.ts";
+import { Requests } from "../approvals/store.ts";
+import { shownArgv } from "../approvals/text.ts";
 import { base32 } from "../auth/nodes.ts";
+import { chat } from "../chat/index.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { ownerOn } from "../people/store.ts";
@@ -283,11 +287,6 @@ const HIDDEN =
 /** Whether `text` holds nothing that hides or reorders text. */
 export const plain = (text: string) => !HIDDEN.test(text);
 
-const PLAIN_WORD = /^[\p{L}\p{N}\p{M}\p{Pc}./:=@%+-]+$/u;
-
-/** approvals `shown_argv`: each word bare when plain, else as a JSON string. */
-export const shownArgv = (argv: string[]) => argv.map((w) => (PLAIN_WORD.test(w) ? w : JSON.stringify(w))).join(" ");
-
 /**
  * An approval's body and what the notification may do about it: Approve and Deny only when the body is everything the
  * card would show, whole on one line (D183/D193). A secret is entered in the app, so it gets no action.
@@ -319,33 +318,6 @@ export function approvalNotice(r: HumanRequest): [string, PushCategory | undefin
   return [body, answerable && exact && plain(why) ? "approve" : "review"];
 }
 
-/** Open requests, newest first (approvals store `list` with states [open]); read-only. */
-function openRequests(hub: Hub, limit: number): HumanRequest[] {
-  return hub.db
-    .all<{ data: string }>("SELECT data FROM requests WHERE state = 'open' ORDER BY n DESC LIMIT ?", [Math.max(1, limit)])
-    .flatMap((r) => {
-      try {
-        return [JSON.parse(r.data) as HumanRequest];
-      } catch {
-        return [];
-      }
-    });
-}
-
-/** One request by its id (`Q<n>`), read-only. */
-function requestGet(hub: Hub, id: string): HumanRequest | undefined {
-  const m = /^Q([1-9][0-9]*)$/.exec(id);
-  if (!m) return undefined;
-  const row = hub.db.conn.query<{ data: string }, [number]>("SELECT data FROM requests WHERE n = ?").get(Number(m[1]));
-  return row ? (JSON.parse(row.data) as HumanRequest) : undefined;
-}
-
-/**
- * Whether `r`'s chat waits on its person with no request open: the chat area's (`hub.area("chat_state")`, T2255's).
- * Until it is set, no chat counts.
- */
-export const chatState = (hub: Hub) => hub.area("chat_state", () => ({ needsYou: (_r: ProjectRef) => false }));
-
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
 /**
@@ -359,7 +331,7 @@ export function badge(hub: Hub, person: PersonId): number {
     const r = { machineId: project.machineId, projectId: project.projectId };
     if (!recipients(hub.db.conn, r).includes(person)) continue;
     const requests = open.filter((q) => sameRef(q.projectRef, r)).length;
-    count += requests > 0 ? requests : chatState(hub).needsYou(r) ? 1 : 0;
+    count += requests > 0 ? requests : chat(hub).state(r, false).needsYou ? 1 : 0;
   }
   return count;
 }
@@ -396,7 +368,7 @@ export function notice(hub: Hub, event: HubEvent): Notice | undefined {
     if (id !== undefined) {
       requestId = id;
       collapse = collapseKey(`request/${id}`);
-      const r = requestGet(hub, id);
+      const r = new Requests(hub.db).get(id);
       if (r && r.state === "open") [body, category] = approvalNotice(r);
       else body = event.summary;
       kind = "approval";
