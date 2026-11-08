@@ -148,7 +148,8 @@ fn owner_removed(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
 
 /// The projects a call's input names, at any of its objects down to `depth`: a `machineId` with a `projectId`, or
 /// with a `threadId` (the thread's project), a `requestId` (the project that asked), an `automationId` (the
-/// project it runs in) and a `sessionId` (the screen's project).
+/// project it runs in), a `sessionId` (the screen's project), a `workstreamId` (the order's project), a `taskId`
+/// (the task's project) and a `steerId` (its order's project).
 fn refs(
     c: &Connection,
     input: &Value,
@@ -185,6 +186,21 @@ fn refs(
             {
                 out.push(p);
             }
+            if let Some(id) = text("workstreamId")
+                && let Some(p) = numbered_project(c, "workstreams", 'W', id)?
+            {
+                out.push(p);
+            }
+            if let Some(id) = text("taskId")
+                && let Some(p) = numbered_project(c, "tasks", 'T', id)?
+            {
+                out.push(p);
+            }
+            if let Some(id) = text("steerId")
+                && let Some(p) = steer_project(c, id)?
+            {
+                out.push(p);
+            }
             if depth > 0 {
                 for v in fields.values() {
                     refs(c, v, depth - 1, out)?;
@@ -210,6 +226,43 @@ fn thread_project(c: &Connection, m: &str, t: &str) -> Result<Option<ProjectRef>
         machine_id: MachineId::unchecked(m),
         project_id: ProjectId::unchecked(p),
     }))
+}
+
+/// The project of row n of `table` (`workstreams` or `tasks`), by an id `<prefix><n>`: an order's or a task's.
+fn numbered_project(
+    c: &Connection,
+    table: &str,
+    prefix: char,
+    id: &str,
+) -> Result<Option<ProjectRef>, StoreError> {
+    let Some(n) = id.strip_prefix(prefix).and_then(|n| n.parse::<i64>().ok()) else {
+        return Ok(None);
+    };
+    let row: Option<(String, String)> = c
+        .prepare_cached(&format!(
+            "SELECT machine_id, project_id FROM {table} WHERE n = ?"
+        ))?
+        .query_row([n], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    Ok(row.map(|(m, p)| ProjectRef {
+        machine_id: MachineId::unchecked(m),
+        project_id: ProjectId::unchecked(p),
+    }))
+}
+
+/// A steer's project: its order's.
+fn steer_project(c: &Connection, id: &str) -> Result<Option<ProjectRef>, StoreError> {
+    let Some(n) = id.strip_prefix('S').and_then(|n| n.parse::<i64>().ok()) else {
+        return Ok(None);
+    };
+    let order: Option<String> = c
+        .prepare_cached("SELECT workstream_id FROM steers WHERE n = ?")?
+        .query_row([n], |row| row.get(0))
+        .optional()?;
+    match order {
+        Some(w) => numbered_project(c, "workstreams", 'W', &w),
+        None => Ok(None),
+    }
 }
 
 /// An automation's project.

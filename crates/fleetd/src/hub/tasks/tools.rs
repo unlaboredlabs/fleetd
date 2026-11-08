@@ -41,7 +41,9 @@ pub fn register(tools: &mut Registry) {
             workstream_id: None,
             limit: if input.project_ref.is_none() { 1000 } else { limit + 1 },
         };
-        let listed: Vec<_> = hub.tasks.list(&filter)?.into_iter().filter(|t| allows(&caller, Role::Read, Some(&t.project_ref.machine_id))).collect();
+        // Another person's Only me project's tasks are theirs alone (D310).
+        let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
+        let listed: Vec<_> = hub.tasks.list(&filter)?.into_iter().filter(|t| allows(&caller, Role::Read, Some(&t.project_ref.machine_id)) && !navis.contains(&t.project_ref)).collect();
         let shown = cap(listed, limit);
         let next = if shown.truncated.is_some() {
             "Narrow the list with projectRef or state."

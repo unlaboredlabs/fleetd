@@ -426,6 +426,10 @@ pub fn agent_lanes(hub: &Hub, caller: &Caller, lane_id: &str) -> Vec<LaneNow> {
         .ok()
         .flatten()
         .filter(|t| allows(caller, Role::Read, Some(&t.project_ref.machine_id)))
+        // Another person's Only me project's agents are theirs alone (D310).
+        .filter(|t| {
+            crate::hub::navi::owner::may_use(&hub.db, caller, &t.project_ref).unwrap_or(false)
+        })
         .map(|t| vec![task_lane(hub, &t, true)])
         .unwrap_or_default()
 }
@@ -463,12 +467,15 @@ pub fn machines(hub: &Hub, caller: &Caller) -> Vec<MachineLive> {
     out
 }
 
-/// The slot board, its per-project and per-machine rows cut to the machines the key may read.
+/// The slot board, its per-project and per-machine rows cut to the machines the key may read, and its per-project
+/// rows to the projects it may see (another person's Only me project is theirs alone, D310).
 pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
     let mut state = hub.slots.state();
+    let navis = crate::hub::navi::owner::others(&hub.db, caller);
     let rows: Vec<_> = std::mem::take(&mut state.per_project)
         .into_iter()
         .filter(|p| allows(caller, Role::Read, Some(&p.project_ref.machine_id)))
+        .filter(|p| navis.as_ref().is_ok_and(|n| !n.contains(&p.project_ref)))
         .collect();
     state.per_project = List::unchecked(rows);
     let machines: Vec<_> = std::mem::take(&mut state.per_machine)

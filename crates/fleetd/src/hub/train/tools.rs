@@ -46,11 +46,16 @@ async fn changes_list(
         repo: input.repo.map(|r| r.to_string()),
         state: input.state,
     };
+    // Another person's Only me project's changes are theirs alone (D310).
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let all: Vec<_> = hub
         .train
         .list(&filter)
         .into_iter()
-        .filter(|c| allows(&caller, Role::Read, Some(&c.project_ref.machine_id)))
+        .filter(|c| {
+            allows(&caller, Role::Read, Some(&c.project_ref.machine_id))
+                && !navis.contains(&c.project_ref)
+        })
         .collect();
     let shown = cap(all, limit as usize);
     let next = if shown.truncated.is_some() {

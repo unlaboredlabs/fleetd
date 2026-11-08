@@ -1,11 +1,11 @@
 //! `time_spans`, `time_breakdown`, `time_insights`, `time_retention_set` and `thread_window`. Reads are bounded:
 //! at most [`MAX_ROWS`] spans per period are loaded, and a read that hits the bound says so in coverage.
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::effort::{PROFILES_MAX, ProfileName};
-use fleetd_contracts::ids::{MachineId, ThreadRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::mcp::{
     ErrorCode, ThreadWindowInput, ThreadWindowOutput, TimeBreakdownInput, TimeBreakdownOutput,
     TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput,
@@ -981,19 +981,35 @@ fn period(since: &Timestamp, until: Option<&Timestamp>, now: i64) -> Result<(i64
 }
 
 /// Rows readable by the caller (fleet scope: only machines it may read).
-fn readable(caller: &Caller, l: Loaded) -> Loaded {
-    if allows_everywhere(caller, Role::Read) {
-        return l;
+/// Another person's Only me projects: their spans are theirs alone (D310).
+fn others(c: &Connection, caller: &Caller) -> Result<HashSet<ProjectRef>, StoreError> {
+    let me = crate::hub::navi::owner::who(c, caller)?;
+    Ok(crate::hub::navi::store::others(c, me.as_ref())?
+        .into_iter()
+        .collect())
+}
+
+/// Whether the key may read `r`: on a machine it has a grant on, and not of one of `navis`.
+fn may_read(caller: &Caller, navis: &HashSet<ProjectRef>, r: &Row) -> bool {
+    let of_navi = match (&r.machine_id, &r.project_id) {
+        (Some(m), Some(p)) => navis.contains(&ProjectRef {
+            machine_id: MachineId::unchecked(m.as_str()),
+            project_id: ProjectId::unchecked(p.as_str()),
+        }),
+        _ => false,
+    };
+    !of_navi
+        && r.machine_id
+            .as_deref()
+            .is_none_or(|m| allows(caller, Role::Read, Some(&MachineId::unchecked(m))))
+}
+
+fn readable(c: &Connection, caller: &Caller, l: Loaded) -> Result<Loaded, StoreError> {
+    let navis = others(c, caller)?;
+    if navis.is_empty() && allows_everywhere(caller, Role::Read) {
+        return Ok(l);
     }
-    let keep: Vec<bool> = l
-        .rows
-        .iter()
-        .map(|r| {
-            r.machine_id
-                .as_deref()
-                .is_none_or(|m| allows(caller, Role::Read, Some(&MachineId::unchecked(m))))
-        })
-        .collect();
+    let keep: Vec<bool> = l.rows.iter().map(|r| may_read(caller, &navis, r)).collect();
     let mut it = keep.iter();
     let mut rows = l.rows;
     rows.retain(|_| *it.next().unwrap());
@@ -1003,12 +1019,12 @@ fn readable(caller: &Caller, l: Loaded) -> Loaded {
     let mut it = keep.iter();
     let mut weights = l.weights;
     weights.retain(|_| *it.next().unwrap());
-    Loaded {
+    Ok(Loaded {
         rows,
         metas,
         weights,
         truncated: l.truncated,
-    }
+    })
 }
 
 /// The rules' input over the period's spans of `l`, which it takes rather than copies; with those spans' metas, in
@@ -1081,7 +1097,7 @@ async fn time_spans(
         f.after_id = input.after_id.map(|a| a.get());
         let mut rows: Vec<(Row, Meta)> = match input.rule {
             Some(rule) => {
-                let l = readable(&caller, load(c, &input.scope, since, until, None)?);
+                let l = readable(c, &caller, load(c, &input.scope, since, until, None)?)?;
                 let (ri, metas) = rule_input(c, l, since, until)?;
                 let after = f.after_id.unwrap_or(0);
                 let wanted: std::collections::HashSet<i64> = rules::rule_spans(&ri, rule)
@@ -1097,11 +1113,8 @@ async fn time_spans(
             }
             None => store::read_meta(c, &f, limit + 1)?,
         };
-        rows.retain(|(r, _)| {
-            r.machine_id
-                .as_deref()
-                .is_none_or(|m| allows(&caller, Role::Read, Some(&MachineId::unchecked(m))))
-        });
+        let navis = others(c, &caller)?;
+        rows.retain(|(r, _)| may_read(&caller, &navis, r));
         let l = Loaded {
             rows: rows.iter().map(|(r, _)| r.clone()).collect(),
             metas: rows.iter().map(|(_, m)| m.clone()).collect(),
@@ -1141,7 +1154,7 @@ fn period_breakdown(
     until: i64,
     role: Option<String>,
 ) -> Result<(Loaded, i64, i64, Vec<CategoryTotal>), StoreError> {
-    let l = readable(caller, load(c, scope, since, until, role.clone())?);
+    let l = readable(c, caller, load(c, scope, since, until, role.clone())?)?;
     let (agent, cats) = totals(c, scope, role.as_deref(), &l, since, until)?;
     let wall = wall(c, scope, &l, since, until)?;
     Ok((l, wall, agent, cats))
@@ -1258,11 +1271,11 @@ async fn time_insights(
         if let Err(e) = check(c, &caller, &input.scope) {
             return Ok(Err(e));
         }
-        let l = readable(&caller, load(c, &input.scope, since, until, None)?);
+        let l = readable(c, &caller, load(c, &input.scope, since, until, None)?)?;
         let (cur, _) = rule_input(c, l, since, until)?;
         Ok(Ok(match compare {
             Some((s, u)) => {
-                let lp = readable(&caller, load(c, &input.scope, s, u, None)?);
+                let lp = readable(c, &caller, load(c, &input.scope, s, u, None)?)?;
                 let (prev, _) = rule_input(c, lp, s, u)?;
                 rules::compare(&cur, &prev)
             }
@@ -1357,6 +1370,49 @@ mod tests {
             lane: "thread:devbox/t".into(),
             ..NewSpan::default()
         }
+    }
+
+    /// Fleet-wide time leaves out another person's Only me project's spans (D310); its owner still reads them.
+    #[test]
+    fn fleet_time_leaves_out_another_persons_only_me_project() {
+        let db = HubDb::open_memory().unwrap();
+        let device = |person: &str| -> Caller {
+            let mut c: Caller = serde_json::from_value(serde_json::json!({
+                "keyId": format!("key_{person}"), "name": "desk", "prefix": "fld_abcdef",
+                "createdAt": "2026-11-08T00:00:00.000Z", "grants": [{ "role": "operate", "machines": "*" }],
+                "person": { "personId": person, "name": person },
+            }))
+            .unwrap();
+            c.kind = Some(fleetd_contracts::auth::KeyKind::Human);
+            c
+        };
+        let in_project = |key: &str, project: &str| NewSpan {
+            ids: Ids {
+                machine_id: Some("devbox".into()),
+                project_id: Some(project.into()),
+                ..Ids::default()
+            },
+            ..span(key, 1_000, 2_000)
+        };
+        db.transaction(|c| {
+            write(c, &in_project("mine", "trips"), &[])?;
+            write(c, &in_project("shared", "app"), &[])?;
+            c.execute(
+                "INSERT INTO project_settings (machine_id, project_id, only_me, owner_person)
+                 VALUES ('devbox', 'trips', 1, 'p_annannan')",
+                [],
+            )?;
+            let keys = |caller: &Caller| -> Result<Vec<String>, StoreError> {
+                let l = readable(c, caller, load(c, &TimeScope::Fleet, 0, 10_000, None)?)?;
+                let mut keys: Vec<String> = l.metas.iter().map(|m| m.src_key.clone()).collect();
+                keys.sort();
+                Ok(keys)
+            };
+            assert_eq!(keys(&device("p_bobbobbo"))?, ["shared"]);
+            assert_eq!(keys(&device("p_annannan"))?, ["mine", "shared"]);
+            Ok(())
+        })
+        .unwrap();
     }
 
     /// Past span retention, whole days still add up from the roll-ups, the edge days from spans, and coverage says
