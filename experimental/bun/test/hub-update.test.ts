@@ -1,6 +1,6 @@
 // Ports the core of crates/fleetd/src/hub/update/tests.rs against fake ports: a fake release feed, fake nodes, no
 // service manager and no release server.
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { byMachine, defaultTiming, lastAutoOf, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
@@ -109,8 +109,12 @@ function updatesIn(dir: string, fake: Fake) {
   return u;
 }
 
+// Each step of a run is written to run.json with an fsync, on the test's own thread: a loaded machine (CI, or a busy
+// devbox) takes seconds over a run, longer than bun's 5 s default.
+setDefaultTimeout(30_000);
+
 async function until(f: () => boolean) {
-  for (let i = 0; i < 400 && !f(); i++) await Bun.sleep(5);
+  for (const end = Date.now() + 20_000; Date.now() < end && !f(); ) await Bun.sleep(5);
   expect(f()).toBe(true);
 }
 

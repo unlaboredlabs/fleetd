@@ -1,7 +1,7 @@
 // The merge train end to end over a fake GitHub backed by a real bare git origin (train_kit.ts), as
 // crates/fleetd/src/hub/train/tests.rs drives the Rust one: enqueue, review, rebase, CI, the `fleetd/train` status and
 // the pinned squash merge; red CI and conflicts back to their writers; batches; refusals; merges outside the train.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
 import { awaitsChecks, checks } from "../src/hub/train/rules.ts";
 import { batchSkipped, gatedName, jobChecks, labelGated, unprovenBatchSkips } from "../src/hub/train/next.ts";
@@ -17,6 +17,10 @@ afterEach(() => {
   for (const k of kits) k.done();
   kits = [];
 });
+// Every merge, push and check goes through a real git origin, a git process each: a loaded machine (CI, or a busy
+// devbox) takes longer than bun's 5 s default.
+setDefaultTimeout(30_000);
+
 const kit = (...a: ConstructorParameters<typeof Kit>) => {
   const k = new Kit(...a);
   kits.push(k);

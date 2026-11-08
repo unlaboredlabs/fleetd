@@ -1,11 +1,15 @@
 // A writer's worktree that is gone after a crash comes back at the same path when its session next starts: from what
 // it pushed when its local branch is gone too, and the agent hears so first.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import { tempHome } from "../helpers.ts";
+
+// The session host starts twice (sh, then bun), and the repo takes a git process a step: a loaded machine (CI, or a
+// busy devbox) takes longer than bun's 5 s default.
+setDefaultTimeout(30_000);
 
 const git = (cwd: string, ...args: string[]) => spawnSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
 const until = async <T>(what: string, fn: () => T | undefined | false, ms = 10_000): Promise<T> => {
