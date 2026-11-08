@@ -59,9 +59,22 @@ test("the Mac screen is a Mac's own, never ready elsewhere, and off unless turne
   if (process.platform !== "darwin") {
     expect(on).toMatchObject({ host: "mac", ready: false, off: "unsupported", on: false, idleMinutes: 5 });
   } else {
-    expect(on).toMatchObject({ ready: false, off: "missing", on: true });
+    expect(on).toMatchObject({ host: "mac", on: true });
     expect(macScreen({})).toMatchObject({ ready: false, off: "off", on: false });
   }
+});
+
+test("on a Mac, the Mac screen is ready while nothing stands in the way, else says what does and how to clear it", () => {
+  const clear = macScreen({ enabled: true }, () => undefined, true);
+  expect(clear).toMatchObject({ host: "mac", ready: true, on: true, idleMinutes: 5 });
+  expect(clear.detail).toContain("on the Mac's screen, unlocked");
+  const locked = macScreen({ enabled: true }, () => ({ message: "the Mac's screen is locked: unlock it at the Mac as agents" }), true);
+  expect(locked).toMatchObject({ ready: false, off: "missing", detail: "the Mac's screen is locked: unlock it at the Mac as agents" });
+  expect(locked.fix).toBeUndefined();
+  const grant = macScreen({ enabled: true }, () => ({ message: "fleetd needs Screen Recording", fix: "open 'x-apple.systempreferences:…'" }), true);
+  expect(grant).toMatchObject({ ready: false, off: "missing", fix: "open 'x-apple.systempreferences:…'" });
+  // Off in node.json: the gate isn't asked.
+  expect(macScreen({}, () => { throw new Error("asked"); }, true)).toMatchObject({ ready: false, off: "off", on: false });
 });
 
 test("a kind turned on since the node started waits for its restart; a browser or desktop already runs", () => {

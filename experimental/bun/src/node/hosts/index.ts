@@ -14,6 +14,8 @@ import { findChrome, installDir } from "../browser/chrome.ts";
 import { type NodeConfig, readConfig } from "../config.ts";
 import { type DeviceConfig, health as androidHealth } from "../device/index.ts";
 import { kvm as kvmNow, type KvmCheck, supported as androidSupported } from "../device/sdk.ts";
+import { macScreen as desktopMacScreen } from "../desktop/index.ts";
+import { type Blocked, blocked as macBlocked } from "../desktop/mac/index.ts";
 
 const FRESH_MS = 300_000;
 /** A screen's idle timeout where node.json sets none. */
@@ -94,15 +96,18 @@ function androidCheck(config: DeviceConfig, health: ReturnType<typeof androidHea
  * The agents' Mac's own screen: ready while the node's user is on the Mac's screen, unlocked, with Screen Recording
  * and Accessibility allowed.
  */
-export function macScreen(section: Section): HostCheck {
-  const supported = process.platform === "darwin";
+export function macScreen(section: Section, blocked: () => Blocked | undefined = macBlocked, supported = process.platform === "darwin"): HostCheck {
   const on = section.enabled === true && supported;
   let c: HostCheck;
   if (!supported) c = check("mac", "unsupported", "the Mac screen is a Mac's own: its agents session's screen");
   else if (!on) c = check("mac", "off", "off: turn the Mac screen on, on its page in Settings › Hub › Machines");
-  // TODO(bun): node/desktop's `macScreen(node).blocked()` (T2367's port of desktop/mac) once it lands: ready when it
-  // says nothing stands in the way, else its message and fix. Until then this node can't host the Mac's screen.
-  else c = check("mac", "missing", "the Bun node doesn't host the Mac's own screen yet");
+  else {
+    // What stands in the way now (node/desktop/mac `blocked`): the session off the screen or locked, a grant missing.
+    const why = blocked();
+    c = why
+      ? fixed(check("mac", "missing", why.message), why.fix)
+      : check("mac", undefined, "the node's session is on the Mac's screen, unlocked, with Screen Recording and Accessibility");
+  }
   return withSwitch(c, on, MAC_IDLE_MINUTES);
 }
 
@@ -133,11 +138,17 @@ export function forget(home: string): void {
 }
 
 /** This node's own lines, read at most every few minutes: those before the desktop's, and the Mac's after it. */
-export function lines(home: string, config: NodeConfig | undefined, kvm: KvmCheck = kvmNow, now = Date.now()) {
+export function lines(
+  home: string,
+  config: NodeConfig | undefined,
+  kvm: KvmCheck = kvmNow,
+  now = Date.now(),
+  blocked: () => Blocked | undefined = macBlocked,
+) {
   const kept = last.get(home);
   if (kept && now - kept.at < FRESH_MS) return kept.checks;
   const section = (key: string) => ((config as Record<string, unknown> | undefined)?.[key] ?? {}) as Section;
-  const mac = macScreen(section("mac"));
+  const mac = macScreen(section("mac"), blocked);
   const idle = config?.screenIdleMinutes;
   const checks =
     config?.agentsMac === true
@@ -174,7 +185,8 @@ export function start(node: Node, kvm: KvmCheck = kvmNow): void {
     } catch {
       now = node.config;
     }
-    const mine = lines(node.home, now, kvm);
+    // The Mac screen's gate as node/desktop checks it at each start (its own test's, where one set it).
+    const mine = lines(node.home, now, kvm, Date.now(), () => desktopMacScreen(node).blocked());
     // The restart's word first: a kind turned on since the node started says it waits for that.
     const all = gate([...mine.before, ...(hb.load.hosts ?? []), ...mine.after], node.config, now);
     hb.load.hosts = listed(all, node.area("caps").list());
