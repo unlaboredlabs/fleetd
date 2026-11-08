@@ -523,7 +523,7 @@ export class Session {
     const next = reduce(was, action);
     if (next === was) return;
     this.#state = next;
-    if (next.projects !== was.projects || next.chatStates !== was.chatStates || next.latest !== was.latest || next.sends !== was.sends || next.meName !== was.meName) this.#saveSoon();
+    if (next.projects !== was.projects || next.chatStates !== was.chatStates || next.latest !== was.latest || next.sends !== was.sends || next.requests !== was.requests || next.meName !== was.meName) this.#saveSoon();
     this.#notify();
   }
 
