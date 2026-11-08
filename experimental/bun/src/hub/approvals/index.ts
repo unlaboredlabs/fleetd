@@ -39,6 +39,9 @@ export const HUMAN_ONLY_SECRET_FIX =
 const RELINK_WAIT_MS = 15 * 60_000;
 /** How often it looks whether the node is back meanwhile. */
 const RELINK_POLL_MS = 1000;
+/** How long an approval given while its node is offline waits for it to link again before it goes back to the person:
+ * a node restarting for an update is back well within it. */
+const OFFLINE_WAIT_MS = 30_000;
 export const GATED_DEFAULT_TIMEOUT_SEC = 1800;
 
 /** Why an approved command whose result neither the hub nor its node has goes back to the person. */
@@ -583,7 +586,7 @@ export class Approvals {
       const input: Record<string, unknown> = { argv: spec.argv, cwd, timeoutSec: spec.timeoutSec, requestId: id };
       if (spec.secretEnv !== undefined) input.secretEnv = spec.secretEnv;
       try {
-        ran = await this.deps.nodes.runGated(machine, input);
+        ran = await this.runOnceLinked(machine, input);
       } catch (e) {
         const err = e instanceof NodeCommandError ? e : new NodeCommandError("failed", String(e));
         if (err.reason === "offline") {
@@ -606,6 +609,31 @@ export class Approvals {
     if (done) await this.deps.hub.wakeRequest(done);
   }
 
+  /** Runs an approved command on `machine`'s node. Offline, nothing was sent: a node restarting (an update) gets
+   * OFFLINE_WAIT_MS to link again, and past it the offline error is thrown. */
+  private async runOnceLinked(machine: string, input: Record<string, unknown>): Promise<GatedOutcome> {
+    const deadline = this.deps.clock.now() + OFFLINE_WAIT_MS;
+    for (;;) {
+      try {
+        return await this.deps.nodes.runGated(machine, input);
+      } catch (e) {
+        if (!(e instanceof NodeCommandError && e.reason === "offline") || this.deps.clock.now() >= deadline) throw e;
+        await this.sleep(RELINK_POLL_MS);
+        if (!(await this.linkedBy(machine, deadline))) throw e;
+      }
+    }
+  }
+
+  /** Whether `machine`'s node is linked, or links again before `deadline`, looking every RELINK_POLL_MS. A hub
+   * shutting down stops looking. */
+  private async linkedBy(machine: string, deadline: number): Promise<boolean> {
+    for (;;) {
+      if (await this.deps.nodes.isLinked(machine)) return true;
+      if (this.deps.clock.now() >= deadline || this.deps.signal?.aborted) return false;
+      await this.sleep(RELINK_POLL_MS);
+    }
+  }
+
   /**
    * The approved command `r` was running when its result was lost. Once its node is linked again it is asked for
    * that result, which settles it as if it had come in time. Only when the node has none either, or isn't back within
@@ -619,13 +647,10 @@ export class Approvals {
     let why: string;
     for (;;) {
       if (this.deps.signal?.aborted) return;
-      if (!(await this.deps.nodes.isLinked(machine))) {
-        if (this.deps.clock.now() >= deadline) {
-          why = `${lost}, and ${machine}'s node has not linked again since`;
-          break;
-        }
-        await this.sleep(RELINK_POLL_MS);
-        continue;
+      if (!(await this.linkedBy(machine, deadline))) {
+        if (this.deps.signal?.aborted) return;
+        why = `${lost}, and ${machine}'s node has not linked again since`;
+        break;
       }
       try {
         const o = await this.deps.nodes.resumeGated(machine, id, timeoutSec);

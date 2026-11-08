@@ -10,6 +10,7 @@ import { browserResult, toolResult } from "../src/cli/agent_mcp/results.ts";
 import { callerCwd, sendToNode } from "../src/cli/agent_mcp/socket.ts";
 import { ALIASES, SNAPSHOT, toolList } from "../src/cli/agent_mcp/tools.ts";
 import { main } from "../src/cli/index.ts";
+import { HUB_UNREACHABLE } from "../src/node/lead/index.ts";
 import { tempHome } from "./helpers.ts";
 
 const RUST_SOURCE = readFileSync(join(import.meta.dir, "../../../crates/fleetd/src/cli/agent_mcp.rs"), "utf8");
@@ -228,29 +229,73 @@ describe("agent-mcp", () => {
     expect(sent[1]!.t).toBe("browser_call");
   });
 
-  test("talks to a node socket and says when none listens", async () => {
-    const socket = join(home.dir, "node.sock");
-    const down = await sendToNode(socket, {}, 5000).catch((why: string) => why);
-    expect(down).toStartWith(`fleetd hub unreachable: no fleetd node is listening at ${socket}`);
-    let got: unknown;
-    const server = Bun.listen({
-      unix: socket,
-      socket: {
-        data(conn, data) {
-          const frame = JSON.parse(data.toString());
-          got = frame;
-          conn.write(`${JSON.stringify({ t: "lead_result", id: frame.id, result: { op: "decisions_search", decisions: [] } })}\n`);
-        },
-      },
-    });
+  /** A node answering one `decisions_search` frame at `socket`, once it binds `afterMs` from now. */
+  function nodeAnswering(socket: string, afterMs: number) {
+    let server: ReturnType<typeof Bun.listen> | undefined;
+    const got = new Promise<unknown>((resolve) =>
+      setTimeout(() => {
+        server = Bun.listen({
+          unix: socket,
+          socket: {
+            data(conn, data) {
+              const frame = JSON.parse(data.toString());
+              resolve(frame);
+              conn.write(`${JSON.stringify({ t: "lead_result", id: frame.id, result: { op: "decisions_search", decisions: [] } })}\n`);
+            },
+          },
+        });
+      }, afterMs),
+    );
+    return { got, stop: () => server?.stop(true) };
+  }
+
+  const frame = { t: "lead_call", id: "cli-1", cwd: "/w", call: { op: "decisions_search", query: "health" } };
+
+  test("talks to a node socket", async () => {
+    const socket = join(home.dir, "up.sock");
+    const node = nodeAnswering(socket, 0);
     try {
-      const frame = { t: "lead_call", id: "cli-1", cwd: "/w", call: { op: "decisions_search", query: "health" } };
       const answer = await sendToNode(socket, frame, 5000);
-      expect(got).toEqual(frame);
+      expect(await node.got).toEqual(frame);
       expect((answer.result as any).op).toBe("decisions_search");
     } finally {
-      server.stop(true);
+      node.stop();
     }
+  });
+
+  // A node restarting for an update has no socket for a moment: the call waits for it and is answered.
+  test("a call waits for a restarting node", async () => {
+    const socket = join(home.dir, "restart.sock");
+    const node = nodeAnswering(socket, 1000);
+    try {
+      const answer = await sendToNode(socket, frame, 5000);
+      expect(await node.got).toEqual(frame);
+      expect((answer.result as any).op).toBe("decisions_search");
+    } finally {
+      node.stop();
+    }
+  });
+
+  // A node that doesn't come back within the wait (here a short one, 20 s for real): the call says fleetd is
+  // restarting, without the "carry on" a call that may have run gets.
+  test("a node that stays down is reported restarting", async () => {
+    const socket = join(home.dir, "down.sock");
+    const started = Date.now();
+    const down = await sendToNode(socket, {}, 5000, 1000).catch((why: string) => why);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
+    expect(down).toBe(
+      `fleetd is restarting; try again (no fleetd node is listening at ${socket}; set FLEETD_NODE_SOCK if it is elsewhere)`,
+    );
+    const deps: LeadDeps = { pwd: undefined, sock: undefined, thread: undefined, cwd: home.dir, send: async () => { throw down; } };
+    const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "decisions_search", arguments: { query: "x" } } };
+    const answer: any = await handle("lead", call, deps);
+    expect(answer.result.content[0].text).toBe(down);
+  });
+
+  // The node relaying a call while the hub restarts says so, not that the call was refused.
+  test("a restarting hub is no refusal", () => {
+    const answer = toolResult({ t: "lead_result", id: "cli-1", error: { code: "machine_offline", message: HUB_UNREACHABLE } });
+    expect(answer.content[0]!.text).toBe("fleetd hub is restarting; try again shortly");
   });
 
   test("a node that never answers times out", async () => {

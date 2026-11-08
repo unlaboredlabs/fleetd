@@ -501,6 +501,15 @@ export class Pool {
     return this.warmClones.length;
   }
 
+  /** About how long until the `nth` clone from now (1 is the next) is ready, in seconds: a warm one at once, the rest
+   * one boot after another behind the one under way. */
+  readyIn(nth: number): number {
+    const warm = this.warm();
+    if (nth <= warm) return 0;
+    const behind = nth - warm - 1;
+    return this.refills.wait(Date.now()).secs + behind * Math.max(Math.floor(this.refills.lastBoot / 1000), 1);
+  }
+
   /** The last boot's error, while the pool's boots keep failing. */
   failing(): string | undefined {
     return this.refills.lastError;

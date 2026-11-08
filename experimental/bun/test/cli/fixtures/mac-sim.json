@@ -1,5 +1,5 @@
 {
   "code": 64,
   "stdout": "",
-  "stderr": "mac: mac sim start [--device <type>] | mac sim end\nmac: see mac --help\n"
+  "stderr": "mac: mac sim start [--device <type>] [--no-wait] | mac sim end\nmac: see mac --help\n"
 }

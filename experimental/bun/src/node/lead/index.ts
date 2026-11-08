@@ -11,8 +11,12 @@ import { headUtf16 } from "../util.ts";
 import { peerPid, type PeerSession } from "./peer.ts";
 
 export const leadSocketPath = (home: string) => join(home, "node.sock");
-export const HUB_UNREACHABLE = "fleetd hub unreachable; the node keeps retrying — try again shortly";
+export const HUB_UNREACHABLE = "fleetd hub is restarting; try again shortly";
+/** How long a call waits for the hub link to be up. */
 const LINK_WAIT_MS = 5_000;
+/** How long it waits instead when the link dropped within RECENT_DROP_MS: the hub is likely restarting for an update. */
+const RELINK_WAIT_MS = 30_000;
+const RECENT_DROP_MS = 60_000;
 const ANSWER_TIMEOUT_MS = 30_000;
 const MAX_FRAME_BYTES = 256 * 1024;
 const MAX_BROWSER_FRAME_BYTES = 8 << 20;
@@ -38,6 +42,8 @@ export class LeadRelay {
   #nextId = 0;
   #hubCaps: string[] = [];
   #linkedWaiters: (() => void)[] = [];
+  /** When the hub link last dropped (performance.now()). */
+  #dropped: number | undefined;
   /** Holds the node's agents between steps (`fleetd update` ahead of the node's restart). */
   hold: (() => number) | undefined;
   /** The agents' Mac: no lead call leaves it. */
@@ -51,6 +57,7 @@ export class LeadRelay {
     return () => {
       if (this.#send !== send) return;
       this.#send = undefined;
+      this.#dropped = performance.now();
       const pending = [...this.#pending];
       this.#pending.clear();
       for (const [id, answer] of pending) answer(unanswered(id, "the link to the fleetd hub dropped before it answered"));
@@ -70,12 +77,14 @@ export class LeadRelay {
     }
   }
 
-  /** Forwards one frame and returns the hub's answer under the caller's id. Never throws: trouble is an error frame. */
+  /** Forwards one frame and returns the hub's answer under the caller's id. Never throws: trouble is an error frame.
+   * A call is sent once: one lost after sending may have run, so it is never sent again. */
   async call(frame: LeadCallFrame, waitMs = ANSWER_TIMEOUT_MS): Promise<LeadResultFrame> {
     const callerId = frame.id;
     if (!this.#send) {
+      const restarting = this.#dropped !== undefined && performance.now() - this.#dropped < RECENT_DROP_MS;
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, LINK_WAIT_MS);
+        const timer = setTimeout(resolve, restarting ? RELINK_WAIT_MS : LINK_WAIT_MS);
         this.#linkedWaiters.push(() => (clearTimeout(timer), resolve()));
       });
     }
