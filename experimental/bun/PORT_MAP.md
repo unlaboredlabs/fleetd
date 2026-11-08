@@ -496,7 +496,7 @@ every `fleetd` command.
 ### CLI commands
 
 - [ ] `fleetd agent-device` → `src/cli/agent_device` <!-- cli:`fleetd agent-device` -->
-- [ ] `fleetd agent-mcp` → `src/cli/agent_mcp` <!-- cli:`fleetd agent-mcp` -->
+- [x] `fleetd agent-mcp` → `src/cli/agent_mcp` <!-- cli:`fleetd agent-mcp` -->
 - [ ] `fleetd build-slot` → `src/node/build_slots` <!-- cli:`fleetd build-slot` -->
 - [ ] `fleetd chat` → `src/cli/chat` <!-- cli:`fleetd chat` -->
 - [ ] `fleetd chat history` → `src/cli/chat` <!-- cli:`fleetd chat history` -->
@@ -646,52 +646,52 @@ every `fleetd` command.
 
 ### agent-mcp tools
 
-- [ ] agent-mcp tool `spawn_agent` → `src/cli/agent_mcp` (op task_spawn) <!-- agent-mcp:agent-mcp tool `spawn_agent` -->
-- [ ] agent-mcp tool `message_agent` → `src/cli/agent_mcp` (op task_message) <!-- agent-mcp:agent-mcp tool `message_agent` -->
-- [ ] agent-mcp tool `agents` → `src/cli/agent_mcp` (op task_list) <!-- agent-mcp:agent-mcp tool `agents` -->
-- [ ] agent-mcp tool `stop_agent` → `src/cli/agent_mcp` (op task_cancel) <!-- agent-mcp:agent-mcp tool `stop_agent` -->
-- [ ] agent-mcp tool `brief` → `src/cli/agent_mcp` (op brief_create) <!-- agent-mcp:agent-mcp tool `brief` -->
-- [ ] agent-mcp tool `request_secret` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secret` -->
-- [ ] agent-mcp tool `request_withdraw` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_withdraw` -->
-- [ ] agent-mcp tool `decide` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `decide` -->
-- [ ] agent-mcp tool `close` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `close` -->
-- [ ] agent-mcp tool `gated_run` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `gated_run` -->
-- [ ] agent-mcp tool `decisions_search` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `decisions_search` -->
-- [ ] agent-mcp tool `remember` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `remember` -->
-- [ ] agent-mcp tool `forget` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `forget` -->
-- [ ] agent-mcp tool `memory_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `memory_read` -->
-- [ ] agent-mcp tool `nudge` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `nudge` -->
-- [ ] agent-mcp tool `automation_create` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_create` -->
-- [ ] agent-mcp tool `automation_list` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_list` -->
-- [ ] agent-mcp tool `automation_update` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_update` -->
-- [ ] agent-mcp tool `automation_delete` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_delete` -->
-- [ ] agent-mcp tool `automation_run` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_run` -->
-- [ ] agent-mcp tool `automation_runs` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_runs` -->
-- [ ] agent-mcp tool `automation_confirm` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_confirm` -->
-- [ ] agent-mcp tool `checklist` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `checklist` -->
-- [ ] agent-mcp tool `skill_install` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `skill_install` -->
-- [ ] agent-mcp tool `skill_save` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `skill_save` -->
-- [ ] agent-mcp tool `project_message` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `project_message` -->
-- [ ] agent-mcp tool `factory_status` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `factory_status` -->
-- [ ] agent-mcp tool `chat_search` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_search` -->
-- [ ] agent-mcp tool `chat_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_read` -->
-- [ ] agent-mcp tool `confirm_step` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `confirm_step` -->
-- [ ] agent-mcp tool `usage_resume` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `usage_resume` -->
-- [ ] agent-mcp tool `change_enqueue` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `change_enqueue` -->
-- [ ] agent-mcp tool `report` → `src/cli/agent_mcp` (op review_verdict) <!-- agent-mcp:agent-mcp tool `report` -->
-- [ ] agent-mcp tool `ask_lead` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `ask_lead` -->
-- [ ] agent-mcp tool `brief_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `brief_read` -->
-- [ ] agent-mcp tool `wait_ci` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `wait_ci` -->
-- [ ] agent-mcp tool `review_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `review_read` -->
-- [ ] agent-mcp tool `chat_file` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_file` -->
-- [ ] agent-mcp tool `publish_artifact` → `src/cli/agent_mcp` (op artifact_publish) <!-- agent-mcp:agent-mcp tool `publish_artifact` -->
-- [ ] agent-mcp tool `session_start` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_start` -->
-- [ ] agent-mcp tool `desktop` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `desktop` -->
-- [ ] agent-mcp tool `session_end` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_end` -->
-- [ ] agent-mcp tool `request_takeover` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_takeover` -->
-- [ ] agent-mcp tool `fill_credential` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `fill_credential` -->
-- [ ] agent-mcp tool `purchase_request` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_request` -->
-- [ ] agent-mcp tool `purchase_fill` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_fill` -->
-- [ ] agent-mcp tool `request_secure_input` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secure_input` -->
-- [ ] agent-mcp tool `secure_input_fill` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `secure_input_fill` -->
+- [x] agent-mcp tool `spawn_agent` → `src/cli/agent_mcp` (op task_spawn) <!-- agent-mcp:agent-mcp tool `spawn_agent` -->
+- [x] agent-mcp tool `message_agent` → `src/cli/agent_mcp` (op task_message) <!-- agent-mcp:agent-mcp tool `message_agent` -->
+- [x] agent-mcp tool `agents` → `src/cli/agent_mcp` (op task_list) <!-- agent-mcp:agent-mcp tool `agents` -->
+- [x] agent-mcp tool `stop_agent` → `src/cli/agent_mcp` (op task_cancel) <!-- agent-mcp:agent-mcp tool `stop_agent` -->
+- [x] agent-mcp tool `brief` → `src/cli/agent_mcp` (op brief_create) <!-- agent-mcp:agent-mcp tool `brief` -->
+- [x] agent-mcp tool `request_secret` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secret` -->
+- [x] agent-mcp tool `request_withdraw` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_withdraw` -->
+- [x] agent-mcp tool `decide` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `decide` -->
+- [x] agent-mcp tool `close` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `close` -->
+- [x] agent-mcp tool `gated_run` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `gated_run` -->
+- [x] agent-mcp tool `decisions_search` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `decisions_search` -->
+- [x] agent-mcp tool `remember` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `remember` -->
+- [x] agent-mcp tool `forget` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `forget` -->
+- [x] agent-mcp tool `memory_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `memory_read` -->
+- [x] agent-mcp tool `nudge` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `nudge` -->
+- [x] agent-mcp tool `automation_create` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_create` -->
+- [x] agent-mcp tool `automation_list` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_list` -->
+- [x] agent-mcp tool `automation_update` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_update` -->
+- [x] agent-mcp tool `automation_delete` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_delete` -->
+- [x] agent-mcp tool `automation_run` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_run` -->
+- [x] agent-mcp tool `automation_runs` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_runs` -->
+- [x] agent-mcp tool `automation_confirm` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `automation_confirm` -->
+- [x] agent-mcp tool `checklist` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `checklist` -->
+- [x] agent-mcp tool `skill_install` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `skill_install` -->
+- [x] agent-mcp tool `skill_save` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `skill_save` -->
+- [x] agent-mcp tool `project_message` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `project_message` -->
+- [x] agent-mcp tool `factory_status` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `factory_status` -->
+- [x] agent-mcp tool `chat_search` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_search` -->
+- [x] agent-mcp tool `chat_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_read` -->
+- [x] agent-mcp tool `confirm_step` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `confirm_step` -->
+- [x] agent-mcp tool `usage_resume` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `usage_resume` -->
+- [x] agent-mcp tool `change_enqueue` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `change_enqueue` -->
+- [x] agent-mcp tool `report` → `src/cli/agent_mcp` (op review_verdict) <!-- agent-mcp:agent-mcp tool `report` -->
+- [x] agent-mcp tool `ask_lead` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `ask_lead` -->
+- [x] agent-mcp tool `brief_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `brief_read` -->
+- [x] agent-mcp tool `wait_ci` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `wait_ci` -->
+- [x] agent-mcp tool `review_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `review_read` -->
+- [x] agent-mcp tool `chat_file` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_file` -->
+- [x] agent-mcp tool `publish_artifact` → `src/cli/agent_mcp` (op artifact_publish) <!-- agent-mcp:agent-mcp tool `publish_artifact` -->
+- [x] agent-mcp tool `session_start` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_start` -->
+- [x] agent-mcp tool `desktop` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `desktop` -->
+- [x] agent-mcp tool `session_end` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_end` -->
+- [x] agent-mcp tool `request_takeover` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_takeover` -->
+- [x] agent-mcp tool `fill_credential` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `fill_credential` -->
+- [x] agent-mcp tool `purchase_request` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_request` -->
+- [x] agent-mcp tool `purchase_fill` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_fill` -->
+- [x] agent-mcp tool `request_secure_input` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secure_input` -->
+- [x] agent-mcp tool `secure_input_fill` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `secure_input_fill` -->
 

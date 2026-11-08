@@ -37,6 +37,8 @@ export async function main(argv: string[]): Promise<number> {
         throw new NotImplemented(`src/cli: fleetd hub ${sub ?? ""}`.trim());
       case "node":
         return await nodeCommand(argv.slice(1));
+      case "agent-mcp":
+        return await (await import("./agent_mcp/index.ts")).agentMcp(argv.slice(1));
       default:
         throw new NotImplemented(`src/cli: fleetd ${command}`);
     }
