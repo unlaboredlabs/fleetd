@@ -11,6 +11,9 @@
 // - `node.area("caps")`: `contribute(fn)`, the capabilities an area adds to the hello (`browser`,
 //   `session_linux_desktop` once its health is ready, …), and `changed()` once they may differ: the node links again,
 //   so the hub reads them in a new hello, as the Rust node lists a kind from its next link;
+// - `node.area("launch")`: `contribute({ env, pluginDirs })`, what an agent's claude launch gets from an area (Rust's
+//   browser `SessionHooks::env` and `plugin_dirs`): `env(thread, path)` its variables, given the launch's PATH, and
+//   `pluginDirs()` its skills' plugins, for a lead's or a worker's session (a plain one gets none);
 // - `node.area("sessions")`: `maskFor(thread)` (the masker for a session's secrets) and `sessionCwd(thread)` (the
 //   folder this node started it in), for the screens' sessions of an agent;
 // - `node.config`: node.json, its screens' sections typed by their areas.
@@ -157,6 +160,45 @@ export class CapsArea {
   }
 }
 
+/** What an area adds to an agent's claude launch. */
+export type LaunchPart = {
+  /** The session's variables, given the PATH it launches with (one that names PATH puts its own first on it). */
+  env?: (thread: string, path: string | undefined) => [string, string][];
+  /** Plugin folders of skills for the session. */
+  pluginDirs?: () => string[];
+};
+
+export class LaunchArea {
+  readonly #parts: LaunchPart[] = [];
+  contribute(part: LaunchPart): void {
+    this.#parts.push(part);
+  }
+  /** Every part's variables for the session, in order: a later part's value for a name wins. */
+  env(thread: string, path: string | undefined): [string, string][] {
+    const out = new Map<string, string>();
+    for (const part of this.#parts) {
+      try {
+        for (const [k, v] of part.env?.(thread, out.get("PATH") ?? path) ?? []) out.set(k, v);
+      } catch (error) {
+        console.warn(`${new Date().toISOString()} WARN a launch env part failed {"error":${JSON.stringify(String(error))}}`);
+      }
+    }
+    return [...out];
+  }
+  /** Every part's plugin folders, each once. */
+  pluginDirs(): string[] {
+    const out: string[] = [];
+    for (const part of this.#parts) {
+      try {
+        for (const dir of part.pluginDirs?.() ?? []) if (!out.includes(dir)) out.push(dir);
+      } catch (error) {
+        console.warn(`${new Date().toISOString()} WARN a launch plugins part failed {"error":${JSON.stringify(String(error))}}`);
+      }
+    }
+    return out;
+  }
+}
+
 /** What the screens' sessions read of an agent's session on this node. */
 export type SessionsArea = {
   /** The masker for the session's secrets (its project's and order's); throws why there is none. */
@@ -165,7 +207,7 @@ export type SessionsArea = {
   sessionCwd: (thread: string) => string | undefined;
 };
 
-type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea; caps: CapsArea; sessions: SessionsArea };
+type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea; caps: CapsArea; launch: LaunchArea; sessions: SessionsArea };
 
 export class Node {
   readonly #areas = new Map<string, unknown>();
@@ -179,6 +221,7 @@ export class Node {
     this.#areas.set("hb", new HbArea());
     this.#areas.set("items", new ItemsArea());
     this.#areas.set("caps", new CapsArea());
+    this.#areas.set("launch", new LaunchArea());
   }
 
   /** The node core's areas by name, or any other area's service, made on first use: `node.area("browser", make)`. */
