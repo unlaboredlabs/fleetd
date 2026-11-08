@@ -1296,6 +1296,90 @@ async fn an_undecodable_node_frame_is_refused_alone_and_the_link_stays_up() {
     );
 }
 
+/// The hub's stop (SIGTERM) waits for the lead calls it is answering: one in flight gets its answer, one that comes in
+/// meanwhile is told it didn't run, and only then does the link close, as a restart (1012), so the node redials at
+/// once rather than find its socket reset.
+#[tokio::test]
+async fn a_lead_call_in_flight_at_the_stop_is_answered_then_the_link_closes_as_a_restart() {
+    let t = start().await;
+    let (mut node, welcome) = link_node(&t, &[]).await;
+    assert_eq!(welcome["t"], "welcome");
+    // A call the hub is still answering, held open by the test.
+    let in_flight = t.hub.link.call_started().expect("not stopping yet");
+    let link = t.hub.link.clone();
+    let stopped = tokio::spawn(async move { link.stop(Duration::from_secs(2)).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let late =
+        json!({ "t": "lead_call", "id": "late-1", "cwd": "/w", "call": { "op": "task_list" } });
+    node.send(Message::text(late.to_string())).await.unwrap();
+    let refused = next_lead_result(&mut node).await;
+    assert_eq!(refused["id"], "late-1");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("restarting, so this call didn't run"),
+        "{refused}"
+    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !stopped.is_finished(),
+        "the stop waits for the call in flight"
+    );
+    let started = Instant::now();
+    drop(in_flight);
+    stopped.await.unwrap();
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "{:?}",
+        started.elapsed()
+    );
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), node.next())
+            .await
+            .expect("the link closes")
+        {
+            Some(Ok(Message::Close(Some(frame)))) => {
+                assert_eq!(
+                    (u16::from(frame.code), frame.reason.as_str()),
+                    (
+                        fleetd_contracts::node_link::close::RESTART,
+                        "hub restarting"
+                    )
+                );
+                break;
+            }
+            Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {}
+            other => panic!("expected a 1012 close, got {other:?}"),
+        }
+    }
+}
+
+/// A call still running when the stop's wait is over doesn't hold the hub up: the link closes anyway.
+#[tokio::test]
+async fn the_stop_waits_for_lead_calls_only_so_long() {
+    let t = start().await;
+    let (mut node, _) = link_node(&t, &[]).await;
+    let _stuck = t.hub.link.call_started().unwrap();
+    let started = Instant::now();
+    t.hub.link.stop(Duration::from_millis(300)).await;
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    loop {
+        match node.next().await {
+            Some(Ok(Message::Close(Some(frame)))) => {
+                assert_eq!(u16::from(frame.code), 1012);
+                break;
+            }
+            Some(Ok(_)) => {}
+            other => panic!("expected a 1012 close, got {other:?}"),
+        }
+    }
+}
+
 /// A node that sends nothing readable is still cut off: past the minute's limit of bad frames, the link ends.
 #[tokio::test]
 async fn a_flood_of_undecodable_node_frames_ends_the_link() {

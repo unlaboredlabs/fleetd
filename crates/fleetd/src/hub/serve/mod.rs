@@ -135,6 +135,10 @@ pub fn hub_start(argv: &[String]) -> ExitCode {
     }
 }
 
+/// How long the hub's stop waits for the lead calls it is answering: agents' fleetd tool calls in flight get their
+/// answers rather than a dropped link.
+const LEAD_CALLS_GRACE: Duration = Duration::from_secs(2);
+
 /// Runs the hub until SIGTERM/SIGINT.
 pub async fn run(options: HubOptions) -> anyhow::Result<()> {
     let user_home = std::env::var_os("HOME")
@@ -156,10 +160,13 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         hub.config.home.display(),
         hub.config.listen
     );
-    let shutdown = hub.shutdown.clone();
+    let stopping = hub.clone();
     tokio::spawn(async move {
         stop_signal().await;
-        shutdown.trigger();
+        // The lead calls being answered finish first, then every node link closes as a restart (1012), so each node
+        // redials at once; the app sockets close the same way as the shutdown fires.
+        stopping.link.stop(LEAD_CALLS_GRACE).await;
+        stopping.shutdown.trigger();
     });
     let loops = start_loops(&hub, &tools);
     let served = http::serve(listener, hub, tools).await;
