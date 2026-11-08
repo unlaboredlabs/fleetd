@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { APP_ORIGIN, assetPath, originOf } from "./origin";
+import { APP_ORIGIN, assetPath, assetType, originOf } from "./origin";
 
 describe("originOf", () => {
   it("tells the app's own pages from local files and other sites", () => {
@@ -28,5 +28,20 @@ describe("assetPath", () => {
     expect(assetPath("app://fleetd/assets/..%2f..%2f..%2fetc%2fpasswd", root)).toBeNull();
     expect(assetPath("app://other/index.html", root)).toBeNull();
     expect(assetPath("file:///opt/fleetd/renderer/index.html", root)).toBeNull();
+  });
+});
+
+describe("assetType", () => {
+  it("types each kind of file the build makes, a module script as JavaScript", () => {
+    expect(assetType("/r/index.html")).toBe("text/html; charset=utf-8");
+    expect(assetType("/r/assets/index-1.js")).toBe("text/javascript; charset=utf-8");
+    expect(assetType("/r/assets/ui-1.css")).toBe("text/css; charset=utf-8");
+    expect(assetType("/r/assets/a.webp")).toBe("image/webp");
+    expect(assetType("/r/assets/inter.woff2")).toBe("font/woff2");
+  });
+
+  it("leaves any other kind to the session's own typing", () => {
+    expect(assetType("/r/assets/index-1.js.map")).toBeUndefined();
+    expect(assetType("/r/assets")).toBeUndefined();
   });
 });
