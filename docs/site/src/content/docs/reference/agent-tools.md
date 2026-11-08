@@ -854,11 +854,11 @@ Lift the usage pause on your project's machine now and send every agent parked t
 
 ### change_enqueue
 
-Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in this repo or any other, that must merge first: the train holds this one until they have, and tells you when one of them fails. A PR on the train that its review's findings block, enqueued again, gets a fresh full review of the same patch: for findings you resolved without a new push (by narrowing the brief).
+Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in this repo or any other, that must merge first: the train holds this one until they have, and tells you when one of them fails. Only PRs of projects your person can see: one of another person's Only me project is refused. A PR on the train that its review's findings block, enqueued again, gets a fresh full review of the same patch: for findings you resolved without a new push (by narrowing the brief).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `after` | string[] | no | PRs, in this repo or any other, that must merge first: the train holds this one until each has merged. Enqueuing a PR already on the train adds these to it, unless it is already being merged. At most 20 items. |
+| `after` | string[] | no | PRs, in this repo or any other, that must merge first: the train holds this one until each has merged. Enqueuing a PR already on the train adds these to it, unless it is already being merged. Only PRs of projects your person can see: one of another person's Only me project is refused. At most 20 items. |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
