@@ -364,26 +364,34 @@ impl Socket {
 /// The project `given` names, as `fleetd status` finds one: its id, title or folder, `<machine>/` first when two
 /// machines have one.
 async fn project_ref(socket: &mut Socket, given: &str) -> Result<Value, Failure> {
-    let machine = given
+    let named = given
         .split_once('/')
-        .map(|(m, _)| m)
-        .filter(|m| super::is_machine_id(m));
+        .filter(|(m, _)| super::is_machine_id(m));
     let listed = socket
-        .call("project_get", json!({ "machineId": machine }))
+        .call("project_get", json!({ "machineId": named.map(|(m, _)| m) }))
         .await?;
     let projects = listed["projects"].as_array().cloned().unwrap_or_default();
-    pick_project(given, &projects, listed["truncated"] == true).map_err(Failure::Refused)
+    let why = match pick_project(given, &projects) {
+        Ok(r) => return Ok(r),
+        Err(why) => why,
+    };
+    // A `<machine>/<id>` the list leaves out (a pool machine's project, one past the list's cut) is still the hub's:
+    // asked for by its id, as chat always took one.
+    let Some((machine_id, project_id)) = named else {
+        return Err(Failure::Refused(why));
+    };
+    let r = json!({ "machineId": machine_id, "projectId": project_id });
+    match socket.call("project_get", r.clone()).await {
+        Ok(_) => Ok(r),
+        Err(Failure::Refused(_)) => Err(Failure::Refused(why)),
+        Err(unreachable) => Err(unreachable),
+    }
 }
 
-/// `truncated`: the hub listed only its first projects, so a `<machine>/<id>` not among them goes as given, for the
-/// hub to find.
-fn pick_project(given: &str, projects: &[Value], truncated: bool) -> Result<Value, String> {
-    super::time::resolve_project(given, projects).or_else(|why| match given.split_once('/') {
-        Some((machine_id, project_id)) if truncated && super::is_machine_id(machine_id) => {
-            Ok(json!({ "machineId": machine_id, "projectId": project_id }))
-        }
-        _ if projects.is_empty() => Err(format!("no project {given}: the hub has none yet")),
-        _ => Err(why.replacen("no order or project", "no project", 1)),
+fn pick_project(given: &str, projects: &[Value]) -> Result<Value, String> {
+    super::time::resolve_project(given, projects).map_err(|why| match projects {
+        [] => format!("no project {given}: the hub has none yet"),
+        _ => why.replacen("no order or project", "no project", 1),
     })
 }
 
@@ -682,36 +690,23 @@ mod tests {
         ];
         let at = |m: &str, p: &str| Ok(json!({ "machineId": m, "projectId": p }));
         assert_eq!(
-            pick_project("devbox/storefront", &projects, false),
+            pick_project("devbox/storefront", &projects),
             at("devbox", "f0d0d1a4")
         );
         assert_eq!(
-            pick_project("devbox/f0d0d1a4", &projects, false),
+            pick_project("devbox/f0d0d1a4", &projects),
             at("devbox", "f0d0d1a4")
         );
-        assert_eq!(
-            pick_project("Docs site", &projects, false),
-            at("devbox", "77ab")
-        );
-        assert_eq!(pick_project("docs", &projects, false), at("devbox", "77ab"));
+        assert_eq!(pick_project("Docs site", &projects), at("devbox", "77ab"));
+        assert_eq!(pick_project("docs", &projects), at("devbox", "77ab"));
         assert!(
-            pick_project("storefront", &projects, false)
+            pick_project("storefront", &projects)
                 .unwrap_err()
                 .contains("devbox/storefront, buildbox/storefront")
         );
-        let none = pick_project("devbox/nope", &projects, false).unwrap_err();
+        let none = pick_project("devbox/nope", &projects).unwrap_err();
         assert!(none.starts_with("no project 'devbox/nope'"), "{none}");
-        assert!(
-            pick_project("app", &[], false)
-                .unwrap_err()
-                .contains("none yet")
-        );
-        // A hub with more projects than one list holds: an id past them goes as given, as it always did.
-        assert_eq!(
-            pick_project("devbox/5e2a", &projects, true),
-            at("devbox", "5e2a")
-        );
-        assert!(pick_project("nope", &projects, true).is_err());
+        assert!(pick_project("app", &[]).unwrap_err().contains("none yet"));
     }
 
     #[test]
@@ -808,7 +803,35 @@ mod against_a_hub {
                 .unwrap()],
             )
             .unwrap();
+        // One the project list leaves out: a project on a pool machine.
+        HubStore::new(db.clone())
+            .projects_upsert_many(
+                &MachineId::new("cloud-1").unwrap(),
+                &[serde_json::from_value(json!({
+                    "machineId": "cloud-1", "projectId": "p1", "title": "p1", "workspaceRoot": "/w/p1",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                    "lastActivityAt": "2026-11-08T00:00:00.000Z",
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        db.with(|c| {
+            c.execute(
+                "INSERT INTO node_keys (machine_id, pub_key, pool) VALUES ('cloud-1', 'pk', 1)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
         let hub = crate::hub::serve::build_on(db, config, Arc::new(SystemClock)).unwrap();
+        for machine in ["devbox", "cloud-1"] {
+            let machine = serde_json::from_value(json!({
+                "machineId": machine, "name": machine, "tags": [], "status": "offline",
+                "lastSeenAt": "2026-11-08T00:00:00.000Z", "nodeVersion": "0.1.0",
+            }))
+            .unwrap();
+            hub.store.machine_upsert(&machine, None).unwrap();
+        }
         let grants: Vec<Grant> =
             serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
         let key = hub
@@ -842,6 +865,8 @@ mod against_a_hub {
             0,
             "by its id"
         );
+        // Review of the bug hunt: it went as given before chat looked titles up, then was refused ("no project").
+        assert_eq!(chat(&["cloud-1/p1", "on the pool"]).await, 0);
         let texts: Vec<String> = hub
             .db
             .with(|c| {
@@ -860,7 +885,14 @@ mod against_a_hub {
                 Ok(rows)
             })
             .unwrap();
-        assert_eq!(texts, ["f0d0d1a4: ship it", "f0d0d1a4: and the docs"]);
+        assert_eq!(
+            texts,
+            [
+                "f0d0d1a4: ship it",
+                "f0d0d1a4: and the docs",
+                "p1: on the pool"
+            ]
+        );
         assert_eq!(chat(&["history", "devbox/storefront"]).await, 0);
         assert_eq!(
             chat(&["history", "devbox/nope"]).await,
