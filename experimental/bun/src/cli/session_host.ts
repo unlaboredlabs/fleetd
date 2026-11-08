@@ -3,11 +3,7 @@
 // and anything else that starts a host through `fleetd` work on a Bun-only install. execve, not a child: the host's pid,
 // session and signals stay its own, as when the Rust binary is run directly.
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { findHelper, NO_HELPER } from "../node/runner/helper.ts";
-
-/** Set while this command looks for a host: findHelper tries each candidate, and a Bun build it tries then refuses at
- * once rather than looking in turn (two Bun builds on PATH would otherwise try each other without end). */
-export const LOOKING = "FLEETD_SESSION_HOST_LOOKUP";
+import { findHelper, LOOKUP, NO_HELPER } from "../node/runner/helper.ts";
 
 const cstring = (s: string) => Buffer.from(`${s}\0`, "utf8");
 
@@ -30,10 +26,10 @@ function execve(bin: string, argv: string[], env: string[]): void {
 
 export function run(argv: string[]): number {
   const missing = () => (process.stderr.write(`fleetd: ${NO_HELPER}\n`), 1);
-  if (process.env[LOOKING] !== undefined) return missing();
-  process.env[LOOKING] = "1";
+  // findHelper is trying this build as a host (LOOKUP in its probe's environment): refuse at once rather than look in
+  // turn, or two Bun builds on PATH would keep trying each other.
+  if (process.env[LOOKUP] !== undefined) return missing();
   const bin = findHelper();
-  delete process.env[LOOKING];
   if (bin === undefined) return missing();
   const env = Object.entries(process.env).flatMap(([k, v]) => (v === undefined ? [] : [`${k}=${v}`]));
   execve(bin, ["fleetd", "session-host", ...argv], env);
