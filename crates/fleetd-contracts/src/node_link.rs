@@ -322,11 +322,6 @@ pub struct NodeLoad {
     pub mem_used_pct: Option<Int<0, 100>>,
     /// Physical memory; absent from older nodes and when it can't be read.
     pub mem_total_bytes: Option<Count>,
-    /// Swap in use, percent. Linux only; absent without swap and from older nodes.
-    pub swap_used_pct: Option<Int<0, 100>>,
-    /// Memory pressure: the share of the last 10 s in which some task stalled waiting for memory (PSI `some avg10`),
-    /// percent. Linux only; absent on kernels without PSI and from older nodes.
-    pub mem_pressure_pct: Option<NonNegative>,
     /// Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
     /// older nodes.
     pub mem_per_agent_bytes: Option<Count>,
@@ -911,5 +906,16 @@ mod tests {
         assert_eq!(serde_json::to_string(&decoded).unwrap(), slept);
         let backwards = r#"{"t":"slept","fromMs":1760000646000,"toMs":1760000000000}"#;
         assert!(serde_json::from_str::<NodeToHub>(backwards).is_err());
+    }
+
+    #[test]
+    fn an_older_nodes_swap_and_memory_pressure_figures_are_ignored() {
+        let load: NodeLoad = serde_json::from_str(
+            r#"{"cpus":32,"load1":3.5,"memUsedPct":41,"swapUsedPct":100,"memPressurePct":23.45}"#,
+        )
+        .unwrap();
+        assert_eq!(load.mem_used_pct, Some(Int::unchecked(41)));
+        let sent = serde_json::to_value(&load).unwrap();
+        assert!(sent.get("swapUsedPct").is_none() && sent.get("memPressurePct").is_none());
     }
 }
