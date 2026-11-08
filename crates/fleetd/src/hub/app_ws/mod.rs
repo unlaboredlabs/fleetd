@@ -246,7 +246,12 @@ impl Session {
         self.early = Early::Auth;
     }
 
-    fn ready<'a>(&mut self, key: String, info: Caller, mut features: impl Iterator<Item = &'a str>) {
+    fn ready<'a>(
+        &mut self,
+        key: String,
+        info: Caller,
+        mut features: impl Iterator<Item = &'a str>,
+    ) {
         self.caller = Some((key, info));
         self.deflate |= features.any(|f| f == fleetd_contracts::app::APP_DEFLATE);
         self.send(json!({

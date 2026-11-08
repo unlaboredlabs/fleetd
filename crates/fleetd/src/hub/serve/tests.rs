@@ -999,7 +999,7 @@ async fn an_upgrade_that_carries_the_key_gets_ready_and_the_snapshot_before_any_
     let t = start().await;
     let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
     let mut app = app_with_upgrade_auth(&t, &reader, "").await;
-    let mut read = async |app: &mut tokio_tungstenite::WebSocketStream<_>| {
+    let read = async |app: &mut tokio_tungstenite::WebSocketStream<_>| {
         serde_json::from_str::<Value>(app.next().await.unwrap().unwrap().to_text().unwrap())
             .unwrap()
     };
