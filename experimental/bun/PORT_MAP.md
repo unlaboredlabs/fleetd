@@ -186,7 +186,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `memory_get` → `src/hub/memory` (read) <!-- tool:`memory_get` -->
 - [x] `memory_set` → `src/hub/memory` (operate) <!-- tool:`memory_set` -->
 - [x] `memory_undo` → `src/hub/memory` (operate) <!-- tool:`memory_undo` -->
-- [ ] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
+- [x] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
 - [x] `memory_shared_get` → `src/hub/memory` (admin) <!-- tool:`memory_shared_get` -->
 - [x] `memory_shared_set` → `src/hub/memory` (admin) <!-- tool:`memory_shared_set` -->
 - [x] `automation_list` → `src/hub/automations` (read) <!-- tool:`automation_list` -->
@@ -197,7 +197,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `automation_delete` → `src/hub/automations` (operate) <!-- tool:`automation_delete` -->
 - [x] `automation_run` → `src/hub/automations` (operate) <!-- tool:`automation_run` -->
 - [x] `automation_runs` → `src/hub/automations` (read) <!-- tool:`automation_runs` -->
-- [ ] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
+- [x] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
 - [x] `checklist_get` → `src/hub/checklist` (read) <!-- tool:`checklist_get` -->
 - [x] `navi_asks` → `src/hub/navi` (read) <!-- tool:`navi_asks` -->
 - [x] `project_asks` → `src/hub/navi` (read) <!-- tool:`project_asks` -->
@@ -235,7 +235,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
 - [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
-- [ ] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
+- [x] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
 - [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
