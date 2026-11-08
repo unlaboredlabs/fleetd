@@ -34,6 +34,7 @@ import {
   toThread,
   transitionEvent,
 } from "./shell_mapper.ts";
+import { type SendOpts, sendWith as sendThread } from "./sessions.ts";
 import { Views } from "./views.ts";
 
 /** The activity tracker (T2253's src/hub/executor/activity.ts, `hub.area("activity")`), once its area exists. */
@@ -620,6 +621,15 @@ export class Executors {
     } catch (error) {
       console.error("executor: event append failed:", error);
     }
+  }
+
+  /**
+   * A send with its mode and steer tag (executor/mod.rs `send_with`), as the write queue's ThreadWriter takes it
+   * (queue/ports.rs): `behindRun` is the node's `queued`, the message waiting behind the thread's active run.
+   */
+  async sendWith(target: ThreadRef, message: string, clientRequestId: string, opts: SendOpts = {}): Promise<{ runId?: string; behindRun: boolean }> {
+    const out = await sendThread(this.hub, target, message, clientRequestId, opts);
+    return { ...(out.runId !== undefined ? { runId: out.runId } : {}), behindRun: out.queued };
   }
 
   /** The thread as the machine stream last said, while this hub has seen it. */
