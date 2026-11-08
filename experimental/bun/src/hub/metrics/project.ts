@@ -77,27 +77,38 @@ export function catchUp(hub: Hub): void {
 export function run(hub: Hub): void {
   const log = events(hub);
   let cursor = readCursor(hub.db.conn, CURSOR) ?? 0;
-  let scheduled = false;
-  const pass = () => {
-    scheduled = false;
-    if (hub.shutdown.signal.aborted) return;
+  // One pass at a time: an append during a pass's yield is folded by that pass's next page, or by one more pass.
+  let busy = false;
+  let again = false;
+  const pass = async () => {
     try {
-      for (;;) {
-        const [next, more] = step(hub.db, log, cursor);
-        cursor = next;
-        if (!more) break;
-      }
+      do {
+        again = false;
+        for (;;) {
+          if (hub.shutdown.signal.aborted) return;
+          const [next, more] = step(hub.db, log, cursor);
+          cursor = next;
+          if (!more) break;
+          // A long backlog is folded a page at a time, the hub serving between pages (Rust folds on a worker thread).
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      } while (again);
     } catch (error) {
       console.error("metrics: events not projected:", error);
       const retry = setTimeout(wake, 5000);
       hub.shutdown.signal.addEventListener("abort", () => clearTimeout(retry), { once: true });
+    } finally {
+      busy = false;
     }
   };
   // Appends in one tick are folded together, after the appender's transaction.
   const wake = () => {
-    if (scheduled) return;
-    scheduled = true;
-    queueMicrotask(pass);
+    if (busy) {
+      again = true;
+      return;
+    }
+    busy = true;
+    queueMicrotask(() => void pass());
   };
   const unsubscribe = log.subscribe(wake);
   hub.shutdown.signal.addEventListener("abort", unsubscribe, { once: true });
@@ -241,7 +252,7 @@ export function change(db: HubDb, id: string): Change | undefined {
   }
 }
 
-function taskWorkstream(db: HubDb, task: string): string | undefined {
+export function taskWorkstream(db: HubDb, task: string): string | undefined {
   return db.conn.query<{ w: string | null }, [number]>("SELECT workstream_id AS w FROM tasks WHERE n = ?1").get(number(task))?.w ?? undefined;
 }
 

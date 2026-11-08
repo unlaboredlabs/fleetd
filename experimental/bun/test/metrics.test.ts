@@ -1,159 +1,19 @@
 // The metrics over a fresh hub (crates/fleetd/src/hub/metrics/tests.rs, touch_tests.rs): the projector's routes and
 // stamps from the train's events, replays, the person's touches, metrics_get's figures by calendar day in a zone, its
 // bounds and grants, and the prune.
-import { afterEach, expect, test } from "bun:test";
-import { registerAll } from "../src/gen/areas.ts";
-import { Registry, type Caller } from "../src/hub/api/registry.ts";
+import { expect, test } from "bun:test";
 import * as compute from "../src/hub/metrics/compute.ts";
 import * as human from "../src/hub/metrics/human.ts";
 import { weeks } from "../src/hub/metrics/index.ts";
 import { start } from "../src/hub/metrics/loops.ts";
 import { step } from "../src/hub/metrics/project.ts";
+import { metricsSweep } from "../src/hub/metrics/sweep.ts";
 import * as store from "../src/hub/metrics/store.ts";
 import { dayStart } from "../src/hub/metrics/zone.ts";
 import { events } from "../src/hub/store/events.ts";
 import { isoMs } from "../src/hub/store/time.ts";
 import { cursor as readCursor } from "../src/hub/time/store.ts";
-import type { HubEventType, MetricsGetOutput } from "../src/shared/contracts.ts";
-import { testHub } from "./hub-helpers.ts";
-
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-const MIN = 60_000;
-const NOW = "2026-10-25T12:00:00.000Z";
-const REPO = "github.com/acme/web";
-const ms = (t: string) => Date.parse(t);
-
-let cleanup: (() => void) | undefined;
-afterEach(() => {
-  cleanup?.();
-  cleanup = undefined;
-});
-
-function hub() {
-  const t = testHub(ms(NOW));
-  cleanup = t.done;
-  return t;
-}
-type H = ReturnType<typeof hub>["hub"];
-
-const caller = (grants: Caller["grants"]): Caller => ({
-  keyId: "k1",
-  name: "desk",
-  prefix: "fld_abcdef",
-  createdAt: NOW,
-  grants,
-  kind: "human",
-});
-const admin = () => caller([{ role: "admin", machines: "*" }]);
-
-const sql = (h: H, statement: string, ...args: (string | number)[]) => h.db.conn.query(statement).run(...args);
-
-/** W1 the person submitted in the app; W2 the lead opened from the chat. */
-function orders(h: H) {
-  for (const [n, channel, at] of [
-    [1, "app", "2026-10-20T08:00:00.000Z"],
-    [2, "lead", "2026-10-21T09:00:00.000Z"],
-  ] as const) {
-    const w = {
-      workstreamId: `W${n}`,
-      projectRef: { machineId: "devbox", projectId: "web" },
-      title: "Checkout",
-      source: { text: "Checkout", channel, by: "human", at },
-      state: "open",
-      createdAt: at,
-      updatedAt: at,
-    };
-    sql(h, "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (?1, 'devbox', 'web', 'open', ?2)", n, JSON.stringify(w));
-  }
-}
-
-function change(h: H, n: number, pr: number, w: string, task: string | undefined, state: string, created: string) {
-  const c: Record<string, unknown> = {
-    changeId: `X${n}`,
-    projectRef: { machineId: "devbox", projectId: "web" },
-    repo: "acme/web",
-    prNumber: pr,
-    prUrl: `https://github.com/acme/web/pull/${pr}`,
-    branch: `fleetd/T${n}-x`,
-    workstreamId: w,
-    headSha: "b".repeat(40),
-    state,
-    reviews: [],
-    createdAt: created,
-    updatedAt: created,
-  };
-  if (task) c.taskId = task;
-  sql(
-    h,
-    `INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
-     VALUES (?1, 'acme/web', ?2, ?3, 'devbox', 'web', ?1, ?4)`,
-    n,
-    pr,
-    state,
-    JSON.stringify(c),
-  );
-}
-
-function event(h: H, at: string, type: string, data: unknown) {
-  events(h).append({ at, type: type as HubEventType, machineId: "devbox", projectId: "web", summary: type, data });
-}
-
-/** Projects every page from `cursor`, as the projector's loop does; the cursor it ends on. */
-function projectFrom(h: H, cursor: number): number {
-  for (;;) {
-    const [next, more] = step(h.db, events(h), cursor);
-    cursor = next;
-    if (!more) return cursor;
-  }
-}
-
-const rows = (h: H) => store.merges(h.db.conn, 0, Number.MAX_SAFE_INTEGER);
-
-async function get(h: H, who: Caller, input: unknown): Promise<MetricsGetOutput> {
-  const r = new Registry();
-  registerAll(r);
-  const out = await r.call(h, who, "metrics_get", input);
-  if ("output" in out) return out.output as MetricsGetOutput;
-  throw out.error.kind === "tool" ? out.error.error : new Error(JSON.stringify(out.error));
-}
-
-/** A week on acme/web: the train's change, two fleetd PRs merged by hand, one from outside, and a bot's PR. */
-function aWeek(h: H) {
-  orders(h);
-  sql(h, "INSERT INTO trains (repo, machine_id, project_id, watch_since_ms) VALUES ('acme/web', 'devbox', 'web', 0)");
-  sql(h, "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data) VALUES (3, 'devbox', 'web', 'W2', 'done', '{}')");
-  change(h, 1, 7, "W1", "T1", "merged", "2026-10-20T09:00:00.000Z");
-  change(h, 2, 8, "W2", undefined, "abandoned", "2026-10-21T10:00:00.000Z");
-  const moved = (at: string, from: string, to: string) =>
-    event(h, at, "change.state", { changeId: "X1", workstreamId: "W1", repo: "acme/web", prNumber: 7, from, to });
-  event(h, "2026-10-20T08:00:00.000Z", "workstream.created", { workstreamId: "W1" });
-  moved("2026-10-20T09:30:00.000Z", "queued", "reviewing");
-  moved("2026-10-20T10:00:00.000Z", "reviewing", "ready");
-  // A bounce back to ready later keeps the first pass.
-  moved("2026-10-20T10:30:00.000Z", "ready", "rebasing");
-  moved("2026-10-20T11:00:00.000Z", "rebasing", "ready");
-  event(h, "2026-10-20T12:00:00.000Z", "pr.merged", {
-    changeId: "X1",
-    workstreamId: "W1",
-    repo: "acme/web",
-    prNumber: 7,
-    taskId: "T1",
-    mergedSha: "A".repeat(40),
-    batchPr: 12,
-  });
-  // Reported an hour after it merged: the git host's time counts.
-  event(h, "2026-10-21T15:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: 8, changeId: "X2", mergedAt: "2026-10-21T14:00:00.000Z" });
-  event(h, "2026-10-22T11:00:00.000Z", "pr.merged_outside", {
-    repo: "acme/web",
-    prNumber: 9,
-    prCreatedAt: "2026-10-22T10:00:00.000Z",
-    authorKind: "human",
-    mergedByKind: "human",
-  });
-  event(h, "2026-10-23T10:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: 10, head: "fleetd/T3-fix-totals" });
-  event(h, "2026-10-23T12:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: 11, head: "dependabot/npm/left-pad", authorKind: "bot" });
-}
+import { aWeek, admin, caller, DAY, event, get, type H, HOUR, hub, MIN, ms, NOW, orders, projectFrom, REPO, rows, sql, storeRow } from "./metrics-kit.ts";
 
 test("a week of merges reads as routes, rates and order times", async () => {
   const { hub: h } = hub();
@@ -218,21 +78,6 @@ test("a replay writes the same rows and the train has the last word", () => {
   const pr7 = rows(h).find((r) => r.unitKey === "pr:7")!;
   expect([pr7.route, pr7.mergedMs, pr7.mergedByKind]).toEqual(["train", ms("2026-10-20T12:00:00.000Z"), "train"]);
 });
-
-function storeRow(h: H, unit: string, route: string, mergedMs: number, w?: string) {
-  h.db.transaction((c) =>
-    store.upsertMerge(c, {
-      repo: REPO,
-      unitKey: unit,
-      machineId: "devbox",
-      projectId: "web",
-      mergedMs,
-      route,
-      ...(w ? { workstreamId: w } : {}),
-      src: "event",
-    }),
-  );
-}
 
 test("an order known after its merge gets its request time", () => {
   const { hub: h } = hub();
@@ -328,7 +173,8 @@ test("the prune keeps what the retention says, and the hourly loop prunes", asyn
   sql(h, "INSERT INTO time_settings (key, value) VALUES ('metrics_retention_days', 30)");
   expect(h.db.transaction((c) => store.prune(c, clock.now()))).toBe(false);
   expect(units()).toEqual(["pr:3"]);
-  // The loops start and stop with the hub.
+  // The loops start and stop with the hub (no git host to read: the sweep has no sources here).
+  metricsSweep(h).sources = {};
   start(h);
   h.shutdown.abort();
 });
@@ -347,6 +193,7 @@ test("the saved cursor only moves forward", () => {
 test("the projector folds each append as it lands", async () => {
   const { hub: h } = hub();
   orders(h);
+  metricsSweep(h).sources = {};
   start(h);
   event(h, "2026-10-24T09:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: 21 });
   await Bun.sleep(5);
@@ -518,4 +365,19 @@ test("minutes per merged PR are the sessions over fleetd work, with the low boun
     { source: "chat", ms: 3 * MIN, touches: 2 },
     { source: "other", ms: 3 * MIN + 20_000, touches: 1 },
   ]);
+});
+
+test("the projector folds a long backlog a page at a time, the hub serving between pages", async () => {
+  const { hub: h } = hub();
+  for (let n = 1; n <= 350; n++) event(h, "2026-10-24T09:00:00.000Z", "pr.merged_outside", { repo: "acme/web", prNumber: n });
+  metricsSweep(h).sources = {};
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  start(h);
+  for (let i = 0; i < 200 && rows(h).length < 350; i++) await Bun.sleep(1);
+  clearInterval(timer);
+  expect(rows(h).length).toBe(350);
+  // Four pages of 100: the loop ran between them.
+  expect(ticks).toBeGreaterThan(0);
+  h.shutdown.abort();
 });

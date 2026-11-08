@@ -16,6 +16,7 @@ import { cursor as readCursor } from "../time/store.ts";
 import * as compute from "./compute.ts";
 import { Identities, attributed, REVIEW_MAX_MS } from "./human.ts";
 import * as store from "./store.ts";
+import { metricsSweep } from "./sweep.ts";
 import { clock, zone } from "./zone.ts";
 
 /** Landed changes listed per read, newest first. */
@@ -185,6 +186,8 @@ export async function metricsGet(hub: Hub, caller: Caller, input: import("../../
     if (!keep) projects.delete(repo);
   }
   const repos = [...projects.keys()].sort();
+  // A read asks the sweep for these repos' latest; it answers with what is stored now.
+  metricsSweep(hub).want(repos);
   // The big reads, off the event loop: landed changes of both periods, and touches up to a review's credit past
   // `until` (one recorded then may have started before it).
   const [mergeSql, mergeParams] = store.mergesSql(prevSince, until, repos);
