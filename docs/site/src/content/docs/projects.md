@@ -763,8 +763,8 @@ overlap and runs them at once.
 
 The memory figure only sizes a machine's auto cap. No agent waits for the memory it might take: a Max agents you set
 starts that many, as far as the machine's cap and disk allow, and a machine you set runs that many whatever it is
-estimated to fit. What does hold new agents back is memory really in use, the
-[guard's pause](/docs/machines#guard) at 90%.
+estimated to fit. Memory in use and CPU load don't hold new agents back either: builds take turns for the machine's
+[build slots](/docs/machines#fair-share) instead.
 
 The Agents tab shows "2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo. A fleet cap below a project's own max gets a warning.
@@ -793,7 +793,7 @@ When the cap is reached:
 
 - A new agent **queues**; it doesn't fail. The lead is told its place in line, and the hub starts it the moment a
   slot frees.
-- New agents also wait while their machine is short of disk or CPU ([Disk and load](/docs/machines#guard)).
+- New agents also wait while their machine is short of disk or its Claude login nearly out of a usage window ([Disk and usage](/docs/machines#guard)).
 - Reviewers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
   the merge train.
 
