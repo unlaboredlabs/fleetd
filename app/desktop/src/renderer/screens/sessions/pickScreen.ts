@@ -21,7 +21,7 @@ export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string
 const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", android: "android", linux_desktop: "desktop", mac: "mac" };
 
 /** A machine as the picker lists it. */
-export interface HostChoice {
+interface HostChoice {
   readonly machineId: string;
   readonly name: string;
   /** Screens live there now, of how many it hosts. */
