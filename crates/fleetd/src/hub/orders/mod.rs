@@ -505,7 +505,18 @@ pub fn orders_in_scope(
             .filter(|w| w.updated_at.0.as_str() >= since.0.as_str()),
         );
     }
-    out.retain(|w| allows(caller, Role::Read, Some(&w.project_ref.machine_id)));
+    // Another person's Only me project's orders are theirs alone (D310).
+    let navis = match crate::hub::navi::owner::others(&hub.db, caller) {
+        Ok(navis) => navis,
+        Err(error) => {
+            tracing::warn!(%error, "orders: Only me owners not read");
+            return Vec::new();
+        }
+    };
+    out.retain(|w| {
+        allows(caller, Role::Read, Some(&w.project_ref.machine_id))
+            && !navis.contains(&w.project_ref)
+    });
     out
 }
 

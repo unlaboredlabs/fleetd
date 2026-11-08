@@ -92,7 +92,11 @@ fn decision_project(hub: &Hub, scope: &DecisionScope) -> Result<Option<ProjectRe
 fn can_read_decision(hub: &Hub, caller: &Caller, decision: &Decision) -> bool {
     match decision_project(hub, &decision.scope) {
         Ok(None) => true,
-        Ok(Some(r)) => allows(caller, Role::Read, Some(&r.machine_id)),
+        // Another person's Only me project's decisions are theirs alone (D310).
+        Ok(Some(r)) => {
+            allows(caller, Role::Read, Some(&r.machine_id))
+                && crate::hub::navi::owner::may_use(&hub.db, caller, &r).unwrap_or(false)
+        }
         Err(_) => false,
     }
 }
