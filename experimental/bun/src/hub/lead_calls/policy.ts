@@ -23,6 +23,7 @@ export const WORKER_OPS: readonly string[] = [
   "chat_image",
   "chat_file",
   "artifact_publish",
+  "artifact_read",
 ];
 /** The calls a task's node makes for it: its browser sessions (node/browser), and a Navi's purchases in them. */
 export const NODE_OPS: readonly string[] = [
@@ -65,8 +66,8 @@ export function check(agent: CallerAgent, op: string): void {
           `${op} is a lead's call, and ${task} is a task.`,
           "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief (brief_read), " +
             "decisions (decisions_search) and its PRs' reviews (review_read), and may upload an image or file for your " +
-            "lead to show (chat_file), publish a report (publish_artifact) or wait on CI (wait_ci). Put anything else in " +
-            "your result or ask your lead.",
+            "lead to show (chat_file), publish a report (publish_artifact), read one of your project's (artifact_read) or " +
+            "wait on CI (wait_ci). Put anything else in your result or ask your lead.",
         );
       }
       return;

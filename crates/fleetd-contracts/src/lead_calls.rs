@@ -326,6 +326,8 @@ pub enum LeadCall {
     ChatFile(ChatFileCall),
     /// A lead's, task's or Navi's report for its project's chat (hub/artifacts).
     ArtifactPublish(crate::artifacts::ArtifactPublishCall),
+    /// Reads one back, a lead's, task's or Navi's, from its own project only.
+    ArtifactRead(crate::artifacts::ArtifactReadCall),
     AutomationCreate(AutomationCreateCall),
     AutomationList(AutomationListCall),
     AutomationUpdate(AutomationUpdateCall),
@@ -421,11 +423,17 @@ pub struct TaskResultFrame {
     pub next: Option<String>,
 }
 
+/// A task's whole final result, as `agents` with taskId returns it: room for a long report, cut past it.
+pub const FULL_RESULT_CAP: usize = 32 * 1024;
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TaskListResult {
     /// Newest first.
     pub tasks: List<Task, 0, 50>,
+    /// With taskId: its final result whole, at most [`FULL_RESULT_CAP`] units, when `result.tail` is cut.
+    pub full_result: Option<Text<0, { FULL_RESULT_CAP + 200 }>>,
     pub truncated: Option<bool>,
     pub next: Option<String>,
 }
@@ -552,6 +560,7 @@ pub enum LeadCallResult {
     ChatImage(ChatImageResult),
     ChatFile(ChatImageResult),
     ArtifactPublish(crate::artifacts::ArtifactPublishResult),
+    ArtifactRead(crate::artifacts::ArtifactReadResult),
     AutomationCreate(AutomationResult),
     AutomationList(AutomationListResult),
     AutomationUpdate(AutomationResult),
