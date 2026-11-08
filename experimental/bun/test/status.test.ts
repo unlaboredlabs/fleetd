@@ -184,3 +184,12 @@ test("a project's PRs show in its groups: in review, landing and done", () => {
     ["done", "b3", 13],
   ]);
 });
+
+test("the status area hands factory_status its rows through the navi bridge's hooks", async () => {
+  const { hub } = setup();
+  const { start } = await import("../src/hub/status/loops.ts");
+  const { found } = await import("../src/hub/navi/bridge.ts");
+  start(hub);
+  expect(found.statusRows?.(hub, NOW).map((r) => r.title)).toEqual(["app"]);
+  hub.shutdown.abort();
+});
