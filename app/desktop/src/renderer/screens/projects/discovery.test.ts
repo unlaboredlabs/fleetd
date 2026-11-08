@@ -53,7 +53,7 @@ describe("discovery", () => {
 
   it("says each problem and its fix as sentences, as the screen runs them together", () => {
     // The hub's words end without a stop: "gh is not logged in on the hub Run `gh auth login`…" read as one.
-    const github = { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh repo list did not run: gh is not logged in on the hub", fix: "Run `gh auth login` on the hub machine, or paste the repository's URL" } } as const;
+    const github: ProjectDiscoverOutput["github"] = { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh repo list did not run: gh is not logged in on the hub", fix: "Run `gh auth login` on the hub machine, or paste the repository's URL" } };
     const d = discovery({ machines: [], github }, names);
     expect(d.problems).toEqual([
       { message: "gh repo list did not run: gh is not logged in on the hub.", fix: "Run `gh auth login` on the hub machine, or paste the repository's URL." },
