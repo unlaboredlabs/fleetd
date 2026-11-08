@@ -27,10 +27,15 @@ const RENDERER_DIR = join(import.meta.dirname, "../renderer");
 
 type Call = { [K in keyof RecorderApi]: RecorderApi[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 
-/** The recorder page's API, called across with executeJavaScript (the page has no preload). */
+/**
+ * The recorder page's API, called across with executeJavaScript (the page has no preload). What it throws comes back
+ * as its name and message: a DOMException (getDisplayMedia's refusals) would arrive as an empty object.
+ */
 const remote = (win: BrowserWindow): Call => {
   const call = (method: keyof RecorderApi, ...args: Array<unknown>) =>
-    win.webContents.executeJavaScript(`window.${RECORDER_GLOBAL}.${method}(${args.map((a) => JSON.stringify(a)).join(",")})`);
+    win.webContents.executeJavaScript(
+      `(async () => window.${RECORDER_GLOBAL}.${method}(${args.map((a) => JSON.stringify(a)).join(",")}))().catch((e) => { throw \`\${e?.name ?? "Error"}: \${e?.message ?? e}\`; })`,
+    );
   return {
     start: (options: RecorderStart) => call("start", options) as Promise<string>,
     clipStart: () => call("clipStart") as Promise<undefined>,

@@ -14,7 +14,7 @@ for (const screen of screens) {
     test(`${label(screen)} · ${fixture}`, async () => {
       const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, { realClock: screen.realClock === true });
       try {
-        const reserved = await reservedRegions(app);
+        const reserved = screen.frameless ? [] : await reservedRegions(app);
         const shots: Shot[] = [];
         const shotSizes = screen.sizes ?? defaultSizes;
         // Shown once, at the first size it is shot at (the sidebar hides itself in a narrow window), then resized: a
