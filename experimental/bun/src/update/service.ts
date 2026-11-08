@@ -15,12 +15,12 @@ const home = () => process.env.HOME ?? "";
 
 /** The hub and node services `fleetd init` created for `exe`: the unit files whose command line names it, hubs first. */
 export function services(exe: string): Service[] {
-  const dir =
-    process.platform === "darwin"
-      ? join(home(), "Library/LaunchAgents")
-      : join(process.env.XDG_CONFIG_HOME ?? join(home(), ".config"), "systemd/user");
-  return servicesIn(dir, exe);
+  return servicesIn(unitDir(), exe);
 }
+
+/** Where the user's service manager reads the unit files `fleetd init` wrote. */
+export const unitDir = () =>
+  process.platform === "darwin" ? join(home(), "Library/LaunchAgents") : join(process.env.XDG_CONFIG_HOME ?? join(home(), ".config"), "systemd/user");
 
 export function servicesIn(dir: string, exe: string): Service[] {
   const [prefix, ext] = unitAffixes();
@@ -45,7 +45,7 @@ export function servicesIn(dir: string, exe: string): Service[] {
 const uid = () => String(process.getuid?.() ?? "");
 
 /** What a non-PAM SSH session lacks for `systemctl --user` and `systemd-run --user`. */
-const userManagerEnv = () => ({ ...process.env, ...(process.env.XDG_RUNTIME_DIR ? {} : { XDG_RUNTIME_DIR: `/run/user/${uid()}` }) });
+export const userManagerEnv = () => ({ ...process.env, ...(process.env.XDG_RUNTIME_DIR ? {} : { XDG_RUNTIME_DIR: `/run/user/${uid()}` }) });
 
 /** Restarts one service; the error is one plain reason. */
 export function restart(service: Service): void {
