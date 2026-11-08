@@ -43,7 +43,13 @@ export class LinkFatal extends Error {
   }
 }
 
-type LinkEnd = { kind: "lost"; why: string } | { kind: "fatal"; fatal: LinkFatal } | { kind: "woke" } | { kind: "relink"; why: string };
+type LinkEnd =
+  | { kind: "lost"; why: string }
+  /** The hub closed the link as a restart (`CLOSE.RESTART`): it is back within a moment. */
+  | { kind: "restarting"; why: string }
+  | { kind: "fatal"; fatal: LinkFatal }
+  | { kind: "woke" }
+  | { kind: "relink"; why: string };
 
 /** `<hub>/node/link` as a ws(s) URL. */
 export function linkUrl(hub: string): string {
@@ -63,6 +69,34 @@ export function linkUrl(hub: string): string {
 /** The wait before reconnect `attempt` (0 first), `jitter` in 0.8..1.2. */
 export function reconnectDelay(attempt: number, jitter: number): number {
   return Math.round(Math.min(30_000, 250 * 2 ** Math.min(attempt, 16)) * jitter);
+}
+
+/** How long the node redials every `RESTART_REDIAL_MS` after the hub closed its link as a restart. */
+const RESTART_WINDOW_MS = 60_000;
+/** The wait between redials while the hub restarts: it is down for a moment, so a backoff would only relink late. */
+export const RESTART_REDIAL_MS = 250;
+
+/**
+ * When the node redials: right behind a hub that said it restarts (`CLOSE.RESTART`), for `RESTART_WINDOW_MS`;
+ * otherwise, and once that window is over, with the backoff of `reconnectDelay`.
+ */
+export class Redial {
+  private attempt = 0;
+  restartUntil: number | undefined;
+
+  /** The wait before the next try, after one that ended at `now` (`restarting`: with the hub's restart close). */
+  next(restarting: boolean, now: number, jitter: number): number {
+    if (restarting) this.restartUntil = now + RESTART_WINDOW_MS;
+    if (this.restartUntil !== undefined && now < this.restartUntil) return RESTART_REDIAL_MS;
+    this.restartUntil = undefined;
+    return reconnectDelay(this.attempt++, jitter);
+  }
+
+  /** A welcome: the next loss starts over. */
+  linked(): void {
+    this.attempt = 0;
+    this.restartUntil = undefined;
+  }
 }
 
 /** Whether the node compresses: only when its own hello listed `link_deflate` and the welcome says the hub inflates. */
@@ -129,12 +163,12 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
   const log = options.log ?? defaultLog;
   let enrollToken = options.enrollToken;
   let onEnrolled = options.onEnrolled;
-  let attempt = 0;
+  const redial = new Redial();
   let downSince: number | undefined;
   let linkedOnce = false;
   while (!options.signal?.aborted) {
     const end = await runLinkOnce(options, enrollToken, (hubId) => {
-      attempt = 0;
+      redial.linked();
       const since = downSince;
       downSince = undefined;
       if (!linkedOnce) log("info", "linked to hub", { hubId, machineId: options.settings.machineId });
@@ -159,8 +193,7 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
       continue;
     }
     if (options.signal?.aborted) break;
-    const delay = reconnectDelay(attempt, 0.8 + Math.random() * 0.4);
-    attempt++;
+    const delay = redial.next(end.kind === "restarting", Date.now(), 0.8 + Math.random() * 0.4);
     if (downSince === undefined) {
       downSince = Date.now();
       log("warn", "hub link lost; reconnecting until it is back", { why: end.why, retryInMs: delay });
@@ -400,7 +433,8 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
       reads = reads.then(() => {
         if (code === CLOSE.UNAUTHORIZED || code === CLOSE.PROTOCOL_MISMATCH)
           return finish({ kind: "fatal", fatal: new LinkFatal(reason || `closed with ${code}`) });
-        finish({ kind: "lost", why: `hub closed the link (${code} ${reason})`.trim() });
+        const why = `hub closed the link (${code} ${reason})`.trim();
+        finish(code === CLOSE.RESTART ? { kind: "restarting", why } : { kind: "lost", why });
       });
     });
     ws.addEventListener("error", () => {

@@ -189,6 +189,11 @@ export class Link {
   private readonly githubDown = new Set<string>();
   /** The socket handler `GET /node/link` upgrades to. */
   readonly socket: SocketHandler;
+  /** Lead calls being answered now, across every link: the hub's stop waits for them (`stop`). */
+  private calls = 0;
+  private readonly callsDone = new Set<() => void>();
+  /** The hub is stopping: lead calls that come in now aren't run, and say so. */
+  private stopping = false;
 
   constructor(private readonly hub: Hub) {
     this.socket = {
@@ -203,6 +208,38 @@ export class Link {
   }
 
   // ---- The seam (D346).
+
+  /**
+   * The hub stops (SIGTERM): lead calls that come in from now on are answered as not run, the ones being answered get
+   * up to `waitMs` to finish and send their answers, and then every link closes with `CLOSE.RESTART`, so each node
+   * redials at once rather than find its socket reset.
+   */
+  async stop(waitMs: number): Promise<void> {
+    this.stopping = true;
+    if (this.calls > 0) {
+      let done: () => void = () => {};
+      const finished = new Promise<void>((resolve) => this.callsDone.add((done = resolve)));
+      let timer: Timer | undefined;
+      await Promise.race([finished, new Promise<void>((resolve) => (timer = setTimeout(resolve, waitMs)))]);
+      clearTimeout(timer);
+      this.callsDone.delete(done);
+    }
+    for (const live of [...this.links.values()]) this.close(live.ws, live.state, CLOSE.RESTART, "hub restarting");
+  }
+
+  /** One lead call being answered, counted until its `end`; undefined once the hub is stopping. */
+  callStarted(): { end(): void } | undefined {
+    if (this.stopping) return undefined;
+    this.calls++;
+    let ended = false;
+    return {
+      end: () => {
+        if (ended) return;
+        ended = true;
+        if (--this.calls === 0) for (const done of [...this.callsDone]) done();
+      },
+    };
+  }
 
   /** Calls `fn(machineId, frame)` for each frame tagged `tag` from any node; returns the unsubscribe. */
   on<T extends NodeToHubTag>(tag: T, fn: FrameHandler<T>): () => void {
@@ -630,11 +667,25 @@ export class Link {
         if (typeof frame.id !== "string" || frame.id === "") throw new FrameError("missing field `id`");
         if (typeof frame.cwd !== "string") throw new FrameError("missing field `cwd`");
         if (!frame.call || typeof frame.call !== "object" || Array.isArray(frame.call)) throw new FrameError("missing field `call`");
-        // Off the frame loop: a slow call must not hold up heartbeats or other calls. Its answer goes back on this
-        // link, which may have closed by then.
-        onLeadCallFrame(this.hub, machineId, frame as unknown as LeadCallFrame, (result) => {
-          this.write(ws, state, result);
-        });
+        {
+          const inFlight = this.callStarted();
+          if (!inFlight) {
+            // Not run, so trying it again can't run it twice.
+            this.write(ws, state, {
+              t: "lead_result",
+              id: frame.id,
+              error: { code: "failed", message: "fleetd hub is restarting, so this call didn't run", fix: "try it again in a few seconds" },
+            });
+            break;
+          }
+          // Off the frame loop: a slow call must not hold up heartbeats or other calls. Its answer goes back on this
+          // link, which may have closed by then.
+          void onLeadCallFrame(this.hub, machineId, frame as unknown as LeadCallFrame, (result) => {
+            this.write(ws, state, result);
+            // Counted until its answer is queued ahead of the link's close.
+            inFlight.end();
+          }).finally(() => inFlight.end());
+        }
         break;
       default:
         // A reply a request waits for is that request's alone.
