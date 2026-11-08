@@ -2685,7 +2685,7 @@ export const screens: readonly Screen[] = [
     route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["integrations-signin"],
     open: async (page) => {
-      const list = page.getByRole("list", { name: "Integrations" });
+      const list = page.getByRole("list", { name: "MCP servers" });
       await expect(list.getByRole("listitem", { name: "calendar" })).toContainText("Signed out");
       await expect(list.getByRole("listitem", { name: "mail" })).toContainText("Signed in with auth.mail.example");
       await list.scrollIntoViewIfNeeded();
