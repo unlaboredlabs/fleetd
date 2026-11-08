@@ -410,6 +410,30 @@ async fn a_burst_of_reads_asks_github_once_per_minute() {
 }
 
 #[tokio::test]
+async fn only_open_pages_ask_github_for_checks() {
+    let open = gql_page(vec![gql_pull(4, "OPEN", 0)], None);
+    let mut merged = gql_pull(3, "MERGED", 0);
+    merged.as_object_mut().unwrap().remove("commits");
+    let closed = gql_page(vec![merged], None);
+    let gh = canned(vec![(0, &open, ""), (0, &closed, "")]);
+    let github = PrsGitHub::new(gh.clone(), ManualClock::at(1_792_000_000_000));
+    github.page("acme/web", false, None).await;
+    let page = github.page("acme/web", true, None).await.value.unwrap();
+    assert_eq!(page.pulls[0].title, "PR 3");
+    assert!(page.pulls[0].status_check_rollup.is_empty());
+    let runs = gh.runs.lock().unwrap();
+    assert!(
+        runs[0].join(" ").contains("statusCheckRollup"),
+        "an open PR's checks show in the lists"
+    );
+    assert!(
+        !runs[1].join(" ").contains("statusCheckRollup") && !runs[1].join(" ").contains("CHECKS"),
+        "a closed page leaves them out: {}",
+        runs[1].join(" ")
+    );
+}
+
+#[tokio::test]
 async fn a_failed_read_keeps_the_last_answer_and_waits_a_minute_to_ask_again() {
     let detail = json!({ "number": 4, "title": "Fix login", "state": "OPEN", "headRefName": "fix", "headRefOid": SHA,
                           "createdAt": AT, "updatedAt": AT, "body": "Fixes the login.", "changedFiles": 1 })
