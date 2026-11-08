@@ -204,7 +204,7 @@ fleetd people role <personId> <owner|admin|member>
 fleetd people remove <personId>
 ```
 
-signs out all their devices; one device: `fleetd hub` key revoke \<keyId\>. The hub always keeps an owner
+signs out all their devices; one device: `fleetd hub key revoke` \<keyId\>. The hub always keeps an owner
 
 ### fleetd github-app {#github-app}
 
