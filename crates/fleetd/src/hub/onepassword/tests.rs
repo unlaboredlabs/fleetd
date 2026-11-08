@@ -229,6 +229,71 @@ async fn cards_are_listed_for_a_project_the_hub_has() {
     assert!(calls.try_recv().is_err(), "no node was asked");
 }
 
+/// A shared project's lead fills only with the project's own token: the picker never offers cards a member's own
+/// token reads there, with what to do instead. With its own token, or in an Only me project, the cards are listed.
+#[tokio::test]
+async fn a_shared_project_offers_only_cards_its_own_token_reads() {
+    use fleetd_contracts::node_link::CAP_ONEPASSWORD_CARDS;
+    use fleetd_contracts::project_settings::EnvVarName;
+    let (hub, _home) = hub();
+    owner(&hub);
+    let bob = member(&hub, "Bob");
+    let mut calls = node(&hub, &[CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS]).await;
+    let desk = device(&hub, &bob, "operate");
+    let input = json!({ "sealed": [{ "machineId": "lab", "sealed": sealed(TOKEN) }] });
+    call(&hub, &desk, "onepassword_set", input).await.unwrap();
+    calls.recv().await.unwrap();
+    let r = project();
+    let cards = json!({ "project": { "machineId": "lab", "projectId": "p1" } });
+    let refused = call(&hub, &desk, "onepassword_cards", cards.clone())
+        .await
+        .unwrap_err();
+    let said = format!("{refused:?}");
+    assert!(
+        said.contains("A shared project pays only with a 1Password token of its own")
+            && said.contains("OP_SERVICE_ACCOUNT_TOKEN"),
+        "{said}"
+    );
+    assert!(calls.try_recv().is_err(), "no node was asked");
+    // Its own token: the node lists with it.
+    let own = EnvVarName::unchecked("OP_SERVICE_ACCOUNT_TOKEN");
+    let settings = hub.db.project_settings();
+    let at = Timestamp("2026-11-08T10:00:00Z".into());
+    let row = crate::hub::projects::settings::EnvRow {
+        name: own.clone(),
+        value: None,
+        fingerprint: Some(SecretFingerprint::unchecked("0b5e55ed")),
+        bytes: TOKEN.len(),
+    };
+    settings.env_apply(&r, &[row], &[], &at).unwrap();
+    let listed = call(&hub, &desk, "onepassword_cards", cards.clone())
+        .await
+        .unwrap();
+    assert_eq!(listed["cards"][0]["ref"], "op://Personal/visa", "{listed}");
+    assert!(matches!(
+        calls.recv().await.unwrap(),
+        SessionCall::OnePasswordCards { project_id: Some(p), .. } if p == r.project_id
+    ));
+    // An Only me project of Bob's, with no token of its own, lists his own cards as before.
+    settings.env_apply(&r, &[], &[own], &at).unwrap();
+    hub.db
+        .with(|c| {
+            Ok(crate::hub::navi::store::set_only_me(
+                c,
+                &r,
+                true,
+                Some(&bob),
+            )?)
+        })
+        .unwrap();
+    let listed = call(&hub, &desk, "onepassword_cards", cards).await.unwrap();
+    assert_eq!(listed["cards"][0]["ref"], "op://Personal/visa", "{listed}");
+    assert!(matches!(
+        calls.recv().await.unwrap(),
+        SessionCall::OnePasswordCards { person_id, .. } if person_id == bob
+    ));
+}
+
 /// The setup step's Test lists the caller's own token's vaults with the fake 1Password and reads every saved token's:
 /// two vaults want a look, with what to do; a token reading only fleetd's vault is done. No item is read.
 #[tokio::test]

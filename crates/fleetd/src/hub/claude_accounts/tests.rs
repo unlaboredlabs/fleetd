@@ -434,7 +434,7 @@ pub(crate) fn sealed(value: &str) -> String {
 }
 
 /// Links a node holding project p1 that answers account and 1Password calls as a node would (a Claude test fails
-/// with the token masked; a 1Password test lists two vaults), handing each call to the test.
+/// with the token masked; a 1Password test lists two vaults, its cards one Visa), handing each call to the test.
 pub(crate) async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiver<SessionCall> {
     node_reading(hub, caps, &["Agents", "Shared"]).await
 }
@@ -498,6 +498,10 @@ pub(crate) async fn node_reading(
                 }
                 SessionCall::OnePasswordTest { .. } => {
                     json!({ "ok": { "kind": "onepassword_tested", "vaults": vaults } })
+                }
+                SessionCall::OnePasswordCards { .. } => {
+                    json!({ "ok": { "kind": "onepassword_carded",
+                    "cards": [{ "ref": "op://Personal/visa", "title": "Visa", "vault": "Personal" }] } })
                 }
                 SessionCall::ClaudeAccountTest { .. } => {
                     json!({ "ok": { "kind": "claude_account_tested",
