@@ -6,7 +6,7 @@
 // `leadCalls(hub).register("task_spawn", (caller, call) => …)`, returning the call's result without its `op`, or
 // throwing a ToolError to refuse.
 import type { MachineId, ProjectRef, ThreadId, ThreadRef } from "../../shared/contracts.ts";
-import { ToolError } from "../../shared/errors.ts";
+import { NotImplemented, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { outsideEveryProject, projectIndexForCwd } from "./cwd.ts";
 import { decodeFrame } from "./decode.ts";
@@ -132,6 +132,11 @@ export class LeadCalls {
       return { id, result: { ...result, op: frame.call.op } };
     } catch (error) {
       if (error instanceof ToolError) return { id, error: error.toJSON() };
+      // A call whose handler reaches a part not ported yet can never work here: say what, so the agent stops
+      // retrying, as the tool registry does.
+      if (error instanceof NotImplemented) {
+        return { id, error: new ToolError("failed", error.message, "carry on without this call and say so in your result").toJSON() };
+      }
       console.error(`lead call ${sent.call?.op} failed:`, error);
       return { id, error: failedHandling().toJSON() };
     }
