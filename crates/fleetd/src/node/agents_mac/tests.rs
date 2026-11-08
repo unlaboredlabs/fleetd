@@ -523,11 +523,18 @@ fn the_mac_lists_no_call_that_carries_a_secret_a_claude_or_a_navi() {
         fleetd_contracts::node_link::CAP_ASSISTANT,
         fleetd_contracts::node_link::CAP_ORDER_ENV,
         fleetd_contracts::node_link::CAP_CLAUDE_LOGIN,
+        fleetd_contracts::node_link::CAP_LINK_DEFLATE,
     ]
     .map(str::to_owned);
+    // Compressed link frames carry no secret: the Mac keeps them, so its hello asks the hub to inflate what it sends.
     assert_eq!(
         super::capabilities(all, false),
-        [CAP_AGENTS_MAC, CAP_SELF_UPDATE, CAP_SESSION_IOS]
+        [
+            CAP_AGENTS_MAC,
+            CAP_SELF_UPDATE,
+            CAP_SESSION_IOS,
+            fleetd_contracts::node_link::CAP_LINK_DEFLATE
+        ]
     );
 }
 

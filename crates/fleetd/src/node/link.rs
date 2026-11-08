@@ -667,10 +667,10 @@ async fn run_link_once(
         )
         .collect(),
     };
-    send(NodeToHub::Hello(tool_only(
-        shared.agents_mac.as_ref(),
-        hello,
-    )));
+    let hello = tool_only(shared.agents_mac.as_ref(), hello);
+    // The hub inflates only for a hello that listed link_deflate (the agents' Mac keeps only some caps).
+    let asked = hello.capabilities.clone();
+    send(NodeToHub::Hello(hello));
     let hub_id = match next_frame(&mut stream, &mut inflater, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
@@ -678,11 +678,7 @@ async fn run_link_once(
             });
         }
         Ok(HubToNode::Welcome(welcome)) => {
-            let inflates = welcome
-                .capabilities
-                .iter()
-                .any(|c| c == fleetd_contracts::node_link::HUB_CAP_LINK_DEFLATE);
-            deflate.store(inflates, Ordering::Relaxed);
+            deflate.store(compresses(&asked, &welcome.capabilities), Ordering::Relaxed);
             shared.lead_calls.set_hub_caps(welcome.capabilities);
             welcome.hub_id
         }
@@ -1015,6 +1011,17 @@ async fn write_frames(mut sink: WsSink, mut out: Outgoing, deflate: Arc<AtomicBo
 }
 
 /// The agents' Mac lists only a tool's calls (node/agents_mac); any other node, all it takes.
+/// Whether the node sends compressed frames: only when its own hello listed `link_deflate`, so the hub keeps an
+/// inflater for the link, and the welcome says the hub inflates.
+fn compresses(hello: &[String], welcome: &[String]) -> bool {
+    hello
+        .iter()
+        .any(|c| c == fleetd_contracts::node_link::CAP_LINK_DEFLATE)
+        && welcome
+            .iter()
+            .any(|c| c == fleetd_contracts::node_link::HUB_CAP_LINK_DEFLATE)
+}
+
 fn tool_only(mac: Option<&crate::node::agents_mac::AgentsMac>, mut hello: NodeHello) -> NodeHello {
     if let Some(mac) = mac {
         hello.capabilities = crate::node::agents_mac::capabilities(hello.capabilities, mac.tool());
@@ -1210,6 +1217,23 @@ mod tests {
         assert!(matches!(
             hub.next().await.unwrap().unwrap(),
             Message::Text(_)
+        ));
+    }
+
+    /// Compressed only when both sides listed it: a hello without the cap (an agents' Mac before it kept it) never
+    /// compresses toward a hub that has no inflater for it, whatever the welcome says.
+    #[test]
+    fn the_node_compresses_only_when_its_hello_asked_and_the_hub_inflates() {
+        use fleetd_contracts::node_link::{
+            CAP_LINK_DEFLATE, HUB_CAP_LINK_DEFLATE, HUB_CAP_SESSION_ROUTE,
+        };
+        let caps = |cs: &[&str]| cs.iter().map(|c| (*c).to_owned()).collect::<Vec<_>>();
+        let hub = caps(&[HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE]);
+        assert!(compresses(&caps(&[CAP_LINK_DEFLATE]), &hub));
+        assert!(!compresses(&caps(&[]), &hub));
+        assert!(!compresses(
+            &caps(&[CAP_LINK_DEFLATE]),
+            &caps(&[HUB_CAP_SESSION_ROUTE])
         ));
     }
 
