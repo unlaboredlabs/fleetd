@@ -52,7 +52,7 @@ function Card({ card, who, onOpen }: { card: ScreenCard; who: string; onOpen: ()
       }}
       style={({ pressed }) => [styles.card, { backgroundColor: asking ? t.warningSoft : t.surface }, pressed && styles.pressed]}
     >
-      <View style={[styles.tile, { backgroundColor: asking ? t.warning : t.accentFill }]}>
+      <View style={[styles.tile, { backgroundColor: asking ? t.warning : t.accentDeep }]}>
         <Icon name={asking ? "hand" : ICON[card.kind]} size={20} color="#FFFFFF" weight="semibold" />
       </View>
       <View style={styles.words}>
