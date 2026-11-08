@@ -1,5 +1,6 @@
 import type { Hub } from "../api/hub.ts";
 import { startApprovals } from "../approvals/serve.ts";
+import { startDoctor } from "../doctor/loops.ts";
 import { leads } from "../leads/index.ts";
 import { queuePorts } from "../leads/seams.ts";
 import { registerLeadCalls } from "./calls.ts";
@@ -19,4 +20,5 @@ export function start(hub: Hub): void {
   ports.whenClear = (thread) => u.whenClear(thread, hub.shutdown.signal);
   leads(hub).parkedOf = (thread) => u.parkedOf(thread);
   startApprovals(hub);
+  startDoctor(hub);
 }
