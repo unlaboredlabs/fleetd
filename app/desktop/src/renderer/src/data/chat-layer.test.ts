@@ -282,6 +282,19 @@ describe("sending", () => {
     expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)?.leadWaiting).toBe("The lead is starting; it reads this first.");
   });
 
+  it("drops why the lead didn't have a message once the lead writes after it", async () => {
+    const { fake, layer } = await connected();
+    const out = layer.chat.send(KEY, { text: "node is down" }, "c1");
+    const mine = msg(3, { author: "human", text: "node is down", clientRequestId: "c1", delivery: "queued" });
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine, leadWaiting: "devbox is offline: its node isn't connected." } });
+    expect(await out).toBe("sent");
+    const waiting = () => selectChat(KEY)(layer.store.getState())?.items.find((i) => i.id === "m3")?.leadWaiting;
+    expect(waiting()).toBe("devbox is offline: its node isn't connected.");
+    // devbox is back: the offline queue gave it to the lead, whose reply says it has it (the hub's copy still says queued).
+    fake.send(messageEvent(4, msg(4, { text: "On it." })));
+    expect(waiting()).toBeUndefined();
+  });
+
   it("a timeout retries once in the call, then waits as unanswered and goes again on reconnect, same id", async () => {
     const { fake, layer } = await connected();
     const out = layer.chat.send(KEY, { text: "do it" }, "c1");
