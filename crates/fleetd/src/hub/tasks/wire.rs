@@ -260,6 +260,21 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
+    fn send_brief<'a>(
+        &'a self,
+        thread: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+    ) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move {
+            self.executors
+                .send_brief(thread, message, client_request_id)
+                .await
+                .map(|_| ())
+                .map_err(port_error)
+        })
+    }
+
     fn started_run(&self, thread: &ThreadRef) -> Option<String> {
         self.executors.started_run(thread)
     }

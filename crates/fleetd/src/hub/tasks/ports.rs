@@ -170,6 +170,15 @@ pub trait TaskPorts: Send + Sync {
         message: &'a str,
         client_request_id: &'a str,
     ) -> BoxFut<'a, Result<(), PortError>>;
+    /// Executors.sendBrief: `send` that waits at most 15 s for the node, for a send made under the tasks lock.
+    fn send_brief<'a>(
+        &'a self,
+        thread: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+    ) -> BoxFut<'a, Result<(), PortError>> {
+        self.send(thread, message, client_request_id)
+    }
     /// Executors.send as a steer's run: `mode` and its tag. Plain ports send it plainly.
     fn send_steer<'a>(
         &'a self,
