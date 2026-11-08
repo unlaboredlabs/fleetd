@@ -25,7 +25,6 @@ fn node_error(e: crate::hub::link::commands::NodeCommandError) -> NodeCommandErr
         }
         .into(),
         message: e.message,
-        fix: None,
     }
 }
 
@@ -35,7 +34,6 @@ fn frame<T: DeserializeOwned>(mut input: Value) -> Result<T, NodeCommandError> {
     serde_json::from_value(input).map_err(|e| NodeCommandError {
         reason: "invalid".into(),
         message: e.to_string(),
-        fix: None,
     })
 }
 
@@ -43,7 +41,6 @@ fn machine_id(m: &str) -> Result<fleetd_contracts::ids::MachineId, NodeCommandEr
     convert(&m).ok_or_else(|| NodeCommandError {
         reason: "invalid".into(),
         message: format!("{m} is not a machine id"),
-        fix: None,
     })
 }
 
@@ -95,11 +92,6 @@ impl ApprovalNodes for OpsPorts {
         })
     }
 
-    fn is_linked(&self, m: &str) -> BoxFut<'_, bool> {
-        let m: Option<fleetd_contracts::ids::MachineId> = convert(&m);
-        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
-    }
-
     fn answer_permission(
         &self,
         m: &str,
@@ -113,7 +105,6 @@ impl ApprovalNodes for OpsPorts {
             let r = r.ok_or_else(|| NodeCommandError {
                 reason: "invalid".into(),
                 message: "not a machine and thread id".into(),
-                fix: None,
             })?;
             self.hub()
                 .executors
@@ -134,15 +125,14 @@ fn thread_ref(m: &str, t: &str) -> Option<ThreadRef> {
 }
 
 fn executor_error(e: ExecutorError) -> NodeCommandError {
-    let (reason, fix) = match &e {
-        ExecutorError::MachineNotConnected { .. } => ("offline", None),
-        ExecutorError::ThreadNotFound { .. } => ("not_found", None),
-        ExecutorError::NodeRequestFailed { fix, .. } => ("failed", fix.clone()),
+    let reason = match &e {
+        ExecutorError::MachineNotConnected { .. } => "offline",
+        ExecutorError::ThreadNotFound { .. } => "not_found",
+        ExecutorError::NodeRequestFailed { .. } => "failed",
     };
     NodeCommandError {
         reason: reason.into(),
         message: e.to_string(),
-        fix,
     }
 }
 

@@ -158,8 +158,6 @@ pub struct NodeCommandError {
     /// "offline", "lost", "no_reply", "invalid", "not_found" or "failed".
     pub reason: String,
     pub message: String,
-    /// The node's own fix, when it gave one.
-    pub fix: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -190,8 +188,6 @@ pub trait ApprovalNodes: Send + Sync {
         machine_id: &str,
         input: Value,
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
-    /// The machine's node is linked and its session stream subscribed.
-    fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
     /// `session_call answer`: the decision for the prompt `request_id` the thread's run waits on.
     fn answer_permission(
         &self,

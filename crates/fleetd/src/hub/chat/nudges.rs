@@ -32,17 +32,6 @@ pub(super) const WAITING: &str =
      AND json_extract(data, '$.nudge') IS NOT NULL
      AND json_extract(data, '$.nudge.cleared') IS NULL ORDER BY seq";
 
-/// A reason as a nudge holds it: one line, cut to fit.
-pub fn reason_of(text: &str) -> Option<Line<1, 200>> {
-    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let cut = if line.chars().count() > 200 {
-        format!("{}…", line.chars().take(199).collect::<String>())
-    } else {
-        line
-    };
-    Line::new(cut).ok()
-}
-
 /// Whether a nudge still waits at `now`: not cleared, and less than a day old.
 pub fn waiting(nudge: &ChatNudge, now: i64) -> bool {
     nudge.cleared.is_none()

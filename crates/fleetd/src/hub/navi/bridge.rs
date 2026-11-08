@@ -457,7 +457,6 @@ pub struct Ask {
     pub via_link: Option<String>,
     /// It went out through this link kept here, as the ask `remote` there.
     pub to_hub: Option<String>,
-    pub remote: Option<String>,
 }
 
 fn pref(machine: String, project: String) -> ProjectRef {
@@ -467,7 +466,7 @@ fn pref(machine: String, project: String) -> ProjectRef {
     }
 }
 
-const ASK_COLUMNS: &str = "n, from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms, via_link, to_hub, remote";
+const ASK_COLUMNS: &str = "n, from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms, via_link, to_hub";
 
 fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Result<Ask> {
     let n: i64 = row.get(0)?;
@@ -488,7 +487,6 @@ fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resul
         orders,
         via_link: row.get(7)?,
         to_hub: row.get(8)?,
-        remote: row.get(9)?,
     })
 }
 

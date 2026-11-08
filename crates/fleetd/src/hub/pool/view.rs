@@ -11,17 +11,12 @@ use fleetd_contracts::node_link::NodeBusy;
 use super::boat::{BoatError, Limits};
 use super::ledger::{MACHINE_TYPES, SettingsChange, Slot, State};
 use super::tunnel::Tunnel;
-use super::{LABEL_HUB, MINUTE, PathTest, Pool, day_start, price_per_hour};
+use super::{LABEL_HUB, MINUTE, PathTest, Pool, day_start};
 use crate::hub::store::StoreError;
 
 /// The slots of a pool of `n`: `boat-1`…`boat-n`.
 pub fn slot_names(n: u32) -> Vec<String> {
     (1..=n).map(|i| format!("boat-{i}")).collect()
-}
-
-/// What `n` machines of `kind` cost awake around the clock, a day: the most the pool size alone lets it spend.
-pub fn ceiling(n: u32, kind: &str) -> f64 {
-    f64::from(n) * price_per_hour(kind) * 24.0
 }
 
 /// boat's sizes with their list prices.

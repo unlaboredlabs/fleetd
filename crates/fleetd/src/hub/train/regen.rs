@@ -95,14 +95,6 @@ impl Regenerate {
         self.timeout_minutes.unwrap_or(DEFAULT_MINUTES) * 60
     }
 
-    /// Whether `path` is one of the generated files.
-    pub fn generated(&self, path: &str) -> bool {
-        self.generated.iter().any(|g| match g.strip_suffix('/') {
-            Some(dir) => path.starts_with(&format!("{dir}/")),
-            None => path == g,
-        })
-    }
-
     /// The migrations `added` (paths) that sort at or before the newest of `on_base` (file names): their stamps.
     pub fn early_migrations<'a>(&self, added: &'a [String], on_base: &[String]) -> Vec<&'a str> {
         let Some(dir) = self.migrations.as_deref() else {
@@ -699,18 +691,12 @@ mod tests {
             .join("../..")
             .join(CONFIG_PATH);
         let config = Regenerate::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert!(config.generated("crates/fleetd-contracts/schema/tasks.json"));
-        assert!(!config.generated("crates/fleetd/src/main.rs"));
-    }
-
-    #[test]
-    fn a_generated_file_is_one_under_a_directory_or_the_named_file() {
-        let c = config();
-        assert!(c.generated("site/docs/index.html"));
-        assert!(c.generated("docs/cli.md"));
-        assert!(!c.generated("site/docsx/a"));
-        assert!(!c.generated("docs/cli.md.bak"));
-        assert!(!c.generated("src/main.rs"));
+        assert!(
+            config
+                .generated
+                .iter()
+                .any(|g| g == "crates/fleetd-contracts/schema/")
+        );
     }
 
     #[test]

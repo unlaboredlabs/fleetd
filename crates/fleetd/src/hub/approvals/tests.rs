@@ -17,7 +17,6 @@ fn verdict(verdict: CheckerVerdict, reason: &str) -> CheckerNote {
 /// The approvals over a real request store, a scripted node and a recorded event log.
 struct Fake {
     requests: Arc<Requests>,
-    linked: Mutex<bool>,
     events: Mutex<Vec<NewEvent>>,
     /// Each lead wake: `<requestId> <state>`.
     woken: Mutex<Vec<String>>,
@@ -63,7 +62,6 @@ impl Default for Fake {
     fn default() -> Self {
         Self {
             requests: Requests::new(HubDb::open_memory().unwrap()),
-            linked: Mutex::new(false),
             events: Mutex::default(),
             woken: Mutex::default(),
             woke: tokio::sync::Notify::new(),
@@ -152,10 +150,6 @@ impl ApprovalNodes for Fake {
         self.runs.lock().unwrap().push((m.into(), input));
         let reply = self.gated_reply.lock().unwrap().clone();
         Box::pin(async move { reply })
-    }
-    fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
-        let l = *self.linked.lock().unwrap();
-        Box::pin(async move { l })
     }
     fn answer_permission(
         &self,
@@ -500,7 +494,6 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a's node is not linked to the hub".into(),
-        fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
     fake.woken_times(2).await;
@@ -741,7 +734,6 @@ async fn a_command_an_update_cut_off_is_reported_interrupted_and_never_run_again
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
         reason: "lost".into(),
         message: "the link to lab-a's node dropped while the command ran".into(),
-        fix: None,
     });
     a.answer(&person(), "Q1", true, None).await.unwrap();
     fake.woken_times(1).await;
@@ -754,8 +746,7 @@ async fn a_command_an_update_cut_off_is_reported_interrupted_and_never_run_again
              before approving it again"
         )
     );
-    // The node is back (and the hub restarted too): nothing runs it again.
-    *fake.linked.lock().unwrap() = true;
+    // The hub restarted: nothing runs it again.
     a.reopen_unfinished().await;
     assert_eq!(
         fake.runs.lock().unwrap().len(),
@@ -1043,7 +1034,6 @@ async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_
     *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a is offline".into(),
-        fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
     let q2 = fake.request("Q2");
