@@ -91,15 +91,14 @@ after you change it.
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and usage](/docs/machines#guard). |
-| `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once by default. It sizes the default only: no agent waits for the memory it might take. Absent or `0`: 2 GB. Read with every heartbeat. |
-| `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 | `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. A test build of a lib's tests beside its other targets takes two. Absent: one per 11 GB of memory left after a quarter of it (4 to 16 GB) is kept back, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
-| `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. Settings › Hub › Machines › Screens writes each kind's `enabled`, and every kind's `idleMinutes`, for you. |
-| `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
-| `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled`, `pool`, `deviceType`. |
-| `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`, `runtime`, `image`, `xvfb`, `ffmpeg`, `pool`, `idleMinutes`. |
-| `mac` | Whether this Mac lends [its screen](/docs/browser-sessions#mac-setup): `enabled`, `idleMinutes`; and `simulators`, how many iOS simulators [the agents' Mac](/docs/agents-mac#sim) boots for agents at once. |
+| `screenIdleMinutes` | Minutes without a command before a browser, Android or Linux desktop screen ends. Absent: 30. A machine's page in Settings › Hub › Machines doesn't pick it; `machine_screens_set` writes it. The agents' Mac's screen ends after 5. |
+| `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `sandbox`. |
+| `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`. |
+| `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled` (ignored on the agents' Mac, where simulators are always on), `deviceType`. |
+| `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`. |
+| `mac` | Whether this Mac lends [its screen](/docs/browser-sessions#mac-setup): `enabled`; and `simulators`, how many iOS simulators [the agents' Mac](/docs/agents-mac#sim) boots for agents at once. |
 | `agentsMac` | `true` makes this Mac [the agents' Mac](/docs/agents-mac#setup), a tool for agents on other machines that runs none itself. Set by the installer's `--mac`. |
 
 ## The Claude login {#claude}
@@ -294,7 +293,7 @@ one agent's work or wait, such as a tool call or a CI check.
 
 | Data | Kept |
 |---|---|
-| Spans | 30 days (1 to 365 with `fleetd time --retention <days>`) |
+| Spans | 30 days |
 | Daily totals and each piece of work's critical path | 400 days |
 
 Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub is away, it keeps up to 7 days or

@@ -203,11 +203,10 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     ],
                 ),
                 part(
-                    "Turn on Android screens (optional)",
+                    "Android screens (optional)",
                     Some(
-                        "A browser and a Linux desktop are on wherever they can run. Android emulators (Linux with KVM) \
-                     install once a machine is opted in: its switch in Settings › Hub › Machines › Screens. iOS \
-                     simulators are the agents' Mac's: A Mac for agents sets it up.",
+                        "Android emulators need Linux with KVM. Turn them on on the machine's page in Settings › Hub › \
+                     Machines. iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
                     ),
                     vec![],
                     vec![],

@@ -671,10 +671,32 @@ async fn the_lead_makes_lists_edits_pauses_runs_and_deletes_its_projects_automat
         "fields left out stay"
     );
 
-    let LeadCallResult::AutomationPause(paused) = call(
+    let LeadCallResult::AutomationUpdate(paused) = call(
         &autos,
         &me,
-        "automation_pause",
+        "automation_update",
+        json!({ "automationId": id, "paused": true }),
+    )
+    .await
+    .unwrap() else {
+        panic!()
+    };
+    assert!(paused.automation.paused && paused.automation.next_run_at.is_none());
+    assert_eq!(paused.automation.name.as_str(), "Weekly report");
+    // An older node still sends automation_pause; agent-mcp sends a lead's to automation_update.
+    let older: LeadCall = serde_json::from_value(
+        json!({ "op": "automation_pause", "automationId": id, "paused": false }),
+    )
+    .unwrap();
+    let LeadCallResult::AutomationPause(resumed) = calls::answer(&autos, &me, older).await.unwrap()
+    else {
+        panic!()
+    };
+    assert!(!resumed.automation.paused);
+    let LeadCallResult::AutomationUpdate(paused) = call(
+        &autos,
+        &me,
+        "automation_update",
         json!({ "automationId": id, "paused": true }),
     )
     .await

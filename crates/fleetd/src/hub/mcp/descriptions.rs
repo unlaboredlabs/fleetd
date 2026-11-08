@@ -122,7 +122,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_approvals_set",
-        "Set how a project's risky actions are approved: mode ask, checker or yolo, and the checker's model and effort (absent: the hub's defaults). A person's key only, never an agent's.",
+        "Set how a project's risky actions are approved: mode ask, checker or yolo. The checker always runs on the hub's default model and effort; model and effort are ignored. A person's key only, never an agent's.",
     ),
     (
         "navi_approvals_set",
@@ -529,16 +529,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Deterministic findings over a scope's time since a time (no model): repeated full test suites, commands rerun with nothing edited between, and the slowest commands. Each carries its numbers and span ids; compare gives both periods.",
     ),
     (
-        "time_retention_set",
-        "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
-    ),
-    (
         "metrics_get",
         "Factory metrics for one project's repos, or the fleet's with each repo counted once: pull requests merged per day, time from order to merged (median, p90), the person's minutes per merged PR, and the share of merged work through fleetd, by calendar day in tz. A landed change is a PR merged into the default branch (a train batch's members one each) or a direct push; each has a route: train, fleetd_by_hand, outside or direct. coverage says which repos were read, when, and what fleetd can't see.",
-    ),
-    (
-        "metrics_retention_set",
-        "How many days the hub keeps landed changes and the person's touches for the factory metrics (30 to 400, default 400). Pruned hourly. Admin.",
     ),
     (
         "thread_window",

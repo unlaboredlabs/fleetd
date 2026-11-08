@@ -56,24 +56,25 @@ pub struct DesktopConfig {
     /// `container` or `xvfb` only. Absent: a container where docker or podman works, else Xvfb.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<DesktopBackend>,
-    /// The docker or podman to use instead of the one on the PATH.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The docker or podman to use instead of the one on the PATH: `FLEETD_DESKTOP_RUNTIME`, for development.
+    #[serde(skip)]
     pub runtime: Option<String>,
     /// An image to run instead of building the pinned one: it must start Xvfb on :0 with `-auth /fleetd/xauth`, as
-    /// the pinned one's entry does (container.rs).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// the pinned one's entry does (container.rs). `FLEETD_DESKTOP_IMAGE`, for development.
+    #[serde(skip)]
     pub image: Option<String>,
-    /// The Xvfb to use instead of the one on the PATH.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The Xvfb to use instead of the one on the PATH: `FLEETD_XVFB`, for development.
+    #[serde(skip)]
     pub xvfb: Option<String>,
-    /// An ffmpeg to encode the video with (matroska and mjpeg in, libvpx-vp9 out). Absent: the browser's or the Android one's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// An ffmpeg to encode the video with (matroska and mjpeg in, libvpx-vp9 out): `FLEETD_FFMPEG`, for development.
+    /// Absent: the browser's or the Android one's.
+    #[serde(skip)]
     pub ffmpeg: Option<String>,
-    /// Displays kept started for the next sessions. Absent: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Displays kept started for the next sessions: 1, and 0 in tests that start none.
+    #[serde(skip)]
     pub pool: Option<usize>,
-    /// A session no action touched for this long is ended. Absent: 30.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A session no action touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30.
+    #[serde(skip)]
     pub idle_minutes: Option<u64>,
 }
 
@@ -654,7 +655,7 @@ impl Desktops {
         }))
     }
 
-    /// node.json's ffmpeg, else one the browser or Android sessions installed.
+    /// `FLEETD_FFMPEG`, else one the browser or Android sessions installed.
     fn ffmpeg(&self) -> Option<PathBuf> {
         self.config
             .ffmpeg

@@ -326,10 +326,11 @@ pub struct NodeLoad {
     pub mem_used_pct: Option<Int<0, 100>>,
     /// Physical memory; absent from older nodes and when it can't be read.
     pub mem_total_bytes: Option<Count>,
-    /// Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
-    /// older nodes.
+    /// Memory to allow per agent when sizing the machine's cap: an older node's node.json `memPerAgentGb`, or its
+    /// 2 GB default. A node now sends none: the hub sizes it.
     pub mem_per_agent_bytes: Option<Count>,
-    /// Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes.
+    /// Disk to allow per new agent's worktree: an older node's node.json `diskPerAgentGb`, or its 5 GB default. A
+    /// node now sends none: the hub counts 5 GB.
     pub disk_per_agent_bytes: Option<Count>,
     /// The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
     /// which send none.

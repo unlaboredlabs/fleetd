@@ -154,7 +154,7 @@ describe("why a kind can't open", () => {
     const reason = whyOff([off("devbox", { android: "off" }), off("lab", { android: "missing" })], "android");
     expect(reason).toEqual({ why: "Android emulators are turned off on devbox.", short: "Turned off", fix: "turn_on", machine: { machineId: "devbox", name: "devbox" } });
     expect(fixLabel("turn_on")).toBe("Turn on");
-    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines › Screens.");
+    expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to turn them on in Settings › Hub › Machines › devbox.");
   });
 
   it("sends an older node's switch to an update, since the hub can't reach it", () => {

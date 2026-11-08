@@ -463,7 +463,8 @@ pub fn set_approvals(
     }
     let navi = navi_of(hub, &r)?;
     let approvals = hub.db.with(|c| {
-        checker::set_approvals(c, &r, input.mode, input.model.as_ref(), input.effort)?;
+        // An older app's model and effort are taken and ignored: the checker runs on the hub's (W467).
+        checker::set_approvals(c, &r, input.mode)?;
         Ok(checker::approvals(c, &r)?)
     })?;
     changed(

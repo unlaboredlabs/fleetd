@@ -1,4 +1,4 @@
-//! `fleetd metrics`: the factory's numbers over the hub's MCP endpoint (metrics_get, metrics_retention_set): PRs
+//! `fleetd metrics`: the factory's numbers over the hub's MCP endpoint (metrics_get): PRs
 //! merged per day, time from order to merged, the person's minutes per merged PR and the share through fleetd, by
 //! calendar day in this machine's zone. It only lays out what the hub computed; `--json` prints it as the hub sent it.
 //! A figure the hub doesn't have reads "—" with why, never as a zero.
@@ -19,9 +19,8 @@ pub const METRICS_USAGE: &str = r#"  metrics [--project <p>] [--days 30] [--json
              merged, your minutes per merged PR and the share through fleetd, over the last
              --days calendar days (1-400, today included) in this machine's zone; one project by
              id or title (<machine>/<project> when two machines have one), the whole fleet
-             without one. On the hub machine it needs no --hub or --key-file
-  metrics --retention <days> [--hub <url> --key-file <path>]
-             keep 30-400 days of landed changes (admin key on every machine)
+             without one. Landed changes are kept 400 days. On the hub machine it needs no
+             --hub or --key-file
 "#;
 
 /// Landed changes printed under the figures, newest first; `--json` has them all.
@@ -39,7 +38,6 @@ pub struct MetricsArgs {
     /// The first of those days' midnight in the zone, as an ISO time.
     pub since: String,
     pub json: bool,
-    pub retention: Option<u32>,
 }
 
 /// The midnight that starts the last `days` calendar days in `zone`, today included.
@@ -65,7 +63,6 @@ pub fn parse_metrics_args(
         ("project", Kind::Str),
         ("days", Kind::Str),
         ("json", Kind::Bool),
-        ("retention", Kind::Str),
     ];
     let v = args::parse(
         argv,
@@ -91,15 +88,6 @@ pub fn parse_metrics_args(
             .filter(|d| (1..=400).contains(d))
             .ok_or_else(|| format!("--days must be 1 to 400, got '{given}'"))?,
     };
-    let retention = match v.str("retention") {
-        None => None,
-        Some(days) => Some(
-            days.parse::<u32>()
-                .ok()
-                .filter(|d| (30..=400).contains(d))
-                .ok_or_else(|| format!("--retention must be 30 to 400 days, got '{days}'"))?,
-        ),
-    };
     Ok(MetricsArgs {
         hub,
         home: None,
@@ -107,7 +95,6 @@ pub fn parse_metrics_args(
         days,
         since: since_of(days, now, zone),
         json: v.flag("json"),
-        retention,
     })
 }
 
@@ -398,13 +385,6 @@ pub async fn metrics_command(argv: &[String]) -> u8 {
 }
 
 async fn run(hub: &mut Hub, args: &MetricsArgs, zone: Tz) -> Result<(), u8> {
-    if let Some(days) = args.retention {
-        let set = hub
-            .call("metrics_retention_set", json!({ "retentionDays": days }))
-            .await?;
-        println!("landed changes are kept {} days", set["retentionDays"]);
-        return Ok(());
-    }
     let mut input = json!({ "since": args.since, "tz": zone.name() });
     let mut title = String::new();
     if !args.project.is_empty() {
@@ -477,13 +457,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(berlin.since, "2026-10-18T22:00:00.000Z");
-        assert_eq!(parse(&["--retention", "30"]).unwrap().retention, Some(30));
         for bad in [
             &["--days", "0"][..],
             &["--days", "401"],
             &["--days", "7d"],
-            &["--retention", "29"],
-            &["--retention", "401"],
+            // Landed changes keep a fixed 400 days.
+            &["--retention", "400"],
             &["storefront"],
             &["--hub", "http://h"],
         ] {
@@ -639,8 +618,7 @@ mod against_a_hub {
     use fleetd_contracts::ids::MachineId;
     use serde_json::json;
 
-    /// Scripts read the exit code: the fleet and a project there is read 0, a project there isn't 2, and the
-    /// retention needs an admin key, 1 when the hub refuses it.
+    /// Scripts read the exit code: the fleet and a project there is read 0, a project there isn't 2.
     #[tokio::test(flavor = "multi_thread")]
     async fn the_fleet_and_a_project_exit_0_an_unknown_project_2() {
         let home = tempfile::tempdir().unwrap();
@@ -697,11 +675,6 @@ mod against_a_hub {
         );
         assert_eq!(metrics(&["--project", "storefront", "--json"]).await, 0);
         assert_eq!(metrics(&["--project", "nope"]).await, 2, "no such project");
-        assert_eq!(
-            metrics(&["--retention", "90"]).await,
-            1,
-            "a read key can't set it"
-        );
         served.abort();
     }
 }

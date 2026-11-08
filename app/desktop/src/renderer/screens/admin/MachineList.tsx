@@ -1,11 +1,13 @@
 // Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state (and, unless online, what
-// it needs), a link to its page (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches
+// it needs), a link to its page (its checklist, role, screens and max agents), Remove, and Repair while it is degraded
+// or offline. A search for a machine's role, screens or max agents lands on this list, since each is on a machine's
+// own page. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
 // machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. A
 // removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
-import { useState } from "react";
+import { useState, type RefCallback } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectMachines, selectOrphanProjects } from "../../src/data/selectors";
@@ -14,6 +16,7 @@ import { machineOrder } from "../projects/machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { CallError } from "../../src/data/queries";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
+import { useReveal } from "../settings/search";
 import { toHash } from "../shell/routes";
 import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
 import { ownMachines } from "./cloudModel";
@@ -32,12 +35,25 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
   const cloud = useCloud();
   const all = views?.map((v) => v.machine).filter((m) => !removed.has(m.machineId));
   const machines = all === undefined ? undefined : ownMachines(all, cloud ?? undefined).sort(machineOrder);
+  const rolesRef = useReveal<HTMLElement>("hub.roles");
+  const screensRef = useReveal<HTMLElement>("hub.screens");
+  const capsRef = useReveal<HTMLElement>("hub.caps");
+  const marked: RefCallback<HTMLElement> = (el) => {
+    rolesRef.current = el;
+    screensRef.current = el;
+    capsRef.current = el;
+  };
   return (
     <>
-    <section className={`${a.section} ${a.machines}`} aria-labelledby="machines-list">
-      <Text strong id="machines-list">
-        This hub's machines
-      </Text>
+    <section ref={marked} className={`${a.section} ${a.machines}`} aria-labelledby="machines-list" tabIndex={-1}>
+      <div className={a.who}>
+        <Text strong id="machines-list">
+          This hub's machines
+        </Text>
+        <Text size="xs" tone="quiet">
+          Open one for its role, screens and max agents.
+        </Text>
+      </div>
       {machines === undefined ? (
         <Text tone="quiet">Loading…</Text>
       ) : machines.length === 0 ? (
@@ -57,9 +73,11 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
                     {STATUS[m.status]}
                   </Text>
                 </div>
-                <Text size="xs" tone="quiet">
-                  {`fleetd ${m.nodeVersion}${m.machineId === m.name ? "" : ` · ${m.machineId}`}`}
-                </Text>
+                {m.machineId === m.name ? null : (
+                  <Text size="xs" tone="quiet">
+                    {m.machineId}
+                  </Text>
+                )}
                 {statusLine(m) === null ? null : (
                   <Text size="xs" tone={m.status === "degraded" ? "warning" : "default"}>
                     {statusLine(m)}
@@ -67,9 +85,11 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
                 )}
               </div>
               <div className={a.controls}>
-                <Button size="sm" variant="ghost" onClick={() => onRepair(repairOf(m.machineId, hosts))}>
-                  Repair
-                </Button>
+                {m.status === "online" ? null : (
+                  <Button size="sm" variant="ghost" onClick={() => onRepair(repairOf(m.machineId, hosts))}>
+                    Repair
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setRemoving(m)}>
                   Remove
                 </Button>

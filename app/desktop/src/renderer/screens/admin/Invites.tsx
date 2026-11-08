@@ -106,7 +106,7 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
         create();
       }}
     >
-      <Field label="Name" description="How the hub and the leads name them: “Alice writes”." error={tried ? problem : undefined}>
+      <Field label="Name" error={tried ? problem : undefined}>
         <Input value={name} placeholder="Alice" autoComplete="off" onChange={(e) => setName(e.target.value)} />
       </Field>
       <div className={s.settingLabel}>

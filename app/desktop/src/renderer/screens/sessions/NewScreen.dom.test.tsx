@@ -429,6 +429,6 @@ it("tells a member who to ask, with no button", async () => {
   await settle();
   const reason = document.querySelector("[data-off-reason='turn_on']");
   expect(reason?.textContent).toContain("Android emulators are turned off on devbox.");
-  expect(reason?.textContent).toContain("Ask Ana to turn them on in Settings › Hub › Machines › Screens.");
+  expect(reason?.textContent).toContain("Ask Ana to turn them on in Settings › Hub › Machines › devbox.");
   expect(button("Turn on")).toBeUndefined();
 });

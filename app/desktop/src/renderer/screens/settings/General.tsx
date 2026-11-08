@@ -87,10 +87,10 @@ function PresenceSetting() {
     };
   }, []);
   return (
-    <Setting reveal="general.presence" label="Time in the app" help="Counts toward your minutes per merged PR.">
+    <Setting reveal="general.presence" label="Time in the app" help="Used to measure your time per merged PR.">
       <Switch
         label="Tell the hub when I'm using the app"
-        description="Once a minute: whether fleetd is in front, which project is on screen, and whether you used it in the last minute. Never what you type or see. It stays on your hub."
+        description="Once a minute: whether the app is in front and which project is open. Never what you type or see."
         checked={on ?? true}
         disabled={on === null}
         onCheckedChange={(next) => void window.fleetd.app.presence(next).then(setOn)}

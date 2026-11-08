@@ -94,7 +94,7 @@ fn words(out: &Output) -> String {
 }
 
 impl Runtime {
-    /// node.json's `desktop.runtime`, else docker or podman on the PATH.
+    /// `FLEETD_DESKTOP_RUNTIME`, else docker or podman on the PATH.
     pub fn find(configured: Option<&str>, home: &Path) -> Option<Self> {
         let bin = match configured {
             Some(bin) => PathBuf::from(bin),

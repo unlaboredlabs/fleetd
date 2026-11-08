@@ -163,11 +163,15 @@ impl NodeLinkServer {
         let now = now_ms(self.deps.clock.as_ref());
         let node_now = crate::hub::store::parse_ms(node_at).unwrap_or(now);
         if let Some(load) = &load {
-            let name = match self.deps.store.machine_get(machine_id) {
-                Ok(Some(m)) => m.name,
-                _ => machine_id.to_string(),
+            let (name, cloud) = match self.deps.store.machine_get(machine_id) {
+                Ok(Some(m)) => (m.name, m.cloud == Some(true)),
+                _ => (machine_id.to_string(), false),
             };
-            if let Err(e) = self.deps.slots.observe_machine(machine_id, &name, load) {
+            if let Err(e) = self
+                .deps
+                .slots
+                .observe_machine(machine_id, &name, load, cloud)
+            {
                 tracing::warn!(error = %e, "node link: machine facts not applied to the slot board");
             }
         }

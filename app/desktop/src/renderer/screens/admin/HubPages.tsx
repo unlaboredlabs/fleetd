@@ -1,22 +1,21 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
-// and every hub link); Machines (Add machine, the machines with Repair and Remove, each one's page with its checklist,
-// their roles, their screens and their caps); Updates (UpdatesPage.tsx: where the hub and each machine stand, Update now and
-// Update automatically); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
+// and every hub link); Machines (Add machine, the machines with Remove, and Repair for one that isn't well, each one's
+// page with its checklist, its role, its screens and its max agents; recordings and cloud machines); Updates
+// (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
+// as a project's own pages are: Profiles, Tools & skills,
 // Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
-// and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), listed only
-// while a required one is left. With several hubs the group manages
-// one hub at a time, named above every page, and switches between the hubs this person administers: nothing here acts
-// on a hub the page doesn't name.
+// and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), always listed,
+// with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
+// and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Separator, SidebarItem, Text, Truncate, cx } from "../../ui";
+import { Button, Separator, SidebarItem, Text, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
-import { useData, useHub, useSeveralHubs } from "../../src/data/react";
+import { useHub, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
-import { HubCaps } from "../settings/Agents";
-import { MachineRoles } from "../settings/MachineRoles";
-import { Screens } from "../settings/Screens";
+import { FleetCapNote } from "../settings/Agents";
+import { Recordings } from "../settings/Screens";
 import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
@@ -66,11 +65,10 @@ export function HubPage({ tab, route }: { tab: HubTab; route: SettingsRoute }) {
   );
 }
 
-/** With several hubs, the one every page here acts on, by name and address, above the page. */
+/** With several hubs, the one every page here acts on, by its name and colour, above the page. */
 function Managing() {
   const several = useSeveralHubs();
   const hub = useHub();
-  const state = useData((st) => st.hub);
   if (!several) return null;
   return (
     <div className={a.managing} role="note" aria-label={`Managing ${hub.label}`} data-managing={hub.id}>
@@ -81,11 +79,6 @@ function Managing() {
       <Text size="sm" strong>
         {hub.label}
       </Text>
-      {state.phase === "unpaired" ? null : (
-        <Truncate size="xs" tone="quiet" mono>
-          {state.hub}
-        </Truncate>
-      )}
     </div>
   );
 }
@@ -131,8 +124,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 
 /**
  * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
- * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist; then their roles, the
- * screens each opens, how many agents each machine and all of them together run at once, and cloud machines on boat.dev.
+ * Remove, Repair (which opens in Add machine) while it isn't well, and a page of its own with everything about it; then
+ * how long recordings are kept, cloud machines on boat.dev, and updates.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -148,13 +141,9 @@ function Machines() {
             document.querySelector("section[aria-label='Add machine']")?.scrollIntoView({ block: "nearest" });
           }}
         />
-        <Separator />
-        <MachineRoles />
-        <PagePart title="Screens" reveal="hub.screens" intro="Which kinds of screen each machine opens, when an idle one ends, and how long the hub keeps recordings.">
-          <Screens />
-        </PagePart>
-        <PagePart title="Max agents" reveal="hub.caps" intro="Every project's agents together: on each machine, and on all of them.">
-          <HubCaps />
+        <FleetCapNote />
+        <PagePart title="Recordings" reveal="hub.recordings">
+          <Recordings />
         </PagePart>
         <CloudPart />
       </div>
@@ -170,9 +159,7 @@ function Profiles() {
   return (
     <div className={s.scroll} data-screen="settings.hub.profiles">
       <div className={s.column}>
-        <PageHead title="Profiles">
-          What agents run on: a model, a reasoning level and fast mode each, with a note the lead picks by. Every project allows the default; it picks the others on its Agents page.
-        </PageHead>
+        <PageHead title="Profiles">The models agents run on. Each project picks which it allows.</PageHead>
         <ProfilesEditor />
       </div>
     </div>
@@ -188,7 +175,7 @@ function ToolsAndSkills() {
         <PagePart title="MCP servers" reveal="hub.mcp">
           <HubMcpServers />
         </PagePart>
-        <PagePart title="Skills" reveal="hub.skills" intro="Every project's agents get them, after the project's repo's and its own.">
+        <PagePart title="Skills" reveal="hub.skills">
           <HubSkills />
         </PagePart>
       </div>
@@ -196,18 +183,16 @@ function ToolsAndSkills() {
   );
 }
 
-/** Every project › Instructions & memory: the instructions every project's agents get, and the old shared memory. */
+/** Every project › Instructions & memory: the instructions every project's agents get, and the old shared memory while it has text. */
 function InstructionsAndMemory() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory">What every project&apos;s agents are told, and the old shared memory.</PageHead>
+        <PageHead title="Instructions & memory">What every project&apos;s agents are told.</PageHead>
         <PagePart title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </PagePart>
-        <PagePart title="Shared memory" reveal="hub.shared-memory" intro="The one memory every lead read before each person had their own. Owners and admins only.">
-          <SharedMemory />
-        </PagePart>
+        <SharedMemory />
       </div>
     </div>
   );
@@ -252,7 +237,7 @@ function Setup() {
     return (
       <div className={s.scroll} data-screen={steps === null ? "settings.hub.setup.loading" : "settings.hub.setup.error"}>
         <div className={s.column}>
-          {head("Everything the hub needs, step by step: the same steps as fleetd init.")}
+          {head("Everything the hub needs, step by step.")}
           <Text tone={steps === null || steps.old ? "quiet" : "danger"}>{text}</Text>
         </div>
       </div>

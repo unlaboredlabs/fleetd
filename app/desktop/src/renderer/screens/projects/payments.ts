@@ -24,7 +24,7 @@ export const cardLabel = (card: NaviCard): string => {
 
 /** Payments' help, word for word on the desktop's settings and the phone's (D312: a purchase fills without asking). */
 export const PAYMENTS_HELP =
-  "The card it pays with at a checkout, from your 1Password. fleetd fills it in at the checkout, and the project never sees it. Each purchase is listed below, with the shop and the total.";
+  "The card it pays with at a checkout, from your 1Password. fleetd fills it in at the checkout, and the project never sees it. Use a virtual or low-limit card, never your main one. Each purchase is listed below, with the shop and the total.";
 
 /** The picker's value for "no card". */
 export const NO_CARD = "none";

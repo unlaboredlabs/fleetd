@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
-// Hub › Machines' roles: each machine's roles and session slots, read from machine_roles; a role
-// change goes out as machine_roles_set and the hub's line about it shows under the row.
+// A machine's role, on its page in Hub › Machines: read from machine_roles; a role change goes out as
+// machine_roles_set and the hub's line about it shows under it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, useToolQuery } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { MachineRoles } from "./MachineRoles";
+import { MachineRole } from "./MachineRoles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -53,6 +53,17 @@ const agentsMac: MachineRolesEntry = {
 
 const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [] });
 
+/** Each machine's role, as its page shows it, under its name. */
+function Roles() {
+  const machines = useToolQuery("machine_roles", {}).data?.machines ?? [];
+  return machines.map((m) => (
+    <section key={m.machineId} aria-labelledby={`machine-${m.machineId}-name`}>
+      <span id={`machine-${m.machineId}-name`}>{m.name}</span>
+      <MachineRole machine={m} />
+    </section>
+  ));
+}
+
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
@@ -93,7 +104,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <MachineRoles />
+          <Roles />
         </DataProvider>
       </UiProvider>,
     );
@@ -110,11 +121,11 @@ const render = async () => {
 const row = (name: string) => host.querySelector<HTMLElement>(`section[aria-labelledby="machine-${name}-name"]`);
 const pressed = (within: HTMLElement | null) => within?.querySelector('button[aria-pressed="true"]')?.textContent;
 
-it("shows each machine's roles and sessions in plain words", async () => {
+it("shows each machine's role in plain words", async () => {
   await render();
   const box = row("devbox");
   expect(pressed(box)).toBe("Both");
-  expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
+  expect(box?.textContent).toContain("Runs agents and hosts screens, its own agents' first.");
   expect(pressed(row("mac1"))).toBe("Screens");
 });
 
@@ -135,6 +146,7 @@ it("gives the agents' Mac its switch instead of roles, and says why agents can't
   const mac = row("studio");
   expect(pressed(mac)).toBeUndefined();
   expect(mac?.textContent).toContain("Agents may use this Mac");
+  expect(mac?.textContent).toContain("Agents build iOS apps and run simulators here. It runs no agents itself.");
   expect(mac?.textContent).toContain("it runs on macOS only");
   const toggle = mac?.querySelector<HTMLButtonElement>('button[role="switch"]');
   expect(toggle?.getAttribute("aria-checked")).toBe("true");

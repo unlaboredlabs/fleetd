@@ -282,15 +282,23 @@ async function mountShared(text: string | null) {
   return hub;
 }
 
-it("shows the hub's old shared memory for an admin to edit, and retires it whole", async () => {
+it("shows the hub's old shared memory for an admin to edit, and once it is emptied the part is gone", async () => {
   const hub = await mountShared(FILE);
   expect(Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li'))).toHaveLength(4);
   await click("Edit as text");
   const field = textarea("All of user.md");
   type(field, "");
   await click("Save");
+  await settle();
   expect(hub.sets.at(-1)).toEqual({ text: "" });
-  expect(document.body.textContent).toContain("Retired: each person's memory is their own.");
+  expect(document.body.textContent).not.toContain("Shared memory");
+  expect(document.body.textContent).not.toContain("Retired");
+});
+
+it("shows no shared memory part on a hub whose shared memory is already empty", async () => {
+  await mountShared("");
+  expect(document.querySelector("[data-part='hub.shared-memory']")).toBeNull();
+  expect(document.body.textContent).not.toContain("Shared memory");
 });
 
 it("says a hub from before per-person memory still shares one, read and edited in Your memory", async () => {

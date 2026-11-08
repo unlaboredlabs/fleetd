@@ -8,7 +8,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { McpSection, HubMcpServers } from "./McpServers";
+import { HubMcpServers } from "./McpServers";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -209,38 +209,5 @@ describe("Settings → MCP servers", () => {
     const toggle = document.querySelector<HTMLElement>('[role="switch"]');
     await click(toggle as HTMLElement);
     expect(calls.find((c) => c.tool === "mcp_settings_set")?.input).toEqual({ userServers: false });
-  });
-
-  it("on a project's page, seals its own server's secret to its machine only and shows the global it replaces", async () => {
-    project = [{ ...github, scope: { kind: "project", machineId: "devbox", projectId: "p1" }, roles: { lead: false, writers: true, reviewers: false } }];
-    await render(<McpSection projectRef={{ machineId: "devbox", projectId: "p1" }} />);
-    expect(calls.find((c) => c.tool === "mcp_servers_get")?.input).toEqual({ project: { machineId: "devbox", projectId: "p1" } });
-    expect(document.body.textContent).toContain("replaced by this project's");
-    await click(button("Edit"));
-    // The saved secret stays unless a new value is typed.
-    await click(button("Save", dialog()));
-    expect(saved[0]?.headers).toEqual([{ kind: "keep", name: "Authorization" }]);
-    expect(saved[0]?.boxes).toEqual([]);
-    await click(button("Edit"));
-    const row = dialog().querySelector<HTMLElement>('[role="group"]');
-    await type(field("Value", row as HTMLElement), `Bearer ${SECRET}`);
-    await click(button("Save", dialog()));
-    expect(saved[1]?.headers).toEqual([{ kind: "secret", name: "Authorization", value: `Bearer ${SECRET}` }]);
-    expect(saved[1]?.boxes).toEqual([{ machineId: "devbox", boxPubKey: KEY }]);
-  });
-});
-
-describe("a project's MCP section", () => {
-  it("leaves its integrations to the Integrations section, and keeps their names taken", async () => {
-    project = [{ ...github, scope: { kind: "project", machineId: "devbox", projectId: "p1" }, name: "crm", integration: {} }];
-    await render(<McpSection projectRef={{ machineId: "devbox", projectId: "p1" }} />);
-    const own = document.querySelector('[role="list"][aria-label="MCP servers"]');
-    expect(own).toBeNull();
-    expect(document.body.textContent).toContain("1 more is under Integrations, on its Project page.");
-    await click(button("Add server"));
-    const name = dialog().querySelector<HTMLInputElement>('input[placeholder="github"]');
-    if (name === null) throw new Error("no name field");
-    await type(name, "crm");
-    expect(dialog().textContent).toContain("crm is already there");
   });
 });

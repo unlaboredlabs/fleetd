@@ -142,7 +142,9 @@ const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c
 it("lists only your own devices", async () => {
   await render();
   expect(rows()).toEqual(["MacBook"]);
-  expect(host.textContent).toContain("Your devices");
+  // With one hub the page's own title says it: no second heading or intro.
+  expect(host.querySelector("section[aria-label='Your devices'] h2")).toBeNull();
+  expect(host.textContent).not.toContain("Each of these acts as you");
 });
 
 it("pairs a phone by QR, shows the address and code to type and how long it lasts, then notices the phone", async () => {

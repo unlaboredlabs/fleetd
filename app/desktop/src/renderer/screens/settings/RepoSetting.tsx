@@ -1,9 +1,9 @@
 // Settings › Projects › Project › Repos: the git repos a project holds (ProjectSummary.repos), each with its remote, base
-// branch, checkout, and the setup it runs with, read with project_settings_get and `repo`; then the
-// project's default setup (SetupSetting.tsx), which a repo without its own runs. Add repo takes a
+// branch, checkout, and its own setup when it has one, read with project_settings_get and `repo`; then the
+// project's setup (SetupSetting.tsx), which a repo without its own runs. Add repo takes a
 // checkout on the project's machine or a GitHub repo to clone there (project_repo_add); Remove takes one out
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Button, Dialog, Input, Text } from "../../ui";
 import type { ProjectRepo, ProjectSettings as Settings, ProjectSummary } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -11,7 +11,7 @@ import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
 import { Setting, useProjects } from "./parts";
 import { DefaultSetup } from "./SetupSetting";
-import { addInput, applied, checkoutPath, isOwn, sourceProblem, type Applied } from "./repoModel";
+import { addInput, applied, checkoutPath, isOwn, sourceProblem } from "./repoModel";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -21,8 +21,21 @@ export function RepoSetting({ settings }: { settings: Settings }) {
   const repos = projects.find((p) => p.machineId === settings.machineId && p.projectId === settings.projectId)?.repos ?? [];
   const [echo, setEcho] = useState<Echo | null>(null);
   const [removing, setRemoving] = useState<ProjectRepo | null>(null);
+  // The repos with setup of their own: only then is the project's the default, and only those rows say their setup.
+  const [own, setOwn] = useState<ReadonlySet<string>>(new Set());
+  const owns = useCallback(
+    (name: string, on: boolean) =>
+      setOwn((was) => {
+        if (was.has(name) === on) return was;
+        const next = new Set(was);
+        if (on) next.add(name);
+        else next.delete(name);
+        return next;
+      }),
+    [],
+  );
   return (
-    <Setting reveal="projects.repos" label="Repos" help="The git repos the project holds, the setup each one runs with, and the default setup for those with none of their own.">
+    <Setting reveal="projects.repos" label="Repos" help="The git repos the project holds, and the setup new worktrees run.">
       {repos.length === 0 ? (
         <Text size="sm" tone="quiet">
           No repo, a plain folder.
@@ -30,12 +43,12 @@ export function RepoSetting({ settings }: { settings: Settings }) {
       ) : (
         <div role="list" aria-label="Repos" className={s.repoList}>
           {repos.map((repo) => (
-            <RepoRow key={repo.repoId} repo={repo} settings={settings} projects={projects} onRemove={isOwn(repo, settings) ? null : () => setRemoving(repo)} />
+            <RepoRow key={repo.repoId} repo={repo} settings={settings} projects={projects} onOwn={owns} onRemove={isOwn(repo, settings) ? null : () => setRemoving(repo)} />
           ))}
         </div>
       )}
       <AddRepo settings={settings} onDone={setEcho} />
-      <DefaultSetup settings={settings} />
+      <DefaultSetup settings={settings} isDefault={repos.some((r) => own.has(r.name))} />
       {echo ? (
         <div role={echo.ok ? "status" : "alert"}>
           <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
@@ -157,17 +170,20 @@ function RepoRow({
   repo,
   settings,
   projects,
+  onOwn,
   onRemove,
 }: {
   repo: ProjectRepo;
   settings: Settings;
   projects: ReadonlyArray<ProjectSummary>;
+  onOwn: (name: string, own: boolean) => void;
   onRemove: (() => void) | null;
 }) {
   const machine = useData((d) => d.machines[repo.checkout.machineId]?.name) ?? repo.checkout.machineId;
   // A hub before per-repo settings refuses `repo`: the project's then apply, as they do on it.
   const own = useToolQuery("project_settings_get", { machineId: settings.machineId, projectId: settings.projectId, repo: repo.name });
   const { setup } = applied(settings, own.data?.settings);
+  useEffect(() => onOwn(repo.name, setup.own), [onOwn, repo.name, setup.own]);
   return (
     <div role="listitem" aria-label={repo.name} className={s.repoRow}>
       <div className={s.inline}>
@@ -186,9 +202,18 @@ function RepoRow({
             <code>{checkoutPath(repo, projects)}</code> on {machine}
           </Text>
         </Fact>
-        <Fact label="Setup">
-          <AppliedLine applied={setup} of="the default" />
-        </Fact>
+        {/* Only a repo with setup of its own says it: the rest run the Setup below. */}
+        {setup.own ? (
+          <Fact label="Setup">
+            {setup.line ? (
+              <Text size="sm" mono>
+                {setup.line}
+              </Text>
+            ) : (
+              <Quiet>None</Quiet>
+            )}
+          </Fact>
+        ) : null}
       </dl>
     </div>
   );
@@ -212,15 +237,5 @@ function Quiet({ children }: { children: ReactNode }) {
     <Text size="sm" tone="quiet">
       {children}
     </Text>
-  );
-}
-
-/** `of`: whose a repo without its own uses, in words: the default setup. */
-function AppliedLine({ applied: a, of }: { applied: Applied; of: string }) {
-  if (a.own) return a.line ? <Text size="sm" mono>{a.line}</Text> : <Quiet>None</Quiet>;
-  return (
-    <Quiet>
-      Uses {of}: {a.line ? <code>{a.line}</code> : "none"}
-    </Quiet>
   );
 }

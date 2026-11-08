@@ -1,146 +1,37 @@
-// Hub › Machines' machine roles: what each machine is for (agents, sessions or both) and how many browser and device
-// sessions it hosts at once; what it can host is under Screens (Screens.tsx), with a switch each. Hub-wide, so only its
-// owners and admins see it. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
-// answer replaces the row. The agents' Mac (D298) has no roles to pick: it never runs agents, and its row is the
-// "Agents may use this Mac" switch with why agents can't use it now, when they can't.
-import { useState } from "react";
+// A machine's role, on its page in Hub › Machines (admin/MachinePage.tsx): what it is for (agents, screens or both).
+// Hub-wide, so only its owners and admins see it. The page reads machine_roles; a change is a machine_roles_set call
+// (an admin's), and the hub's answer replaces the row. The agents' Mac (D298) has no roles to pick: it never runs
+// agents, and its row is the "Agents may use this Mac" switch with why agents can't use it now, when they can't. How
+// many screens it hosts at once is under its Screens (Screens.tsx).
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { useToolQuery } from "../../src/data/react";
-import { Segmented, Select, Switch, Text } from "../../ui";
-import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { useReveal } from "./search";
-import { capChoices, choiceOf, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
+import { Segmented, Switch, Text } from "../../ui";
+import { useMachineSet } from "./Screens";
+import { choiceOf, ROLE_CHOICES, ROLE_HELP, rolesOf } from "./machinesModel";
 import s from "./settings.module.css";
 
-const noInput = {};
-
-export function MachineRoles() {
-  const live = useLive();
-  const read = useToolQuery("machine_roles", noInput);
-  const machines = read.data?.machines;
-  const ref = useReveal<HTMLElement>("hub.roles");
-  return (
-    <section ref={ref} className={s.machineList} aria-labelledby="machine-roles">
-      <div className={s.settingLabel}>
-        <Text strong id="machine-roles">
-          Machine roles
-        </Text>
-        <Text size="xs" tone="quiet">
-          What each machine is for. A browser or device session an agent starts runs on its own machine when it can host it, else on another that can, through the hub.
-        </Text>
-      </div>
-      {!live ? (
-        <Text tone="quiet">Connect to a hub to see and change this.</Text>
-      ) : read.error ? (
-        <Text tone="danger">{`Couldn't read the machines: ${errorText(read.error)}`}</Text>
-      ) : machines === undefined ? (
-        <Text tone="quiet">Loading…</Text>
-      ) : machines.length === 0 ? (
-        <Text tone="quiet">No machine has joined yet.</Text>
-      ) : (
-        machines.map((m) => <MachineRow key={m.machineId} machine={m} />)
-      )}
-    </section>
-  );
-}
-
-function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
-  const live = useLive();
-  const call = useHubCall();
-  const refetch = useRefetch();
-  const [busy, setBusy] = useState(false);
-  const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
+export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
+  const { set, disabled, echo } = useMachineSet("machine_roles_set", m.machineId);
   const choice = choiceOf(m.roles);
-  const id = `machine-${m.machineId}`;
-
-  const set = (input: { roles?: RolesChoice; cap?: string; macTool?: boolean }) => {
-    setBusy(true);
-    setEcho(null);
-    const cap = input.cap === undefined ? {} : input.cap === "auto" ? { autoSessions: true } : { maxSessions: Number(input.cap) };
-    call("machine_roles_set", {
-      machineId: m.machineId,
-      ...(input.roles === undefined ? {} : { roles: rolesOf(input.roles) }),
-      ...cap,
-      ...(input.macTool === undefined ? {} : { macTool: input.macTool }),
-    })
-      .then(
-        (out) => setEcho(out.next === undefined ? null : { ok: true, text: out.next }),
-        (e: unknown) => setEcho({ ok: false, text: `Not changed: ${errorText(e)}` }),
-      )
-      .finally(() => {
-        setBusy(false);
-        refetch(["machine_roles"]);
-      });
-  };
-
-  const disabled = !live || busy;
-  const note = hostsNote(m);
   return (
-    <section className={s.machineRow} aria-labelledby={`${id}-name`}>
-      <div className={s.agentsHead}>
-        <Text strong id={`${id}-name`}>
-          {m.name}
-        </Text>
-        <Text size="xs" tone="quiet">
-          {m.online ? "online" : "offline"}
-        </Text>
-      </div>
+    <div className={s.machineControls} data-roles={m.machineId}>
       {m.mac !== undefined ? (
-        <div className={s.machineControls}>
-          <Switch
-            label="Agents may use this Mac"
-            description="The agents' Mac: every project's agents build and run iOS simulators here with mac commands. It never runs agents or leads itself."
-            checked={m.mac.on}
-            disabled={disabled}
-            onCheckedChange={(macTool) => set({ macTool })}
-          />
+        <>
+          <Switch label="Agents may use this Mac" description="Agents build iOS apps and run simulators here. It runs no agents itself." checked={m.mac.on} disabled={disabled} onCheckedChange={(macTool) => set({ macTool })} />
           {m.mac.note === undefined ? null : (
             <Text size="xs" tone="quiet">
               {m.mac.note}
             </Text>
           )}
-        </div>
+        </>
       ) : (
-        <div className={s.machineControls}>
-          <Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles })} />
+        <>
+          <Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles: rolesOf(roles) })} />
           <Text size="xs" tone="quiet">
             {ROLE_HELP[choice]}
           </Text>
-        </div>
+        </>
       )}
-      {m.roles.includes("sessions") ? (
-        <div className={s.machineControls}>
-          <div className={s.inline}>
-            <Text size="xs" tabular>
-              {sessionsLine(m)}
-            </Text>
-            <Select
-              aria-label={`Most screens ${m.name} hosts at once`}
-              className={s.machineCap}
-              value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
-              options={capChoices(m)}
-              disabled={disabled}
-              onValueChange={(cap) => set({ cap })}
-            />
-          </div>
-          {note === null ? null : (
-            <Text size="xs" tone="quiet">
-              {note}
-            </Text>
-          )}
-        </div>
-      ) : null}
-      {echo === null ? null : echo.ok ? (
-        <Text size="xs" tone="quiet">
-          {echo.text}
-        </Text>
-      ) : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">
-            {echo.text}
-          </Text>
-        </p>
-      )}
-    </section>
+      {echo}
+    </div>
   );
 }

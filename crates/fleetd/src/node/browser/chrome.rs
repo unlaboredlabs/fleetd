@@ -1,6 +1,6 @@
 //! The browsers sessions get: Playwright's build of Chrome's headless shell and its ffmpeg, installed by the node at a
-//! pinned Playwright release under `<node home>/browser/ms-playwright` (node.json `browser.chrome` and
-//! `browser.ffmpeg` name others), and a warm pool of launched processes. Each session takes a process of its own with a
+//! pinned Playwright release under `<node home>/browser/ms-playwright` (`FLEETD_CHROME` and `FLEETD_FFMPEG` name
+//! others, for development), and a warm pool of launched processes. Each session takes a process of its own with a
 //! fresh, empty profile directory, and both are thrown away when it ends: nothing of one session reaches the next.
 //!
 //! A Navi's sessions are the exception (D221): each Navi keeps one profile of its own ([`Kept`]), so the sites it

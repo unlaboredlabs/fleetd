@@ -13,8 +13,8 @@ use crate::hub::prompts::PromptSet;
 /// An automation's order, and the tools that manage them.
 const AUTOMATIONS: &str = "## Automations\nAn order that says \"From automation\" is a run of one of this project's \
 automations: start its work without asking the human first; reviews, the train and approvals still apply. For \
-recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update`, \
-`automation_pause`, `automation_delete`, `automation_run` and `automation_runs`.";
+recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` \
+(which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`.";
 
 /// The prompt a lead starts from: `assistant.start` for a Navi, else `lead.start`.
 pub fn start_prompt(navi: bool) -> &'static str {

@@ -1,18 +1,21 @@
-// Hub › Machines › Screens (W268): which kinds of screen each machine that hosts screens opens, a switch each, how long
-// an idle one lasts there, and how long the hub keeps recordings. A switch is a machine_screens_set call: the machine's
-// node writes its node.json, so turning Android on installs what it needs, and the line under the switch follows
-// what the node says (installing, starting once its live screens end). A kind that can't run for something missing
-// shows the command that fixes it, to run on that machine. Retention is browser_retention_set, for every
-// project. Hub-wide, so only owners and admins see it; the hub's answer reads the machines again. The agents' Mac's row
-// has only its own screen's switch, and says how soon an idle one ends instead of a timeout to pick.
-import { useState } from "react";
-import type { HostCheck, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
+// A machine's screens, on its page in Hub › Machines (admin/MachinePage.tsx, W268): which kinds of screen it opens, a
+// switch each, and how many it hosts at once; and, on Hub › Machines, how long the hub keeps recordings. A switch is a
+// machine_screens_set call: the machine's node writes its node.json, so turning Android on installs what it needs, and
+// the line under the switch follows what the node says (installing, starting once its live screens end). A kind that
+// can't run for something missing shows the command that fixes it, to run on that machine. The at-once limit is
+// machine_roles_set. An idle screen ends after the node's timeout (30 minutes unless node.json says otherwise; the
+// agents' Mac's own screen, 5), said in a line. Retention is browser_retention_set, for every project: the app sets
+// only the days, and the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
+import { useState, type ReactNode } from "react";
+import type { HostCheck, MachineRolesEntry, SessionHost, ToolInput } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
-import { Select, Switch, Text } from "../../ui";
+import { Button, Select, Switch, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
 import { RunOn } from "../setup/Guide";
-import { daysChoices, fixOf, gbChoices, idleChoices, idleOf, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { navigate } from "../shell/navigation";
+import { capChoices, hostsNote, sessionsLine } from "./machinesModel";
+import { daysChoices, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -34,32 +37,23 @@ function EchoLine({ echo }: { echo: Echo }) {
   );
 }
 
-export function Screens() {
-  const live = useLive();
-  const read = useToolQuery("machine_roles", noInput);
-  const machines = read.data?.machines.filter((m) => m.roles.includes("sessions"));
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
-  if (read.error) return <Text tone="danger">{`Couldn't read the machines: ${errorText(read.error)}`}</Text>;
-  if (machines === undefined) return <Text tone="quiet">Loading…</Text>;
-  return (
-    <div className={s.machineList}>
-      {machines.length === 0 ? <Text tone="quiet">No machine hosts screens: set one&apos;s role to Screens or Both above.</Text> : machines.map((m) => <ScreensRow key={m.machineId} machine={m} />)}
-      {read.data?.retention === undefined ? null : <Retention days={read.data.retention.retentionDays} gb={read.data.retention.maxGbPerProject} />}
-    </div>
-  );
-}
+type MachineTool = "machine_roles_set" | "machine_screens_set";
+type Change<T extends MachineTool> = ToolInput<T> extends infer I ? (I extends unknown ? Omit<I, "machineId"> : never) : never;
 
-function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
+/**
+ * One machine's change, as its role and its screens make them: the call, the hub's line about it (or why not) under
+ * the controls, and the machines read again once it answers.
+ */
+export function useMachineSet<T extends MachineTool>(tool: T, machineId: string): { set: (change: Change<T>) => void; disabled: boolean; echo: ReactNode } {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo>(null);
-  const id = `screens-${m.machineId}`;
-  const set = (input: { host: SessionHost; on: boolean } | { idleMinutes: number }) => {
+  const set = (change: Change<T>) => {
     setBusy(true);
     setEcho(null);
-    call("machine_screens_set", { machineId: m.machineId, ...input })
+    call(tool, { machineId, ...change })
       .then(
         (out) => setEcho(out.next === undefined ? null : { ok: true, text: out.next }),
         (e: unknown) => setEcho({ ok: false, text: `Not changed: ${errorText(e)}` }),
@@ -69,20 +63,19 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
         refetch(["machine_roles"]);
       });
   };
+  return { set, disabled: !live || busy, echo: <EchoLine echo={echo} /> };
+}
+
+/** A machine's screens: a switch per kind it may open, what each needs, how many at once, and when an idle one ends. */
+export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
+  const kind = useMachineSet("machine_screens_set", m.machineId);
+  const cap = useMachineSet("machine_roles_set", m.machineId);
   const check = (host: SessionHost): HostCheck | undefined => (m.hosts ?? []).find((h) => h.host === host);
   const kinds = kindsOf(m);
-  const idle = idleOf(m);
   const wait = nodeWait(m);
+  const note = hostsNote(m);
   return (
-    <section className={s.machineRow} aria-labelledby={`${id}-name`} data-screens={m.machineId}>
-      <div className={s.agentsHead}>
-        <Text strong id={`${id}-name`}>
-          {m.name}
-        </Text>
-        <Text size="xs" tone="quiet">
-          {m.online ? "online" : "offline"}
-        </Text>
-      </div>
+    <div className={s.machineControls} data-screens={m.machineId}>
       <div className={s.screenKinds}>
         {kinds.map(({ host, label }) => {
           const c = check(host);
@@ -93,8 +86,8 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
               label={label}
               description={stateLine(c)}
               checked={switchOn(c)}
-              disabled={!live || busy || locked !== null}
-              onCheckedChange={(on) => set({ host, on })}
+              disabled={kind.disabled || locked !== null}
+              onCheckedChange={(on) => kind.set({ host, on })}
               aria-label={`${label} screens on ${m.name}`}
             />
           );
@@ -104,23 +97,6 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
         const fix = fixOf(m, check(host));
         return fix === null ? null : <RunOn key={host} where={`${m.name}, for ${label}`} command={fix} />;
       })}
-      {m.mac === undefined ? (
-        <div className={s.inline}>
-          <Text size="xs">Idle screens end after</Text>
-          <Select
-            aria-label={`Idle timeout on ${m.name}`}
-            className={s.machineCap}
-            value={idle === undefined ? undefined : String(idle)}
-            options={idleChoices(idle)}
-            disabled={!live || busy || lockedWhy(m, check("browser")) !== null || idle === undefined}
-            onValueChange={(v) => set({ idleMinutes: Number(v) })}
-          />
-        </div>
-      ) : (
-        <Text size="xs" tone="quiet">
-          {`An idle Mac screen ends after ${String(check("mac")?.idleMinutes ?? 5)} minutes, so the next agent gets it.`}
-        </Text>
-      )}
       {wait === "restarting" ? (
         <Text size="xs" tone="quiet">
           {`${m.name}'s node is restarting: these come back once it links again.`}
@@ -128,35 +104,69 @@ function ScreensRow({ machine: m }: { machine: MachineRolesEntry }) {
       ) : null}
       {wait === "old" ? (
         <>
-          <Text size="xs" tone="quiet">
-            {`${m.name}'s fleetd is too old to change these from here: press Update in Settings › Hub › Updates.`}
-          </Text>
+          <div className={s.inline}>
+            <Text size="xs" tone="quiet">
+              {`Update ${m.name}'s fleetd to change these.`}
+            </Text>
+            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
+              Open Updates
+            </Button>
+          </div>
           {m.nodeRestart === undefined ? null : (
             <>
               <Text size="xs" tone="quiet">
-                {`Still says this once ${m.name} is updated? Its node didn't restart onto the new build: run this on ${m.name}.`}
+                {`Still the same after updating? Run this on ${m.name}:`}
               </Text>
               <CommandLine command={m.nodeRestart} />
             </>
           )}
         </>
       ) : null}
-      <EchoLine echo={echo} />
-    </section>
+      {kind.echo}
+      <div className={s.inline}>
+        <Text size="xs" tabular>
+          {sessionsLine(m)}
+        </Text>
+        <Select
+          aria-label={`Most screens ${m.name} hosts at once`}
+          className={s.machineCap}
+          value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
+          options={capChoices(m)}
+          disabled={cap.disabled}
+          onValueChange={(v) => cap.set(v === "auto" ? { autoSessions: true } : { maxSessions: Number(v) })}
+        />
+      </div>
+      {note === null ? null : (
+        <Text size="xs" tone="quiet">
+          {note}
+        </Text>
+      )}
+      {cap.echo}
+      <Text size="xs" tone="quiet">
+        {idleLine(m)}
+      </Text>
+    </div>
   );
 }
 
-/** How long the hub keeps every project's recordings, and how much of them. */
-function Retention({ days, gb }: { days: number; gb: number }) {
+/** How long the hub keeps every project's recordings. */
+export function Recordings() {
   const live = useLive();
+  const read = useToolQuery("machine_roles", noInput);
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo>(null);
-  const set = (retentionDays: number, maxGbPerProject: number) => {
+  const retention = read.data?.retention;
+  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
+  if (read.error) return <Text tone="danger">{`Couldn't read it: ${errorText(read.error)}`}</Text>;
+  if (read.data === undefined) return <Text tone="quiet">Loading…</Text>;
+  if (retention === undefined) return <Text tone="quiet">Update the hub&apos;s fleetd to change this here.</Text>;
+  const set = (retentionDays: number) => {
     setBusy(true);
     setEcho(null);
-    call("browser_retention_set", { retentionDays, maxGbPerProject })
+    // The size limit stays as the hub has it: a safety net, not a choice here.
+    call("browser_retention_set", { retentionDays, maxGbPerProject: retention.maxGbPerProject })
       .then(
         (out) => setEcho(out.next === undefined ? null : { ok: true, text: out.next }),
         (e: unknown) => setEcho({ ok: false, text: `Not changed: ${errorText(e)}` }),
@@ -167,20 +177,12 @@ function Retention({ days, gb }: { days: number; gb: number }) {
       });
   };
   return (
-    <section className={s.machineRow} aria-label="Recordings" data-screens-retention>
-      <Text strong>Recordings</Text>
+    <div className={s.stack} data-screens-retention>
       <div className={s.inline}>
-        <Text size="xs">Keep each screen&apos;s recording for</Text>
-        <Select aria-label="Keep recordings for" className={s.machineCap} value={String(days)} options={daysChoices(days)} disabled={!live || busy} onValueChange={(v) => set(Number(v), gb)} />
-      </div>
-      <div className={s.inline}>
-        <Text size="xs">At most, per project</Text>
-        <Select aria-label="Recordings per project, at most" className={s.machineCap} value={String(gb)} options={gbChoices(gb)} disabled={!live || busy} onValueChange={(v) => set(days, Number(v))} />
-        <Text size="xs" tone="quiet">
-          Its oldest go first.
-        </Text>
+        <Text size="sm">Keep screen recordings for</Text>
+        <Select aria-label="Keep recordings for" className={s.machineCap} value={String(retention.retentionDays)} options={daysChoices(retention.retentionDays)} disabled={busy} onValueChange={(v) => set(Number(v))} />
       </div>
       <EchoLine echo={echo} />
-    </section>
+    </div>
   );
 }

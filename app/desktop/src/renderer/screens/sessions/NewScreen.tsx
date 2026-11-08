@@ -438,7 +438,7 @@ function OffLine({ kind, reason, onLeave }: { kind: ScreenKind; reason: OffReaso
     if (reason.fix !== "turn_on" || reason.machine === undefined) {
       onLeave();
       revealNext(reveal);
-      navigate({ id: "settings", tab });
+      navigate(tab === "hub.machines" && reason.fix === "roles" && reason.machine !== undefined ? { id: "settings", tab, machine: reason.machine.machineId } : { id: "settings", tab });
       return;
     }
     setTurning(true);

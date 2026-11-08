@@ -360,7 +360,7 @@ describe("You › Hubs › Hub links", () => {
   it("lists the links to each hub, and leaves each project's linked hubs to its settings", async () => {
     await render(<HubLinksSettings />);
     expect(text()).toContain("Links to this hub");
-    expect(text()).toContain("Paste one into a project’s Linked hubs, in its settings.");
+    expect(text()).toContain("Paste it into that project’s Linked hubs.");
     expect(text()).not.toContain("Ada");
     const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { navi?: { projectId: string } }).navi?.projectId);
     expect(asked.filter((id) => id !== undefined)).toEqual([]);

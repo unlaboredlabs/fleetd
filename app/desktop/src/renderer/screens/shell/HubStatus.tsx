@@ -5,13 +5,15 @@
 // Hubs, not #/onboarding: that page sends a connected app straight back to the board. With several hubs there is one
 // row per hub, each under its name and with its own state: one offline never hides another. While any of the hub's
 // machines is down the row says how many ("1 down"), which opens Machines, as the popover's Machines line always does:
-// the sidebar has no Machines entry. A cloud machine asleep is at rest, not down.
+// the sidebar has no Machines entry. For a member, who can't open Machines, both are plain text. A cloud machine
+// asleep is at rest, not down.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
 import { useData, useDataLayer, useHub, useSeveralHubs } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dot, Popover, PopoverContent, PopoverTrigger, Text, Tooltip } from "../../ui";
+import { useSettledAdministers } from "../admin/role";
 import { Prose } from "../onboarding/Prose";
 import { ForgetHubDialog, OPTIONS, openOption } from "../settings";
 import { connLine, type ConnTone } from "./model";
@@ -47,6 +49,8 @@ export function HubStatus({ hub }: { hub: HubState }) {
   const own = machines?.filter((m) => m.machine.cloud !== true);
   const cloud = (machines?.length ?? 0) - (own?.length ?? 0);
   const down = own?.filter((m) => m.machine.status !== "online").length ?? 0;
+  const online = `${String((own?.length ?? 0) - down)} of ${String(own?.length ?? 0)} online${cloud === 0 ? "" : ` · ${String(cloud)} cloud`}`;
+  const admin = useSettledAdministers();
   const [open, setOpen] = useState(false);
   // Controlled, so its content never changes (an empty one would drop the Tooltip and remount the chip): it just
   // stays shut while the popover is open.
@@ -98,17 +102,21 @@ export function HubStatus({ hub }: { hub: HubState }) {
                 <>
                   <dt>Machines</dt>
                   <dd>
-                    <button
-                      type="button"
-                      className={h.factLink}
-                      data-opens="machines"
-                      onClick={() => {
-                        setOpen(false);
-                        navigate({ id: "settings", tab: "hub.machines", at: self.id });
-                      }}
-                    >
-                      {`${String((own?.length ?? 0) - down)} of ${String(own?.length ?? 0)} online${cloud === 0 ? "" : ` · ${String(cloud)} cloud`}`}
-                    </button>
+                    {admin ? (
+                      <button
+                        type="button"
+                        className={h.factLink}
+                        data-opens="machines"
+                        onClick={() => {
+                          setOpen(false);
+                          navigate({ id: "settings", tab: "hub.machines", at: self.id });
+                        }}
+                      >
+                        {online}
+                      </button>
+                    ) : (
+                      online
+                    )}
                   </dd>
                 </>
               )}
@@ -162,7 +170,11 @@ export function HubStatus({ hub }: { hub: HubState }) {
           </div>
         </PopoverContent>
       </Popover>
-      {down > 0 ? (
+      {down > 0 && !admin ? (
+        <span className={h.down} data-down>
+          {`${String(down)} down`}
+        </span>
+      ) : down > 0 ? (
         <button
           type="button"
           className={h.down}

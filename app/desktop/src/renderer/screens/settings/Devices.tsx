@@ -19,14 +19,14 @@ import { PagePart } from "./parts";
 import a from "../admin/admin.module.css";
 import s from "./settings.module.css";
 
-/** Each paired hub's part: with one hub, just Your devices. */
+/** Each paired hub's part: with one hub, just the list and Pair a phone, under the page's own title. */
 export function DevicesSettings() {
   const hubs = useHubs();
   return (
     <>
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
-          <YourDevices title={hubs.length === 1 ? "Your devices" : `On ${hub.label}`} reveal={hubs.length === 1 ? "devices.pair" : `devices.${hub.id}`} />
+          <YourDevices title={hubs.length === 1 ? "Your devices" : `On ${hub.label}`} reveal={hubs.length === 1 ? "devices.pair" : `devices.${hub.id}`} one={hubs.length === 1} />
         </HubScope>
       ))}
     </>
@@ -38,7 +38,7 @@ type Pairing =
   | { readonly phase: "shown"; readonly out: PairCodeCreateOutput; readonly before: ReadonlySet<string> }
   | { readonly phase: "failed"; readonly error: string };
 
-function YourDevices({ title, reveal }: { title: string; reveal: string }) {
+function YourDevices({ title, reveal, one }: { title: string; reveal: string; one: boolean }) {
   const live = useLive();
   const read = usePeople();
   const call = useHubCall();
@@ -62,7 +62,8 @@ function YourDevices({ title, reveal }: { title: string; reveal: string }) {
     <PagePart
       title={title}
       reveal={reveal}
-      intro="Each of these acts as you on this hub, on every machine."
+      untitled={one}
+      intro={one ? undefined : "Each of these acts as you on this hub, on every machine."}
       aside={
         pairing === null ? (
           <Button icon={<Smartphone size={14} />} disabled={!live || read.data === undefined} onClick={pair}>

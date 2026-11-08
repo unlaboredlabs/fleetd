@@ -183,7 +183,7 @@ export const askLine = (reason: OffReason, kind: ScreenKind, admins: readonly st
   const on = reason.machine === undefined ? "" : ` on ${reason.machine.name}`;
   switch (reason.fix) {
     case "turn_on":
-      return `${ask} to turn them on in Settings › Hub › Machines › Screens.`;
+      return `${ask} to turn them on in Settings › Hub › Machines${reason.machine === undefined ? "" : ` › ${reason.machine.name}`}.`;
     case "update":
       return `${ask} to update fleetd${on}.`;
     case "roles":
@@ -203,7 +203,7 @@ export const fixLabel = (fix: OffFix): string | null => {
     case "update":
       return "Open updates";
     case "roles":
-      return "Open machine roles";
+      return "Open Machines";
     case "add":
       return "Add machine";
     case "none":
@@ -212,7 +212,7 @@ export const fixLabel = (fix: OffFix): string | null => {
 };
 
 /** Where an admin's action that isn't Turn on goes: Settings › Hub › Updates for an update, else the option it reveals
- * on Settings › Hub › Machines. */
+ * on Settings › Hub › Machines (a role, on the machine's own page when the reason names one). */
 export const fixPlace = (fix: OffFix): { readonly tab: "hub.machines" | "hub.updates"; readonly reveal: string | null } =>
   fix === "update"
     ? { tab: "hub.updates", reveal: null }

@@ -1353,6 +1353,7 @@ impl SessionService {
                 let root = self.project_root(&project_id)?;
                 let dir = self.worktrees_dir(&project_id);
                 let held = self.worktrees_of(&project_id)?;
+                let kept = super::browser::chrome::kept_dir(&self.inner.config.home, &project_id);
                 let worktrees = blocking(move || {
                     let base_branch = worktree::has_commit(&root)
                         .then(|| worktree::default_branch(&root))
@@ -1372,6 +1373,7 @@ impl SessionService {
                         dir: dir.to_string_lossy().into_owned(),
                         base_branch,
                         worktrees,
+                        signins_kept: Some(kept.is_some_and(|d| d.is_dir())),
                     }
                 })
                 .await;
@@ -2418,7 +2420,7 @@ impl SessionService {
                 let home = self.inner.config.home.clone();
                 let (n, slots) = blocking(move || {
                     (
-                        super::load::build_jobs_here(&home),
+                        super::load::build_jobs_here(),
                         super::build_slots::slots_here(&home),
                     )
                 })
@@ -3131,10 +3133,7 @@ impl SessionService {
                 );
             }
         }
-        env.extend(share::jobs_env(
-            &env,
-            super::load::build_jobs_here(&config.home),
-        ));
+        env.extend(share::jobs_env(&env, super::load::build_jobs_here()));
         // Its cargo builds take turns for the machine's build slots.
         super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
         let scratch = share::scratch_dir(&config.home, id);

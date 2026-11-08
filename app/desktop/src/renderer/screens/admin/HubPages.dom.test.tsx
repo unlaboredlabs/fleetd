@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Settings' Hub group (D211): People, Machines, Updates, Every project (Profiles, Tools & skills, Instructions & memory,
-// Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude and
+// Prompts), Hub accounts, and Setup, always; Machines a list with Add machine and recordings, each machine's role,
+// screens and caps on its own page; Claude and
 // GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
 // servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
 // hub-wide. A project's pages keep its own: its Prompts never offer a hub-wide save, and its Instructions are a
@@ -172,12 +173,12 @@ it("nests Every project's pages, Setup last saying how many required steps are l
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).not.toBeNull();
 });
 
-it("puts machine roles, screens and caps on Machines, and the hub's Claude and GitHub on Hub accounts", async () => {
+it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub on Hub accounts", async () => {
   window.location.hash = "#/settings/hub/machines";
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
-  expect(host.querySelector("#machine-roles")).not.toBeNull();
-  expect(parts()).toEqual(["hub.screens", "hub.caps"]);
+  expect(host.querySelector("#machines-list")).not.toBeNull();
+  expect(parts()).toEqual(["hub.recordings"]);
 
   await click(button("Hub accounts", nav() ?? document));
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
@@ -192,8 +193,9 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
-  expect(parts()).toEqual(["hub.instructions", "hub.shared-memory"]);
-  expect(host.querySelector("#machine-roles")).toBeNull();
+  // The old shared memory shows only while it has text: this hub's has none.
+  expect(parts()).toEqual(["hub.instructions"]);
+  expect(host.querySelector("#machines-list")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");
   await type(text, "Write tests first.");

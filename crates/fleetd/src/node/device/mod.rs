@@ -54,11 +54,8 @@ pub struct DeviceConfig {
     /// run only while /dev/kvm opens read-write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// Emulators kept booted for the next sessions. Absent: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pool: Option<usize>,
-    /// A session no tool call touched for this long is ended. Absent: 30.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A session no tool call touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30.
+    #[serde(skip)]
     pub idle_minutes: Option<u64>,
 }
 
@@ -318,7 +315,7 @@ impl Devices {
 
     /// Makes the pool and starts filling it.
     pub fn ready(&self, sdk: sdk::Sdk) {
-        let pool = Pool::new(sdk, self.config.pool.unwrap_or(1));
+        let pool = Pool::new(sdk, 1);
         pool.refill();
         *lock(&self.install) = Install::Ready(pool);
     }

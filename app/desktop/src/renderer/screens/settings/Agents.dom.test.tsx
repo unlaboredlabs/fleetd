@@ -98,7 +98,7 @@ it("says a project's own max is its own, and goes back to the default", async ()
 it("goes back to the default on Undo of a change from it", async () => {
   vi.useFakeTimers();
   await render(billing);
-  expect(host.textContent).toContain("Follows the default: the whole fleet's cap.");
+  expect(host.textContent).toContain("Follows the default: the hub's fleet cap.");
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Use the default")).toBe(false);
   const thumb = host.querySelector<HTMLElement>("[role='slider']");
   if (thumb === null) throw new Error("no slider");

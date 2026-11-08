@@ -188,7 +188,8 @@ it("names the hub it manages, and lists to switch only the hubs this person admi
   expect(host.querySelector('[data-screen="settings.hub.people"]')).not.toBeNull();
   expect(managing()?.dataset["managing"]).toBe("a1b2");
   expect(managing()?.textContent).toContain("Acme");
-  expect(managing()?.textContent).toContain("https://hub.acme.example");
+  // Its name and colour only: no raw address.
+  expect(managing()?.textContent).not.toContain("https://hub.acme.example");
   // Club, where they are a member, is no hub to manage.
   expect(choices()).toEqual([
     ["hub", false],

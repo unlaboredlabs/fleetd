@@ -1,5 +1,5 @@
 // Max agents: how many of a project's agents may run at once, how many a machine runs, and the fleet-wide cap above
-// every project. The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
+// every project, which only the CLI sets (unset, every machine's cap added up). The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
 // them. Pure, so it is tested without a screen.
 import type { ProjectRef, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
 
@@ -53,7 +53,7 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
 export function sourceLine(slots: SlotState, a: ProjectAgents): string {
   if (a.own) return `Set for this project. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
-  return fleet ? "Follows the default: the whole fleet's cap." : "Follows the default: its machine's cap, within the whole fleet's.";
+  return fleet ? "Follows the default: the hub's fleet cap." : "Follows the default: its machine's cap.";
 }
 
 /**
@@ -140,20 +140,15 @@ export function extrasLine(over: number, paused: number): string | null {
   return over === 1 ? "1 agent over it finishes its current work first." : `${over} agents over it finish their current work first.`;
 }
 
-/** The fleet slider's top: room to raise it, and never below a cap already set higher (by the CLI). */
+/** The sliders' top without a fleet cap: room to raise past what the machines fit, never below the sum already. */
 export const fleetTop = (cap: number): number => Math.max(64, cap);
 
 /**
- * A fleet cap below a project's own max holds that project to the fleet cap; said while the slider moves, and after.
- * `name` gives a project's title.
+ * A fleet cap the CLI (or an older app) saved below what the machines fit together, which holds every project under
+ * it: said on Hub › Machines, since the app no longer sets it. Null when none is set, or it holds nothing back.
  */
-export function fleetWarning(slots: SlotState, cap: number, name: (r: ProjectRef) => string): string | null {
-  // A project on the default follows the fleet cap, so only an own max is held below. A hub from before `own` sends
-  // none, and its rows are maxes set, or busy projects at their machine's cap.
-  const over = slots.perProject.filter((p) => p.own !== false && p.maxAgents > cap);
-  const [first] = over;
-  if (first === undefined) return null;
-  if (over.length === 1) return `Below ${name(first.projectRef)}'s max of ${first.maxAgents}: it runs at most ${cap} until you raise this.`;
-  const who = over.length === 2 ? over.map((p) => name(p.projectRef)).join(" and ") : `${over.length} projects`;
-  return `Below the max of ${who}: they run at most ${cap} until you raise this.`;
-}
+export const fleetCapLine = (slots: SlotState): string | null => {
+  const sum = (slots.perMachine ?? []).reduce((n, m) => n + m.cap, 0);
+  if (slots.fleetCap === undefined || (sum > 0 && slots.fleetCap >= sum)) return null;
+  return `All machines together run at most ${slots.fleetCap} agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.`;
+};

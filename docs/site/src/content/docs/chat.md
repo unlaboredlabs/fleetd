@@ -122,15 +122,14 @@ can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) 
 of a project with no repo talks in a voice of its own, a personal assistant's rather than an engineer's
 (`assistant.voice`).
 
-An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
-[`chat_image`](/docs/reference/agent-tools#chat_image), which reads only a png, jpeg, webp or gif file (checked by its
-bytes, at most 25 MiB) inside the agent's own worktree or working directory, never anywhere else on the machine. The
-image belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.
+An image or file can be one the lead or its agents made: a screenshot of a UI change, a PDF, a CSV, a document. They
+upload it with [`chat_file`](/docs/reference/agent-tools#chat_file), which reads it only from inside the agent's own
+worktree or working directory, never anywhere else on the machine, at most 25 MiB, its bytes checked against what its
+name says. It belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.
 
-A file works the same way with [`chat_file`](/docs/reference/agent-tools#chat_file): a PDF, a CSV, a document or any
-other type a chat takes, its bytes checked against what its name says. It shows as a card with its name, kind and
-size. **Open** opens it in your computer's app for that kind, and the download button saves it where you pick; on the
-phone, tapping it opens the share sheet (Save to Files, or another app). A file you attached shows as the same card.
+An image (png, jpeg, webp or gif) shows inline. Anything else shows as a card with its name, kind and size. **Open**
+opens it in your computer's app for that kind, and the download button saves it where you pick; on the phone, tapping
+it opens the share sheet (Save to Files, or another app). A file you attached shows as the same card.
 
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
 nothing (the panel's History › [What happened](/docs/desktop-app#activity) shows those). It writes when you must act or decide, when something you asked about

@@ -60,7 +60,7 @@ export function AdminGithub() {
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
   const intro =
-    "The hub works on GitHub as an App of its own: the merge train's rebases, statuses and merges, and the PR pages. You create it here once, with nothing to paste; GitHub hands its keys straight to the hub.";
+    "The hub's own GitHub App, which merges PRs and shows their pages. Create it here once; there's nothing to paste.";
   if (!live || read.data === undefined) {
     const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
@@ -167,7 +167,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
       {removing ? (
         <ConfirmRemove
           title={`Remove ${app.name} from the hub?`}
-          description="The hub forgets the App and its keys, and its gh goes back to the machine's own login. GitHub keeps the App until you delete it there."
+          description="The hub forgets the App and its keys, and goes back to each machine's own GitHub login. GitHub keeps the App until you delete it there."
           action="Remove"
           onRemove={() =>
             hubCall("github_app_remove", {}).then((out) => {

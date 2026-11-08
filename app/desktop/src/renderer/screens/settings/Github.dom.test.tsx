@@ -124,7 +124,7 @@ describe("Settings › Your accounts › GitHub", () => {
   it("asks to connect before a first PR, and connects through main", async () => {
     await render();
     expect(document.body.textContent).toContain("Not connected");
-    expect(document.body.textContent).toContain("Connect before your first PR");
+    expect(document.body.textContent).toContain("Connect before your first pull request.");
     await click(button("Connect GitHub"));
     expect(connects).toBe(1);
     expect(document.body.textContent).toContain("Connected as sam-rivera");

@@ -95,12 +95,6 @@
 }
 
 /* A machine's checklist: one item per row between hairlines, a still glyph on the title's first line. */
-.checklistHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  max-width: 720px;
-}
 .checklist {
   display: flex;
   flex-direction: column;

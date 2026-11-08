@@ -917,10 +917,6 @@ input!(TimeInsightsInput {
 });
 output!(TimeInsightsOutput { insights: List<Insight, 0, 30> });
 
-// time_retention_set: how many days the hub keeps spans. Roll-ups and critical paths stay 400 days.
-input!(TimeRetentionSetInput { retention_days: Int<1, 365> });
-output!(TimeRetentionSetOutput { retention_days: Int<1, 365> });
-
 // metrics_get: the factory metrics of one project's repos, or the whole fleet's deduped by repo: merged per day,
 // order to merged, the person's minutes per merged PR and the share through fleetd, by calendar day in `tz`.
 input!(MetricsGetInput {
@@ -947,14 +943,6 @@ output!(MetricsGetOutput {
     repos: Option<List<crate::metrics::MetricsRepoRow, 0, 200>>,
     coverage: crate::metrics::MetricsCoverage,
     compare: Option<crate::metrics::MetricsComparePeriod>,
-});
-
-// metrics_retention_set: how many days the hub keeps landed changes and the person's touches.
-input!(MetricsRetentionSetInput {
-    retention_days: crate::metrics::MetricsRetentionDays
-});
-output!(MetricsRetentionSetOutput {
-    retention_days: crate::metrics::MetricsRetentionDays
 });
 
 // thread_window: the items and messages around one item of a session, oldest first (for "click to transcript").
@@ -1571,9 +1559,9 @@ input!(NaviApprovalsSetInput {
     machine_id: MachineId,
     project_id: ProjectId,
     mode: crate::navi::NaviApprovalMode,
-    /// The checker's model; absent: the hub's default.
+    /// Ignored: the checker always runs on the hub's default model. Taken so an older app's call still works.
     model: Option<ModelName>,
-    /// The checker's effort; absent: the hub's default.
+    /// Ignored, as `model` is.
     effort: Option<Effort>,
 });
 output!(NaviApprovalsSetOutput {
@@ -1617,6 +1605,9 @@ pub struct ProjectSettings {
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
     pub worktrees_unknown: Option<String>,
+    /// Whether its machine keeps a browser profile of its sign-ins now, so Forget sign-ins has something to forget.
+    /// Absent when its machine can't say (offline, or an older node).
+    pub signins_kept: Option<bool>,
 }
 output!(ProjectSettingsGetOutput {
     settings: ProjectSettings
@@ -4031,9 +4022,7 @@ tools! {
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
-    time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
     metrics_get => MetricsGet, Read, MetricsGetInput, MetricsGetOutput;
-    metrics_retention_set => MetricsRetentionSet, Admin, MetricsRetentionSetInput, MetricsRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-// Hub › Machines' caps: each machine's number and where it comes from, the slider that sets it and the way
-// back to auto; and Settings → Projects → Agents' project slider past its machine's cap, which says the machine holds it, with the
-// way to Hub › Machines for an owner or admin and nothing more for anyone else.
+// A machine's cap, on its page in Hub › Machines: its number and where it comes from, the slider that sets it and the
+// way back to auto; the note a fleet cap the CLI set gets there; and Settings → Projects → Agents' project slider past
+// its machine's cap, which says the machine holds it, with the way to that machine's page for an owner or admin and
+// nothing more for anyone else.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AgentsSettings, HubCaps } from "./Agents";
+import { AgentsSettings, FleetCapNote, MachineCap } from "./Agents";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Settings search reads the platform when it loads, before any test runs.
@@ -83,10 +84,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** `page`: Hub › Machines' caps, or storefront's Settings → Projects › Agents. `admin`: what hub_info says of the key. */
-const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
+/** `page`: each machine's cap as its page shows it, or storefront's Settings → Projects › Agents. `admin`: what hub_info
+ * says of the key. */
+const render = async (page: "hub" | "settings" = "hub", admin?: boolean, start: SlotState = slots) => {
   let listener: (frame: HubFrame) => void = () => undefined;
-  let now = slots;
+  let now = start;
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "cap_set") {
@@ -109,7 +111,18 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          {page === "hub" ? <HubCaps /> : <AgentsSettings route={{ tab: "agents", prompt: null, for: "devbox/storefront", view: "edit" }} />}
+          {page === "hub" ? (
+            <>
+              <FleetCapNote />
+              {["devbox", "builder"].map((id) => (
+                <section key={id} aria-label={id}>
+                  <MachineCap machineId={id} />
+                </section>
+              ))}
+            </>
+          ) : (
+            <AgentsSettings route={{ tab: "agents", prompt: null, for: "devbox/storefront", view: "edit" }} />
+          )}
         </DataProvider>
       </UiProvider>,
     );
@@ -117,7 +130,7 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener(snapshot);
+    listener({ ...snapshot, snapshot: { ...snapshot.snapshot, slots: start } });
     await Promise.resolve();
   });
 };
@@ -140,8 +153,6 @@ const click = (el: HTMLElement) =>
 
 it("shows each machine's number, where it comes from, and a slider to change it", async () => {
   await render();
-  const machines = host.querySelector("section[aria-labelledby='agents-machines']");
-  expect(machines?.textContent).toContain("Machines");
   const devbox = section("devbox");
   expect(devbox.querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("22");
   expect(devbox.querySelector("[role='slider']")?.getAttribute("aria-valuemax")).toBe("50");
@@ -151,6 +162,10 @@ it("shows each machine's number, where it comes from, and a slider to change it"
   const builder = section("builder");
   expect(builder.querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("40");
   expect(builder.textContent).toContain("Set by you. Auto would be 28: 28 of 32 CPUs.");
+  expect(builder.textContent).toContain("Agents on builder at once");
+  // No whole-fleet slider; the fleet cap of 50, below the machines' 62, is said with how to change it.
+  expect(host.textContent).not.toContain("Whole fleet");
+  expect(host.querySelector("[data-fleet-cap]")?.textContent).toContain("All machines together run at most 50 agents");
 
   await click(button(builder, "Use auto"));
   expect(calls).toEqual([{ tool: "cap_set", input: { machine: { machineId: "builder", auto: true } } }]);
@@ -183,16 +198,26 @@ it("takes a project's slider to the fleet cap and says when its machine holds it
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
   expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this project runs 22 until an admin raises devbox.");
   // A member sees the line only: no raise, no fleet or machine caps, nothing about admin keys.
-  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("Machine caps in Hub › Machines");
-  expect(host.querySelector("section[aria-labelledby='agents-fleet-label']")).toBeNull();
-  expect(host.querySelector("section[aria-labelledby='agents-machines']")).toBeNull();
+  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("devbox's max in Hub › Machines");
   expect(host.textContent).not.toContain("admin key");
   expect(calls).toEqual([]);
 });
 
-it("gives an owner or admin the way to the machine caps on Hub › Machines", async () => {
+it("gives an owner or admin the way to the machine's own page, where its cap is", async () => {
   await render("settings", true);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  await click(button(section("Max agents"), "Machine caps in Hub › Machines"));
-  expect(window.location.hash).toBe("#/settings/hub/machines");
+  await click(button(section("Max agents"), "devbox's max in Hub › Machines"));
+  expect(window.location.hash).toBe("#/settings/hub/machines/devbox");
+});
+
+it("says a fleet cap the CLI set below the machines' total, and nothing without one", async () => {
+  await render("hub", true, { ...slots, cap: 30, fleetCap: 30 });
+  expect(host.querySelector("[data-fleet-cap]")?.textContent).toBe(
+    "All machines together run at most 30 agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.",
+  );
+  act(() => root.unmount());
+  root = createRoot(host);
+  const { fleetCap: _, ...none } = slots;
+  await render("hub", true, { ...none, cap: 62 });
+  expect(host.querySelector("[data-fleet-cap]")).toBeNull();
 });

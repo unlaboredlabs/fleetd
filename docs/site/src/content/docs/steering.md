@@ -41,7 +41,7 @@ do next.
 
 ## Receipts {#receipts}
 
-Each steer to an agent (and each `fleetd steer` to an order's lead) gets a receipt. In the app it shows under the
+Each steer to an agent gets a receipt. In the app it shows under the
 agent's box; from a terminal it carries the steer's id, such as `S12`. A message to the lead in its chat has its
 own line instead (see [Chat](/docs/chat#steer)).
 
@@ -95,15 +95,14 @@ Once delivered, a steer can't be taken back. Send another one that says what cha
    (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
-2. Steer one agent (`T88`), or the lead working on `W41`. To reach the lead in its chat, use
-   `fleetd chat <project> "…" --now` instead: that is the same message ⌘Enter sends.
+2. Steer one agent (`T88`). To reach the lead, use `fleetd chat <machine>/<project> "…" --now`: that is the same
+   message ⌘Enter sends in its chat.
 
    ```sh
-   fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/human.key
    fleetd steer T88 "stop: the schema changed, rebase first" --now --wait --key-file ~/.fleetd/human.key
    ```
 
-3. List recent steers, or take one back:
+3. List an order's (`W41`) or one agent's recent steers, or take one back:
 
    ```sh
    fleetd steers W41 --key-file ~/.fleetd/human.key

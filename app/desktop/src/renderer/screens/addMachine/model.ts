@@ -47,8 +47,8 @@ export const hereLine = (here: Here | undefined): string => {
   }
   if (here.joined) return `${here.machineId} is a machine of this hub already: adding it again repairs it.`;
   return here.kind === "hub"
-    ? `${here.machineId}, the hub's own machine: the hub sets up its node with its own fleetd.`
-    : `${here.machineId}: downloads the hub's fleetd for this computer, checks it and runs its node as a user service.`;
+    ? `${here.machineId}, the hub's own computer.`
+    : `${here.machineId}: installs fleetd here and joins the hub.`;
 };
 
 const SOURCE: Record<string, string> = {

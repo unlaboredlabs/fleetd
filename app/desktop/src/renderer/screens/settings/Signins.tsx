@@ -1,6 +1,7 @@
 // A project's sign-ins (its Projects page): its browser keeps the sites it signed into between sessions, in a browser
 // profile of its own on its machine, never shared with another project. Forget sign-ins is project_signins_forget,
-// which ends its open browser session and deletes that profile; deleting the project deletes it too. Its skills
+// which ends its open browser session and deletes that profile; deleting the project deletes it too. It is offered
+// only while its machine says it keeps one (project_settings_get's signinsKept), or can't say. Its skills
 // (Skills) are in its panel; the page links there.
 import { useState } from "react";
 import { Button, Dialog, Text } from "../../ui";
@@ -18,7 +19,7 @@ type Ref = { machineId: string; projectId: string };
 /** Ending a browser session that is open, then deleting its profile, can take a while. */
 const FORGET_MS = 60_000;
 
-export function SigninsSetting({ projectRef }: { projectRef: Ref }) {
+export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: boolean | undefined }) {
   const live = useLive();
   const machine = useData((d) => d.machines[projectRef.machineId]?.name) ?? projectRef.machineId;
   const [asking, setAsking] = useState(false);
@@ -27,20 +28,28 @@ export function SigninsSetting({ projectRef }: { projectRef: Ref }) {
     <Setting
       reveal="projects.signins"
       label="Sign-ins"
-      help={`Its browser stays signed in to the sites it signed into, from one session to the next. Their cookies and site data are kept on ${machine}, for this project alone; its history, cache and passwords are not kept.`}
+      help={`Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.`}
     >
-      <div className={s.inline}>
-        <Button
-          variant="danger"
-          disabled={!live}
-          onClick={() => {
-            setDone(false);
-            setAsking(true);
-          }}
-        >
-          Forget sign-ins…
-        </Button>
-      </div>
+      {kept === false ? (
+        done ? null : (
+          <Text size="sm" tone="quiet">
+            No sign-ins kept yet.
+          </Text>
+        )
+      ) : (
+        <div className={s.inline}>
+          <Button
+            variant="danger"
+            disabled={!live}
+            onClick={() => {
+              setDone(false);
+              setAsking(true);
+            }}
+          >
+            Forget sign-ins…
+          </Button>
+        </div>
+      )}
       {done ? (
         <div role="status">
           <Text size="sm" tone="quiet">

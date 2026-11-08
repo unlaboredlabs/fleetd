@@ -588,10 +588,9 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
         cmd_roots: None,
         claude_config_dir: None,
         min_free_gb: None,
-        mem_per_agent_gb: None,
-        disk_per_agent_gb: None,
         warm_builds: None,
         build_slots: None,
+        screen_idle_minutes: None,
         enrolled: true,
         browser: None,
         device: None,
@@ -617,11 +616,13 @@ fn only_agents_mac_makes_the_node_the_agents_mac() {
 /// the iOS screen kind could be turned off) is ignored, and its other settings kept. Elsewhere `enabled` stands.
 #[test]
 fn the_agents_mac_ignores_a_legacy_ios_off() {
-    let off: crate::node::device::ios::IosConfig =
-        serde_json::from_value(serde_json::json!({ "enabled": false, "pool": 2 })).unwrap();
+    let off: crate::node::device::ios::IosConfig = serde_json::from_value(
+        serde_json::json!({ "enabled": false, "deviceType": "iPhone 17 Pro" }),
+    )
+    .unwrap();
     let on = super::ios_config(Some(off.clone()), true);
     assert_eq!(on.enabled, Some(true));
-    assert_eq!(on.pool, Some(2));
+    assert_eq!(on.device_type.as_deref(), Some("iPhone 17 Pro"));
     assert_eq!(super::ios_config(None, true).enabled, Some(true));
     assert_eq!(super::ios_config(Some(off), false).enabled, Some(false));
     assert_eq!(super::ios_config(None, false).enabled, None);

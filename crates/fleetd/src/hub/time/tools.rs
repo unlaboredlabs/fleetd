@@ -1,4 +1,4 @@
-//! `time_spans`, `time_breakdown`, `time_insights`, `time_retention_set` and `thread_window`. Reads are bounded:
+//! `time_spans`, `time_breakdown`, `time_insights` and `thread_window`. Reads are bounded:
 //! at most [`MAX_ROWS`] spans per period are loaded, and a read that hits the bound says so in coverage.
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -8,8 +8,7 @@ use fleetd_contracts::effort::{PROFILES_MAX, ProfileName};
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::mcp::{
     ErrorCode, ThreadWindowInput, ThreadWindowOutput, TimeBreakdownInput, TimeBreakdownOutput,
-    TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput,
-    TimeSpansInput, TimeSpansOutput,
+    TimeInsightsInput, TimeInsightsOutput, TimeSpansInput, TimeSpansOutput,
 };
 use fleetd_contracts::prim::{Count, Int, List, Text};
 use fleetd_contracts::time::{
@@ -22,9 +21,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::model::{PathInput, Row, RuleInput, is_detail};
 use super::store::{self, Filter, Meta};
 use super::{parse_ms, path, rules};
-use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows, allows_everywhere, require,
-};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
 use crate::hub::store::{StoreError, iso_ms};
 
 /// Spans loaded per period for a breakdown or the rules.
@@ -36,7 +33,6 @@ pub fn register(tools: &mut Registry) {
     tools.add("time_spans", time_spans);
     tools.add("time_breakdown", time_breakdown);
     tools.add("time_insights", time_insights);
-    tools.add("time_retention_set", time_retention_set);
     tools.add("thread_window", thread_window);
 }
 
@@ -1287,30 +1283,6 @@ async fn time_insights(
         next: Some("time_spans with rule lists every span a finding links to.".into()),
         truncated: None,
         insights: List::unchecked(insights.into_iter().take(rules::MAX_INSIGHTS).collect()),
-    })
-}
-
-async fn time_retention_set(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: TimeRetentionSetInput,
-) -> Result<TimeRetentionSetOutput, ToolError> {
-    // Retention prunes every machine's spans, so Admin on one machine is not enough.
-    if !allows_everywhere(&caller, Role::Admin) {
-        return Err(ToolError::new(
-            ErrorCode::Forbidden,
-            "Span retention is fleet-wide: it needs Admin on every machine.",
-        )
-        .with_fix(admin_everywhere_fix(&caller)));
-    }
-    let days = input.retention_days.get();
-    hub.db.transaction(|c| store::set_retention_days(c, days))?;
-    Ok(TimeRetentionSetOutput {
-        retention_days: input.retention_days,
-        next: Some(
-            "Spans older than this go at the next hourly prune; roll-ups stay 400 days.".into(),
-        ),
-        truncated: None,
     })
 }
 

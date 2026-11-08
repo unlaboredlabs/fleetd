@@ -199,7 +199,7 @@ it("shows Settings' Hub group to an owner or admin, and to nobody else; the main
   }
 });
 
-it("lists the Hub group's pages, Every project's nested, and Setup only while a required step is left", async () => {
+it("lists the Hub group's pages, Every project's nested, and Setup always, saying how many required steps are left", async () => {
   setupLeft = 2;
   await render({ me: sam, admin: true }, "settings");
   const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
@@ -219,8 +219,8 @@ it("lists the Hub group's pages, Every project's nested, and Setup only while a 
   root = createRoot(host);
   setupLeft = 0;
   await render({ me: sam, admin: true }, "settings");
-  expect(rows()).not.toContain("Setup");
-  expect(rows().at(-1)).toBe("Hub accounts");
+  // Done: still listed, as a quiet row, since setup's own texts send people there.
+  expect(rows().at(-1)).toBe("Setup");
 });
 
 it("counts the required setup steps left on Settings' entry, opening it on Hub › Setup, and says nothing once none is", async () => {

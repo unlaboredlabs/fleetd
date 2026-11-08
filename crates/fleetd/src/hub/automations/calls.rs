@@ -1,4 +1,4 @@
-//! The lead's automation tools: create, list, update, pause and resume, delete, run now and the runs, scoped to the
+//! The lead's automation tools: create, list, update (pause and resume too), delete, run now and the runs, scoped to the
 //! caller's project by its session. The lead never sees a webhook secret: a person adds a webhook in the app, which
 //! shows its URL once. A task can make none of these (`tasks::policy`).
 //!
@@ -32,6 +32,14 @@ pub const OPS: [&str; 8] = [
     "automation_runs",
     "automation_confirm",
 ];
+
+fn pause_next(paused: bool) -> &'static str {
+    if paused {
+        "Paused: its schedule and webhook start nothing until you resume it."
+    } else {
+        "Resumed: its schedule goes on from now."
+    }
+}
 
 /// `automation_confirm` as a Navi's session asks for it: always a card for the person (the node's `LEAD_ASK`, and
 /// the relay's person-only rule), never the checker's or YOLO's to answer.
@@ -146,7 +154,7 @@ pub async fn answer(
             };
             // What it runs, or when, changed: the person's go-ahead covers only what they saw.
             let confirmed = (c.prompt.is_some() || schedule.is_some()).then_some(false);
-            let (automation, _) = automations.update(
+            let (mut automation, _) = automations.update(
                 &c.automation_id,
                 Edit {
                     name: c.name,
@@ -157,9 +165,12 @@ pub async fn answer(
                 },
                 by,
             )?;
+            if let Some(paused) = c.paused {
+                automation = automations.pause(&c.automation_id, paused, by)?;
+            }
             LeadCallResult::AutomationUpdate(AutomationResult {
                 automation,
-                next: None,
+                next: c.paused.map(|p| pause_next(p).into()),
             })
         }
         // Its card, if the person approved it, already marked it: this call only says how it stands.
@@ -179,14 +190,9 @@ pub async fn answer(
         LeadCall::AutomationPause(c) => {
             automations.own(r, &c.automation_id)?;
             let automation = automations.pause(&c.automation_id, c.paused, by)?;
-            let next = if c.paused {
-                "Paused: its schedule and webhook start nothing until you resume it."
-            } else {
-                "Resumed: its schedule goes on from now."
-            };
             LeadCallResult::AutomationPause(AutomationResult {
                 automation,
-                next: Some(next.into()),
+                next: Some(pause_next(c.paused).into()),
             })
         }
         LeadCall::AutomationDelete(c) => {

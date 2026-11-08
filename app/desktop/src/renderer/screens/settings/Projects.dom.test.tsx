@@ -148,6 +148,8 @@ const render = async (page: "project" | "instructions" = "project") => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "automation_list") return Promise.resolve({ ok: true, output: { automations: [], memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin", lastRun: { at: AT, trigger: "schedule", state: "done", added: 2, replaced: 0, removed: 1 } } } });
+      if (tool === "memory_refresh_run") return Promise.resolve({ ok: true, output: { memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin" }, why: "Nothing new since the last refresh." } });
       if (tool === PROJECT_TOOLS.approvals && approvalsFail > 0) {
         approvalsFail -= 1;
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${PROJECT_TOOLS.approvals}: no approvals row for project p1 on devbox` } });
@@ -250,13 +252,13 @@ const dialog = () => {
 };
 
 describe("Settings → Projects", () => {
-  it("shows a secret by its fingerprint only, and where worktrees go", async () => {
+  it("shows a secret by its fingerprint only, and no read-only Worktrees row", async () => {
     await render();
     const text = document.body.textContent;
     expect(text).toContain("https://staging.example");
     expect(text).toContain("secret · 5ec2e7a1");
-    expect(text).toContain("/home/w/.fleetd/node/worktrees/p1");
-    expect(text).toContain("2 there now, 1 with uncommitted changes");
+    expect(text).not.toContain("2 there now");
+    expect(document.querySelector('[aria-label="Worktrees"]')).toBeNull();
   });
 
   it("sends a new secret only through main's sealing, never as a hub call", async () => {
@@ -314,6 +316,12 @@ describe("Settings → Projects", () => {
     const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label, div")?.textContent.includes("Refresh memory every night"));
     if (toggle === undefined) throw new Error("no memory switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
+    // Its hour and last run, and Run now, are here too: Automations no longer lists it.
+    expect(document.body.textContent).toContain("Every night at 04:00 (Europe/Berlin)");
+    expect(document.body.textContent).toContain("done, 2 added, 1 removed");
+    await click(button("Run now"));
+    expect(calls.find((c) => c.tool === "memory_refresh_run")?.input).toEqual({ projectRef: { machineId: "devbox", projectId: "p1" } });
+    expect(document.body.textContent).toContain("Not run: Nothing new since the last refresh.");
     await click(toggle);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", memoryRefresh: false });
@@ -410,8 +418,16 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true, removeFolder: true });
   });
 
+  it("offers no Forget sign-ins where its machine keeps none", async () => {
+    answers = [{ ...settings, signinsKept: false }];
+    await render();
+    expect(document.body.textContent).toContain("No sign-ins kept yet.");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
+  });
+
   it("forgets a project's sign-ins after asking, a project of code's too", async () => {
     repos = [web];
+    answers = [{ ...settings, signinsKept: true }];
     await render();
     expect(document.body.textContent).toContain("stays signed in to the sites it signed into");
     await click(button("Forget sign-ins…"));
@@ -439,7 +455,10 @@ describe("Settings → Projects", () => {
     await settle();
     const part = document.querySelector('section[aria-label="Approvals"]');
     expect(part?.textContent).toContain("Checker decides");
-    expect(part?.textContent).toContain("Sonnet 5.5 · medium effort (the default)");
+    // The checker runs on the hub's default: no model or effort to pick here.
+    expect(part?.querySelector('[aria-label="Checker model"]')).toBeNull();
+    expect(part?.textContent).not.toContain("effort");
+    expect(part?.textContent).toContain("It sees the action, never the mail or pages the lead read.");
     expect(part?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.closest("label")?.textContent).toContain("Checker decides");
     const log = document.querySelector('ul[aria-label="Ran without asking"]');
     expect(log?.querySelectorAll("li")).toHaveLength(2);
@@ -582,7 +601,9 @@ describe("Settings → Projects → Repos", () => {
     expect(text).not.toContain("github.com");
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
-    expect(text).toContain("Uses the default: pnpm install");
+    // Its setup is the project's, shown once, below: the row doesn't repeat it, and there is no "default" to explain.
+    expect(text).not.toContain("pnpm install");
+    expect(section().querySelector("#default-setup")?.textContent).toBe("Setup");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
 
@@ -595,14 +616,15 @@ describe("Settings → Projects → Repos", () => {
     };
     await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
-    expect(row("web")).toContain("Uses the default: pnpm install");
+    expect(row("web")).not.toContain("pnpm install");
     const text = row("api");
     expect(text).toContain("team/api on gitlab.example.com");
     expect(text).toContain("Not known yet");
     // Its checkout isn't a listed project: shown by its id, on its machine.
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
-    expect(text).not.toContain("Uses the default");
+    // One repo has its own, so the project's is the default for the rest.
+    expect(section().querySelector("#default-setup")?.textContent).toBe("Default setup");
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {
