@@ -247,7 +247,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
 - [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
 - [x] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
-- [ ] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
+- [x] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
 
 ## hub-train+github
 

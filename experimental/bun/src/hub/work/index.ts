@@ -36,7 +36,7 @@ import { addDeclared, matcherKeys, matcherScope, matchesIn } from "./check.ts";
 import { bindFromRoot } from "./bind.ts";
 import { intent } from "./intent.ts";
 import * as elsewhere from "./elsewhere.ts";
-import type { Landing } from "./landings.ts";
+import { type Landing, landingEvent } from "./landings.ts";
 import * as matcher from "./matcher.ts";
 import * as store from "./store.ts";
 import type { WorkScope } from "./store.ts";
@@ -114,6 +114,12 @@ function ended(claim: Claim, state: ClaimState, now: number, reason: string, lan
 }
 
 export class Work {
+  /**
+   * Told once per flip when git on a machine stops reaching GitHub, or reaches it again (the landing scanner's poll).
+   * The tasks area sets it to tell the agents running there (tasks/mod.rs `github_reach`); until then it logs.
+   */
+  onGithubReach: (machine: MachineId, reached: boolean) => Promise<void> | void = (machine, reached) =>
+    console.info(`work: git on ${machine} ${reached ? "reaches GitHub again" : "can't reach GitHub"}`);
   /** The matcher, with a spawn's intent as it reads one, for the tasks area's duplicate check. */
   readonly matcher = { ...matcher, intent };
   private ports: WorkPorts;
@@ -525,22 +531,6 @@ export class Work {
       data,
     });
   }
-}
-
-/** What `work.landed` says of a landing. */
-export function landingEvent(l: Landing) {
-  return {
-    repoKey: l.repoKey,
-    base: l.base,
-    sha: l.sha,
-    route: l.route,
-    ...(l.prNumber !== undefined ? { prNumber: l.prNumber } : {}),
-    ...(l.headBranch !== undefined ? { headBranch: l.headBranch } : {}),
-    subject: l.subject,
-    claimIds: l.claimIds,
-    ...(l.changeId !== undefined ? { changeId: l.changeId } : {}),
-    ...(l.taskId !== undefined ? { taskId: l.taskId } : {}),
-  };
 }
 
 /** The hub's work ledger. */
