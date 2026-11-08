@@ -34,7 +34,7 @@ export function Badge({ count, muted = false, label, tone = "accent" }: { count?
   if (count === undefined) return <View style={[styles.dot, { backgroundColor: fill }]} accessibilityLabel={label ?? "Needs you"} />;
   return (
     <View style={[styles.badge, { backgroundColor: fill }]} accessibilityLabel={label ?? `${String(count)} waiting`}>
-      <Text style={[type.footnote, styles.badgeText]} maxFontSizeMultiplier={1.4}>
+      <Text style={[type.footnote, styles.badgeText, { color: fill === t.accentFill ? t.onAccent : "#FFFFFF" }]} maxFontSizeMultiplier={1.4}>
         {count > 99 ? "99+" : String(count)}
       </Text>
     </View>
@@ -47,5 +47,5 @@ const styles = StyleSheet.create({
   center: { textAlign: "center" },
   dot: { width: 12, height: 12, borderRadius: 6 },
   badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
-  badgeText: { color: "#FFFFFF", fontWeight: "600" },
+  badgeText: { fontWeight: "600" },
 });

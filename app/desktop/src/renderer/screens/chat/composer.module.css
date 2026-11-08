@@ -16,10 +16,10 @@
   border-radius: 18px;
   background: var(--raised);
 }
+/* Focused, its edge darkens to a control's (3:1, as the caret shows where typing goes): a neutral ring around the whole
+   box would weigh more than the words in it. */
 .box:has(> .input:focus-visible) {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  border-color: var(--control-border);
 }
 
 .input {

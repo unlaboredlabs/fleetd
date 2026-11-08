@@ -51,7 +51,7 @@ export function ListRow({
   /** A status dot's color, before the value: how a link is. */
   valueDot?: string | undefined;
   icon?: IconName;
-  /** The icon tile's color; the accent when unset. */
+  /** The icon tile's color; the deep accent when unset. */
   tint?: string | undefined;
   onPress?: () => void;
   chevron?: boolean;
@@ -66,7 +66,7 @@ export function ListRow({
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
       {icon === undefined ? null : (
-        <View style={[styles.tile, { backgroundColor: tint ?? t.accentFill }]}>
+        <View style={[styles.tile, { backgroundColor: tint ?? t.accentDeep }]}>
           <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
         </View>
       )}

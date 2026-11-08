@@ -528,7 +528,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 function Action({ label, icon, onPress, prominent = false, destructive = false, busy = false }: { label: string; icon?: "hand" | "handBack" | "close"; onPress?: () => void; prominent?: boolean; destructive?: boolean; busy?: boolean }) {
   const t = useTheme();
   const tint = prominent ? t.accentFill : destructive ? t.danger : undefined;
-  const ink = tint === undefined ? t.label : t.onAccent;
+  const ink = tint === undefined ? t.label : prominent ? t.onAccent : "#FFFFFF";
   return (
     <Glass interactive style={styles.action} {...(tint === undefined ? {} : { tint })}>
       <Pressable

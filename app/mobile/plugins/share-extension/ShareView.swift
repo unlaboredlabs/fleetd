@@ -21,6 +21,7 @@ struct ShareSheet: View {
               Button { model.send() } label: { Label("Send", systemImage: "arrow.up") }
                 .disabled(!model.canSend)
                 .tint(Color.accentFill)
+                .foregroundStyle(Color.onAccent)
             }
           }
         }
@@ -208,7 +209,7 @@ private struct RecentRow: View {
                   if selected == chat {
                     Image(systemName: "checkmark.circle.fill")
                       .font(.system(size: 20))
-                      .foregroundStyle(.white, Color.accentFill)
+                      .foregroundStyle(Color.onAccent, Color.accentFill)
                       .background(Circle().fill(Color(.systemBackground)).padding(-2))
                       .transition(.scale.combined(with: .opacity))
                   }
@@ -364,23 +365,24 @@ extension View {
   @ViewBuilder func prominent(_ on: Bool) -> some View {
     #if compiler(>=6.2)
     if #available(iOS 26.0, *) {
-      if on { buttonStyle(.glassProminent).tint(Color.accentFill) } else { buttonStyle(.glass) }
+      if on { buttonStyle(.glassProminent).tint(Color.accentFill).foregroundStyle(Color.onAccent) } else { buttonStyle(.glass) }
     } else if on {
-      buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill)
+      buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill).foregroundStyle(Color.onAccent)
     } else {
       buttonStyle(.bordered).buttonBorderShape(.capsule)
     }
     #else
-    if on { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill) } else { buttonStyle(.bordered).buttonBorderShape(.capsule) }
+    if on { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill).foregroundStyle(Color.onAccent) } else { buttonStyle(.bordered).buttonBorderShape(.capsule) }
     #endif
   }
 }
 
-/// The app's accent (src/theme.ts), the desktop app's blue rather than system blue: as text and icons, and as a fill
-/// under white, which dark mode deepens so white on it stays readable.
+/// The app's accent (src/theme.ts), a neutral one: near-black in light and near-white in dark, as text and icons and as
+/// a fill under onAccent, which flips to near-black in dark so it stays readable.
 extension Color {
-  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x79ABF5) : UIColor(hex: 0x2360C4) })
-  static let accentFill = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x2E69CC) : UIColor(hex: 0x2360C4) })
+  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF5F5F7) : UIColor(hex: 0x1D1D1F) })
+  static let accentFill = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0xF5F5F7) : UIColor(hex: 0x1D1D1F) })
+  static let onAccent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x1D1D1F) : .white })
 }
 
 private extension UIColor {
