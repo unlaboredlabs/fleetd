@@ -113,7 +113,8 @@ describe.skipIf(!RUST)("agent-mcp matches the Rust binary", () => {
   });
 
   test("tools.json is what the Rust binary lists and how it refuses", () => {
-    expect(snapshot(RUST!)).toEqual({ ...SNAPSHOT, rust: SNAPSHOT.rust });
+    // The version line names the binary, which can be any build of this tree: only the tools and probes must match.
+    expect({ ...snapshot(RUST!), rust: SNAPSHOT.rust }).toEqual(SNAPSHOT);
   });
 
   test("the protocol: initialize, ping, tools/list, a notification, an unknown method", async () => {
