@@ -88,3 +88,14 @@ test("the sweep reports a machine offline with running threads once per spell, a
   expect(offline[0]?.summary).toBe("lab-a is still offline with 1 running thread; their runs are not being watched");
   expect(offline[0]?.data).toEqual({ since: "2026-11-08T10:00:00.000Z", runningThreads: ["t1"], count: 1 });
 });
+
+test("the hub's watch reads the executor through a static import, so the compiled binary finds it", async () => {
+  const { hubWatch } = await import("../src/hub/watchdog/index.ts");
+  const { executors } = await import("../src/hub/executor/index.ts");
+  const { hub } = testHub();
+  const watch = hubWatch(hub);
+  // The executor answers, though it can't follow a thread's stream yet: nothing to watch, nothing thrown.
+  expect(typeof executors(hub).running).toBe("function");
+  expect(watch.running()).toEqual([]);
+  expect(await new Watchdog(600_000, watch).resubscribe()).toBe(0);
+});
