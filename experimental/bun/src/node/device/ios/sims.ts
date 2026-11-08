@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { ToolError } from "../../../shared/errors.ts";
 import { simBudget } from "../../mac_tool/protocol.ts";
 import { release, sessionDir } from "../agent_device.ts";
-import { blocksSimulators, type Simulators } from "./index.ts";
+import { blocksSimulators } from "../../agents_mac/checks.ts";
+import type { Simulators } from "./index.ts";
 import type { Lent } from "./pool.ts";
 import { iosEnv, setDir, writeConfig } from "./wrapper.ts";
 

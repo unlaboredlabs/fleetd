@@ -4,7 +4,8 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { binDir as androidBin, entry, LENT, sessionDir, VERSION } from "../src/node/device/agent_device.ts";
-import { blocksSimulators, healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
+import { blocksSimulators } from "../src/node/agents_mac/checks.ts";
+import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
 import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Refill, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
 import { MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
@@ -328,7 +329,7 @@ test("simulators wait for Developer Mode, and a Mac without them says so", async
     join(home.dir, "mac-health.json"),
     JSON.stringify({ user: "agents", checks: [{ id: "developer", state: "fail", message: "Developer Mode is off.", command: "sudo DevToolsSecurity -enable" }] }),
   );
-  expect(blocksSimulators(home.dir)).toEqual({ message: "Developer Mode is off.", command: "sudo DevToolsSecurity -enable" });
+  expect(blocksSimulators(home.dir)).toMatchObject({ message: "Developer Mode is off.", command: "sudo DevToolsSecurity -enable" });
   const simulators = new Simulators(home.dir, {}, { simctl: new Simctl(setDir(home.dir), "/nonexistent/xcrun") });
   const sims = new MacSims(home.dir, simulators, 2);
   const blocked = await sims.start({ name: "T1", project: "p" }).catch((e: { message: string; fix?: string }) => e);
@@ -339,4 +340,34 @@ test("simulators wait for Developer Mode, and a Mac without them says so", async
   const a = host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta" });
   await expect(host.step(a, { step: "sim_start" })).rejects.toThrow("its golden simulator isn't made");
   expect((await host.step(a, { step: "sim_end" }))[0]).toEqual({ step: "sim_end", ended: false });
+});
+
+test("the Mac's heartbeat carries its simulators' state for the doctor", async () => {
+  const { testNode } = await import("./node_helpers.ts");
+  const { host, startSims, stop } = await import("../src/node/mac_tool/index.ts");
+  const hbOf = async (t: { node: import("../src/node/api.ts").Node }) => {
+    const hb = { load: { cpus: 1 } as never, steps: [] as unknown[], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
+    await t.node.area("hb").fill(hb);
+    return (hb.load as { ios?: { state: string; message: string } }).ios;
+  };
+  const ready = testNode("mac1", { agentsMac: true });
+  cleanups.push(ready.done);
+  fakeAgentDevice(ready.node.home);
+  const xctestrun = join(ready.node.home, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  writeGolden(ready.node.home, xctestrun);
+  const { xcrun } = fakeXcrun(ready.node.home);
+  const simctl = new Simctl(setDir(ready.node.home), xcrun);
+  startSims(ready.node, host(ready.node), new Simulators(ready.node.home, { enabled: true }, { simctl, runner: async () => {} }), 2);
+  cleanups.push(() => stop(ready.node));
+  expect(await hbOf(ready)).toMatchObject({ state: "ready", message: expect.stringContaining("iPhone 18") });
+
+  // A golden that couldn't be made says so, with why.
+  const failed = testNode("mac2", { agentsMac: true });
+  cleanups.push(failed.done);
+  const making = new Simulators(failed.node.home, { enabled: true }, { simctl, prepare: async () => Promise.reject(new Error("no iOS runtime")) });
+  startSims(failed.node, host(failed.node), making, 2);
+  cleanups.push(() => stop(failed.node));
+  await until(() => !JSON.parse(readFileSync(join(failed.node.home, "device/ios/state.json"), "utf8")).preparing);
+  expect((await hbOf(failed))?.state).toBe("unavailable");
 });

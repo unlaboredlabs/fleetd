@@ -5,7 +5,7 @@
 // simulators live in a device set of the node's own (simctl.ts), apart from a person's in Xcode.
 //
 // TODO(bun): health's Xcode facts beyond simctl (agents_mac/xcode.rs: an Xcode in /Applications that isn't selected).
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { IosHealth } from "../../../shared/contracts.ts";
 import { ToolError } from "../../../shared/errors.ts";
@@ -207,6 +207,12 @@ export class Simulators {
     return this.prep.at === "ready";
   }
 
+  /** Where this Mac's simulators stand, for the doctor (the heartbeat's `load.ios`). */
+  health(): IosHealth | undefined {
+    if (this.config.enabled === false) return undefined;
+    return healthFrom(this.config, findGolden(this.home, this.config.deviceType), readState(this.home))?.health;
+  }
+
   private pool(): Pool {
     if (this.prep.at === "starting") throw new ToolError("failed", "This Mac's iOS sessions are starting up.", "try session_start again in a moment");
     if (this.prep.at !== "ready" && !optedIn(this.config)) {
@@ -274,18 +280,5 @@ export class Simulators {
   /** Every waiting clone goes (the node stops). */
   async shutdown(): Promise<void> {
     if (this.prep.at === "ready") await this.prep.pool.drain();
-  }
-}
-
-/** The developer check, when it fails (`<home>/mac-health.json`): iOS simulators would hang on its password prompt. */
-export function blocksSimulators(home: string): { message: string; command?: string } | undefined {
-  const file = join(home, "mac-health.json");
-  if (!existsSync(file)) return undefined;
-  try {
-    const health = JSON.parse(readFileSync(file, "utf8")) as { checks?: { id?: string; state?: string; message?: string; command?: string }[] };
-    const check = health.checks?.find((c) => c.id === "developer" && c.state === "fail");
-    return check ? { message: String(check.message ?? ""), ...(check.command ? { command: check.command } : {}) } : undefined;
-  } catch {
-    return undefined;
   }
 }
