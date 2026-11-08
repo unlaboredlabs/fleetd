@@ -273,7 +273,7 @@ jobs:
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             args+=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
           fi
-          pnpm exec electron-builder "${args[@]}"
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder "${args[@]}"
           mkdir -p ../../dist
           mv dist/mac-universal/fleetd.app ../../dist/fleetd.app
           lipo -info ../../dist/fleetd.app/Contents/MacOS/fleetd
@@ -403,7 +403,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-          pnpm exec electron-builder --linux --publish never -c.extraMetadata.version="$FLEETD_VERSION"
+          "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --linux --publish never -c.extraMetadata.version="$FLEETD_VERSION"
           mkdir -p ../../dist
           ../../.github/release/desktop-fuses-check.sh dist/linux-unpacked/fleetd-desktop dist/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
           mv dist/fleetd-desktop-linux-x86_64.AppImage dist/fleetd-desktop-linux-amd64.deb ../../dist/

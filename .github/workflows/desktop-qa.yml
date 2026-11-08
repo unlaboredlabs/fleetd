@@ -116,7 +116,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - if: steps.scope.outputs.run == 'true'
         # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
-        run: pnpm exec install-electron
+        run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
       # The fixtures are cached under a hash of every file their build reads (scripts/fixtures-key.ts follows the part
       # of the app they import), so a shard whose fixtures a run has built before (main's, or this PR's last) skips
       # that minute. The QA build takes seconds and isn't cached.
