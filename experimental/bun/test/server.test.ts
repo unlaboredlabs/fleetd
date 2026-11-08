@@ -3,9 +3,9 @@ import { onError, serve, stop } from "../src/hub/http/index.ts";
 import { build, parseHubArgs, parseListen } from "../src/hub/serve/index.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 import { internalError } from "../src/shared/errors.ts";
-import { insertKey, tempHome } from "./helpers.ts";
+import { hubHome, insertKey } from "./helpers.ts";
 
-const home = tempHome();
+const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
 const server = serve(hub, tools, 0);
 const base = `http://127.0.0.1:${server.port}`;
@@ -86,7 +86,7 @@ test("hub start's flags, with the Rust hub's messages", () => {
 test("hub.url() is the URL setup saved, unless it is a wildcard address", async () => {
   const { configuredUrl } = await import("../src/hub/serve/index.ts");
   const { writeFileSync } = await import("node:fs");
-  const dir = tempHome();
+  const dir = hubHome();
   const save = (url: string, machines: Record<string, unknown> = {}) =>
     writeFileSync(`${dir.dir}/setup.json`, JSON.stringify({ listen: "0.0.0.0:4790", url, machines }));
   expect(configuredUrl(dir.dir)).toBeUndefined();

@@ -36,7 +36,7 @@ const scratch = () => {
   return home.dir;
 };
 
-const until = async (what: string, ok: () => boolean, ms = 5_000) => {
+const until = async (what: string, ok: () => boolean, ms = 15_000) => {
   const end = Date.now() + ms;
   while (!ok()) {
     if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
@@ -304,7 +304,9 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   expect(readdirSync(x11)).toEqual([]);
   expect(readdirSync(locks)).toEqual([]);
   await expect(t.local.call("desktop", { action: "screenshot" }, "thread-1")).rejects.toThrow("No desktop session is open");
-});
+  // A real Xvfb and the processes launched on it: a loaded machine (CI, or a busy devbox) takes longer than bun's 5 s
+  // default.
+}, 30_000);
 
 test("a start on a machine that can't prepare says why at once, and the hub's session_end ends a desktop", async () => {
   if (process.platform !== "linux") return;

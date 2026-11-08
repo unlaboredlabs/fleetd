@@ -127,7 +127,8 @@ const driver = async (url: string) => {
   await new Promise((r) => (ws.onopen = r));
   const call = async (id: number, method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
     ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    for (let i = 0; i < 200; i++) {
+    // A real Chrome on a loaded machine can take seconds to answer a navigate.
+    for (const end = Date.now() + 10_000; Date.now() < end; ) {
       const answer = got.find((m) => m.id === id);
       if (answer) return answer;
       await Bun.sleep(5);
@@ -183,10 +184,15 @@ test.skipIf(!chrome)("a real headless Chrome: launched on its pipe, driven throu
   const attached = (await d.call(2, "Target.attachToTarget", { targetId: page.targetId, flatten: true })) as { result: { sessionId: string } };
   const s = attached.result.sessionId;
   await d.call(3, "Page.navigate", { url: "data:text/html,<title>fleetd</title><h1 style='font-size:90px'>hello</h1>" }, s);
-  await Bun.sleep(300);
-  const title = (await d.call(4, "Runtime.evaluate", { expression: "document.title", returnByValue: true }, s)) as { result: { result: { value: string } } };
-  expect(title.result.result.value).toBe("fleetd");
-  for (let i = 0; i < 100 && !link.sent.some((f) => f.t === "browser_frame"); i++) await Bun.sleep(20);
+  // The navigate answers once it starts, not once the page is in: read the title until it is, or the deadline passes.
+  let title = "";
+  for (let id = 4, end = Date.now() + 10_000; title !== "fleetd" && Date.now() < end; id++) {
+    const read = (await d.call(id, "Runtime.evaluate", { expression: "document.title", returnByValue: true }, s)) as { result: { result: { value: string } } };
+    title = read.result.result.value;
+    if (title !== "fleetd") await Bun.sleep(50);
+  }
+  expect(title).toBe("fleetd");
+  for (const end = Date.now() + 10_000; Date.now() < end && !link.sent.some((f) => f.t === "browser_frame"); ) await Bun.sleep(20);
   const frame = link.sent.find((f) => f.t === "browser_frame") as { sessionId: string; jpegB64: string; width: number; height: number };
   expect(frame).toMatchObject({ sessionId: started.sessionId });
   expect(frame.width).toBeGreaterThan(0);

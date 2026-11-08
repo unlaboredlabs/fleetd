@@ -1,6 +1,6 @@
 // The landing scanner against real git (crates/fleetd/src/hub/work/landings_tests.rs and landings.rs' own tests): an
 // origin, a person's clone of it, and checkouts for projects under $TMPDIR, with every commit dated from the hub's clock.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
@@ -39,6 +39,10 @@ const START_MS = 1_792_922_400_000;
 const GITLAB = "git@gitlab.example.com:acme/shop.git";
 const GITHUB = "https://github.com/acme/shop.git";
 const AT = "2026-10-25T10:00:00.000Z";
+
+// A test makes real repos, commits and pushes, a git process each, and the scan runs git too: a loaded machine (CI, or
+// a busy devbox) takes longer than bun's 5 s default.
+setDefaultTimeout(30_000);
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
