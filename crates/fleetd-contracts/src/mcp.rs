@@ -3181,7 +3181,7 @@ pub struct HubUpdateData {
     pub run_id: Text<1, 64>,
     pub state: HubUpdatePhase,
     /// The hub's own part: `restarting` while the hub restarts onto the new build (the apps' sockets close with
-    /// `APP_CLOSE_RESTART`, 1012), `done` once it runs it.
+    /// `APP_CLOSE_RESTART`, 1001), `done` once it runs it.
     pub hub: UpdateState,
     /// The build the hub ran when the update started.
     pub from: Text<0, 200>,
@@ -3196,7 +3196,7 @@ pub struct HubUpdateData {
     pub machines: List<HubUpdateMachine, 0, HUB_UPDATE_MACHINES_MAX>,
     /// Machines past `machines`, not named here.
     pub more_machines: Option<u32>,
-    /// With `failed` or `put_back`: what happened, in one sentence (the hub's part's message).
+    /// With `failed` or `put_back`: what happened, in one sentence (the hub's, or the machine's that missed the build).
     pub message: Option<Text<0, 200>>,
 }
 
@@ -3220,9 +3220,10 @@ pub enum HubUpdatePhase {
     Updated,
     /// The hub didn't come up healthy on `to`, so its previous build was put back. "Put back"
     PutBack,
-    /// The hub didn't update and nothing changed: the download, the checksum or the install failed (`message`).
+    /// Nothing changed: the hub didn't update (the download, the checksum or the install failed), or it already ran
+    /// `to` and a machine behind it didn't get it. `message` says why.
     Failed,
-    /// Finished with nothing to do: the hub and every machine already ran `to`.
+    /// Finished with nothing to do: the hub and every machine online already ran `to`.
     Current,
     /// A state this build doesn't know (a newer hub). Never sent.
     #[serde(other)]

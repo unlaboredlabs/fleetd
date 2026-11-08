@@ -26,8 +26,8 @@ import { type Others, others, visible } from "./visible.ts";
 export const CLOSE_UNAUTHORIZED = 4401;
 /** Calls one connection may have running at once; more are refused rather than queued without bound. */
 export const MAX_CALLS_IN_FLIGHT = 32;
-/** "Service Restart": the hub is stopping and comes back within a moment (the Rust hub names an update's build). */
-const CLOSE_RESTART = 1012;
+/** "Going Away": the hub is stopping and comes back within a moment (the Rust hub names an update's build). */
+const CLOSE_RESTART = 1001;
 /** "Try again later": the connection fell too far behind; the app reconnects and reads again. */
 const CLOSE_TOO_FAR_BEHIND = 1013;
 /** "Invalid frame payload data": a compressed frame that doesn't inflate. */

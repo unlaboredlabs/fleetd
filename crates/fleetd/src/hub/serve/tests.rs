@@ -560,10 +560,10 @@ async fn stops_within_a_second_while_an_app_stream_and_an_events_wait_long_poll_
         Some(Ok(Message::Close(Some(frame)))) => {
             assert_eq!(
                 (u16::from(frame.code), frame.reason.as_str()),
-                (1012, "hub restarting")
+                (1001, "hub restarting")
             );
         }
-        other => panic!("expected a 1012 close, got {other:?}"),
+        other => panic!("expected a 1001 close, got {other:?}"),
     }
     poll.abort();
 }
@@ -617,9 +617,9 @@ async fn an_update_restart_is_in_the_snapshot_and_the_close_says_so() {
     match app.next().await {
         Some(Ok(Message::Close(Some(frame)))) => assert_eq!(
             (u16::from(frame.code), frame.reason.as_str()),
-            (1012, "updating to 0.0.0-nightly.202611081000+bbbbbbb")
+            (1001, "updating to 0.0.0-nightly.202611081000+bbbbbbb")
         ),
-        other => panic!("expected a 1012 close, got {other:?}"),
+        other => panic!("expected a 1001 close, got {other:?}"),
     }
 }
 

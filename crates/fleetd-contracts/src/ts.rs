@@ -50,7 +50,7 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "APP_CLOSE_RESTART",
-            "The /app close code when the hub stops (Service Restart): redial at once, it comes back within a moment.",
+            "The /app close code when the hub stops (Going Away): redial at once, it comes back within a moment.",
             crate::app::APP_CLOSE_RESTART.into(),
         ),
         (
