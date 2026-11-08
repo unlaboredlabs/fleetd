@@ -428,8 +428,10 @@ static TOOLS: &[Tool] = &[
         description: "Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is \
                       the run's (`https://github.com/<owner>/<repo>/actions/runs/<id>`; `gh run view <id> --json url \
                       -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, \
-                      the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: \
-                      nothing else wakes you.",
+                      the outcome and the failing jobs. With merged: true on a PR's URL, be woken when that PR merges \
+                      instead, or if it fails on the merge train or is closed unmerged: one call per PR your next step \
+                      builds on (a stacked PR, another writer's seam). Never end a turn saying you'll wait for a run \
+                      or a merge without it, or ask your lead to ping you: nothing else wakes you.",
         schema: inline_schema::<WaitCiCall>,
         human: None,
     },
