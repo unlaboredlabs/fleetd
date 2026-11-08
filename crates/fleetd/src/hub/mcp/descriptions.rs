@@ -322,7 +322,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "onepassword_cards",
-        "A person's own device only. List the Credit Card items the caller's 1Password token reads, for a project's card picker: each item's op:// reference, title and vault, never its number, expiry or code (machineId, default the first online machine holding the token). error says why none could be listed, the token masked.",
+        "A person's own device only. List the Credit Card items the caller's 1Password token reads, for a project's card picker: each item's op:// reference, title and vault, never its number, expiry or code (machineId, default the first online machine holding the token). For a project, listed on its machine with the token its fills use: its own OP_SERVICE_ACCOUNT_TOKEN, else in an Only me project the caller's; a shared project without one is refused, as its checkout can't read a member's own token. error says why none could be listed, the token masked.",
     ),
     (
         "onepassword_test",

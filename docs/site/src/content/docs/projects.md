@@ -475,10 +475,10 @@ Keep the card in fleetd's own vault, and make it a virtual card with a monthly l
 on the machine could read what the token reads ([why](/docs/security#agent-reach)).
 
 1. **Pick a card.** In the project's settings, **Payments** lists the Credit Card items the project's 1Password token
-   reads: its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else yours (Settings › Your accounts ›
-   1Password). Pick one. fleetd keeps only its `op://vault/item` reference. At the checkout the fill reads it with
-   the project's own variable, else, in an [Only me](#only-me) project, its owner's token: a shared project pays only
-   with a variable of its own.
+   reads: its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else, in an [Only me](#only-me) project, yours
+   (Settings › Your accounts › 1Password). A shared project pays only with a variable of its own: without one it lists
+   no card and says to add it, as its checkout can't read your token. Pick one. fleetd keeps only its
+   `op://vault/item` reference.
 2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
    name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
    record: the shop, the total, each item, and the card.
@@ -728,7 +728,7 @@ crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId
 |---|---|
 | Sites | `project_sites {machineId, projectId}`, `project_site_revoke {machineId, projectId, site}` |
 | Approvals | `project_approvals {machineId, projectId}`, `project_approvals_set {machineId, projectId, mode, model?, effort?}` |
-| Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the project's own token's, when it has one). |
+| Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the project's own token's, when it has one; refused in a shared project without one). |
 | Asked | `project_asks {project}`, with the orders opened for each, on a hub whose ready frame names the `navi_asks` feature. |
 | Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the project's machine online and on a fleetd that keeps them. |
 | Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |

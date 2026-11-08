@@ -316,6 +316,16 @@ fn holding(
     Ok(machine_id)
 }
 
+/// Whether project `r` has its own `OP_SERVICE_ACCOUNT_TOKEN` secret, which its node's fills and card list use first.
+fn has_own_token(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
+    use fleetd_contracts::project_settings::EnvVarKind;
+    Ok(db
+        .project_settings()
+        .env(r)?
+        .iter()
+        .any(|v| v.name.as_str() == "OP_SERVICE_ACCOUNT_TOKEN" && v.kind == EnvVarKind::Secret))
+}
+
 /// The Credit Card items the caller's token reads, listed on a machine holding it: never a card's details.
 async fn cards(
     hub: Arc<Hub>,
@@ -337,6 +347,17 @@ async fn cards(
                         navi.project_id, navi.machine_id
                     ),
                     "project_get shows the projects and their ids.",
+                ));
+            }
+            // A shared project's lead fills with its own token only (for_lead): cards a member's own token reads are
+            // never offered, as its checkout can't read them.
+            if crate::hub::navi::of(&hub.db, navi)?.is_none() && !has_own_token(&hub.db, navi)? {
+                return Err(error(
+                    ErrorCode::Invalid,
+                    "A shared project pays only with a 1Password token of its own: your own token's cards can't \
+                     fill at its checkout.",
+                    "Add OP_SERVICE_ACCOUNT_TOKEN as a secret in the project's Settings › Environment variables, \
+                     then pick a card.",
                 ));
             }
             node_ready(&hub, &navi.machine_id)?;
