@@ -904,6 +904,16 @@
           "type": "string"
         },
         {
+          "const": "machine.down",
+          "description": "The machine has been offline 10 minutes with nothing to explain it (an update restarting its node, a cloud\nmachine the hub put to sleep): the hub's admins are paged, once per outage. `data.offlineMs`.",
+          "type": "string"
+        },
+        {
+          "const": "machine.back",
+          "description": "A machine paged as down (machine.down) linked again: the admins are told, once. `data.offlineMs`.",
+          "type": "string"
+        },
+        {
           "const": "thread.orphaned",
           "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
           "type": "string"
