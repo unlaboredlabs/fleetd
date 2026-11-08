@@ -13,6 +13,7 @@ import { hook } from "../src/hub/automations/webhook.ts";
 import type { RouteContext } from "../src/hub/http/route.ts";
 import type { LeadCall, LeadCaller } from "../src/hub/leads/seams.ts";
 import { LeadRecords } from "../src/hub/leads/records.ts";
+import { standing } from "../src/hub/navi/checker_turn.ts";
 import { put as putNavi } from "../src/hub/navi/store.ts";
 import { workstreamGet, workstreamsList } from "../src/hub/orders/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -553,4 +554,16 @@ test("a Navi's run closes once its turn ends, and the next scheduled run starts;
   ended("completed");
   await settle(hub);
   expect(autos.runs(a.automationId, 1)[0]!.state).toBe("running");
+});
+
+test("the Navi checker's standing word is the confirmed automations with a run open", async () => {
+  const { hub } = setup();
+  start(hub);
+  const [mine] = automations(hub).create(fresh(PROJECT, undefined, false));
+  const [lead] = automations(hub).create({ ...fresh(PROJECT, undefined, false), name: "Unconfirmed", confirmed: false });
+  expect(standing(hub, PROJECT)).toEqual([]);
+  await automations(hub).run(mine.automationId, { kind: "manual", by: "human" });
+  await automations(hub).run(lead.automationId, { kind: "manual", by: "human" });
+  expect(automations(hub).running(PROJECT).length).toBe(2);
+  expect(standing(hub, PROJECT)).toEqual([{ automation: mine.name, prompt: mine.prompt }]);
 });

@@ -13,6 +13,7 @@ import { requireHuman, unknownProject } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
 import { changed } from "./calls.ts";
 import { activePeople, Memory, projectTarget, type Target, type You, youTarget, userTarget } from "./index.ts";
+import { registerImportAndRefresh } from "./import.ts";
 import { lineItems, listed, putLineItems } from "./refresh_store.ts";
 
 /** The caller's own memory: their person's; the shared user.md on a hub with no people; nobody's for a key with none. */
@@ -127,6 +128,7 @@ function undoRefreshed(hub: Hub, caller: Caller, message: ChatMessage, refreshed
 }
 
 export function register(tools: Registry): void {
+  registerImportAndRefresh(tools);
   tools.add("memory_get", (hub, caller, input) => {
     const memory = Memory.of(hub);
     const own = youTarget(mine(hub, caller));

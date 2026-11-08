@@ -48,8 +48,8 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] `hub_link_remove` → `src/hub/hub_links` (operate) <!-- tool:`hub_link_remove` -->
 - [x] `doctor_list` → `src/hub/doctor` (read) <!-- tool:`doctor_list` -->
 - [x] `doctor_fix` → `src/hub/doctor` (operate) <!-- tool:`doctor_fix` -->
-- [ ] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
-- [ ] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
+- [x] `setup_list` → `src/hub/setup` (admin) <!-- tool:`setup_list` -->
+- [x] `setup_test` → `src/hub/setup` (admin) <!-- tool:`setup_test` -->
 - [x] `mac_code_create` → `src/hub/pair` (admin) <!-- tool:`mac_code_create` -->
 - [x] `mac_code_status` → `src/hub/pair` (admin) <!-- tool:`mac_code_status` -->
 - [ ] `metrics_get` → `src/hub/metrics` (read) <!-- tool:`metrics_get` -->
@@ -124,12 +124,12 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `project_get` → `src/hub/executor` (read) <!-- tool:`project_get` -->
 - [x] `thread_tail` → `src/hub/executor` (read) <!-- tool:`thread_tail` -->
 - [x] `actions_list` → `src/hub/executor` (read) <!-- tool:`actions_list` -->
-- [ ] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
-- [ ] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
-- [ ] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
-- [ ] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
-- [ ] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
-- [ ] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
+- [x] `project_discover` → `src/hub/projects` (read) <!-- tool:`project_discover` -->
+- [x] `project_add` → `src/hub/projects` (operate) <!-- tool:`project_add` -->
+- [x] `project_remove` → `src/hub/projects` (operate) <!-- tool:`project_remove` -->
+- [x] `project_repo_add` → `src/hub/projects` (operate) <!-- tool:`project_repo_add` -->
+- [x] `project_repo_list` → `src/hub/projects` (read) <!-- tool:`project_repo_list` -->
+- [x] `project_repo_remove` → `src/hub/projects` (operate) <!-- tool:`project_repo_remove` -->
 - [ ] `navi_create` → `src/hub/navi` (operate) <!-- tool:`navi_create` -->
 - [x] `navi_list` → `src/hub/navi` (read) <!-- tool:`navi_list` -->
 - [ ] `navi_rename` → `src/hub/navi` (operate) <!-- tool:`navi_rename` -->
@@ -186,7 +186,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `memory_get` → `src/hub/memory` (read) <!-- tool:`memory_get` -->
 - [x] `memory_set` → `src/hub/memory` (operate) <!-- tool:`memory_set` -->
 - [x] `memory_undo` → `src/hub/memory` (operate) <!-- tool:`memory_undo` -->
-- [ ] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
+- [x] `memory_import` → `src/hub/memory` (operate) <!-- tool:`memory_import` -->
 - [x] `memory_shared_get` → `src/hub/memory` (admin) <!-- tool:`memory_shared_get` -->
 - [x] `memory_shared_set` → `src/hub/memory` (admin) <!-- tool:`memory_shared_set` -->
 - [x] `automation_list` → `src/hub/automations` (read) <!-- tool:`automation_list` -->
@@ -197,7 +197,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `automation_delete` → `src/hub/automations` (operate) <!-- tool:`automation_delete` -->
 - [x] `automation_run` → `src/hub/automations` (operate) <!-- tool:`automation_run` -->
 - [x] `automation_runs` → `src/hub/automations` (read) <!-- tool:`automation_runs` -->
-- [ ] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
+- [x] `memory_refresh_run` → `src/hub/memory` (operate) <!-- tool:`memory_refresh_run` -->
 - [x] `checklist_get` → `src/hub/checklist` (read) <!-- tool:`checklist_get` -->
 - [x] `navi_asks` → `src/hub/navi` (read) <!-- tool:`navi_asks` -->
 - [x] `project_asks` → `src/hub/navi` (read) <!-- tool:`project_asks` -->
@@ -235,10 +235,10 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `chat::flow::run` → `src/hub/chat` <!-- loop:hub loop `chat::flow::run` -->
 - [x] hub loop `intake::attachments::run_sweep` → `src/hub/intake` <!-- loop:hub loop `intake::attachments::run_sweep` -->
 - [ ] hub loop `leads.run` → `src/hub/leads` <!-- loop:hub loop `leads.run` -->
-- [ ] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
+- [x] hub loop `memory::refresh::run` → `src/hub/memory` <!-- loop:hub loop `memory::refresh::run` -->
 - [x] hub loop `navi::bridge::run` → `src/hub/navi` <!-- loop:hub loop `navi::bridge::run` -->
 - [x] hub loop `navi::erase::run` → `src/hub/navi` <!-- loop:hub loop `navi::erase::run` -->
-- [ ] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
+- [x] hub loop `projects::order_env::run` → `src/hub/projects` <!-- loop:hub loop `projects::order_env::run` -->
 - [x] hub loop `slots.run` → `src/hub/slots` <!-- loop:hub loop `slots.run` -->
 - [ ] hub loop `steer::run_sweep` → `src/hub/steer` <!-- loop:hub loop `steer::run_sweep` -->
 - [ ] hub loop `tasks.run` → `src/hub/tasks` <!-- loop:hub loop `tasks.run` -->

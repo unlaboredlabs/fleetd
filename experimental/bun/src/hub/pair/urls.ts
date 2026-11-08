@@ -201,3 +201,17 @@ export async function phoneHubUrl(hub: Hub, appUrl: string | undefined): Promise
   // The phone opens the link's hub as a URL: an address saved without its scheme gets http's.
   return url.includes("://") ? url : `http://${url}`;
 }
+
+/**
+ * Why a worker told to reach the hub at `hub` can join only from the hub's own computer: undefined when another
+ * machine can reach that address (cli/pair.rs `worker_reach_note`). Plain text: the app shows it as it is.
+ */
+export function workerReachNote(hub: string): string | undefined {
+  if (phoneUrl([hub]) !== undefined) return undefined;
+  return (
+    `The hub is only at ${hub}, which no other machine reaches, so only a node on the hub's own computer can ` +
+    "join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init " +
+    "--listen <ip>:<port> --url http://<name>:<port> (Settings › Hub › Setup › Where the hub listens), then " +
+    "try again."
+  );
+}
