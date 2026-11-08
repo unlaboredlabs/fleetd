@@ -98,6 +98,27 @@ export async function run(home: string): Promise<any[]> {
   return listChecks(await connect(home));
 }
 
+/** Registers `path` on `machineId` as a project through the hub (project_add, the path the app and agents use). */
+export async function addProject(home: string, machineId: string, path: string): Promise<void> {
+  const client = await connect(home);
+  const title = path.split("/").filter(Boolean).pop() ?? "";
+  const fix = `fleetd doctor shows whether ${machineId} is online; then run fleetd init again`;
+  let result;
+  try {
+    result = await client.callTool("project_add", { machineId, path, title }, 60_000);
+  } catch (error) {
+    const m = (error as Error).message;
+    throw {
+      message: `project_add failed: ${m}`,
+      fix: m.includes("not found") ? "this hub's fleetd predates project_add: fleetd update, then run fleetd init again" : fix,
+    } satisfies Failure;
+  }
+  if (result.isError) {
+    const text = (k: string) => (typeof result.body?.[k] === "string" ? (result.body[k] as string) : undefined);
+    throw { message: text("message") ?? JSON.stringify(result.body), fix: text("fix") ?? fix } satisfies Failure;
+  }
+}
+
 const CHECKING = ["checking the node's runner", "checking the node's claude runner"];
 
 /** A machine's degraded reason that only means its first runner check hasn't answered yet. */
