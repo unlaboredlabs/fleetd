@@ -5,6 +5,7 @@
 #   scripts/check.sh <check>...   these, changed or not: rust-lint rust-docs rust-tests site desktop qa
 #   scripts/check.sh --background [<check>...]   the same, detached, its output in the git dir's fleetd-check.log
 #   scripts/check.sh --wait       waits for the background run to end, and prints its last line
+#   scripts/check.sh --keys       each check's key on the worktree's tree: the hash of the files it reads (below)
 #
 # Each runs the commands of its ci.yml job, scoped as CI scopes it (.github/rust-scope.sh's paths for the Rust ones):
 # - rust-lint: cargo fmt --check, clippy -D warnings, and the hub migrations check: the worktree (untracked files too)
@@ -24,6 +25,9 @@
 #   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
 #   fails there when one of its fixtures has no answer for it.
 #
+# The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, and so do the tests picked: a run of them
+# all waits for a build slot 3 times: clippy, that build, the tests.
+#
 # It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
 #   check.sh: passed <check>...; still to pass on <tree>: ...  the checks named passed, others are still to pass
@@ -31,9 +35,12 @@
 # It fetches origin/main first, and doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
 #
 # A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): it records the tree it
-# checked (the worktree's, committed or not) and each check that passed on it in the git dir's fleetd-checked, and the
-# tree passes once every check the changes touch has passed on it, in one run or in several (scripts/check.sh
-# rust-tests reruns only the one that failed). So run it after your final rebase onto origin/main, and commit
+# checked (the worktree's, committed or not) in the git dir's fleetd-checked once every check the changes touch has
+# passed on it, in one run or in several (scripts/check.sh rust-tests reruns only the one that failed). A check's pass
+# is kept under its key, the hash of its inputs: the Rust ones .github/rust-scope.sh's paths, the site those and its
+# own, desktop and qa the whole tree (their tests read files across it), each with this script. So a
+# run with none named skips a check that already passed on the same inputs, and says so: a desktop fix on a branch
+# whose Rust passed doesn't run the Rust checks again. So run it after your final rebase onto origin/main, and commit
 # exactly what it checked. One too long for a command's time limit runs with --background, and --wait, run with
 # Claude's Monitor tool, says how it ended (never a sleep loop): it records its pass when it ends either way.
 set -uo pipefail
@@ -66,14 +73,53 @@ if [ "${1:-}" = --wait ]; then
 fi
 
 all=(rust-lint rust-docs rust-tests site desktop qa)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+
+# .github/rust-scope.sh's paths, read from it so the two never differ.
+eval "$(sed -n '/^paths=(/,/^)$/p' .github/rust-scope.sh)"
+# shellcheck disable=SC2154
+rust_paths=("${paths[@]}")
+site_paths=(docs/site site .github/site-check.mjs .github/site-layout-check.mjs .github/docs-links.mjs
+  .github/docs-serve.mjs "${rust_paths[@]}")
+
+# key <tree> <check>: a hash of the check's inputs in the tree, every file it reads, this script among them. A check
+# that passed on a tree passes on any tree with the same key: a run with none named doesn't run it again.
+key() {
+  local tree=$1 check=$2
+  case $check in
+    rust-lint | rust-docs | rust-tests) set -- "${rust_paths[@]}" ;;
+    site) set -- "${site_paths[@]}" ;;
+    # The desktop app's tests and screens read files across the repo (the Rust crates' features, the phone app's
+    # sources, every path's name for the case clashes): the whole tree. Neither waits for a build slot.
+    desktop | qa)
+      echo "$tree"
+      return
+      ;;
+  esac
+  git ls-tree -r "$tree" -- scripts/check.sh "$@" | git hash-object --stdin
+}
+
+# The worktree's tree: committed or not, untracked files too, but not ignored ones.
+worktree_tree() {
+  local index=$tmp/index
+  cp "$(git rev-parse --git-path index)" "$index" && GIT_INDEX_FILE=$index git add -A && GIT_INDEX_FILE=$index git write-tree
+}
+
+# --keys: each check's key on the worktree's tree, "<check> <key>" a line.
+if [ "${1:-}" = --keys ]; then
+  tree=$(worktree_tree) || exit 1
+  for c in "${all[@]}"; do echo "$c $(key "$tree" "$c")"; done
+  exit 0
+fi
+
 for name in "$@"; do
   [[ " ${all[*]} " == *" $name "* ]] || { echo "unknown check: $name (checks: ${all[*]})" >&2; exit 2; }
 done
 
 git fetch -q origin main || echo "check.sh: couldn't fetch origin/main; comparing with the one fetched before" >&2
 base=$(git merge-base origin/main HEAD) || exit 1
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT
+marks=$(git rev-parse --git-path fleetd-checked)
 target=${CARGO_TARGET_DIR:-target}
 [[ $target == /* ]] || target=$PWD/$target
 
@@ -84,12 +130,20 @@ changed() {
 changed_files() {
   { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u
 }
-# wanted <check> <path>...: named on the command line, or (with none named) one of its paths changed.
+# wanted <check> <path>...: named on the command line, or (with none named) one of its paths changed and it hasn't
+# passed on the same inputs before.
 wanted() {
   local check=$1
   shift
   if [ ${#named[@]} -gt 0 ]; then [[ " ${named[*]} " == *" $check "* ]]; return; fi
-  changed "$@"
+  changed "$@" && ! passed_before "$check"
+}
+# passed_before <check>: whether it passed in an earlier run on a tree with the checked tree's key for it; says so.
+passed_before() {
+  local k
+  k=$(key "$checked_tree" "$1")
+  grep -qxF "$k $1" "$marks" 2>/dev/null || return
+  echo "==> $1: passed before on the same inputs (key ${k:0:12}), so it doesn't run again (scripts/check.sh $1 runs it)"
 }
 named=("$@")
 
@@ -110,16 +164,6 @@ npm_ci() {
   [ "$1/node_modules/.package-lock.json" -nt "$1/package-lock.json" ] || npm ci --prefix "$1" --no-audit --no-fund
 }
 
-# .github/rust-scope.sh's paths, read from it so the two never differ.
-eval "$(sed -n '/^paths=(/,/^)$/p' .github/rust-scope.sh)"
-# shellcheck disable=SC2154
-rust_paths=("${paths[@]}")
-
-# The worktree's tree: committed or not, untracked files too, but not ignored ones.
-worktree_tree() {
-  local index=$tmp/index
-  cp "$(git rev-parse --git-path index)" "$index" && GIT_INDEX_FILE=$index git add -A && GIT_INDEX_FILE=$index git write-tree
-}
 # What it checks, read before any check runs.
 checked_tree=$(worktree_tree) || exit 1
 echo "check.sh: checking tree ${checked_tree:0:12} (past a command's time limit: scripts/check.sh --background, or one check at a time)"
@@ -141,8 +185,6 @@ if wanted rust-lint "${rust_paths[@]}"; then
   step rust-lint node .github/migrations-check.mjs origin/main "$head"
 fi
 
-site_paths=(docs/site site .github/site-check.mjs .github/site-layout-check.mjs .github/docs-links.mjs
-  .github/docs-serve.mjs "${rust_paths[@]}")
 # The checks the changes touch: what a run with none named runs, and what a tree must pass to be pushed.
 needed=()
 changed "${rust_paths[@]}" && needed+=(rust-lint rust-docs rust-tests)
@@ -151,21 +193,44 @@ changed app/desktop .github/workflows/ci.yml && needed+=(desktop)
 changed app/desktop/src/renderer app/desktop/fixtures && needed+=(qa)
 
 help=$tmp/fleetd-help.txt
-site_wanted=false
+site_wanted=false docs_wanted=false tests_wanted=false schema_wanted=false
 wanted site "${site_paths[@]}" && site_wanted=true
-if wanted rust-docs "${rust_paths[@]}"; then
-  step rust-docs cargo build --locked -p fleetd -p docsgen
+wanted rust-docs "${rust_paths[@]}" && docs_wanted=true
+wanted rust-tests "${rust_paths[@]}" && tests_wanted=true
+if $tests_wanted && { [ ${#named[@]} -gt 0 ] || changed crates/fleetd-contracts app/desktop/src/shared/contracts/generated; }; then
+  schema_wanted=true
+fi
+
+# The binaries the checks run, built by one cargo so they wait for one build slot: fleetd (the lab scenarios, the
+# site's `fleetd help`), docsgen and fleetd-schema. When it fails, so does each check that runs one of them.
+uses=() packages=()
+$docs_wanted && uses+=(rust-docs)
+$site_wanted && uses+=(site)
+$schema_wanted && uses+=(rust-tests)
+{ $docs_wanted || $site_wanted; } && packages+=(-p fleetd)
+$docs_wanted && packages+=(-p docsgen)
+$schema_wanted && packages+=(-p fleetd-contracts)
+built=true
+if [ ${#packages[@]} -gt 0 ]; then
+  build=(cargo build --locked "${packages[@]}")
+  echo "==> ${uses[*]}: ${build[*]}"
+  if ! "${build[@]}"; then
+    built=false
+    for c in "${uses[@]}"; do failed+=("$c: ${build[*]}"); done
+    echo "==> FAILED ${uses[*]}: ${build[*]}"
+  fi
+fi
+
+if $docs_wanted && $built; then
   # Fix: cargo run -q -p docsgen, and commit the pages it wrote.
-  step rust-docs cargo run --locked -q -p docsgen -- --check
+  step rust-docs "$target/debug/docsgen" --check
   step rust-docs npm_ci tests/lab
   # A short directory: the node's socket path in it must fit in SUN_LEN (108 bytes).
   export FLEETD_BIN=$target/debug/fleetd FLEETD_FACTORY_DIR=$tmp/f
   step rust-docs npm run factory --prefix tests/lab
-elif $site_wanted; then
-  step site cargo build --locked -p fleetd
 fi
 
-if wanted rust-tests "${rust_paths[@]}"; then
+if $tests_wanted; then
   # The modules the changed files of crates/fleetd are in (src/hub/train/batch.rs, src/hub/train/tests.rs and
   # src/hub/train.rs are hub::train; the prompts are hub::prompts), its integration tests that changed, and the other
   # crates whole. Its root files (lib.rs, main.rs) and anything else in it pick no tests.
@@ -183,24 +248,61 @@ if wanted rust-tests "${rust_paths[@]}"; then
         rel=${f#crates/fleetd/src/}
         case $rel in lib.rs | main.rs) ;; *) mods+=("${rel%.rs}::") ;; esac
         ;;
-      crates/fleetd/tests/*.rs) [ -e "$f" ] && itests+=(--test "$(basename "$f" .rs)") ;;
+      crates/fleetd/tests/*.rs) [ -e "$f" ] && itests+=("$(basename "$f" .rs)") ;;
       crates/fleetd/*) ;;
       crates/*/*) c=${f#crates/}; crates+=("${c%%/*}") ;;
     esac
   done < <(changed_files)
-  if [ ${#named[@]} -gt 0 ] || changed crates/fleetd-contracts app/desktop/src/shared/contracts/generated; then
+  if $schema_wanted && $built; then
     # Fix: cargo run -p fleetd-contracts --bin fleetd-schema, and commit what it wrote.
-    step rust-tests cargo run --locked -q -p fleetd-contracts --bin fleetd-schema -- --check
+    step rust-tests "$target/debug/fleetd-schema" --check
   fi
   mapfile -t mods < <(printf '%s\n' "${mods[@]}" | sort -u | sed '/^$/d')
+  mapfile -t itests < <(printf '%s\n' "${itests[@]}" | sort -u | sed '/^$/d')
   mapfile -t crates < <(printf '%s\n' "${crates[@]}" | sort -u | sed '/^$/d')
+  # The tests picked build in one cargo, so they wait for one build slot. Without other crates, only the lib and the
+  # integration tests picked build (a target flag would apply to every package).
+  packages=() targets=()
+  { [ ${#mods[@]} -gt 0 ] || [ ${#itests[@]} -gt 0 ]; } && packages+=(-p fleetd)
+  for c in "${crates[@]}"; do packages+=(-p "$c"); done
+  if [ ${#crates[@]} -eq 0 ]; then
+    [ ${#mods[@]} -gt 0 ] && targets+=(--lib)
+    for t in "${itests[@]}"; do targets+=(--test "$t"); done
+  fi
   if cargo nextest --version >/dev/null 2>&1; then
     run_tests() { cargo nextest run --locked --no-tests=pass "$@"; }
+    # The picked tests under one nextest, a filterset choosing them.
+    picked_tests() {
+      local m t c filter=''
+      for m in "${mods[@]}"; do filter+="${filter:+ | }(package(fleetd) & kind(lib) & test(/^$m/))"; done
+      for t in "${itests[@]}"; do filter+="${filter:+ | }binary_id(fleetd::$t)"; done
+      for c in "${crates[@]}"; do filter+="${filter:+ | }package($c)"; done
+      run_tests "${packages[@]}" "${targets[@]}" -E "$filter"
+    }
   else
-    run_tests() {
-      local args=() filters=() seen=false
-      for a in "$@"; do if [ "$a" = -- ]; then seen=true; elif $seen; then filters+=("$a"); else args+=("$a"); fi; done
-      cargo test --locked "${args[@]}" -- "${filters[@]}"
+    run_tests() { cargo test --locked "$@"; }
+    # The picked tests' binaries, built by one `cargo test --no-run`, each run as cargo test runs it, from its package's
+    # directory: the lib's with the modules as its filters, the integration tests picked, the other crates' every one.
+    test_binaries='select(.reason == "compiler-artifact" and .profile.test and .executable != null)
+      | [.manifest_path, .target.name, .target.kind[0], .executable] | @tsv'
+    picked_tests() {
+      local manifest name kind exe dir status=0
+      cargo test --locked --no-run --message-format=json-render-diagnostics "${packages[@]}" "${targets[@]}" \
+        >"$tmp/tests.json" || return
+      while IFS=$'\t' read -r manifest name kind exe; do
+        dir=$(dirname "$manifest")
+        filters=()
+        if [ "$(basename "$dir")" = fleetd ]; then
+          if [ "$kind" = lib ] && [ ${#mods[@]} -gt 0 ]; then
+            filters=("${mods[@]}")
+          elif [ "$kind" != test ] || [[ " ${itests[*]} " != *" $name "* ]]; then
+            continue
+          fi
+        fi
+        echo "     Running $name ($kind of ${dir#"$PWD"/}) ${filters[*]}"
+        (cd "$dir" && CARGO_MANIFEST_DIR=$dir "$exe" "${filters[@]}") || status=1
+      done < <(jq -r "$test_binaries" "$tmp/tests.json")
+      return $status
     }
   fi
   if [ ${#mods[@]} -eq 0 ] && [ ${#itests[@]} -eq 0 ] && [ ${#crates[@]} -eq 0 ]; then
@@ -210,15 +312,16 @@ if wanted rust-tests "${rust_paths[@]}"; then
       echo "==> rust-tests: no change picks a test module; CI runs them all"
     fi
   fi
-  [ ${#mods[@]} -gt 0 ] && step rust-tests run_tests -p fleetd --lib -- "${mods[@]}"
-  [ ${#itests[@]} -gt 0 ] && step rust-tests run_tests -p fleetd "${itests[@]}"
-  for c in "${crates[@]}"; do step rust-tests run_tests -p "$c"; done
+  if [ ${#packages[@]} -gt 0 ]; then
+    echo "==> rust-tests: the tests of ${packages[*]} ${targets[*]}, in one cargo; in the lib, ${mods[*]:-none}"
+    step rust-tests picked_tests
+  fi
 fi
 
 if $site_wanted; then
   step site npm_ci docs/site
   step site npm run build --prefix docs/site
-  if [ -x "$target/debug/fleetd" ]; then
+  if $built && [ -x "$target/debug/fleetd" ]; then
     "$target/debug/fleetd" help >"$help"
     step site node .github/site-check.mjs "$help"
   fi
@@ -270,7 +373,7 @@ if [[ " ${named[*]} " == *" qa "* ]]; then
   step qa pnpm -C app/desktop qa:build
   step qa pnpm -C app/desktop qa:selftest
   step qa pnpm -C app/desktop qa
-elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixtures; then
+elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixtures && ! passed_before qa; then
   mapfile -t touched < <(changed_files | sed -n 's|^app/desktop/||p')
   tests='' grep=''
   if touched tests --count && touched grep; then
@@ -288,14 +391,14 @@ elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixt
       step qa qa_picked
     fi
   fi
-elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.yml; then
+elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.yml &&
+  ! changed app/desktop/src/renderer app/desktop/fixtures; then
   echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs the screens CI runs"
 fi
 
-# For fleetd's pre-push gate, newest last: "<tree> <check>" for each check that passed on the tree, and "<tree>" once
-# every check it needs has. A check run on every call (reverts, the identifier check) that fails records none, and a run
-# that fails anything never marks its tree whole: a later run that passes does.
-marks=$(git rev-parse --git-path fleetd-checked)
+# For fleetd's pre-push gate, newest last: "<key> <check>" for each check that passed (its key on the tree), and "<tree>"
+# once every check the tree needs has passed on its key. A check run on every call (reverts, the identifier check) that
+# fails records none, and a run that fails anything never marks its tree whole: a later run that passes does.
 ran=("${named[@]}")
 [ ${#named[@]} -gt 0 ] || ran=("${needed[@]}")
 passed=("${ran[@]}")
@@ -307,10 +410,10 @@ done
 {
   tail -n 199 "$marks" 2>/dev/null
   for c in "${passed[@]}"; do
-    printf '%s\n' "${failed[@]}" | grep -q "^$c:" || echo "$checked_tree $c"
+    printf '%s\n' "${failed[@]}" | grep -q "^$c:" || echo "$(key "$checked_tree" "$c") $c"
   done
 } >"$tmp/checked"
-for c in "${needed[@]}"; do grep -qxF "$checked_tree $c" "$tmp/checked" || { whole=false; missing+=" $c"; }; done
+for c in "${needed[@]}"; do grep -qxF "$(key "$checked_tree" "$c") $c" "$tmp/checked" || { whole=false; missing+=" $c"; }; done
 $whole && echo "$checked_tree" >>"$tmp/checked"
 mv "$tmp/checked" "$marks"
 

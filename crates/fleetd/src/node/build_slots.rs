@@ -3,7 +3,9 @@
 //! a `cargo` of its own first on each agent's PATH (`<node home>/build-slots/bin/cargo`), which runs
 //! `fleetd build-slot`: a build, test, check, clippy (and the like, [`HEAVY`]) first takes one of the machine's slots,
 //! a file under `<node home>/build-slots` it holds a lock on while the real cargo runs, and every other cargo command
-//! runs at once but `run`, whose build alone takes a slot (what it runs may run for hours). With every slot in use a build queues, first come first served, and says so in one line. The kernel
+//! runs at once but `run`, whose build alone takes a slot (what it runs may run for hours). A call that compiles nothing
+//! ([`compiles_nothing`]: `cargo nextest --version`, `cargo build --help`) runs at once too. With every slot in use a
+//! build queues, first come first served, and says so in one line. The kernel
 //! drops a lock when its holder exits however it ends, so a slot never stays taken by a build that's gone, and nothing
 //! running is ever stopped: a build only ever waits before it starts.
 //!
@@ -83,9 +85,35 @@ fn command_at(args: &[String]) -> Option<usize> {
     None
 }
 
-/// Whether cargo's `args` name a [`HEAVY`] command.
+/// Whether cargo's `args` name a [`HEAVY`] command that compiles: not one that only prints ([`compiles_nothing`]).
 pub fn heavy(args: &[String]) -> bool {
-    command_at(args).is_some_and(|at| HEAVY.contains(&args[at].as_str()))
+    command_at(args).is_some_and(|at| HEAVY.contains(&args[at].as_str())) && !compiles_nothing(args)
+}
+
+/// Flags that make a command print and exit: `cargo nextest --version`, `cargo build --help`.
+const PRINTS_ONLY: &[&str] = &["--version", "-V", "--help", "-h"];
+
+/// Whether cargo's `args` compile nothing whatever their command: none (`cargo -V`), or a version or help flag of the
+/// command's own (before `--`, and for `run` before the program's first argument), or `install --list`.
+pub fn compiles_nothing(args: &[String]) -> bool {
+    let Some(at) = command_at(args) else {
+        return true;
+    };
+    let command = args[at].as_str();
+    let run = ["run", "r"].contains(&command);
+    let mut rest = args[at + 1..].iter().take_while(|a| *a != "--");
+    while let Some(arg) = rest.next() {
+        if PRINTS_ONLY.contains(&arg.as_str()) || (command == "install" && arg == "--list") {
+            return true;
+        }
+        if run && RUN_VALUES.contains(&arg.as_str()) {
+            rest.next();
+        } else if run && !arg.starts_with('-') {
+            // The program's arguments from here on, flags too.
+            return false;
+        }
+    }
+    false
 }
 
 /// `cargo run`'s flags that take a value as the next argument: every one of them `cargo build` takes too.
@@ -341,7 +369,7 @@ pub fn main(args: &[String]) -> ExitCode {
     let mut command = std::process::Command::new(&cargo);
     command.args(args);
     let held = std::env::var_os(HELD).is_some();
-    let build = build_first(args).filter(|_| !held);
+    let build = build_first(args).filter(|_| !held && !compiles_nothing(args));
     let waits = !held && (build.is_some() || heavy(args));
     let slots = if waits { slots_here(home) } else { None };
     let Some(slots) = slots else {
@@ -577,6 +605,36 @@ mod tests {
         ] {
             assert!(!heavy(&args(light)), "{light:?}");
         }
+    }
+
+    /// A call that only prints (a version, a command's help, `install --list`) runs at once, even with a command that
+    /// compiles; the flags of a program or its tests don't count.
+    #[test]
+    fn trivial_calls_skip_the_slot() {
+        for trivial in [
+            &["--version"][..],
+            &["-V"],
+            &["nextest", "--version"],
+            &["nextest", "run", "--help"],
+            &["+nightly", "-q", "clippy", "-V"],
+            &["build", "-p", "fleetd", "-h"],
+            &["install", "--list"],
+            &["run", "-p", "docsgen", "--help"],
+        ] {
+            assert!(compiles_nothing(&args(trivial)), "{trivial:?}");
+            assert!(!heavy(&args(trivial)), "{trivial:?}");
+        }
+        for builds in [
+            &["test", "--", "--help"][..],
+            &["nextest", "run", "--", "-h"],
+            &["run", "-p", "docsgen", "--", "--version"],
+            &["run", "-q", "prog", "-h"],
+            &["run", "--bin", "-h"],
+            &["install", "cargo-nextest"],
+        ] {
+            assert!(!compiles_nothing(&args(builds)), "{builds:?}");
+        }
+        assert!(heavy(&args(&["test", "--", "--help"])));
     }
 
     #[test]
