@@ -380,6 +380,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
       - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/electron-cache
+      - if: steps.scope.outputs.run == 'true'
         name: No paths that differ only in case
         # macOS checkouts are case-insensitive: Composer.tsx beside composer.ts breaks the Mac build and the
         # "./composer" import alike, so the extension is ignored too.
@@ -439,6 +441,8 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/electron-cache
       - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - name: Test build (DevTools-driven perf and recording)
@@ -524,6 +528,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
       - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/electron-cache
+      - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - name: Test build (DevTools-driven perf and recording)
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
@@ -589,6 +595,10 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/electron-cache
+        with:
+          packs: mac-layout
       # darwin's native packages too (@napi-rs/keyring's), which a Linux install leaves out.
       - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile --os current --os darwin --cpu x64 --cpu arm64

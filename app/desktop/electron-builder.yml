@@ -33,6 +33,17 @@ electronFuses:
   onlyLoadAppFromAsar: true
   enableCookieEncryption: true
   grantFileProtocolExtraPrivileges: false
+# Electron's zips are checked against the sums its npm package ships (node_modules/electron/checksums.json, what its
+# own install checks), not a SHASUMS256.txt fetched from GitHub on every pack: with the zip in CI's cache
+# (.github/actions/electron-cache) packing makes no request, so an outage of GitHub's release downloads doesn't fail
+# it. `force` (false, the default) makes these @electron/get's options, which pass the sums on. A test keeps them the
+# installed Electron's (src/main/electronDownload.test.ts).
+electronDownload:
+  force: false
+  checksums:
+    electron-v44.9.0-darwin-arm64.zip: 12d873a5ae98a6598e730402e9278c5d132e97ea1a4405a7713bec2a3e83921f
+    electron-v44.9.0-darwin-x64.zip: fd9d60a1d6cbe98105c3cdd345f7dcca0961364650e6fbbf49d13e58b0f34786
+    electron-v44.9.0-linux-x64.zip: ecced7ecb55697f92ca870939c5988557faa8acd8c222c232cae5913d318c8b9
 extraResources:
   - from: build/app-update.yml
     to: app-update.yml

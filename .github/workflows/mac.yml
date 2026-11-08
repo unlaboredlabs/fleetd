@@ -115,6 +115,9 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - uses: ./.github/actions/electron-cache
+        with:
+          packs: mac-arm64
       - run: pnpm install --frozen-lockfile
       - name: Packaged smoke (macOS)
         run: |
