@@ -7,6 +7,7 @@
 use super::github::{CheckRun, TRAIN_CONTEXT};
 use super::next::gated_name;
 use super::records::Watch;
+use super::repeats::warn_hourly;
 use super::service::{Train, is_red, short};
 
 /// A merged commit is watched at least this long, so checks that start late (a workflow run on the push) are seen.
@@ -89,7 +90,7 @@ impl Train {
             let runs = match self.github.check_runs(repo, &w.sha).await {
                 Ok(runs) => runs,
                 Err(e) => {
-                    tracing::warn!(repo, sha = w.sha, error = %e.message, "train: merged commit's checks not read");
+                    warn_hourly!(self, [repo, w.sha], e.message; repo, sha = w.sha, error = %e.message, "train: merged commit's checks not read");
                     continue;
                 }
             };
@@ -130,7 +131,7 @@ impl Train {
                     .put_fix_order(repo, &check.name, &w.sha, &order, now);
             }
             Err(e) => {
-                tracing::warn!(repo, sha = w.sha, check = check.name, error = %e, "train: fix order not opened; tried again next pass")
+                warn_hourly!(self, [repo, w.sha, check.name], e; repo, sha = w.sha, check = check.name, error = %e, "train: fix order not opened; tried again next pass")
             }
         }
     }

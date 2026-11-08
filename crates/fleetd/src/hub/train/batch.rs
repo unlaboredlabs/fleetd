@@ -20,6 +20,7 @@ use super::host::BoxFut;
 use super::next::{WAITING_ON, gated_name, proven_runs};
 use super::records::DRAFT;
 use super::regen::{Conflict, REGENERATING};
+use super::repeats::warn_hourly;
 use super::service::{
     Between, CiOutcome, Fast, ReviewWait, Train, error_text, is_red, lock, short,
 };
@@ -638,7 +639,7 @@ impl Train {
         };
         for branch in branches {
             if let Err(e) = self.github.delete_branch(repo, &branch).await {
-                tracing::warn!(repo, branch, error = %e.message, "train: scratch branch not deleted");
+                warn_hourly!(self, [repo, branch], e.message; repo, branch, error = %e.message, "train: scratch branch not deleted");
             }
         }
     }
@@ -1379,7 +1380,8 @@ impl Train {
         let pull = match self.github.pull(&change.repo, change.pr_number.get()).await {
             Ok(pull) => pull,
             Err(e) => {
-                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: batch member not read; the next pass finishes it");
+                warn_hourly!(self, [change.change_id], e.message; change_id = %change.change_id, error = %e.message, "train: batch member not read; the next pass finishes it");
+                return;
             }
         };
         if pull.head.sha.to_lowercase() != change.head_sha.as_str() {

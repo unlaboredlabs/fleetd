@@ -2068,6 +2068,48 @@ async fn drops_a_removed_projects_train_at_start() {
     assert!(train.records().train(REPO).is_none());
 }
 
+/// A removed project's PRs leave the train with it as abandoned, as a stopped order's do: one line for them all and a
+/// `change.state` event each, then nothing on the passes after. A live project's PR stays on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_projects_prs_leave_the_train_once_with_one_line() {
+    let kit = Kit::new();
+    let gone = kit
+        .enqueue_held(kit.open_pr(7, "gone", &[add("g.txt", "g\n")]))
+        .await;
+    let kept = kit
+        .enqueue_held(kit.open_pr(8, "kept", &[add("k.txt", "k\n")]))
+        .await;
+    let mut moved = kit.get(&gone.change_id);
+    moved.project_ref = removed();
+    kit.train.records().put(&moved);
+
+    let logs = super::hub_host_tests::Logs::default();
+    let guard = logs.capture();
+    kit.train.drop_removed();
+    kit.train.drop_removed();
+    drop(guard);
+
+    let left = kit.get(&gone.change_id);
+    assert_eq!(
+        (left.state, left.last_error.as_deref()),
+        (
+            ChangeState::Abandoned,
+            Some(super::service::REMOVED_PROJECT)
+        )
+    );
+    assert_ne!(kit.get(&kept.change_id).state, ChangeState::Abandoned);
+    let abandoned: Vec<_> = kit
+        .host
+        .events_of("change.state")
+        .into_iter()
+        .filter(|d| d["to"] == "abandoned")
+        .collect();
+    assert_eq!(abandoned.len(), 1, "{abandoned:?}");
+    assert_eq!(abandoned[0]["changeId"], gone.change_id.as_str());
+    assert_eq!(logs.count("PRs of removed projects left the train"), 1);
+    assert_eq!(logs.count("WARN"), 0);
+}
+
 /// A removed project's train stays when another project has the repo, and moves to it.
 #[tokio::test(flavor = "multi_thread")]
 async fn moves_a_removed_projects_train_to_another_project_with_the_repo() {
