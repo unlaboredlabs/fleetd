@@ -225,9 +225,9 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `agents_list` → `src/hub/agents` (read) <!-- tool:`agents_list` -->
 - [x] `agent_work` → `src/hub/agents` (read) <!-- tool:`agent_work` -->
 - [ ] `chat_stop` → `src/hub/chat` (operate) <!-- tool:`chat_stop` -->
-- [ ] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
-- [ ] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
-- [ ] `work_done` → `src/hub/work` (operate) <!-- tool:`work_done` -->
+- [x] `work_claim` → `src/hub/work` (operate) <!-- tool:`work_claim` -->
+- [x] `work_list` → `src/hub/work` (read) <!-- tool:`work_list` -->
+- [x] `work_done` → `src/hub/work` (operate) <!-- tool:`work_done` -->
 
 ### Background loops
 
@@ -246,7 +246,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [ ] hub loop `tasks::worktrees::run` → `src/hub/tasks` <!-- loop:hub loop `tasks::worktrees::run` -->
 - [x] hub loop `time.start` → `src/hub/time` <!-- loop:hub loop `time.start` -->
 - [x] hub loop `usage::wire::start` → `src/hub/usage` <!-- loop:hub loop `usage::wire::start` -->
-- [ ] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
+- [x] hub loop `work::bind::run` → `src/hub/work` <!-- loop:hub loop `work::bind::run` -->
 - [ ] hub loop `work::landings::run` → `src/hub/work` <!-- loop:hub loop `work::landings::run` -->
 
 ## hub-train+github
