@@ -1,10 +1,10 @@
 // Who the kernel's OOM killer takes first when a machine runs out of memory: an agent's processes, never the node or
-// the hub (Rust's oom.rs). The node lowers its own score as far as the kernel lets it (protect): to SERVICE where the
-// process may, otherwise to its user manager's own score, 100 under systemd's `user@.service`, as low as an
-// unprivileged process goes. Everything it starts for an agent starts at AGENT (agentSpawn, agentScoreLine): its
-// session host, Chrome, the Android emulator, Xvfb and a Linux desktop's apps. A child inherits its parent's score, so
-// one started plainly would sit at the node's protected score. The agent's own children inherit AGENT: builds,
-// rust-analyzer, test runners.
+// the hub (Rust's oom.rs). The node and the hub each lower their own score as far as the kernel lets them (protect):
+// to SERVICE where the process may, otherwise to its user manager's own score, 100 under systemd's `user@.service`, as
+// low as an unprivileged process goes. Everything the node starts for an agent starts at AGENT (agentSpawn,
+// agentScoreLine): its session host, Chrome, the Android emulator, Xvfb and a Linux desktop's apps. A child inherits
+// its parent's score, so one started plainly would sit at the node's protected score. The agent's own children
+// inherit AGENT: builds, rust-analyzer, test runners.
 //
 // macOS has no OOM score to set (it compresses and swaps before it ends anything, and launchd runs the node as
 // `ProcessType=Interactive`), so these are no-ops there.
@@ -38,7 +38,7 @@ export function lowest(now: number, set: (adj: number) => boolean): number {
   return now;
 }
 
-/** Lowers this process's score as far as the kernel allows, and logs it: at the node's start. */
+/** Lowers this process's score as far as the kernel allows, and logs it: at the node's and the hub's start. */
 export function protect(what: string): number | undefined {
   const before = score();
   if (before === undefined) return undefined;

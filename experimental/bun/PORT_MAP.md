@@ -2,9 +2,9 @@
 # Bun port map
 
 Every HTTP route, /app message, MCP tool, node link message, session and lead call, agent-mcp tool, CLI command,
-background loop, heartbeat field and module without a wire surface in the Rust tree, with the Bun module that ports it
-(the Rust module's path under `src/`). To tick an item when its module does it and a test covers it, add its
-`<!-- key -->` as a line of `src/<module>/PORTED` (sorted), then run `bun run gen`.
+background loop, heartbeat field, module without a wire surface, service start step and hub HTTP layer in the Rust
+tree, with the Bun module that ports it (the Rust module's path under `src/`). To tick an item when its module does
+it and a test covers it, add its `<!-- key -->` as a line of `src/<module>/PORTED` (sorted), then run `bun run gen`.
 
 ## hub-core
 
@@ -108,6 +108,12 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
+
+### Service start and HTTP layers
+
+- [x] the hub lowers its own OOM score at start → `src/hub/serve` <!-- service:the hub lowers its own OOM score at start -->
+- [x] hub HTTP layer `counted` → `src/hub/http` <!-- service:hub HTTP layer `counted` -->
+- [x] hub HTTP layer `gzip` → `src/hub/http` <!-- service:hub HTTP layer `gzip` -->
 
 ## hub-work
 
@@ -442,6 +448,10 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 ### Modules without a wire surface
 
 - [x] `node/runner/scope.rs` → `src/node/runner` (each session host in a systemd scope of its own, so agents outlive the node's restart) <!-- mod:`node/runner/scope.rs` -->
+
+### Service start and HTTP layers
+
+- [x] the node lowers its own OOM score at start → `src/node` <!-- service:the node lowers its own OOM score at start -->
 
 ## node-browser+screens
 
