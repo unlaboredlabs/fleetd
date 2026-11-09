@@ -230,6 +230,7 @@ mod tests {
             name: Some(if workflow == 1 { "Mac" } else { "Staple" }.into()),
             path: Some(".github/workflows/mac.yml".into()),
             head_sha: sha.into(),
+            status: Some("completed".into()),
             conclusion: Some(conclusion.into()),
             html_url: format!("https://github.com/acme/app/actions/runs/{id}"),
             updated_at: Some(at.into()),

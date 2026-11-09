@@ -1,0 +1,128 @@
+{
+  "stale": {
+    "check_runs": [
+      {
+        "id": 128906546687,
+        "name": "qa (ubuntu-latest, 1/4)",
+        "status": "in_progress",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:02:16Z",
+        "completed_at": "2026-11-09T00:02:25Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128906546687",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128906546639,
+        "name": "qa (ubuntu-latest, 2/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:02:16Z",
+        "completed_at": "2026-11-09T00:02:26Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128906546639",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128906546445,
+        "name": "qa (ubuntu-latest, 3/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:02:16Z",
+        "completed_at": "2026-11-09T00:02:29Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128906546445",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128906546672,
+        "name": "qa (ubuntu-latest, 4/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:02:17Z",
+        "completed_at": "2026-11-09T00:02:28Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128906546672",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      }
+    ],
+    "workflow_run": {
+      "id": 42538020541,
+      "name": "Desktop QA",
+      "path": ".github/workflows/desktop-qa.yml",
+      "workflow_id": 389191042,
+      "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541",
+      "updated_at": "2026-11-09T00:02:30Z"
+    }
+  },
+  "rerun": {
+    "check_runs": [
+      {
+        "id": 128919534102,
+        "name": "qa (ubuntu-latest, 1/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:49:22Z",
+        "completed_at": "2026-11-09T00:49:30Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128919534102",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128919533896,
+        "name": "qa (ubuntu-latest, 2/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:49:22Z",
+        "completed_at": "2026-11-09T00:49:31Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128919533896",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128919534138,
+        "name": "qa (ubuntu-latest, 3/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:49:22Z",
+        "completed_at": "2026-11-09T00:49:32Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128919534138",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      },
+      {
+        "id": 128919534085,
+        "name": "qa (ubuntu-latest, 4/4)",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-09T00:49:22Z",
+        "completed_at": "2026-11-09T00:49:31Z",
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42538020541/job/128919534085",
+        "head_sha": "4257a978e0175804e2644ee6670db42e888c1dcd"
+      }
+    ]
+  },
+  "pending": {
+    "check_runs": [
+      {
+        "id": 128920581738,
+        "name": "site",
+        "status": "in_progress",
+        "conclusion": null,
+        "started_at": "2026-11-09T00:53:09Z",
+        "completed_at": null,
+        "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42542555767/job/128920581738",
+        "head_sha": "794306d95f04a455647be08cce0cbeb718db7a65"
+      }
+    ],
+    "workflow_run": {
+      "id": 42542555767,
+      "name": "CI",
+      "path": ".github/workflows/ci.yml",
+      "workflow_id": 387535278,
+      "head_sha": "794306d95f04a455647be08cce0cbeb718db7a65",
+      "status": "in_progress",
+      "conclusion": null,
+      "run_attempt": 1,
+      "html_url": "https://github.com/unlaboredlabs/fleetd/actions/runs/42542555767",
+      "updated_at": "2026-11-09T00:53:09Z"
+    }
+  }
+}
