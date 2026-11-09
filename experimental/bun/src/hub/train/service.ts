@@ -215,6 +215,8 @@ export class Train {
   private readonly overdue = new Set<string>();
   /** The upstream failures the lead was told of, each Change's with its hold. */
   readonly afterTold = new Set<string>();
+  /** Per ready Change, the red head its author was told of (`tellOwnRed`), until its own CI goes green. */
+  readonly ownRedTold = new Map<string, string>();
   /** Held by an enqueue with `after` from its loop check until its Change records them. */
   private readonly afterLock = new Mutex();
   /** GitHub's answer for an upstream PR with no open Change, by URL, and when it was read. */
