@@ -19,7 +19,7 @@ import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { NodeCommandError, NodeCommands, type RequestOptions } from "./commands.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
-import { type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
+import { type NodeSessions, type NodeToHubSession, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { executorsOf, SESSION_FRAMES } from "./executor.ts";
 import { BadFrames, FrameError, undecodable } from "./frames.ts";
 import { problem as networkProblemOf } from "./network.ts";
@@ -48,6 +48,11 @@ import {
 export const HELLO_TIMEOUT_MS = 10_000;
 /** How many heartbeats apart the hub re-reads the runner's state, so a fixed or expired login shows within a minute. */
 const RUNNER_CHECK_EVERY = 4;
+/**
+ * How long a link may keep heartbeating while its executor isn't live before the hub attaches its sessions again:
+ * otherwise a subscription lost on a healthy link leaves the machine offline until its node restarts.
+ */
+export const REATTACH_AFTER_MS = 30_000;
 /** The most one compressed node frame may inflate to: the socket's own message cap, a put_file's 64 MiB. */
 const MAX_INFLATED = 64 << 20;
 const NODE_TAGS: ReadonlySet<string> = new Set(NODE_TO_HUB);
@@ -74,6 +79,10 @@ type LinkSocket = {
   helloTimer?: Timer;
   heartbeat?: Timer;
   beats: number;
+  /** The link's executor sender, once welcomed: `reattachIfDark` subscribes on it again. */
+  sessions?: NodeSessions;
+  /** When this link's heartbeats first found its executor not live. */
+  darkSince?: number;
   inflater?: Inflater;
   deflater?: Deflater;
   /** This link's frames that didn't decode, per minute. */
@@ -189,6 +198,11 @@ export class Link {
   private readonly githubDown = new Set<string>();
   /** The socket handler `GET /node/link` upgrades to. */
   readonly socket: SocketHandler;
+  /** Lead calls being answered now, across every link: the hub's stop waits for them (`stop`). */
+  private calls = 0;
+  private readonly callsDone = new Set<() => void>();
+  /** The hub is stopping: lead calls that come in now aren't run, and say so. */
+  private stopping = false;
 
   constructor(private readonly hub: Hub) {
     this.socket = {
@@ -203,6 +217,38 @@ export class Link {
   }
 
   // ---- The seam (D346).
+
+  /**
+   * The hub stops (SIGTERM): lead calls that come in from now on are answered as not run, the ones being answered get
+   * up to `waitMs` to finish and send their answers, and then every link closes with `CLOSE.RESTART`, so each node
+   * redials at once rather than find its socket reset.
+   */
+  async stop(waitMs: number): Promise<void> {
+    this.stopping = true;
+    if (this.calls > 0) {
+      let done: () => void = () => {};
+      const finished = new Promise<void>((resolve) => this.callsDone.add((done = resolve)));
+      let timer: Timer | undefined;
+      await Promise.race([finished, new Promise<void>((resolve) => (timer = setTimeout(resolve, waitMs)))]);
+      clearTimeout(timer);
+      this.callsDone.delete(done);
+    }
+    for (const live of [...this.links.values()]) this.close(live.ws, live.state, CLOSE.RESTART, "hub restarting");
+  }
+
+  /** One lead call being answered, counted until its `end`; undefined once the hub is stopping. */
+  callStarted(): { end(): void } | undefined {
+    if (this.stopping) return undefined;
+    this.calls++;
+    let ended = false;
+    return {
+      end: () => {
+        if (ended) return;
+        ended = true;
+        if (--this.calls === 0) for (const done of [...this.callsDone]) done();
+      },
+    };
+  }
 
   /** Calls `fn(machineId, frame)` for each frame tagged `tag` from any node; returns the unsubscribe. */
   on<T extends NodeToHubTag>(tag: T, fn: FrameHandler<T>): () => void {
@@ -539,8 +585,9 @@ export class Link {
       state.inflater = new Inflater(MAX_INFLATED);
     }
     state.detach = this.commands.attach(machineId, id, (frame) => this.write(ws, state, frame));
+    state.sessions = { linkId: id, send: (frame) => this.write(ws, state, frame) };
     try {
-      executorsOf(this.hub).attach(machineId, { linkId: id, send: (frame) => this.write(ws, state, frame) });
+      executorsOf(this.hub).attach(machineId, state.sessions);
     } catch (error) {
       console.error("node link: the executor did not take the link:", error);
     }
@@ -630,11 +677,25 @@ export class Link {
         if (typeof frame.id !== "string" || frame.id === "") throw new FrameError("missing field `id`");
         if (typeof frame.cwd !== "string") throw new FrameError("missing field `cwd`");
         if (!frame.call || typeof frame.call !== "object" || Array.isArray(frame.call)) throw new FrameError("missing field `call`");
-        // Off the frame loop: a slow call must not hold up heartbeats or other calls. Its answer goes back on this
-        // link, which may have closed by then.
-        onLeadCallFrame(this.hub, machineId, frame as unknown as LeadCallFrame, (result) => {
-          this.write(ws, state, result);
-        });
+        {
+          const inFlight = this.callStarted();
+          if (!inFlight) {
+            // Not run, so trying it again can't run it twice.
+            this.write(ws, state, {
+              t: "lead_result",
+              id: frame.id,
+              error: { code: "failed", message: "fleetd hub is restarting, so this call didn't run", fix: "try it again in a few seconds" },
+            });
+            break;
+          }
+          // Off the frame loop: a slow call must not hold up heartbeats or other calls. Its answer goes back on this
+          // link, which may have closed by then.
+          void onLeadCallFrame(this.hub, machineId, frame as unknown as LeadCallFrame, (result) => {
+            this.write(ws, state, result);
+            // Counted until its answer is queued ahead of the link's close.
+            inFlight.end();
+          }).finally(() => inFlight.end());
+        }
         break;
       default:
         // A reply a request waits for is that request's alone.
@@ -676,6 +737,31 @@ export class Link {
     }
     const live = this.links.get(machineId);
     if (live && ++live.state.beats % RUNNER_CHECK_EVERY === 0) this.checkRunner(machineId);
+    if (live) this.reattachIfDark(machineId, live.state);
+  }
+
+  /**
+   * On each heartbeat of a link: once its executor hasn't been live for `REATTACH_AFTER_MS` while heartbeats kept
+   * coming, its sessions are attached again. `state.darkSince` is when this link's heartbeats first found it not live.
+   */
+  reattachIfDark(machineId: string, state: { sessions?: NodeSessions; darkSince?: number }): void {
+    const ex = executorsOf(this.hub);
+    if (!state.sessions || ex.isConnected(machineId)) {
+      state.darkSince = undefined;
+      return;
+    }
+    const now = this.hub.clock.now();
+    const since = (state.darkSince ??= now);
+    if (now - since < REATTACH_AFTER_MS) return;
+    console.warn(
+      `node link: heartbeats arrive but its sessions aren't live; attaching them again machine_id=${machineId} link_id=${state.sessions.linkId} dark_ms=${now - since}`,
+    );
+    state.darkSince = now;
+    try {
+      ex.reattach(machineId, state.sessions);
+    } catch (error) {
+      console.error("node link: the executor did not take the link again:", error);
+    }
   }
 
   /**
