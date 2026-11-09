@@ -12,6 +12,7 @@ export const ROLLUP_DAYS = 400;
 export const PRUNE_BATCH = 5_000;
 const LABEL_MAX = 500;
 export const DAY = 86_400_000;
+export const HOUR = 3_600_000;
 
 /** Who a span belongs to. */
 export type Ids = {
@@ -144,6 +145,34 @@ function labelId(c: Database, fam: string, text: string): number {
   return Number(c.query("INSERT INTO time_labels (hash, family, text) VALUES (?1, ?2, ?3)").run(hash, fam, text).lastInsertRowid);
 }
 
+/** A span was written into its hour: that hour's digest (hours.ts) reads it live until it is built again. */
+function touch(c: Database, startMs: number): void {
+  c.query("INSERT INTO time_hours (hour, version) VALUES (?1, 1) ON CONFLICT(hour) DO UPDATE SET version = version + 1").run(
+    Math.floor(startMs / HOUR),
+  );
+}
+
+/**
+ * Spans already digested changed in place (a task named its early spans, a project was erased): the hours' digests
+ * are not read again until they are built anew. Without hours, every hour.
+ */
+export function resetHours(c: Database, hours?: number[]): void {
+  if (hours === undefined) {
+    c.run("UPDATE time_hours SET built_version = NULL, reset = reset + 1, version = version + 1");
+    c.run("DELETE FROM time_digests");
+    return;
+  }
+  const reset = c.query(
+    `INSERT INTO time_hours (hour, version, reset) VALUES (?1, 1, 1)
+     ON CONFLICT(hour) DO UPDATE SET built_version = NULL, reset = reset + 1, version = version + 1`,
+  );
+  const drop = c.query("DELETE FROM time_digests WHERE hour = ?1");
+  for (const h of hours) {
+    reset.run(h);
+    drop.run(h);
+  }
+}
+
 /** Writes one span; counts it in the roll-ups when it is new and closed, or when this write closes it. */
 export function write(c: Database, span: NewSpan, shares: Share[] = []): Wrote {
   const existing = c
@@ -170,6 +199,7 @@ export function write(c: Database, span: NewSpan, shares: Share[] = []): Wrote {
   if (existing) {
     if (existing.end_ms !== null || span.endMs === undefined) return { kind: "unchanged" };
     id = existing.id;
+    touch(c, span.startMs);
     c.query(
       `UPDATE time_spans SET end_ms = ?2, excl_ms = ?3, status = ?4,
          extra = COALESCE(?5, extra), label_id = COALESCE(?6, label_id),
@@ -223,6 +253,7 @@ export function write(c: Database, span: NewSpan, shares: Share[] = []): Wrote {
           i.profile ?? null,
         ).lastInsertRowid,
     );
+    touch(c, span.startMs);
     if (span.endMs === undefined) return { kind: "opened", id };
   }
   const owners = c
@@ -267,6 +298,11 @@ export function linkParents(c: Database, src: string, pairs: [child: string, par
 /** Deletes spans past retention and roll-ups past ROLLUP_DAYS, one batch per call; true while more remain. */
 export function prune(c: Database, nowMs: number): boolean {
   const cutoff = nowMs - retentionDays(c) * DAY;
+  // Hours whose spans all go take their digests along; the hour the cutoff falls in is built again from what stays.
+  const cutHour = Math.floor(cutoff / HOUR);
+  c.query("DELETE FROM time_digests WHERE hour < ?1").run(cutHour);
+  c.query("DELETE FROM time_hours WHERE hour < ?1").run(cutHour);
+  if (c.query("SELECT 1 FROM time_spans WHERE start_ms >= ?1 AND start_ms < ?2 LIMIT 1").get(cutHour * HOUR, cutoff)) resetHours(c, [cutHour]);
   const n = c
     .query("DELETE FROM time_spans WHERE id IN (SELECT id FROM time_spans WHERE start_ms < ?1 ORDER BY start_ms LIMIT ?2)")
     .run(cutoff, PRUNE_BATCH).changes;
@@ -310,11 +346,21 @@ export type Filter = {
   workstreamId?: string;
   taskIds?: string[];
   thread?: [string, string];
+  /** A thread on any machine. */
+  threadId?: string;
   role?: string;
   kinds?: SpanKind[];
   afterId?: number;
   /** Only spans that start here or later: keeps a period's read on the start index. */
   startFrom?: number;
+  /** Only spans that start before this (`untilMs` still cuts open spans). */
+  startBefore?: number;
+  /** Only these spans. */
+  ids?: number[];
+  /** Only spans with one of these labels (the label index). */
+  labelIds?: number[];
+  /** Only spans of this kind, as a literal, so a partial index on it serves the read. */
+  kind?: SpanKind;
   /** At the limit, keep the newest spans instead of the oldest. */
   newest?: boolean;
 };
@@ -386,8 +432,13 @@ export function readMeta(c: Database, f: Filter, limit: number): [Row, Meta][] {
   if (f.project) add("s.machine_id = ? AND s.project_id = ?", f.project);
   if (f.lead) add("s.machine_id = ? AND s.project_id = ? AND s.role = 'lead'", f.lead);
   if (f.startFrom !== undefined) add("s.start_ms >= ?", [f.startFrom]);
+  if (f.startBefore !== undefined) add("s.start_ms < ?", [f.startBefore]);
+  if (f.ids) add("s.id IN (SELECT value FROM json_each(?))", [JSON.stringify(f.ids)]);
+  if (f.labelIds) add("s.label_id IN (SELECT value FROM json_each(?))", [JSON.stringify(f.labelIds)]);
+  if (f.kind !== undefined) sql += ` AND s.kind = ${kindCode(f.kind)}`;
   if (f.taskIds) add("s.task_id IN (SELECT value FROM json_each(?))", [JSON.stringify(f.taskIds)]);
   if (f.thread) add("s.machine_id = ? AND s.thread_id = ?", f.thread);
+  if (f.threadId !== undefined) add("s.thread_id = ?", [f.threadId]);
   if (f.role !== undefined) add("s.role = ?", [f.role]);
   if (f.kinds) add("s.kind IN (SELECT value FROM json_each(?))", [JSON.stringify(f.kinds.map(kindCode))]);
   if (f.afterId !== undefined) add("s.id > ?", [f.afterId]);

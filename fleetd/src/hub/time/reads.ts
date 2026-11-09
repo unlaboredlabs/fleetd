@@ -2,7 +2,9 @@
 // connection to hub.sqlite: tools.ts runs them on the read worker (store/read-worker.ts), off the event loop, as Rust
 // ran them on its read-only connection. A fleet breakdown reads 200k spans and takes seconds; on the main connection
 // every other call waited behind it. Reads are bounded: at most MAX_ROWS spans per period are loaded, and a read that
-// hits the bound says so in coverage. Nothing here may need the hub itself, only the database and the job's fields.
+// hits the bound says so in coverage. A breakdown or insights of the fleet, a machine, a project or its lead reads the
+// hourly digests instead (hours.ts), which give the same answer from a few thousand digests and the spans around them,
+// unbounded. Nothing here may need the hub itself, only the database and the job's fields.
 import type { Database } from "bun:sqlite";
 import type {
   Category,
@@ -29,14 +31,20 @@ import type { Caller } from "../api/registry.ts";
 import { Refs, who } from "../navi/owner.ts";
 import * as navis from "../navi/store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
-import { CATEGORIES, categoryOf, kindCode } from "./kinds.ts";
+import { type Digest, runsOf } from "./digest.ts";
+import { ANY_ROLE, built, digestRead, type Merged, type Selection } from "./hours.ts";
+import { CATEGORIES, categoryOf, kindCode, kindOf } from "./kinds.ts";
 import { dur, isDetail, type Row, type RuleInput } from "./model.ts";
 import { criticalPath, decodeStored, forOutput } from "./path.ts";
-import { compare as compareRules, insights as findInsights, MAX_INSIGHTS, ruleSpans } from "./rules.ts";
+import { compare as compareRules, FULL_SUITE_MIN_RUNS, insights as findInsights, MAX_INSIGHTS, REPEAT_MIN_RUNS, ruleSpans, SLOW_TOP } from "./rules.ts";
 import { DAY, type Filter, headUtf16, type Meta, read, readMeta, retentionDays, rollupTotals, storedBytes } from "./store.ts";
 
 /** Spans loaded per period for a breakdown or the rules. */
 export const MAX_ROWS = 200_000;
+/** Every span of a read by label or kind: those come to a few thousand. */
+const ALL = 10_000_000;
+/** How long a running order's `change.ci` segments the hub worked out stand in for its path (upkeep.ts). */
+export const LIVE_CI_MS = 60_000;
 /** Spans of one order read for its critical path. */
 const PATH_ROWS = 100_000;
 /** Running orders whose path a read computes, newest first. */
@@ -112,8 +120,9 @@ function filterOf(scope: TimeScope, since: number, until: number): Filter {
 export function orderBounds(c: Database, w: string): [number, number | undefined] | undefined {
   const row = c.query<{ start_ms: number; end_ms: number | null }, [string]>("SELECT start_ms, end_ms FROM time_orders WHERE workstream_id = ?1").get(w);
   const intake = c
-    .query<{ s: number | null }, [string, number]>("SELECT MIN(start_ms) AS s FROM time_spans WHERE workstream_id = ?1 AND kind = ?2")
-    .get(w, kindCode("intake.route"))?.s;
+    // The kind as a literal, so the intake index answers it; else the read walks every span of the order.
+    .query<{ s: number | null }, [string]>(`SELECT MIN(start_ms) AS s FROM time_spans WHERE workstream_id = ?1 AND kind = ${kindCode("intake.route")}`)
+    .get(w)?.s;
   if (!row) return undefined;
   return [intake == null ? row.start_ms : Math.min(intake, row.start_ms), row.end_ms ?? undefined];
 }
@@ -213,12 +222,21 @@ function rollupScope(scope: TimeScope): [string, string] | undefined {
 
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
+/** The whole UTC days inside the period, which the daily roll-ups give a scope's totals for; none for a role filter. */
+function wholeDays(scope: TimeScope, role: string | undefined, since: number, until: number): [number, number] | undefined {
+  const fromDay = Math.floor(since / DAY) + (mod(since, DAY) !== 0 ? 1 : 0);
+  const toDay = Math.floor(until / DAY);
+  return rollupScope(scope) && role === undefined && toDay > fromDay ? [fromDay * DAY, toDay * DAY] : undefined;
+}
+
+type Add = (cat: Category, kind: SpanKind, ms: number, n: number) => void;
+
 /**
- * Agent time per category and kind. Whole UTC days inside the period come from the daily roll-ups, the partial days
- * at its edges, and scopes without a roll-up (a thread, a role filter), from spans. Every span counts in the day it
+ * Agent time per category and kind. Whole UTC days inside the period come from the daily roll-ups; `rest` adds the
+ * partial days at its edges, and scopes without a roll-up (a thread, a role filter). Every span counts in the day it
  * started.
  */
-function totals(c: Database, scope: TimeScope, role: string | undefined, l: Loaded, since: number, until: number): { agent: number; cats: CategoryTotal[] } {
+function totals(c: Database, scope: TimeScope, whole: [number, number] | undefined, rest: (add: Add) => void): { agent: number; cats: CategoryTotal[] } {
   const by = new Map<Category, { ms: number; n: number; kinds: Map<SpanKind, [number, number]> }>();
   const add = (cat: Category, kind: SpanKind, ms: number, n: number) => {
     const e = by.get(cat) ?? { ms: 0, n: 0, kinds: new Map() };
@@ -230,19 +248,11 @@ function totals(c: Database, scope: TimeScope, role: string | undefined, l: Load
     k[0] += ms;
     k[1] += n;
   };
-  const fromDay = Math.floor(since / DAY) + (mod(since, DAY) !== 0 ? 1 : 0);
-  const toDay = Math.floor(until / DAY);
   const sc = rollupScope(scope);
-  let whole: [number, number] | undefined;
-  if (sc && role === undefined && toDay > fromDay) {
-    for (const [cat, kind, ms, n] of rollupTotals(c, sc[0], sc[1], fromDay, toDay)) if (!isDetail(kind)) add(cat, kind, ms, n);
-    whole = [fromDay * DAY, toDay * DAY];
+  if (sc && whole) {
+    for (const [cat, kind, ms, n] of rollupTotals(c, sc[0], sc[1], whole[0] / DAY, whole[1] / DAY)) if (!isDetail(kind)) add(cat, kind, ms, n);
   }
-  l.rows.forEach((r, i) => {
-    if (r.startMs < since || r.startMs >= until || isDetail(r.kind)) return;
-    if (whole && r.startMs >= whole[0] && r.startMs < whole[1]) return;
-    add(categoryOf(r.kind), r.kind, r.exclMs * (l.weights[i] as number), 1);
-  });
+  rest(add);
   let agent = 0;
   const cats: CategoryTotal[] = CATEGORIES.flatMap((cat) => {
     const e = by.get(cat);
@@ -280,6 +290,10 @@ function byProfile(l: Loaded, since: number, until: number): ProfileTotal[] {
     sum[0] += ms;
     if (categoryOf(r.kind) === "model") sum[1] += ms;
   });
+  return profilesOut(sums);
+}
+
+function profilesOut(sums: Map<string, [number, number, number]>): ProfileTotal[] {
   return [...sums.entries()]
     .map(([profile, [agent, model, tokens]]) => ({
       profile,
@@ -350,7 +364,12 @@ function repeated(rows: Row[]): RepeatStat[] {
   return out.sort((a, b) => b.totalMs - a.totalMs).slice(0, 10);
 }
 
-function ciChecks(rows: Row[], paths: [string, CriticalPath][]): CiCheckStat[] {
+/** An order's `change.ci` segments on its critical path, as `[start, end]`. */
+export type CiSegments = [number, number][];
+
+export const ciOf = (p: CriticalPath): CiSegments => p.segments.filter((s) => s.kind === "change.ci").map((s) => [s.startMs, s.endMs]);
+
+function ciChecks(rows: Row[], paths: [string, CiSegments][]): CiCheckStat[] {
   const by = new Map<string, number[]>();
   for (const r of rows) {
     if (r.kind !== "ci.check") continue;
@@ -369,14 +388,14 @@ function ciChecks(rows: Row[], paths: [string, CriticalPath][]): CiCheckStat[] {
     ofOrder.set(r.workstreamId, list);
   }
   const excess = new Map<string, number>();
-  for (const [w, p] of paths) {
+  for (const [w, segs] of paths) {
     const own = ofOrder.get(w) ?? [];
-    for (const seg of p.segments.filter((s) => s.kind === "change.ci")) {
-      const checks = own.filter((r) => r.startMs < seg.endMs && r.endMs > seg.startMs).sort((a, b) => a.endMs - b.endMs);
+    for (const [segStart, segEnd] of segs) {
+      const checks = own.filter((r) => r.startMs < segEnd && r.endMs > segStart).sort((a, b) => a.endMs - b.endMs);
       const last = checks[checks.length - 1];
       if (!last) continue;
-      const before = checks.length >= 2 ? (checks[checks.length - 2] as Row).endMs : seg.startMs;
-      const e = Math.min(last.endMs, seg.endMs) - Math.max(before, seg.startMs);
+      const before = checks.length >= 2 ? (checks[checks.length - 2] as Row).endMs : segStart;
+      const e = Math.min(last.endMs, segEnd) - Math.max(before, segStart);
       const name = last.extra.check ?? "";
       excess.set(name, (excess.get(name) ?? 0) + Math.max(e, 0));
     }
@@ -498,8 +517,13 @@ const pathCache = (c: Database) => {
 const STORED_FOR_MS = 60_000;
 const stored = new WeakMap<Database, [at: number, bytes: number]>();
 
-/** The bytes the time tables take on disk, measured at most STORED_FOR_MS ago on this connection. */
+/**
+ * The bytes the time tables take on disk: as the hub last measured them (upkeep.ts; measuring takes a few hundred ms),
+ * else measured at most STORED_FOR_MS ago on this connection.
+ */
 function storedBytesOf(c: Database, now: number): number {
+  const kept = c.query<{ value: number }, []>("SELECT value FROM time_settings WHERE key = 'stored_bytes'").get()?.value;
+  if (kept !== undefined) return kept;
   const hit = stored.get(c);
   if (hit && now - hit[0] >= 0 && now - hit[0] < STORED_FOR_MS) return hit[1];
   const bytes = storedBytes(c);
@@ -520,6 +544,41 @@ function paths(c: Database, scope: TimeScope, since: number, until: number, now:
       path = cache.getOr(c, w, now);
     }
     if (path) out.push([w, path]);
+  }
+  return out;
+}
+
+/**
+ * `paths`, as only their `change.ci` segments: a done order's from its stored path, a running one's as the hub last
+ * worked them out (within LIVE_CI_MS, as PathCache keeps a path a minute), else as `paths` finds them.
+ */
+function ciPaths(c: Database, scope: TimeScope, since: number, until: number, now: number, cache: PathCache): [string, CiSegments][] {
+  const out: [string, CiSegments][] = [];
+  const keptCi = c.query<{ done: number; computed_ms: number; ci: string }, [string]>("SELECT done, computed_ms, ci FROM time_order_ci WHERE workstream_id = ?1");
+  let running = 0;
+  for (const [w, , , done] of ordersIn(c, scope, since, until).slice(0, 500)) {
+    const kept = keptCi.get(w);
+    if (done) {
+      const at = c.query<{ computed_ms: number }, [string]>("SELECT computed_ms FROM time_paths WHERE workstream_id = ?1").get(w)?.computed_ms;
+      if (at !== undefined && kept?.done === 1 && kept.computed_ms === at) {
+        out.push([w, JSON.parse(kept.ci) as CiSegments]);
+        continue;
+      }
+      const stored = at === undefined ? undefined : c.query<{ data: string }, [string]>("SELECT data FROM time_paths WHERE workstream_id = ?1").get(w)?.data;
+      const path = stored === undefined ? undefined : decodeStored(stored);
+      if (path) {
+        out.push([w, ciOf(path)]);
+        continue;
+      }
+    }
+    if (running >= RUNNING_PATHS) continue;
+    running += 1;
+    if (!done && kept?.done === 0 && now - kept.computed_ms >= 0 && now - kept.computed_ms < LIVE_CI_MS) {
+      out.push([w, JSON.parse(kept.ci) as CiSegments]);
+      continue;
+    }
+    const path = cache.getOr(c, w, now);
+    if (path) out.push([w, ciOf(path)]);
   }
   return out;
 }
@@ -689,8 +748,173 @@ function narrow(scope: TimeScope, f: TimeFilters | undefined): TimeScope {
 function periodBreakdown(j: Reading, scope: TimeScope, since: number, until: number, role?: string) {
   const c = j.c;
   const l = readable(j, load(c, scope, since, until, role));
-  const { agent, cats } = totals(c, scope, role, l, since, until);
+  const whole = wholeDays(scope, role, since, until);
+  const { agent, cats } = totals(c, scope, whole, (add) =>
+    l.rows.forEach((r, i) => {
+      if (r.startMs < since || r.startMs >= until || isDetail(r.kind)) return;
+      if (whole && r.startMs >= whole[0] && r.startMs < whole[1]) return;
+      add(categoryOf(r.kind), r.kind, r.exclMs * (l.weights[i] as number), 1);
+    }),
+  );
   return { l, wall: wall(c, scope, l, since, until), agent, cats };
+}
+
+/** The digests and spans a breakdown of `scope` reads (hours.ts); none for an order, a task or a thread. */
+function selectionOf(j: Reading, scope: TimeScope, role: string | undefined): Selection | undefined {
+  const mayRead = (machineId: string | undefined, projectId: string | undefined) =>
+    !(machineId !== undefined && projectId !== undefined && j.others.has({ machineId, projectId })) &&
+    (machineId === undefined || allows(j.caller, "read", machineId));
+  let s: Selection;
+  switch (scope.kind) {
+    case "fleet":
+      s = { role: ANY_ROLE, filter: {}, mayRead };
+      break;
+    case "machine":
+      s = { machineId: scope.machineId, role: ANY_ROLE, filter: { machineId: scope.machineId }, mayRead };
+      break;
+    case "project":
+    case "lead": {
+      const { machineId, projectId } = scope.projectRef;
+      const ref: [string, string] = [machineId, projectId];
+      s = scope.kind === "lead" ? { machineId, projectId, role: "lead", filter: { lead: ref }, mayRead } : { machineId, projectId, role: ANY_ROLE, filter: { project: ref }, mayRead };
+      break;
+    }
+    default:
+      return undefined;
+  }
+  if (role !== undefined) {
+    s.filter.role = role;
+    // A lead scope filtered to another role has no spans; no digest has that role.
+    s.role = s.role === ANY_ROLE || s.role === role ? role : "\u0000";
+  }
+  return s;
+}
+
+/** Label ids whose ms reach the `k`th largest: the top `k` labels, ties at the cut included. */
+function topLabels(labels: Digest["labels"], k: number): number[] {
+  // The k largest so far, ascending: a month holds 100k labels, too many to sort for twenty.
+  const top: number[] = [];
+  for (const [, ms] of labels.values()) {
+    if (top.length === k && ms <= (top[0] as number)) continue;
+    let i = 0;
+    while (i < top.length && (top[i] as number) < ms) i++;
+    top.splice(i, 0, ms);
+    if (top.length > k) top.shift();
+  }
+  const cut = top.length === k ? (top[0] as number) : Number.NEGATIVE_INFINITY;
+  const out: number[] = [];
+  for (const [id, [, ms]] of labels) if (ms >= cut) out.push(id);
+  return out;
+}
+
+/** The spans of these labels that a selection reads in the period: commands only. */
+function labelRows(c: Database, sel: Selection, ids: number[], since: number, until: number): [Row, Meta][] {
+  if (ids.length === 0) return [];
+  return readMeta(c, { ...sel.filter, sinceMs: since, untilMs: until, startFrom: since, labelIds: ids }, ALL).filter(
+    ([r]) => (r.kind === "tool.bash" || r.kind === "git") && sel.mayRead(r.machineId, r.projectId),
+  );
+}
+
+/** A period's wall and agent time per category, from the digests. */
+function digestTotals(j: Reading, scope: TimeScope, sel: Selection, role: string | undefined, since: number, until: number) {
+  const whole = wholeDays(scope, role, since, until);
+  const m = digestRead(j.c, sel, since, until, whole);
+  const { agent, cats } = totals(j.c, scope, whole, (add) => {
+    for (const [code, [ms, n]] of m.d.kinds) {
+      const kind = kindOf(code);
+      if (kind !== undefined && !isDetail(kind)) add(categoryOf(kind), kind, ms, n);
+    }
+  });
+  return { m, wall: wall(j.c, scope, NO_SPANS, since, until), agent, cats };
+}
+
+const NO_SPANS: Loaded = { rows: [], metas: [], weights: [], truncated: false };
+
+/** `repeated`, from the threads' folded commands. */
+function repeatedOf(c: Database, m: Merged): RepeatStat[] {
+  // Most time first, then by thread and place in it, as `repeated` lists them.
+  const runs = [...m.seqs]
+    .flatMap(([thread, s]) => runsOf(s).map((r) => ({ thread, r })))
+    .sort((a, b) => b.r.ms - a.r.ms || (a.thread < b.thread ? -1 : a.thread > b.thread ? 1 : 0) || a.r.start - b.r.start || a.r.id - b.r.id)
+    .slice(0, 10);
+  const text = c.query<{ text: string }, [number]>("SELECT text FROM time_labels WHERE id = ?1");
+  return runs.map(({ thread, r }) => ({
+    label: text.get(r.label)?.text ?? "",
+    threadId: thread,
+    ...(r.task === undefined ? {} : { taskId: r.task }),
+    n: r.n,
+    totalMs: r.ms,
+  }));
+}
+
+/** `breakdown` from the digests: the same answer, without reading each span of the period. */
+function digestBreakdown(j: Reading, scope: TimeScope, sel: Selection, input: ToolMap["time_breakdown"]["input"], role: string | undefined) {
+  const { c, now } = j;
+  const [since, until] = period(input.since, input.until, now);
+  const cmp = input.compare ? period(input.compare.since, input.compare.until, now) : undefined;
+  let compare: { since: string; until: string; wallMs: number; agentMs: number; byCategory: CategoryTotal[] } | undefined;
+  if (cmp) {
+    const p = digestTotals(j, scope, sel, role, cmp[0], cmp[1]);
+    compare = { since: isoMs(cmp[0]), until: isoMs(cmp[1]), wallMs: Math.max(p.wall, 0), agentMs: Math.max(p.agent, 0), byCategory: p.cats };
+  }
+  const { m, wall: wallMs, agent, cats } = digestTotals(j, scope, sel, role, since, until);
+  const commands = labelRows(c, sel, topLabels(m.d.labels, 20), since, until).map(([r]) => r);
+  const gaps = readMeta(c, { ...sel.filter, sinceMs: since, untilMs: until, startFrom: since - DAY, kind: "gap" }, ALL).filter(([r]) =>
+    sel.mayRead(r.machineId, r.projectId),
+  );
+  const cov = coverage(c, scope, { rows: gaps.map(([r]) => r), metas: gaps.map(([, mt]) => mt), weights: gaps.map(() => 1), truncated: false }, undefined, since, now);
+  const profiles = profilesOut(m.d.profiles);
+  return {
+    wallMs: Math.max(wallMs, 0),
+    agentMs: Math.max(agent, 0),
+    byCategory: cats,
+    ...(profiles.length > 0 ? { byProfile: profiles } : {}),
+    topCommands: topCommands(commands),
+    repeated: repeatedOf(c, m),
+    ciChecks: ciChecks(
+      m.d.rows.filter((r) => r.kind === "ci.check"),
+      ciPaths(c, scope, since, until, now, pathCache(c)),
+    ),
+    humanWait: humanWait(m.d.rows),
+    retentionDays: retentionDays(c),
+    storedBytes: storedBytesOf(c, now),
+    coverage: cov,
+    ...(compare ? { compare } : {}),
+    next: "time_insights reads the same spans for findings; time_spans lists them.",
+  };
+}
+
+/** The rules' input from the digests: every span of the labels that can fire or that `want` names, and the edits. */
+function digestRuleInput(c: Database, sel: Selection, m: Merged, want: number[], since: number, until: number): RuleInput {
+  const rows = [...labelRows(c, sel, want, since, until).map(([r]) => r), ...m.d.rows.filter((r) => r.kind === "tool.edit")].sort((a, b) => a.id - b.id);
+  return ruleInput(c, { rows, metas: rows.map(() => NO_META), weights: rows.map(() => 1), truncated: false }, since, until).input;
+}
+
+const NO_META: Meta = { srcKey: "", open: false };
+
+/**
+ * The labels the rules need spans of: a finding needs a label run REPEAT_MIN_RUNS times (FULL_SUITE_MIN_RUNS for a
+ * suite), or among the SLOW_TOP slowest.
+ */
+function ruleLabels(m: Merged): number[] {
+  const runs = Math.min(REPEAT_MIN_RUNS, FULL_SUITE_MIN_RUNS);
+  const out = new Set(topLabels(m.d.labels, SLOW_TOP));
+  for (const [id, [n]] of m.d.labels) if (n >= runs) out.add(id);
+  return [...out];
+}
+
+/** `insightsOf` from the digests: the rules run on the spans that can make a finding, which are the same findings. */
+function digestInsights(j: Reading, sel: Selection, input: ToolMap["time_insights"]["input"]): ToolMap["time_insights"]["output"] {
+  const { c, now } = j;
+  const [since, until] = period(input.since, input.until, now);
+  const cmp = input.compare ? period(input.compare.since, input.compare.until, now) : undefined;
+  const cur = digestRead(c, sel, since, until);
+  const prev = cmp ? digestRead(c, sel, cmp[0], cmp[1]) : undefined;
+  // Both periods read the same labels, so a finding of one has its numbers in the other.
+  const want = [...new Set([...ruleLabels(cur), ...(prev ? ruleLabels(prev) : [])])].sort((a, b) => a - b);
+  const a = digestRuleInput(c, sel, cur, want, since, until);
+  const found = cmp && prev ? compareRules(a, digestRuleInput(c, sel, prev, want, cmp[0], cmp[1])) : findInsights(a);
+  return { next: "time_spans with rule lists every span a finding links to.", insights: found.slice(0, MAX_INSIGHTS) };
 }
 
 /** One read's job, as the read worker gets it: the tool, its decoded input, the key it is for and the hub's now. */
@@ -700,11 +924,14 @@ export type TimeJob =
   | { tool: "time_insights"; input: ToolMap["time_insights"]["input"]; caller: Caller; now: number };
 
 /** What a read has to hand: its connection, its key, the Only me projects that key may not see, and now. */
-type Reading = { c: Database; caller: Caller; others: Refs; now: number };
+type Reading = { c: Database; caller: Caller; others: Refs; now: number; spansOnly: boolean };
 
-/** The job's answer, read on `c`; throws the ToolError the tool answers with. */
-export function answer(c: Database, job: TimeJob): unknown {
-  const j: Reading = { c, caller: job.caller, others: new Refs(navis.others(c, who(c, job.caller))), now: job.now };
+/**
+ * The job's answer, read on `c`; throws the ToolError the tool answers with. `spansOnly` reads every span instead of
+ * the hourly digests, as the test that holds the two answers equal does.
+ */
+export function answer(c: Database, job: TimeJob, spansOnly = false): unknown {
+  const j: Reading = { c, caller: job.caller, others: new Refs(navis.others(c, who(c, job.caller))), now: job.now, spansOnly };
   switch (job.tool) {
     case "time_spans":
       return spans(j, job.input);
@@ -752,6 +979,8 @@ function breakdown(j: Reading, input: ToolMap["time_breakdown"]["input"]): ToolM
   const role = input.filters?.role;
   const scope = narrow(input.scope, input.filters);
   check(c, caller, scope);
+  const sel = j.spansOnly || !built(c, since, until, now) || (cmp && !built(c, cmp[0], cmp[1], now)) ? undefined : selectionOf(j, scope, role);
+  if (sel) return digestBreakdown(j, scope, sel, input, role);
   // The compared period first, so its spans are gone before this period's load.
   let compare: { since: string; until: string; wallMs: number; agentMs: number; byCategory: CategoryTotal[] } | undefined;
   if (cmp) {
@@ -771,7 +1000,7 @@ function breakdown(j: Reading, input: ToolMap["time_breakdown"]["input"]): ToolM
     ...(profiles.length > 0 ? { byProfile: profiles } : {}),
     topCommands: topCommands(inPeriod),
     repeated: repeated(inPeriod),
-    ciChecks: ciChecks(inPeriod, ps),
+    ciChecks: ciChecks(inPeriod, ps.map(([w, p]) => [w, ciOf(p)])),
     humanWait: humanWait(inPeriod),
     ...(path ? { criticalPath: forOutput(path) } : {}),
     retentionDays: retentionDays(c),
@@ -788,6 +1017,8 @@ function insightsOf(j: Reading, input: ToolMap["time_insights"]["input"]): ToolM
   const [since, until] = period(input.since, input.until, now);
   const cmp = input.compare ? period(input.compare.since, input.compare.until, now) : undefined;
   check(c, caller, input.scope);
+  const sel = j.spansOnly || !built(c, since, until, now) || (cmp && !built(c, cmp[0], cmp[1], now)) ? undefined : selectionOf(j, input.scope, undefined);
+  if (sel) return digestInsights(j, sel, input);
   const cur = ruleInput(c, readable(j, load(c, input.scope, since, until)), since, until).input;
   const found = cmp
     ? compareRules(cur, ruleInput(c, readable(j, load(c, input.scope, cmp[0], cmp[1])), cmp[0], cmp[1]).input)

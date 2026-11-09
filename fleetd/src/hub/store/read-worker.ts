@@ -1,9 +1,11 @@
 // The read worker: a read-only connection to hub.sqlite on its own thread, for the reads that take long (the Time
 // view's spans and usage over weeks). Its first message names the file; each later one is a query, or a Time read
-// answered whole (time/reads.ts), so its seconds of work run here rather than on the hub's event loop.
+// answered whole (time/reads.ts), or the Time digests' upkeep (time/upkeep.ts), so its seconds of work run here rather
+// than on the hub's event loop.
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { ToolError } from "../../shared/errors.ts";
 import { answer, type TimeJob } from "../time/reads.ts";
+import { upkeep, type UpkeepJob } from "../time/upkeep.ts";
 
 /** A ToolError's fields, as they cross to the main thread (an Error's class doesn't). */
 export type WireToolError = { code: ToolError["code"]; message: string; fix?: string; reason?: ToolError["reason"]; personFix?: string };
@@ -11,7 +13,8 @@ export type WireToolError = { code: ToolError["code"]; message: string; fix?: st
 export type ReadRequest =
   | { id: -1; path: string }
   | { id: number; sql: string; params: SQLQueryBindings[] | Record<string, SQLQueryBindings> }
-  | { id: number; time: TimeJob };
+  | { id: number; time: TimeJob }
+  | { id: number; upkeep: UpkeepJob };
 export type ReadReply = { id: number; rows: unknown[] } | { id: number; output: unknown } | { id: number; error: string; tool?: WireToolError };
 
 declare const self: Worker;
@@ -29,6 +32,10 @@ self.onmessage = (event: MessageEvent<ReadRequest>) => {
     if (!conn) throw new Error("no database: the worker's first message names it");
     if ("time" in request) {
       postMessage({ id: request.id, output: answer(conn, request.time) } satisfies ReadReply);
+      return;
+    }
+    if ("upkeep" in request) {
+      postMessage({ id: request.id, output: upkeep(conn, request.upkeep) } satisfies ReadReply);
       return;
     }
     const query = conn.query<unknown, SQLQueryBindings[]>(request.sql);

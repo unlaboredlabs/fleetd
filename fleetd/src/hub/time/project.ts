@@ -9,7 +9,7 @@ import { BATCH_MS, events } from "../store/events.ts";
 import { parseMs } from "../store/time.ts";
 import { profileOf, threadLane, who, writeHub } from "./ingest.ts";
 import { kindCode, kindOf } from "./kinds.ts";
-import { cursor, headUtf16, type Ids, type NewSpan, setCursor, type Share, write } from "./store.ts";
+import { cursor, headUtf16, type Ids, type NewSpan, resetHours, setCursor, type Share, write } from "./store.ts";
 import { orderPath } from "./reads.ts";
 
 const CURSOR = "events";
@@ -201,6 +201,14 @@ export function apply(c: Database, e: HubEvent): void {
       if (e.type === "task.started" && m !== undefined && t !== undefined) {
         // Node spans that arrived before the task knew its thread.
         const ids = taskIds(c, task);
+        // Those spans change project, task and profile, so their hours' digests are built again.
+        const hours = c
+          .query<{ h: number }, [string, string]>(
+            "SELECT DISTINCT start_ms / 3600000 AS h FROM time_spans WHERE machine_id = ?1 AND thread_id = ?2 AND task_id IS NULL AND role IS NULL",
+          )
+          .all(m, t)
+          .map((r) => r.h);
+        resetHours(c, hours);
         c.query(
           `UPDATE time_spans SET task_id = ?3, workstream_id = ?4, project_id = COALESCE(project_id, ?5),
              profile = COALESCE(profile, ?6)
