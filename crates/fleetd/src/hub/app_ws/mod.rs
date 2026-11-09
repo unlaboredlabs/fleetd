@@ -259,7 +259,7 @@ impl Session {
     ) {
         self.caller = Some((key, info));
         self.deflate |= features.any(|f| f == fleetd_contracts::app::APP_DEFLATE);
-        // The vault lives in fleetd's Bun build only (hub/vault answers each of its tools that it needs that one).
+        // The vault lives in fleetd's Bun build only: hub/vault answers every vault tool that it needs that build.
         let offered: Vec<&str> = fleetd_contracts::app::APP_FEATURES
             .into_iter()
             .filter(|f| *f != fleetd_contracts::app::APP_VAULT)

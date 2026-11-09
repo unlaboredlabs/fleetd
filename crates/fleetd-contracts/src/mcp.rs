@@ -3782,8 +3782,8 @@ output!(VaultGetOutput {
 });
 // A new item (no `itemId`: `kind`, `scope`, its scope's ids, `label` and `sealed`), or a change to one (`itemId`):
 // `sealed` absent changes only what's given of the label, sites and billing address; present, it holds only the
-// changed fields, merged into the stored ones (a field set to "" or null is cleared). The hub works out the
-// metadata from the merged value.
+// changed fields, merged into the stored ones (a field set to "" is cleared; absent or null keeps it). The hub
+// works out the metadata from the merged value.
 input!(
     #[serde(remote = "Self")]
     VaultSaveInput {

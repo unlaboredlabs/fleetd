@@ -39,7 +39,8 @@ pub type AppCallId = Text<1, 64>;
 ///   has only a few in flight, so on a slow link it sees the newest screen rather than one queued seconds ago, and the
 ///   hub fits the screen's encoding to what the link carries.
 /// - `vault` ([`APP_VAULT`]): the `vault_*` tools and the `vault.changed` and `vault.used` events: Settings › Vault and
-///   a project's Vault. Only fleetd's Bun build lists it; the Rust build answers each vault tool that it needs that one.
+///   a project's Vault. Only fleetd's Bun build lists it; the Rust build answers every vault tool with "The vault
+///   needs fleetd's Bun build".
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
 pub const APP_FEATURES: [&str; 12] = [
