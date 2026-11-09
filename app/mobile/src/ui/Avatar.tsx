@@ -1,18 +1,18 @@
 // A chat's or a person's avatar, a circle as iOS draws a contact's: its picture once one was given (project_avatar_set,
-// person_avatar_set), else its built-in icon (Being: a soft-black being on a pale field of a color, the hub's pick or
-// one it derived), else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps
+// person_avatar_set), else for a project its bot (Being, in the state the project is in), else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps
 // draw a person's. A
 // picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
-// the next launch; one not seen before fades in over the icon.
+// the next launch; one not seen before fades in over the bot.
 import { File, Paths } from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
 import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { initials, tintIndex } from "../avatar";
-import type { ProjectIcon } from "../desktop";
+import type { BotState } from "../desktop";
 import { SessionContext } from "../hubContext";
 import { useTheme } from "../theme";
 import { Being } from "./Being";
+import { useBot } from "./botState";
 
 /** "#RRGGBB" mixed toward white by `amount` (0 to 1). */
 const lighter = (hex: string, amount: number): string => {
@@ -23,8 +23,8 @@ const lighter = (hex: string, amount: number): string => {
 
 /** Whose picture: a project's summary has these, or a person (hub_info's me). */
 export type Pictured =
-  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly icon?: ProjectIcon | undefined }
-  | { readonly personId: string; readonly avatar?: string | undefined; readonly icon?: undefined };
+  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined }
+  | { readonly personId: string; readonly avatar?: string | undefined };
 
 const fileOf = (avatar: string): File => new File(Paths.cache, `avatar-${avatar}.jpg`);
 
@@ -94,13 +94,15 @@ export function Avatar({
   name,
   size = 52,
   picture,
-  icon,
+  bot,
   person = false,
 }: {
   name: string;
   size?: number;
   picture?: Pictured | undefined;
-  icon?: ProjectIcon | undefined;
+  /** A project's bot in this state, over the one its project's state gives (botState.ts): shown under its picture, or
+   * alone while it has none. */
+  bot?: BotState | undefined;
   /** A person's: neutral letters (NEUTRAL) rather than a color from their name. */
   person?: boolean;
 }) {
@@ -109,13 +111,14 @@ export function Avatar({
   const text = initials(name);
   const shown = usePicture(picture);
   const box = { width: size, height: size, borderRadius: size / 2 };
-  // `icon` over the summary's: the picker's choice before it is sent.
-  const drawn = icon ?? picture?.icon;
+  const project = picture !== undefined && "machineId" in picture ? `${picture.machineId}/${picture.projectId}` : undefined;
+  const state = useBot(project);
+  const drawn = bot ?? state;
   if (drawn !== undefined) {
     return (
       <View accessible={false} style={[styles.base, box]}>
-        <Being face={drawn.face} color={drawn.color} size={size} />
-        {shown.uri === undefined || icon !== undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
+        <Being state={drawn} size={size} />
+        {shown.uri === undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
       </View>
     );
   }

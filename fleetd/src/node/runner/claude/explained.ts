@@ -17,8 +17,10 @@ const WHY_NESTED =
 /**
  * Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list), then the Bash rules against a
  * nested claude. claude matches `Bash(claude *)` in every part of a compound command and past the wrappers it strips,
- * but no other spelling of the program, so the rest name the obvious ones. A script that hides the name still gets
- * through: these keep agents honest, they are not a sandbox.
+ * but no other spelling of the program, so the rest name the obvious ones. Each starts with literal text, never `*`:
+ * claude matches a rule against a part's whole text, quoted arguments and heredocs included, and at times against the
+ * whole chain, so `*sh -*c *claude*` refused `git push -q …; gh pr create --body "…claude.com…"`. A script that hides
+ * the name still gets through: these keep agents honest, they are not a sandbox.
  */
 export const DISALLOWED_WHY: Why<string> = [
   ["Task", WHY_TASK],
@@ -40,17 +42,26 @@ export const DISALLOWED_WHY: Why<string> = [
   ["EnterWorktree", WHY_WORKTREE],
   ["ExitWorktree", WHY_WORKTREE],
   ["Bash(claude *)", WHY_NESTED],
-  ["Bash(*bin/claude)", WHY_NESTED],
-  ["Bash(*bin/claude *)", WHY_NESTED],
-  ["Bash(*/claude -*)", WHY_NESTED],
-  ["Bash(*claude/versions/*)", WHY_NESTED],
-  ["Bash(npx *claude*)", WHY_NESTED],
-  ["Bash(bunx *claude*)", WHY_NESTED],
-  ["Bash(*@anthropic-ai/claude-code*)", WHY_NESTED],
-  ["Bash(*sh -*c *claude*)", WHY_NESTED],
-  ["Bash(env *claude*)", WHY_NESTED],
-  ["Bash(exec *claude*)", WHY_NESTED],
-  ["Bash(xargs *claude*)", WHY_NESTED],
+  ["Bash(/*/claude *)", WHY_NESTED],
+  ["Bash(~/*/claude *)", WHY_NESTED],
+  ["Bash($HOME/*/claude *)", WHY_NESTED],
+  ["Bash(./*/claude *)", WHY_NESTED],
+  ["Bash(/*/claude/versions/*)", WHY_NESTED],
+  ["Bash(~/*/claude/versions/*)", WHY_NESTED],
+  ["Bash($HOME/*/claude/versions/*)", WHY_NESTED],
+  ["Bash(npx claude *)", WHY_NESTED],
+  ["Bash(bunx claude *)", WHY_NESTED],
+  ["Bash(npx *@anthropic-ai/claude-code*)", WHY_NESTED],
+  ["Bash(bunx *@anthropic-ai/claude-code*)", WHY_NESTED],
+  ["Bash(npm exec *@anthropic-ai/claude-code*)", WHY_NESTED],
+  ["Bash(pnpm dlx *@anthropic-ai/claude-code*)", WHY_NESTED],
+  ["Bash(sh -*c *claude -*)", WHY_NESTED],
+  ["Bash(bash -*c *claude -*)", WHY_NESTED],
+  ["Bash(zsh -*c *claude -*)", WHY_NESTED],
+  ["Bash(/*sh -*c *claude -*)", WHY_NESTED],
+  ["Bash(env *claude -*)", WHY_NESTED],
+  ["Bash(exec *claude -*)", WHY_NESTED],
+  ["Bash(xargs *claude -*)", WHY_NESTED],
 ];
 
 const WHY_UNUSED = "Unused by fleetd's agents, and tool schemas ride on every request.";

@@ -336,14 +336,17 @@ describe("what enters with motion", () => {
     expect(keys([hub("a", 1), copy])).toEqual(keys([hub("a", 1), send]));
   });
 
-  it("enters a streamed reply as the lead starts writing, and its text again once written", () => {
+  it("enters a streamed reply once, as the lead starts writing, and not again once written", () => {
     const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
     const writing = arrivalsOf(opened, [hub("a", 1), item("s", "lead", at(19, 9), { state: "streaming" })], true, NOW + 10);
     expect(writing.entering.get("s")?.at).toBe(NOW + 10);
     const more = arrivalsOf(writing, [hub("a", 1), hub("s", 2, "lead", { state: "streaming", text: "more" })], true, NOW + 20);
     expect(more.entering.get("s")?.at).toBe(NOW + 10);
     const done = arrivalsOf(more, [hub("a", 1), hub("s", 2)], true, NOW + 900);
-    expect(done.entering.get("s")?.at).toBe(NOW + 900);
+    expect(done.entering.get("s")?.at).toBe(NOW + 10);
+    expect(arrivalsOf(done, [hub("a", 1), hub("s", 2)], true, NOW + ENTER_MS + 10).entering.has("s")).toBe(false);
+    // The next reply after it still enters.
+    expect(arrivalsOf(done, [hub("a", 1), hub("s", 2), hub("t", 3)], true, NOW + 950).entering.get("t")).toEqual({ at: NOW + 950, step: 0 });
   });
 
   it("shows older pages loading above, and fleetd's one-liners and history, still", () => {

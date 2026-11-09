@@ -13,6 +13,7 @@ import type { ChatItem } from "../../src/data/chat";
 import { shortClock } from "./format";
 import { isMineRow, latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
 import { MessageView, useEnter } from "./Bubble";
+import { useGlide } from "./glide";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
@@ -288,6 +289,7 @@ export function ChatList(props: {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast(isMineRow)?.key, [rows]);
+  useGlide(virtualizer, rows);
 
   // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls. A link
   // (a notification's, or Show) opens the chat at a message instead, and keeps that message in view the same way:
@@ -399,6 +401,8 @@ export function ChatList(props: {
         items={rows}
         getKey={(r) => r.key}
         estimateSize={56}
+        // The composer's room above its box is the list's, so a new bubble comes out from behind the box.
+        paddingEnd={8}
         followOutput
         startAtEnd
         className={s.scroller}

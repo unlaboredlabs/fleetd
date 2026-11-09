@@ -1,6 +1,6 @@
 // Placement on cloud machines (crates/fleetd/src/hub/pool/place.rs, D306), deterministic: a task goes to a cloud
 // machine only when its project's own machine is at its agent limit. In order: its own machine while it has room;
-// an awake cloud machine, caught up, with room (hydrated first, then the busiest); waking a sleeping one, one at a
+// an awake cloud machine, caught up, its runner usable, with room (hydrated first, then the busiest); waking a sleeping one, one at a
 // time; else it queues, its line saying why. Each cloud machine holds a pool checkout of each opted-in project's repos,
 // registered there under the home checkout's project id, so `(boat-2, <id>)` is the home checkout's twin.
 import type { ProjectRef, ProjectRepo, Task } from "../../shared/contracts.ts";
@@ -104,7 +104,8 @@ export function room(hub: Hub, pool: Pool, cloning: Cloning, task: Task, checkou
   const failed = cloning.failedAnywhere(checkout, now);
   if (failed !== undefined) r.cloneFailed = failed;
   for (const m of awake(pool)) {
-    if (!executors(hub).isConnected(m)) continue;
+    // A degraded runner (claude not logged in, say) can neither start an agent nor take its messages.
+    if (!executors(hub).isConnected(m) || !executors(hub).isReady(m)) continue;
     if (store(hub).projectGet(twin(m, checkout))) {
       if (pool.hydrated(m)) r.warm++;
       r.awake.push(m);

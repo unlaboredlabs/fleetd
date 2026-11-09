@@ -1,5 +1,5 @@
 // A project's own screen, opened from its chat's header, as a contact's in a chat app: its avatar and name (tapping the
-// avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx), then what
+// avatar, or Edit under it, opens its icon's sheet: its bot, or a photo: IconPicker.tsx), then what
 // runs there now (Agents: agents_list, then the DMs its agents sent each other: screens/dms), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and Only
 // me. Then the desktop's sections, each pushed: Approvals, Payments, Linked hubs, Skills and the chat's

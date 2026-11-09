@@ -6,7 +6,7 @@
 // A session launched on an account reads it at each start of its claude (`envFor`): its variables replace every
 // credential and gateway of the machine's own setup (ACCOUNT_CLEARS), and its value is masked in all the session's
 // reports. One whose account is gone fails to start rather than fall back to the machine's login.
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClaudeAccount } from "../../shared/contracts.ts";
@@ -139,6 +139,24 @@ export function envFor(home: string, account: ClaudeAccount): { vars: Vars; secr
 export function accountSecrets(home: string, account: ClaudeAccount): Vars {
   const file = read(home, account);
   return file ? [[accountVar(account), file.value]] : [];
+}
+
+/** The account to probe the runner on while the machine's own claude is logged out (claude_accounts.rs `held`): the
+ * hub's API key, else a person's subscription (the first by id). What the hub sealed to this node is what its work
+ * runs on: a cloud machine has no login of its own. */
+export function held(home: string): ClaudeAccount | undefined {
+  if (existsSync(path(home, { kind: "hub" }))) return { kind: "hub" };
+  let names: string[];
+  try {
+    names = readdirSync(join(home, DIR));
+  } catch {
+    return undefined;
+  }
+  const personId = names
+    .map((n) => n.replace(/\.json$/, ""))
+    .filter((id) => /^p_[a-z2-7]{8}$/.test(id))
+    .sort()[0];
+  return personId === undefined ? undefined : { kind: "person", personId };
 }
 
 /** `env` with the account's variables in place of every credential and gateway the machine's own setup set. */

@@ -334,7 +334,8 @@ test("the pool's start fills the tasks area's cloud hooks: the room, a wake for 
   const hub = new Hub({ home: dir, listen: { host: "127.0.0.1", port: 4796 } }, HubDb.memory(), { now: () => now });
   const boat = new FakeBoat();
   const seen = new Map<string, number>();
-  const fleet: Fleet = { lastSeen: (m) => seen.get(m), busy: () => undefined, ready: () => true, othersHeard: () => true };
+  const woke: string[] = [];
+  const fleet: Fleet = { lastSeen: (m) => seen.get(m), busy: () => undefined, ready: () => true, othersHeard: () => true, woke: (m) => woke.push(m) };
   const pool = hub.area("pool", (h) => new Pool(h.db, dir, boat, new FakeTunnels(), fleet, h.clock, "UTC"));
   // No loop: only the hooks.
   hub.shutdown.abort();
@@ -367,6 +368,31 @@ test("the pool's start fills the tasks area's cloud hooks: the room, a wake for 
   expect(pool.ledger.slot("boat-1")!.state).toBe("awake");
   expect(hooks.claim("boat-1")).toBe(true);
   expect(hooks.wake("boat-1")).toEqual({ machine: "boat-1" });
+  // Its node is live and holds the project's pool checkout: room there while its runner is usable, none while it
+  // is degraded (claude not logged in), since an agent there could neither start nor take a message.
+  const { executors } = await import("../src/hub/executor/index.ts");
+  const { store } = await import("../src/hub/store/hub_store.ts");
+  const at = new Date(now).toISOString();
+  const twin = { machineId: "boat-1", projectId: "shop", title: "Shop", workspaceRoot: "/work/shop", lastActivityAt: at };
+  store(hub).projectsUpsertMany("boat-1", [{ ...twin, threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as never]);
+  let runnerUsable = true;
+  Object.assign(executors(hub), { isConnected: (m: string) => m === "boat-1", isReady: () => runnerUsable });
+  expect(hooks.room(task, project)).toEqual({ eligible: true, awake: ["boat-1"], warm: 0 });
+  runnerUsable = false;
+  expect(hooks.room(task, project)).toEqual({ eligible: true, awake: [], warm: 0 });
+  // Its runner turns usable (the login came after its catch-up): the queue runs again at once, and finds it.
+  const { link } = await import("../src/hub/link/server.ts");
+  const ready = (m: string, on: boolean) => {
+    for (const hook of (link(hub) as unknown as { readyHooks: Set<(m: string, ready: boolean) => void> }).readyHooks) hook(m, on);
+  };
+  woke.length = 0;
+  ready("boat-1", false);
+  ready("lab-a", true);
+  expect(woke).toEqual([]);
+  runnerUsable = true;
+  ready("boat-1", true);
+  expect(woke).toEqual(["boat-1"]);
+  expect(hooks.room(task, project)).toEqual({ eligible: true, awake: ["boat-1"], warm: 0 });
   expect(taskRoom({ eligible: { no: "not for cloud: its project's secret variables are only on its own machine" }, awake: [], warm: 0 })).toEqual({
     eligible: { why: "not for cloud: its project's secret variables are only on its own machine" },
     awake: [],

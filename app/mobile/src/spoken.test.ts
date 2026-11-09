@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivalsOf } from "./arrivals";
+import { arrivalsOf, type Arrival } from "./arrivals";
 import type { ChatItem } from "./desktop";
 import { arrivedReplies, bubbleActions, bubbleLabel, spokenText } from "./spoken";
 
@@ -52,19 +52,20 @@ describe("what VoiceOver can do inside a bubble", () => {
 describe("a reply that comes in while VoiceOver is on", () => {
   it("is said once its words are written, by who wrote it, its first line", () => {
     const opened = arrivalsOf(undefined, [item("a", 1, "Morning.")], true, 0);
+    const heard = new Set<Arrival>();
     const streaming = arrivalsOf(opened, [item("a", 1, "Morning."), item("b", 2, "Two **emails**", { state: "streaming" })], true, 10);
-    expect(arrivedReplies(opened.entering, streaming.entering, [item("b", 2, "", { state: "streaming" })], "Ada")).toEqual([]);
+    expect(arrivedReplies(heard, streaming.entering, [item("b", 2, "", { state: "streaming" })], "Ada")).toEqual([]);
     const done = [item("a", 1, "Morning."), item("b", 2, "Two **emails** need you.\n\nThe first is from Bo.")];
     const written = arrivalsOf(streaming, done, true, 20);
-    expect(arrivedReplies(streaming.entering, written.entering, done, "Ada")).toEqual(["Ada: Two emails need you."]);
+    expect(arrivedReplies(heard, written.entering, done, "Ada")).toEqual(["Ada: Two emails need you."]);
     // Said once: the next word elsewhere doesn't say it again.
-    expect(arrivedReplies(written.entering, arrivalsOf(written, done, true, 30).entering, done, "Ada")).toEqual([]);
+    expect(arrivedReplies(heard, arrivalsOf(written, done, true, 30).entering, done, "Ada")).toEqual([]);
   });
 
   it("isn't what the chat opened with, nor your own send", () => {
     const opened = arrivalsOf(undefined, [item("a", 1, "Morning.")], true, 0);
     expect(opened.entering.size).toBe(0);
     const mine = [item("a", 1, "Morning."), item("b", 2, "Thanks", { author: "human" })];
-    expect(arrivedReplies(opened.entering, arrivalsOf(opened, mine, true, 10).entering, mine, "Ada")).toEqual([]);
+    expect(arrivedReplies(new Set(), arrivalsOf(opened, mine, true, 10).entering, mine, "Ada")).toEqual([]);
   });
 });

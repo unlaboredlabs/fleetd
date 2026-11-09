@@ -28,6 +28,7 @@ import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
+import { useBot } from "../ui/botState";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -445,9 +446,11 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
   const accentLine = row.preview === undefined && (row.working || row.want !== undefined);
   const unread = row.unread > 0;
   const mine = !accentLine && text.startsWith("You: ");
+  // A reply you haven't read: its bot is done.
+  const bot = useBot(row.key, unread || row.markedUnread);
   return (
     <View style={styles.row}>
-      <Avatar name={row.project.title} size={AVATAR} picture={row.project} />
+      <Avatar name={row.project.title} size={AVATAR} picture={row.project} bot={bot} />
       <View style={styles.body}>
         <View style={styles.top}>
           <View style={styles.name}>

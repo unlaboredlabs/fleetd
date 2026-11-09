@@ -8,6 +8,7 @@ import { loadOrCreateBoxKey, openSealed, publicKeyOf } from "../../shared/sealed
 import { REPAIR_FIX } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { ClaudeAccountStore } from "../claude_accounts/index.ts";
 import { allowsEverywhere } from "../claude_accounts/people.ts";
 import { cloud } from "../cloud/index.ts";
 import { slotScript, TOKEN_FILE } from "../cloud/setup.ts";
@@ -18,7 +19,7 @@ import { CLAUDE_TESTED } from "../update/ports.ts";
 import { VERSION } from "../../shared/version.ts";
 import { API, RestBoat } from "./boat.ts";
 import { type Fleet, hubZone, Pool, sizes } from "./index.ts";
-import { hubKey, hubTarget, SshTunnels } from "./tunnel.ts";
+import { claudeTarget, defaultTunnelTiming, hubKey, hubTarget, SshTunnels } from "./tunnel.ts";
 
 /** The hub's Fleet: machines' last sightings from the store, what keeps them busy from the link, readiness from cloud. */
 function hubFleet(hub: Hub): Fleet {
@@ -53,7 +54,12 @@ export const pool = (hub: Hub) =>
   hub.area("pool", (h) => {
     let p!: Pool;
     const boat = new RestBoat(API, () => p.openKey());
-    const tunnels = new SshTunnels(boat, () => hubKey(p.ledger, h.config.home), hubTarget(h.config.listen));
+    // The hub's API key's endpoint, carried to each cloud machine when the machine can't reach it itself.
+    const claude = {
+      target: () => claudeTarget(new ClaudeAccountStore(h.db).hubApi()?.endpoint),
+      heard: (slot: string, problem: string | undefined) => link(h).claudeEndpoint(slot, problem),
+    };
+    const tunnels = new SshTunnels(boat, () => hubKey(p.ledger, h.config.home), hubTarget(h.config.listen), defaultTunnelTiming(), claude);
     p = new Pool(h.db, h.config.home, boat, tunnels, hubFleet(h), h.clock, hubZone());
     return p;
   });

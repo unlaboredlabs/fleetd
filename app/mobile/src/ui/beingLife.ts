@@ -1,40 +1,67 @@
-// What keeps the built-in avatars alive on the phone, as on the desktop (its ui/lib/botLife.ts): one conductor for
-// every small avatar on screen gives a single one an idle moment every 2 to 5 s, never the same one twice running, and
-// each large one lives on its own, planned a few seconds ahead. The moves are planned here and handed to the avatar
-// (Being.tsx), whose springs then run on the UI thread. Nothing moves while the app is in the background, for an
-// avatar off screen or under another screen; with Reduce Motion an avatar never joins.
+// What keeps the bots alive on the phone, as on the desktop (its ui/lib/botLife.ts): a bot's springs run on the UI
+// thread (Being.tsx), and this says when. A bot in a live state (thinking, working, needs you, done, an error), or a
+// large one on its own, moves while it's on screen; an idle one in a list sleeps, and one conductor gives a single idle
+// bot on screen its moment (a blink or a glance) every 1.6 to 3.6 s, never the same one twice running. A state change
+// wakes a bot while its springs settle. Nothing moves while the app is in the background, for a bot off screen or
+// under another screen, or with Reduce Motion once its change has settled; a sleeping bot's clock stops, so it wakes
+// where it was.
 import { AppState } from "react-native";
-import { Life, listMoment, listRest, Plan, random, type Moves } from "../desktop";
+import { listRest, random } from "../desktop";
 
 export interface Living {
-  readonly canBlink: boolean;
-  readonly large: boolean;
-  /** Runs its moves until they come to rest at `until`, from now. */
-  play(moves: Moves, from: number, until: number): void;
+  /** It lives on its own (a large one), even idle. */
+  readonly solo: boolean;
+  /** Its state is idle now. */
+  idle(): boolean;
+  /** Reduce Motion is on. */
+  calm(): boolean;
   /** Whether it is on screen now. */
   visible(): Promise<boolean>;
+  /** Gives it its moment, on the UI thread. */
+  moment(): void;
+  /** Runs its springs, or stops them. */
+  run(on: boolean): void;
 }
 
 interface Member extends Living {
-  readonly plan: Plan;
-  life?: Life;
+  /** It keeps moving until then (ms), though asleep: a moment's or a change's springs settling. */
+  until: number;
+  on: boolean;
 }
 
-/** Seconds, on the clock the moves are planned on. */
-export const now = (): number => performance.now() / 1000;
+/** How long a moment or a change keeps a sleeping bot moving: its springs settle in that. */
+const SETTLE_MS = 2600;
+/** How often a moving bot is looked for on screen. */
+const LOOK_MS = 1000;
 
 const members = new Set<Member>();
 const r = random(Math.floor(Math.random() * 2 ** 31));
 let conductor: ReturnType<typeof setTimeout> | undefined;
-let large: ReturnType<typeof setInterval> | undefined;
+let looker: ReturnType<typeof setInterval> | undefined;
 let last: Member | undefined;
 
-const awake = (): boolean => AppState.currentState === "active";
+const active = (): boolean => AppState.currentState === "active";
+const live = (m: Member): boolean => !m.calm() && (m.solo || !m.idle());
 
-const play = (m: Member): void => {
-  const t = now();
-  m.plan.settle(t);
-  m.play(m.plan.flat, t, m.plan.until);
+/** Runs `m` while it should move and is seen, else stops it. */
+const update = (m: Member): void => {
+  const wants = active() && (live(m) || Date.now() < m.until);
+  if (!wants) {
+    if (m.on) m.run((m.on = false));
+    return;
+  }
+  void m.visible().then((seen) => {
+    if (!members.has(m)) return;
+    const on = seen && active() && (live(m) || Date.now() < m.until);
+    if (on !== m.on) m.run((m.on = on));
+  });
+};
+
+/** Keeps `m` moving while its springs settle, then stops it unless it should move on. */
+const wake = (m: Member): void => {
+  m.until = Date.now() + SETTLE_MS;
+  update(m);
+  setTimeout(() => members.has(m) && update(m), SETTLE_MS + 50);
 };
 
 /** The first of `ms` on screen, in a random order. */
@@ -44,51 +71,51 @@ const firstShown = async (ms: Member[]): Promise<Member | undefined> => {
   return undefined;
 };
 
-/** The next small avatar's moment, then the rest before the one after. */
+/** The next idle list bot's moment, then the rest before the one after. */
 const conduct = (): void => {
   conductor = setTimeout(conduct, listRest(r) * 1000);
-  if (!awake()) return;
-  void firstShown([...members].filter((m) => !m.large && m !== last)).then((m) => {
+  if (!active()) return;
+  void firstShown([...members].filter((m) => !m.solo && m.idle() && !m.calm() && m !== last)).then((m) => {
     if (m === undefined) return;
     last = m;
-    listMoment(m.plan, r, now() + 0.02, m.canBlink);
-    play(m);
-  });
-};
-
-/** Each large avatar's next few seconds. */
-const live = (m: Member): void => {
-  void m.visible().then((shown) => {
-    if (!shown || !awake() || m.life === undefined || !members.has(m)) return;
-    m.life.ahead(now() + 6);
-    play(m);
+    m.moment();
+    wake(m);
   });
 };
 
 const start = (): void => {
   conductor ??= setTimeout(conduct, (0.8 + r()) * 1000);
-  large ??= setInterval(() => {
-    for (const m of members) if (m.life !== undefined) live(m);
-  }, 3000);
+  looker ??= setInterval(() => {
+    for (const m of members) if (m.on || live(m)) update(m);
+  }, LOOK_MS);
 };
 
 const stop = (): void => {
   clearTimeout(conductor);
-  clearInterval(large);
-  conductor = large = undefined;
+  clearInterval(looker);
+  conductor = looker = undefined;
 };
 
-/** Brings an avatar to life until the returned function lets it go. */
-export const bringToLife = (a: Living): (() => void) => {
-  const m: Member = { ...a, plan: new Plan() };
-  if (a.large) m.life = new Life(m.plan, Math.floor(r() * 2 ** 31), now(), a.canBlink);
+export interface Life {
+  /** Its state changed: it moves while its springs settle, and on if the new state is live. */
+  readonly wake: () => void;
+  readonly release: () => void;
+}
+
+/** Brings a bot to life until it's released. */
+export const bringToLife = (a: Living): Life => {
+  const m: Member = { ...a, until: 0, on: false };
   members.add(m);
   start();
-  // A large one starts as it comes on screen, once it has been laid out.
-  if (m.life !== undefined) setTimeout(() => live(m), 50);
-  return () => {
-    members.delete(m);
-    if (last === m) last = undefined;
-    if (members.size === 0) stop();
+  // It starts as it comes on screen, once it has been laid out.
+  setTimeout(() => members.has(m) && update(m), 50);
+  return {
+    wake: () => members.has(m) && wake(m),
+    release: () => {
+      members.delete(m);
+      if (m.on) m.run((m.on = false));
+      if (last === m) last = undefined;
+      if (members.size === 0) stop();
+    },
   };
 };

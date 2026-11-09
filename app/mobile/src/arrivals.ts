@@ -1,5 +1,5 @@
 // Which bubbles enter with motion, as the desktop app decides it (screens/chat/model.ts arrivalsOf): only what arrives
-// while the chat is open and live (a reply, your send, a streamed reply's text once written), each a step after the
+// while the chat is open and live (a reply, your send, a streamed reply once, as it starts), each a step after the
 // others that came with it. What the chat opened with, older pages, and what a reconnect brings show still. Pure, so
 // it is unit-tested.
 import type { ChatItem } from "./desktop";
@@ -40,8 +40,10 @@ export const arrivalsOf = (prev: Arrivals | undefined, items: readonly ChatItem[
   for (const i of items) {
     const key = phaseKey(i);
     const seq = i.message?.seq;
-    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity) || known.has(`${rowKeyOf(i)}~`);
-    if (!still && !known.has(key) && newer && enters(i)) entering.set(rowKeyOf(i), { at: nowMs, step: step++ });
+    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity);
+    // It entered as it started streaming: written, it is the same message, grown.
+    const written = key !== `${rowKeyOf(i)}~` && known.has(`${rowKeyOf(i)}~`);
+    if (!still && !known.has(key) && !written && newer && enters(i)) entering.set(rowKeyOf(i), { at: nowMs, step: step++ });
     known.add(key);
     if (seq !== undefined && seq > newest) newest = seq;
   }

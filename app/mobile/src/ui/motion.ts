@@ -1,15 +1,17 @@
 // The desktop app's motion, on the phone (app/desktop/src/renderer/ui/tokens.css and ui/DESIGN.md): snappy, things
 // arrive fast and stop dead, nothing bounces or floats, and only transform and opacity move. The same curves and
 // durations, as Reanimated's:
-// - a bubble that arrives rises 6 pt as it fades in, 200 ms, a reply's bubbles 50 ms apart; your own send, 140 ms
+// - a bubble that arrives glides in: it rides up from behind the composer with the rows above it on the desktop's
+//   springs (glide.ts), fading in over its first 100 ms, a reply's bubbles 50 ms apart; nothing scales
 // - a list row rises 3 pt in 160 ms; one that leaves fades in place for 140 ms, then the gap closes as rows move up
 // - state changes (a send button, a menu, a banner, a press) take 140 ms on the snap curve
 // - loops (the state glyph's grain and ring) step on the desktop's 120 ms beat, one beat for the whole app, rather than glide
-// With Reduce Motion nothing moves: what arrives fades in place, and loops stand still. iOS's own transitions (a
+// With Reduce Motion nothing moves: what arrives fades in place (a bubble 200 ms, your send 140 ms), and loops stand still. iOS's own transitions (a
 // pushed screen, a sheet) stay iOS's.
 import { useEffect, useState } from "react";
 import { AccessibilityInfo } from "react-native";
-import { cancelAnimation, Easing, FadeOut, LinearTransition, makeMutable, withDelay, withRepeat, withTiming, type EntryAnimationsValues, type SharedValue } from "react-native-reanimated";
+import { cancelAnimation, Easing, FadeOut, LinearTransition, makeMutable, withDelay, withRepeat, withSpring, withTiming, type EntryAnimationsValues, type SharedValue } from "react-native-reanimated";
+import { GLIDE, type Spring } from "../glide";
 import { BEAT_MS, LOOP_BEATS } from "../glyph";
 
 /** --ease-snap, for every transition and entrance; --ease-out, for fades (a menu's backdrop, a highlight). */
@@ -21,7 +23,9 @@ export const dur = {
   base: 180,
   /** --dur-quick: a state change, a press, a leaving row. */
   quick: 140,
-  /** --dur-enter and --dur-enter-mine. */
+  /** --dur-enter: a bubble's fade as it glides in. */
+  fade: 100,
+  /** --dur-enter and --dur-enter-mine with reduced motion: a bubble's fade in place. */
   enter: 200,
   enterMine: 140,
   /** --dur-row-in. */
@@ -32,8 +36,8 @@ export const dur = {
   beat: BEAT_MS,
 } as const;
 
-/** --enter-rise and --row-rise. */
-const rise = { enter: 6, row: 3 } as const;
+/** --row-rise. */
+const rise = { row: 3 } as const;
 
 /** A reply's bubbles enter a step apart, up to this many: a long one doesn't keep you waiting for its last. */
 const MAX_STEP = 5;
@@ -56,11 +60,27 @@ const riseIn = (by: number, duration: number, delay: number) => (_: EntryAnimati
 };
 
 /**
- * A bubble that came in while the chat was open: `step` places into its burst; yours quicker. The thread is an inverted
- * list, which flips both its scroll view and each row, so a row's rise is the screen's.
+ * Rides up by its own height on `spring`, from behind the composer to its place, as the rows above it move up by the
+ * same on the same spring (glide); it fades in over its first 100 ms, after `delay`. The thread is an inverted list,
+ * which flips both its scroll view and each row, so a row's move is the screen's.
+ */
+const rideIn = (spring: Spring, delay: number) => (v: EntryAnimationsValues) => {
+  "worklet";
+  return {
+    initialValues: { opacity: 0, transform: [{ translateY: v.targetHeight }] },
+    animations: { opacity: withDelay(delay, withTiming(1, { duration: dur.fade, easing: ease.out })), transform: [{ translateY: withSpring(0, spring) }] },
+  };
+};
+
+/**
+ * A bubble that came in while the chat was open, `step` places into its burst: it glides in on its side's spring
+ * (yours quicker), or with Reduce Motion fades in place.
  */
 export const bubbleIn = (mine: boolean, step: number, reduce: boolean) =>
-  riseIn(reduce ? 0 : rise.enter, mine ? dur.enterMine : dur.enter, reduce ? 0 : Math.min(step, MAX_STEP) * dur.stagger);
+  reduce ? riseIn(0, mine ? dur.enterMine : dur.enter, 0) : rideIn(mine ? GLIDE.mine : GLIDE.theirs, Math.min(step, MAX_STEP) * dur.stagger);
+
+/** The thread's rows making room for a new bubble, or the newest growing, on `spring` (glide.ts glideOf). */
+export const glide = (spring: Spring) => LinearTransition.springify().stiffness(spring.stiffness).damping(spring.damping).mass(spring.mass);
 
 /** A list row that turned up while the list was on screen. */
 export const rowIn = (reduce: boolean) => riseIn(reduce ? 0 : rise.row, dur.rowIn, 0);
