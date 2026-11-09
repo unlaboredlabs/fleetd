@@ -11,6 +11,7 @@ import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { isSealedSecret } from "../approvals/sink.ts";
+import { endpointChanged, endpointOn } from "../cloud/claude.ts";
 import { linked, nodeCan, offline, sessionCall } from "../cloud/node.ts";
 import { missed } from "../cloud/outbox.ts";
 import { store } from "../store/hub_store.ts";
@@ -63,6 +64,7 @@ export function register(tools: Registry): void {
       updatedBy: refOf(by),
     };
     s.putHubApi(api);
+    endpointChanged(hub);
     return {
       hubApi: api,
       missingOn: missingOn(hub, api.sealedOn),
@@ -76,6 +78,7 @@ export function register(tools: Registry): void {
     const before = s.hubApi();
     if (before) {
       s.removeHubApi();
+      endpointChanged(hub);
       await forget(hub, { kind: "hub" }, before.sealedOn.map((x) => x.machineId));
     }
     return {
@@ -279,10 +282,14 @@ async function relay(
 ): Promise<[ClaudeSealedOn[], string[]]> {
   const held: ClaudeSealedOn[] = [];
   const problems: string[] = [];
+  const on = (m: string) => {
+    const e = endpointOn(hub, m, endpoint);
+    return e !== undefined ? { endpoint: e } : {};
+  };
   const sends: [string, Record<string, unknown>][] =
     seals.length === 0
-      ? before.map((s) => [s.machineId, endpoint !== undefined ? { endpoint } : {}])
-      : seals.map((s) => [s.machineId, { sealed: s.sealed, ...(endpoint !== undefined ? { endpoint } : {}) }]);
+      ? before.map((s) => [s.machineId, on(s.machineId)])
+      : seals.map((s) => [s.machineId, { sealed: s.sealed, ...on(s.machineId) }]);
   for (const [m, set] of sends) {
     try {
       nodeReady(hub, m);

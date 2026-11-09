@@ -5,8 +5,11 @@
 import type { ClaudeAccount, ClaudeSealedOn } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { ClaudeAccountStore } from "../claude_accounts/index.ts";
+import type { Tunnels } from "../pool/tunnel.ts";
+import { machineEndpoint } from "../pool/tunnel.ts";
 import { store } from "../store/hub_store.ts";
 import { linked, nodeCan, sessionCall } from "./node.ts";
+import { isPool } from "./outbox.ts";
 
 export type Brought = { nothing: true } | { current: ClaudeAccount } | { resealed: ClaudeAccount; from: string };
 
@@ -42,13 +45,22 @@ function record(hub: Hub, account: ClaudeAccount, machineId: string, fingerprint
   }
 }
 
+/** The endpoint as the machine is handed it: a cloud machine reaches an http:// one through the hub's tunnel, at its
+ * own loopback, so it needs no way onto the hub's network (pool/tunnel `CLAUDE_PORT`). */
+export const endpointOn = (hub: Hub, machineId: string, endpoint: string | undefined): string | undefined =>
+  endpoint !== undefined && isPool(hub, machineId) ? machineEndpoint(endpoint) : endpoint;
+
+/** The hub's API key's endpoint changed: the tunnels to the cloud machines up now carry it, or stop carrying it. */
+export const endpointChanged = (hub: Hub) => hub.peek<{ tunnels: Tunnels }>("pool")?.tunnels.claudeChanged?.();
+
 const ready = (hub: Hub, m: string, cap: string) => linked(hub, m) && nodeCan(hub, m, cap);
 
 /** Brings the account the hub's own work runs on to the cloud machine, sealed to its box key by a machine holding it. */
 export async function bring(hub: Hub, machineId: string): Promise<Brought> {
   const held = hubAccount(hub);
   if (!held) return { nothing: true };
-  const { account, endpoint, sealedOn } = held;
+  const { account, sealedOn } = held;
+  const endpoint = endpointOn(hub, machineId, held.endpoint);
   const want = sealedOn.find((s) => s.machineId !== machineId)?.fingerprint;
   if (want === undefined) throw new Error("no other machine holds the hub's Claude account to seal it from");
   if (!ready(hub, machineId, CAP_CLAUDE_ACCOUNTS)) throw new Error(`${machineId}'s node takes no Claude account`);
