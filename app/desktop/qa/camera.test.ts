@@ -49,7 +49,10 @@ describe("direct", () => {
     // Resting between the two clicks, and back home at the end.
     expect(at(2950).pointer.alpha).toBeLessThan(0.05);
     expect(at(take[1] - o.fade).pointer.alpha).toBeLessThan(0.05);
-    for (const d of run) expect(d.pointer.alpha).toBeGreaterThanOrEqual(0), expect(d.pointer.alpha).toBeLessThanOrEqual(1);
+    for (const d of run) {
+      expect(d.pointer.alpha).toBeGreaterThanOrEqual(0);
+      expect(d.pointer.alpha).toBeLessThanOrEqual(1);
+    }
   });
 
   it("dips as it clicks and springs back", () => {
