@@ -308,6 +308,8 @@ async function film(
           ctx.drawImage(bitmap, left * px, top * px, vw * px, vh * px, 0, 0, size.width, size.height);
           const k = size.width / vw;
           ctx.save();
+          // Hidden while it rests (camera.ts's alpha).
+          ctx.globalAlpha = pointer.alpha;
           ctx.translate((pointer.x - left) * k, (pointer.y - top) * k);
           // It dips as it clicks, about its tip.
           ctx.scale(k * pointer.scale, k * pointer.scale);

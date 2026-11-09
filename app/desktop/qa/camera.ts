@@ -5,6 +5,8 @@
 // Both move on springs, worked out for every frame of the clip, so they never start or stop with a jolt:
 // - The cursor heads for each click along a gentle arc, quicker over a longer way (up to a cap), on a spring a touch
 //   under critical damping, so it lands with the slightest settle just before the press; then it dips and springs back.
+//   It shows only while it has something to do: it fades in just before it sets off and out once it has rested a
+//   moment after the click, so no pointer sits over the app while the app moves on its own.
 // - The camera frames the action: it sets off as the cursor does, pushes in on what is typed into, on what is clicked
 //   together with what the click changed, and on what a look names, holds, and eases back out to the whole window
 //   between steps; steps close together share one move in, panning between. It never zooms past `cap`, the most the
@@ -46,6 +48,8 @@ export interface Pointer {
   readonly y: number;
   /** 1 at rest, down to about 0.85 as it clicks. */
   readonly scale: number;
+  /** How much it shows: 1 on its way to a click and just after, 0 while it rests. */
+  readonly alpha: number;
 }
 
 export interface Direction {
@@ -83,6 +87,9 @@ const DIP = { omega: 45, zeta: 0.75, depth: 0.85, ms: 55 } as const;
 const REACH = { base: 300, perPx: 0.35, min: 350, max: 800, speed: 2400 } as const;
 /** The cursor's spring trails its way by about this, ms: the way ends this long before the press. */
 const TRAIL = 140;
+/** It shows from this long before it sets off until this long after its way ends (the click is TRAIL in), ms, and
+ * fades in or out on a critically damped spring of about a quarter of a second. */
+const SHOW = { before: 250, after: 900, omega: 16 } as const;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
@@ -170,15 +177,15 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
   // It opens where the last click before the first take left it, or a short way from the first click in it.
   const rest: Point =
     opening !== undefined ? centre(opening.box) : after !== undefined ? toward(centre(after.box), { x: o.view.width / 2, y: o.view.height * 0.6 }, 220) : { x: o.view.width * 0.64, y: o.view.height * 0.7 };
-  const ways: Array<{ from: number; to: number; a: Point; b: Point }> = [];
+  const ways: Array<{ from: number; to: number; a: Point; b: Point; home?: true }> = [];
   let pos = rest;
   let free = first;
-  const go = (b: Point, by: number, earliest: number) => {
+  const go = (b: Point, by: number, earliest: number, home = false) => {
     const dist = Math.hypot(b.x - pos.x, b.y - pos.y);
     if (dist < 1) return;
     const ms = Math.max(clamp(REACH.base + REACH.perPx * dist, REACH.min, REACH.max), (dist / REACH.speed) * 1000);
     const from = Math.max(by - ms, earliest);
-    ways.push({ from, to: Math.max(by, from + 200), a: pos, b });
+    ways.push({ from, to: Math.max(by, from + 200), a: pos, b, ...(home ? { home: true as const } : {}) });
     pos = b;
   };
   for (const c of clicks) {
@@ -189,8 +196,8 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
     go(centre(c.box), c.at - TRAIL, free);
     free = c.at + 200;
   }
-  // And it ends back where it opened, so the loop joins up.
-  go(rest, home - 350, free + 300);
+  // And it ends back where it opened, so the loop joins up: hidden, since it has nothing to do there.
+  go(rest, home - 350, free + 300, true);
   const target = (t: number): Point => {
     let p = rest;
     for (const w of ways) {
@@ -200,6 +207,7 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
     return p;
   };
   const presses = clicks.filter((c) => c.at > first + 150).map((c) => c.at);
+  const shown = (t: number) => ways.some((w) => w.home === undefined && t >= w.from - SHOW.before && t <= w.to + SHOW.after);
 
   const camX = new Spring(whole.x, CAMERA.omega, CAMERA.zeta);
   const camY = new Spring(whole.y, CAMERA.omega, CAMERA.zeta);
@@ -207,6 +215,7 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
   const curX = new Spring(rest.x, CURSOR.omega, CURSOR.zeta);
   const curY = new Spring(rest.y, CURSOR.omega, CURSOR.zeta);
   const dip = new Spring(1, DIP.omega, DIP.zeta);
+  const seen = new Spring(shown(first) ? 1 : 0, SHOW.omega, 1);
   let now = first;
   let take = -1;
   // Up to `t` in 4 ms slices, each with its targets then; the camera only within a take.
@@ -224,6 +233,7 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
       curX.step(p.x, ms);
       curY.step(p.y, ms);
       dip.step(presses.some((c) => now >= c && now < c + DIP.ms) ? DIP.depth : 1, ms);
+      seen.step(shown(now) ? 1 : 0, ms);
     }
   };
   const out: Direction[] = [];
@@ -244,7 +254,7 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
     }
     run(t, plan.plan);
     const zoom = clamp(Math.exp(camZ.x), 1, o.cap);
-    out.push({ shot: inside({ x: camX.x, y: camY.x }, zoom, o.view), pointer: { x: curX.x, y: curY.x, scale: dip.x } });
+    out.push({ shot: inside({ x: camX.x, y: camY.x }, zoom, o.view), pointer: { x: curX.x, y: curY.x, scale: dip.x, alpha: clamp(seen.x, 0, 1) } });
   }
   return out;
 }
