@@ -49,9 +49,15 @@ export class HubDb {
    * (WAL). An in-memory database has no second connection, so it reads on the main one.
    */
   async read<T = Record<string, unknown>>(sql: string, params: Params = []): Promise<T[]> {
-    if (!this.path) return this.all<T>(sql, params);
+    const reader = this.readers();
+    return reader ? reader.all<T>(sql, params) : this.all<T>(sql, params);
+  }
+
+  /** The read workers, started on first use; none for an in-memory database, whose long reads run on the main one. */
+  readers(): Reader | undefined {
+    if (!this.path) return undefined;
     this.reader ??= new Reader(this.path);
-    return this.reader.all<T>(sql, params);
+    return this.reader;
   }
 
   /** A short read on the main connection. */

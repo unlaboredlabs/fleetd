@@ -211,6 +211,24 @@ export const removeDetached = (root: string, path: string): Promise<void> =>
 
 export const uncommitted = async (path: string) => (await git(path, ["status", "--porcelain"])).trim() !== "";
 
+/** Worktrees `uncommittedAll` asks git about at once. */
+const STATUS_AT_ONCE = 8;
+
+/**
+ * Whether each worktree holds uncommitted changes, `git status` on up to STATUS_AT_ONCE of them at a time: one after
+ * another, a project's 120 worktrees took 1.2 s (project_settings_get, Settings › Project). A worktree git can't read
+ * counts as holding work.
+ */
+export async function uncommittedAll(paths: string[]): Promise<boolean[]> {
+  const out = paths.map(() => true);
+  let next = 0;
+  const lane = async () => {
+    for (let i = next++; i < paths.length; i = next++) out[i] = await uncommitted(paths[i] as string).catch(() => true);
+  };
+  await Promise.all(Array.from({ length: Math.min(STATUS_AT_ONCE, paths.length) }, lane));
+  return out;
+}
+
 export const KEPT = "kept ";
 export const UNCOMMITTED = "it has uncommitted changes";
 export const UNPUSHED = "not pushed";

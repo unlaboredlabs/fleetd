@@ -5,7 +5,7 @@ import { afterAll, expect, test } from "bun:test";
 import { registerAll } from "../src/gen/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { Registry, type Caller } from "../src/hub/api/registry.ts";
-import { explain, type GhCheck, type GhPull, type GhReview, PrsGitHub } from "../src/hub/prs/github.ts";
+import { explain, type GhCheck, type GhPull, type GhReview, PrsGitHub, READS_AT_ONCE } from "../src/hub/prs/github.ts";
 import { personReview } from "../src/hub/prs/index.ts";
 import * as join from "../src/hub/prs/join.ts";
 import { listPage, PR_LIST_MAX } from "../src/hub/prs/tools.ts";
@@ -233,6 +233,27 @@ test("a burst of reads asks GitHub once per minute", async () => {
   clock.ms += 61_000;
   await github.page("acme/web", false);
   expect(gh.runs.length).toBe(2);
+});
+
+test("reads of different PRs run side by side, READS_AT_ONCE at most; a burst for one PR shares its read", async () => {
+  let running = 0;
+  let most = 0;
+  const gh: GhRunner & { runs: number } = {
+    runs: 0,
+    async run(args: string[]): Promise<GhOut> {
+      gh.runs += 1;
+      running += 1;
+      most = Math.max(most, running);
+      await Bun.sleep(20);
+      running -= 1;
+      const number = Number(args[2]);
+      return { exitCode: 0, stdout: JSON.stringify({ number, title: `PR ${number}`, state: "OPEN", headRefName: "f", headRefOid: SHA, createdAt: AT, updatedAt: AT }), stderr: "" };
+    },
+  };
+  const github = new PrsGitHub(gh, new ManualClock(1_792_000_000_000));
+  const reads = await Promise.all([...Array.from({ length: 10 }, (_, i) => github.detail("acme/web", i + 1)), github.detail("acme/web", 1)]);
+  expect(reads.map((r) => r.value?.pull.title)).toEqual([...Array.from({ length: 10 }, (_, i) => `PR ${i + 1}`), "PR 1"]);
+  expect([gh.runs, most]).toEqual([10, READS_AT_ONCE]);
 });
 
 test("only open pages ask GitHub for checks", async () => {

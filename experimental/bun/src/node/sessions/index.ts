@@ -866,13 +866,19 @@ export class SessionService {
 
   async #projectWorktrees(projectId: string): Promise<SessionOutput> {
     const root = this.#projectRoot(projectId);
-    const worktrees = [];
-    for (const r of this.store.sessions()) {
-      if (r.summary.projectId !== projectId || !r.local.baseRef || !r.summary.worktreePath || !existsSync(r.local.cwd)) continue;
-      const dirty = await worktree.uncommitted(r.local.cwd).catch(() => true);
-      worktrees.push({ sessionId: r.summary.sessionId, path: r.local.cwd, ...(r.local.branch ? { branch: r.local.branch } : {}), uncommitted: dirty });
-    }
-    const baseBranch = (await worktree.hasCommit(root)) ? await worktree.defaultBranch(root) : undefined;
+    const held = this.store
+      .sessions()
+      .filter((r) => r.summary.projectId === projectId && r.local.baseRef && r.summary.worktreePath && existsSync(r.local.cwd));
+    const [dirty, baseBranch] = await Promise.all([
+      worktree.uncommittedAll(held.map((r) => r.local.cwd)),
+      worktree.hasCommit(root).then((has) => (has ? worktree.defaultBranch(root) : undefined)),
+    ]);
+    const worktrees = held.map((r, i) => ({
+      sessionId: r.summary.sessionId,
+      path: r.local.cwd,
+      ...(r.local.branch ? { branch: r.local.branch } : {}),
+      uncommitted: dirty[i] as boolean,
+    }));
     return { kind: "project_worktrees", dir: this.#worktreesDir(projectId), ...(baseBranch ? { baseBranch } : {}), worktrees, signinsKept: signinsKept(this.home, projectId) };
   }
 

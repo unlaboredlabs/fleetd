@@ -207,6 +207,12 @@ test("windows, items, spans and the project calls answer from the store and the 
   const worktrees = (await ok("project_worktrees", { projectId: "p1" })).worktrees as { sessionId: string; branch: string; uncommitted: boolean }[];
   // s5's setup left made.txt, which git doesn't track: it holds work.
   expect(worktrees.find((w) => w.sessionId === "s5")).toMatchObject({ branch: "fleetd/t5", uncommitted: true });
+  // Each worktree keeps its own answer, though git reads them all at once.
+  expect(worktrees.map((w) => [w.sessionId, w.uncommitted])).toEqual([
+    ["s5", true],
+    ["s6", false],
+    ["s7", true],
+  ]);
   const made = join(home.dir, "made");
   expect(await ok("folder_make", { path: made, gitInit: true })).toEqual({ kind: "folder", path: made });
   expect(existsSync(join(made, ".git"))).toBe(true);
