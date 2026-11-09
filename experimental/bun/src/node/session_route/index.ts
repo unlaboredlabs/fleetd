@@ -104,6 +104,15 @@ export class Router {
     return result;
   }
 
+  /** The agent's claude exited: its screens end now, not at their idle timeout, here or on the machine hosting one
+   * (session_route.rs `ended`). */
+  ended(thread: string): void {
+    screens(this.node).ended(thread);
+    if (!this.remotes.has(thread)) return;
+    const end: BrowserCallFrame = { id: "ended", cwd: "/", call: { op: "session_end" } } as BrowserCallFrame;
+    void this.route(thread, end).catch((e) => console.info(`hosted session not ended: ${(e as Error).message}`));
+  }
+
   /** A call for a screen on this machine, of whichever kind (node/device's router); a hosted start's secrets with it. */
   private here(thread: string, frame: BrowserCallFrame): Promise<{ op: string } & Record<string, unknown>> {
     const secrets = this.secretsFor.get(thread);
@@ -211,6 +220,8 @@ export function start(node: Node, given?: Router): Router {
   onHub(node, "session_step", (f) => void brokerOf(node).item(String(f.hostKey), f.item as ThreadItem));
   // And the other way: an agent's command that drove its session hosted elsewhere goes to the runner's recording.
   node.area("items").on((thread, item) => void r.step(thread, item));
+  // The agent's claude exited: its screens go with it.
+  node.area("launch").contribute({ ended: (thread) => r.ended(thread) });
   const b = brokerOf(node);
   b.remote = (thread) => r.remotes.get(thread);
   b.gone = (thread) => void r.remotes.delete(thread);

@@ -1,7 +1,7 @@
 // Adding a project, the machine's half (crates/fleetd/src/node/repos.rs, cli/setup/detect.rs): find checkouts, look
 // at one. Clones and `gh repo list` are ../actions/clone.ts's.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { type Dirent, existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { defaultBranch } from "../worktree/index.ts";
 
@@ -9,6 +9,34 @@ const MAX_REPOS = 200;
 export const PARTIAL = ".fleetd-partial-";
 /** Where people keep checkouts, under the home directory. */
 export const REPO_ROOTS = ["src", "code", "projects", "dev", "Developer", "repos", "git"];
+
+/** Removes clones a previous node process left half done (`<dest>.fleetd-partial-<addId>`), under the usual source
+ * dirs, two levels down. Run at start, before any clone. How many it removed. */
+export function removePartials(home: string): number {
+  let removed = 0;
+  let dirs = REPO_ROOTS.map((r) => join(home, r));
+  for (let depth = 0; depth < 2 && dirs.length; depth++) {
+    const next: string[] = [];
+    for (const dir of dirs) {
+      let entries: Dirent[] = [];
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {}
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        const path = join(dir, e.name);
+        if (e.name.includes(PARTIAL)) {
+          try {
+            rmSync(path, { recursive: true, force: true });
+            removed++;
+          } catch {}
+        } else if (!existsSync(join(path, ".git"))) next.push(path);
+      }
+    }
+    dirs = next;
+  }
+  return removed;
+}
 
 /** Where a clone goes by default: the first of ~/src, ~/code, ~/projects that exists, else ~/src. */
 export const cloneRoot = (home: string) => ["src", "code", "projects"].map((d) => join(home, d)).find((d) => existsSync(d) && statSync(d).isDirectory()) ?? join(home, "src");

@@ -8,6 +8,17 @@ import type { MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, SessionRole
 /** How many machine events are kept for `subscribe{after}`; an older cursor gets a snapshot. */
 export const EVENTS_KEPT = 10_000;
 
+/** The span outbox keeps at most this many rows, and none older than SPANS_KEPT_MS, while the hub is away. Past either
+ * bound the oldest rows go and one `gap` span says how many, so the loss shows in coverage. */
+export const SPANS_KEPT = 500_000;
+export const SPANS_KEPT_MS = 7 * 24 * 3600 * 1000;
+const SPANS_DROP_BATCH = 5_000;
+/** A session's steps (`items`: tool calls and their outputs) are kept this long after they last changed; its
+ * messages, the chat itself, and the steps of a session at work now are kept whatever their age. */
+export const ITEMS_KEPT_MS = 30 * 24 * 3600 * 1000;
+/** Rows pruneItems looks at per transaction, so no other store call waits long on it. */
+export const ITEMS_PRUNE_BATCH = 500;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
@@ -229,11 +240,66 @@ export class NodeStore {
       .map((r) => [r.rid, JSON.parse(r.json)]);
   }
 
-  putSpans(spans: { sessionId: string; endMs: number }[]): void {
+  /** Appends spans to the outbox in one transaction, then holds the outbox to its bounds. */
+  putSpans(spans: { sessionId: string; endMs: number }[], nowMs = Date.now(), kept = SPANS_KEPT): void {
     if (!spans.length) return;
     this.tx(() => {
       const put = this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)");
       for (const span of spans) put.run(span.sessionId, span.endMs, JSON.stringify(span));
+      this.#boundSpans(nowMs, kept);
+    });
+  }
+
+  /** Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`. */
+  #boundSpans(nowMs: number, kept: number): void {
+    for (;;) {
+      const { min, max } = this.db.query<{ min: number | null; max: number | null }, []>("SELECT MIN(rid) AS min, MAX(rid) AS max FROM spans").get()!;
+      if (min === null || max === null) return;
+      const firstYoung = this.db.query<{ r: number | null }, [number]>("SELECT MIN(rid) AS r FROM spans WHERE at_ms >= ?").get(nowMs - SPANS_KEPT_MS)!.r;
+      const byAge = firstYoung === null ? max : firstYoung - 1;
+      // Past the count, room for the gap span too: store.rs's `max - SPANS_KEPT` dropped one row and added one gap on
+      // every pass once the outbox was full, and never stopped.
+      const byCount = max - min + 1 > kept ? max - kept + 1 : min - 1;
+      const upto = Math.min(Math.max(byAge, byCount), min + SPANS_DROP_BATCH - 1);
+      if (upto < min) return;
+      const dropped = this.db
+        .query<{ n: number; first: number; last: number; session: string }, [number]>(
+          "SELECT COUNT(*) AS n, MIN(at_ms) AS first, MAX(at_ms) AS last, MIN(session_id) AS session FROM spans WHERE rid <= ?",
+        )
+        .get(upto)!;
+      this.db.query("DELETE FROM spans WHERE rid <= ?").run(upto);
+      const gap = {
+        key: `node/gap/${upto}`,
+        kind: "gap",
+        sessionId: dropped.session,
+        startMs: Math.max(0, dropped.first),
+        endMs: Math.max(0, dropped.last, dropped.first),
+        status: "incomplete",
+        extra: { count: dropped.n, reason: "the node's span outbox was full while the hub was away" },
+      };
+      this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)").run(dropped.session, nowMs, JSON.stringify(gap));
+      console.warn(`${new Date().toISOString()} WARN span outbox full: dropped the oldest spans {"dropped":${dropped.n}}`);
+    }
+  }
+
+  /** One batch of the items prune: of the ITEMS_PRUNE_BATCH rows after row `after`, deletes those last updated before
+   * `before` (RFC 3339), but none of a session with an active run. How many went, and the row to go on after, or
+   * undefined once the rest is newer: rows are numbered as they are first stored, so the oldest come first. */
+  pruneItems(after: number, before: string): [number, number | undefined] {
+    return this.tx(() => {
+      const { last, oldest } = this.db
+        .query<{ last: number | null; oldest: string | null }, [number, number]>(
+          "SELECT MAX(rid) AS last, MIN(json_extract(json, '$.updatedAt')) AS oldest FROM (SELECT rid, json FROM items WHERE rid > ? ORDER BY rid LIMIT ?)",
+        )
+        .get(after, ITEMS_PRUNE_BATCH)!;
+      if (last === null) return [0, undefined];
+      const gone = this.db
+        .query(
+          `DELETE FROM items WHERE rid > ? AND rid <= ? AND json_extract(json, '$.updatedAt') < ?
+             AND session_id NOT IN (SELECT id FROM sessions WHERE json_extract(summary, '$.activeRunId') IS NOT NULL)`,
+        )
+        .run(after, last, before).changes;
+      return [gone, oldest !== null && oldest < before ? last : undefined];
     });
   }
 

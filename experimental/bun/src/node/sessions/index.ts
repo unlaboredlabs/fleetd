@@ -11,7 +11,7 @@
 // answers with a plain refusal, PORT_MAP.md): worktree setup commands, warm builds, steer receipts, the node's own run
 // retries and model fallback.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { mkdirPrivate, readConfig } from "../config.ts";
 import type { ClaudeAccount } from "../../shared/contracts.ts";
@@ -22,10 +22,14 @@ import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
-import { HostLink, LaunchError, launch as launchHost, marker, shutdown, startOf, stop as stopHost, sweep, type SessionCommand } from "../runner/host.ts";
+import { endLeft, HostLink, LaunchError, launch as launchHost, marker, readRegistration, shutdown, startOf, stop as stopHost, sweep, type SessionCommand } from "../runner/host.ts";
+import { descendants, table } from "../runner/procs.ts";
+import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
+import { buildJobsHere } from "../load/index.ts";
+import { removePartials } from "../repos/index.ts";
 import { applyProjectEnv, copyProjectEnv, forgetOrderVars, forgetProjectEnv, orderEnvFile, orderVarsForSpawn, projectSecrets, projectVars } from "../secrets/env.ts";
 import { writeAtomic } from "../secrets/files.ts";
-import { headUtf16, homeDir, nowIso, tailUtf16, type Env } from "../util.ts";
+import { headUtf16, homeDir, nowIso, selfArgv, tailUtf16, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
@@ -47,7 +51,10 @@ import type { LaunchArea } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
-import { NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
+import { ITEMS_KEPT_MS, NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
+import { Health } from "./health.ts";
+import { killOrphans, killRecorded } from "./proc.ts";
+import { briefNote, compileCacheEnv, jobsEnv } from "./share.ts";
 import {
   FOLDER_NOT_EMPTY,
   FOLDER_TAKEN,
@@ -87,6 +94,10 @@ const REAP_GRACE_MS = 10_000;
 const MONITOR_DEFAULT_MS = 5 * 60_000;
 const MONITOR_MAX_MS = 30 * 60_000;
 const MONITOR_GRACE_MS = 60_000;
+/** The steps prune: its first run this long after the node starts, then daily, with a pause between its batches. */
+const ITEMS_PRUNE_AFTER_START_MS = 10 * 60_000;
+const ITEMS_PRUNE_EVERY_MS = 24 * 3600_000;
+const ITEMS_PRUNE_PAUSE_MS = 100;
 
 /** What the agent is told when the Monitors it waited on were lost `when` its claude went. */
 export function monitorsLost(lost: { description?: string }[], when: string): string {
@@ -244,6 +255,42 @@ export function settingsOverlay(
 }
 
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+
+/** The user-level bin dirs installers put programs in, in a former Navi's home, first on its commands' PATH. */
+const NAVI_HOME_BINS = [".local/bin", "bin", ".cargo/bin", "go/bin", ".bun/bin", ".deno/bin"];
+
+/** What claude runs ahead of each command of a former Navi's lead (`CLAUDE_ENV_FILE`), when the project has the home a
+ * Navi kept (`navis/<id>/home` under the node's home, D234): that home as HOME, with NAVI_HOME_BINS first on its PATH
+ * and npm installing globally there too (`~/.local`); `navis/<id>/tmp` as TMPDIR; pip allowed to install for the user
+ * on a system that marks its Python as managed; the person's rustup toolchains, when they have them. claude itself
+ * keeps the person's HOME, where its login and settings are. Undefined for a project with no such home. */
+export function naviHomeEnv(nodeHome: string, projectId: string, userHome: string): string | undefined {
+  const own = join(nodeHome, "navis", projectId);
+  let home: string;
+  try {
+    home = realpathSync(join(own, "home"));
+  } catch {
+    return undefined;
+  }
+  const tmp = join(own, "tmp");
+  try {
+    mkdirSync(tmp, { recursive: true });
+  } catch (error) {
+    console.warn(`${nowIso()} WARN a former Navi's tmp dir was not made: ${(error as Error).message}`);
+  }
+  let env =
+    `export HOME=${quote(home)}\n` +
+    `export PATH="${NAVI_HOME_BINS.map((b) => `$HOME/${b}`).join(":")}:$PATH"\n` +
+    `export NPM_CONFIG_PREFIX="$HOME/.local"\n` +
+    `export CARGO_HOME="$HOME/.cargo"\n` +
+    `export PIP_BREAK_SYSTEM_PACKAGES=1\n` +
+    `export TMPDIR=${quote(tmp)} TMP=${quote(tmp)} TEMP=${quote(tmp)}\n`;
+  const rustup = join(userHome, ".rustup");
+  try {
+    if (statSync(rustup).isDirectory()) env += `export RUSTUP_HOME=${quote(rustup)}\n`;
+  } catch {}
+  return env;
+}
 /** The PreToolUse hook: free while there is no hold, `fleetd update-hold` while there is one (node/hold.rs). */
 export const holdHook = (exe: string, home: string) => {
   const hold = quote(join(home, "update", "hold"));
@@ -306,7 +353,10 @@ export class SessionService {
   #announced = new Map<string, number>();
   #spawning = new Map<string, Promise<unknown>>();
   #files = new Map<string, { at: number; paths: string[] }>();
-  #runner: RunnerInfo | undefined;
+  readonly #health = new Health();
+  #probing: Promise<unknown> = Promise.resolve();
+  #prober: ReturnType<typeof setTimeout> | undefined;
+  #itemsPruner: ReturnType<typeof setTimeout> | undefined;
   #limits = new Map<string, { limitType: string; utilization?: number; resetsAt?: string; status: string; observedAt: string }>();
   #spans = { enabled: false, sent: 0 };
   #onRunning: ((n: number) => void)[] = [];
@@ -315,7 +365,7 @@ export class SessionService {
   /** Called for each step stored as completed or failed (node.area("items")). */
   onItemEnded: ((sessionId: string, item: ThreadItem) => void) | undefined;
   /** What the node's areas add to a lead's or a worker's launch (node.area("launch")). */
-  launch: Pick<LaunchArea, "env" | "pluginDirs"> | undefined;
+  launch: Pick<LaunchArea, "env" | "pluginDirs" | "ended"> | undefined;
   /** Sessions whose worktree setup still runs: a send waits for it; true once the brief went to claude. */
   #settingUp = new Map<string, Promise<boolean>>();
   /** Ends a session's running setup (its command killed), and the run it is for: only that run's interrupt ends it. */
@@ -344,6 +394,8 @@ export class SessionService {
     const service = new SessionService(new NodeStore(join(config.home, "sessions.sqlite")), config);
     const hosts = join(config.home, "hosts");
     const adopted = new Set<string>();
+    // The processes of re-adopted sessions: their hosts and everything under them, which the orphan sweep spares.
+    const protectedPids = new Set<number>();
     // Sessions whose claude went with the last node while a Monitor of theirs could still fire: woken once the sweep
     // below is done, or it would stop the host each wake starts.
     const lost: [string, { description?: string }[]][] = [];
@@ -356,6 +408,8 @@ export class SessionService {
           if (link.pid === row.local.pid && existsSync(row.local.cwd)) {
             service.#adopt(row, link);
             adopted.add(id);
+            const host = readRegistration(dir)?.hostPid;
+            if (host) for (const pid of [host, ...descendants(table(), host).map((p) => p.pid)]) protectedPids.add(pid);
             console.log(`${nowIso()} INFO re-adopted a session that ran on through the restart {"sessionId":"${id}","pid":${link.pid}}`);
             continue;
           }
@@ -365,13 +419,17 @@ export class SessionService {
           if (existsSync(dir)) await stopHost(dir);
         }
       }
+      if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, INTERRUPT_GRACE_MS);
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
       // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it.
       const armed = (row.local.monitors ?? []).filter((m) => m.untilMs > Date.now());
       if (row.local.monitors?.length) service.update(id, (c) => void delete c.row.local.monitors);
       if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
     }
-    await sweep(hosts, adopted);
+    const stopped = await sweep(hosts, adopted);
+    if (stopped) console.warn(`${nowIso()} WARN stopped sessions' hosts no session runs on {"stopped":${stopped}}`);
+    const killed = await killOrphans(config.home, protectedPids);
+    if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
     // A killed node's scratch dirs: each session's own TMPDIR stays while its worktree or its process does.
     const keep = new Set([...service.store.sessions().filter((r) => r.local.baseRef && r.summary.worktreePath).map(scratchOwner), ...adopted].map(scratchName));
     let swept = 0;
@@ -383,9 +441,23 @@ export class SessionService {
       } catch {}
     }
     if (swept) console.log(`${nowIso()} INFO removed scratch dirs a previous node left {"swept":${swept}}`);
+    const partials = removePartials(homeDir());
+    if (partials) console.log(`${nowIso()} INFO removed clones a previous node left half done {"removed":${partials}}`);
     service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
     // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
     service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
+    // Once a day the steps older than 30 days go, the first a while after the node starts.
+    const pruneItems = (after: number) => {
+      service.#itemsPruner = setTimeout(() => {
+        void service
+          .pruneItems()
+          .catch((error) => console.warn(`${nowIso()} WARN steps not pruned: ${(error as Error).message}`))
+          .finally(() => !service.#stopping && pruneItems(ITEMS_PRUNE_EVERY_MS));
+      }, after);
+    };
+    pruneItems(ITEMS_PRUNE_AFTER_START_MS);
+    // The runner is probed now, and again every 15 s while it can't run sessions.
+    service.#scheduleProbe();
     for (const [id, armed] of lost) service.#wakeLost(id, armed, "this machine's fleetd node restarted");
     return service;
   }
@@ -801,6 +873,8 @@ export class SessionService {
     const project = this.store.project(projectId);
     const ids = this.store.sessions().filter((r) => r.summary.projectId === projectId);
     for (const row of ids) if (this.#live.has(row.summary.sessionId)) await this.#stop(row.summary.sessionId, false, "the project was removed");
+    // Its agents' tasks end with it, and what their sessions left running too.
+    for (const row of ids) if (row.local.role === "worker") await endLeft(join(this.home, "hosts", row.summary.sessionId));
     if (removeWorktrees && project) {
       try {
         worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
@@ -820,6 +894,8 @@ export class SessionService {
     }
     forgetProjectEnv(this.home, projectId);
     mcp.forgetSecrets(this.home, projectId);
+    // What a Navi kept under the node's home before Navis became projects (D310): its own home.
+    rmSync(join(this.home, "navis", projectId), { recursive: true, force: true });
     const frame = this.store.removeProject(projectId);
     if (frame) this.#machine(frame);
     return { kind: "done" };
@@ -882,8 +958,25 @@ export class SessionService {
     // it was left, uncommitted changes included, with its scratch dir; a worktree that is gone comes back first.
     const earlier = ws.type === "worktree" && ws.fromSession ? this.store.session(ws.fromSession) : undefined;
     const taken = earlier?.local.baseRef && ws.type === "worktree" && earlier.local.branch === ws.branch ? earlier : undefined;
+    // A checkout fleetd cloned with a token (a cloud machine's) fetches with its order's, which the hub delivered before
+    // this launch.
+    const token = launch.orderId ? orderVarsForSpawn(this.home, launch.projectId, launch.orderId).vars.find(([n]) => n === "GITHUB_TOKEN") : undefined;
+    if (token) worktree.useToken(root, token[1]);
+    // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check. The head the
+    // hub named needs no remote when this machine has its commit (its writer pushed from here); else the remote is
+    // asked while the base fetches.
+    const head =
+      ws.type === "detached" && ws.pr
+        ? Promise.resolve(ws.head ? worktree.knownCommit(root, ws.head) : undefined)
+            .then((known) => known ?? worktree.prHead(root, ws.pr!))
+            .catch((error: Error) => {
+              console.warn(`${nowIso()} WARN worktree at the base, not ${ws.pr}'s head {"sessionId":"${id}","error":${JSON.stringify(error.message)}}`);
+              return undefined;
+            })
+        : undefined;
     let base: worktree.Base | undefined;
     if (ws.type !== "root" && !taken) base = await worktree.freshBase(root, ws.baseRef);
+    const prHead = await head;
     // A retry that arrived while this one fetched.
     const raced = this.store.session(id);
     if (raced) return { kind: "launched", summary: raced.summary };
@@ -910,7 +1003,7 @@ export class SessionService {
       worktree.ensure(root, path, ws.branch, base.sha);
       [cwd, addDirs, baseRef, branch] = [path, [root], base.baseRef, ws.branch];
     } else if (ws.type === "detached" && base) {
-      const sha = (ws.head && worktree.knownCommit(root, ws.head)) || base.sha;
+      const sha = prHead ?? ((ws.head && worktree.knownCommit(root, ws.head)) || base.sha);
       worktree.ensureDetached(root, path, sha);
       [cwd, addDirs, baseRef] = [path, [root], sha];
       // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
@@ -926,6 +1019,9 @@ export class SessionService {
     const model = launch.profile ? (launch.model ?? own.model) : own.model;
     const effort = launch.profile ? (launch.effort ?? own.effort) : own.effort;
     const title = launch.title ?? [...(launch.prompt.split("\n")[0] ?? "")].slice(0, 80).join("");
+    // A task's share of the machine is a standing rule like its brief's: it joins the system prompt.
+    const machineNote = launch.role === "worker" ? this.#machineNote() : undefined;
+    const systemPrompt = launch.systemPrompt && machineNote ? `${launch.systemPrompt.trimEnd()}\n\n${machineNote}` : (launch.systemPrompt ?? machineNote);
     const row: SessionRow = {
       summary: {
         sessionId: id,
@@ -957,7 +1053,7 @@ export class SessionService {
         profile,
         ...(launch.fast ? { fast: true } : {}),
         ...(launch.helperModel ? { helperModel: launch.helperModel } : {}),
-        ...(launch.systemPrompt ? { systemPrompt: launch.systemPrompt } : {}),
+        ...(systemPrompt ? { systemPrompt } : {}),
         ...(launch.claudeAccount ? { claudeAccount: launch.claudeAccount } : {}),
         ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
         ...(taken ? { scratchOf: scratchOwner(taken) } : {}),
@@ -988,6 +1084,14 @@ export class SessionService {
 
   /** Records a run and its user message, then hands it to the session's process. Whether it waits behind an active
    * run. Idempotent on `runId`. */
+  /** What a worker's standing rules say about its share of this machine: build jobs, test workers, scratch and build
+   * turns. */
+  #machineNote(): string {
+    const n = buildJobsHere();
+    const slots = slotsHere(this.home);
+    return briefNote(jobsEnv(runnerEnv(this.config), n), n) + (slots === undefined ? "" : briefLine(slots));
+  }
+
   /** Records a run and its user message; false when it was recorded before (a retry). */
   #recordRun(id: string, runId: string, text: string): boolean {
     return this.update(id, (c) => {
@@ -1185,13 +1289,18 @@ export class SessionService {
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
     delete env[claude.ORDER_ENV_FILE_ENV];
-    const sourced = row.local.orderId ? orderEnvFile(this.home, row.summary.projectId, row.local.orderId) : undefined;
+    let sourced = row.local.orderId ? orderEnvFile(this.home, row.summary.projectId, row.local.orderId) : undefined;
+    // A former Navi's lead still runs its commands in the home it kept, with what it installed there on the PATH (D234,
+    // kept by D310); its agents run in the person's own, with their git and logins.
+    const naviHome = role === "lead" || role === "assistant" ? naviHomeEnv(this.home, row.summary.projectId, homeDir()) : undefined;
+    if (naviHome) sourced = naviHome + (sourced ?? "");
     if (sourced) {
       const at = join(dir, "order-env.sh");
       writeFileSync(at, sourced);
       env[claude.ORDER_ENV_FILE_ENV] = at;
     }
     env[claude.AUTO_MEMORY_OFF_ENV[0]] = claude.AUTO_MEMORY_OFF_ENV[1];
+    for (const [k, v] of compileCacheEnv(env)) env[k] = v;
     // A writer's commits name its task, so its work merged by hand is found from git alone, and it pushes only a tree
     // its repo's pre-push check passed on.
     const task = row.local.branch ? hooks.branchTask(row.local.branch) : undefined;
@@ -1207,6 +1316,10 @@ export class SessionService {
         console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
     }
+    // Its builds and test runners held to its share of the CPUs, and its cargo builds taking turns for the machine's
+    // build slots.
+    for (const [k, v] of jobsEnv(env, buildJobsHere())) env[k] = v;
+    addToPath(this.home, selfArgv(), env);
     const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
@@ -1481,6 +1594,8 @@ export class SessionService {
       }
     }
     this.#retries.delete(runId);
+    if (typeof outcome === "object" && "Failed" in outcome && outcome.Failed.class === "auth") this.#healthChanged((h) => h.authFailed(outcome.Failed.message, Date.now()));
+    else if (typeof outcome === "object" && "Completed" in outcome) this.#healthChanged((h) => h.runCompleted());
     const cause = live.ending ?? (this.#stopping ? ({ kind: "node_stopping" } as const) : undefined);
     live.ending = undefined;
     const end = state.runEnd(outcome, cause, false);
@@ -1514,6 +1629,8 @@ export class SessionService {
   #exited(id: string, live: Live, exit: state.ExitInfo): void {
     if (this.#live.get(id) !== live) return;
     this.#live.delete(id);
+    // Its agent-browser and its tools went with the process: so do its screens, here or elsewhere.
+    this.launch?.ended(id);
     this.#steers.exited(id, exit.code, (run) => this.#retries.has(run));
     const cause: state.EndCause = live.ending ?? (this.#stopping ? { kind: "node_stopping" } : { kind: "exited", exit });
     // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session.
@@ -1890,6 +2007,11 @@ export class SessionService {
         await Promise.race([live.exited, Bun.sleep(5_000)]);
       }
     }
+    // A task's stop is its end: what its session's tree left running in any of its turns goes now.
+    if (row.local.role === "worker") {
+      const ended = await endLeft(join(this.home, "hosts", id));
+      if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
+    }
     // A session's scratch goes with its worktree, or with its process when it has none.
     if (removeWorktree || !row.local.baseRef) rmSync(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
     if (removeWorktree && row.local.baseRef) {
@@ -1969,13 +2091,21 @@ export class SessionService {
     return { summary: row.summary, messages, items: items.map(state.bounded), runs: this.store.runs(id), truncated: olderMessages || olderItems };
   }
 
-  /** The runner's state, probed once and again when asked while it can't run sessions. */
+  /** `runner_info`: the last probe, unless the next one is due (Health.nextProbeIn). */
   async runnerInfo(): Promise<RunnerInfo> {
-    if (this.#runner && this.#runner.login === "logged_in" && this.#runner.conformanceOk) return this.#runner;
-    return this.reprobe();
+    const cached = this.#health.nextProbeIn(Date.now()) === 0 ? undefined : this.#health.info();
+    return cached ?? this.reprobe();
   }
 
-  async reprobe(): Promise<RunnerInfo> {
+  /** Probes the runner now, whatever the last probe said (after Claude Code was installed). One probe at a time. */
+  reprobe(): Promise<RunnerInfo> {
+    const next = this.#probing.catch(() => undefined).then(() => this.#probe());
+    this.#probing = next;
+    return next;
+  }
+
+  async #probe(): Promise<RunnerInfo> {
+    const started = Date.now();
     const info = await claude.probe(this.config.claudeBin, runnerEnv(this.config));
     // No session host: claude may be fine, but no session starts here. Both hubs read a logged-in runner as able to
     // take sessions whatever its problem says (runner_problem), so its login goes out as unknown: the hub shows the
@@ -1984,10 +2114,50 @@ export class SessionService {
       info.problem = info.problem ? `${NO_HELPER}. ${info.problem}` : NO_HELPER;
       info.login = "unknown";
     }
-    const changed = JSON.stringify(info) !== JSON.stringify(this.#runner);
-    this.#runner = info;
-    if (changed) this.#machine(this.store.appendEvent({ type: "runner_info", ...info }));
-    return info;
+    this.#healthChanged((h) => h.probed(info, started));
+    return this.#health.info() ?? info;
+  }
+
+  /** Applies `f` to the runner's health and pushes `runner_info` when what it reports changed; the prober then
+   * reckons its next probe again. */
+  #healthChanged(f: (h: Health) => void): void {
+    const before = JSON.stringify(this.#health.info());
+    f(this.#health);
+    const after = this.#health.info();
+    if (after && JSON.stringify(after) !== before) {
+      console.log(`${nowIso()} INFO runner_info changed {"login":"${after.login}","problem":${JSON.stringify(after.problem ?? "")}}`);
+      this.#machine(this.store.appendEvent({ type: "runner_info", ...after }));
+    }
+    this.#scheduleProbe();
+  }
+
+  /** Probes whenever Health.nextProbeIn says so: at start, then every 15 s while the runner is unusable. */
+  #scheduleProbe(): void {
+    clearTimeout(this.#prober);
+    this.#prober = undefined;
+    if (this.#stopping) return;
+    const wait = this.#health.nextProbeIn(Date.now());
+    if (wait === undefined) return;
+    this.#prober = setTimeout(() => {
+      this.#prober = undefined;
+      void this.runnerInfo().catch((error) => console.warn(`${nowIso()} WARN the runner was not probed: ${(error as Error).message}`));
+    }, wait);
+  }
+
+  /** Prunes the steps older than ITEMS_KEPT_MS, a batch at a time with a pause between, so sends never queue behind
+   * it. How many went. */
+  async pruneItems(pauseMs = ITEMS_PRUNE_PAUSE_MS): Promise<number> {
+    const before = new Date(Date.now() - ITEMS_KEPT_MS).toISOString();
+    let gone = 0;
+    let after: number | undefined = 0;
+    while (after !== undefined && !this.#stopping) {
+      const [n, next]: [number, number | undefined] = this.store.pruneItems(after, before);
+      gone += n;
+      after = next;
+      await Bun.sleep(pauseMs);
+    }
+    if (gone) console.log(`${nowIso()} INFO pruned steps older than 30 days {"gone":${gone}}`);
+    return gone;
   }
 
   /** The machine just woke. A run whose claude has said nothing since, and waits on no tool and no person, lost its
@@ -2037,6 +2207,8 @@ export class SessionService {
     this.#stopping = true;
     clearInterval(this.#reaper);
     clearInterval(this.#warmPruner);
+    clearTimeout(this.#itemsPruner);
+    clearTimeout(this.#prober);
     await Promise.all([...this.#live.values()].map((live) => live.link.detach()));
     this.#live.clear();
     this.store.close();
@@ -2047,6 +2219,8 @@ export class SessionService {
     this.#stopping = true;
     clearInterval(this.#reaper);
     clearInterval(this.#warmPruner);
+    clearTimeout(this.#itemsPruner);
+    clearTimeout(this.#prober);
     for (const id of [...this.#live.keys()]) await stopHost(join(this.home, "hosts", id));
   }
 }

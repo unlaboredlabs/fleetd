@@ -5,6 +5,7 @@ import { availableParallelism, loadavg } from "node:os";
 import { readFileSync, statfsSync } from "node:fs";
 import type { LoginLimit, NodeDisk, NodeLoad } from "../../shared/contracts.ts";
 import { readConfig } from "../config.ts";
+import { memTotal } from "../build_slots.ts";
 import { read as network } from "./network.ts";
 
 export type Memory = { total: number; available: number };
@@ -26,6 +27,33 @@ export const usedPct = (m: Memory) =>
 /** The default free-space floor: 10% of the volume or 20 GB, whichever is larger. */
 export const minFreeBytes = (total: number, minFreeGb?: number) =>
   minFreeGb === undefined ? Math.max(Math.floor(total / 10), 20_000_000_000) : minFreeGb * 1_000_000_000;
+
+/** The memory an agent is sized for here, as the hub sizes the machine's cap. */
+const MEM_PER_AGENT = 2_000_000_000;
+
+/** The agents this machine fits by its own measure, as the hub sizes its cap (load.rs `agents_fit`): one per CPU less a
+ * reserve of one in eight, and the memory left after a quarter of it (4 to 16 GB) at `memPerAgent` bytes each, at most
+ * 64. An unknown total counts as 4 on memory, as the hub counts it. */
+export function agentsFit(cpus: number, memTotalBytes: number | undefined, memPerAgent: number): number {
+  const cpuTerm = Math.max(1, cpus - Math.ceil(cpus / 8));
+  let memTerm = 4;
+  if (memTotalBytes !== undefined) {
+    // As sold: a 32 GB machine whose kernel reports 31.3 counts as 32.
+    const total = Math.ceil(memTotalBytes / 2 ** 30);
+    const reserve = Math.min(16, Math.max(4, total / 4));
+    memTerm = Math.max(1, Math.floor(Math.max(0, total - reserve) / (Math.max(1, memPerAgent) / 1e9)));
+  }
+  return Math.min(cpuTerm, memTerm, 64);
+}
+
+/** Parallel build jobs for each agent: its share of the CPUs when the machine runs all the agents it fits, at least 2. */
+export const buildJobs = (cpus: number, agents: number) => Math.max(2, Math.floor(cpus / Math.max(1, agents)));
+
+/** buildJobs for this machine now. */
+export function buildJobsHere(): number {
+  const cpus = Math.max(1, availableParallelism());
+  return buildJobs(cpus, agentsFit(cpus, memTotal(), MEM_PER_AGENT));
+}
 
 function memory(): Memory | undefined {
   if (process.platform !== "linux") return undefined;

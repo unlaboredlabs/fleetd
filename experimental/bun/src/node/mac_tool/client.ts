@@ -10,7 +10,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
-import { selfArgv } from "../agents_mac/grants.ts";
+import { selfArgv } from "../util.ts";
 import { hubCall, type Node } from "../browser/node.ts";
 import { type Done, type Envelope, openAnswer, PIECE, PULL_MAX, PUSH_MAX, sealStep, type Step } from "./protocol.ts";
 import { installForwarder, removeForwarder } from "./shim.ts";

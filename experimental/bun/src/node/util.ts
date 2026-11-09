@@ -14,6 +14,9 @@ export const scrubbedEnv = (): Env => passed(BASE_ENV);
 /** Git the hub runs reaches an SSH remote through the user's agent; nothing else gets it. */
 export const gitCommandEnv = (): Env => ({ ...scrubbedEnv(), ...passed(GIT_SSH_ENV) });
 
+/** This binary's own command line: the compiled one, or Bun with the entry it runs. */
+export const selfArgv = (): string[] => (Bun.main.startsWith("/$bunfs/") ? [process.execPath] : [process.execPath, Bun.main]);
+
 export const homeDir = () => process.env.HOME || homedir() || "/";
 
 /** RFC 3339 with milliseconds and `Z`, as chrono's `to_rfc3339_opts(Millis, true)`. */

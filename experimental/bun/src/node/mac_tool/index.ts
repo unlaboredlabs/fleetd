@@ -8,7 +8,7 @@ import { type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
-import { selfArgv } from "../agents_mac/grants.ts";
+import { selfArgv } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient } from "./client.ts";
 import { FOLDER_DAYS, Host, sweep } from "./host.ts";

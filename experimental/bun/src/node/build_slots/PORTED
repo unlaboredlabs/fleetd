@@ -1,1 +1,2 @@
 cli:`fleetd build-slot`
+mod:`node/build_slots.rs`

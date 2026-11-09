@@ -166,6 +166,8 @@ export type LaunchPart = {
   env?: (thread: string, path: string | undefined) => [string, string][];
   /** Plugin folders of skills for the session. */
   pluginDirs?: () => string[];
+  /** The agent's claude exited: what the area holds for the session (its screens, here or elsewhere) goes now. */
+  ended?: (thread: string) => void;
 };
 
 export class LaunchArea {
@@ -196,6 +198,16 @@ export class LaunchArea {
       }
     }
     return out;
+  }
+  /** The node core's: the agent's claude exited (Rust's `SessionHooks::ended`). */
+  ended(thread: string): void {
+    for (const part of this.#parts) {
+      try {
+        part.ended?.(thread);
+      } catch (error) {
+        console.warn(`${new Date().toISOString()} WARN a launch ended part failed {"error":${JSON.stringify(String(error))}}`);
+      }
+    }
   }
 }
 

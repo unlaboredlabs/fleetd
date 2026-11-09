@@ -8,11 +8,9 @@ import type { ClonePhase } from "../../shared/contracts.ts";
 import type { CloneProgressFrame, GhRepo, GhRepos } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { PARTIAL } from "../repos/index.ts";
-import { git } from "../worktree/index.ts";
+import { git, TOKEN_MARK, tokenEnv, useToken } from "../worktree/index.ts";
 import { CallRefusal, invalid, openB64, utf8 } from "./refusal.ts";
 
-/** The clone's mark: its later fetches may use the newest token an order's launch brings (worktree.rs). */
-export const TOKEN_MARK = "fleetd.githubToken";
 const GH_LIMIT = "100";
 const GH_TIMEOUT_MS = 30_000;
 
@@ -50,14 +48,6 @@ export function parseProgress(line: string): Progress | undefined {
   }
   return { phase, ...(percent !== undefined ? { percent } : {}), ...(detail !== undefined ? { detail } : {}) };
 }
-
-/** Has git authenticate to github.com with `token` through its environment only, as actions/checkout does: never in
- * its arguments, where the process list shows it, nor in the repo's config. */
-export const tokenEnv = (token: string): Record<string, string> => ({
-  GIT_CONFIG_COUNT: "1",
-  GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
-  GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
-});
 
 const hasGh = () => (process.env.PATH ?? "").split(":").some((dir) => dir && existsSync(`${dir}/gh`));
 
@@ -127,6 +117,7 @@ export async function clone(url: string, dest: string, addId: string, token: str
     } catch (error) {
       throw new Error(`cannot move the clone into ${dest}: ${(error as Error).message}`);
     }
+    if (token) useToken(dest, token);
   } catch (error) {
     rmSync(partial, { recursive: true, force: true });
     throw error;
