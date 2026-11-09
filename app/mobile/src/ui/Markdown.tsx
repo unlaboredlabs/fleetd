@@ -348,8 +348,8 @@ function Inlines({ nodes, ink, onAccent, small = false }: { nodes: readonly Inli
 }
 
 const styles = StyleSheet.create({
-  blocks: { gap: space.sm },
-  code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
+  blocks: { gap: 10 },
+  code: { fontFamily: mono, fontSize: 14, lineHeight: 20 },
   codeBlock: { borderRadius: 12, borderCurve: "continuous", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 6 },
   unshown: { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.7 },
   codePressed: { opacity: 0.7 },
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
   copy: { flexDirection: "row", alignItems: "center", gap: 4 },
   inlineCode: { fontFamily: mono, fontSize: 15 },
   quote: { borderLeftWidth: 3, paddingLeft: 10, gap: space.xs },
-  list: { gap: 2 },
+  list: { gap: 4 },
   item: { flexDirection: "row", gap: 6 },
   marker: { minWidth: 14 },
   // Shrinks to fit, but keeps its width: the bubble sizes to its longest line, as iMessage's does.

@@ -1,19 +1,19 @@
-// iMessage's bubble geometry, measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots):
-// one place for the thread's words, its pictures and files, and the menu's lifted preview, pinned by bubble.test.ts.
-// Points, at the default text size.
+// iMessage's bubble geometry, measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots),
+// with Apple's Body leading for a lead's long replies: one place for the thread's words, its pictures and files, and
+// the menu's lifted preview, pinned by bubble.test.ts. Points, at the default text size.
 
 export const bubble = {
-  /** The words: SF at body size. Messages sets its lines 20 apart, not the type scale's 22. */
+  /** The words: SF in Apple's Body style, 17 on 22. Messages' tighter 20 crowds multi-paragraph replies with lists. */
   fontSize: 17,
-  lineHeight: 20,
-  /** Inside the bubble: from its edge to the words, side and top. A one-line bubble is 40 tall. */
+  lineHeight: 22,
+  /** Inside the bubble: from its edge to the words, side and top. A one-line bubble is 42 tall. */
   padX: 14,
   padY: 10,
   /** A bubble's corners, on iOS's continuous curve: a one-liner is a capsule. */
-  radius: 20,
+  radius: 21,
   /** Between bubbles of one burst, and between bursts (a new sender, or the same after a pause): body to body. */
   gap: 4,
-  burstGap: 10,
+  burstGap: 12,
   /** The thread's side margin, screen edge to bubble edge. */
   margin: 16,
   /** A bubble's widest, as a share of the screen's width. */

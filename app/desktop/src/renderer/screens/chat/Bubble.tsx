@@ -340,7 +340,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
         ) : null}
         {r.reply !== undefined ? (
           <button type="button" className={cx(s.quote, quote.className)} style={quote.style} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
-            <Truncate size="xs" tone="quiet" expand="none">
+            <Truncate size="xs" tone="quiet" expand="none" className={s.quoteText}>
               {r.reply.quote}
             </Truncate>
           </button>

@@ -1,13 +1,16 @@
-/* Message prose: hierarchy from weight and space, not heading sizes; everything wraps. */
+/*
+ * Message prose: hierarchy from weight and space, not heading sizes; everything wraps. A container can set the
+ * `--prose-*` scale for what it holds (the chat's bubbles do); elsewhere it is the app's body size.
+ */
 .root {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
+  font-size: var(--prose-size, var(--text-md));
+  line-height: var(--prose-leading, var(--leading-md));
 }
 .root > * + * {
-  margin-top: var(--space-2);
+  margin-top: var(--prose-gap, var(--space-2));
 }
 .root h1,
 .root h2,
@@ -15,21 +18,21 @@
 .root h4,
 .root h5,
 .root h6 {
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
+  font-size: var(--prose-size, var(--text-md));
+  line-height: var(--prose-leading, var(--leading-md));
   font-weight: var(--weight-strong);
 }
 .root > :is(h1, h2, h3, h4, h5, h6):not(:first-child) {
-  margin-top: var(--space-4);
+  margin-top: var(--prose-head-gap, var(--space-4));
 }
 .root ul,
 .root ol {
-  padding-left: var(--space-6);
+  padding-left: var(--prose-indent, var(--space-6));
 }
 .root li + li,
 .root li > ul,
 .root li > ol {
-  margin-top: 2px;
+  margin-top: var(--prose-item-gap, 2px);
 }
 .root li::marker {
   color: var(--quiet);

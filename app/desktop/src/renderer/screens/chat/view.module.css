@@ -88,12 +88,12 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding-top: 2px;
+  gap: 3px;
+  padding-top: 3px;
   min-width: 0;
 }
 .messageHead {
-  padding-top: var(--space-3);
+  padding-top: 14px;
 }
 /* Yours, on the right. */
 .mine {
@@ -145,15 +145,32 @@
   width: 100%;
   max-width: 100%;
 }
+/*
+ * Bubble type is a step above the app's body, 15 on 22, in the same face: a one-line bubble is a capsule (radius
+ * half its height), and a code card's radius is the bubble's less its padding, so their corners run parallel.
+ */
 .bubble {
-  --tight: 5px;
+  --tight: 6px;
+  --prose-size: 15px;
+  --prose-leading: 22px;
+  --prose-gap: 10px;
+  --prose-head-gap: 16px;
+  --prose-indent: 22px;
+  --prose-item-gap: 4px;
+  --code-size: 13px;
+  --code-leading: 20px;
+  --code-pad-y: 9px;
+  --code-pad-x: 13px;
+  --code-radius: 10px;
+  --code-inline-size: 0.87em;
+  --code-inline-pad: 1px 4px;
   position: relative;
   /* The tail's pseudo-elements paint under the text, over the bubble's own fill. */
   isolation: isolate;
   min-width: 0;
   max-width: 100%;
-  padding: 6px 12px 7px;
-  border-radius: 17px;
+  padding: 7px 13px 8px;
+  border-radius: 19px;
   background: var(--bubble);
 }
 .bubble.wide {
@@ -459,7 +476,7 @@ span.changeUndo {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: var(--leading-md);
+  height: var(--prose-leading);
 }
 /* The lead writing: three square cells, one lit at a time, stepping left to right like a cursor on the app's beat
    (ui/lib/beat: data-step on .typing), two beats each. Without a beat (the window hidden, reduced motion) all three are half lit, still. */
@@ -545,6 +562,9 @@ span.changeUndo {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+.quote .quoteText {
+  font-size: 12px;
 }
 /* Where a person's message came from when not this app (the Share Sheet, Shortcuts): a quiet line under its bubble. */
 .via {
