@@ -1,5 +1,6 @@
-/* A chat's avatar: a circle with its picture or its letters, or a project's bot (Avatar.tsx). Its tints are iOS's own colors in the phone's
-   order (app/mobile/src/theme.ts `tints`), picked by name: its letters are its tint on a wash of it. */
+/* A chat's avatar: a circle with its picture or its letters, or a project's bot (Avatar.tsx). Its tints are iOS's own
+   colors in the phone's order (app/mobile/src/theme.ts `tints`), picked by name: its letters are its tint on a wash
+   of it. */
 .avatar {
   --wash: 16%;
   position: relative;
