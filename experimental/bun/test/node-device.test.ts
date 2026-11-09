@@ -3,7 +3,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { broker } from "../src/node/browser/index.ts";
+import { broker, start as startBrowser } from "../src/node/browser/index.ts";
+import { type DeviceCall, type DeviceDone, openDone, PIECE, sealCall, Work } from "../src/node/device/work.ts";
+import { NodeBoxKey } from "../src/node/identity.ts";
+import { Router, start as startRoute } from "../src/node/session_route/index.ts";
+import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { agentEnv, controlPath, daemonPid, findAgentDevice, homeOf, LENT, makePlugin, PAUSED, release, sessionDir, VERSION, wrapperScript, writeConfig, entry, binDir } from "../src/node/device/agent_device.ts";
 import { emulatorArgs, emulatorCommand, freePort, isLeftover } from "../src/node/device/emulator.ts";
 import { capabilities, health, start as startDevices } from "../src/node/device/index.ts";
@@ -410,3 +414,82 @@ test("a machine that isn't set up says so, and one with no KVM says how to fix i
   expect(health(off.node.home, { enabled: true }, () => ({ err: { why: "no /dev/kvm here" } }))?.state).toBe("unavailable");
   expect(health(off.node.home, { enabled: true }, () => ({ ok: "direct" }))?.state).toBe("wanted");
 });
+
+test("an Android screen hosted for another machine runs only sealed device steps, in order, and its recording is scrubbed", async () => {
+  const scrcpy = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  cleanups.push(() => scrcpy.stop(true));
+  const t = testNode("box2", { device: { enabled: true } });
+  cleanups.push(t.done);
+  fakeInstall(t.node.home, scrcpy.port, join(t.node.home, "adb.log"));
+  // The node's agent-device wrapper: what it ran, where, and an install's app copied back out.
+  writeFileSync(
+    join(binDir(t.node.home), "agent-device"),
+    '#!/bin/sh\necho "ran $* as ${AGENT_DEVICE_HOME:-nobody}"\nif [ "$1" = install ]; then cat "$2" > out/9-copy.bin; fi\nexit 3\n',
+  );
+  const calls: { op: string; args: Record<string, unknown> }[] = [];
+  t.link.answer = async (op, args) => {
+    calls.push({ op, args });
+    if (op === "browser_recording_part") return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
+    return {};
+  };
+  const devices = startDevices(t.node, { kvm: () => ({ ok: "direct" as const }), warm: 1 })!;
+  const b = startBrowser(t.node);
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const route = startRoute(t.node, new Router(t.node, b, new NodeBoxKey(secret)));
+  cleanups.push(async () => {
+    await devices.shutdown();
+    await b.shutdown();
+  });
+  await until(() => devices.warm() === 1);
+
+  const key = `H${"cd".repeat(16)}`;
+  const relayKey = crypto.getRandomValues(new Uint8Array(32));
+  const plain = JSON.stringify({ secrets: [["TOKEN", "hunter2-value"]], relayKey: Buffer.from(relayKey).toString("base64") });
+  const sealed = Buffer.from(seal(publicKeyOf(secret), new TextEncoder().encode(plain))).toString("base64");
+  const started = await route.host({ hostKey: key, sealed, frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "PR build", kind: "android" } } } as never);
+  expect(started.error).toBeUndefined();
+  const id = String(started.result?.sessionId);
+
+  let count = 0;
+  const step = async (call: DeviceCall, n = ++count) => {
+    const answer = await route.host({ hostKey: key, frame: { id: `s${n}`, cwd: "/", call: { op: "device", ...sealCall(relayKey, n, call) } } } as never);
+    if (answer.error) return answer.error;
+    const { op: _, ...done } = answer.result!;
+    return openDone(relayKey, n, done as DeviceDone);
+  };
+  const app = Buffer.alloc(PIECE + 10, 7);
+  expect(await step({ step: "put", name: "1-app.zip", offset: 0, dataB64: app.subarray(0, PIECE).toString("base64") })).toEqual({ step: "put", bytes: PIECE });
+  await step({ step: "put", name: "1-app.zip", offset: PIECE, dataB64: app.subarray(PIECE).toString("base64") });
+  const ran = (await step({ step: "run", args: ["install", "in/1-app.zip"] })) as DeviceDone & { step: "run" };
+  expect(ran.exitCode).toBe(3);
+  expect(ran.stdout).toContain(`ran install in/1-app.zip as ${sessionDir(t.node.home, key)}`);
+  expect(ran.files).toEqual([{ name: "9-copy.bin", bytes: app.length }]);
+  const back: Buffer[] = [];
+  for (let got = 0; got < app.length; ) {
+    const piece = (await step({ step: "get", name: "9-copy.bin", offset: got })) as { dataB64: string; total: number };
+    back.push(Buffer.from(piece.dataB64, "base64"));
+    got += back.at(-1)!.length;
+  }
+  expect(Buffer.concat(back).equals(app)).toBe(true);
+  // A command that isn't the screen's, a step played again or one the hub made up runs nothing.
+  expect(await step({ step: "run", args: ["shell", "id"] })).toMatchObject({ message: expect.stringContaining("doesn't run here") });
+  expect(await step({ step: "run", args: ["home"] }, count)).toMatchObject({ message: expect.stringContaining("came again") });
+  const unsealed = await route.host({ hostKey: key, frame: { id: "x", cwd: "/", call: { op: "device", step: "run", args: ["home"] } } } as never);
+  expect(unsealed.error?.message).toBe("device steps come sealed by the agent's node");
+  await step({ step: "run", args: ["type", "hunter2-value"] });
+  // Only a screen hosted for another machine takes them.
+  await expect(devices.device("t-own", { step: "run", args: ["home"] })).rejects.toThrow("hosted for another machine");
+
+  const ended = await route.host({ hostKey: key, frame: { id: "e", cwd: "/", call: { op: "session_end" } } } as never);
+  expect(ended.error).toBeUndefined();
+  expect(existsSync(new Work(t.node.home, key).dir)).toBe(false);
+  expect(route.hosted.has(key)).toBe(false);
+  await until(() => !existsSync(join(recordingsDir(t.node.home), id)));
+  const log = calls
+    .filter((c) => c.op === "browser_recording_part" && c.args.file === "actions")
+    .map((c) => Buffer.from(String(c.args.dataB64), "base64").toString())
+    .join("");
+  expect(log).toContain("agent-device install in/1-app.zip");
+  expect(log).toContain("***TOKEN***");
+  expect(log).not.toContain("hunter2");
+}, 20_000);

@@ -536,9 +536,13 @@ export class SessionService {
 
   /** The masker for a session's calls: its project's secrets and its order's. */
   maskFor(sessionId: string): Masker {
+    return new Masker(this.secretsFor(sessionId));
+  }
+
+  /** The session's secrets themselves: its project's, its order's, its MCP servers' and its account's. */
+  secretsFor(sessionId: string): [string, string][] {
     const row = this.store.session(sessionId);
-    if (!row) return new Masker();
-    return new Masker(this.#secrets(row));
+    return row ? this.#secrets(row) : [];
   }
 
   #secrets(row: SessionRow): [string, string][] {

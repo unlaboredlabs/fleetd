@@ -8,6 +8,7 @@ import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Subprocess } from "bun";
 import type { BrowserAction, BrowserControl, BrowserSessionState } from "../../shared/contracts.ts";
+import type { Scrub } from "../mask.ts";
 import { RECORDING_FILES, RECORDING_PART_BYTES, SCREEN_STEPS_MAX, STEP_ARGS_BYTES, STEP_RESULT_CHARS } from "../../shared/screens_wire.ts";
 
 export const FPS = 25;
@@ -57,39 +58,19 @@ export function files(dir: string): [keyof typeof RECORDING_FILES, number][] {
   });
 }
 
-/**
- * Masks a session's secrets in what it logs: each value as it is, JSON-escaped, URL-encoded and in base64, as
- * `***NAME***`. TODO(bun): node/mask.rs's thorough masker (every encoding it knows, short values in `value=` only).
- */
-export class Scrub {
-  private readonly forms: [string, string][];
+/** What a recording scrubs: the full masker (node/mask.ts). */
+export { Scrub } from "../mask.ts";
 
-  constructor(secrets: [string, string][] = []) {
-    this.forms = secrets
-      .filter(([, v]) => v.length >= 4)
-      .flatMap(([name, v]) => {
-        const shown = `***${name}***`;
-        return [v, JSON.stringify(v).slice(1, -1), encodeURIComponent(v), Buffer.from(v).toString("base64")].map(
-          (form) => [form, shown] as [string, string],
-        );
-      })
-      .sort((a, b) => b[0].length - a[0].length);
+/** The action log (or any text file of the recording) scrubbed once more whole, with every secret known. */
+export function scrubFile(path: string, scrub: Scrub): void {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return;
   }
-
-  text(text: string): string {
-    let out = text;
-    for (const [form, shown] of this.forms) if (form && out.includes(form)) out = out.split(form).join(shown);
-    return out;
-  }
-
-  value<T>(value: T): T {
-    if (typeof value === "string") return this.text(value) as T;
-    if (Array.isArray(value)) return value.map((v) => this.value(v)) as T;
-    if (value && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, this.value(v)])) as T;
-    }
-    return value;
-  }
+  const scrubbed = scrub.text(text);
+  if (scrubbed !== text) writeFileSync(path, scrubbed, { mode: 0o600 });
 }
 
 /** A step as the heartbeat carries it: its args only when short, its result cut. */
@@ -111,6 +92,12 @@ export class Steps {
       .slice(0, SCREEN_STEPS_MAX)
       .map(([sessionId, s]) => ({ sessionId, step: s.step }));
   }
+}
+
+/** Appends one scrubbed JSON line to a recording file (the DOM trace's). */
+export function appendLine(dir: string, file: string, item: unknown, scrub: Scrub): void {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  appendFileSync(join(dir, file), `${JSON.stringify(scrub.value(item))}\n`);
 }
 
 /** Appends a step to the action log, scrubbed. */
@@ -340,4 +327,81 @@ export async function giveUp(hub: HubCall, dir: string, why: string): Promise<vo
     await hub(meta.threadId, meta.cwd, "browser_session", report({ ...meta, note: why }, "lost", "agent", []));
   }
   rmSync(dir, { recursive: true, force: true });
+}
+
+/** A recording folder this new with no ended session file may be a session still opening (upload.rs `OPENING`). */
+export const OPENING_MS = 5 * 60_000;
+
+/** Whether the folder or its session file changed this recently. */
+function changedWithin(dir: string, ms: number, now: number): boolean {
+  return [dir, join(dir, "session.json")].some((p) => {
+    try {
+      return now - statSync(p).mtimeMs < ms;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * The recordings in `root` waiting to go, but `live` ones (upload.rs `waiting_in`). One a node stopped during (a Rust
+ * node's or this one's) is ended now, with a note; a folder with no session file is a start that never got going.
+ */
+export function waitingIn(root: string, live: string[], now = Date.now()): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const name of names) {
+    if (live.includes(name)) continue;
+    const dir = join(root, name);
+    const meta = readMeta(dir);
+    if (!meta?.endedAt && changedWithin(dir, OPENING_MS, now)) continue;
+    if (!meta) {
+      rmSync(dir, { recursive: true, force: true });
+      continue;
+    }
+    if (!meta.endedAt) {
+      try {
+        writeMeta(dir, { ...meta, endedAt: new Date(now).toISOString(), note: "the node stopped during this session; its video may end early" });
+      } catch {
+        continue;
+      }
+    }
+    out.push(dir);
+  }
+  return out;
+}
+
+/** A screen kind's uploads: one per folder at a time, tried again at each sweep, and one that waited GIVE_UP_MS lost. */
+export class Uploads {
+  private readonly uploading = new Set<string>();
+
+  constructor(
+    private readonly hub: HubCall,
+    private readonly what: string,
+  ) {}
+
+  async send(dir: string, now = Date.now()): Promise<void> {
+    if (this.uploading.has(dir)) return;
+    this.uploading.add(dir);
+    try {
+      await upload(this.hub, dir);
+    } catch (e) {
+      const why = (e as Error).message;
+      console.warn(`${this.what} recording ${dir}: not uploaded yet: ${why}`);
+      const ended = readMeta(dir)?.endedAt;
+      if (ended && now - Date.parse(ended) >= GIVE_UP_MS) await giveUp(this.hub, dir, `its upload kept failing: ${why}`).catch(() => {});
+    } finally {
+      this.uploading.delete(dir);
+    }
+  }
+
+  /** Sends every recording waiting in `root` but the `live` ones. */
+  async sweep(root: string, live: string[], now = Date.now()): Promise<void> {
+    for (const dir of waitingIn(root, live, now)) await this.send(dir, now);
+  }
 }

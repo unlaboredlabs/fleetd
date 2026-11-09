@@ -6,7 +6,8 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
-import { appendAction, Scrub, type Steps, type VideoSink } from "./record.ts";
+import { RECORDING_FILES } from "../../shared/screens_wire.ts";
+import { appendAction, appendLine, Scrub, type Steps, type VideoSink } from "./record.ts";
 
 export const WIDTH = 1280;
 export const HEIGHT = 800;
@@ -15,6 +16,10 @@ const NO_ACTIVE_PAGE = "Not attached to an active page";
 const SCREENCAST_START = 10_000;
 /** The live view's frame rate: at most one frame per this. */
 const LIVE_GAP = 33.333;
+/** A page's HTML past this is cut in the DOM trace. */
+const DOM_MAX_BYTES = 2 << 20;
+/** The longest the session's end waits for the DOM captures queued before it. */
+const CAPTURES_WAIT = 30_000;
 
 export const PAUSED =
   "A person has control of the browser now. Wait for them to hand it back (carry on with other work meanwhile); your next command after that sees the page as they left it.";
@@ -47,6 +52,9 @@ export class Session implements GuardSession {
   /** Where its recording goes, and what it masks; none for a session that records nothing (tests). */
   recording: { dir: string; scrub: Scrub; steps: Steps; video: VideoSink | undefined } | undefined;
   private ticker: Timer | undefined;
+  /** The DOM captures after each step, in order, and the hash of the page the last one wrote. */
+  private captures: Promise<void> = Promise.resolve();
+  private lastDom: string | undefined;
 
   constructor(
     readonly id: string,
@@ -88,9 +96,54 @@ export class Session implements GuardSession {
     return seq;
   }
 
-  /** A finished `agent-browser` command of the agent's, logged with the ref it named an element by. */
+  /** A finished `agent-browser` command of the agent's, logged, and the page after it in the DOM trace. */
   agentStep(command: string, ok: boolean, output: string | undefined, durationMs: number): number {
-    return this.stepAt("agent-browser", { command }, ok, output, durationMs);
+    const seq = this.stepAt("agent-browser", { command }, ok, output, durationMs);
+    this.queueCapture(seq);
+    return seq;
+  }
+
+  /** Queues the DOM capture after action `seq`, behind those before it. */
+  queueCapture(seq: number): void {
+    if (!this.recording) return;
+    this.captures = this.captures.then(() => this.captureDom(seq)).catch(() => {});
+  }
+
+  /** Every DOM capture queued so far, landed (at most CAPTURES_WAIT): the session's end waits for them first. */
+  async flushCaptures(): Promise<void> {
+    const done = await Promise.race([this.captures.then(() => true), Bun.sleep(CAPTURES_WAIT).then(() => false)]);
+    if (!done) console.warn(`browser ${this.id}: DOM captures not finished in ${CAPTURES_WAIT / 1000} s`);
+  }
+
+  /** Writes the page's HTML to the DOM trace after action `seq`, unless it is as the last one left it. */
+  private async captureDom(seq: number): Promise<void> {
+    const r = this.recording;
+    const page = this.page();
+    if (!r || !page) return;
+    const doc = (await this.cdp.call(page[1], "DOM.getDocument", { depth: 0 })) as { root?: { nodeId?: number } };
+    const root = doc.root?.nodeId;
+    if (typeof root !== "number") return;
+    const outer = (await this.cdp.call(page[1], "DOM.getOuterHTML", { nodeId: root })) as { outerHTML?: unknown };
+    let html = typeof outer.outerHTML === "string" ? outer.outerHTML : "";
+    const info = ((await this.cdp.call(undefined, "Target.getTargetInfo", { targetId: page[0] }).catch(() => ({}))) ?? {}) as {
+      targetInfo?: { url?: unknown; title?: unknown };
+    };
+    const url = typeof info.targetInfo?.url === "string" ? info.targetInfo.url : "";
+    const title = typeof info.targetInfo?.title === "string" ? info.targetInfo.title : "";
+    const hash = new Bun.CryptoHasher("sha256").update(`${url}\n${html}`).digest("hex");
+    if (hash === this.lastDom) return;
+    this.lastDom = hash;
+    const bytes = Buffer.from(html, "utf8");
+    if (bytes.length > DOM_MAX_BYTES) {
+      let end = DOM_MAX_BYTES;
+      while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+      html = bytes.subarray(0, end).toString("utf8");
+    }
+    try {
+      appendLine(r.dir, RECORDING_FILES.dom.name, { seq, offsetMs: this.offsetMs(), url, title, html }, r.scrub);
+    } catch (e) {
+      console.warn(`browser ${this.id}: DOM snapshot not written: ${(e as Error).message}`);
+    }
   }
 
   /** Keeps a still page's frame showing in the video, once a second. */

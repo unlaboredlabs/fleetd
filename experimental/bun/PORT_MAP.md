@@ -545,6 +545,11 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 
 - [x] `node/mac_tool/client.rs` → `src/node/mac_tool` (`mac` and, while the session holds a simulator, the forwarding agent-device first on every agent's PATH) <!-- mod:`node/mac_tool/client.rs` -->
 - [x] `node/mac_tool/activity.rs` → `src/node/mac_tool` (what agents do on the agents' Mac, written for its menu bar) <!-- mod:`node/mac_tool/activity.rs` -->
+- [x] `node/session_route.rs` → `src/node/session_route` (every kind of screen placed elsewhere: the session's secrets sealed to the runner, none to the agents' Mac, each step masked) <!-- mod:`node/session_route.rs` -->
+- [x] `node/device/remote.rs` → `src/node/device` (a screen hosted for another machine runs sealed agent-device steps in its own folder; the agent's forwarder is node/mac_tool's) <!-- mod:`node/device/remote.rs` -->
+- [x] `node/desktop/session.rs` → `src/node/desktop` (desktop and Mac screen recordings: video, action log, scrubbed, uploaded) <!-- mod:`node/desktop/session.rs` -->
+- [x] `node/browser/upload.rs` → `src/node/browser` (recordings a stopped node left, every kind's and a Rust node's iOS ones, ended and uploaded) <!-- mod:`node/browser/upload.rs` -->
+- [x] `node/mask.rs` → `src/node/browser` (the thorough masker and Scrub every screen's recording and DOM trace go through) <!-- mod:`node/mask.rs` -->
 
 ## cli
 

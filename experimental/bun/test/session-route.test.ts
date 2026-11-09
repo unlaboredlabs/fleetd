@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
@@ -13,7 +14,10 @@ import { publicKeyOf } from "../src/shared/sealed_box.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import { addMachine, addProject, agent, callLead, testHub } from "./screens_helpers.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
+import { Masker } from "../src/node/mask.ts";
 import { type TestNode, testNode } from "./node_helpers.ts";
+import { tempHome } from "./helpers.ts";
+import { Desktops, start as startDesktop } from "../src/node/desktop/index.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -58,7 +62,11 @@ function fakeBrowser(): Transport {
   };
 }
 
-test("a session the hub places on another machine: sealed to it, started there, driven through the relay", async () => {
+/**
+ * Two nodes and a real hub between them (its HTTP server, its relay), each node answering its lead calls through the
+ * hub as the link would: devbox runs the agent, box2 hosts its screens. `secrets` are the agent session's own.
+ */
+async function fleet(opts: { secrets?: [string, string][]; box2Hosts?: { host: string; ready: boolean; detail: string }[]; box2Config?: Record<string, unknown> } = {}) {
   const t = testHub();
   cleanups.push(t.done);
   startBrowser(t.hub);
@@ -72,23 +80,26 @@ test("a session the hub places on another machine: sealed to it, started there, 
   t.hub.db.conn.query("INSERT INTO machine_roles (machine_id, agents, sessions) VALUES ('devbox', 1, 0)").run();
   t.link.link("devbox", ["browser", "session_seal", "session_host"]);
   t.link.link("box2", ["browser", "session_seal", "session_host"]);
-  t.link.deliver("box2", { t: "hb", load: { cpus: 8, load1: 0, memTotalBytes: 16 * 2 ** 30, hosts: [{ host: "browser", ready: true, detail: "Chrome" }] } });
+  const hosts = opts.box2Hosts ?? [{ host: "browser", ready: true, detail: "Chrome" }];
+  t.link.deliver("box2", { t: "hb", load: { cpus: 8, load1: 0, memTotalBytes: 16 * 2 ** 30, hosts } });
 
-  // Two nodes, each answering its lead calls through the hub as the link would.
   const hubUrl = `http://127.0.0.1:${server.port}`;
-  const itemFns = new Map<string, TestNode["node"]>();
   const nodes = new Map<string, { node: TestNode["node"]; router: Router; link: TestNode["link"]; local: TestNode["local"] }>();
   for (const [machine, secret] of [["devbox", crypto.getRandomValues(new Uint8Array(32))], ["box2", runnerSecret]] as const) {
-    const tn = testNode(machine, { hub: hubUrl });
+    const tn = testNode(machine, { hub: hubUrl, ...(machine === "box2" ? opts.box2Config : {}) });
     const node = tn.node;
-    itemFns.set(machine, node);
+    if (machine === "devbox" && opts.secrets) {
+      const secrets = opts.secrets;
+      node.area("sessions", () => ({ maskFor: () => new Masker(secrets), secretsFor: () => secrets, sessionCwd: () => undefined }));
+    }
     const broker = startNodeBrowser(node, new Broker(node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
     const router = startRoute(node, new Router(node, broker, new NodeBoxKey(secret)));
     const link = tn.link;
-    link.answer = async (op, args) => {
+    link.answer = async (op, args, threadId) => {
+      const thread = typeof args.threadId === "string" ? args.threadId : threadId;
       const caller =
-        typeof args.threadId === "string" && leadCalls(t.hub).hosted(machine, args.threadId)
-          ? { ...leadCalls(t.hub).hosted(machine, args.threadId)!, by: "lead:devbox/p1" }
+        thread && leadCalls(t.hub).hosted(machine, thread)
+          ? { ...leadCalls(t.hub).hosted(machine, thread)!, by: "lead:devbox/p1" }
           : agent(machine, "p1", "T5");
       const call = caller.threadId !== args.threadId && op === "browser_session" ? { ...args, threadId: caller.threadId } : args;
       const answer = await callLead(t.hub, caller, { op, ...call });
@@ -113,8 +124,12 @@ test("a session the hub places on another machine: sealed to it, started there, 
   };
   const piped: string[] = [];
   relays(t.hub).tap = (m) => piped.push(Buffer.from(m as Uint8Array).toString("latin1"));
+  return { t, runner, agentNode: nodes.get("devbox")!, piped };
+}
 
-  const agentNode = nodes.get("devbox")!;
+test("a session the hub places on another machine: sealed to it, started there, driven through the relay", async () => {
+  const { t, runner, agentNode, piped } = await fleet({ secrets: [["DEPLOY_TOKEN", "tok-hunter2-secret"]] });
+  const itemFns = new Map([["devbox", agentNode.node]]);
   const started = (await agentNode.local.call("session_start", { purpose: "look" }, "t1")) as { sessionId: string; cdp: string };
   // The agent's own address, on its own node: never the runner's.
   expect(started.cdp).toBe((await import("../src/node/browser/index.ts")).broker(agentNode.node).proxy.url("t1"));
@@ -141,7 +156,7 @@ test("a session the hub places on another machine: sealed to it, started there, 
       startedAt: "2026-11-08T12:00:00.000Z",
       completedAt: "2026-11-08T12:00:00.200Z",
       updatedAt: "2026-11-08T12:00:00.200Z",
-      kind: { type: "command", command: "agent-browser open https://example.com", exitCode: 0 },
+      kind: { type: "command", command: "agent-browser open https://example.com", exitCode: 0, output: "typed tok-hunter2-secret" },
     } as never);
   }
   const { broker: brokerOf } = await import("../src/node/browser/index.ts");
@@ -149,6 +164,9 @@ test("a session the hub places on another machine: sealed to it, started there, 
   expect(brokerOf(runner.node).steps()).toEqual([
     { sessionId: started.sessionId, step: expect.objectContaining({ tool: "agent-browser", args: { command: "agent-browser open https://example.com" } }) },
   ]);
+  // Masked on the agent's node before it left, and scrubbed again by the runner with what was sealed to it.
+  expect(JSON.stringify(brokerOf(runner.node).steps())).toContain("***DEPLOY_TOKEN***");
+  expect(JSON.stringify(brokerOf(runner.node).steps())).not.toContain("hunter2");
   ws.close();
   await agentNode.local.call("session_end", {}, "t1");
   expect(agentNode.router.remotes.size).toBe(0);
@@ -190,7 +208,106 @@ test("a hosted start's sealed secrets reach its broker, which scrubs its recordi
   });
   const plain = { secrets: [["TOKEN", "hunter2-value"]], relayKey: Buffer.alloc(32, 7).toString("base64") };
   const sealed = Buffer.from(seal(publicKeyOf(secret), new TextEncoder().encode(JSON.stringify(plain)))).toString("base64");
-  const answer = await router.host({ hostKey: "host-k1", frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "look" } }, sealed } as never);
+  const key = `H${"ab".repeat(16)}`;
+  const answer = await router.host({ hostKey: key, frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "look" } }, sealed } as never);
   expect(answer.error).toBeUndefined();
-  expect(broker.live("host-k1")?.recording?.scrub.text("typed hunter2-value")).toBe("typed ***TOKEN***");
+  expect(broker.live(key)?.recording?.scrub.text("typed hunter2-value")).toBe("typed ***TOKEN***");
+  // Read at the start: they leave the node's memory, while the relay key stays until the session ends.
+  expect(router.hosted.get(key)?.secrets).toBeUndefined();
+  expect(router.hosted.get(key)?.relayKey.length).toBe(32);
+  // However it ends here (idle, a person, the app), its report makes the node forget the relay key too.
+  await broker.end(key);
+  expect(router.hosted.has(key)).toBe(false);
+});
+
+test("a desktop the hub places on another machine: the agent's secrets sealed to it, its recording scrubbed of them and uploaded", async () => {
+  if (process.platform !== "linux") return;
+  const dir = tempHome();
+  cleanups.push(dir.done);
+  const xvfb = join(dir.dir, "Xvfb");
+  writeFileSync(xvfb, `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, "fake_x.ts")}" "$@"\n`);
+  chmodSync(xvfb, 0o755);
+  const [x11, locks] = [join(dir.dir, "x11"), join(dir.dir, "locks")];
+  mkdirSync(x11);
+  mkdirSync(locks);
+  process.env.FAKE_X11_DIR = x11;
+  process.env.FAKE_X_LOCK_DIR = locks;
+  const { t, runner, agentNode } = await fleet({
+    secrets: [["DEPLOY_TOKEN", "tok-hunter2-secret"], ["OP_SERVICE_ACCOUNT_TOKEN", "ops_never_sealed"]],
+    box2Hosts: [{ host: "desktop", ready: true, detail: "Xvfb" }],
+    box2Config: { desktop: { backend: "xvfb", xvfb, x11Dir: x11, lockDir: locks, windowManagers: [], pool: 0 } },
+  });
+  // The agent's machine runs no desktops of its own: the hub places it on box2.
+  const own = startDesktop(agentNode.node, new Desktops(agentNode.node, { enabled: false }));
+  const there = startDesktop(runner.node);
+  cleanups.push(() => own.shutdown());
+  cleanups.push(() => there.shutdown());
+  const started = (await agentNode.local.call("session_start", { kind: "linux_desktop", purpose: "check the app" }, "t1")) as { sessionId: string };
+  expect(started.sessionId).toMatch(/^B[0-9a-f]{32}$/);
+  const key = [...runner.router.hosted.keys()][0]!;
+  expect(there.live(key)).toEqual({ id: started.sessionId, kind: "linux_desktop" });
+  // Its secrets were read at the start, then left the runner's memory.
+  expect(runner.router.hosted.get(key)?.secrets).toBeUndefined();
+  // The agent's desktop actions go there through the hub; the runner's answers come back masked.
+  const typed = (await agentNode.local.call("desktop", { action: "type", text: "tok-hunter2-secret" }, "t1")) as { message: string };
+  expect(typed.message).toBe("Typed 18 characters.");
+  await agentNode.local.call("desktop", { action: "type", text: "ops_never_sealed" }, "t1");
+  const ended = (await agentNode.local.call("session_end", {}, "t1")) as { files: { file: string }[] };
+  expect(ended.files.map((f) => f.file)).toEqual(["actions"]);
+  expect(runner.router.hosted.size).toBe(0);
+  // Uploaded to the hub: scrubbed of the agent's secret, which only the seal brought to box2. The 1Password token was
+  // never sealed, so it is not the runner's to scrub.
+  const stored = join(t.hub.config.home, "browser", started.sessionId, "actions.jsonl");
+  for (let i = 0; i < 300 && !existsSync(stored); i++) await Bun.sleep(10);
+  const log = readFileSync(stored, "utf8");
+  expect(log).toContain("***DEPLOY_TOKEN***");
+  expect(log).not.toContain("hunter2");
+  expect(log).toContain("ops_never_sealed");
+  expect(existsSync(join(runner.node.home, "desktop", "recordings", started.sessionId))).toBe(false);
+}, 30_000);
+
+/** A node whose hub places the session on `runner`, sealed to `pub`: the two `session_route` calls it made. */
+function placedElsewhere(secrets: [string, string][], relayOnly: boolean) {
+  const tn = testNode("devbox");
+  cleanups.push(tn.done);
+  tn.node.area("sessions", () => ({ maskFor: () => new Masker(secrets), secretsFor: () => secrets, sessionCwd: () => undefined }));
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const routes: Record<string, unknown>[] = [];
+  tn.link.answer = async (op, args) => {
+    if (op !== "session_route") return {};
+    routes.push(args);
+    if (!args.sealed) return { runner: "box2", here: false, sealTo: Buffer.from(publicKeyOf(secret)).toString("base64"), ...(relayOnly ? { relayOnly: true } : {}) };
+    return { runner: "box2", here: false, answer: { id: "1", result: { op: "session_start", sessionId: `B${"0".repeat(32)}` } } };
+  };
+  const broker = startNodeBrowser(tn.node, new Broker(tn.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(() => broker.shutdown());
+  startRoute(tn.node, new Router(tn.node, broker, new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)))));
+  const opened = () => {
+    const sealed = (routes[1]?.sealed as { dataB64: string } | undefined)?.dataB64;
+    const plain = sealed ? new NodeBoxKey(secret).open(Buffer.from(sealed, "base64")) : null;
+    return plain ? (JSON.parse(new TextDecoder().decode(plain)) as { secrets: [string, string][]; relayKey: string }) : undefined;
+  };
+  return { tn, routes, opened };
+}
+
+test("an agent's node seals its session's secrets to the runner, never its 1Password token, and none to the agents' Mac", async () => {
+  const secrets: [string, string][] = [["DEPLOY_TOKEN", "tok-hunter2-secret"], ["OP_SERVICE_ACCOUNT_TOKEN", "ops_token"]];
+  const browser = placedElsewhere(secrets, false);
+  await browser.tn.local.call("session_start", { purpose: "look" }, "t1");
+  expect(browser.opened()?.secrets).toEqual([["DEPLOY_TOKEN", "tok-hunter2-secret"]]);
+  expect(Buffer.from(browser.opened()!.relayKey, "base64").length).toBe(32);
+
+  const mac = placedElsewhere(secrets, true);
+  await mac.tn.local.call("session_start", { purpose: "look", kind: "mac" }, "t1");
+  expect(mac.routes[0]).toMatchObject({ host: "mac" });
+  expect(mac.opened()?.secrets).toEqual([]);
+});
+
+test("an Android screen the hub would place on another machine is refused before anything is sealed to it", async () => {
+  const android = placedElsewhere([["DEPLOY_TOKEN", "tok-hunter2-secret"]], false);
+  await expect(android.tn.local.call("session_start", { purpose: "Settings", kind: "android" }, "t1")).rejects.toThrow("can't drive an emulator there");
+  expect(android.routes.length).toBe(1);
+  // And an iOS start isn't even asked of the hub.
+  await expect(android.tn.local.call("session_start", { purpose: "Settings", kind: "ios" }, "t1")).rejects.toThrow("mac sim start");
+  expect(android.routes.length).toBe(1);
 });
