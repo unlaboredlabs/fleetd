@@ -543,7 +543,7 @@ const opening: Partial<Record<keyof ReturnType<typeof clips>, (page: Page) => Pr
   team: async (page) => {
     await press(page, item(page, /^checkout\b/u));
     await page.locator("[data-composer] textarea").waitFor({ state: "visible", timeout: 10_000 });
-    await press(page, page.getByRole("button", { name: "Hide the panel" }));
+    await press(page, page.locator('[data-opens="panel"]'));
   },
 };
 

@@ -2,6 +2,8 @@
  * The lead chat. One column, inset like the rest of the app; messages are bubbles, the lead's on the left and yours on
  * the right, a run drawn as one stack; fleet activity and fleetd's own lines stay quiet and one line high.
  */
+/* It starts below the window's floating top row; its conversation scrolls on under it instead (ChatList's own room at
+   its top). */
 .screen {
   --pad: var(--space-4);
   display: flex;
@@ -9,6 +11,10 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
+  padding-top: var(--top-bar-height);
+}
+.screen[data-under] {
+  padding-top: 0;
 }
 .loading {
   display: flex;
@@ -20,12 +26,6 @@
   padding: var(--space-4) var(--pad);
 }
 /* A held chat's "Last known" chip in the top bar, in a box as tall as the bar's controls, so it sits on their line. */
-.state {
-  display: inline-flex;
-  align-items: center;
-  height: var(--control);
-  min-width: 0;
-}
 /* One line under the header: a held chat that couldn't be read again, with why and Retry. */
 .notice {
   flex: none;

@@ -34,10 +34,8 @@ import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
 import { SessionWindows } from "./sessionWindow";
 import { restorePlacement, trackPlacement } from "./windowState";
+import { TRAFFIC_LIGHTS } from "../shared/frame";
 
-/** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
-const TOP_BAR = 44;
-const TRAFFIC_LIGHT = 16;
 
 // Below 1000 px wide the sidebar hides itself (renderer/screens/shell/Shell.tsx), so a 900 px window still gives the
 // chat its full width.
@@ -173,7 +171,7 @@ const createWindow = (mode: HubsMode): BrowserWindow => {
     ...(mac
       ? {
           titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 },
+          trafficLightPosition: TRAFFIC_LIGHTS,
           // The translucent sidebar: an NSVisualEffectView the window server composites behind the page. It is
           // static (nothing in the page repaints for it) and goes opaque on its own with Reduce transparency.
           vibrancy: "sidebar" as const,
@@ -260,7 +258,7 @@ void app.whenReady().then(() => {
       show: false,
       title: "Screen · fleetd",
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
-      ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 } } : {}),
+      ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: TRAFFIC_LIGHTS } : {}),
       webPreferences: pagePreferences(mode),
     });
     win.once("ready-to-show", () => win.show());
@@ -285,7 +283,7 @@ void app.whenReady().then(() => {
         title: "Set up this Mac for agents",
         backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
         titleBarStyle: "hiddenInset" as const,
-        trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 },
+        trafficLightPosition: TRAFFIC_LIGHTS,
         webPreferences: pagePreferences(mode),
       });
       win.once("ready-to-show", () => win.show());

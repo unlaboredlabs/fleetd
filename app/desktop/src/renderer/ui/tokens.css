@@ -46,6 +46,15 @@
   --diff-add: #e7f4ea;
   --diff-del: #fbebea;
   --shadow: #0000001f;
+  /* Glass (the chat's floating capsules, ui/layout Capsule): a grey tint a step under --bg rather than white, so a
+     capsule reads as material over the page and not as a white pill on it; the blur and saturation take the colour of
+     what scrolls under it. Its edge is a hairline drawn inside, a brighter line along its top where light catches the
+     rim, and a soft shadow that lifts it off the page. */
+  --glass: #f1f1efb8;
+  --glass-edge: #0000001a;
+  --glass-rim: #ffffffd9;
+  --glass-lift: 0 1px 2px #0000000f, 0 6px 18px -6px #00000029;
+  --glass-pressed: #00000012;
   /* One restrained tint per agent role (live/chips.rs role_tint), clear of the accent and the status colours. */
   --role-implementer: #126c64;
   --role-reviewer: #6244bd;
@@ -105,6 +114,11 @@
   --diff-add: #1f3326;
   --diff-del: #3b2422;
   --shadow: #00000066;
+  --glass: #2f2f2ea6;
+  --glass-edge: #ffffff17;
+  --glass-rim: #ffffff12;
+  --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
+  --glass-pressed: #ffffff1a;
   --role-implementer: #6ccbc0;
   --role-reviewer: #bba8f5;
   --role-verifier: #e79bcd;
@@ -161,8 +175,14 @@
   --control: 24px;
   --field: 28px;
   --bar: 40px;
-  /* The window's top bar; the shell (E0) sizes the macOS traffic lights to sit centred in it. */
-  --top-bar-height: 44px;
+  /* The window's top row, which floats over the screen (no bar of its own); the main process centres the macOS traffic
+     lights in it (shared/frame.ts TOP_BAR). */
+  --top-bar-height: 52px;
+  /* How far the sidebar floats in from the window's edges, as a macOS 26 sidebar does. */
+  --side-inset: 8px;
+  --side-radius: 12px;
+  /* The glass's blur, the same in both themes. */
+  --glass-blur: blur(24px) saturate(180%);
   --sidebar-w: 264px;
   --measure: 680px;
   /* The QA gate's minimum gap between content and the window edge. */
@@ -205,7 +225,7 @@
 }
 
 :root[data-platform="darwin"] {
-  --traffic-lights-inset: 78px;
+  --traffic-lights-inset: 84px;
 }
 
 @media (prefers-reduced-motion: reduce) {

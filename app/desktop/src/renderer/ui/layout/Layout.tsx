@@ -20,12 +20,14 @@ const TitleSlot = createContext<HTMLElement | null>(null);
 const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undefined);
 
 /**
- * The window: a sidebar down the left, from the very top (the macOS traffic lights sit in it), and beside it the
- * top row over the main area (which owns its own scrolling). `sidebarTop` is the sidebar's first row, beside the
- * traffic lights; without a sidebar the top row runs the full width and starts after them. `aside` is a panel on
- * the right, from the very top too, as wide as its content says: its own first row sits beside the top row.
- * `corner` stays at the window's top right whether the aside shows or not (the panel's toggle, so a second click in
- * the same place undoes the first); the top row, or the aside's first row, leaves it room.
+ * The window: a sidebar floating inset down the left (the macOS traffic lights sit in its top corner), and beside it
+ * the main area (which owns its own scrolling), with the top row floating over its top: no bar, just what the screen
+ * puts there. `sidebarTop` is the sidebar's first row, beside the traffic lights; without a sidebar the top row starts
+ * after them. `under` says the screen's content scrolls on under the top row (the chat), which then fades it as it
+ * goes. `aside` is a panel on the right, from the very top too, as wide as its content says: its own first row sits
+ * beside the top row. `corner` stays at the window's top right whether the aside shows or not (the agents capsule, so
+ * a second click in the same place undoes the first); the top row, or the aside's first row, leaves it room, as wide as
+ * it is (--corner-w).
  *
  * The sidebar and the aside slide in from the window's edge as their toggle opens them and out to it as it closes
  * them (useSlide): the frame lays out once, at the toggle, and only their transform moves after it, so the chat
@@ -43,6 +45,8 @@ export function AppFrame(props: {
   aside?: ReactNode;
   /** Whether the aside's toggle has it open, as `sidebarOpen`. */
   asideOpen?: boolean;
+  /** The screen's content scrolls under the top row rather than starting below it. */
+  under?: boolean;
   corner?: ReactNode;
   /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
   translucent?: boolean;
@@ -52,31 +56,64 @@ export function AppFrame(props: {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const side = useSlide(props.sidebarOpen, props.sidebar, props.sidebarTop);
   const aside = useSlide(props.asideOpen, props.aside);
+  const [frameRef, cornerRef] = useCornerWidth(Boolean(props.corner));
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
-        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.translucent && s.translucent, props.className)}>
+        <div
+          ref={frameRef}
+          className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.under && s.under, props.translucent && s.translucent, props.className)}>
           {side.kept === null ? null : (
             <div id="sidebar" className={s.side} {...side.attrs}>
               <div className={s.sideTop}>{side.kept[1]}</div>
               {side.kept[0]}
             </div>
           )}
-          {props.topBar}
-          {/* After the top row: a control under a drag box that comes after it loses its click (base.css). */}
-          {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
           <main className={s.main}>{props.children}</main>
+          {/* After the main area it floats over: Electron takes app-region boxes in document order, so the row's drag
+              box and its controls' no-drag ones win over anything under them. */}
+          {props.topBar}
+          {/* After the top row: the edge reaches a few pixels over it, and a control under a drag box that comes after
+              it loses its click (base.css). */}
+          {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
           {aside.kept === null ? null : (
             <div className={s.aside} {...aside.attrs}>
               {aside.kept[0]}
             </div>
           )}
           {/* Last: Electron takes app-region boxes in document order, so the aside's drag row would cover it. */}
-          {props.corner ? <div className={s.corner}>{props.corner}</div> : null}
+          {props.corner ? (
+            <div ref={cornerRef} className={s.corner} data-floats="">
+              {props.corner}
+            </div>
+          ) : null}
         </div>
       </TitleSlot.Provider>
     </SetTitleSlot.Provider>
   );
+}
+
+/**
+ * The corner's room, --corner-w on the frame: its width as it lays out (a count in it widens it), set before paint and
+ * again as it resizes, so the row it sits at the end of never runs under it.
+ */
+function useCornerWidth(shown: boolean) {
+  const frame = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const root = frame.current;
+    if (!shown || el === null || root === null) return;
+    const set = () => root.style.setProperty("--corner-w", `${String(Math.ceil(el.getBoundingClientRect().width))}px`);
+    set();
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
+    watch?.observe(el);
+    return () => {
+      watch?.disconnect();
+      root.style.removeProperty("--corner-w");
+    };
+  }, [shown]);
+  return [frame, box] as const;
 }
 
 /** Whether the element's transform moves now; without a transition (reduced motion, no styles) its end never comes. */
@@ -143,16 +180,14 @@ function useSlide(open: boolean | undefined, ...nodes: ReadonlyArray<ReactNode>)
 }
 
 /**
- * The top row over the main area, and the window's drag region. Its middle holds the current screen's FrameTitle;
- * buttons and fields inside stay clickable.
+ * The top row over the main area, and the window's drag region: no bar, only what floats in it. It holds the current
+ * screen's FrameTitle; buttons and fields inside stay clickable.
  */
-export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; className?: string }) {
+export function TopBar(props: { className?: string }) {
   const setSlot = useContext(SetTitleSlot);
   return (
-    <header className={cx(s.topBar, props.className)}>
-      {props.leading ? <div className={s.topLeading}>{props.leading}</div> : null}
+    <header className={cx(s.topBar, props.className)} data-floats="">
       <div ref={setSlot} className={s.topCenter} />
-      {props.trailing ? <div className={s.topTrailing}>{props.trailing}</div> : null}
     </header>
   );
 }
@@ -160,14 +195,15 @@ export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; class
 /**
  * A screen's header, in the frame's top row rather than a header bar of the screen's own: every page's one header
  * style. `title` is the page's name (its heading), `detail` a quiet line beside it (text, or a line of its own),
- * `lead` what comes before it (a way back), and `children` the page's controls and state, at the end.
+ * `lead` what comes before it (a way back), and `children` the page's controls and state, at the end. `glass` floats
+ * it as a capsule over a screen that scrolls under the top row (the chat), its controls then in Capsules of their own.
  */
-export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; children?: ReactNode }) {
+export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; glass?: boolean; children?: ReactNode }) {
   const slot = useContext(TitleSlot);
   if (slot === null) return null;
   return createPortal(
     <>
-      <span className={s.frameTitle}>
+      <span className={s.frameTitle} data-glass={props.glass === true ? "" : undefined}>
         {props.lead}
         {props.title === undefined ? null : (
           <Truncate as="h1" strong className={s.frameHeading}>
@@ -186,6 +222,11 @@ export function FrameTitle(props: { title?: string | undefined; detail?: ReactNo
     </>,
     slot,
   );
+}
+
+/** A glass capsule in the top row, floating over what scrolls under it: a few of a screen's controls, together. */
+export function Capsule({ children, className }: { children: ReactNode; className?: string | undefined }) {
+  return <span className={cx(s.capsule, className)}>{children}</span>;
 }
 
 /** The sidebar's rows, which scroll; `footer` stays at the bottom, outside the scroll. */
