@@ -15,8 +15,10 @@
 //   browser `SessionHooks::env` and `plugin_dirs`): `env(thread, path)` its variables, given the launch's PATH, and
 //   `pluginDirs()` its skills' plugins, for a lead's or a worker's session (a plain one gets none);
 // - `node.area("sessions")`: `maskFor(thread)` (the masker for a session's secrets), `secretsFor(thread)` (the
-//   secrets themselves) and `sessionCwd(thread)` (the folder this node started it in), for the screens' sessions of an
-//   agent;
+//   secrets themselves, a 1Password fill's token among them), `sessionCwd(thread)` (the folder this node started it
+//   in) and `hasProject(id)`, for the screens' sessions of an agent;
+// - the sessions' `screens` (ScreenHooks, set by the node core from node/browser): what a session's launch tells the
+//   screens, and what the sessions ask of them;
 // - `node.config`: node.json, its screens' sections typed by their areas.
 import type { NodeLoad } from "../shared/contracts.ts";
 import type { ThreadItem } from "./sessions/types.ts";
@@ -212,6 +214,23 @@ export class LaunchArea {
   }
 }
 
+/**
+ * What the node's sessions ask of the screens (Rust's browser `SessionHooks`), set by node/browser as it starts: a
+ * session's role as its claude launches, the values filled into its browsers (masked in what it reports), whether it
+ * holds a screen (its idle claude isn't reaped then), and forgetting a project's sign-ins. Its claude's exit goes to
+ * the launch area's `ended`.
+ */
+export type ScreenHooks = {
+  /** The agent session's claude launches as a lead (`lead`, a project with repos; `assistant`, one that does its own
+   * work) of `projectId`: its browser runs on that project's kept profile. */
+  launched(thread: string, role: string, projectId: string): void;
+  /** Every value filled into the session's browsers, when there are more than `known`. */
+  filledSince(thread: string, known: number): [string, string][] | undefined;
+  holdsScreen(thread: string): boolean;
+  /** Forgets a project's sign-ins: the browser on its kept profile ends, then the profile goes. Throws why not. */
+  forgetSignins(projectId: string): Promise<void>;
+};
+
 /** What the screens' sessions read of an agent's session on this node. */
 export type SessionsArea = {
   /** The masker for the session's secrets (its project's and order's); throws why there is none. */
@@ -221,6 +240,8 @@ export type SessionsArea = {
   secretsFor: (thread: string) => [string, string][];
   /** The folder this node started the session in; undefined for a session it doesn't have. */
   sessionCwd: (thread: string) => string | undefined;
+  /** Whether this machine has the project. */
+  hasProject?: (projectId: string) => boolean;
 };
 
 type Builtin = { link: LinkArea; local: LocalArea; hb: HbArea; items: ItemsArea; caps: CapsArea; launch: LaunchArea; sessions: SessionsArea };

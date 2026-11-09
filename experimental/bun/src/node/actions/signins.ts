@@ -1,7 +1,8 @@
-// A Navi's kept browser sign-ins (crates/fleetd/src/node/browser/chrome.rs `kept_dir`, sessions/mod.rs
-// `forget_signins`, D221): the profile its browser sessions keep, under `<node home>/browser/navis/<navi>` (or
-// `browser/kept/<navi>` for one from before), deleted when the person forgets them or the project goes. The Bun node
-// runs no browser sessions yet, so forgetting is deleting that folder; none to forget is fine.
+// A project's kept browser sign-ins (crates/fleetd/src/node/browser/chrome.rs `kept_dir`, sessions/mod.rs
+// `forget_signins`, D221, D310): the profile its lead's browser sessions keep, under `<node home>/browser/kept/<id>`
+// (or `browser/navis/<id>` for a former Navi's), deleted when the person forgets them or the project goes. With a
+// browser broker on this node, forgetting goes through it (browser/index.ts `forgetSignins`: the browser on the
+// profile ends first); without one it is deleting that folder. None to forget is fine.
 import { existsSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 

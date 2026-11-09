@@ -165,7 +165,7 @@ test("the agent's driver reaches its browser through the proxy, and waits while 
   const ops = link.calls.slice(-3).map((c) => `${c.op}:${String(c.args.state ?? c.args.file)}`);
   expect(ops).toEqual(["browser_session:uploading", "browser_recording_part:actions", "browser_session:recorded"]);
   const log = Buffer.from(String(link.calls.at(-2)!.args.dataB64), "base64").toString().trim().split("\n").map((l) => JSON.parse(l));
-  expect(log.map((a: { tool: string }) => a.tool)).toEqual(["takeover", "handback"]);
+  expect(log.map((a: { tool: string }) => a.tool)).toEqual(["takeover", "handback", "agent_resumed"]);
   expect(link.calls.at(-1)!.args.files).toEqual([{ file: "actions", bytes: ended.files[0]!.bytes }]);
 });
 
@@ -440,4 +440,17 @@ test("after each of the agent's commands the page's DOM goes into the trace, onc
   expect(dom.map((d) => d.seq)).toEqual([1, 3]);
   expect(dom[0]).toMatchObject({ url: "https://shop.test/", title: "Shop", html: '<html><body><input value="***LOGIN***"></body></html>' });
   expect(dom[1]!.html).toBe("<html><body>Thanks</body></html>");
+});
+
+test("an agent's request_takeover reaches the hub after its session, and the session waits for the person", async () => {
+  const { broker, link, local } = nodeWith(async () => ({ cdp: new Cdp(fakeBrowser()) }));
+  await expect(broker.call("t9", { id: "1", cwd: "/", call: { op: "request_takeover", reason: "Solve the captcha" } as never })).rejects.toThrow("No browser session is open.");
+  const started = (await local.call("session_start", { purpose: "sign up" }, "t9")) as { sessionId: string };
+  const asked = await broker.call("t9", { id: "2", cwd: "/", call: { op: "request_takeover", reason: "Solve the captcha" } as never });
+  expect(String(asked.message)).toStartWith("Asked: it shows under waiting on you.");
+  expect(link.calls.map((c) => c.op)).toEqual(["browser_session", "browser_takeover"]);
+  expect(link.calls[1]!.args).toEqual({ sessionId: started.sessionId, reason: "Solve the captcha" });
+  expect(broker.live("t9")!.idleFor(Date.now() + 3_600_000)).toBe(0);
+  // Not a browser's: the desktop tool.
+  await expect(broker.call("t9", { id: "3", cwd: "/", call: { op: "desktop", action: "screenshot" } as never })).rejects.toThrow("The desktop tool drives desktop sessions, not browsers.");
 });

@@ -4,12 +4,15 @@
 // do too: the port is kept in `browser/proxy.json`, with the key each token is signed with. Chrome itself has no
 // debugging port; its pipe is the node's (cdp.ts). The proxy forwards the driver's commands under ids of its own, sends
 // back their answers and the events the driver may see, and answers itself instead when the command isn't one
-// agent-browser sends, or the agent may not drive now (guard.ts, session.ts).
+// agent-browser sends, or the agent may not drive now (guard.ts, session.ts). Once the session filled a value from
+// 1Password, everything the driver hears is scrubbed of it, and a write to a field it filled is refused
+// (credentials.ts).
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import type { Message } from "./cdp.ts";
+import { filledFieldRefusal, writesNode } from "./credentials.ts";
 import { refused } from "./guard.ts";
 import type { Session } from "./session.ts";
 import { clientEnd, type End, type Frame, pipeSealed, relaySaysGone } from "../session_route/relay.ts";
@@ -29,7 +32,7 @@ export interface Sessions {
 
 type Kept = { port: number; key: string };
 type Data =
-  | { session: Session }
+  | { session: Session; queue?: Promise<void> }
   | { relay: { url: string; key: Uint8Array }; thread: string; message?: (m: Frame) => void; closed?: () => void };
 
 const keptPath = (home: string) => join(home, "browser", "proxy.json");
@@ -124,7 +127,7 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
       open(ws: ServerWebSocket<Data>) {
         const d = ws.data;
         if ("session" in d) {
-          d.session.cdp.proxyEvents((message) => ws.send(JSON.stringify(message)));
+          d.session.cdp.proxyEvents((message) => ws.send(JSON.stringify(d.session.outgoing(message))));
           return;
         }
         // The driver's side of the channel: piped sealed to the session's relay on the hub.
@@ -149,12 +152,29 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
         } catch {
           return;
         }
-        const why = d.session.refusal(command);
-        if (why) {
-          ws.send(JSON.stringify(refused(command.id ?? null, why)));
+        const session = d.session;
+        const commandIn = (filled: string | undefined) => {
+          const why = filled ?? session.refusal(command);
+          if (why) {
+            ws.send(JSON.stringify(refused(command.id ?? null, why)));
+            return;
+          }
+          if (!session.cdp.forward(command)) ws.send(JSON.stringify(refused(command.id ?? null, "the browser closed")));
+        };
+        // A write to a field the session filled: the browser says which node it names first. The driver's commands
+        // keep their order meanwhile.
+        if (d.queue || (session.sealed() && writesNode(command.method))) {
+          const ahead = d.queue ?? Promise.resolve();
+          const mine: Promise<void> = ahead
+            .then(() => filledFieldRefusal(session, command))
+            .then(commandIn, () => commandIn(undefined))
+            .finally(() => {
+              if (d.queue === mine) d.queue = undefined;
+            });
+          d.queue = mine;
           return;
         }
-        if (!d.session.cdp.forward(command)) ws.send(JSON.stringify(refused(command.id ?? null, "the browser closed")));
+        commandIn(undefined);
       },
       close(ws: ServerWebSocket<Data>) {
         const d = ws.data;

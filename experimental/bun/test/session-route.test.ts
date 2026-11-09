@@ -128,7 +128,7 @@ async function fleet(opts: { secrets?: [string, string][]; box2Hosts?: { host: s
 }
 
 test("a session the hub places on another machine: sealed to it, started there, driven through the relay", async () => {
-  const { t, runner, agentNode, piped } = await fleet({ secrets: [["DEPLOY_TOKEN", "tok-hunter2-secret"]] });
+  const { t, runner, agentNode, piped } = await fleet({ secrets: [["DEPLOY_TOKEN", "tok-hunter2-secret"], ["OP_SERVICE_ACCOUNT_TOKEN", "ops_fake-token-0123"]] });
   const itemFns = new Map([["devbox", agentNode.node]]);
   const started = (await agentNode.local.call("session_start", { purpose: "look" }, "t1")) as { sessionId: string; cdp: string };
   // The agent's own address, on its own node: never the runner's.
@@ -167,6 +167,21 @@ test("a session the hub places on another machine: sealed to it, started there, 
   // Masked on the agent's node before it left, and scrubbed again by the runner with what was sealed to it.
   expect(JSON.stringify(brokerOf(runner.node).steps())).toContain("***DEPLOY_TOKEN***");
   expect(JSON.stringify(brokerOf(runner.node).steps())).not.toContain("hunter2");
+  // A fill: read on the agent's node with its token, the value sealed to the runner alone, and filled there under the
+  // same check of the item's site (the fake browser's page is on no website).
+  const asked: string[] = [];
+  brokerOf(agentNode.node).credentials.vaultFor = (token) => {
+    expect(token).toBe("ops_fake-token-0123");
+    return { resolve: async (ref) => (asked.push(ref), { value: "Hunter2-Sekr3t", urls: ["https://shop.devbox.test/"] }) };
+  };
+  brokerOf(runner.node).credentials.vaultFor = () => {
+    throw new Error("the runner read 1Password");
+  };
+  const filled = await agentNode.local.call("fill_credential", { ref: "op://Team/Shop/password", target: "#pw" }, "t1").catch((e: Error) => e);
+  expect((filled as Error).message).toBe("op://Team/Shop/password is for shop.devbox.test; this page is on no website.");
+  expect(asked).toEqual(["op://Team/Shop/password"]);
+  expect(brokerOf(agentNode.node).credentials.filledSince("t1", 0)).toEqual([["op://Team/Shop/password", "Hunter2-Sekr3t"]]);
+  expect(JSON.stringify(t.link.linked.get("box2")!.out)).not.toContain("Hunter2-Sekr3t");
   ws.close();
   await agentNode.local.call("session_end", {}, "t1");
   expect(agentNode.router.remotes.size).toBe(0);
@@ -211,7 +226,7 @@ test("a hosted start's sealed secrets reach its broker, which scrubs its recordi
   const key = `H${"ab".repeat(16)}`;
   const answer = await router.host({ hostKey: key, frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "look" } }, sealed } as never);
   expect(answer.error).toBeUndefined();
-  expect(broker.live(key)?.recording?.scrub.text("typed hunter2-value")).toBe("typed ***TOKEN***");
+  expect(broker.live(key)?.scrub().text("typed hunter2-value")).toBe("typed ***TOKEN***");
   // Read at the start: they leave the node's memory, while the relay key stays until the session ends.
   expect(router.hosted.get(key)?.secrets).toBeUndefined();
   expect(router.hosted.get(key)?.relayKey.length).toBe(32);

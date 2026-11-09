@@ -7,6 +7,7 @@ import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
 import { RECORDING_FILES } from "../../shared/screens_wire.ts";
+import { hostOf } from "./onepassword.ts";
 import { appendAction, appendLine, Scrub, type Steps, type VideoSink } from "./record.ts";
 
 export const WIDTH = 1280;
@@ -49,21 +50,114 @@ export class Session implements GuardSession {
   readonly startedAt = new Date().toISOString();
   private readonly start0 = performance.now();
   private steps_ = 0;
-  /** Where its recording goes, and what it masks; none for a session that records nothing (tests). */
-  recording: { dir: string; scrub: Scrub; steps: Steps; video: VideoSink | undefined } | undefined;
+  /** Where its recording goes; none for a session that records nothing (tests). */
+  recording: { dir: string; steps: Steps; video: VideoSink | undefined } | undefined;
   private ticker: Timer | undefined;
   /** The DOM captures after each step, in order, and the hash of the page the last one wrote. */
   private captures: Promise<void> = Promise.resolve();
   private lastDom: string | undefined;
+  /** Its own secrets, then every value filled into its browser, and their scrub: what it records and answers. */
+  private readonly secrets: [string, string][];
+  private scrubNow: Scrub;
+  /** The fields filled from 1Password, by target: the site the target was on then and their `backendNodeId`s. The
+   * driver may not write to them (credentials.ts `filledFieldRefusal`). */
+  private readonly filledFields = new Map<string, { site: string; nodes: Set<number> }>();
+  /** The driver's own target sessions, by session id: the target each is on, from its attach events. */
+  private readonly driverTargets = new Map<string, string>();
+  /** Until when the session waits on a person (a purchase's approval, a takeover such as a bank's confirmation): it
+   * isn't idle meanwhile, so a held fare or room isn't lost. */
+  private heldUntil = 0;
+  /** The hold waits for an answer the Navi is woken with (a purchase, a secure input): its next browser command ends
+   * it, whatever the answer was. */
+  private heldForAnswer = false;
 
   constructor(
     readonly id: string,
     readonly threadId: string,
     readonly cdp: Cdp,
-  ) {}
+    secrets: [string, string][] = [],
+  ) {
+    this.secrets = [...secrets];
+    this.scrubNow = new Scrub(this.secrets);
+  }
 
   /** When a step, a person's input or a change of control last touched the session: what its idle end goes by. */
   touched = Date.now();
+
+  /** How long nothing touched it; none while it waits on a person (`hold`). */
+  idleFor(now = Date.now()): number {
+    return this.heldUntil > now ? 0 : now - this.touched;
+  }
+
+  /** The session waits on a person for at most `forMs` (undefined: no more): it doesn't idle out meanwhile. */
+  hold(forMs: number | undefined): void {
+    this.heldUntil = forMs === undefined ? 0 : Date.now() + forMs;
+    this.heldForAnswer = false;
+    this.touched = Date.now();
+  }
+
+  /** As `hold`, until the Navi's next browser command, which comes once it is woken with the person's answer. */
+  holdForAnswer(forMs: number): void {
+    this.hold(forMs);
+    this.heldForAnswer = true;
+  }
+
+  /** What it scrubs everything it records or answers with. */
+  scrub(): Scrub {
+    return this.scrubNow;
+  }
+
+  /** A value the session must never show: scrubbed from everything recorded or answered from now on. */
+  addSecret(name: string, value: string): void {
+    if (this.secrets.some(([, v]) => v === value)) return;
+    this.secrets.push([name, value]);
+    this.scrubNow = new Scrub(this.secrets);
+  }
+
+  /**
+   * A field the node filled from 1Password, by its target, the site the target was on and its `backendNodeId`, which
+   * is unique only within one renderer process: it counts until that target moves to another site (`targetMoved`).
+   * `fieldSite` is the field's own document's host, for a target the browser hasn't said the address of.
+   */
+  filledField(target: string, fieldSite: string, backend: number): void {
+    const known = this.urls.get(target);
+    const site = (known === undefined ? undefined : hostOf(known)) ?? fieldSite;
+    let on = this.filledFields.get(target);
+    if (!on) this.filledFields.set(target, (on = { site, nodes: new Set() }));
+    on.nodes.add(backend);
+  }
+
+  /** Whether `backend` is a field the node filled on `target`; with no target known, on any. */
+  isFilledField(target: string | undefined, backend: number): boolean {
+    if (target !== undefined) return this.filledFields.get(target)?.nodes.has(backend) ?? false;
+    return [...this.filledFields.values()].some((on) => on.nodes.has(backend));
+  }
+
+  /** The target the driver's session `driver` is on, if its attach was seen. */
+  driverTarget(driver: string): string | undefined {
+    return this.driverTargets.get(driver);
+  }
+
+  /** The target now shows `url`: on another site (or gone, undefined), its filled fields are no more. */
+  private targetMoved(target: string, url: string | undefined): void {
+    const on = this.filledFields.get(target);
+    if (on && (url === undefined ? undefined : hostOf(url)) !== on.site) this.filledFields.delete(target);
+  }
+
+  /** A message from the browser on its way to the driver: the driver's attaches say which target each of its sessions
+   * is on, and once the session filled a credential every form of the values is scrubbed (credentials.ts). */
+  outgoing(message: Record<string, unknown>): Record<string, unknown> {
+    const params = (message.params ?? {}) as Record<string, unknown>;
+    if (message.method === "Target.attachedToTarget") {
+      const target = (params.targetInfo as { targetId?: unknown } | undefined)?.targetId;
+      if (typeof params.sessionId === "string" && typeof target === "string") this.driverTargets.set(params.sessionId, target);
+    } else if (message.method === "Target.detachedFromTarget" && typeof params.sessionId === "string") {
+      this.driverTargets.delete(params.sessionId);
+    }
+    return this.outgoingHook ? this.outgoingHook(this, message) : message;
+  }
+  /** credentials.ts `outgoing`, set by the broker: kept out of this module so the guard stays one place. */
+  outgoingHook: ((session: Session, message: Record<string, unknown>) => Record<string, unknown>) | undefined;
 
   /** Milliseconds since the session started: the recording's clock. */
   offsetMs(): number {
@@ -87,17 +181,22 @@ export class Session implements GuardSession {
     const r = this.recording;
     if (r) {
       try {
-        appendAction(r.dir, action, r.scrub, r.steps, this.id);
+        appendAction(r.dir, action, this.scrubNow, r.steps, this.id);
       } catch (e) {
         console.warn(`browser ${this.id}: action not logged: ${(e as Error).message}`);
       }
-      this.step = r.scrub.value(action);
-    } else this.step = action;
+      this.step = this.scrubNow.value(action);
+    } else this.step = this.scrubNow.value(action);
     return seq;
   }
 
   /** A finished `agent-browser` command of the agent's, logged, and the page after it in the DOM trace. */
   agentStep(command: string, ok: boolean, output: string | undefined, durationMs: number): number {
+    // The Navi drives again: a hold for an answer it is woken with has done its work, approved or denied.
+    if (this.heldForAnswer) {
+      this.heldForAnswer = false;
+      this.heldUntil = 0;
+    }
     const seq = this.stepAt("agent-browser", { command }, ok, output, durationMs);
     this.queueCapture(seq);
     return seq;
@@ -140,7 +239,7 @@ export class Session implements GuardSession {
       html = bytes.subarray(0, end).toString("utf8");
     }
     try {
-      appendLine(r.dir, RECORDING_FILES.dom.name, { seq, offsetMs: this.offsetMs(), url, title, html }, r.scrub);
+      appendLine(r.dir, RECORDING_FILES.dom.name, { seq, offsetMs: this.offsetMs(), url, title, html }, this.scrubNow);
     } catch (e) {
       console.warn(`browser ${this.id}: DOM snapshot not written: ${(e as Error).message}`);
     }
@@ -192,6 +291,7 @@ export class Session implements GuardSession {
       // Handed back: the agent's first command takes control again and sees the page as the person left it.
       case "handing_back":
         this.controlNow = "agent";
+        this.heldUntil = 0;
         this.onControl?.("agent");
         return undefined;
       default:
@@ -281,7 +381,10 @@ export class Session implements GuardSession {
       }
       case "Target.targetInfoChanged": {
         const info = e.params.targetInfo as { targetId?: string; url?: string };
-        if (info.targetId && info.url !== undefined) this.urls.set(info.targetId, info.url);
+        if (info.targetId && info.url !== undefined) {
+          this.targetMoved(info.targetId, info.url);
+          this.urls.set(info.targetId, info.url);
+        }
         return;
       }
       case "Target.targetCreated": {
@@ -303,6 +406,7 @@ export class Session implements GuardSession {
         const target = e.method === "Target.targetDestroyed" ? String(e.params.targetId ?? "") : "";
         const gone = e.method === "Target.detachedFromTarget" ? String(e.params.sessionId ?? "") : "";
         this.urls.delete(target);
+        if (target) this.targetMoved(target, undefined);
         const current = this.page();
         const left = this.pages.filter(([t, s]) => t !== target && s !== gone);
         this.pages.splice(0, this.pages.length, ...left);

@@ -29,7 +29,9 @@ import { LOGINS } from "./runner/login.ts";
 import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
 import { holdForScreens, ScreensRestart } from "./restart.ts";
 import { apply as applyScreens } from "./screens/index.ts";
-import { broker } from "./browser/index.ts";
+import { broker, screenHooks } from "./browser/index.ts";
+import { router as screens } from "./device/router.ts";
+import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
 import { configDir } from "./runner/claude.ts";
@@ -254,10 +256,15 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   sessions.launch = node.area("launch");
   node.area("sessions", () => ({
     maskFor: (thread: string) => sessions.maskFor(thread),
-    secretsFor: (thread: string) => sessions.secretsFor(thread),
     sessionCwd: (thread: string) => sessions.sessionCwd(thread),
+    secretsFor: (thread: string) => sessions.secretsFor(thread),
+    hasProject: (projectId: string) => sessions.store.project(projectId) !== undefined,
   }));
   registerAreas(node);
+  // What the sessions tell the screens and ask of them (Rust's browser SessionHooks).
+  sessions.screens = screenHooks(node, (thread) => screens(node).live(thread) || sessionRoute(node).remotes.has(thread));
+  // Playwright's Chrome and agent-browser, installed in the background where they are missing (Rust Broker::start).
+  if (config.browser?.enabled !== false && !isAgentsMac(config)) broker(node).prepare();
   // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.
   const mac = isAgentsMac(config) ? agentsMac(node) : undefined;
   relay.toolOnly = isAgentsMac(config);
@@ -313,8 +320,17 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       case "cmd_check":
         void runCmdCheck(frame as unknown as CmdCheck, roots, home, ctx.signal).then((r) => ctx.send({ t: "cmd_result", ...r }), logFailed("cmd_check"));
         return;
-      case "secret_deliver":
-        return ctx.send({ t: "secret_result", ...deliverSecret(frame as unknown as SecretDeliver, secretsCtx) });
+      case "secret_deliver": {
+        const deliver = frame as unknown as SecretDeliver;
+        // A Navi's secure input: opened here and typed into its browser session's field by the broker.
+        if (deliver.sink.startsWith("fill:")) {
+          void broker(node)
+            .deliver(deliver, boxKey, config.machineId)
+            .then((r) => link.send({ t: "secret_result", ...r }));
+          return;
+        }
+        return ctx.send({ t: "secret_result", ...deliverSecret(deliver, secretsCtx) });
+      }
       case "gated_run":
         // Not the link's: an approved command runs to its end when the link drops, and the hub asks for its result.
         void gated.run(frame as unknown as GatedRun, ctx.hubId, secretsCtx).then((r) => link.send({ t: "gated_result", ...r }), logFailed("gated_run"));

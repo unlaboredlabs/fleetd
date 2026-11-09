@@ -304,3 +304,23 @@ test("an interrupt with no process closes the run, and a stop ends the session's
   const unknown = await call("bogus_op");
   expect(unknown.result).toMatchObject({ err: { code: "runner_unavailable" } });
 });
+
+test("a lead's launch tells the screens, and what its browsers filled is masked in what it reports", async () => {
+  const launched: string[] = [];
+  const filled: [string, string][] = [];
+  service.screens = {
+    launched: (thread, role, projectId) => void launched.push(`${thread} ${role} ${projectId}`),
+    filledSince: (_thread, known) => (filled.length > known ? [...filled] : undefined),
+    holdsScreen: () => false,
+    forgetSignins: async () => {},
+  };
+  try {
+    filled.push(["op://Team/Shop/password", "Sekr3t-Value-99"]);
+    await ok("launch", { sessionId: "s-filled", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "typed Sekr3t-Value-99", runId: "rf1", role: "lead" });
+    await until("the run to complete", () => summary("s-filled")?.latestRun?.status === "completed");
+    expect(launched).toEqual(["s-filled lead p1"]);
+    expect(summary("s-filled")?.latestAssistantTail).toBe("ok: typed ***op://Team/Shop/password***");
+  } finally {
+    service.screens = undefined;
+  }
+});
