@@ -1,9 +1,10 @@
-// The pinned chats over the chats list, as Messages draws them: large round avatars three to a row (one to three make
-// a centred row, four are three and one, nine fill three rows), each name under it. Unread, its newest message rises
-// out of the avatar in a bubble, with a dot beside the name; while its lead works, a typing bubble with the working
-// glyph takes the bubble's place; an approval waiting is an orange count on the avatar (pinnedGrid.ts). A tap opens
-// the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute) in iOS's menu. A pin grows
-// into its place and an unpinned one shrinks away, on the app's snap curve.
+// The pinned chats over the chats list, as Messages draws them: large round avatars three to a row, a quarter of their
+// width apart so they read as one group (one to three make a centred row, four are three and one, nine fill three
+// rows), each name under it at medium weight in the text's own colour. Unread, its newest message rises out of the
+// avatar in a bubble, with a dot before the name, which turns semibold; while its lead works, a typing bubble with the
+// working glyph takes the bubble's place; an approval waiting is an orange count on the avatar (pinnedGrid.ts). A tap
+// opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute) in iOS's menu. A pin
+// grows into its place and an unpinned one shrinks away, on the app's snap curve.
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Animated, { withTiming, type EntryAnimationsValues, type ExitAnimationsValues } from "react-native-reanimated";
 import { phaseOf } from "../desktop";
@@ -36,14 +37,15 @@ const pinOut = (_: ExitAnimationsValues) => {
 export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: readonly ChatRow[]; arrived: ReadonlySet<string>; onOpen: (row: ChatRow) => void; menu: (row: ChatRow) => readonly MenuItem[]; label: (row: ChatRow) => string }) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { cell, avatar } = gridSize(useWindowDimensions().width);
+  const { cell, avatar, row: across } = gridSize(useWindowDimensions().width);
   return (
-    <View style={styles.grid}>
+    // Three cells across, centred: a wide screen has room for a fourth, which would wrap up into the row.
+    <View style={[styles.grid, { width: across }]}>
       {rows.map((row) => {
         const face = pinFace(row);
         const bubble = face.bubble === undefined ? null : face.bubble.t === "typing" ? <Typing phase={phaseOf(row.key)} /> : <Said text={face.bubble.text} muted={row.muted} />;
         // The bubble's slot: as wide as the cell, its foot 22 pt into the avatar.
-        const slot = { bottom: avatar - 22, left: -(cell - avatar) / 2 + 6, right: -(cell - avatar) / 2 + 6 };
+        const slot = { bottom: avatar - 22, left: -(cell - avatar) / 2 + SLOT_INSET, right: -(cell - avatar) / 2 + SLOT_INSET };
         return (
           <Animated.View key={row.key} style={{ width: cell }} {...(arrived.has(row.key) ? { entering: pinIn(reduce) } : {})} exiting={pinOut} {...(reduce ? {} : { layout: rowMove })}>
             <HoldMenu
@@ -63,8 +65,8 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
                 </View>
                 <View style={styles.name}>
                   {face.dot === undefined ? null : <View style={[styles.dot, { backgroundColor: face.dot === "muted" ? t.muted : t.accentFill }]} />}
-                  {row.muted ? <Icon name="mute" size={11} color={t.tertiary} /> : null}
-                  <Text style={[type.footnote, styles.nameText, face.dot === undefined ? { color: t.secondary } : [styles.nameUnread, { color: t.label }]]} numberOfLines={1}>
+                  {row.muted ? <Icon name="mute" size={12} color={t.tertiary} /> : null}
+                  <Text style={[type.subhead, styles.nameText, face.dot === undefined ? null : styles.nameUnread, { color: t.label }]} numberOfLines={1}>
                     {row.project.title}
                   </Text>
                 </View>
@@ -126,13 +128,15 @@ function Approvals({ count }: { count: number }) {
 
 /** A held avatar lifts with its name on a card with these corners. */
 const CELL_RADIUS = 28;
+/** Between a bubble and its cell's edge: two neighbours' bubbles stay apart. */
+const SLOT_INSET = 2;
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", paddingHorizontal: space.sm, paddingTop: 2, paddingBottom: space.md, rowGap: 2 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignSelf: "center", paddingTop: 2, paddingBottom: space.md, rowGap: 2 },
   // Room over each avatar for its bubble.
   cell: { alignItems: "center", paddingTop: 26, paddingBottom: 6, gap: 7 },
-  name: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: "100%", paddingHorizontal: 6 },
-  nameText: { flexShrink: 1, textAlign: "center" },
+  name: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: "100%", paddingHorizontal: 4 },
+  nameText: { flexShrink: 1, textAlign: "center", fontWeight: "500" },
   nameUnread: { fontWeight: "600" },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
   slot: { position: "absolute", alignItems: "center" },

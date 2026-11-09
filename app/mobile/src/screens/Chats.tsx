@@ -454,7 +454,7 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
       <View style={styles.body}>
         <View style={styles.top}>
           <View style={styles.name}>
-            <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
+            <Text style={[type.headline, styles.nameText, styles.chatName, { color: t.label }]} numberOfLines={1}>
               {row.project.title}
             </Text>
             {row.muted ? <Icon name="mute" size={13} color={t.tertiary} /> : null}
@@ -505,7 +505,7 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
           <Avatar name={title} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
             <View style={styles.top}>
-              <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
+              <Text style={[type.headline, styles.nameText, styles.chatName, { color: t.label }]} numberOfLines={1}>
                 {title}
               </Text>
               <Text style={[type.footnote, { color: t.secondary }]}>{listTime(hit.at, now)}</Text>
@@ -544,6 +544,8 @@ const styles = StyleSheet.create({
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   name: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
   nameText: { flexShrink: 1 },
+  /** A chat's name, a step over the headline as the pinned names are a step up: the row's one strong line. */
+  chatName: { fontSize: 18, lineHeight: 23 },
   // Two lines kept for every row, as chat apps do, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
