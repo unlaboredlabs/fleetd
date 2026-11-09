@@ -188,7 +188,7 @@ const countryName = (code: string): string => {
 };
 
 /** The one quiet line under a row's label, from its readable metadata alone. */
-export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "envName">): string => {
+export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "envName"> & { readonly value?: string | undefined }): string => {
   const meta = item.meta as Record<string, unknown>;
   switch (item.kind) {
     case "login": {
@@ -197,7 +197,7 @@ export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "envName"
     }
     case "card": {
       const last4 = str(meta.last4);
-      return [str(meta.brand) ?? "Card", last4 === undefined ? undefined : `••${last4}`].filter((x) => x !== undefined).join(" ");
+      return [brandWord(str(meta.brand)), last4 === undefined ? undefined : `••${last4}`].filter((x) => x !== undefined).join(" ");
     }
     case "address": {
       const city = str(meta.city);
@@ -206,9 +206,15 @@ export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "envName"
       return city === undefined ? countryName(country) : `${city}, ${country}`;
     }
     case "env":
-      return meta.secret === true ? "Secret" : "Plain";
+      // A plain one shows its value, as a setting does.
+      return meta.secret === false ? (item.value === undefined || item.value === "" ? "Plain" : item.value) : "Secret";
   }
 };
+
+const BRAND_WORDS: Readonly<Record<string, string>> = { visa: "Visa", mastercard: "Mastercard", amex: "Amex", discover: "Discover", diners: "Diners", jcb: "JCB", unionpay: "UnionPay" };
+
+/** The hub's brand (`visa`) as printed on the card; one it doesn't know is just a card. */
+export const brandWord = (brand: string | undefined): string => (brand === undefined ? "Card" : (BRAND_WORDS[brand] ?? "Card"));
 
 /** Where an item may be used, when it isn't only its owner's work: a project's name, or Everyone for the hub's. */
 export const scopeTag = (item: Pick<VaultItemSummary, "scope" | "machineId" | "projectId" | "sharedWith">, projectName: (machineId: string, projectId: string) => string | undefined): string | undefined => {
@@ -463,10 +469,10 @@ const ACTION_WORDS: Readonly<Record<string, string>> = {
 export const auditLine = (e: VaultAuditEntry, projectName: (machineId: string, projectId: string) => string | undefined): { title: string; detail: string | undefined } => {
   const data = e.data as Record<string, unknown>;
   const title = ACTION_WORDS[e.action] ?? sentence(e.action.replace(/_/gu, " "));
-  const where = str(data.site) ?? str(data.host);
+  const where = str(data.site);
   const project = e.machineId === undefined || e.projectId === undefined ? undefined : projectName(e.machineId, e.projectId);
   // A refusal or failure says why, in the hub's words.
-  const why = e.outcome === "ok" || e.outcome === "" ? undefined : (str(data.reason) ?? e.outcome).replace(/_/gu, " ");
+  const why = e.outcome === "refused" || e.outcome === "failed" ? (str(data.message) ?? e.outcome) : undefined;
   const parts = [where, project, e.taskId, why === undefined ? undefined : sentence(why)];
   const detail = parts.filter((x) => x !== undefined && x !== "").join(" · ");
   return { title, detail: detail === "" ? undefined : detail };

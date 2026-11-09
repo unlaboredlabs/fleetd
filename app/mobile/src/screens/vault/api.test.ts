@@ -14,12 +14,12 @@ vi.mock("expo-crypto", () => ({
   },
 }));
 
-const { deleteItem, dismissImport, importItems, listItems, reveal, saveItem, sealToHub, usableCards, vaultErrorWords } = await import("./api");
+const { deleteItem, dismissImport, importItems, listItems, reveal, saveItem, sealToHub, searchOnePassword, usableCards, vaultErrorWords } = await import("./api");
 const { openSealed, seal, toBase64, fromBase64, utf8, utf8Encode, keyPairOf } = await import("../../seal");
 
 const HUB = keyPairOf(new Uint8Array(randomBytes(32)));
 const STATUS = { hubBoxKey: toBase64(HUB.publicKey), locked: false };
-const SUMMARY = { itemId: "V1", kind: "card", scope: "person", label: "Visa", meta: { brand: "Visa", last4: "4242" }, createdMs: 1, updatedMs: 1, canEdit: true, canReveal: true };
+const SUMMARY = { itemId: "V1", kind: "card", scope: "person", label: "Visa", meta: { brand: "visa", last4: "4242" }, createdMs: 1, updatedMs: 1, updatedBy: "human:phone", version: 1, canEdit: true, canReveal: true };
 
 /** A hub that answers each tool from `answers`, recording what it was called with. */
 const fake = (answers: Record<string, (input: Record<string, unknown>) => unknown>) => {
@@ -113,13 +113,14 @@ describe("the rest", () => {
     const gone = { ...SUMMARY, itemId: "V9", deletedMs: 5 };
     const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, gone] }) });
     expect(await usableCards(hub, { machineId: "devbox", projectId: "p1" })).toEqual({ ok: true, value: [SUMMARY] });
-    expect(calls[0]!.input).toEqual({ kind: "card", machineId: "devbox", projectId: "p1" });
+    expect(calls[0]!.input).toEqual({ kind: "card", machineId: "devbox", projectId: "p1", usable: true });
   });
 
   it("lists the person's items, or a project's", async () => {
     const own = { ...SUMMARY, itemId: "V2", scope: "project" };
     const order = { ...SUMMARY, itemId: "V3", scope: "order", kind: "env" };
-    const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, own, order] }) });
+    const newer = { ...SUMMARY, itemId: "V4", kind: "passport" };
+    const { hub, calls } = fake({ vault_list: () => ({ items: [SUMMARY, own, order, newer] }) });
     expect(await listItems(hub, { kind: "mine" })).toEqual({ ok: true, value: [SUMMARY, own, order] });
     expect(await listItems(hub, { kind: "project", project: { machineId: "devbox", projectId: "p1" } })).toEqual({ ok: true, value: [own, order] });
     expect(calls.map((c) => c.input)).toEqual([{}, { machineId: "devbox", projectId: "p1" }]);
@@ -136,5 +137,15 @@ describe("the rest", () => {
       ["vault_import", { proposalId: "P1", dismiss: true }],
     ]);
     expect(calls[1]!.timeoutMs).toBe(240_000);
+  });
+});
+
+describe("searching 1Password", () => {
+  it("lists what it found, and says 1Password's own refusal as an error", async () => {
+    const hit = { ref: "op://v/a", title: "Amazon", kind: "login", sites: ["amazon.com"], vault: "fleetd" };
+    const { hub } = fake({ vault_import_search: () => ({ items: [hit, { ...hit, ref: "op://v/b", kind: "passport" }] }) });
+    expect(await searchOnePassword(hub, "am")).toEqual({ ok: true, value: [hit] });
+    const { hub: none } = fake({ vault_import_search: () => ({ items: [], error: "No 1Password token saved." }) });
+    expect(await searchOnePassword(none, "")).toMatchObject({ ok: false, error: { message: "No 1Password token saved." } });
   });
 });

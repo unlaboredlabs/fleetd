@@ -7,7 +7,8 @@ import type { HubError, ProjectRef } from "../../desktop";
 import type { Session } from "../../session";
 import { fromBase64, keyPairOf, openSealed, seal, toBase64, utf8, utf8Encode } from "../../seal";
 import type { Result } from "../manage/api";
-import type { VaultAuditEntry, VaultImportHit, VaultItemSummary, VaultKind, VaultScope, VaultStatus } from "./types";
+import { KINDS } from "./model";
+import type { VaultAuditEntry, VaultImportCandidate, VaultItemSummary, VaultKind, VaultScope, VaultStatus } from "./types";
 
 /** The calls these make, typed loosely: the vault's tools are read by their own shapes (types.ts). */
 export interface VaultHub {
@@ -32,16 +33,19 @@ export type Whose = { readonly kind: "mine" } | { readonly kind: "project"; read
  * A project's list is what its work can use that the person can see; its Vault shows its own items (and its orders'
  * variables) among them, the person's shared ones and the hub's staying in Settings.
  */
+/** Only the kinds this app knows: one from a newer hub has no screen here. */
+const known = <T extends { readonly kind: string }>(items: readonly T[]): T[] => items.filter((i) => (KINDS as readonly string[]).includes(i.kind));
+
 export const listItems = async (hub: VaultHub, whose: Whose): Promise<Result<readonly VaultItemSummary[]>> => {
   const r = await hub.call("vault_list", whose.kind === "mine" ? {} : cleanRef(whose.project));
   if (!r.ok) return r;
-  const items = (r.output as { items: readonly VaultItemSummary[] }).items;
+  const items = known((r.output as { items: readonly VaultItemSummary[] }).items);
   return { ok: true, value: whose.kind === "mine" ? items : items.filter((i) => i.scope === "project" || i.scope === "order") };
 };
 
 /** The cards a project's work can pay with: its own, the person's it may use, and the hub's. */
 export const usableCards = async (hub: VaultHub, p: ProjectRef): Promise<Result<readonly VaultItemSummary[]>> => {
-  const r = await hub.call("vault_list", { kind: "card", ...cleanRef(p) });
+  const r = await hub.call("vault_list", { kind: "card", ...cleanRef(p), usable: true });
   return r.ok ? { ok: true, value: (r.output as { items: readonly VaultItemSummary[] }).items.filter((i) => i.kind === "card" && i.deletedMs === undefined) } : r;
 };
 
@@ -150,10 +154,15 @@ export const reveal = async (hub: VaultHub, itemId: string, fields: readonly str
   }
 };
 
-/** Items in the person's 1Password matching `query`, read on a machine holding their token: titles and sites, never values. */
-export const searchOnePassword = async (hub: VaultHub, query: string): Promise<Result<readonly VaultImportHit[]>> => {
+/**
+ * Items in the person's 1Password matching `query`, read on a machine holding their token: titles and sites, never
+ * values. 1Password's own refusal (no token, a wrong one) comes back as the hub's error.
+ */
+export const searchOnePassword = async (hub: VaultHub, query: string): Promise<Result<readonly VaultImportCandidate[]>> => {
   const r = await hub.call("vault_import_search", { query }, ONEPASSWORD_MS);
-  return r.ok ? { ok: true, value: (r.output as { items: readonly VaultImportHit[] }).items } : r;
+  if (!r.ok) return r;
+  const out = r.output as { items: readonly VaultImportCandidate[]; error?: string };
+  return out.error === undefined ? { ok: true, value: known(out.items) } : failed(out.error);
 };
 
 export interface Imported {

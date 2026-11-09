@@ -13,7 +13,7 @@ import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { errorWords } from "../manage/parts";
 import { dismissImport, importItems, vaultErrorWords, vaultHub } from "./api";
-import { importOutcome, KIND_WORDS, SCOPE_WORDS } from "./model";
+import { importOutcome, KIND_WORDS, KINDS, SCOPE_WORDS } from "./model";
 import { KindTile } from "./parts";
 import type { VaultImportCard } from "./types";
 
@@ -36,6 +36,7 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
     );
   }
 
+  // An item of a kind this app doesn't know is still imported: only its row here is plainer.
   const ticked = card.items.filter((i) => !unticked.has(i.ref));
   const toggle = (ref: string) => {
     haptics.select();
@@ -80,7 +81,8 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
       <View style={[styles.items, { backgroundColor: t.cell }]}>
         {card.items.map((i, n) => {
           const on = !unticked.has(i.ref);
-          const line = [KIND_WORDS[i.kind].one, i.site].filter((x) => x !== undefined && x !== "").join(" · ");
+          const known = (KINDS as readonly string[]).includes(i.kind);
+          const line = [known ? KIND_WORDS[i.kind].one : undefined, i.site].filter((x) => x !== undefined && x !== "").join(" · ");
           return (
             <Pressable
               key={i.ref}
@@ -91,7 +93,7 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
               onPress={() => toggle(i.ref)}
               style={({ pressed }) => [styles.item, n > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.separator }, pressed && { backgroundColor: t.fillQuiet }]}
             >
-              <KindTile kind={i.kind} size={26} />
+              {known ? <KindTile kind={i.kind} size={26} /> : <Icon name="import" size={22} color={t.secondary} />}
               <View style={styles.grow}>
                 <Text style={[type.body, { color: t.label }]} numberOfLines={1}>
                   {i.title}

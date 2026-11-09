@@ -2,7 +2,7 @@
 // the person asks. Tapping a hidden field asks for Face ID (or the passcode), then shows every field of the item for 30
 // seconds; tapping a shown one copies it to a clipboard that stays on this phone and empties itself after a minute.
 // Leaving the screen, or the app going to the background, hides them at once: a value lives in this screen's state
-// only while it's on screen, and is never logged. A plain variable shows as it is. Then the sites it fills on, where
+// only while it's on screen, and is never logged. A plain variable shows as it is, its value in the list's metadata. Then the sites it fills on, where
 // it's used, its last 20 uses (vault_get's activity), and Delete.
 import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
@@ -60,15 +60,13 @@ export function VaultItem() {
   const plain = item !== undefined && item.kind === "env" && !isSecretEnv(item);
   const fields = item === undefined ? [] : presentFields(item);
 
-  /** Opens the item's fields: after Face ID, unless it's a plain variable. */
+  /** Opens the item's fields, after Face ID. */
   const open = async (why: string): Promise<Record<string, string> | null> => {
     if (item === undefined || busy) return null;
-    if (!plain) {
-      const ok = await unlock(why);
-      if (!ok.ok) {
-        if (ok.why !== undefined) setProblem(ok.why);
-        return null;
-      }
+    const ok = await unlock(why);
+    if (!ok.ok) {
+      if (ok.why !== undefined) setProblem(ok.why);
+      return null;
     }
     setBusy(true);
     setProblem(undefined);
@@ -81,23 +79,16 @@ export function VaultItem() {
     const values = shownFields(item.kind, r.value);
     clearTimeout(timer.current);
     setShown(values);
-    if (!plain) timer.current = setTimeout(hide, REVEAL_MS);
+    timer.current = setTimeout(hide, REVEAL_MS);
     return values;
   };
 
-  // A plain variable shows as soon as the screen opens: there's nothing to guard.
-  const openedPlain = useRef(false);
-  useEffect(() => {
-    if (plain && item?.canReveal === true && !openedPlain.current && live) {
-      openedPlain.current = true;
-      void open("");
-    }
-  });
+  // A plain variable's value comes with the list: there's nothing to guard.
+  const values = plain && item?.value !== undefined ? { value: item.value } : shown;
 
   const copy = async (f: FieldSpec) => {
     // A shown value was unlocked a moment ago; a hidden one asks first.
-    const values = shown ?? (await open(`Copy ${f.label.toLowerCase()}`));
-    const value = values?.[f.key];
+    const value = (values ?? (await open(`Copy ${f.label.toLowerCase()}`)))?.[f.key];
     if (value === undefined || value === "") return;
     await Clipboard.setStringAsync(copyText(f.key, value), { ios: { localOnly: true, expiresAt: new Date(Date.now() + CLIPBOARD_MS) }, android: { isSensitive: true } });
     haptics.success();
@@ -108,7 +99,7 @@ export function VaultItem() {
   const onField = (f: FieldSpec) => {
     if (item?.canReveal !== true) return;
     haptics.tap();
-    if (shown === null) void open(`Show ${titleOf(item)}`);
+    if (values === null) void open(`Show ${titleOf(item)}`);
     else void copy(f);
   };
 
@@ -170,7 +161,7 @@ export function VaultItem() {
     ? "Only whoever added it, or an admin, can see its values."
     : plain
       ? "A plain variable: not a secret, so it shows as it is."
-      : shown === null
+      : values === null
         ? "Tap a field to see it, after Face ID. Tap it again to copy it."
         : "Shown for 30 seconds. A copied value stays on this phone and clears after a minute.";
 
@@ -189,8 +180,8 @@ export function VaultItem() {
           <FieldRow
             key={f.key}
             field={f}
-            value={shown?.[f.key]}
-            shown={shown !== null}
+            value={values?.[f.key]}
+            shown={values !== null}
             copied={copied === f.key}
             busy={busy}
             {...(item.canReveal && live ? { onPress: () => onField(f) } : {})}

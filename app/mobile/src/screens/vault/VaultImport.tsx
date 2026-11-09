@@ -14,7 +14,7 @@ import { CheckRow, errorWords, Problem, sheetOptions } from "../manage/parts";
 import { importItems, searchOnePassword, vaultErrorWords, vaultHub } from "./api";
 import { KIND_WORDS, KINDS } from "./model";
 import { useVaultNav, useVaultRoute, whoseOf } from "./parts";
-import type { VaultImportHit } from "./types";
+import type { VaultImportCandidate } from "./types";
 
 /** How long typing rests before the search goes. */
 const TYPED_MS = 400;
@@ -27,7 +27,7 @@ export function VaultImport() {
   const hub = useMemo(() => vaultHub(session), [session]);
   const { project } = whoseOf(state, key);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<readonly VaultImportHit[] | null>(null);
+  const [hits, setHits] = useState<readonly VaultImportCandidate[] | null>(null);
   const [searching, setSearching] = useState(true);
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -120,7 +120,14 @@ export function VaultImport() {
         groups.map((g) => (
           <ListSection key={g.kind} header={KIND_WORDS[g.kind].plural}>
             {g.hits.map((h) => (
-              <CheckRow key={h.ref} title={h.title} detail={[h.site, h.vault].filter((x) => x !== undefined && x !== "").join(" · ")} checked={ticked.has(h.ref)} disabled={busy} onPress={() => toggle(h.ref)} />
+              <CheckRow
+                key={h.ref}
+                title={h.title}
+                detail={h.imported !== undefined ? "Already in the vault" : [h.sites?.[0], h.vault].filter((x) => x !== undefined && x !== "").join(" · ")}
+                checked={ticked.has(h.ref)}
+                disabled={busy || h.imported !== undefined}
+                onPress={() => toggle(h.ref)}
+              />
             ))}
           </ListSection>
         ))
