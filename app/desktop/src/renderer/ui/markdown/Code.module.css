@@ -1,7 +1,8 @@
+/* A container can set the `--code-*` scale for what it holds (the chat's bubbles do). */
 .block {
   position: relative;
   min-width: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--code-radius, var(--radius-md));
   background: var(--sidebar);
   border: 1px solid var(--hairline);
 }
@@ -21,16 +22,16 @@
 }
 .pre {
   margin: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--code-pad-y, var(--space-2)) var(--code-pad-x, var(--space-3));
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
+  font-size: var(--code-size, var(--text-sm));
+  line-height: var(--code-leading, var(--leading-sm));
   color: var(--text);
   tab-size: 4;
   overflow-x: auto;
 }
 .noHead .pre {
-  padding-top: var(--space-2);
+  padding-top: var(--code-pad-y, var(--space-2));
 }
 .wrap {
   white-space: pre-wrap;
@@ -41,14 +42,14 @@
 }
 .line {
   display: block;
-  min-height: var(--leading-sm);
+  min-height: var(--code-leading, var(--leading-sm));
 }
 .inline {
-  padding: 0 3px;
+  padding: var(--code-inline-pad, 0 3px);
   border-radius: var(--radius-sm);
   background: var(--selected);
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: var(--code-inline-size, 0.92em);
   overflow-wrap: anywhere;
 }
 

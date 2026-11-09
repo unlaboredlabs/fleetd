@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 import { bubble, bubbleMax, fitWidth, jumbo, photoSize } from "./bubble";
 
 describe("bubble", () => {
-  // Measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots); change them only against it.
+  // Measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots), on Body's 22 pt leading
+  // (the bubble-type report's Balanced); change them only against it.
   it("keeps iMessage's geometry", () => {
     expect(bubble).toEqual({
       fontSize: 17,
-      lineHeight: 20,
+      lineHeight: 22,
       padX: 14,
       padY: 10,
-      radius: 20,
+      radius: 21,
       gap: 4,
-      burstGap: 10,
+      burstGap: 12,
       margin: 16,
       maxShare: 0.7,
       tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
@@ -20,10 +21,10 @@ describe("bubble", () => {
     });
   });
 
-  it("makes a one-line bubble a 40 pt capsule, a three-line one 80 pt", () => {
-    expect(bubble.lineHeight + 2 * bubble.padY).toBe(40);
+  it("makes a one-line bubble a 42 pt capsule, a three-line one 86 pt", () => {
+    expect(bubble.lineHeight + 2 * bubble.padY).toBe(42);
     expect(bubble.lineHeight + 2 * bubble.padY).toBe(2 * bubble.radius);
-    expect(3 * bubble.lineHeight + 2 * bubble.padY).toBe(80);
+    expect(3 * bubble.lineHeight + 2 * bubble.padY).toBe(86);
   });
 
   it("hangs the tail's tip under the bubble's corner, 9.3 pt in and 7.6 pt down", () => {
