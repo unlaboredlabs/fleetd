@@ -117,8 +117,10 @@ export interface State {
   readonly latest: Readonly<Record<Key, readonly ChatMessage[]>>;
   /** Each chat's newest page, read when search opens: what search looks through, with the chats opened. */
   readonly corpus: Readonly<Record<Key, readonly ChatMessage[]>>;
-  /** The open requests (requests_list); undefined until read on this connection. */
+  /** The open requests (requests_list); undefined until read, or as last seen before the app was closed (cache.ts). */
   readonly requests: readonly HumanRequest[] | undefined;
+  /** Whether the open requests were read from the hub since the app started, rather than only kept from before. */
+  readonly requestsRead: boolean;
   /** Approvals answered from here and on their way, by requestId. */
   readonly answering: Readonly<Record<string, true>>;
   /**
@@ -156,6 +158,7 @@ export const initial = (hub: HubState): State => ({
   latest: {},
   corpus: {},
   requests: undefined,
+  requestsRead: false,
   answering: {},
   cut: {},
   answerErrors: {},
@@ -190,6 +193,14 @@ export type Action =
 
 const chatOf = (s: State, key: Key): Chat => s.chats[key] ?? emptyChat;
 
+/**
+ * A chat as it opens before its latest page is read: the newest few messages the list holds, shown as they are (a
+ * cached chat, which the page starts over), rather than a stand-in. The page's older messages come in above them, off
+ * the screen's newest end, so nothing on screen moves.
+ */
+export const openingChat = (latest: readonly ChatMessage[] | undefined): Chat =>
+  latest === undefined || latest.length === 0 ? emptyChat : { ...emptyChat, messages: latest, cached: true };
+
 const withChat = (s: State, key: Key, chat: Chat): State => (chat === s.chats[key] ? s : { ...s, chats: { ...s.chats, [key]: chat } });
 
 /** The newest messages kept for a chat's preview. */
@@ -210,7 +221,7 @@ export const reduce = (s: State, a: Action): State => {
     case "frame":
       return applyFrame(s, a.frame, a.nowMs);
     case "chat_open":
-      return s.chats[a.key] === undefined ? withChat(s, a.key, emptyChat) : s;
+      return s.chats[a.key] === undefined ? withChat(s, a.key, openingChat(s.latest[a.key])) : s;
     case "resume": {
       const chat = s.chats[a.key];
       if (chat?.cached !== true) return s;
@@ -258,7 +269,7 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "requests": {
       const answering = Object.keys(s.cut).length === 0 ? s.answering : Object.fromEntries(Object.entries(s.answering).filter(([id]) => s.cut[id] === undefined));
-      return { ...s, requests: a.requests.filter((r) => r.state === "open"), answering, cut: {} };
+      return { ...s, requests: a.requests.filter((r) => r.state === "open"), requestsRead: true, answering, cut: {} };
     }
     case "screens":
       return { ...s, screens: { ...s.screens, [a.key]: a.sessions } };

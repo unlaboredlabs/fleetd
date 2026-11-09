@@ -2,13 +2,14 @@
 // full screen to pinch, zoom and share; and any other file, as a card with its kind, name and size that opens the
 // share sheet (Save to Files, another app). A picture's bubble reads its preview (session.preview, kept on disk), the
 // viewer the picture itself; a file is read only when it is opened, in pieces that resume after a drop.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { bubble, bubbleMax, photoSize } from "../bubble";
 import { fileSize } from "../chatView";
 import { glyphOf, kindOf, type AttachmentGetOutput, type FileGlyph, type HubError } from "../desktop";
 import { useSession } from "../hubContext";
+import { imageSize } from "../imageSize";
 import type { Typed } from "../hub/client";
 import { shareFile } from "../shareFile";
 import type { Key } from "../store";
@@ -21,16 +22,20 @@ import { SkeletonBlock } from "./Skeleton";
 
 /**
  * A picture's preview for its bubble, read from the hub or the disk: undefined while it comes, else the preview or why
- * it couldn't be had. One that couldn't is read again on `retry` (a tap) and each time the link is live again, never
- * kept as it failed.
+ * it couldn't be had; one already read, or on disk, from the first frame. One that couldn't is read again on `retry`
+ * (a tap) and each time the link is live again, never kept as it failed.
  */
 const usePreview = (chatKey: Key, attachmentId: string): { got: Typed<"attachment_get"> | undefined; retry: () => void } => {
   const session = useSession();
-  const [got, setGot] = useState<Typed<"attachment_get"> | undefined>(undefined);
+  const kept = (): Typed<"attachment_get"> | undefined => {
+    const output = session.keptPreview(attachmentId);
+    return output === undefined ? undefined : { ok: true, output };
+  };
+  const [got, setGot] = useState<Typed<"attachment_get"> | undefined>(kept);
   const [tries, setTries] = useState(0);
   useEffect(() => {
     let on = true;
-    setGot(undefined);
+    setGot((was) => (was?.ok === true && was.output.attachmentId === attachmentId ? was : kept()));
     void session.preview(chatKey, attachmentId).then((out) => {
       if (on) setGot(out);
     });
@@ -73,11 +78,14 @@ export function ImageBubble({
   const screen = useWindowDimensions();
   const { got: read, retry } = usePreview(chatKey, attachmentId);
   const got = read?.ok === true ? read.output : undefined;
-  const [aspect, setAspect] = useState<number | undefined>(undefined);
+  // Its shape from its header, at once; from the decoded image only for a header that can't be read.
+  const header = useMemo(() => (got === undefined ? undefined : imageSize(got.dataB64)), [got]);
+  const [measured, setMeasured] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (got === undefined) return;
-    Image.getSize(uriOf(got), (w, h) => setAspect(w / h), () => setAspect(4 / 3));
-  }, [got]);
+    if (got === undefined || header !== undefined) return;
+    Image.getSize(uriOf(got), (w, h) => setMeasured(w / h), () => setMeasured(4 / 3));
+  }, [got, header]);
+  const aspect = header === undefined ? measured : header.width / header.height;
   if (read?.ok === false)
     // Why the hub couldn't give it, and a tap reads it again.
     return (
