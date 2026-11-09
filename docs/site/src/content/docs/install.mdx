@@ -112,15 +112,16 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Build from source {#from-source}
 
-With a Rust toolchain:
+With [Bun](https://bun.sh):
 
 ```sh
 git clone https://github.com/unlaboredlabs/fleetd
-cd fleetd
-cargo build --release --locked -p fleetd
+cd fleetd/fleetd
+bun install --frozen-lockfile
+bun run compile
 ```
 
-The CLI is `target/release/fleetd`. Copy it to `~/.local/bin/fleetd`, or run it from there. A worker you add with
+The CLI is `fleetd/dist/fleetd`. Copy it to `~/.local/bin/fleetd`, or run it from there. A worker you add with
 `fleetd machine add` gets a copy of the hub's binary, so build once on the hub. Building the desktop app is covered in
 [CONTRIBUTING](https://github.com/unlaboredlabs/fleetd/blob/main/docs/CONTRIBUTING.md).
 

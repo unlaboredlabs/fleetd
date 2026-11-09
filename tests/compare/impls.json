@@ -1,27 +1,24 @@
 {
-  "//": "The implementations under test. Each step runs from `cwd` in bash; $SCRATCH is a fresh directory per step (deleted before its clean run, kept for the incremental one), so a clean build shares no cache with any other. A step that doesn't apply is null. A step with `after` runs once, warm, in that step's $SCRATCH (the test suite's run on its finished build). Paths are relative to the repo. build.ts runs every step on the same N CPUs and sets cargo's, make's and the Rust test harness's parallelism to N (--jobs).",
-  "rust": {
-    "bin": "target/release/fleetd",
-    "cwd": ".",
-    "touch": "crates/fleetd/src/hub/tasks/tools.rs",
-    "comment": "//",
-    "steps": {
-      "build": { "run": "cargo build --release -p fleetd", "env": { "CARGO_TARGET_DIR": "$SCRATCH" }, "artifact": "$SCRATCH/release/fleetd" },
-      "check": { "run": "cargo check -p fleetd --all-targets", "env": { "CARGO_TARGET_DIR": "$SCRATCH" } },
-      "testBuild": { "run": "cargo test -p fleetd -p fleetd-contracts --no-run", "env": { "CARGO_TARGET_DIR": "$SCRATCH" } },
-      "test": { "run": "cargo test -p fleetd -p fleetd-contracts", "env": { "CARGO_TARGET_DIR": "$SCRATCH" }, "after": "testBuild" }
-    }
-  },
+  "//": "The implementations under test. Each step runs from `cwd` in bash; $SCRATCH is a fresh directory per step (deleted before its clean run, kept for the incremental one), so a clean build shares no cache with any other. A step that doesn't apply is null. A step with `after` runs once, warm, in that step's $SCRATCH (the test suite's run on its finished build). Paths are relative to the repo. build.ts runs every step on the same N CPUs (--jobs).",
   "bun": {
-    "bin": "experimental/bun/dist/fleetd",
-    "cwd": "experimental/bun",
-    "touch": "experimental/bun/src/main.ts",
+    "bin": "fleetd/dist/fleetd",
+    "cwd": "fleetd",
+    "touch": "fleetd/src/main.ts",
     "comment": "//",
     "steps": {
-      "build": { "prepare": "rm -rf dist", "run": "bun run compile", "artifact": "dist/fleetd" },
-      "check": { "prepare": "find . -name '*.tsbuildinfo' -not -path './node_modules/*' -delete", "run": "bun run typecheck" },
+      "build": {
+        "prepare": "rm -rf dist",
+        "run": "bun run compile",
+        "artifact": "dist/fleetd"
+      },
+      "check": {
+        "prepare": "find . -name '*.tsbuildinfo' -not -path './node_modules/*' -delete",
+        "run": "bun run typecheck"
+      },
       "testBuild": null,
-      "test": { "run": "bun test" }
+      "test": {
+        "run": "bun test"
+      }
     }
   }
 }

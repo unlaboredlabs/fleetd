@@ -1,4 +1,4 @@
-// `node build.ts --impl <rust|bun> [--jobs N] [--steps build,check,testBuild,test] [--bin-out <path>] [--keep]`: build
+// `node build.ts --impl <name> [--jobs N] [--steps build,check,testBuild,test] [--bin-out <path>] [--keep]`: build
 // and check times for one implementation, from impls.json, so both run the same script. Every command runs on the same
 // N CPUs (taskset -c 0-<N-1>; --jobs or COMPARE_JOBS, default 2, this devbox's per-agent build share), with cargo's,
 // make's and the Rust test harness's parallelism set to N whatever the caller's environment says, so the two sides
@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { arg, has, impls, REPO, round, scratch, timed, writeResult } from "./lib.ts";
 
-const name = arg("--impl", "COMPARE_IMPL", "rust")!;
+const name = arg("--impl", "COMPARE_IMPL", "bun")!;
 const impl = impls()[name];
 if (impl === undefined) throw new Error(`unknown impl ${name}; impls.json has ${Object.keys(impls()).join(", ")}`);
 const wanted = arg("--steps")?.split(",");

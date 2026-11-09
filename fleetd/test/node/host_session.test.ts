@@ -267,7 +267,8 @@ test.skipIf(process.platform !== "linux")("two spawns of one session never sweep
     const [oldTool, newTool] = [old.toolPid(), next.toolPid()];
     process.kill(old.session.pid, "SIGKILL");
     await old.untilExit();
-    expect(gone(oldTool)).toBe(true);
+    // The sweep at the old claude's exit may still be ending its tree as the exit is read.
+    await until(() => gone(oldTool), 5_000, "the old tool went");
     expect(alive(newTool)).toBe(true);
     next.session.command(shutdown(0));
     await next.untilExit();

@@ -342,7 +342,7 @@ const netem = (port: number, command: string) =>
     c.on("error", reject);
   });
 
-/** The hub's database file under its home (the name is the implementation's: hub.sqlite in Rust's). */
+/** The hub's database file under its home (hub.sqlite). */
 const findDb = (hubHome: string): string => {
   const found = fs.readdirSync(hubHome, { recursive: true, encoding: "utf8" }).find((p) => /hub\.(sqlite|db)$/u.test(p));
   if (found === undefined) throw new Error(`no hub database under ${hubHome}`);

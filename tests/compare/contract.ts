@@ -1,7 +1,7 @@
 // `node contract.ts [--impl <name>] [--bin <fleetd>] [--json <file>]`: the wire contract, checked from outside. On a
 // throwaway fleet (hub, node, project) of the fleetd under test it checks that every frame and tool answer the apps
-// read decodes as its type in crates/fleetd-contracts/schema (the JSON Schemas the Rust types generate, and the apps'
-// TypeScript comes from): /healthz, `--version` and `help`, MCP's tool list and a read of each tool below as its
+// read decodes as its type in app/desktop/src/shared/contracts/schema (the JSON Schemas the hub decodes calls with,
+// kept with the apps' TypeScript): /healthz, `--version` and `help`, MCP's tool list and a read of each tool below as its
 // `<tool>.output`, /app's `ready`, `snapshot` and a call's `result` as AppServerMessage, a hub event on /app after a
 // write, and `fleetd status --json`. It also prints the surface (tool names, ready's features, snapshot keys) so
 // behaviour.ts can diff two implementations. Exit 0 when every check passed.
@@ -15,7 +15,7 @@ import { arg, REPO, scratch, target } from "./lib.ts";
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020") as new (o: object) => { compile: (s: object) => ((x: unknown) => boolean) & { errors?: unknown } };
 const addFormats = require("ajv-formats") as (a: unknown) => void;
-const SCHEMA = path.join(REPO, "crates/fleetd-contracts/schema");
+const SCHEMA = path.join(REPO, "app/desktop/src/shared/contracts/schema");
 const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: true });
 addFormats(ajv);
 // schemars' integer formats: the type and bounds already say it.

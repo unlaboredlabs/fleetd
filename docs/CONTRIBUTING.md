@@ -2,29 +2,31 @@
 
 ## Layout
 
-fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one static binary with no Node in it.
+fleetd is TypeScript on Bun, and the desktop and phone apps. The shipped `fleetd` is one file from
+`bun build --compile`: the hub, the node and the CLI.
 
-- `crates/fleetd`: the binary. `hub/` holds the MCP endpoint, app socket, leads, merge train, ledger and the rest;
-  `node/` is the per-machine sidecar that runs the agents; `cli/` is setup, `update`, the human commands and
-  `agent-mcp`, the agents' tools. The hub's SQLite schema matches the TypeScript fleetd it replaced, so an older hub's
-  database opens unchanged.
-- `crates/fleetd/src/node/runner`: drives the `claude` CLI over stream-json. Claude's stream-json output is not a
-  stable public API, so the runner accepts a pinned `claude` version range, and fixture tests
-  (`runner/fixtures/claude-<version>-*.jsonl`) hold it to recorded output. Widening the range may mean
+- `fleetd/`: fleetd itself; its README says how to build, test and run it. `src/hub/` holds the MCP endpoint, app
+  socket, leads, merge train, ledger and the rest; `src/node/` is the per-machine sidecar that runs the agents;
+  `src/cli/` is setup, `update`, the human commands and `agent-mcp`, the agents' tools.
+- `fleetd/src/node/runner`: drives the `claude` CLI over stream-json; each session runs under a host of its own
+  (`fleetd session-host`, `runner/host/`) that outlives the node. Claude's stream-json output is not a stable public
+  API, so the runner accepts a pinned `claude` version range, and fixture tests
+  (`fleetd/test/fixtures/runner/claude-<version>-*.jsonl`) hold it to recorded output. Widening the range may mean
   re-recording the fixtures in the same PR.
-- `crates/fleetd-contracts`: serde types for everything that crosses a wire between fleetd components, shared by the
-  binary and the app. `cargo run -p fleetd-contracts --bin fleetd-schema` rewrites the committed JSON Schemas in
-  `schema/` and the desktop app's TypeScript in `app/desktop/src/shared/contracts/generated/`; a test
-  (`schema::generated_contracts_are_current`) fails while either is out of date or hand-edited. A Rust enum a newer
-  hub may extend gets `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know
-  yet.
-- `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
+- `app/desktop/src/shared/contracts/`: the wire contract, everything that crosses a wire between fleetd's parts and the
+  apps: the TypeScript types (`contracts.ts`), which the hub, the node and both apps import, and the JSON Schemas
+  (`schema/`), which the hub decodes calls with and the app's fixtures are checked against. Both are kept by hand: a
+  change edits both, and `fleetd/test/contracts.test.ts` fails while they disagree. An enum a newer hub may extend is
+  `"x-open": true` in its schema and `Known<Name> | (string & {})` in TypeScript, so an app also admits values it
+  doesn't know yet.
+- `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace.
 - `app/mobile`: the phone app (Expo); its README says how to try it on the agents' Mac's simulator, and
   `scripts/phone-lab.sh up` gives it a seeded throwaway hub to pair with.
 - `tests/lab`: the factory lab (`factory/`, offline, in CI), and the tools that record claude's fixtures, the site's
-  captures and the demo.
+  captures and the demo. `tests/compare`: black-box tests and benchmarks of two builds side by side.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` is
-  the docs' Starlight site, built into `site/docs/` by the Vercel build; `crates/docsgen` writes its generated pages.
+  the docs' Starlight site, built into `site/docs/` by the Vercel build; `fleetd/scripts/docs.ts` writes its generated
+  pages.
 
 ## The desktop app
 
@@ -55,7 +57,7 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 
 Before every push, run `scripts/check.sh`; its header says what each check runs, and `ci.yml`'s comments say what
 CI runs. Run it after your last commit and rebase: it checks the worktree against `origin/main` as it fetches it then,
-so a migration main gained since, stale generated contracts, a fixture with no answer for a screen's new call, or the
+so a migration main gained since, a stale generated file, a fixture with no answer for a screen's new call, or the
 host name in a new file fails there instead of in CI.
 
 A fleetd writer can't push a tree it hasn't passed on (`.fleetd/pre-push.json`): a pass records the tree it checked,
@@ -63,14 +65,8 @@ so commit exactly that. Its last line says how it went: `check.sh: pushable <tre
 Too long for one command: start `scripts/check.sh --background`, then wait with Claude's Monitor tool running
 `scripts/check.sh --wait`, which prints that last line once the run ends (never a sleep loop). The tree passes once
 every check its changes touch has passed on it, in one run or several, so after a failure rerun only that check
-(`scripts/check.sh rust-tests`). A check's pass holds for any tree with the same inputs for it (`scripts/check.sh
---keys` prints each one's hash), so a desktop fix on a branch whose Rust checks passed doesn't run them again.
-Give each worktree its own Rust build folder (its `target/`; no `CARGO_TARGET_DIR` shared with another worktree): two
-checks building into one folder build the same test binary, and one can run the other's.
-
-`crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
-`darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and
-TLS uses webpki roots.
+(`scripts/check.sh fleetd`). A check's pass holds for any tree with the same inputs for it (`scripts/check.sh
+--keys` prints each one's hash), so a desktop fix on a branch whose fleetd check passed doesn't run it again.
 
 ## The site
 
@@ -78,14 +74,14 @@ TLS uses webpki roots.
 
 ## The merge train's checks
 
-The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s, `bun.yml`'s and
+The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s, `fleetd.yml`'s and
 `mac.yml`'s comments say which run where.
 
 ## Hub migrations
 
-Each change to the hub's database is one new SQL file in `crates/fleetd/src/hub/store/migrations/`, named for the
+Each change to the hub's database is one new SQL file in `fleetd/src/hub/store/migrations/`, named for the
 current UTC time: `YYYYMMDDHHMM_snake_case_name.sql` (`date -u +%Y%m%d%H%M`), opening with `--` comment lines on
-what it does. The build runs them in prefix order and fails on two with one prefix. A hub records each one it ran by
+what it does. `bun run gen` lists them in prefix order in `src/gen/migrations.ts`, and fails on two with one prefix. A hub records each one it ran by
 name with its file's SHA-256 (`migrations_applied`) and runs every one it hasn't, so a file that sorts before one a hub
 already ran still runs there; one that changed after it ran never runs again, and the hub warns at its start. Never
 edit, rename or remove a file that is on main: CI checks that a PR only adds files, each sorting after every one on
@@ -95,7 +91,7 @@ for you).
 
 ## Conventions
 
-- Rust edition 2024, no `unsafe`.
+- TypeScript on Bun, checked with tsc-rs (`bun run typecheck`).
 - fleetd never calls a model or usage API directly; Claude runs only through the `claude` CLI.
 - Tests cover real logic and observable behaviour, not wiring, and don't sleep or poll.
 - Conventional commit titles in plain language (`feat(hub): ...`, `fix(node): ...`), one branch per PR.

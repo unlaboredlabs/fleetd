@@ -1,7 +1,6 @@
 // Shared plumbing for the comparison harness: the implementations under test (impls.json), result files, /proc
 // sampling of a process's memory and CPU, and small statistics. Every bench treats a fleetd as a black box: a binary
-// given by FLEETD_BIN (or --bin), started and measured from outside, so the Rust and the Bun builds run the same
-// scripts.
+// given by FLEETD_BIN (or --bin), started and measured from outside, so two builds run the same scripts.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -52,11 +51,11 @@ export const arg = (flag: string, env?: string, fallback?: string): string | und
 export const has = (flag: string) => process.argv.includes(flag);
 
 /**
- * The implementation under test: `--impl <name>` (default `rust`) names its results directory; `--bin` or FLEETD_BIN
+ * The implementation under test: `--impl <name>` (default `bun`) names its results directory; `--bin` or FLEETD_BIN
  * the binary, else the impl's own default.
  */
 export const target = () => {
-  const name = arg("--impl", "COMPARE_IMPL", "rust")!;
+  const name = arg("--impl", "COMPARE_IMPL", "bun")!;
   const impl = impls()[name];
   const given = arg("--bin", "FLEETD_BIN") ?? (impl === undefined ? undefined : path.join(REPO, impl.bin));
   if (given === undefined) throw new Error(`no binary for ${name}: give --bin or FLEETD_BIN`);

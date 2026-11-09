@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 const CONTENT = "docs/site/src/content/docs";
-// Written whole by crates/docsgen from the code (fleetd help, the agent tools), so they say only what fleetd has.
+// Written whole by fleetd/scripts/docs.ts from the code (fleetd help, the agent tools), so they say only what fleetd has.
 const GENERATED = new Set(["reference/cli.md", "reference/agent-tools.md"]);
 const DOCS = fs
   .readdirSync(CONTENT, { recursive: true })

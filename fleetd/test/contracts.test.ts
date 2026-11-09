@@ -8,7 +8,7 @@ import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const DIR = join(import.meta.dir, "../../../app/desktop/src/shared/contracts");
+const DIR = join(import.meta.dir, "../../app/desktop/src/shared/contracts");
 const ts = readFileSync(join(DIR, "contracts.ts"), "utf8");
 type Schema = { [key: string]: unknown } & {
   type?: string;

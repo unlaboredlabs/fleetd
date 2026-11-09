@@ -1,5 +1,4 @@
-// `node report.ts [<a> <b>] [--out <file.md>]`: two implementations' result sets (results/<a>/, results/<b>/; default
-// rust and bun) as one markdown report: build and check times, the behaviour suites pass/fail side by side, then
+// `node report.ts [<a> <b>] [--out <file.md>]`: two builds' result sets (results/<a>/, results/<b>/) as one markdown report: build and check times, the behaviour suites pass/fail side by side, then
 // every runtime bench's numbers with b/a. A summary ({n, median, p90, …}) shows as its median and p90; a bench only
 // one side has run shows "-" for the other. Prints the markdown, and writes it with --out.
 import fs from "node:fs";
@@ -7,7 +6,8 @@ import path from "node:path";
 import { arg, RESULTS } from "./lib.ts";
 
 const positional = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !all[i - 1]?.startsWith("--"));
-const [a = "rust", b = "bun"] = positional;
+const [a, b] = positional;
+if (a === undefined || b === undefined) throw new Error("usage: node report.ts <a> <b> [--out <file.md>]");
 const root = arg("--results", "COMPARE_OUT") ?? RESULTS;
 type Json = Record<string, any>;
 const load = (impl: string) => {
@@ -60,7 +60,7 @@ for (const file of builds) {
   }
 }
 out();
-out("Each side runs on the same N CPUs (taskset), with cargo's, make's and the Rust test harness's parallelism set to N. Rust's times are cargo's own (\"Finished … in\"), which leave out any wait for one of the machine's build slots; `test` is the suite's run on its finished build (its wall time less cargo's build check).");
+out("Each side runs on the same N CPUs (taskset); `test` is the suite's run on its finished build.");
 out();
 
 out("## Behaviour");
