@@ -1,0 +1,481 @@
+{
+  "impl": "bun",
+  "bench": "behaviour",
+  "version": "fleetd 0.0.0 (protocol 1)",
+  "machine": {
+    "cpus": 32,
+    "cpuModel": "AMD Ryzen 9 9955HX 16-Core Processor",
+    "memGb": 59,
+    "kernel": "7.0.0-42-generic",
+    "loadavg": [
+      26.4,
+      29.85,
+      22.22
+    ],
+    "at": "2026-11-08T22:59:21.883Z"
+  },
+  "data": {
+    "suites": {
+      "factory:throughput": {
+        "ok": true,
+        "wallMs": 12338
+      },
+      "factory:self-healing": {
+        "ok": true,
+        "wallMs": 9348
+      },
+      "factory:lead-wake": {
+        "ok": true,
+        "wallMs": 20223
+      },
+      "cargo:closed_pipe": {
+        "ok": true,
+        "wallMs": 120954
+      },
+      "cargo:home_isolation": {
+        "ok": true,
+        "wallMs": 4909
+      },
+      "cargo:session_host": {
+        "ok": true,
+        "wallMs": 674
+      },
+      "contract": {
+        "ok": true,
+        "wallMs": 2819
+      },
+      "contract: GET /healthz is 200": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: fleetd --version": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: fleetd help": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP tools/list answers": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP fleetd_status decodes as fleetd_status.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP hub_info decodes as hub_info.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP project_get decodes as project_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP agents_list decodes as agents_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP orders_board decodes as orders_board.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP tasks_list decodes as tasks_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP events_list decodes as events_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP decisions_list decodes as decisions_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP profiles_list decodes as profiles_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP chat_history decodes as chat_history.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP metrics_get decodes as metrics_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP people_list decodes as people_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP skills_list decodes as skills_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP time_spans decodes as time_spans.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP time_breakdown decodes as time_breakdown.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP project_settings_get decodes as project_settings_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP automation_list decodes as automation_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP requests_list decodes as requests_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP changes_list decodes as changes_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP status_get decodes as status_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP memory_get decodes as memory_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP artifacts_list decodes as artifacts_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP checklist_get decodes as checklist_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP doctor_list decodes as doctor_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP sidebar_order_get decodes as sidebar_order_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP machine_roles decodes as machine_roles.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP screens_count decodes as screens_count.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP wake_list decodes as wake_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP claude_accounts_get decodes as claude_accounts_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP mcp_servers_get decodes as mcp_servers_get.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP setup_list decodes as setup_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP browser_sessions decodes as browser_sessions.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP navi_list decodes as navi_list.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP project_files decodes as project_files.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP usage_status decodes as usage_status.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app ready decodes as AppServerMessage": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app snapshot decodes as AppServerMessage": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app call fleetd_status answers a result": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app result decodes as AppServerMessage": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app fleetd_status decodes as fleetd_status.output": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app call sidebar_order_set": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: MCP decisions_record": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app hears a hub event after a write": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: /app event decodes as AppServerMessage": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: every /app frame decodes (5 frames)": {
+        "ok": true,
+        "wallMs": 0
+      },
+      "contract: fleetd status --json reads the hub": {
+        "ok": true,
+        "wallMs": 0
+      }
+    },
+    "surface": {
+      "mcpTools": [
+        "actions_list",
+        "agent_work",
+        "agents_list",
+        "approval_answer",
+        "artifact_get",
+        "artifacts_list",
+        "attachment_get",
+        "attachment_part",
+        "attachment_put",
+        "automation_create",
+        "automation_delete",
+        "automation_list",
+        "automation_pause",
+        "automation_rotate",
+        "automation_run",
+        "automation_runs",
+        "automation_update",
+        "browser_control",
+        "browser_recording_get",
+        "browser_retention_set",
+        "browser_sessions",
+        "cap_set",
+        "changes_list",
+        "chat_history",
+        "chat_nudge_clear",
+        "chat_pins_get",
+        "chat_pins_set",
+        "chat_send",
+        "chat_stop",
+        "checklist_get",
+        "checklist_remove",
+        "claude_account_test",
+        "claude_accounts_get",
+        "claude_choice_set",
+        "claude_hub_api_remove",
+        "claude_hub_api_set",
+        "claude_settings_set",
+        "claude_subscription_remove",
+        "claude_subscription_set",
+        "cloud_create",
+        "cloud_get",
+        "cloud_key_set",
+        "cloud_reset",
+        "cloud_resume",
+        "cloud_set",
+        "cloud_stop",
+        "cloud_test",
+        "decisions_list",
+        "decisions_overturn",
+        "decisions_record",
+        "decisions_search",
+        "device_revoke",
+        "doctor_fix",
+        "doctor_list",
+        "events_list",
+        "events_wait",
+        "fleetd_status",
+        "github_app_create",
+        "github_app_get",
+        "github_app_manifest",
+        "github_app_remove",
+        "github_app_test",
+        "github_connect",
+        "github_disconnect",
+        "hub_info",
+        "hub_link_add",
+        "hub_link_mint",
+        "hub_link_remove",
+        "hub_link_revoke",
+        "hub_links_get",
+        "hub_update",
+        "hub_update_settings",
+        "hub_update_status",
+        "invite_create",
+        "invite_revoke",
+        "lead_start",
+        "mac_code_create",
+        "mac_code_status",
+        "machine_add",
+        "machine_add_plan",
+        "machine_add_status",
+        "machine_claude_login",
+        "machine_hosts",
+        "machine_join",
+        "machine_remove",
+        "machine_roles",
+        "machine_roles_set",
+        "machine_screens_set",
+        "mcp_oauth_start",
+        "mcp_server_remove",
+        "mcp_server_set",
+        "mcp_server_test",
+        "mcp_servers_get",
+        "mcp_settings_set",
+        "memory_get",
+        "memory_import",
+        "memory_refresh_run",
+        "memory_set",
+        "memory_shared_get",
+        "memory_shared_set",
+        "memory_undo",
+        "metrics_get",
+        "navi_approvals",
+        "navi_approvals_set",
+        "navi_archive",
+        "navi_asks",
+        "navi_card_set",
+        "navi_create",
+        "navi_list",
+        "navi_purchases",
+        "navi_rename",
+        "navi_signins_forget",
+        "navi_site_revoke",
+        "navi_sites",
+        "onepassword_cards",
+        "onepassword_get",
+        "onepassword_remove",
+        "onepassword_set",
+        "onepassword_test",
+        "order_get",
+        "orders_board",
+        "pair_code_create",
+        "people_list",
+        "person_avatar_get",
+        "person_avatar_set",
+        "person_remove",
+        "person_set",
+        "pr_diff",
+        "pr_files",
+        "pr_get",
+        "pr_list",
+        "profile_create",
+        "profile_delete",
+        "profile_update",
+        "profiles_list",
+        "project_add",
+        "project_approvals",
+        "project_approvals_set",
+        "project_archive",
+        "project_asks",
+        "project_avatar_get",
+        "project_avatar_set",
+        "project_card_set",
+        "project_discover",
+        "project_env_set",
+        "project_files",
+        "project_get",
+        "project_icon_set",
+        "project_purchases",
+        "project_remove",
+        "project_repo_add",
+        "project_repo_list",
+        "project_repo_remove",
+        "project_set",
+        "project_settings_get",
+        "project_settings_set",
+        "project_signins_forget",
+        "project_site_revoke",
+        "project_sites",
+        "project_stop",
+        "prompt_get",
+        "prompt_set",
+        "push_badge",
+        "push_device_register",
+        "push_device_remove",
+        "push_devices_list",
+        "push_relay_set",
+        "requests_list",
+        "screen_end",
+        "screen_open",
+        "screens_count",
+        "secret_submit",
+        "session_prompt_get",
+        "setup_list",
+        "setup_test",
+        "sidebar_order_get",
+        "sidebar_order_set",
+        "skill_delete",
+        "skill_get",
+        "skill_install",
+        "skill_off",
+        "skill_revert",
+        "skill_set",
+        "skill_update",
+        "skills_list",
+        "status_get",
+        "steer_send",
+        "steer_withdraw",
+        "task_get",
+        "tasks_list",
+        "thread_tail",
+        "thread_window",
+        "time_breakdown",
+        "time_insights",
+        "time_spans",
+        "usage_resume",
+        "usage_status",
+        "wake_cancel",
+        "wake_list",
+        "wake_set",
+        "work_claim",
+        "work_done",
+        "work_list",
+        "workstream_list"
+      ],
+      "readyFeatures": [
+        "artifacts",
+        "browser_navigate",
+        "browser_sessions",
+        "deflate",
+        "frame_acks",
+        "navi_asks",
+        "navi_skills",
+        "presence",
+        "screen_open",
+        "screen_thumbs"
+      ],
+      "snapshotKeys": [
+        "attention",
+        "chats",
+        "cursor",
+        "machines",
+        "projects",
+        "slots",
+        "t"
+      ],
+      "eventTypes": [
+        "sidebar.order"
+      ]
+    }
+  }
+}
