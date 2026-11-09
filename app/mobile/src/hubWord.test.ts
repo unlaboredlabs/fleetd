@@ -132,7 +132,7 @@ describe("an admin's run, while the hub is live", () => {
 });
 
 describe("the hub's own word on its update (hub.update, the snapshot's update), for everyone", () => {
-  const base = { runId: "u1", from: "0.9.1", to: "0.9.2", startedAt: "2026-11-08T10:00:00Z" };
+  const base = { runId: "u1", from: "0.9.1", to: "0.9.2", startedAt: "2026-11-08T10:00:00Z", hub: "done", machines: [] };
   const ended = "2026-11-08T10:05:00Z";
   const endMs = Date.parse(ended);
   const live1 = step(initial({ phase: "connecting", hub: HUB, attempt: 0 }), { t: "state", state: live() }, T);
