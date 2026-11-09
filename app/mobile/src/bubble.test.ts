@@ -15,7 +15,6 @@ describe("bubble", () => {
       burstGap: 12,
       margin: 16,
       maxShare: 0.7,
-      tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
       photo: { share: 0.6285, tallest: 4 / 3, lowest: 110 },
       jumbo: { one: 72, oneLineHeight: 86, few: 48, fewLineHeight: 57, most: 3 },
     });
@@ -25,18 +24,6 @@ describe("bubble", () => {
     expect(bubble.lineHeight + 2 * bubble.padY).toBe(42);
     expect(bubble.lineHeight + 2 * bubble.padY).toBe(2 * bubble.radius);
     expect(3 * bubble.lineHeight + 2 * bubble.padY).toBe(86);
-  });
-
-  it("hangs the tail's tip under the bubble's corner, 9.3 pt in and 7.6 pt down", () => {
-    // The bar turns about its middle; its tip is its outer bottom corner.
-    const { width, height, angle, inset, drop } = bubble.tail;
-    const a = (angle * Math.PI) / 180;
-    const middle = { x: -(inset + width / 2), y: drop - height / 2 };
-    const tip = { x: middle.x + (width / 2) * Math.cos(a) - (height / 2) * Math.sin(a), y: middle.y + (width / 2) * Math.sin(a) + (height / 2) * Math.cos(a) };
-    expect(tip.x).toBeCloseTo(-9.3, 1);
-    expect(tip.y).toBeCloseTo(7.6, 1);
-    // Its rounded tip stays inside the gap to the next burst.
-    expect(tip.y - bubble.tail.tipRadius).toBeLessThan(bubble.burstGap);
   });
 
   it("caps a bubble's width at a share of the screen", () => {

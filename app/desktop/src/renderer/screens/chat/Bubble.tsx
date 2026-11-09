@@ -1,5 +1,5 @@
 // A message as bubbles: the lead's on the left, yours on the right in the accent, a run from one author drawn as one
-// stack with the tail on its last bubble. A lead message the hub split shows one bubble per part, its blocks as
+// stack, its inner corners tight. A lead message the hub split shows one bubble per part, its blocks as
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.

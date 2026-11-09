@@ -165,8 +165,6 @@
   --code-inline-size: 0.87em;
   --code-inline-pad: 1px 4px;
   position: relative;
-  /* The tail's pseudo-elements paint under the text, over the bubble's own fill. */
-  isolation: isolate;
   min-width: 0;
   max-width: 100%;
   padding: 7px 13px 8px;
@@ -176,7 +174,7 @@
 .bubble.wide {
   box-sizing: border-box;
 }
-/* A run reads as one stack: its inner corners tighten, and its last bubble has the tail. */
+/* A run reads as one stack: its inner corners tighten; its outer ones keep the bubble's radius. */
 .theirs:not(.first) {
   border-top-left-radius: var(--tight);
 }
@@ -188,40 +186,6 @@
 }
 .mineBubble:not(.last) {
   border-bottom-right-radius: var(--tight);
-}
-.last.theirs::before,
-.last.mineBubble::before,
-.last.theirs::after,
-.last.mineBubble::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  bottom: 0;
-  height: 18px;
-}
-.last.theirs::before {
-  left: -6px;
-  width: 18px;
-  background: var(--bubble);
-  border-bottom-right-radius: 14px;
-}
-.last.theirs::after {
-  left: -9px;
-  width: 9px;
-  background: var(--bg);
-  border-bottom-right-radius: 9px;
-}
-.last.mineBubble::before {
-  right: -6px;
-  width: 18px;
-  background: var(--accent-deep);
-  border-bottom-left-radius: 14px;
-}
-.last.mineBubble::after {
-  right: -9px;
-  width: 9px;
-  background: var(--bg);
-  border-bottom-left-radius: 9px;
 }
 /*
  * Yours, in the deep accent. The prose inside reads its colours from the tokens, so they are set again for the fill:
