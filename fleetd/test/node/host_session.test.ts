@@ -290,7 +290,9 @@ test.skipIf(process.platform !== "linux")("shutdown interrupts the run, then esc
     const [events, exit] = await fake.untilExit();
     // SIGTERM is ignored by both, so only the SIGKILL step ends them.
     expect([exit.code, exit.signal]).toEqual([null, 9]);
-    expect(gone(tool)).toBe(true);
+    // Killed, it may still be a zombie for a moment: an escaped child is reaped by the nearest subreaper (an agent's
+    // session host, when the tests run under one), not at once by init.
+    await until(() => gone(tool), 5_000, "the escaped tool went");
     // The node stopped it: the cut run is interrupted, not failed.
     expect(events).toEqual([{ RunEnded: { run_id: runId, outcome: "Interrupted", usage: null } }]);
     // The interrupt went in before stdin closed.
