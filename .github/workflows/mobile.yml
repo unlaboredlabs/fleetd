@@ -80,7 +80,8 @@ jobs:
             site/vercel.json
 
   mobile:
-    # Types (with the desktop modules the app imports) and the client's unit tests.
+    # Types (with the desktop modules the app imports) and the client's unit tests. Its name is a fast check in
+    # .fleetd/train.json: rename both in one PR.
     name: mobile
     needs: mobile-scope
     if: ${{ !cancelled() && !inputs.ios && needs.mobile-scope.outputs.app != 'false' }}
@@ -101,13 +102,25 @@ jobs:
       - run: npm test
 
   android:
-    # A release APK, debug-signed (installable with adb or by opening it on the phone), for arm64 phones and x86_64
-    # emulators.
+    # A release APK, debug-signed (installable with adb or by opening it on the phone). A push to main and a manual run
+    # build it for arm64 phones and x86_64 emulators; a pull request (and the train's batch) for x86_64 alone, what the
+    # hub's Android emulators install, which compiles the same code in half the time. mobile-release.yml's builds keep
+    # every ABI. Gradle's build cache and ccache (the native code) are main's: a pull request reads them, main saves.
     name: mobile (android)
     needs: mobile-scope
     if: ${{ !cancelled() && !inputs.ios && needs.mobile-scope.outputs.app != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a,x86_64' }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+      # The libraries' native builds use precompiled headers, which ccache caches only with these; `expo prebuild`
+      # writes the android project anew each run, so its headers' times say nothing.
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+      # CMake reads these as every project's compiler launcher: the libraries' native code and the app's.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     defaults:
       run:
         working-directory: app/mobile
@@ -125,11 +138,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: ccache
+        run: |
+          sudo apt-get install -y --no-install-recommends ccache
+          ccache --version | head -n 1
+      - uses: actions/cache/restore@v5
+        with:
+          path: .ccache
+          key: ccache-android-${{ github.sha }}
+          restore-keys: ccache-android-
       - run: npm ci --no-audit --no-fund
       - run: npx expo prebuild --platform android --clean --no-install
       - name: Build
         working-directory: app/mobile/android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
+        run: |
+          ccache --zero-stats
+          ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures="$ABIS"
+          ccache --show-stats
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: .ccache
+          key: ccache-android-${{ github.sha }}
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-android-apk

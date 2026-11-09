@@ -24,18 +24,20 @@ function qaShards(os: string): string[] {
     .map((entry) => Object.entries(entry).reduce((name, [k, v]) => name.replaceAll(`\${{ matrix.${k} }}`, String(v)), qa.name!));
 }
 
-test("the train's fast checks are Linux jobs of ci.yml and fleetd.yml, and every Linux QA shard", () => {
-  // fleetd.yml runs on every PR's push as ci.yml does: a scope step, never a paths filter, so it always reports.
-  expect(workflow("fleetd.yml").on?.pull_request?.paths).toBeUndefined();
-  const jobs = [...Object.entries(workflow("ci.yml").jobs), ...Object.entries(workflow("fleetd.yml").jobs)];
+test("the train's fast checks are Linux jobs of ci.yml, fleetd.yml and mobile.yml, and every Linux QA shard", () => {
+  // fleetd.yml and mobile.yml run on every PR's push as ci.yml does: a scope step or job, never a paths filter, so each
+  // check always reports.
+  for (const name of ["fleetd.yml", "mobile.yml"]) expect(workflow(name).on?.pull_request?.paths).toBeUndefined();
+  const jobs = ["ci.yml", "fleetd.yml", "mobile.yml"].flatMap((name) => Object.entries(workflow(name).jobs));
   const shards = qaShards("ubuntu-latest");
   expect(shards).toHaveLength(4);
   for (const shard of shards) expect(settings.fastChecks).toContain(shard);
   expect(settings.fastChecks).toContain("fleetd");
+  expect(settings.fastChecks).toContain("mobile");
   for (const check of settings.fastChecks) {
     if (shards.includes(check)) continue;
     const job = jobs.find(([id, j]) => (j.name ?? id) === check)?.[1];
-    expect(job ? job["runs-on"] : `${PATH} names ${check}, which no job of ci.yml or fleetd.yml is`).toBe("ubuntu-latest");
+    expect(job ? job["runs-on"] : `${PATH} names ${check}, which no job of ci.yml, fleetd.yml or mobile.yml is`).toBe("ubuntu-latest");
   }
 });
 
