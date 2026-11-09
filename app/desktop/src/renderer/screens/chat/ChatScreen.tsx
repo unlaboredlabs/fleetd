@@ -1,14 +1,15 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
-// top. The top bar says what needs you after the title (what the lead waits on you for, a block, what there is to look
-// at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped
-// reading, under a "New" divider. Its settings (where its connections, sign-ins and approvals are) are a click away in
-// the title; your own (Only me) project with no repo has its name in the box and everyday starters, not a codebase's.
+// top. The conversation scrolls on under the window's top row, where its title floats as a glass capsule that says what
+// needs you after the name (what the lead waits on you for, a block, what there is to look at, a red main), and is
+// just the name when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
+// divider. Its settings (where its connections, sign-ins and approvals are) are a click away in a capsule beside the
+// title; your own (Only me) project with no repo has its name in the box and everyday starters, not a codebase's.
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
-import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
+import { Button, Capsule, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -220,16 +221,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen],
   );
 
+  const notice = view?.held === true && !view.offline && data.loadError !== undefined;
+  const under = !data.missing && rows !== undefined && !empty && !notice;
+
   return (
     <div
       className={s.screen}
+      // The conversation scrolls on under the top row's glass and leaves its room itself; anything else starts below.
+      data-under={under || undefined}
       data-screen={
         data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : offline ? "chat.offline" : "chat.loading"
       }
     >
       <FrameTitle
+        glass
         title={title || undefined}
-        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={22} own={bot} />}
+        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={24} own={bot} />}
         detail={
           data.missing ? undefined : (
             <AttentionLine
@@ -251,23 +258,25 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         {view?.held === true ? (
           // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
           // lead is doing now isn't known from it.
-          <span className={s.state}>
+          <Capsule>
             <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
-          </span>
+          </Capsule>
         ) : null}
         {summary !== undefined && !data.missing ? (
-          <Button
-            variant="quiet"
-            iconOnly
-            aria-label={title === "" ? "Project settings" : `${title}’s settings`}
-            title={`${title === "" ? "Project" : title}’s settings: its connections, sign-ins, approvals and memory`}
-            onClick={() => navigate({ id: "settings", tab: "projects", for: key })}
-          >
-            <Settings />
-          </Button>
+          <Capsule>
+            <Button
+              variant="quiet"
+              iconOnly
+              aria-label={title === "" ? "Project settings" : `${title}’s settings`}
+              title={`${title === "" ? "Project" : title}’s settings: its connections, sign-ins, approvals and memory`}
+              onClick={() => navigate({ id: "settings", tab: "projects", for: key })}
+            >
+              <Settings />
+            </Button>
+          </Capsule>
         ) : null}
       </FrameTitle>
-      {view?.held === true && !view.offline && data.loadError !== undefined ? (
+      {notice ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
         <div className={s.notice} role="alert">
           <Text size="sm" tone="danger">
@@ -303,7 +312,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         <EmptyChat project={project} title={title} plain={plain} />
       ) : (
         <BubbleActionsContext.Provider value={actions}>
-          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
+          <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
         </BubbleActionsContext.Provider>
       )}
       {data.missing ? null : (

@@ -220,6 +220,14 @@ const click = async (name: string) => {
   act(() => b.click());
   await settle();
 };
+/** The agents capsule: the panel's toggle. */
+const toggle = () => host.querySelector<HTMLButtonElement>("button[data-opens='panel']");
+const flip = async () => {
+  const b = toggle();
+  if (b === null) throw new Error("no agents capsule");
+  act(() => b.click());
+  await settle();
+};
 const go = async (hash: string) => {
   act(() => {
     window.location.hash = hash;
@@ -241,14 +249,14 @@ const resize = async (width: number) => {
 it("is open on a first launch, and opens and closes with its toggle as the window left it last launch", async () => {
   await mount();
   expect(panel()).not.toBeNull();
-  expect(button("Hide the panel")?.getAttribute("aria-pressed")).toBe("true");
-  await click("Hide the panel");
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("true");
+  await flip();
   expect(panel()).toBeNull();
 
   unmount();
   await mount();
   expect(panel()).toBeNull();
-  await click("Show the panel");
+  await flip();
   expect(panel()).not.toBeNull();
 
   unmount();
@@ -267,7 +275,7 @@ it("slides out when its toggle closes it, and goes at once when you leave the pr
     expect(panel()).toBeNull();
     await go(CHAT);
     expect(panel()?.parentElement?.dataset["motion"]).toBeUndefined();
-    await click("Hide the panel");
+    await flip();
     expect(panel()?.parentElement?.dataset["motion"]).toBe("out");
   } finally {
     slide.remove();
@@ -295,7 +303,8 @@ it("opens on a PR a link names, goes back to the list, and Esc steps back out", 
   await press("Escape");
   expect(panel()).toBeNull();
   expect(window.location.hash).toBe(CHAT);
-  expect(document.activeElement).toBe(button("Show the panel"));
+  expect(document.activeElement).toBe(toggle());
+  expect(toggle()?.getAttribute("aria-pressed")).toBe("false");
   await go(`${CHAT}/prs`);
   expect(panel()).not.toBeNull();
 });
@@ -305,7 +314,7 @@ it("hides itself in a narrow window, shows there with its toggle, and widening r
   expect(panel()).not.toBeNull();
   await resize(900);
   expect(panel()).toBeNull();
-  await click("Show the panel");
+  await flip();
   expect(panel()).not.toBeNull();
   // Narrowed again later, it hides again; widened, it is as you left it there.
   await resize(1400);

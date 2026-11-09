@@ -1,15 +1,16 @@
-// The app frame: the sidebar of projects down the left (the macOS traffic lights sit in its top row, over the window's
-// translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
+// The app frame: the sidebar of projects floating inset down the left (the macOS traffic lights sit in its top row,
+// over the window's translucent material), the top row floating over the screen beside it (the window's drag region,
+// where a chat floats its title and actions as glass, and the agents capsule that opens the panel), and the
 // screen the route names: a project's lead chat, with its agents, PRs and checklist in the panel on the right (panel.tsx), or
 // Status, Time or Settings. Navigation is the hash (routes.ts); `#/` opens the project you last had open. With several
 // hubs the screen is on its route's hub, inside that hub's scope, and each hub has a watcher
-// (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge.
-import { PanelLeft, Search } from "lucide-react";
+// (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
+// panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the agents capsule opens
+// the panel too. ⌘K, not a button, opens the palette.
 import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
-import { display } from "../../../shared/shortcuts";
-import { AppFrame, Button, TopBar } from "../../ui";
-import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
+import { AppFrame, TopBar } from "../../ui";
+import { PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
 import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
@@ -35,8 +36,6 @@ import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
-
-const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
@@ -282,51 +281,25 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     [],
   );
 
-  const toggle = (
-    <Button
-      variant="quiet"
-      iconOnly
-      aria-label={sidebar.hidden ? "Show the sidebar" : "Hide the sidebar"}
-      title={`${sidebar.hidden ? "Show" : "Hide"} the sidebar (${display("sidebar.toggle", platform)})`}
-      aria-pressed={!sidebar.hidden}
-      onClick={sidebar.toggle}
-    >
-      <PanelLeft />
-    </Button>
-  );
   // Settings' pages are in its sidebar, so it shows whatever the toggle says.
   const settings = shown.id === "settings";
   const showSidebar = chrome && (settings || !sidebar.hidden);
   // Its width is the frame's variable: a drag moves it on the root alone, and only its end renders the frame again.
   const root = useRef<HTMLDivElement>(null);
 
-  const top = (
-    <TopBar
-      leading={chrome && !showSidebar ? toggle : undefined}
-      trailing={
-        chrome ? (
-          // The shortcut is the label: the key you learn, not a word to read every time.
-          <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} aria-label="Commands" title="Commands" onClick={() => openPalette()} />
-        ) : undefined
-      }
-    />
-  );
+  // The chat's conversation scrolls under the top row; every other screen starts below it.
+  const under = chrome && shown.id === "project";
+  const top = <TopBar />;
 
   return (
     <div ref={root} className={s.root} data-screen="shell" style={{ "--sidebar-w": `${String(sidebarPx)}px` } as CSSProperties}>
       <AppFrame
         translucent
         topBar={top}
+        under={under}
         // At the window's top right, open or closed, so the click that opened the panel closes it in the same place.
         corner={chrome && panel.project !== null ? <PanelToggle panel={panel} /> : undefined}
-        sidebarTop={
-          settings ? undefined : (
-            <>
-              {toggle}
-              <NewButton go={go} />
-            </>
-          )
-        }
+        sidebarTop={settings ? undefined : <NewButton go={go} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
@@ -350,7 +323,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         aside={chrome && panel.shown ? <PanelSlot panel={panel} sidebarPx={showSidebar ? sidebarPx : 0} /> : undefined}
         asideOpen={panel.open}
       >
-        <div className={s.column}>
+        <div className={s.column} data-under={under || undefined}>
           {/* Fixture data must never pass for a live hub. */}
           {window.fleetd.fixture !== null ? (
             <div className={s.fixtureBanner} role="status">

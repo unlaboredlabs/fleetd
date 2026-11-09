@@ -21,6 +21,7 @@ import { KeptWorktrees } from "./KeptWorktrees";
 import { SkillSavedLine } from "./SkillSaved";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
+import { TOP_BAR } from "../../../shared/frame";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
@@ -285,6 +286,8 @@ export function ChatList(props: {
   sent?: number;
   /** What came in while the chat was open, by row key (arrivalsOf). */
   entering?: ReadonlyMap<string, Arrival> | undefined;
+  /** It scrolls under the window's top row: its first row starts below it, and a row shown is brought in below it. */
+  under?: boolean;
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
@@ -405,6 +408,7 @@ export function ChatList(props: {
         paddingEnd={8}
         followOutput
         startAtEnd
+        paddingStart={props.under === true ? TOP_BAR : 0}
         className={s.scroller}
         virtualizerRef={virtualizer}
         aria-label="Conversation with the lead"

@@ -137,7 +137,7 @@ const follow = async (a: HTMLAnchorElement | undefined) => {
 
 it("opens an agent, the panel's agents and its PRs from the strip's lanes, even when the panel was closed", async () => {
   await mount("");
-  act(() => host.querySelector<HTMLButtonElement>("button[aria-label='Hide the panel']")?.click());
+  act(() => host.querySelector<HTMLButtonElement>("button[data-opens='panel'][aria-pressed='true']")?.click());
   expect(panel()).toBeNull();
 
   // A click on the strip opens its lanes: a row per agent, and the PRs they are on.

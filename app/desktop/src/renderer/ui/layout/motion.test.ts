@@ -26,12 +26,12 @@ const OUT = '.side[data-motion="out"],\n.aside[data-motion="out"]';
 it("slides each side by a transition of transform alone, never keyframes, from and to its own edge", () => {
   expect(decls(rule(layout, IN))).toEqual({ transition: "transform var(--dur-base) var(--ease-out)" });
   expect(layout).not.toMatch(/@keyframes|animation/u);
-  // In from its edge: the side's first style, then its place.
+  // In from its edge: the side's first style, then its place. The sidebar floats inset, so it travels its inset too.
   const starting = layout.slice(layout.indexOf("@starting-style {"));
-  expect(decls(rule(starting, '.side[data-motion="in"]'))).toEqual({ transform: "translateX(-100%)" });
+  expect(decls(rule(starting, '.side[data-motion="in"]'))).toEqual({ transform: "translateX(calc(-100% - var(--side-inset)))" });
   expect(decls(rule(starting, '.aside[data-motion="in"]'))).toEqual({ transform: "translateX(100%)" });
   // Out to it.
-  expect(decls(rule(layout, '.side[data-motion="out"]'))).toMatchObject({ transform: "translateX(-100%)" });
+  expect(decls(rule(layout, '.side[data-motion="out"]'))).toMatchObject({ transform: "translateX(calc(-100% - var(--side-inset)))" });
   expect(decls(rule(layout, '.aside[data-motion="out"]'))).toMatchObject({ transform: "translateX(100%)" });
   // Nothing in the frame transitions a size or the grid: the chat lays out once, at the toggle.
   expect(layout).not.toMatch(/transition[^;]*(width|grid|inset|left|right|margin|padding|all)/u);

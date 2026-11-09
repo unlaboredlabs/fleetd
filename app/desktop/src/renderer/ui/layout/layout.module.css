@@ -1,15 +1,12 @@
-/* The frame: the sidebar down the left from the top of the window, the top row and the content beside it. Content
-   keeps the QA gate's edge inset. */
+/* The frame: the sidebar floating inset down the left, the screen beside it, and over the screen's top the window's top
+   row, which has no bar of its own: what a screen puts there floats over it (the chat's glass capsules), and the
+   chat's conversation scrolls on under them. Content keeps the QA gate's edge inset. */
 .frame {
   position: relative;
-  /* What the corner (below) takes from the right end of the row it sits in; none without one. */
-  --corner-w: 0px;
   display: grid;
-  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  grid-template-areas:
-    "side top"
-    "side main";
+  grid-template-areas: "side main";
   height: 100%;
   min-height: 0;
   /* A side sliding in or out passes the window's edge: no scrollbar for it. */
@@ -18,32 +15,24 @@
 }
 .noSidebar {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    "top"
-    "main";
+  grid-template-areas: "main";
 }
-/* A panel on the right, from the window's top as the sidebar is: the top row stops at its edge, and the panel's own
-   first row (its tabs) sits beside it, so the right side has one header row, not two. */
+/* A panel on the right, from the window's top: the top row stops at its edge, and the panel's own first row (its
+   tabs) sits beside it, as tall. */
 .withAside {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) auto;
-  grid-template-areas:
-    "side top aside"
-    "side main aside";
+  grid-template-areas: "side main aside";
 }
 .noSidebar.withAside {
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "top aside"
-    "main aside";
+  grid-template-areas: "main aside";
 }
-.frame > .topBar {
-  grid-area: top;
-}
-/* The window's top right, over whichever row ends there (the top row, or the aside's first): the panel's toggle, in one
-   place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css),
-   and the frame puts it last so no row's drag box comes after it. */
+/* The window's top right, over whichever row ends there (the top row, or the aside's first): the agents capsule, in
+   one place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css),
+   and the frame puts it last so no row's drag box comes after it. --corner-w is its width (Layout.tsx useCornerWidth);
+   the row it ends leaves --corner-room, that and the gaps either side of it. */
 .withCorner {
-  --corner-w: calc(var(--control) + var(--space-1) + var(--space-3));
+  --corner-room: calc(var(--corner-w, 0px) + var(--space-3) + var(--space-2));
 }
 .corner {
   position: absolute;
@@ -55,7 +44,14 @@
   height: var(--top-bar-height);
 }
 .withCorner:not(.withAside) > .topBar {
-  padding-inline-end: var(--corner-w);
+  padding-inline-end: var(--corner-room);
+}
+/* Over the main area's top, in the same cell: drawn after it, so it is the one that takes clicks there. */
+.frame > .topBar {
+  grid-area: main;
+  align-self: start;
+  position: relative;
+  z-index: 2;
 }
 .main {
   grid-area: main;
@@ -77,13 +73,20 @@
   background: var(--bg);
 }
 
+/* The sidebar floats in from the window's edges as a card of its own, as a macOS 26 sidebar does: its own tone, a
+   hairline drawn inside its edge and a soft shadow under it, the traffic lights in its top left corner. */
 .side {
   grid-area: side;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  margin: var(--side-inset);
+  border-radius: var(--side-radius);
   background: var(--sidebar);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    0 1px 3px var(--shadow);
 }
 /* The sidebar's right edge, a line with no width of its own: what it holds (a resize edge) sits over it. */
 .sideEdge {
@@ -92,40 +95,50 @@
   position: relative;
   z-index: 2;
   width: 0;
+  margin-inline-end: var(--side-inset);
 }
-/* The sidebar's first row: the traffic lights on macOS, then its own controls. Part of the drag region. */
+/* The sidebar's first row: the traffic lights on macOS, then its own controls, centred on the window's top row as the
+   chat's capsules are. Part of the drag region. */
 .sideTop {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-1);
-  height: var(--top-bar-height);
-  padding-inline: max(var(--space-3), var(--traffic-lights-inset)) var(--space-2);
+  height: calc(var(--top-bar-height) - 2 * var(--side-inset));
+  padding-inline: max(var(--space-3), var(--traffic-lights-inset) - var(--side-inset)) var(--space-2);
   -webkit-app-region: drag;
   user-select: none;
 }
 
-/* The window's own frame on macOS: the sidebar is the window's vibrancy (main/index.ts), so nothing here paints
-   over it. The page and the top row stay opaque. Static: the window server composites it, the page never repaints
-   for it. Everywhere else (Linux, Reduce transparency) the sidebar is the plain --sidebar tone. */
-:root[data-vibrancy] .translucent,
+/* The window's own frame on macOS: the sidebar card is the window's vibrancy (main/index.ts), so nothing paints over
+   it, and the page around it is painted by the card's own wide shadow in the page's colour (a clear card can't cut a
+   hole in a painted frame). The page and the top row stay opaque. Static: the window server composites it, the page
+   never repaints for it. Everywhere else (Linux, Reduce transparency) the card is the plain --sidebar tone. */
+:root[data-vibrancy] .translucent {
+  background: transparent;
+}
 :root[data-vibrancy] .translucent > .side:not([data-motion="out"]) {
   background: transparent;
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    0 1px 3px var(--shadow),
+    0 0 0 calc(6 * var(--side-inset)) var(--bg);
 }
 
 /* A side its toggle opens (AppFrame's useSlide) slides in from the window's edge, already at its own width, while the
    main area beside has laid out once for it; one it closes has left the grid already, so it is drawn over the main
    area's edge (opaque there) as it slides out. Only transform moves: nothing beside it lays out mid-way. A transition,
    not keyframes, so a toggle mid-way turns it back from where it is. Short, and out sooner than in; with reduced
-   motion the durations are 0 and it just comes and goes. motion.test.ts pins these. */
+   motion the durations are 0 and it just comes and goes. motion.test.ts pins these. The sidebar travels its inset
+   too, so none of it is left at the edge. */
 .side[data-motion],
 .aside[data-motion] {
   transition: transform var(--dur-base) var(--ease-out);
 }
 @starting-style {
   .side[data-motion="in"] {
-    transform: translateX(-100%);
+    transform: translateX(calc(-100% - var(--side-inset)));
   }
   .aside[data-motion="in"] {
     transform: translateX(100%);
@@ -143,36 +156,40 @@
 }
 .side[data-motion="out"] {
   left: 0;
-  width: var(--sidebar-w);
-  transform: translateX(-100%);
+  width: calc(var(--sidebar-w) - 2 * var(--side-inset));
+  transform: translateX(calc(-100% - var(--side-inset)));
 }
 .aside[data-motion="out"] {
   right: 0;
   transform: translateX(100%);
 }
 
+/* The top row: no bar, no line, nothing of its own but the window's drag region. Over a list that scrolls under it
+   (the chat, `under`), the page's colour and a soft blur fade in towards the window's top edge, as macOS 26's scroll edge
+   does, so what passes under the glass softens before it goes. data-floats tells the QA checks it is drawn over content by design. */
 .topBar {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   height: var(--top-bar-height);
-  padding-inline: var(--space-4) var(--space-3);
-  border-bottom: 1px solid var(--hairline);
-  background: var(--bg);
+  padding-inline: var(--space-3);
   -webkit-app-region: drag;
   user-select: none;
+}
+.under > .topBar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 calc(-1 * var(--space-4));
+  background: linear-gradient(to bottom, var(--bg) 45%, color-mix(in srgb, var(--bg) 85%, transparent) 70%, transparent);
+  backdrop-filter: blur(4px);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  pointer-events: none;
 }
 /* With the sidebar hidden, the top row starts after the traffic lights. */
 .noSidebar > .topBar {
   padding-inline-start: max(var(--space-3), var(--traffic-lights-inset));
-}
-.topLeading,
-.topTrailing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: none;
 }
 .topCenter {
   display: flex;
@@ -198,6 +215,58 @@
 .frameDetail {
   flex: 0 1000 auto;
   min-width: 0;
+}
+
+/* Glass: a capsule floating over what scrolls under it (the chat's title and its actions). The material is the
+   page's own colour, blurred and saturated from what passes under it, under a tint a step off --bg; a hairline inside
+   its edge, a brighter rim along its top and a soft lift under it make it a thing on the page rather than a pill
+   painted on it. Never clipped: the bot in the title hops above its box. */
+.capsule,
+.frameTitle[data-glass] {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  height: calc(var(--top-bar-height) - 2 * var(--side-inset));
+  padding: 0 var(--space-1-5);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+  -webkit-app-region: drag;
+}
+/* The title's capsule: its avatar sits as far in from the capsule's round end as from its top, and the words keep the
+   room they need, the page's controls pushed to the row's far end. */
+.frameTitle[data-glass] {
+  flex: 0 1 auto;
+  gap: var(--space-2);
+  margin-inline-end: auto;
+  padding-inline: var(--space-1-5) var(--space-4);
+}
+/* A capsule's buttons are round at its ends, and quiet until pointed at. */
+.capsule > button {
+  height: calc(var(--top-bar-height) - 2 * var(--side-inset) - 2 * var(--space-1-5));
+  min-width: calc(var(--top-bar-height) - 2 * var(--side-inset) - 2 * var(--space-1-5));
+  border-radius: 999px;
+  color: var(--text);
+}
+.capsule > button[aria-pressed="true"] {
+  background: var(--glass-pressed);
+}
+.capsule > button > svg {
+  width: 16px;
+  height: 16px;
+}
+/* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
+@media (prefers-reduced-transparency: reduce) {
+  .capsule,
+  .frameTitle[data-glass] {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
 }
 
 .sidebar {

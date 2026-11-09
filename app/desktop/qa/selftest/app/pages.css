@@ -37,6 +37,11 @@ pre, code, .mono { font-family: monospace; }
 .drag-stack { position: relative; }
 .over-bar { position: absolute; top: 0; left: 40px; }
 .no-drag { -webkit-app-region: no-drag; }
+/* A window's floating top row (data-floats) over a list that scrolls under it: the row drags, its glass hides what passes
+   under it, and the list's rows passing under are not its controls. */
+.float-stage { position: relative; }
+.float-row { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; height: 32px; -webkit-app-region: drag; }
+.glass { padding: 0 8px; background: #ffffffb3; backdrop-filter: blur(12px); }
 /* Popovers: a fixed positioner (transparent, as Radix's) with the surface inside it; the stage places what they cover. */
 .stage { position: relative; display: flow-root; height: 320px; }
 .at { position: absolute; left: 0; margin: 0; white-space: nowrap; }
