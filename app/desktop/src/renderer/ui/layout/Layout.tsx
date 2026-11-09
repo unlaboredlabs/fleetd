@@ -10,7 +10,9 @@ import {
   type TransitionEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChevronRight } from "lucide-react";
 import { cx } from "../lib/cx";
+import { Tooltip } from "../primitives/Tooltip";
 import { Text } from "../text/Text";
 import { Truncate } from "../text/Truncate";
 import s from "./layout.module.css";
@@ -20,14 +22,12 @@ const TitleSlot = createContext<HTMLElement | null>(null);
 const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undefined);
 
 /**
- * The window: a sidebar floating inset down the left (the macOS traffic lights sit in its top corner), and beside it
- * the main area (which owns its own scrolling), with the top row floating over its top: no bar, just what the screen
+ * The window: a sidebar flush down the left, its own soft tone (the macOS traffic lights sit in its first row), and
+ * beside it the main area (which owns its own scrolling), with the top row floating over its top: no bar, just what the screen
  * puts there. `sidebarTop` is the sidebar's first row, beside the traffic lights; without a sidebar the top row starts
  * after them. `under` says the screen's content scrolls on under the top row (the chat), which then fades it as it
  * goes. `aside` is a panel on the right, from the very top too, as wide as its content says: its own first row sits
- * beside the top row. `corner` stays at the window's top right whether the aside shows or not (the agents capsule, so
- * a second click in the same place undoes the first); the top row, or the aside's first row, leaves it room, as wide as
- * it is (--corner-w).
+ * beside the top row.
  *
  * The sidebar and the aside slide in from the window's edge as their toggle opens them and out to it as it closes
  * them (useSlide): the frame lays out once, at the toggle, and only their transform moves after it, so the chat
@@ -47,7 +47,6 @@ export function AppFrame(props: {
   asideOpen?: boolean;
   /** The screen's content scrolls under the top row rather than starting below it. */
   under?: boolean;
-  corner?: ReactNode;
   /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
   translucent?: boolean;
   children: ReactNode;
@@ -56,20 +55,18 @@ export function AppFrame(props: {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const side = useSlide(props.sidebarOpen, props.sidebar, props.sidebarTop);
   const aside = useSlide(props.asideOpen, props.aside);
-  const [frameRef, cornerRef] = useCornerWidth(Boolean(props.corner));
+  const mainRef = useGlide(aside.attrs["data-motion"]);
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
-        <div
-          ref={frameRef}
-          className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.under && s.under, props.translucent && s.translucent, props.className)}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, props.under && s.under, props.translucent && s.translucent, props.className)}>
           {side.kept === null ? null : (
             <div id="sidebar" className={s.side} {...side.attrs}>
               <div className={s.sideTop}>{side.kept[1]}</div>
               {side.kept[0]}
             </div>
           )}
-          <main className={s.main}>{props.children}</main>
+          <main ref={mainRef} className={s.main}>{props.children}</main>
           {/* After the main area it floats over: Electron takes app-region boxes in document order, so the row's drag
               box and its controls' no-drag ones win over anything under them. */}
           {props.topBar}
@@ -81,12 +78,6 @@ export function AppFrame(props: {
               {aside.kept[0]}
             </div>
           )}
-          {/* Last: Electron takes app-region boxes in document order, so the aside's drag row would cover it. */}
-          {props.corner ? (
-            <div ref={cornerRef} className={s.corner} data-floats="">
-              {props.corner}
-            </div>
-          ) : null}
         </div>
       </TitleSlot.Provider>
     </SetTitleSlot.Provider>
@@ -94,26 +85,39 @@ export function AppFrame(props: {
 }
 
 /**
- * The corner's room, --corner-w on the frame: its width as it lays out (a count in it widens it), set before paint and
- * again as it resizes, so the row it sits at the end of never runs under it.
+ * The main area's glide as the panel comes or goes: the frame lays the main area out once, at its new width, and its
+ * content (centred, as the chat's is) would jump sideways by half the change. Instead it starts where it was and
+ * glides to its place on the panel's own curve: a transform only, so it rewraps once, at the click, and nothing lays out
+ * mid-way. The pill stays put: it sits at the main area's leading edge, which the panel never moves.
  */
-function useCornerWidth(shown: boolean) {
-  const frame = useRef<HTMLDivElement>(null);
-  const box = useRef<HTMLDivElement>(null);
+function useGlide(motion: "in" | "out" | undefined) {
+  const main = useRef<HTMLElement>(null);
+  const width = useRef(0);
+  // Its width as last laid out: a window resize keeps it current, and the effect below reads it before the observer
+  // has seen the panel's change.
   useLayoutEffect(() => {
-    const el = box.current;
-    const root = frame.current;
-    if (!shown || el === null || root === null) return;
-    const set = () => root.style.setProperty("--corner-w", `${String(Math.ceil(el.getBoundingClientRect().width))}px`);
-    set();
-    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(set);
-    watch?.observe(el);
-    return () => {
-      watch?.disconnect();
-      root.style.removeProperty("--corner-w");
-    };
-  }, [shown]);
-  return [frame, box] as const;
+    const el = main.current;
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => (width.current = el.getBoundingClientRect().width));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const el = main.current;
+    if (el === null) return;
+    const now = el.getBoundingClientRect().width;
+    const was = width.current;
+    width.current = now;
+    if (motion === undefined || was === 0 || was === now || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const style = getComputedStyle(el);
+    const duration = parseFloat(style.getPropertyValue(motion === "in" ? "--dur-panel-in" : "--dur-panel-out")) || 0;
+    const easing = style.getPropertyValue("--ease-panel").trim() || "ease-out";
+    const shift = (was - now) / 2;
+    for (const m of el.children) {
+      if (m instanceof HTMLElement) m.animate([{ transform: `translateX(${String(shift)}px)` }, { transform: "none" }], { duration, easing });
+    }
+  }, [motion]);
+  return main;
 }
 
 /** Whether the element's transform moves now; without a transition (reduced motion, no styles) its end never comes. */
@@ -192,32 +196,77 @@ export function TopBar(props: { className?: string }) {
   );
 }
 
+/** What a glass FrameTitle opens when it is a button (the chat's pill and its panel). */
+export interface TitlePress {
+  readonly onPress: () => void;
+  /** What it opens shows now: the button stays pressed, its chevron turned back. */
+  readonly pressed: boolean;
+  readonly label: string;
+  /** Its tooltip: what a click does, and the shortcut that does the same. */
+  readonly tip: string;
+  /** data-opens, as the app's other openers say what they open. */
+  readonly opens: string;
+  /** The id of what it opens, while it shows. */
+  readonly controls: string;
+}
+
 /**
  * A screen's header, in the frame's top row rather than a header bar of the screen's own: every page's one header
  * style. `title` is the page's name (its heading), `detail` a quiet line beside it (text, or a line of its own),
  * `lead` what comes before it (a way back), and `children` the page's controls and state, at the end. `glass` floats
  * it as a capsule over a screen that scrolls under the top row (the chat), its controls then in Capsules of their own.
+ * With `press` the glass capsule is a button (the chat's pill, which opens its panel): it reads as one at rest, by its
+ * edge and a chevron towards where what it opens comes from, brightens under the pointer, gives a little as it is
+ * pressed, and stays pressed, its chevron turned back, while what it opens shows.
  */
-export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; glass?: boolean; children?: ReactNode }) {
+export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; glass?: boolean; press?: TitlePress | undefined; children?: ReactNode }) {
   const slot = useContext(TitleSlot);
   if (slot === null) return null;
+  const press = props.press;
+  const title =
+    props.title === undefined ? null : press === undefined ? (
+      <Truncate as="h1" strong className={s.frameHeading}>
+        {props.title}
+      </Truncate>
+    ) : (
+      // In a button, the name is its words: cut with an ellipsis, the whole of it in the button's label and tooltip.
+      <span className={cx(s.frameHeading, s.pressName)}>{props.title}</span>
+    );
+  const detail =
+    props.detail == null ? null : typeof props.detail === "string" ? (
+      <Truncate size="xs" tone="quiet" className={s.frameDetail}>
+        {props.detail}
+      </Truncate>
+    ) : (
+      props.detail
+    );
   return createPortal(
     <>
-      <span className={s.frameTitle} data-glass={props.glass === true ? "" : undefined}>
-        {props.lead}
-        {props.title === undefined ? null : (
-          <Truncate as="h1" strong className={s.frameHeading}>
-            {props.title}
-          </Truncate>
-        )}
-        {props.detail == null ? null : typeof props.detail === "string" ? (
-          <Truncate size="xs" tone="quiet" className={s.frameDetail}>
-            {props.detail}
-          </Truncate>
-        ) : (
-          props.detail
-        )}
-      </span>
+      {press === undefined ? (
+        <span className={s.frameTitle} data-glass={props.glass === true ? "" : undefined}>
+          {props.lead}
+          {title}
+          {detail}
+        </span>
+      ) : (
+        <Tooltip content={press.tip} side="bottom">
+          <button
+            type="button"
+            className={s.frameTitle}
+            data-glass=""
+            data-opens={press.opens}
+            aria-pressed={press.pressed}
+            aria-label={press.label}
+            aria-controls={press.pressed ? press.controls : undefined}
+            onClick={press.onPress}
+          >
+            {props.lead}
+            {title}
+            {detail}
+            <ChevronRight className={s.pressChevron} aria-hidden />
+          </button>
+        </Tooltip>
+      )}
       {props.children}
     </>,
     slot,

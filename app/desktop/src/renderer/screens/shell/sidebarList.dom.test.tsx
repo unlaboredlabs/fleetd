@@ -134,6 +134,23 @@ describe("one list", () => {
     expect([...host.querySelectorAll("[class*=jump]")].map((j) => j.textContent)).toEqual(["1", "2", "3"]);
   });
 
+  it("numbers the pins first while ⌘ is held, each in its dot's place before its name, then the list on from them", () => {
+    const want = { word: "approve" as const, count: 1, label: "A command to approve" };
+    mount([{ ...ADA, pinned: true, want }, { ...HOME, pinned: true }, STOREFRONT], true);
+    const pins = [...host.querySelectorAll<HTMLElement>("[class*=pinCell]")];
+    expect(pins.map((c) => [c.querySelector("[class*=jump]")?.textContent, c.querySelector("[class*=pinTitle]")?.textContent])).toEqual([
+      ["1", "Ada"],
+      ["2", "Home"],
+    ]);
+    // The number stands in for the dot while ⌘ is held.
+    expect(pins[0]?.querySelector("[class*=dot]")).toBeNull();
+    expect(button("storefront").querySelector("[class*=jump]")?.textContent).toBe("3");
+
+    mount([{ ...ADA, pinned: true, want }, { ...HOME, pinned: true }, STOREFRONT]);
+    expect(host.querySelector("[class*=jump]")).toBeNull();
+    expect(host.querySelector("[class*=pinCell] [class*=dot]")).not.toBeNull();
+  });
+
   it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
     const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
     mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);

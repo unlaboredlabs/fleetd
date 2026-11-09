@@ -10,7 +10,7 @@ import { AT, card, lane, live, project, snapshot } from "../../src/data/fixtures
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { LiveStrip } from "../live";
 import { useRoute } from "../shell/navigation";
-import { PanelSlot, PanelToggle, useProjectPanel } from "../shell/panel";
+import { PanelSlot, useProjectPanel } from "../shell/panel";
 import { InlineText, Message } from "./text";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -90,7 +90,8 @@ function Harness({ text }: { text: string }) {
       <div data-testid="event">
         <InlineText text={text} project={project} />
       </div>
-      <PanelToggle panel={panel} />
+      {/* The chat's pill, which opens and closes the panel. */}
+      <button type="button" data-opens="panel" aria-pressed={panel.shown} onClick={panel.toggle} />
       <PanelSlot panel={panel} sidebarPx={240} />
     </TooltipProvider>
   );
