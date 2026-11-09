@@ -70,9 +70,9 @@ describe("Rename, Only me and Archive", () => {
 });
 
 describe("A project's screen", () => {
-  it("reads what runs, its orders, checklist, last two weeks' merges, profiles and skills side by side", async () => {
+  it("reads what runs, its orders, checklist, last two weeks' merges, profiles, skills and DMs' count side by side", async () => {
     const { hub, session, calls } = setup();
-    const info = readInfo(session, SHOP, NOW, true);
+    const info = readInfo(session, SHOP, NOW, { skills: true, dms: true });
     const projectRef = REF;
     expect(calls("agents_list").at(-1)?.input).toEqual({ projectRef });
     expect(calls("checklist_get").at(-1)?.input).toEqual({ projectRef });
@@ -80,18 +80,21 @@ describe("A project's screen", () => {
     expect(calls("pr_list").at(-1)?.input).toEqual({ projectRef, closedSince: "2026-10-14T10:00:00.000Z" });
     expect(calls("profiles_list").at(-1)?.input).toEqual({ projectRef });
     expect(calls("skills_list").at(-1)?.input).toEqual({ projectRef });
+    expect(calls("agent_messages").at(-1)?.input).toEqual({ projectRef, limit: 1 });
     hub.answer("agents_list", { agents: [{ laneId: "l1", role: "lead", status: "working", title: "Lead", projectRef, projectTitle: "storefront" }], at: AT });
     hub.answer("checklist_get", { items: [{ id: 1, state: "todo", text: "Ship it", updatedAt: AT }], projectRef });
     hub.answer("orders_board", { orders: [], trains: [], at: AT });
     hub.fail("pr_list", "github", "GitHub didn't answer.");
     hub.answer("profiles_list", { profiles: [], models: [], efforts: [], modelsFrom: "builtin" });
     hub.answer("skills_list", { skills: [{ name: "weekly-invoices", description: "", origin: "project" }] });
+    hub.answer("agent_messages", { messages: [], more: true, total: 8 });
     const got = await info;
     expect(got.agents).toHaveLength(1);
     expect(got.checklist).toHaveLength(1);
     expect(got.orders).toEqual([]);
     expect(got.prs).toBeUndefined();
     expect(got.skills).toMatchObject([{ name: "weekly-invoices" }]);
+    expect(got.dms).toBe(8);
     expect(got.error).toMatchObject({ message: "GitHub didn't answer." });
   });
 
@@ -99,7 +102,7 @@ describe("A project's screen", () => {
     const { hub, session } = setup();
     const parts: object[] = [];
     let done = false;
-    void readInfo(session, SHOP, NOW, false, (got) => parts.push(got)).then(() => (done = true));
+    void readInfo(session, SHOP, NOW, { skills: false, dms: false }, (got) => parts.push(got)).then(() => (done = true));
     hub.answer("agents_list", { agents: [{ laneId: "T1", role: "implementer", status: "working", title: "Fix it", projectRef: REF, projectTitle: "storefront" }], at: AT });
     await flush();
     expect(parts).toEqual([{ agents: [expect.objectContaining({ laneId: "T1" })] }]);
@@ -120,11 +123,12 @@ describe("A project's screen", () => {
     expect(withPart({ agents: [], checklist: [] }, { agents: [], error: first })).toEqual({ agents: [], checklist: [], error: first });
   });
 
-  it("leaves its skills out on a hub that doesn't keep them", () => {
+  it("leaves its skills and DMs out on a hub that doesn't keep them", () => {
     const { session, calls } = setup();
-    void readInfo(session, SHOP, NOW, false);
+    void readInfo(session, SHOP, NOW, { skills: false, dms: false });
     expect(calls("agents_list")).toHaveLength(1);
     expect(calls("skills_list")).toEqual([]);
+    expect(calls("agent_messages")).toEqual([]);
   });
 
   it("checks a profile for its agents, keeping the others and leaving the default out", async () => {
