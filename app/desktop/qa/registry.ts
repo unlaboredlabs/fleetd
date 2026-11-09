@@ -1115,7 +1115,8 @@ export const screens: readonly Screen[] = [
     }),
   ),
   // W574: Ada dragged up from the list beside billing's lone pin joins the pins after it, the two to a row; then billing
-  // dragged down out of the pins leaves them, and Ada's pin sits alone in the middle.
+  // dragged down out of the pins leaves them, and Ada's pin sits alone in the middle; Ada out too, and back through the
+  // first pin's place, which shows while a chat is dragged with nothing pinned.
   {
     id: "shell",
     route: CHAT,
@@ -1143,6 +1144,23 @@ export const screens: readonly Screen[] = [
       const left = await middle(pins.first());
       await drag(left, { x: left.x, y: ada.y + 60 });
       await expect(pins).toHaveText([/Ada/u]);
+      // Ada out too: no pins. Picked up again, the first pin's place shows above the list, and Ada dropped there is
+      // pinned.
+      const lone = await middle(pins.first());
+      await drag(lone, { x: lone.x, y: ada.y + 60 });
+      await expect(pins).toHaveCount(0);
+      const row = await middle(nav.locator("[data-reorder-row]").filter({ hasText: "Ada" }).first());
+      await page.mouse.move(row.x, row.y);
+      await page.mouse.down();
+      await page.mouse.move(row.x, row.y + 40, { steps: 6 });
+      const zone = nav.locator('[class*="pinZone"]');
+      await expect(zone).toHaveText("Drop here to pin");
+      const place = await middle(zone);
+      await page.mouse.move(place.x, place.y, { steps: 12 });
+      await expect(zone).toHaveAttribute("data-pinning", "true");
+      await page.mouse.up();
+      await expect(pins).toHaveText([/Ada/u]);
+      await expect(zone).toHaveCount(0);
     },
   },
   {

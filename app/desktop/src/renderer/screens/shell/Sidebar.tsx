@@ -13,7 +13,7 @@
 //
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
@@ -291,14 +291,21 @@ function ProjectGroup(props: {
   const name = (key: string) => rowsByKey.get(key)?.project.title ?? "";
   // The pins lift and move inside their grid, and the hub keeps your order; the other rows' order is their activity's,
   // and they only glide to it.
-  // A pin dragged down past them is unpinned; a chat dragged up past the others is pinned where it is let go.
+  // A pin dragged down past them is unpinned; a chat dragged up past the others is pinned where it is let go. Either
+  // stays inside its own hub's group: let go past it, it goes back.
   const grid = useRef<HTMLDivElement>(null);
+  const group = useRef<HTMLElement>(null);
+  const within = () => {
+    const box = group.current?.getBoundingClientRect();
+    return [box?.top ?? -Infinity, box?.bottom ?? Infinity] as const;
+  };
   const pins = useReorder({
     keys: pinned,
     name,
     onMove: (order) => pin(layer, rows ?? [], order),
     settle: SPRING,
     grid: { columns: PIN_COLUMNS },
+    within,
     out: (key, way) => {
       if (way === "down") pin(layer, rows ?? [], pinned.filter((k) => k !== key));
     },
@@ -316,6 +323,7 @@ function ProjectGroup(props: {
     onMove: () => undefined,
     settle: SPRING,
     fixed: true,
+    within,
     out: (key, way, at) => {
       if (way === "up") pinOn(key, pinPlace([...(grid.current?.children ?? [])].map((c) => c.getBoundingClientRect()), at));
     },
@@ -357,7 +365,7 @@ function ProjectGroup(props: {
   const wanting = rows?.filter((p) => p.want !== undefined).length ?? 0;
 
   return (
-    <section className={s.group} aria-label={named ? hub.label : "Projects"}>
+    <section ref={group} className={s.group} aria-label={named ? hub.label : "Projects"}>
       {named ? (
         <button type="button" className={s.groupHead} aria-expanded={!collapsed} onClick={props.onToggle} data-hub-group={hub.id}>
           {collapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
@@ -383,6 +391,13 @@ function ProjectGroup(props: {
         </div>
       ) : (
         <>
+          {/* With nothing pinned yet, a chat being dragged has somewhere to go: a slim place for the first pin. */}
+          {pins.shown.length === 0 && reorder.lifted ? (
+            <div className={s.pinZone} data-pinning={reorder.leaving === "up" || undefined}>
+              <Pin aria-hidden />
+              Drop here to pin
+            </div>
+          ) : null}
           {pins.shown.length === 0 ? null : (
             <div
               ref={grid}

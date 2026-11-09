@@ -203,6 +203,9 @@ function Bar() {
   );
 }
 
+/** A hub's group of chats: the whole sidebar, its one hub's (Sidebar.tsx keeps a drag inside its own hub's). */
+const GROUP = DOMRect.fromRect({ x: 0, y: -10_000, width: 240, height: 20_000 });
+
 describe("a row dropped in the sidebar", () => {
   const ROW = 28;
   // Each row ROW px tall in its list, drawn as far off its place as its transform says.
@@ -213,6 +216,7 @@ describe("a row dropped in the sidebar", () => {
     // Only pinned rows lift.
     stored = refs("a", "b", "c");
     layout.mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "SECTION") return GROUP;
       const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
       const by = Number(/translateY\((-?[\d.]+)px\)/.exec(this.style.transform)?.[1] ?? 0);
       return DOMRect.fromRect({ x: 0, y: at * ROW + by, width: 200, height: ROW });
@@ -291,6 +295,7 @@ describe("the rows around a row dragged in the sidebar", () => {
     // Where each row was drawn at the last read of the layout: a transition set after it starts there.
     const drawn = new Map<HTMLElement, number>();
     layout.mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "SECTION") return GROUP;
       for (const r of rows()) drawn.set(r, slot(r) + translated(r));
       return DOMRect.fromRect({ x: 0, y: slot(this) + translated(this), width: 200, height: ROW });
     });

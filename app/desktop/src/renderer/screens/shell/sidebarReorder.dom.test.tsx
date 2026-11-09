@@ -87,6 +87,8 @@ const mount = (rows: SidebarProject[] = ROWS) => {
 // place as its transform says. Stacked so, the pins' grid is one column, and moves only up and down; "the pins' grid"
 // below lays them out two to a row, as the sidebar does.
 const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+/** A hub's group of chats: the whole sidebar, its one hub's (Sidebar.tsx keeps a drag inside its own hub's). */
+const GROUP = DOMRect.fromRect({ x: 0, y: -10_000, width: 240, height: 20_000 });
 const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
 /** A row's name, or a pin's. */
 const NAME = "[class*=name], [class*=pinTitle]";
@@ -111,6 +113,7 @@ beforeEach(() => {
   root = createRoot(host);
   drawn = new Map();
   layout.mockImplementation(function (this: HTMLElement) {
+    if (this.tagName === "SECTION") return GROUP;
     for (const r of host.querySelectorAll<HTMLElement>("[data-reorder-row]")) drawn.set(r, slot(r) + translated(r));
     const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
     return DOMRect.fromRect({ x: 0, y: at * ROW + translated(this), width: 200, height: ROW });
@@ -394,6 +397,7 @@ describe("near the edge of a long sidebar", () => {
     Object.defineProperty(body, "scrollTop", { get: () => scrollTop, set: (v: number) => (scrollTop = Math.max(0, Math.min(400, v))) });
     const rect = layout.getMockImplementation();
     layout.mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "SECTION") return GROUP;
       return this === body ? DOMRect.fromRect({ x: 0, y: 0, width: 240, height: 200 }) : (rect?.call(this) ?? new DOMRect());
     });
     let queued: FrameRequestCallback[] = [];
@@ -551,6 +555,7 @@ describe("the pins' grid", () => {
   const cell = (title: string) => rows("Projects").find((r) => nameOf(r) === title) ?? host;
   beforeEach(() => {
     layout.mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "SECTION") return GROUP;
       const list = this.parentElement;
       const at = list === null ? 0 : [...list.children].indexOf(this);
       const [dx, dy] = moved(this);
@@ -602,13 +607,20 @@ describe("the pins' grid", () => {
 describe("pinning and unpinning by drag", () => {
   // The pins stacked from the top, ROW apart; the other chats' list GAP below them. The sidebar's rows come from the
   // Shell, which takes the pins saved (pins.ts usePins, pins.dom.test.tsx): here, what is saved is the pins.
+  // With no pins, the first pin's drop zone, while it shows, pushes the list ZONE further down. The hub's group spans
+  // `group`.
   const GAP = 100;
+  const ZONE = 48;
+  let group: DOMRect;
   const unpinned = (title: string) => ({ ...row(title), pinned: false });
+  const zone = () => host.querySelector<HTMLElement>("[class*=pinZone]");
   beforeEach(() => {
+    group = GROUP;
     layout.mockImplementation(function (this: HTMLElement) {
+      if (this.tagName === "SECTION") return group;
       const list = this.parentElement;
       const at = list === null ? 0 : [...list.children].indexOf(this);
-      const top = list?.className.includes("rows") === true ? GAP : 0;
+      const top = list?.className.includes("rows") === true ? GAP + (zone() === null ? 0 : ZONE) : 0;
       return DOMRect.fromRect({ x: 0, y: top + at * ROW + translated(this), width: 200, height: ROW });
     });
   });
@@ -675,6 +687,70 @@ describe("pinning and unpinning by drag", () => {
     expect(saved()).toEqual([]);
     // The release was the drop's, not a click on the row.
     expect(went).toEqual([]);
+  });
+
+  it("opens a chat on a press that wobbles inside its row, and lifts it only once the pointer leaves the row", async () => {
+    mount([row("api"), unpinned("web"), unpinned("misc")]);
+    const el = button("web");
+    const middle = GAP + ROW / 2;
+    pointer(el, "pointerdown", middle);
+    pointer(window, "pointermove", middle + 6, 3);
+    pointer(window, "pointermove", middle - 10, -2);
+    expect(host.querySelector("[data-lifted]")).toBeNull();
+    pointer(el, "pointerup", middle - 10);
+    act(() => el.click());
+    expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "web" }, message: null }]);
+    pointer(el, "pointerdown", middle);
+    pointer(window, "pointermove", middle - ROW);
+    expect(host.querySelector("[data-lifted]")?.textContent).toContain("web");
+    pointer(window, "pointerup", middle - ROW);
+    await settle(SETTLE_MS + 20);
+  });
+
+  it("shows the first pin's place while a chat is dragged with none pinned, keeping the chat under the pointer", async () => {
+    mount([unpinned("web"), unpinned("misc")]);
+    expect(zone()).toBeNull();
+    // misc lifted: the zone pushed the list down under it, and it stays where the pointer is.
+    const from = GAP + ROW + ROW / 2;
+    pointer(button("misc"), "pointerdown", from);
+    pointer(window, "pointermove", from + ROW);
+    expect(zone()?.textContent).toBe("Drop here to pin");
+    expect(zone()?.hasAttribute("data-pinning")).toBe(false);
+    const lifted = host.querySelector<HTMLElement>("[data-lifted]");
+    expect((lifted?.getBoundingClientRect().top ?? 0) + ROW / 2).toBe(from + ROW);
+    // Over the zone (above the list), it would pin, and says so.
+    pointer(window, "pointermove", GAP + ZONE / 2);
+    expect((lifted?.getBoundingClientRect().top ?? 0) + ROW / 2).toBe(GAP + ZONE / 2);
+    expect(zone()?.hasAttribute("data-pinning")).toBe(true);
+    pointer(window, "pointerup", GAP + ZONE / 2);
+    await settle(SETTLE_MS + 20);
+    expect(saved()).toEqual([["misc"]]);
+    expect(zone()).toBeNull();
+  });
+
+  it("shows no zone with pins already: the pins are the place", async () => {
+    mount([row("api"), unpinned("web"), unpinned("misc")]);
+    await carry("misc", GAP - 10, { hold: true });
+    expect(zone()).toBeNull();
+    expect(grid()?.hasAttribute("data-pinning")).toBe(true);
+    pointer(window, "pointerup", GAP - 10);
+    await settle(SETTLE_MS + 20);
+  });
+
+  it("keeps a drop inside the chat's own hub's group: let go past it, in another hub's, it goes back", async () => {
+    group = DOMRect.fromRect({ x: 0, y: 0, width: 240, height: GAP + 3 * ROW });
+    mount([row("api"), unpinned("web"), unpinned("misc")]);
+    await carry("misc", -40, { hold: true });
+    expect(grid()?.hasAttribute("data-pinning")).toBe(false);
+    pointer(window, "pointerup", -40);
+    await settle(SETTLE_MS + 20);
+    await carry("api", GAP + 3 * ROW + 40);
+    expect(saved()).toEqual([]);
+    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    // Inside it, the same drags pin and unpin.
+    await carry("misc", 10);
+    await carry("api", GAP + 2 * ROW);
+    expect(saved()).toEqual([["misc", "api"], []]);
   });
 
   it("pins no tenth chat: it goes back, and says why", async () => {
