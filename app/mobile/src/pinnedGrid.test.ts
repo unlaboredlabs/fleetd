@@ -41,9 +41,19 @@ describe("pinnedSplit", () => {
 describe("gridSize", () => {
   it("fits three to a row with the avatars at most 84 pt", () => {
     // An iPhone 17 Pro's width, and a narrow one's.
-    expect(gridSize(402)).toEqual({ cell: 128, avatar: 84 });
-    expect(gridSize(320)).toEqual({ cell: 101, avatar: 65 });
-    expect(gridSize(402).cell * 3).toBeLessThanOrEqual(402 - 16);
+    expect(gridSize(402)).toEqual({ cell: 105, avatar: 84 });
+    expect(gridSize(320)).toEqual({ cell: 100, avatar: 80 });
+    // The widest phone's, and a tablet's: no bigger than 84 pt.
+    expect(gridSize(440).avatar).toBe(84);
+    expect(gridSize(820).avatar).toBe(84);
+  });
+
+  it("sets the avatars a quarter of their width apart at every width, three cells within the screen's insets", () => {
+    for (let width = 280; width <= 460; width++) {
+      const { cell, avatar } = gridSize(width);
+      expect(cell * 3).toBeLessThanOrEqual(width - 16);
+      expect(Math.abs(cell - avatar - avatar / 4)).toBeLessThanOrEqual(0.5);
+    }
   });
 });
 
