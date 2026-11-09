@@ -5,7 +5,7 @@
 import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import { compareVersions, isEdge } from "../../../shared/pairing";
 import { DEB_INSTALL, knownVersion, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
-import { hubUpdated, type Flow } from "./flow";
+import { asleep, hubUpdated, type Flow } from "./flow";
 
 export type Tone = "accent" | "warning" | "danger" | "quiet";
 
@@ -261,7 +261,7 @@ const runRow = (p: UpdatePart, to: string, reconnecting: boolean, timeZone?: str
     case "rolled_back":
       return { status: `Put back: ${said}`, tone: "danger" };
     case "skipped":
-      return { status: sentence, tone: "warning" };
+      return { status: sentence, tone: asleep(p) ? "quiet" : "warning" };
     default:
       return { status: sentence, tone: "quiet" };
   }
@@ -344,6 +344,8 @@ const partLine = (p: UpdatePart, retry: Retry | null, timeZone?: string): LineSa
     case "rolled_back":
       return { state: "Failed", tone: "danger", reason: whyFailed(p), ...again };
     case "skipped":
+      // A cloud machine asleep takes the hub's build as it wakes: nothing to retry.
+      if (asleep(p)) return { state: "Asleep", tone: "quiet", reason: "Takes the hub's build when it wakes" };
       return { state: "Skipped", tone: "warning", reason: firstWords(p.message ?? "not updated"), ...again };
     default:
       return { state: firstWords(p.message ?? p.state), tone: "quiet" };
@@ -508,7 +510,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   // Retry once the run is over and the hub runs its build: the hub updates that machine again, so the whole update's
   // button steps back for the lines' Retry.
   const retryable = live !== null && live.finishedAt !== undefined && hubUpdated(live) && !going;
-  const retries = retryable && live.parts.some((p) => p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude"));
+  const retries = retryable && live.parts.some((p) => p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude" && !asleep(p)));
   const update =
     !administers || going || hub.url === null || !outdated || retries
       ? null
@@ -528,7 +530,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
     lines.push({ key: "hub", name: "The hub", ...(p !== undefined ? partLine(p, null, timeZone) : standingLine(hub.version, of, hubReady !== null)) });
     for (const m of [...machines].sort((a, b) => a.name.localeCompare(b.name))) {
       const n = parts.get(`node:${m.machineId}`);
-      const retry = retryable && n !== undefined && ["failed", "rolled_back", "skipped"].includes(n.state) ? ({ kind: "machine", machineId: m.machineId } as const) : null;
+      const retry = retryable && n !== undefined && ["failed", "rolled_back", "skipped"].includes(n.state) && !asleep(n) ? ({ kind: "machine", machineId: m.machineId } as const) : null;
       const say = n !== undefined ? partLine(n, retry, timeZone) : !m.online ? { state: "Offline", tone: "quiet" as const } : standingLine(m.nodeVersion, of, hubReady !== null);
       lines.push({ key: m.machineId, name: m.name, ...say });
     }
@@ -567,7 +569,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   else if (live !== null) {
     const failed = failures(live);
     // Each machine once; a Claude Code left as it is says so on its own line, calmly.
-    const skipped = [...new Set(live.parts.filter((p) => p.state === "skipped" && p.part !== "claude").map((p) => p.name))];
+    const skipped = [...new Set(live.parts.filter((p) => p.state === "skipped" && p.part !== "claude" && !asleep(p)).map((p) => p.name))];
     updated = failed.length === 0 && skipped.length === 0;
     progress =
       failed.length > 0
