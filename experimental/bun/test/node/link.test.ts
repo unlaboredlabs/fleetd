@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { createPublicKey, verify } from "node:crypto";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
-import { compresses, linkUrl, reconnectDelay, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
+import { compresses, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
 import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
@@ -201,6 +201,42 @@ test("reconnects start fast and back off to 30 s; the URL and the frame caps are
   const big = (16 << 20) + 1;
   expect(sizeAllowed({ t: "session_call", call: { op: "put_file" } }, big)).toBe(true);
   expect(sizeAllowed({ t: "session_call", call: { op: "default_branch" } }, big)).toBe(false);
+});
+
+test("after a restart close redials are 250 ms apart for a minute; any other close backs off; a link back starts over", () => {
+  const at = 1_000_000;
+  const backoff = new Redial();
+  expect([0, 1, 2, 3].map(() => backoff.next(false, at, 1))).toEqual([250, 500, 1000, 2000]);
+
+  const redial = new Redial();
+  expect(redial.next(true, at, 1)).toBe(RESTART_REDIAL_MS);
+  // The dials while the hub is still down fail as lost links.
+  for (const s of [1, 10, 59]) expect(redial.next(false, at + s * 1000, 1.2)).toBe(250);
+  const late = at + 61_000;
+  expect(redial.next(false, late, 1)).toBe(250);
+  expect(redial.next(false, late, 1)).toBe(500);
+  redial.linked();
+  expect(redial.next(false, late, 1)).toBe(250);
+  expect(redial.restartUntil).toBeUndefined();
+});
+
+test("the hub's 1012 close reads as a restart: the node redials in 250 ms, with no jitter", async () => {
+  const home = tempHome();
+  const hub = fakeHub();
+  const stop = new AbortController();
+  const lost: Record<string, unknown>[] = [];
+  let links = 0;
+  const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
+    if (msg === "hub link lost; reconnecting until it is back") lost.push(fields ?? {});
+  };
+  void runNode(options(hub.url, home.dir, { attach: () => (links++, () => {}), log, signal: stop.signal }));
+  await until("the welcome", () => links === 1);
+  hub.conns[0]!.ws.close(1012, "hub restarting");
+  await until("the second link", () => links === 2);
+  expect(lost).toEqual([{ why: "hub closed the link (1012 hub restarting)", retryInMs: 250 }]);
+  stop.abort();
+  hub.server.stop(true);
+  home.done();
 });
 
 test("deflate keeps its window across messages, and garbage ends the stream", async () => {
