@@ -12,7 +12,7 @@ import type { Change, HubEvent, HubEventType, TrainEventData } from "../../share
 import type { Hub } from "../api/hub.ts";
 import { getRequested } from "../leads/requested.ts";
 import type { HubDb } from "../store/db.ts";
-import { type EventLog, events } from "../store/events.ts";
+import { BATCH_MS, type EventLog, events } from "../store/events.ts";
 import { parseMs } from "../store/time.ts";
 import { cursor as readCursor, setCursor } from "../time/store.ts";
 import * as store from "./store.ts";
@@ -73,7 +73,7 @@ export function catchUp(hub: Hub): void {
   step(hub.db, events(hub), readCursor(hub.db.conn, CURSOR) ?? 0);
 }
 
-/** Runs the projector until the hub stops: every page now, then again after each append. */
+/** Runs the projector until the hub stops: every page now, a backlog BATCH_MS at a time, then after each append. */
 export function run(hub: Hub): void {
   const log = events(hub);
   let cursor = readCursor(hub.db.conn, CURSOR) ?? 0;
@@ -82,10 +82,17 @@ export function run(hub: Hub): void {
     scheduled = false;
     if (hub.shutdown.signal.aborted) return;
     try {
+      const started = performance.now();
       for (;;) {
         const [next, more] = step(hub.db, log, cursor);
         cursor = next;
         if (!more) break;
+        // A backlog goes a batch at a time, the hub serving between them.
+        if (performance.now() - started >= BATCH_MS) {
+          scheduled = true;
+          setTimeout(pass, 0);
+          break;
+        }
       }
     } catch (error) {
       console.error("metrics: events not projected:", error);

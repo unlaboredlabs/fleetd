@@ -14,7 +14,7 @@ import type {
   UsageStatus,
 } from "../../shared/contracts.ts";
 import { accountFromKey } from "../claude_accounts/index.ts";
-import type { NewEvent, WaitInput, WaitResult } from "../store/events.ts";
+import { BATCH_MS, type NewEvent, type WaitInput, type WaitResult } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { limitOfEvent, type UsageParked } from "./classify.ts";
 import {
@@ -109,11 +109,18 @@ export class Usage {
   async serve(signal: AbortSignal): Promise<void> {
     await this.op(async () => {
       let cursor = 0;
+      let since = performance.now();
       for (;;) {
         const page = await this.deps.events.wait({ cursor, types: REPLAYED, timeoutSec: 0 });
         for (const event of page.events) this.apply(event);
         cursor = page.cursor;
         if (!page.more) break;
+        // A long log replays a batch at a time, the hub serving between them; reads meanwhile see the replay so far,
+        // as the Rust replay's do.
+        if (performance.now() - since >= BATCH_MS) {
+          await Bun.sleep(0);
+          since = performance.now();
+        }
       }
       this.cursor = cursor;
       const resets: string[] = [];

@@ -9,7 +9,7 @@ import { startProjector } from "./project.ts";
 
 export function start(hub: Hub): void {
   const t = time(hub);
-  startProjector(hub);
+  void startProjector(hub);
   t.startPrune();
   const l = link(hub);
   const offs = [
