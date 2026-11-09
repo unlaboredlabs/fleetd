@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardReceipt, countWords, withoutDm, logReceipt, rowState, route, withDms, type AgentMessage, type AgentMessageTo } from "./model";
+import { cardReceipt, cardReceiptFor, countWords, withoutDm, logReceipt, rowState, route, withDms, type AgentMessage, type AgentMessageTo } from "./model";
 
 const hhmm = (iso: string) => iso.slice(11, 16);
 
@@ -27,8 +27,11 @@ describe("a card's receipt", () => {
     );
     // The hub's words as it writes them: one plain sentence, no second colon, "held" said once.
     const guard = to("T2567", "not_woken", { detail: "T2567 has finished and isn't waiting on T2584: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it" });
-    expect(cardReceipt(guard, false, hhmm)).toBe("Didn’t wake T2567: it has finished and isn't waiting on T2584. Held for its next run.");
-    expect(logReceipt(guard)).toBe("wasn’t woken: it has finished and isn't waiting on T2584. Held for its next run");
+    expect(cardReceipt(guard, false, hhmm)).toBe("Didn’t wake T2567: it has finished and isn’t waiting on T2584. Held for its next run.");
+    expect(logReceipt(guard)).toBe("wasn’t woken: it has finished and isn’t waiting on T2584. Held for its next run");
+    // On a DM to several, each receipt follows its recipient's id, said once.
+    expect(cardReceiptFor(guard, hhmm)).toBe("Didn’t wake T2567: it has finished and isn’t waiting on T2584. Held for its next run.");
+    expect(cardReceiptFor(to("T2577", "delivered", { at: "2026-11-08T23:02:00Z" }), hhmm)).toBe("T2577: Delivered at its next step, 23:02.");
     expect(cardReceipt(to("T2567", "not_woken"), false, hhmm)).toBe("Didn’t wake T2567. Held for its next run.");
     expect(cardReceipt(to("T2574", "held"), false, hhmm)).toBe("Held: it isn’t running, and reads this when it runs again.");
     expect(cardReceipt(to("T9", "refused", { detail: "T9 was cancelled" }), false, hhmm)).toBe("Not sent: T9 was cancelled.");

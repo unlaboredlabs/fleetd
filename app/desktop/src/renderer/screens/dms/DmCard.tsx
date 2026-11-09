@@ -6,7 +6,7 @@ import { Fragment } from "react";
 import { Text, Truncate } from "../../ui";
 import { shortClock } from "../chat/format";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
-import { cardReceipt, type AgentMessage, type AgentMessageTo } from "./model";
+import { cardReceipt, cardReceiptFor, type AgentMessage, type AgentMessageTo } from "./model";
 import s from "./dms.module.css";
 
 export function DmCard({ dm, self, project }: { dm: AgentMessage; self: string; project: ProjectKey }) {
@@ -49,17 +49,18 @@ export function DmCard({ dm, self, project }: { dm: AgentMessage; self: string; 
         {dm.text}
       </Truncate>
       <div className={s.foot}>
-        {sent ? dm.to.map((t) => <Receipt key={t.taskId} t={t} who={dm.to.length > 1 ? t.taskId : undefined} received={false} />) : mine === undefined ? null : <Receipt t={mine} received />}
+        {sent ? dm.to.map((t) => <Receipt key={t.taskId} t={t} several={dm.to.length > 1} received={false} />) : mine === undefined ? null : <Receipt t={mine} received />}
       </div>
     </article>
   );
 }
 
-function Receipt({ t, who, received }: { t: AgentMessageTo; who?: string | undefined; received: boolean }) {
+function Receipt({ t, several = false, received }: { t: AgentMessageTo; several?: boolean; received: boolean }) {
+  const fmt = (iso: string) => shortClock(iso);
   const guard = t.outcome === "woke" || t.outcome === "not_woken";
   return (
     <Text size="xs" tone={t.outcome === "refused" ? "danger" : guard ? "default" : "quiet"} strong={guard} data-outcome={t.outcome}>
-      {`${who === undefined ? "" : `${who}: `}${cardReceipt(t, received, (iso) => shortClock(iso))}`}
+      {several ? cardReceiptFor(t, fmt) : cardReceipt(t, received, fmt)}
     </Text>
   );
 }
