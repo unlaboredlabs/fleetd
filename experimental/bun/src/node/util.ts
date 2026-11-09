@@ -61,6 +61,18 @@ export async function exec(argv: string[], timeoutMs: number, opts: { cwd?: stri
   return code === 0 ? { stdout } : { stdout, error: `Command failed: ${argv.join(" ")}\n${stderr}` };
 }
 
+/** `fn` once the last one `turns` holds under `key` has ended, failed or not: work on one repo takes turns off the
+ * event loop, as it did on it. */
+export function inTurn<T>(turns: Map<string, Promise<unknown>>, key: string, fn: () => Promise<T>): Promise<T> {
+  const next = (turns.get(key) ?? Promise.resolve()).catch(() => {}).then(fn);
+  turns.set(key, next);
+  const clear = () => {
+    if (turns.get(key) === next) turns.delete(key);
+  };
+  next.then(clear, clear);
+  return next;
+}
+
 /** One-shot promise with its resolver. */
 export function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
   let resolve!: (v: T) => void;

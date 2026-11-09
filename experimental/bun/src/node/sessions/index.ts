@@ -12,6 +12,7 @@
 // retries and model fallback.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { mkdirPrivate, readConfig } from "../config.ts";
 import type { ClaudeAccount } from "../../shared/contracts.ts";
@@ -353,6 +354,8 @@ export class SessionService {
   #active = new Set<string>();
   #announced = new Map<string, number>();
   #spawning = new Map<string, Promise<unknown>>();
+  /** Launches under way, by session: a retry that comes while one fetches or makes its worktree shares its outcome. */
+  #launching = new Map<string, Promise<SessionOutput>>();
   #files = new Map<string, { at: number; paths: string[] }>();
   readonly #health = new Health();
   #probing: Promise<unknown> = Promise.resolve();
@@ -439,7 +442,7 @@ export class SessionService {
     for (const name of existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : []) {
       if (keep.has(name)) continue;
       try {
-        rmSync(join(config.home, "tmp", name), { recursive: true, force: true });
+        await rm(join(config.home, "tmp", name), { recursive: true, force: true });
         swept++;
       } catch {}
     }
@@ -448,7 +451,7 @@ export class SessionService {
     if (partials) console.log(`${nowIso()} INFO removed clones a previous node left half done {"removed":${partials}}`);
     service.#reaper = setInterval(() => service.#reap(), Math.min(60_000, Math.max(1_000, service.#idleReapMs / 4)));
     // Once a day every checkout's warm builds are pruned to node.json's `warmBuilds`.
-    service.#warmPruner = setInterval(() => warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
+    service.#warmPruner = setInterval(() => void warm.prune(config.home, warm.keep(config.home)), warm.PRUNE_EVERY_MS);
     // Once a day the steps older than 30 days go, the first a while after the node starts.
     const pruneItems = (after: number) => {
       service.#itemsPruner = setTimeout(() => {
@@ -718,7 +721,7 @@ export class SessionService {
       case "project_worktrees":
         return this.#projectWorktrees(c.projectId);
       case "launch":
-        return this.#launch(c as unknown as SessionLaunch);
+        return this.#launchOnce(c as unknown as SessionLaunch);
       case "send": {
         if (c.mcp) this.#refreshMcp(c.sessionId, c.mcp);
         if (c.skills) this.#refreshSkills(c.sessionId, c.skills);
@@ -771,15 +774,15 @@ export class SessionService {
       }
       case "default_branch": {
         const root = this.#projectRoot(c.projectId);
-        const branch = worktree.hasCommit(root) ? await worktree.defaultBranch(root) : undefined;
+        const branch = (await worktree.hasCommit(root)) ? await worktree.defaultBranch(root) : undefined;
         return { kind: "default_branch", ...(branch ? { branch } : {}) };
       }
       case "changes": {
         const row = this.#session(c.sessionId);
         let paths: string[] = [];
         if (existsSync(row.local.cwd)) {
-          const base = row.local.baseRef ? worktree.changesBase(row.local.workspaceRoot, row.local.baseRef) : undefined;
-          paths = worktree.changes(row.local.cwd, base);
+          const base = row.local.baseRef ? await worktree.changesBase(row.local.workspaceRoot, row.local.baseRef) : undefined;
+          paths = await worktree.changes(row.local.cwd, base);
         }
         return {
           kind: "changes",
@@ -791,14 +794,14 @@ export class SessionService {
       case "runner_info":
         return { kind: "runner_info", ...(await this.runnerInfo()) };
       case "list_files": {
-        const all = this.#projectFiles(c.projectId);
+        const all = await this.#projectFiles(c.projectId);
         const [paths, truncated] = rank(all, c.query ?? "", c.limit);
         return { kind: "files", paths, truncated };
       }
       case "put_file": {
         const root = this.#projectRoot(c.projectId);
         try {
-          putFile(root, c.relPath, Buffer.from(c.dataB64, "base64"));
+          await putFile(root, c.relPath, Buffer.from(c.dataB64, "base64"));
         } catch (error) {
           throw invalid((error as Error).message);
         }
@@ -807,7 +810,7 @@ export class SessionService {
       case "has_file":
         return { kind: "has_file", has: hasFile(this.#projectRoot(c.projectId), c.relPath, c.sha256) };
       case "folder_make":
-        return this.#folderMake(c.path, !!c.gitInit, !!c.dryRun);
+        return await this.#folderMake(c.path, !!c.gitInit, !!c.dryRun);
       case "repo_inspect":
         return { kind: "repo_facts", ...(await inspect(c.path)) };
       case "repo_scan": {
@@ -820,13 +823,13 @@ export class SessionService {
     }
   }
 
-  #projectFiles(projectId: string): string[] {
+  async #projectFiles(projectId: string): Promise<string[]> {
     const cached = this.#files.get(projectId);
     if (cached && Date.now() - cached.at < FILES_FOR_MS) return cached.paths;
     const root = this.#projectRoot(projectId);
     let paths: string[];
     try {
-      paths = gitFiles(root);
+      paths = await gitFiles(root);
     } catch (error) {
       throw new Refusal("git", (error as Error).message);
     }
@@ -863,17 +866,13 @@ export class SessionService {
 
   async #projectWorktrees(projectId: string): Promise<SessionOutput> {
     const root = this.#projectRoot(projectId);
-    const worktrees = this.store
-      .sessions()
-      .filter((r) => r.summary.projectId === projectId && r.local.baseRef && r.summary.worktreePath && existsSync(r.local.cwd))
-      .map((r) => {
-        let dirty = true;
-        try {
-          dirty = worktree.uncommitted(r.local.cwd);
-        } catch {}
-        return { sessionId: r.summary.sessionId, path: r.local.cwd, ...(r.local.branch ? { branch: r.local.branch } : {}), uncommitted: dirty };
-      });
-    const baseBranch = worktree.hasCommit(root) ? (await worktree.defaultBranch(root)) : undefined;
+    const worktrees = [];
+    for (const r of this.store.sessions()) {
+      if (r.summary.projectId !== projectId || !r.local.baseRef || !r.summary.worktreePath || !existsSync(r.local.cwd)) continue;
+      const dirty = await worktree.uncommitted(r.local.cwd).catch(() => true);
+      worktrees.push({ sessionId: r.summary.sessionId, path: r.local.cwd, ...(r.local.branch ? { branch: r.local.branch } : {}), uncommitted: dirty });
+    }
+    const baseBranch = (await worktree.hasCommit(root)) ? await worktree.defaultBranch(root) : undefined;
     return { kind: "project_worktrees", dir: this.#worktreesDir(projectId), ...(baseBranch ? { baseBranch } : {}), worktrees, signinsKept: signinsKept(this.home, projectId) };
   }
 
@@ -885,21 +884,21 @@ export class SessionService {
     for (const row of ids) if (row.local.role === "worker") await endLeft(join(this.home, "hosts", row.summary.sessionId));
     if (removeWorktrees && project) {
       try {
-        worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
+        await worktree.removeAll(project.workspaceRoot, this.#worktreesDir(projectId));
       } catch {}
-      rmSync(this.#worktreesDir(projectId), { recursive: true, force: true });
-      warm.dropPool(this.home, project.workspaceRoot);
+      await rm(this.#worktreesDir(projectId), { recursive: true, force: true });
+      await warm.dropPool(this.home, project.workspaceRoot);
     }
     if (erase) {
       this.store.forgetSessions(projectId);
-      if (removeFolder && project) rmSync(project.workspaceRoot, { recursive: true, force: true });
+      if (removeFolder && project) await rm(project.workspaceRoot, { recursive: true, force: true });
     }
     // A Navi's kept browser profile goes with it, before the project does.
     await this.forgetSignins(projectId);
     forgetProjectEnv(this.home, projectId);
     mcp.forgetSecrets(this.home, projectId);
     // What a Navi kept under the node's home before Navis became projects (D310): its own home.
-    rmSync(join(this.home, "navis", projectId), { recursive: true, force: true });
+    await rm(join(this.home, "navis", projectId), { recursive: true, force: true });
     const frame = this.store.removeProject(projectId);
     if (frame) this.#machine(frame);
     return { kind: "done" };
@@ -916,7 +915,7 @@ export class SessionService {
     }
   }
 
-  #folderMake(path: string, gitInit: boolean, dryRun: boolean): SessionOutput {
+  async #folderMake(path: string, gitInit: boolean, dryRun: boolean): Promise<SessionOutput> {
     const dir = expandHome(path);
     if (!isAbsolute(dir) || dir.split("/").some((p) => p === "." || p === "..")) throw invalid(`${path} is not a full path: start it with / or ~/`);
     if (existsSync(dir)) {
@@ -925,7 +924,7 @@ export class SessionService {
     }
     if (!dryRun) {
       mkdirSync(dir, { recursive: true });
-      if (gitInit) worktree.git(dir, ["init"]);
+      if (gitInit) await worktree.git(dir, ["init"]);
     }
     return { kind: "folder", path: dir };
   }
@@ -962,6 +961,15 @@ export class SessionService {
     }
   }
 
+  #launchOnce(launch: SessionLaunch): Promise<SessionOutput> {
+    const id = launch.sessionId;
+    const running = this.#launching.get(id);
+    if (running) return running;
+    const next = this.#launch(launch).finally(() => this.#launching.delete(id));
+    this.#launching.set(id, next);
+    return next;
+  }
+
   async #launch(launch: SessionLaunch): Promise<SessionOutput> {
     const id = launch.sessionId;
     const stages = new Stages("node launch", id);
@@ -977,7 +985,7 @@ export class SessionService {
     // A checkout fleetd cloned with a token (a cloud machine's) fetches with its order's, which the hub delivered before
     // this launch.
     const token = launch.orderId ? orderVarsForSpawn(this.home, launch.projectId, launch.orderId).vars.find(([n]) => n === "GITHUB_TOKEN") : undefined;
-    if (token) worktree.useToken(root, token[1]);
+    if (token) await worktree.useToken(root, token[1]);
     stages.done("checks");
     // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check. The head the
     // hub named needs no remote when this machine has its commit (its writer pushed from here); else the remote is
@@ -1009,7 +1017,7 @@ export class SessionService {
     if (taken) {
       const lost = await this.#lostWorktree(taken);
       if (lost && taken.local.branch) {
-        worktree.restore(taken.local.workspaceRoot, taken.local.cwd, taken.local.branch, lost);
+        await worktree.restore(taken.local.workspaceRoot, taken.local.cwd, taken.local.branch, lost);
         console.log(`${nowIso()} INFO recreated a lost worktree to take over {"sessionId":"${id}","from":"${lost.kind}"}`);
         recreatedFrom = lost.kind;
         // Rebuilt, it has none of what setup made there before.
@@ -1018,15 +1026,15 @@ export class SessionService {
       }
       [cwd, addDirs, baseRef, branch] = [taken.local.cwd, taken.local.addDirs, taken.local.baseRef, taken.local.branch];
     } else if (ws.type === "worktree" && base) {
-      worktree.ensure(root, path, ws.branch, base.sha);
+      await worktree.ensure(root, path, ws.branch, base.sha);
       [cwd, addDirs, baseRef, branch] = [path, [root], base.baseRef, ws.branch];
     } else if (ws.type === "detached" && base) {
-      const sha = prHead ?? ((ws.head && worktree.knownCommit(root, ws.head)) || base.sha);
-      worktree.ensureDetached(root, path, sha);
+      const sha = prHead ?? ((ws.head && (await worktree.knownCommit(root, ws.head))) || base.sha);
+      await worktree.ensureDetached(root, path, sha);
       [cwd, addDirs, baseRef] = [path, [root], sha];
       // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
-      readerPlan = warm.readerSetup(launch.setup, path, base.sha);
-      if (warm.take(this.home, root, path)) prompt = `${prompt.trimEnd()}\n\n${warm.WARM_NOTE}`;
+      readerPlan = await warm.readerSetup(launch.setup, path, base.sha);
+      if (await warm.take(this.home, root, path)) prompt = `${prompt.trimEnd()}\n\n${warm.WARM_NOTE}`;
     } else if (launch.isolated) {
       cwd = join(this.home, "isolated");
       mkdirPrivate(cwd);
@@ -1237,7 +1245,7 @@ export class SessionService {
     }
     stages.done("worktree");
     if (!existsSync(row.local.cwd)) throw invalid(`the session's workspace ${row.local.cwd} is missing`);
-    const spec = this.#spec(row, resume, env);
+    const spec = await this.#spec(row, resume, env);
     // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
     // without the system prompt file, its rules.
     let note = rebuilt;
@@ -1282,7 +1290,7 @@ export class SessionService {
 
   /** Writes the session's files and builds its spec (sessions/mod.rs `spec`): MCP config, settings overlay, system
    * prompt, and the environment. */
-  #spec(row: SessionRow, resume: boolean, base: Env): claude.SessionSpec {
+  async #spec(row: SessionRow, resume: boolean, base: Env): Promise<claude.SessionSpec> {
     const id = row.summary.sessionId;
     const dir = join(this.home, "sessions", id);
     mkdirPrivate(dir);
@@ -1345,12 +1353,12 @@ export class SessionService {
     const task = row.local.branch ? hooks.branchTask(row.local.branch) : undefined;
     if (task && existsSync(row.local.cwd)) {
       try {
-        hooks.trailerHooks(row.local.cwd, task);
+        await hooks.trailerHooks(row.local.cwd, task);
       } catch (error) {
         console.warn(`${nowIso()} WARN commits won't name their task {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
       try {
-        hooks.gate(row.local.cwd, env);
+        await hooks.gate(row.local.cwd, env);
       } catch (error) {
         console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
@@ -1784,7 +1792,7 @@ export class SessionService {
     let note: string | undefined;
     const from = await this.#lostWorktree(row);
     if (from && row.local.branch) {
-      worktree.restore(row.local.workspaceRoot, row.local.cwd, row.local.branch, from);
+      await worktree.restore(row.local.workspaceRoot, row.local.cwd, row.local.branch, from);
       console.log(`${nowIso()} INFO recreated a lost worktree {"sessionId":"${id}","from":"${from.kind}"}`);
       note = worktree.sourceNote(from, row.local.branch);
       row.summary.recreatedFrom = from.kind;
@@ -1794,8 +1802,8 @@ export class SessionService {
       recreated = true;
     }
     if (row.local.baseRef && !row.local.branch && !existsSync(row.local.cwd)) {
-      worktree.ensureDetached(row.local.workspaceRoot, row.local.cwd, row.local.baseRef);
-      if (warm.take(this.home, row.local.workspaceRoot, row.local.cwd)) note = warm.WARM_NOTE;
+      await worktree.ensureDetached(row.local.workspaceRoot, row.local.cwd, row.local.baseRef);
+      if (await warm.take(this.home, row.local.workspaceRoot, row.local.cwd)) note = warm.WARM_NOTE;
       row.summary.worktreePath = row.local.cwd;
       recreated = true;
     }
@@ -2071,14 +2079,15 @@ export class SessionService {
       if (ended) console.log(`${nowIso()} INFO ended processes its session left running {"sessionId":"${id}","ended":${ended}}`);
     }
     // A session's scratch goes with its worktree, or with its process when it has none.
-    if (removeWorktree || !row.local.baseRef) rmSync(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
+    if (removeWorktree || !row.local.baseRef) await rm(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
     if (removeWorktree && row.local.baseRef) {
-      const deleted = row.local.branch
-        ? worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef)
-        : // Its build goes on to the next reader of the checkout.
-          (warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home)),
-          worktree.removeDetached(row.local.workspaceRoot, row.local.cwd),
-          false);
+      let deleted = false;
+      if (row.local.branch) deleted = await worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef);
+      else {
+        // Its build goes on to the next reader of the checkout.
+        await warm.give(this.home, row.local.workspaceRoot, row.local.cwd, warm.keep(this.home));
+        await worktree.removeDetached(row.local.workspaceRoot, row.local.cwd);
+      }
       this.update(id, (c) => {
         delete c.row.summary.worktreePath;
         if (deleted) delete c.row.summary.branch;

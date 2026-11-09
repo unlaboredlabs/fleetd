@@ -21,14 +21,10 @@ const values = (field: string) =>
     .map((v) => v.trim())
     .filter(Boolean);
 
-const succeeds = (root: string, args: string[]) => {
-  try {
-    git(root, args);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const succeeds = (root: string, args: string[]) => git(root, args).then(
+  () => true,
+  () => false,
+);
 
 /** Fetches `branch` from `name` into its remote-tracking ref, leaving FETCH_HEAD (the human's) alone. */
 async function fetchBranch(root: string, name: string, branch: string): Promise<void> {
@@ -48,19 +44,19 @@ async function fetchBranch(root: string, name: string, branch: string): Promise<
 export async function landedLog(root: string, branch: string, sinceMs: number, stopAt?: string): Promise<LandedLog> {
   let fetchFailed: string | undefined;
   let read: [rev: string, read: string] | undefined;
-  const r = remote(root);
+  const r = await remote(root);
   if (r) {
     try {
       await fetchBranch(root, r, branch);
     } catch (error) {
       fetchFailed = (error as Error).message;
     }
-    if (refSha(root, `refs/remotes/${r}/${branch}`)) read = [`refs/remotes/${r}/${branch}`, `${r}/${branch}`];
+    if (await refSha(root, `refs/remotes/${r}/${branch}`)) read = [`refs/remotes/${r}/${branch}`, `${r}/${branch}`];
   }
-  if (!read && refSha(root, `refs/heads/${branch}`)) read = [`refs/heads/${branch}`, branch];
+  if (!read && (await refSha(root, `refs/heads/${branch}`))) read = [`refs/heads/${branch}`, branch];
   if (!read) throw new GitError(`${root} has no ${branch}`);
   const [rev, readName] = read;
-  const onLine = stopAt !== undefined && succeeds(root, ["merge-base", "--is-ancestor", stopAt, rev]) ? stopAt : undefined;
+  const onLine = stopAt !== undefined && (await succeeds(root, ["merge-base", "--is-ancestor", stopAt, rev])) ? stopAt : undefined;
   const format =
     `--format=%H${FIELD}%P${FIELD}%ct${FIELD}%an${FIELD}%s${FIELD}` +
     `%(trailers:key=${CHANGE_TRAILER},valueonly,unfold,separator=%x1d)${FIELD}` +
@@ -69,7 +65,7 @@ export async function landedLog(root: string, branch: string, sinceMs: number, s
   if (onLine === undefined) args.push(`--since=${new Date(sinceMs).toISOString()}`);
   args.push(onLine === undefined ? rev : `${onLine}..${rev}`, "--");
   const commits: GitCommit[] = [];
-  for (const record of git(root, args).split(RECORD)) {
+  for (const record of (await git(root, args)).split(RECORD)) {
     const fields = record.replace(/^\n+/, "").split(FIELD);
     if (fields.length !== 7) continue;
     const [sha, parents, at, author, subject, changes, tasks] = fields as [string, string, string, string, string, string, string];
@@ -84,7 +80,7 @@ export async function landedLog(root: string, branch: string, sinceMs: number, s
       mergedTasks: [],
     };
     if (c.parents.length > 1) {
-      const merged = git(root, ["log", "-n", MERGED_MAX, `--format=%(trailers:key=${TASK_TRAILER},valueonly,unfold,separator=%x1d)${VALUE}`, `${c.parents[0]}..${c.sha}`, "--"]);
+      const merged = await git(root, ["log", "-n", MERGED_MAX, `--format=%(trailers:key=${TASK_TRAILER},valueonly,unfold,separator=%x1d)${VALUE}`, `${c.parents[0]}..${c.sha}`, "--"]);
       for (const task of values(merged)) if (!c.mergedTasks!.includes(task)) c.mergedTasks!.push(task);
     }
     commits.push(c);

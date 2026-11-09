@@ -1,30 +1,26 @@
 // A project's files for its chat and its sessions (crates/fleetd/src/node/sessions/files.rs): @-mention search over
 // git's file list, and the attachments the hub places under `.fleetd/attachments/`, kept out of git.
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { join, sep } from "node:path";
+import { git } from "../worktree/index.ts";
 
 export const ATTACHMENTS_DIR = ".fleetd/attachments/";
 const MAX_FILES = 200_000;
+/** Files looked at at once. */
+const LSTAT_BATCH = 256;
 
-/** `git ls-files -co --exclude-standard`, symlinks left out. */
-export function gitFiles(root: string): string[] {
-  const out = spawnSync("git", ["-C", root, "ls-files", "-co", "--exclude-standard", "-z"], { maxBuffer: 512 << 20 });
-  if (out.error) throw new Error(`git did not run: ${out.error.message}`);
-  if (out.status !== 0) throw new Error(out.stderr.toString().trim());
-  return out.stdout
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean)
-    .slice(0, MAX_FILES)
-    .filter((p) => {
-      try {
-        return !lstatSync(join(root, p)).isSymbolicLink();
-      } catch {
-        return false;
-      }
-    });
+/** `git ls-files -co --exclude-standard`, symlinks left out; off the event loop, as a big repo's list takes a while. */
+export async function gitFiles(root: string): Promise<string[]> {
+  const listed = (await git(root, ["ls-files", "-co", "--exclude-standard", "-z"])).split("\0").filter(Boolean).slice(0, MAX_FILES);
+  const kept: string[] = [];
+  for (let i = 0; i < listed.length; i += LSTAT_BATCH) {
+    const batch = listed.slice(i, i + LSTAT_BATCH);
+    const plain = await Promise.all(batch.map((p) => lstat(join(root, p)).then((st) => !st.isSymbolicLink(), () => false)));
+    for (const [j, p] of batch.entries()) if (plain[j]) kept.push(p);
+  }
+  return kept;
 }
 
 function walk(lower: string[], from: number, nameStart: number, query: string[]): number | undefined {
@@ -76,7 +72,7 @@ export function attachmentPathOk(relPath: string): boolean {
 }
 
 /** Writes the file, creating its directories, never through a symlink, and keeps attachments out of git. */
-export function putFile(root: string, relPath: string, bytes: Uint8Array): void {
+export async function putFile(root: string, relPath: string, bytes: Uint8Array): Promise<void> {
   if (!attachmentPathOk(relPath)) throw new Error(`${relPath} is not under ${ATTACHMENTS_DIR}`);
   const parts = relPath.split("/");
   const name = parts.pop()!;
@@ -107,14 +103,17 @@ export function putFile(root: string, relPath: string, bytes: Uint8Array): void 
     rmSync(tmp, { force: true });
     throw error;
   }
-  excludeAttachments(root);
+  await excludeAttachments(root);
 }
 
 /** `.fleetd/attachments/` in the checkout's `.git/info/exclude`, once. */
-function excludeAttachments(root: string): void {
-  const out = spawnSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], { encoding: "utf8" });
-  if (out.status !== 0) return;
-  const file = out.stdout.trim();
+async function excludeAttachments(root: string): Promise<void> {
+  let file: string;
+  try {
+    file = (await git(root, ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"])).trim();
+  } catch {
+    return;
+  }
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
   if (text.split("\n").some((l) => l.trim() === `/${ATTACHMENTS_DIR}`)) return;
   mkdirSync(join(file, ".."), { recursive: true });

@@ -5,7 +5,6 @@
 // database and syncs the disk, so boat's snapshot holds them whole. Nothing is lost when time runs out: runs resume and
 // recordings go at the next wake.
 import { Database } from "bun:sqlite";
-import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { UPLOAD_BUSY_SECS } from "../shared/node_link.ts";
@@ -69,11 +68,11 @@ function checkpoint(db: string): boolean {
   }
 }
 
-/** Writes every filesystem's buffers out, as sync(2). */
-const syncDisk = () => void spawnSync("sync", { stdio: "ignore" });
+/** Writes every filesystem's buffers out, as sync(2): off the event loop, as a busy disk takes seconds. */
+const syncDisk = () => Bun.spawn(["sync"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited;
 
 /** What a flush left, in one line. `sync` is the disk's (a test's own). */
-export async function flush(home: string, waitMs: number, sync: () => void = syncDisk): Promise<string> {
+export async function flush(home: string, waitMs: number, sync: () => unknown = syncDisk): Promise<string> {
   let held = "agents held between steps";
   try {
     hold(home);
@@ -87,7 +86,7 @@ export async function flush(home: string, waitMs: number, sync: () => void = syn
     waiting = uploads(home);
   }
   const checkpointed = checkpoint(join(home, "sessions.sqlite")) ? "database checkpointed" : "database not checkpointed";
-  sync();
+  await sync();
   const left = waiting === 0 ? "no recording waits" : waiting === 1 ? "1 recording waits for the next wake" : `${waiting} recordings wait for the next wake`;
   return `flushed: ${held}, ${left}, ${checkpointed}, disk synced`;
 }
