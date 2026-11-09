@@ -193,7 +193,9 @@ describe("New Project", () => {
   };
 
   it("suggests what the hub found, filtered as you type, never a new empty project", () => {
-    expect(suggestions("", d).map((f) => f.name)).toEqual(["api", "acme/web", "acme/shop"]);
+    // A repo already a project only once what is typed matches it (picking it opens its chat).
+    expect(suggestions("", d).map((f) => f.name)).toEqual(["api", "acme/web"]);
+    expect(suggestions("shop", d).map((f) => f.name)).toEqual(["acme/shop"]);
     expect(suggestions("web", d).map((f) => f.name)).toEqual(["acme/web"]);
     expect(suggestions("acme/web", d).map((f) => f.name)).toEqual(["acme/web"]);
     expect(suggestions("zzz", d)).toEqual([]);

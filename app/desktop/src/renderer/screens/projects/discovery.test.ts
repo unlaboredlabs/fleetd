@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDiscoverOutput, ProjectInspect } from "./contracts";
-import { discovery, newPath, onlyMeFirst, plan, progress, ready, rows, target } from "./discovery";
+import { discovery, newPath, onlyMeFirst, plan, projectHome, progress, ready, rows, target } from "./discovery";
 import { prefillMachine } from "./store";
 import { addSource, folderName, githubRepo, linkUrl, machineIdFromHost, otherHost, tilde } from "./source";
 
@@ -81,6 +81,40 @@ describe("discovery", () => {
   });
 });
 
+describe("repos already a project", () => {
+  it("are left out of the list until the field matches them, then come last and quiet, never the pick", () => {
+    const d = discovery(out, names);
+    const all = rows("", d.found);
+    expect(all.rows.map((r) => (r.kind === "found" ? d.found[r.index]?.name : r.kind))).toEqual(["notes", "acme/ledger", "acme/site"]);
+    const typed = rows("storefront", d.found);
+    expect(typed.rows.map((r) => (r.kind === "found" ? d.found[r.index]?.name : r.kind))).toEqual(["new", "storefront", "acme/storefront"]);
+    expect(typed.selected).toBe(0);
+  });
+});
+
+describe("cloud machines and the agents' Mac", () => {
+  it("are no project's home: not offered, and their checkouts not listed", () => {
+    const cloud: ProjectDiscoverOutput = {
+      ...out,
+      machines: [...out.machines, { machineId: "boat-1", online: true, cloneRoot: "/root/src", repos: [{ path: "/root/src/storefront", name: "storefront", repo: "acme/storefront" }] }],
+      github: { ...out.github, repos: [{ repo: "acme/site", url: "https://github.com/acme/site", private: false, checkouts: [{ machineId: "boat-1", path: "/root/src/site" }] }] },
+      best: "boat-1",
+    };
+    const d = discovery(cloud, names, (id) => id !== "boat-1");
+    expect(d.workers.map((w) => w.machineId)).toEqual(["devbox", "buildbox"]);
+    expect(d.found.some((f) => f.source.kind === "checkout" && f.source.machineId === "boat-1")).toBe(false);
+    expect(d.found.find((f) => f.name === "acme/site")?.detail).toBe("");
+    expect(d.best).toBeUndefined();
+    expect(target(d, null)?.machineId).toBe("devbox");
+  });
+
+  it("are told apart by the machine's own flags", () => {
+    expect(projectHome({})).toBe(true);
+    expect(projectHome({ cloud: true })).toBe(false);
+    expect(projectHome({ agentsMac: true })).toBe(false);
+  });
+});
+
 describe("a new project", () => {
   it("is ready as a plain folder: no repo facts, and its lead line is no warning", () => {
     const r = ready({ machineId: "devbox", projectId: "p9" }, "Field notes", "devbox", "/home/me/fleetd/projects/field-notes", inspect({ leadNeeds: "a plain folder with no git" }));
@@ -102,16 +136,26 @@ describe("a new project", () => {
     expect(plan(alone.rows[0], d, target(d, null), "buildbox")).toMatchObject({ machineId: "buildbox" });
   });
 
-  it("is never a URL, a path or a repo, and with nothing typed it waits for a name below what was found", () => {
+  it("is never a URL, a path or a repo, and with nothing typed the list is what can be added", () => {
     const d = discovery(out, names);
     for (const text of ["https://gitlab.com/acme/x", "acme/site", "/home/me/x", "~/x"]) {
       expect(rows(text, d.found).rows.some((r) => r.kind === "new"), text).toBe(false);
     }
     const all = rows("", d.found);
-    expect(all.rows[0]).toEqual({ kind: "new", name: "" });
-    expect(all.rows[all.selected]?.kind).toBe("found");
+    expect(all.rows.some((r) => r.kind === "new")).toBe(false);
+    expect(all.selected).toBe(0);
     // Nothing found: the empty state says to type a name.
     expect(rows("", []).rows).toEqual([]);
+  });
+
+  it("comes first unless a repo's name holds what is typed", () => {
+    const d = discovery(out, names);
+    // "site" is in acme/site's name: that repo first.
+    expect(rows("site", d.found).rows[0]).toEqual({ kind: "found", index: 4 });
+    // Only letters in order (s…t…e in "storefront"): the new project first, and the pick.
+    const loose = rows("ste", d.found);
+    expect(loose.rows[0]).toEqual({ kind: "new", name: "ste" });
+    expect(loose.selected).toBe(0);
   });
 
   it("goes to <projectsRoot>/<name as a folder>, named as the hub names it", () => {

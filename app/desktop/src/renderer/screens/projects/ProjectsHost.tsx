@@ -1,16 +1,20 @@
-// Mounted once by the shell: the palette's "New project…" and its machines, and a folder or a GitHub link dropped
-// anywhere on the window, a lead chat included (a link dragged out of a browser works too). Files dropped on a chat
-// are its composer's (see dropOwner); any other file is ignored, never turned into an Add project.
+// Mounted once by the shell: New project, a modal over whatever is on screen (`#/projects/add` opens it and gives the
+// address back to the screen behind, which stays mounted as it was), the palette's "New project…" and its machines,
+// and a folder or a GitHub link dropped anywhere on the window, a lead chat included (a link dragged out of a browser
+// works too). Files dropped on a chat are its composer's (see dropOwner); any other file is ignored, never turned into
+// an Add project.
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Text } from "../../ui";
 import { useCommands, useSource, type Command, type Source } from "../palette";
 import type { DataLayer } from "../../src/data/queries";
-import { useDataLayer } from "../../src/data/react";
+import { useDataLayer, useHub } from "../../src/data/react";
 import { hubNow, selectMachines } from "../../src/data/selectors";
 import { machineParts } from "./machineText";
 import { githubRepo, linkUrl, otherHost, tilde } from "./source";
-import { localMachine, openAddProject, type Note } from "./store";
+import { navigate, screenHash } from "../shell/navigation";
+import { parseHash } from "../shell/routes";
+import { localMachine, openAddProject, useAddUi, type Note } from "./store";
 import s from "./projects.module.css";
 
 /** The palette's machines, read from the data layer's store while the palette is open. */
@@ -107,8 +111,33 @@ export const mayBeProject = (types: ReadonlyArray<string>, files: ReadonlyArray<
 const accepts = (data: DataTransfer | null): boolean =>
   data !== null && mayBeProject([...data.types], [...data.items].map((i) => ({ kind: i.kind, type: i.type })));
 
+// Its own chunk, loaded the first time it opens.
+const AddProjectScreen = lazy(() => import("./AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
+
+/**
+ * `#/projects/add` (the sidebar's +, links, the QA harness) opens the modal and puts the address back to the screen
+ * behind it, so Back never reopens it. One naming another hub opens it over that hub's home.
+ */
+const useAddRoute = (): void => {
+  const { id } = useHub();
+  useEffect(() => {
+    const take = () => {
+      const r = parseHash(window.location.hash);
+      if (r.id !== "projects.add") return;
+      openAddProject();
+      if (r.at !== undefined && r.at !== id) navigate({ id: "home", at: r.at }, { replace: true });
+      else window.location.replace(screenHash() || "#/");
+    };
+    take();
+    window.addEventListener("hashchange", take);
+    return () => window.removeEventListener("hashchange", take);
+  }, [id]);
+};
+
 export function ProjectsHost() {
   const [over, setOver] = useState(false);
+  const { open } = useAddUi();
+  useAddRoute();
 
   const commands = useMemo<ReadonlyArray<Command>>(
     () => [
@@ -176,11 +205,20 @@ export function ProjectsHost() {
     };
   }, []);
 
-  return over ? (
-    <div className={s.dropOverlay} aria-hidden>
-      <Text size="lg" strong>
-        Drop a folder or a GitHub link to add it as a project
-      </Text>
-    </div>
-  ) : null;
+  return (
+    <>
+      {open ? (
+        <Suspense fallback={null}>
+          <AddProjectScreen />
+        </Suspense>
+      ) : null}
+      {over ? (
+        <div className={s.dropOverlay} aria-hidden>
+          <Text size="lg" strong>
+            Drop a folder or a GitHub link to add it as a project
+          </Text>
+        </div>
+      ) : null}
+    </>
+  );
 }

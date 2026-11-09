@@ -1,48 +1,142 @@
 /* Add project. Tokens only; the design system owns controls and text. */
 
-.root {
+/* The modal: centred over the window at one height, so filtering never moves it; the screen behind dims. */
+.backdrop {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, black 28%, transparent);
+  animation: fade var(--dur-base) var(--ease-out);
+}
+/* Black over a dark window barely shows: a deeper dim, so the modal still reads as in front. */
+:global([data-theme="dark"]) .backdrop {
+  background: color-mix(in srgb, black 48%, transparent);
+}
+.modal {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  z-index: 41;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  width: min(600px, calc(100vw - 4 * var(--edge-inset)));
+  height: min(520px, calc(100vh - 2 * var(--top-bar-height)));
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: var(--float-shadow);
+  overflow: hidden;
+  animation: rise var(--dur-base) var(--ease-out);
+}
+/* Progress, ready and errors: as tall as what they say. */
+.fit {
+  height: auto;
+  max-height: calc(100vh - 2 * var(--top-bar-height));
+}
+.modal:focus-visible {
+  outline: none;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .modal {
+    animation: none;
+  }
+}
+
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--bar) - 4px);
+  padding: var(--space-3) var(--space-4) 0;
+}
+.title {
+  flex: 1;
   min-width: 0;
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  overflow-wrap: anywhere;
 }
-
-.note {
-  padding: 0 var(--space-1);
-}
-
-/* With several hubs: which one the project goes to, on one quiet line above the field. */
+/* With several hubs: which one the project goes to, beside the title. */
 .hubPick {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-1);
 }
 
-/* The repo list: section headers by machine and GitHub, then rows. */
-.list {
+/* The one field, as the palette's: large, frameless, a hairline under it. */
+.field {
+  flex: none;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+}
+.input {
+  flex: 1;
   min-width: 0;
+  height: calc(var(--bar) + 4px);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-lg);
+}
+.input:focus-visible {
+  box-shadow: none;
+}
+.input::placeholder {
+  color: var(--faint);
+}
+.noteLine {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+/* The list: rows grouped by where each repo is, under quiet labels. */
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) var(--space-2);
+}
+.quietLine {
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
 }
 .group {
   padding: var(--space-3) var(--space-2) var(--space-1);
 }
 .row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-2);
-  min-height: var(--row);
-  padding: var(--space-1) var(--space-2);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  font: inherit;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   min-width: 0;
+  min-height: var(--row);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: default;
 }
 .row:hover {
   background: var(--hover);
@@ -50,31 +144,26 @@
 .row[aria-selected="true"] {
   background: var(--selected);
 }
-.rowMain {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.rowIcon {
+  flex: none;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
 }
 /* A name on disk set in the interface face: <samp> marks it as machine text, not as code to look at. */
 .name {
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: inherit;
 }
-.rowSide {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  min-width: 0;
-  max-width: 180px;
-  justify-self: end;
+.detail {
+  flex: 1 1 0;
+  min-width: 6em;
 }
-.tag {
-  flex: none;
-  padding: 0 var(--space-1-5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
+/* A repo that is already a project: quieter, and picking it opens its chat. */
+.added .name {
   color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
 }
 
 .problems {
@@ -93,46 +182,66 @@
 .empty {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
   padding: var(--space-3) var(--space-2);
 }
 
-/* The footer: the machine picker, where it goes, and the buttons. */
-.footer {
-  flex: 1 1 100%;
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* The footer: one plain sentence on what the button does, then Only me and the buttons. */
+.foot {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  min-width: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--hairline);
 }
-.machines {
+.summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1-5);
+  column-gap: 0.3em;
+  row-gap: var(--space-1);
+  min-height: var(--field);
+  min-width: 0;
 }
-.machine[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--selected);
-  font-weight: var(--weight-strong);
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+/* A new project's folder, editable where the sentence names it. */
+.folder {
+  min-width: 0;
+  max-width: 100%;
+  height: calc(var(--field) - 4px);
+  padding: 0 var(--space-1-5);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.inlineSelect {
+  width: auto;
+  height: calc(var(--field) - 4px);
 }
 .actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
   gap: var(--space-2);
+  min-width: 0;
 }
-.where {
+.spacer {
   flex: 1;
-  min-width: 0;
-}
-/* A new project's folder, editable, and git init. */
-.newFolder {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
 }
 
 /* Working: the three steps and the clone's bar. */
