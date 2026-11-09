@@ -1050,8 +1050,9 @@ export const screens: readonly Screen[] = [
     },
   },
   // W565: the flush sidebar with its pinned chats, two to a row as on the phone (big round pictures, the name under,
-  // a dot when new, a typing bubble while the lead works, no line before the list), and the top bar's one pill, at rest
-  // with its chevron towards the panel; then the pill opening the panel, pressed, its chevron turned back.
+  // a dot when new, no bubble while the lead works, no line before the list; one open and one hovered, each shade
+  // hugging its picture and name), and the top bar's one pill, at rest with its chevron towards the panel; then the
+  // pill opening the panel, pressed, its chevron turned back.
   {
     id: "shell",
     route: CHAT,
@@ -1066,6 +1067,9 @@ export const screens: readonly Screen[] = [
       const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"] > [data-reorder-row]');
       await expect(grid).toHaveCount(3);
       await expect(pill).toHaveAttribute("aria-pressed", "false");
+      // W572: storefront's open, so its highlight shows; billing's hovered beside it, the same compact shape, quieter.
+      await expect(grid.nth(0).getByRole("button")).toHaveAttribute("aria-current", "page");
+      await grid.nth(1).getByRole("button").hover();
     },
   },
   {

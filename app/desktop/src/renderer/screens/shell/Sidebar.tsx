@@ -158,8 +158,9 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
 /**
  * A pinned chat, as the phone draws its pins (mobile screens/Pinned.tsx, after Messages): a large round picture, its
  * name under it, two to a row over the list. New, the name speaks up with the dot beside it (the warning's when it
- * waits on you); while its lead works, a small typing bubble rises from the picture. While ⌘ (Ctrl) is held, its jump
- * number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1 onwards.
+ * waits on you); while its lead works, the picture's own bot says so, with no bubble of its own. While ⌘ (Ctrl) is
+ * held, its jump number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1
+ * onwards. Hovered or open, its shade hugs the picture and name, centred in its half of the grid.
  */
 function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   const m = mark(p);
@@ -174,14 +175,7 @@ function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
       aria-description={tip}
       {...rest}
     >
-      <span className={s.pinFace}>
-        <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
-        {p.working || p.running > 0 ? (
-          <span className={s.typing} aria-hidden>
-            <StateGlyph state="thinking" size="sm" />
-          </span>
-        ) : null}
-      </span>
+      <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
       <span className={s.pinName}>
         {jump !== null ? (
           <span className={s.jump}>{jump}</span>
