@@ -1,11 +1,11 @@
 // `node_action` `update`: the node updates itself to the build its hub names, with
-// the CLI's own pieces (src/update): a download checked against the release's SHA256SUMS, the previous binary kept,
+// the CLI's own pieces (src/update): a download checked against the release's checksums, the previous binary kept,
 // and the watcher that restarts the node's service and puts the previous binary back if the new one doesn't come up.
 // It answers before the restart; the hub sees the outcome in the version the node reconnects with, or, when the
 // service manager refuses the restart, in a second answer the node still running sends (notRestarted).
 //
 // `fetch` comes first, while the hub fetches its own build: the node downloads the build its hub is about to run and
-// keeps it, checked again against the release's sums before it is installed.
+// keeps it, checked again against the release's checksums before it is installed.
 //
 // The update may name a flavour (the Rust build's `rust` was the other, until Rust's removal): one other than this
 // build's is refused at the install stage, which the hub takes as final.
@@ -21,17 +21,17 @@ import {
   Failure,
   FLAVOUR,
   HttpFeed,
+  build,
   installedExe,
   isBuild,
-  release,
   replaceFile,
   restore,
   runningBinary,
-  sums,
   swap,
   retireHelper,
   type Feed,
   type Flavour,
+  type Sums,
 } from "../../update/index.ts";
 import { isHubService, services, type Service } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
@@ -70,22 +70,22 @@ const dir = (p: Place) => join(p.home, "update");
 export const planPath = (p: Place) => join(dir(p), "node-plan.json");
 /** The build `fetch` kept for the update that follows. */
 const fetched = (p: Place) => join(dir(p), "fleetd.next");
-/** The SHA256SUMS of the build `fetch` was asked for, read while the channel still offered it. */
+/** The checksums of the build `fetch` was asked for, read while the channel still offered it. */
 const keptSumsPath = (p: Place) => join(dir(p), "fleetd.next.sums.json");
 
-function keepSums(p: Place, to: string, s: Map<string, string>): void {
+function keepSums(p: Place, to: string, s: Sums): void {
   try {
     mkdirSync(dir(p), { recursive: true });
-    replaceFile(keptSumsPath(p), JSON.stringify({ version: to, sums: Object.fromEntries(s) }));
+    replaceFile(keptSumsPath(p), JSON.stringify({ version: to, sums: Object.fromEntries(s), ...(s.pinned ? { pinned: true } : {}) }));
   } catch (error) {
     throw new Failure("download", `couldn't keep the release's checksums: ${(error as Error).message}`);
   }
 }
 
-function keptSums(p: Place, to: string): Map<string, string> | undefined {
+function keptSums(p: Place, to: string): Sums | undefined {
   try {
-    const kept = JSON.parse(readFileSync(keptSumsPath(p), "utf8")) as { version: string; sums: Record<string, string> };
-    return kept.version === to ? new Map(Object.entries(kept.sums)) : undefined;
+    const kept = JSON.parse(readFileSync(keptSumsPath(p), "utf8")) as { version: string; sums: Record<string, string>; pinned?: boolean };
+    return kept.version === to ? Object.assign(new Map(Object.entries(kept.sums)), kept.pinned ? { pinned: true } : {}) : undefined;
   } catch {
     return undefined;
   }
@@ -99,15 +99,15 @@ const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
   return run;
 };
 
-/** The channel's newest build and its sums, read together; a newest build other than `to` is refused. */
-async function releaseOf(to: string, feed: Feed): Promise<Map<string, string>> {
-  const [r, s] = await Promise.all([release(feed), sums(feed)]);
+/** The channel's newest build and its sums, from one release.json; a newest build other than `to` is refused. */
+async function releaseOf(to: string, feed: Feed): Promise<Sums> {
+  const r = await build(feed);
   if (r.cliVersion !== to)
     throw new Failure(
       "download",
       `the channel's newest build is now ${r.cliVersion ? versionLabel(r.cliVersion) : "none"}, not the hub's ${versionLabel(to)}: update again`,
     );
-  return s;
+  return r.sums;
 }
 
 export type NodeUpdate = { version: string; channel: string; flavour?: string };

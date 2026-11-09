@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { byMachine, defaultTiming, type Held, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type NodeUpdate, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
 import { busyWords, healthUrl, updateSummary } from "../src/hub/update/ports.ts";
 import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
-import { sha256Hex } from "../src/update/index.ts";
+import { type Feed, sha256Hex } from "../src/update/index.ts";
 import type { Plan } from "../src/update/finish.ts";
 import { atLeast, versionCmp } from "../src/update/version.ts";
 import { PROTOCOL as HOSTED } from "../src/node/runner/host.ts";
@@ -42,6 +42,8 @@ class Fake implements UpdatePorts {
   announced: HubUpdateData[] = [];
   /** The channel's newest build and its bytes. */
   published: [string, Uint8Array] = [NEW, build];
+  /** A feed of its own, instead of `published`'s. */
+  release?: Feed;
 
   constructor(dir: string, nodes: Partial<NodeFacts>[]) {
     require("node:fs").mkdirSync(dir, { recursive: true });
@@ -63,6 +65,7 @@ class Fake implements UpdatePorts {
   }
 
   feed() {
+    if (this.release) return this.release;
     const [version, bytes] = this.published;
     return {
       get: async (name: string) =>
@@ -184,6 +187,55 @@ test("the hub stages its new build for the watcher, and the hub that comes up up
   ]);
   expect(run.finishedAt).toBeDefined();
   expect(JSON.parse(readFileSync(join(dir, "update", "run.json"), "utf8")).id).toBe(run.id);
+});
+
+/**
+ * The edge release as GitHub serves it while edge republishes it: every read sees the next build, as one reader can get
+ * one build's release.json, a cache's older SHA256SUMS and the next build's binary under the same names. Each build's
+ * pinned copy (`<asset>-<first 16 hex digits of its SHA-256>`) stays as it was uploaded.
+ */
+function republishing(builds: [string, Uint8Array][]): Feed & { reads: string[] } {
+  const asset = "fleetd-linux-x64";
+  const reads: string[] = [];
+  const bytesOf = (name: string): Uint8Array => {
+    const [version, bytes] = builds[Math.min(reads.length, builds.length - 1)]!;
+    reads.push(name);
+    const pinned = builds.find(([, b]) => name === `${asset}-${sha256Hex(b).slice(0, 16)}`);
+    if (pinned) return pinned[1];
+    const sum = sha256Hex(bytes);
+    if (name === "release.json") return new TextEncoder().encode(JSON.stringify({ cliVersion: version, sha256: { [asset]: sum } }));
+    if (name === "SHA256SUMS") return new TextEncoder().encode(`${sum}  ${asset}\n`);
+    return name === asset ? bytes : new Uint8Array();
+  };
+  return { reads, get: async (name) => bytesOf(name), stream: async (name, sink) => sink(bytesOf(name)) };
+}
+
+test("a release republished mid-update installs the build its release.json named, checked against it", async () => {
+  const dir = join(home.dir, "republished");
+  const fake = new Fake(dir, []);
+  const builds: [string, Uint8Array][] = [NEW, NEWER, "1.4.0"].map((v) => [v, new TextEncoder().encode(`fleetd ${v}`)]);
+  fake.release = republishing(builds);
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1 || u.status()?.finishedAt !== undefined);
+  const hub = byMachine(u.status()!).get("")!;
+  expect([hub.state, hub.stage, hub.message]).toEqual(["restarting", undefined, `restarting on ${NEW}`]);
+  expect(fake.plans[0]!.to).toBe(NEW);
+  expect(readFileSync(fake.exePath, "utf8")).toBe(`fleetd ${NEW}`);
+});
+
+test("a stale release.json naming an older build than the hub's installs nothing", async () => {
+  const dir = join(home.dir, "stale");
+  const fake = new Fake(dir, []);
+  fake.version = NEWER;
+  const u = updatesIn(dir, fake);
+  await u.prefetch();
+  expect(u.ready()).toBeUndefined();
+  u.start(undefined, true);
+  await until(() => u.status()?.finishedAt !== undefined);
+  const hub = byMachine(u.status()!).get("")!;
+  expect(hub.state).toBe("current");
+  expect(fake.plans).toEqual([]);
 });
 
 test("a hub on the channel's build only updates its nodes; a node that refuses says why", async () => {

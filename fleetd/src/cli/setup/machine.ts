@@ -10,7 +10,7 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 import { NotImplemented } from "../../shared/errors.ts";
 import { relocated } from "../../shared/home.ts";
 import { VERSION } from "../../shared/version.ts";
-import { type Feed, HttpFeed, release, REPO, sums, verified } from "../../update/index.ts";
+import { build, HttpFeed, REPO, sums, type Sums, verified } from "../../update/index.ts";
 import { edgeStamp } from "../../update/version.ts";
 import type { HubDb } from "../../hub/store/db.ts";
 import { eraseIn } from "../../hub/navi/erase.ts";
@@ -129,28 +129,34 @@ export interface Builds {
  * build), or the directory FLEETD_BASE_URL names. */
 export const releases: Builds = {
   async digest(version, asset) {
-    const [feed, edge] = feedOf(version);
-    await stillHolds(feed, edge, version, asset);
-    let listed: Map<string, string>;
-    try {
-      listed = await sums(feed);
-    } catch (error) {
-      throw new Error(missing(asset, version, (error as Error).message));
-    }
+    const [, listed] = await buildOf(version, asset);
     const digest = listed.get(asset);
     if (digest === undefined) throw new Error(missing(asset, version, "its release has none"));
     return digest;
   },
   async build(version, asset) {
-    const [feed, edge] = feedOf(version);
-    await stillHolds(feed, edge, version, asset);
+    const [feed, listed] = await buildOf(version, asset);
     try {
-      return await verified(feed, asset);
+      return await verified(feed, listed, asset);
     } catch (error) {
       throw new Error(missing(asset, version, (error as Error).message));
     }
   },
 };
+
+/** `version`'s release and its checksums: on edge, which republishes its names in place, the build and its checksums
+ * from one read of its release.json; elsewhere its SHA256SUMS. */
+async function buildOf(version: string, asset: string): Promise<[HttpFeed, Sums]> {
+  const [feed, edge] = feedOf(version);
+  let now: { cliVersion?: string; sums: Sums };
+  try {
+    now = edge ? await build(feed) : { sums: await sums(feed) };
+  } catch (error) {
+    throw new Error(missing(asset, version, (error as Error).message));
+  }
+  if (edge) stillHolds(now.cliVersion, version, asset);
+  return [feed, now.sums];
+}
 
 const feedOf = (version: string): [HttpFeed, boolean] => {
   const [base, edge] = releaseOf(version, process.env.FLEETD_BASE_URL);
@@ -166,9 +172,7 @@ export function releaseOf(version: string, override?: string): [string, boolean]
 }
 
 /** The edge release holds `version` only until the next edge build: its release.json says which it is now. */
-async function stillHolds(feed: Feed, edge: boolean, version: string, asset: string) {
-  if (!edge) return;
-  const now = (await release(feed)).cliVersion;
+function stillHolds(now: string | undefined, version: string, asset: string) {
   if (now === version) return;
   throw new Error(
     `this hub runs fleetd ${version}, and the edge release is now ${now ?? "another build"}, so it has no ${asset} of this hub's build. Fix: update the hub (fleetd update)`,
