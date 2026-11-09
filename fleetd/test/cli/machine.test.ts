@@ -140,13 +140,13 @@ const sha = (t: string) => new Bun.CryptoHasher("sha256").update(t).digest("hex"
 
 test.skipIf(process.platform !== "linux")("add copies a Mac this version's release build for it, checked against SHA256SUMS", async () => {
   const build = "the darwin-arm64 build";
-  const server = feed({ SHA256SUMS: `${sha(build)}  fleetd-darwin-arm64\n`, "fleetd-darwin-arm64": build });
+  const server = feed({ SHA256SUMS: `${sha(build)}  fleetd-bun-darwin-arm64\n`, "fleetd-bun-darwin-arm64": build });
   try {
     const r = resolve({ host: "dev@mac-1", dryRun: false, enroll: { kind: "hub" }, noService: true, mac: false }, process.execPath);
     const ran: Ran[] = [];
     const progress = collect();
     const prepared = await prepare(r, { db, home: hubHome, by: "a test" }, fake(ran, macProbe), releases, true, progress);
-    expect(prepared.fetched?.[0]).toBe("fleetd-darwin-arm64");
+    expect(prepared.fetched?.[0]).toBe("fleetd-bun-darwin-arm64");
     expect(new TextDecoder().decode(prepared.fetched?.[1])).toBe(build);
     expect(progress.lines).toContain(
       `begin download fleetd 0.0.0 for darwin-arm64 (this hub's is a linux-${process.arch} build), checked against its release's SHA256SUMS`,
