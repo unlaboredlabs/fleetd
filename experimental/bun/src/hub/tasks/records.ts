@@ -89,12 +89,21 @@ export const TaskRecords = {
     write(db, stored);
   },
 
-  /** An ended task, with its PR lookup marked pending (D67) or not, in one write. */
-  putEnded(db: Database, stored: StoredTask, prLookup: boolean): void {
+  /**
+   * An ended task, with its PR lookup marked pending (D67) or not, and its whole result when its tail cuts it
+   * (undefined clears an earlier run's), in one write.
+   */
+  putEnded(db: Database, stored: StoredTask, prLookup: boolean, fullResult?: string): void {
     db.transaction(() => {
       write(db, stored);
       TaskRecords.setPrLookup(db, stored.task.taskId, prLookup);
+      db.query("UPDATE tasks SET full_result = ? WHERE n = ?").run(fullResult ?? null, numberOf(stored.task.taskId));
     })();
+  },
+
+  /** The task's whole final result, kept when its tail cuts it. */
+  fullResult(db: Database, taskId: TaskId): string | undefined {
+    return db.query<{ full_result: string | null }, [number]>("SELECT full_result FROM tasks WHERE n = ?").get(numberOf(taskId))?.full_result ?? undefined;
   },
 
   /** Numbers the task (`T<n>`) and stores it. `task.taskId` is ignored. */
