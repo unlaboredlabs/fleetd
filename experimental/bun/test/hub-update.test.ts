@@ -28,6 +28,9 @@ class Fake implements UpdatePorts {
   updated: string[] = [];
   /** The updates they were sent, in the same order. */
   sent: NodeUpdate[] = [];
+  /** The flavour a node from before flavours (none named) runs, by machine: it ignores the one it is told and comes
+   * back on this one, naming it. Absent: the hub's. */
+  ownFlavour = new Map<string, "rust" | "bun">();
   fetched: string[] = [];
   claude: string[] = [];
   holds = 0;
@@ -116,8 +119,9 @@ class Fake implements UpdatePorts {
       setTimeout(() => {
         const f = this.facts.find((x) => x.machineId === m)!;
         f.version = update.version;
-        // A node that knows flavours comes back on the one it was told.
-        if (f.flavour !== undefined) f.flavour = update.flavour ?? f.flavour;
+        // A node that knows flavours comes back on the one it was told; one from before them on its own, which it names
+        // from then on.
+        f.flavour = f.flavour !== undefined ? (update.flavour ?? f.flavour) : (this.ownFlavour.get(m) ?? "bun");
         f.liveSince = this.now + 1;
         this.now += 2;
         for (const w of this.waiters.splice(0)) w();
@@ -541,6 +545,22 @@ test("a Rust-reporting node is behind a Bun hub of its version, and told to swit
   // No flavour said: current at the hub's version, never asked.
   expect(await u.catchUp("m1")).toBe("current");
   expect(fake.updated).toEqual(["m0"]);
+});
+
+// A node from before flavours (every live one when this shipped) ignores the hub's flavour, installs its own flavour of
+// the hub's build and comes back naming it. That isn't a failed update put back: the run asks it again, and it switches
+// in the same run.
+test("a node from before flavours comes back as build_rust and switches to Bun in the same run", async () => {
+  const dir = join(home.dir, "before-flavours");
+  const fake = new Fake(dir, [{ name: "boat-2" }]);
+  fake.ownFlavour.set("m0", "rust");
+  const { after, resumed } = await restarted(dir, fake);
+  await until(() => after.status()?.finishedAt !== undefined);
+  expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  expect(fake.updated).toEqual(["m0", "m0"]);
+  expect(fake.sent.map((u) => u.flavour)).toEqual(["bun", "bun"]);
+  expect(fake.facts[0]!.flavour).toBe("bun");
+  await resumed;
 });
 
 test("versions order within a channel only, and the watcher's health URL reaches the hub", () => {

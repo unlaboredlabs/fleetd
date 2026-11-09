@@ -1528,88 +1528,103 @@ impl Updates {
                 () = self.hurry.notified() => {}
             }
         }
-        self.set_part(
-            Some(machine_id),
-            UpdateState::Downloading,
-            None,
-            format!("downloading {label}"),
-        );
-        let asked = now_ms(self.clock.as_ref());
-        let mut refusal = match ports.update_node(machine_id, update).await {
-            Err(e) => {
-                return self.set_part(
-                    Some(machine_id),
-                    UpdateState::Failed,
-                    Some(UpdateStage::Download),
-                    e,
-                );
-            }
-            Ok((r, _)) if !r.ok => {
-                return self.set_part(
-                    Some(machine_id),
-                    UpdateState::Failed,
-                    Some(r.stage.unwrap_or(UpdateStage::Download)),
-                    r.message.as_str(),
-                );
-            }
-            Ok((_, refusal)) => refusal,
-        };
-        self.set_part(
-            Some(machine_id),
-            UpdateState::Restarting,
-            None,
-            format!("restarting on {label}"),
-        );
-        let deadline = asked + ms(self.timing.node_back);
-        loop {
-            let changed = ports.node_changed(machine_id);
-            match facts(ports) {
-                Some(n)
-                    if n.live_since.is_some_and(|at| at > asked)
-                        && n.version == to
-                        && n.runs(to) =>
-                {
+        // A node that names no flavour (from before them) comes back on its own flavour of `to`, then names it.
+        let mut named = node.flavour.is_some();
+        'ask: loop {
+            self.set_part(
+                Some(machine_id),
+                UpdateState::Downloading,
+                None,
+                format!("downloading {label}"),
+            );
+            let asked = now_ms(self.clock.as_ref());
+            let mut refusal = match ports.update_node(machine_id, update).await {
+                Err(e) => {
                     return self.set_part(
                         Some(machine_id),
-                        UpdateState::Done,
-                        None,
-                        format!("runs {label}"),
+                        UpdateState::Failed,
+                        Some(UpdateStage::Download),
+                        e,
                     );
                 }
-                Some(n) if n.live_since.is_some_and(|at| at > asked) => {
+                Ok((r, _)) if !r.ok => {
                     return self.set_part(
                         Some(machine_id),
-                        UpdateState::RolledBack,
+                        UpdateState::Failed,
+                        Some(r.stage.unwrap_or(UpdateStage::Download)),
+                        r.message.as_str(),
+                    );
+                }
+                Ok((_, refusal)) => refusal,
+            };
+            self.set_part(
+                Some(machine_id),
+                UpdateState::Restarting,
+                None,
+                format!("restarting on {label}"),
+            );
+            let deadline = asked + ms(self.timing.node_back);
+            loop {
+                let changed = ports.node_changed(machine_id);
+                match facts(ports) {
+                    Some(n)
+                        if n.live_since.is_some_and(|at| at > asked)
+                            && n.version == to
+                            && n.runs(to) =>
+                    {
+                        return self.set_part(
+                            Some(machine_id),
+                            UpdateState::Done,
+                            None,
+                            format!("runs {label}"),
+                        );
+                    }
+                    // A node from before flavours took its own flavour of `to`, and now names it: asked again, it
+                    // switches in this same run. Not put back: nothing failed.
+                    Some(n)
+                        if n.live_since.is_some_and(|at| at > asked)
+                            && n.version == to
+                            && !named
+                            && n.flavour.is_some() =>
+                    {
+                        named = true;
+                        continue 'ask;
+                    }
+                    Some(n) if n.live_since.is_some_and(|at| at > asked) => {
+                        return self.set_part(
+                            Some(machine_id),
+                            UpdateState::RolledBack,
+                            Some(UpdateStage::Health),
+                            format!(
+                                "{label} didn't come up healthy, so {} was put back and runs again",
+                                n.build_label()
+                            ),
+                        );
+                    }
+                    _ => {}
+                }
+                if let Some(r) = refusal.try_take() {
+                    return self.set_part(
+                        Some(machine_id),
+                        UpdateState::Failed,
+                        Some(r.stage.unwrap_or(UpdateStage::Restart)),
+                        r.message.as_str(),
+                    );
+                }
+                if now_ms(self.clock.as_ref()) >= deadline {
+                    return self.set_part(
+                        Some(machine_id),
+                        UpdateState::Failed,
                         Some(UpdateStage::Health),
                         format!(
-                            "{label} didn't come up healthy, so {} was put back and runs again",
-                            n.build_label()
+                            "didn't come back within {} min: check the fleetd node service on {}",
+                            self.timing.node_back.as_secs() / 60,
+                            node.name
                         ),
                     );
                 }
-                _ => {}
+                self.node_wait(changed).await;
             }
-            if let Some(r) = refusal.try_take() {
-                return self.set_part(
-                    Some(machine_id),
-                    UpdateState::Failed,
-                    Some(r.stage.unwrap_or(UpdateStage::Restart)),
-                    r.message.as_str(),
-                );
-            }
-            if now_ms(self.clock.as_ref()) >= deadline {
-                return self.set_part(
-                    Some(machine_id),
-                    UpdateState::Failed,
-                    Some(UpdateStage::Health),
-                    format!(
-                        "didn't come back within {} min: check the fleetd node service on {}",
-                        self.timing.node_back.as_secs() / 60,
-                        node.name
-                    ),
-                );
-            }
-            self.node_wait(changed).await;
         }
     }
 

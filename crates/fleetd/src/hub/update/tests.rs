@@ -63,6 +63,9 @@ struct Fake {
     asked: Mutex<Vec<String>>,
     /// The updates they were sent, in the same order.
     sent: Mutex<Vec<NodeUpdate>>,
+    /// The flavour a node from before flavours (none named) runs, by machine: it ignores the one it is told and comes
+    /// back on this one, naming it. Absent: the hub's.
+    own_flavour: HashMap<String, Flavour>,
     /// The nodes asked to fetch the build ahead.
     fetched: Mutex<Vec<String>>,
     /// Bumped when a test moves a node's link.
@@ -103,6 +106,7 @@ impl Fake {
             answers: HashMap::new(),
             asked: Mutex::default(),
             sent: Mutex::default(),
+            own_flavour: HashMap::new(),
             fetched: Mutex::default(),
             links: tokio::sync::watch::channel(0).0,
             claude: HashMap::new(),
@@ -281,13 +285,18 @@ impl UpdatePorts for Fake {
                 {
                     n.live_since = Some(i64::MAX / 2);
                     n.version = version.into();
-                    // A node that knows flavours comes back on the one it was told.
-                    if n.flavour.is_some() {
-                        n.flavour = match update.flavour {
-                            Some(BuildFlavour::Bun) => Some(Flavour::Bun),
-                            _ => Some(Flavour::Rust),
-                        };
-                    }
+                    // A node that knows flavours comes back on the one it was told; one from before them on its own,
+                    // which it names from then on.
+                    n.flavour = match (n.flavour, update.flavour) {
+                        (Some(_), Some(BuildFlavour::Bun)) => Some(Flavour::Bun),
+                        (Some(_), _) => Some(Flavour::Rust),
+                        (None, _) => Some(
+                            self.own_flavour
+                                .get(machine_id.as_str())
+                                .copied()
+                                .unwrap_or(Flavour::Rust),
+                        ),
+                    };
                 }
                 Ok((result(true, None, "restarting"), Said(None)))
             }
@@ -2447,6 +2456,33 @@ async fn a_node_on_the_other_flavour_is_behind_and_told_the_hubs() {
     let quiet = MachineId::unchecked("boat-3");
     assert_eq!(updates.catch_up(&quiet).await, Ok(NodeCatchUp::Current));
     assert_eq!(*fake.asked.lock().unwrap(), ["boat-2"]);
+}
+
+/// A node from before flavours (every live one when this shipped) ignores the hub's flavour, installs its own flavour
+/// of the hub's build and comes back naming it. That isn't a failed update put back: the run asks it again, and it
+/// switches in the same run.
+#[tokio::test]
+async fn a_node_from_before_flavours_switches_in_the_same_run() {
+    let home = tempfile::tempdir().unwrap();
+    let mut fake =
+        Fake::new(home.path(), b"new").node("mac", OLD, true, true, Some(Answer::BackOn(NEW)));
+    fake.own_flavour.insert("mac".into(), Flavour::Bun);
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Done);
+    assert_eq!(*fake.asked.lock().unwrap(), ["mac", "mac"]);
+    let told: Vec<_> = fake
+        .sent
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|u| u.flavour)
+        .collect();
+    assert_eq!(told, [Some(BuildFlavour::Rust); 2]);
+    assert_eq!(fake.nodes.lock().unwrap()[0].flavour, Some(Flavour::Rust));
 }
 
 /// A machine an update left behind (the devbox's node, 7 Nov, found a newer edge build out after waiting for its agents,

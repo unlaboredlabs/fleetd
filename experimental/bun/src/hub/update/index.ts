@@ -1179,37 +1179,47 @@ class Drive {
       off();
     }
     if (this.stopped()) return;
-    this.setPart(machineId, "downloading", undefined, `downloading ${label}`);
-    const asked = this.u.clockNow();
-    let refusal: NodeAnswer[1];
-    try {
-      const [r, second] = await ports.updateNode(machineId, update);
-      if (!r.ok) return this.setPart(machineId, "failed", r.stage ?? "download", r.message);
-      refusal = second;
-    } catch (e) {
-      return this.setPart(machineId, "failed", "download", (e as Error).message);
-    }
-    this.setPart(machineId, "restarting", undefined, `restarting on ${label}`);
-    const back = asked + this.u.timing.nodeBack;
-    for (;;) {
-      const ch = ports.nodeChanged(machineId);
-      const n = facts();
-      if (n && n.liveSince !== undefined && n.liveSince > asked) {
-        if (n.version === to && runs(n, to)) return this.setPart(machineId, "done", undefined, `runs ${label}`);
-        return this.setPart(machineId, "rolled_back", "health", `${label} didn't come up healthy, so ${buildLabel(n)} was put back and runs again`);
+    // A node that names no flavour (from before them) comes back on its own flavour of `to`, then names it.
+    let named = node.flavour !== undefined;
+    ask: for (;;) {
+      this.setPart(machineId, "downloading", undefined, `downloading ${label}`);
+      const asked = this.u.clockNow();
+      let refusal: NodeAnswer[1];
+      try {
+        const [r, second] = await ports.updateNode(machineId, update);
+        if (!r.ok) return this.setPart(machineId, "failed", r.stage ?? "download", r.message);
+        refusal = second;
+      } catch (e) {
+        return this.setPart(machineId, "failed", "download", (e as Error).message);
       }
-      const r = refusal.tryTake();
-      if (r) return this.setPart(machineId, "failed", r.stage ?? "restart", r.message);
-      if (this.u.clockNow() >= back) {
-        return this.setPart(
-          machineId,
-          "failed",
-          "health",
-          `didn't come back within ${Math.floor(this.u.timing.nodeBack / 60_000)} min: check the fleetd node service on ${node.name}`,
-        );
+      this.setPart(machineId, "restarting", undefined, `restarting on ${label}`);
+      const back = asked + this.u.timing.nodeBack;
+      for (;;) {
+        const ch = ports.nodeChanged(machineId);
+        const n = facts();
+        if (n && n.liveSince !== undefined && n.liveSince > asked) {
+          if (n.version === to && runs(n, to)) return this.setPart(machineId, "done", undefined, `runs ${label}`);
+        // A node from before flavours took its own flavour of `to`, and now names it: asked again, it switches in this
+        // same run. Not put back: nothing failed.
+        if (n.version === to && !named && n.flavour !== undefined) {
+          named = true;
+          continue ask;
+        }
+          return this.setPart(machineId, "rolled_back", "health", `${label} didn't come up healthy, so ${buildLabel(n)} was put back and runs again`);
+        }
+        const r = refusal.tryTake();
+        if (r) return this.setPart(machineId, "failed", r.stage ?? "restart", r.message);
+        if (this.u.clockNow() >= back) {
+          return this.setPart(
+            machineId,
+            "failed",
+            "health",
+            `didn't come back within ${Math.floor(this.u.timing.nodeBack / 60_000)} min: check the fleetd node service on ${node.name}`,
+          );
+        }
+        if (this.stopped()) return;
+        await this.nodeWait(ch);
       }
-      if (this.stopped()) return;
-      await this.nodeWait(ch);
     }
   }
 
