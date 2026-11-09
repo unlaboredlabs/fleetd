@@ -255,3 +255,20 @@ test("the watcher keeps a build that comes up, puts back one that doesn't, and o
   expect(await run(join(home.dir, "nothing.json"))).toBe(2);
   process.stderr.write = err;
 });
+
+test("the kept binary reads as it was when the process started, after a new one is renamed over its path", async () => {
+  const { Kept } = await import("../src/update/running.ts");
+  const { replaceFile } = await import("../src/update/index.ts");
+  const dir = join(home.dir, "kept");
+  mkdirSync(dir, { recursive: true });
+  const exe = join(dir, "fleetd");
+  writeFileSync(exe, "old build");
+  const kept = Kept.open(exe);
+  try {
+    replaceFile(exe, "the new build");
+    expect(new TextDecoder().decode(kept.bytes())).toBe("old build");
+    expect(readFileSync(exe, "utf8")).toBe("the new build");
+  } finally {
+    kept.close();
+  }
+});

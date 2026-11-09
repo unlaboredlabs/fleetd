@@ -2,6 +2,7 @@
 // exit codes as the Rust one. Exit codes: 0 ok, 1 failed, 2 usage, 3 refused, 4 hub or node unreachable.
 // Every command is a dynamic import, so a short one (`fleetd version`) loads only what it uses: cold start matters.
 import { initFromArgv } from "../shared/home.ts";
+import { keepRunningBinary } from "../update/running.ts";
 import { NotImplemented } from "../shared/errors.ts";
 import { emit } from "./result.ts";
 import * as U from "./usages.ts";
@@ -136,6 +137,7 @@ async function longRunning(command: string, rest: string[]): Promise<number | un
 
 /** Runs `argv` (without the binary's name) and returns the exit code. */
 export async function main(argv: string[]): Promise<number> {
+  keepRunningBinary();
   const [command, sub] = argv;
   const rest = argv.slice(1);
   try {
