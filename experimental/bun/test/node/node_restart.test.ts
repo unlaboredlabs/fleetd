@@ -72,3 +72,24 @@ test("a node exits at once on SIGTERM, and starts again on the same home", async
     home.done();
   }
 });
+
+test("a SIGTERM while the node starts up stops it once it is up, rather than killing it", async () => {
+  const home = tempHome();
+  const root = home.dir;
+  for (const sub of ["user", "node"]) mkdirSync(join(root, sub), { recursive: true });
+  writeFileSync(
+    join(root, "node/node.json"),
+    `${JSON.stringify({ hub: "http://127.0.0.1:1", machineId: "m-restart", name: "devbox", tags: [], enrolled: true })}\n`,
+  );
+  const n = node(root);
+  try {
+    // Logged as it starts, before its sessions, lead socket and link are up.
+    await n.said(["fleetd node starting"]);
+    n.child.kill("SIGTERM");
+    expect(await n.child.exited).toBe(0);
+    expect(n.child.signalCode).toBeNull();
+  } finally {
+    n.child.kill("SIGKILL");
+    home.done();
+  }
+});
