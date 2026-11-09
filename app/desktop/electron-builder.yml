@@ -48,7 +48,10 @@ extraResources:
   - from: build/app-update.yml
     to: app-update.yml
 
+# The icons are rendered from app/icon/ by `npm run icons` in app/mobile: the icns and the Linux set carry the
+# small-size master at 16 and 32 px, which a scaled-down 1024 wouldn't.
 mac:
+  icon: build/icon.icns
   target:
     - target: dir
       arch: universal
@@ -70,6 +73,7 @@ linux:
     - target: deb
       arch: x64
   category: Development
+  icon: build/icons
   executableName: fleetd-desktop
   artifactName: fleetd-desktop-linux-${arch}.${ext}
   syncDesktopName: true
