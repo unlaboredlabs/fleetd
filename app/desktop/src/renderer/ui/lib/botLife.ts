@@ -1,6 +1,6 @@
 // What keeps the bots alive on the desktop (shared/bot.ts): one requestAnimationFrame loop steps every bot that is
 // awake and on screen and writes its frame, and stops when none is; and one conductor gives an idle bot in a list its
-// moment (a blink or a glance) every 2.2 to 4.8 s, never the same one twice running, so idle rows take turns. A bot in
+// moment (a blink or a glance) every 1.6 to 3.6 s, never the same one twice running, so idle rows take turns. A bot in
 // a live state (thinking, working, needs you, done, an error) keeps moving while it's on screen. The bots are the one
 // exception to the app's 120 ms motion beat (D377): springs at the display's rate, and only while they are seen.
 // Nothing moves while the window is hidden or for a bot off screen, whose clock stops there; with reduced motion a

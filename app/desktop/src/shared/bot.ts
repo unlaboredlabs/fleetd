@@ -9,7 +9,7 @@
 // display frame. A bot's clock never restarts and each loop's amplitude is a spring too, so a state change moves only
 // the targets: the bot blends from its current pose and phase, and an arrival nudges the body's speed, never its place.
 // With reduced motion the loops, blinks and glances stop and each state settles, critically damped, into its still pose.
-// Below 44 px the rig sizes itself for small use: larger, slightly wider eyes, half the body motion, a closed eye never
+// Below 44 px the rig sizes itself for small use: larger, slightly wider eyes, 0.8 of the body motion, a closed eye never
 // thinner than 1 px, and no glow.
 //
 // In a list an idle bot waits for its turn (moment: a blink or a glance, one bot at a time), and sleeps between
@@ -160,9 +160,9 @@ const loops = (t: number, a: readonly number[], o: number[], B: number): void =>
   const br = a[BREATH] ?? 0;
   if (br !== 0) {
     const s = Math.sin((TAU * t) / 4.4) + 0.22 * Math.sin((TAU * t) / 1.7 + 1.3);
-    o[SQUASH] = (o[SQUASH] ?? 0) - 0.013 * br * B * s;
-    o[LIFT] = (o[LIFT] ?? 0) + 0.42 * br * B * s;
-    o[GY] = (o[GY] ?? 0) - 0.03 * br * s;
+    o[SQUASH] = (o[SQUASH] ?? 0) - 0.02 * br * B * s;
+    o[LIFT] = (o[LIFT] ?? 0) + 0.63 * br * B * s;
+    o[GY] = (o[GY] ?? 0) - 0.045 * br * s;
   }
   // Reading: four fixations across a line, a saccade back, and a small nod at each new line (2.7 s).
   const rd = a[READ] ?? 0;
@@ -170,43 +170,43 @@ const loops = (t: number, a: readonly number[], o: number[], B: number): void =>
     const p = (t / 2.7) % 1;
     const x = p < 0.84 ? -1 + (2 * Math.floor((p / 0.84) * 4)) / 3 : -1;
     const nod = bump(p, 0.8, 1);
-    o[GX] = (o[GX] ?? 0) + 0.34 * rd * x;
-    o[GY] = (o[GY] ?? 0) + 0.16 * rd * nod;
-    o[LIFT] = (o[LIFT] ?? 0) - 0.9 * rd * B * nod;
-    o[SQUASH] = (o[SQUASH] ?? 0) + 0.02 * rd * B * nod;
+    o[GX] = (o[GX] ?? 0) + 0.5 * rd * x;
+    o[GY] = (o[GY] ?? 0) + 0.24 * rd * nod;
+    o[LIFT] = (o[LIFT] ?? 0) - 1.35 * rd * B * nod;
+    o[SQUASH] = (o[SQUASH] ?? 0) + 0.03 * rd * B * nod;
   }
   // Pondering: the look drifts in a slow circle (3.8 s), a slow sway.
   const pd = a[PONDER] ?? 0;
   if (pd !== 0) {
     const w = (TAU * t) / 3.8;
-    o[GX] = (o[GX] ?? 0) + 0.17 * pd * Math.sin(w);
-    o[GY] = (o[GY] ?? 0) + 0.1 * pd * Math.cos(w);
-    o[LEAN] = (o[LEAN] ?? 0) + 1.8 * pd * B * Math.sin((TAU * t) / 5.6);
+    o[GX] = (o[GX] ?? 0) + 0.26 * pd * Math.sin(w);
+    o[GY] = (o[GY] ?? 0) + 0.15 * pd * Math.cos(w);
+    o[LEAN] = (o[LEAN] ?? 0) + 2.7 * pd * B * Math.sin((TAU * t) / 5.6);
   }
   // Attentive: a small perk up every 3.2 s, the eyes a touch wider at its top, a slow curious tilt.
   const pk = a[PERK] ?? 0;
   if (pk !== 0) {
     const q = bump((t / 3.2) % 1, 0, 0.24);
-    o[LIFT] = (o[LIFT] ?? 0) + 1.2 * pk * B * q;
-    o[SQUASH] = (o[SQUASH] ?? 0) - 0.03 * pk * B * q;
-    o[EYES] = (o[EYES] ?? 0) + 0.03 * pk * q;
-    o[LEAN] = (o[LEAN] ?? 0) + 1.1 * pk * B * Math.sin((TAU * t) / 6.4);
+    o[LIFT] = (o[LIFT] ?? 0) + 1.8 * pk * B * q;
+    o[SQUASH] = (o[SQUASH] ?? 0) - 0.045 * pk * B * q;
+    o[EYES] = (o[EYES] ?? 0) + 0.045 * pk * q;
+    o[LEAN] = (o[LEAN] ?? 0) + 1.65 * pk * B * Math.sin((TAU * t) / 6.4);
   }
   // Content: a slow sway (5 s), the look trailing it.
   const sw = a[SWAY] ?? 0;
   if (sw !== 0) {
-    o[LEAN] = (o[LEAN] ?? 0) + 1.8 * sw * B * Math.sin((TAU * t) / 5);
-    o[GX] = (o[GX] ?? 0) + 0.09 * sw * Math.sin((TAU * t) / 5 - 0.6);
+    o[LEAN] = (o[LEAN] ?? 0) + 2.7 * sw * B * Math.sin((TAU * t) / 5);
+    o[GX] = (o[GX] ?? 0) + 0.14 * sw * Math.sin((TAU * t) / 5 - 0.6);
   }
   // Low: a slow breath with a sigh in it every 6 s.
   const sg = a[SIGH] ?? 0;
   if (sg !== 0) {
     const s = Math.sin((TAU * t) / 6);
     const q = bump((t / 6) % 1, 0.55, 0.95);
-    o[SQUASH] = (o[SQUASH] ?? 0) + sg * B * (0.01 * s + 0.032 * q);
-    o[LIFT] = (o[LIFT] ?? 0) - sg * B * (0.35 * s + 0.9 * q);
-    o[GY] = (o[GY] ?? 0) + 0.07 * sg * q;
-    o[UP] = (o[UP] ?? 0) + 0.05 * sg * q;
+    o[SQUASH] = (o[SQUASH] ?? 0) + sg * B * (0.015 * s + 0.048 * q);
+    o[LIFT] = (o[LIFT] ?? 0) - sg * B * (0.53 * s + 1.35 * q);
+    o[GY] = (o[GY] ?? 0) + 0.1 * sg * q;
+    o[UP] = (o[UP] ?? 0) + 0.07 * sg * q;
   }
 };
 
@@ -239,18 +239,18 @@ const amps = (l: { breath?: number; read?: number; ponder?: number; perk?: numbe
 
 /** Each state: its pose, its loops and its arrival (the report's table). */
 export const MOODS: { readonly [S in BotState]: Mood } = {
-  // Neutral: an uneven breath, a blink every 2.6 to 6.2 s (sometimes two), a glance aside now and then.
-  idle: { pose: channels({}), loops: amps({ breath: 1, glance: 1 }), blink: [2.6, 6.2], twice: 0.18, slow: false, kick: kicks({}) },
+  // Neutral: an uneven breath, a blink every 2 to 4.6 s (sometimes two), a glance aside every 4 to 7.5 s.
+  idle: { pose: channels({}), loops: amps({ breath: 1, glance: 1 }), blink: [2, 4.6], twice: 0.2, slow: false, kick: kicks({}) },
   // Looks up and aside, head tilted; the look drifts in a slow circle. Arrives with a small lift.
-  thinking: { pose: channels({ gx: -0.52, gy: -0.62, lean: -1.6, eyes: 0.97 }), loops: amps({ breath: 0.7, ponder: 1 }), blink: [2.4, 4.8], twice: 0.1, slow: false, kick: kicks({ lift: 7 }) },
+  thinking: { pose: channels({ gx: -0.62, gy: -0.74, lean: -2.4, eyes: 0.97 }), loops: amps({ breath: 0.7, ponder: 1 }), blink: [2.4, 4.8], twice: 0.1, slow: false, kick: kicks({ lift: 7 }) },
   // Looks down, lids a touch lower, and reads. Arrives with a squish.
-  working: { pose: channels({ gy: 0.55, up: 0.07, squash: 0.012 }), loops: amps({ breath: 0.45, read: 1 }), blink: [3.4, 6], twice: 0, slow: false, kick: kicks({ squash: 0.28 }) },
+  working: { pose: channels({ gy: 0.68, up: 0.1, squash: 0.018 }), loops: amps({ breath: 0.45, read: 1 }), blink: [3.4, 6], twice: 0, slow: false, kick: kicks({ squash: 0.28 }) },
   // Sits up taller, eyes bigger with a faint glow, looks at you, perks up. Arrives with a hop.
-  needs: { pose: channels({ lift: 2.3, squash: -0.032, eyes: 1.07, gy: -0.14, glow: 1, lean: 2.6 }), loops: amps({ breath: 0.5, perk: 1 }), blink: [2, 3.8], twice: 0.45, slow: false, kick: kicks({ lift: 24, squash: -0.5 }) },
+  needs: { pose: channels({ lift: 3, squash: -0.042, eyes: 1.1, gy: -0.16, glow: 1, lean: 3.2 }), loops: amps({ breath: 0.5, perk: 1 }), blink: [2, 3.8], twice: 0.45, slow: false, kick: kicks({ lift: 24, squash: -0.5 }) },
   // Crescent eyes from the lower lid, settled a touch wider; a deeper breath and a slow sway. A happy squish.
-  done: { pose: channels({ low: 0.62, up: 0.04, squash: 0.022, lift: -0.4 }), loops: amps({ breath: 1.35, sway: 1 }), blink: null, twice: 0, slow: false, kick: kicks({ squash: 0.6 }) },
+  done: { pose: channels({ low: 0.68, up: 0.04, squash: 0.03, lift: -0.6 }), loops: amps({ breath: 1.35, sway: 1 }), blink: null, twice: 0, slow: false, kick: kicks({ squash: 0.6 }) },
   // Lids drop, lower at the outer corners; looks down, sinks and slumps; dimmer eyes; a sigh every 6 s. A slump.
-  error: { pose: channels({ up: 0.38, slope: 0.55, gy: 0.62, gx: 0.14, squash: 0.055, lift: -2.1, lean: -3, dim: 1, eyes: 0.97 }), loops: amps({ sigh: 1 }), blink: [4, 7], twice: 0, slow: true, kick: kicks({ lift: -9, squash: 0.35 }) },
+  error: { pose: channels({ up: 0.42, slope: 0.6, gy: 0.72, gx: 0.16, squash: 0.065, lift: -2.8, lean: -3.8, dim: 1, eyes: 0.96 }), loops: amps({ sigh: 1 }), blink: [4, 7], twice: 0, slow: true, kick: kicks({ lift: -9, squash: 0.35 }) },
 };
 
 // ---- One bot's rig
@@ -347,7 +347,7 @@ export const newRig = (state: BotState, size: number, seed: number, solo = size 
     awake: -1,
     eyeK: 1 + 0.2 * o,
     gapK: 1 + 0.05 * o,
-    B: 1 - 0.45 * o,
+    B: 1 - 0.2 * o,
     minT: Math.max(1.9, (100 / size) * 1.05),
     glow: size >= SMALL,
     points: size >= SMALL ? 22 : 14,
@@ -397,8 +397,8 @@ export const moment = (r: Rig): void => {
     r.awake = t + 1.2;
   } else if (p < 0.9) {
     const side = rnd(r) < 0.5 ? -1 : 1;
-    r.gx = side * (0.6 + rnd(r) * 0.3);
-    r.gy = (rnd(r) - 0.6) * 0.4;
+    r.gx = side * (0.8 + rnd(r) * 0.35);
+    r.gy = (rnd(r) - 0.6) * 0.5;
     r.glanceEnd = t + 0.8 + rnd(r) * 0.7;
     if (rnd(r) < 0.6) blinkAt(r, t - 0.02);
     r.awake = r.glanceEnd + 1.4;
@@ -430,10 +430,10 @@ const step = (r: Rig, h: number, calm: boolean): void => {
   // Its own glances (a solo bot's; a list's come as moments), and their end.
   if (!calm && r.solo && r.t >= r.nextGlance) {
     const side = rnd(r) < 0.5 ? -1 : 1;
-    r.gx = side * (0.6 + rnd(r) * 0.3);
-    r.gy = (rnd(r) - 0.6) * 0.5;
+    r.gx = side * (0.8 + rnd(r) * 0.35);
+    r.gy = (rnd(r) - 0.6) * 0.6;
     r.glanceEnd = r.t + 0.9 + rnd(r) * 1.2;
-    r.nextGlance = r.t + 5.5 + rnd(r) * 5;
+    r.nextGlance = r.t + 4 + rnd(r) * 3.5;
     if (rnd(r) < 0.55) blinkAt(r, r.t - 0.02);
   }
   if (r.t >= r.glanceEnd) {
@@ -636,5 +636,5 @@ export const random = (seed: number): (() => number) => {
   };
 };
 
-/** In a list, the rest between one bot's moment and the next one's, in seconds: 2.2 to 4.8. */
-export const listRest = (r: () => number): number => 2.2 + r() * 2.6;
+/** In a list, the rest between one bot's moment and the next one's, in seconds: 1.6 to 3.6. */
+export const listRest = (r: () => number): number => 1.6 + r() * 2;

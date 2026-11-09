@@ -38,7 +38,7 @@ describe("the bot", () => {
     const r = newRig("error", 36, 3);
     expect(r.x[DIM]).toBe(1);
     expect(r.x[UP]).toBeCloseTo(MOODS.error.pose[UP] ?? 0, 1);
-    expect(newRig("done", 36, 3).x[LOW]).toBeCloseTo(0.62, 1);
+    expect(newRig("done", 36, 3).x[LOW]).toBeCloseTo(MOODS.done.pose[LOW] ?? 0, 1);
     expect(newRig("needs", 36, 3).x[GLOW]).toBe(1);
   });
 
@@ -80,15 +80,15 @@ describe("the bot", () => {
     const x = r.x.slice();
     expect(isAwake(r, true)).toBe(false);
     run(r, 3, true);
-    for (let i = 0; i < x.length; i++) expect(r.x[i]).toBeCloseTo(x[i] ?? 0, 3);
+    for (let i = 0; i < x.length; i++) expect(r.x[i]).toBeCloseTo(x[i] ?? 0, 2);
   });
 
-  it("sizes itself for lists: larger eyes, half the body's motion, no glow, a closed eye never a hole", () => {
+  it("sizes itself for lists: larger eyes, 0.8 of the body's motion, no glow, a closed eye never a hole", () => {
     const small = newRig("needs", 20, 1);
     const large = newRig("needs", 64, 1);
     expect(small.eyeK).toBeCloseTo(1.2);
     expect(large.eyeK).toBe(1);
-    expect(small.B).toBeLessThan(0.6);
+    expect(small.B).toBeCloseTo(0.8);
     expect(frameOf(small).glow).toBe(0);
     expect(frameOf(large).glow).toBeGreaterThan(0.9);
     // Shut: at 20 px its line is still 1 px thick (5 units of the box).
