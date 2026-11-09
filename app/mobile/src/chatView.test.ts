@@ -132,7 +132,7 @@ const item = (id: string, author: ChatItem["author"], at: string, extra: Partial
 });
 
 describe("threadRows", () => {
-  it("groups a side's burst, tails its last, and puts a day line where a day starts", () => {
+  it("groups a side's burst and puts a day line where a day starts", () => {
     const rows = threadRows([
       item("a", "human", "2026-10-28T10:00:00Z"),
       item("b", "human", "2026-10-28T10:01:00Z"),
@@ -141,15 +141,15 @@ describe("threadRows", () => {
       item("e", "lead", "2026-10-28T11:00:00Z"),
       item("f", "lead", "2026-10-29T08:00:00Z"),
     ], false, undefined, { timeZone: "UTC" });
-    expect(rows.map((r) => (r.t === "item" ? `${r.id}:${r.side}:${r.first ? "F" : "-"}${r.last ? "L" : "-"}` : r.t))).toEqual([
+    expect(rows.map((r) => (r.t === "item" ? `${r.id}:${r.side}:${r.first ? "F" : "-"}` : r.t))).toEqual([
       "day",
-      "a:me:F-",
-      "b:me:-L",
-      "c:them:FL",
-      "d:them:FL",
-      "e:them:FL",
+      "a:me:F",
+      "b:me:-",
+      "c:them:F",
+      "d:them:F",
+      "e:them:F",
       "day",
-      "f:them:FL",
+      "f:them:F",
     ]);
   });
 
@@ -159,7 +159,7 @@ describe("threadRows", () => {
       item("b", "agent", "2026-10-28T10:00:10Z", { message: { ...message("b"), author: "agent", by: "T2" } }),
       item("c", "system", "2026-10-28T10:00:20Z", { kind: "event" }),
     ]);
-    expect(rows.flatMap((r) => (r.t === "item" ? [`${r.side}:${String(r.first && r.last)}`] : []))).toEqual(["them:true", "them:true", "center:true"]);
+    expect(rows.flatMap((r) => (r.t === "item" ? [`${r.side}:${String(r.first)}`] : []))).toEqual(["them:true", "them:true", "center:true"]);
   });
 
   it("ends with the turn line while the lead works, under its reply as it streams too, as the desktop's", () => {
@@ -304,13 +304,13 @@ describe("sameRow", () => {
     expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false, true]);
   });
 
-  it("redraws the bubble above a new one in its burst, which loses its tail", () => {
+  it("doesn't redraw the bubble above a new one in its burst", () => {
     const chat = applyHistory(emptyChat, page([msg(1, "lead", "One.")]), "latest");
     const next = applyHistory(chat, page([msg(1, "lead", "One."), msg(2, "lead", "Two.")]), "latest");
     const [day, one] = rowsOf(chat);
     const [day2, one2] = rowsOf(next);
     expect(sameRow(day as ThreadRow, day2 as ThreadRow)).toBe(true);
-    expect(sameRow(one as ThreadRow, one2 as ThreadRow)).toBe(false);
+    expect(sameRow(one as ThreadRow, one2 as ThreadRow)).toBe(true);
   });
 });
 
@@ -395,9 +395,9 @@ describe("seenSeq", () => {
   it("is the newest message on screen", () => {
     const rows: ThreadRow[] = [
       { t: "day", id: "d", at: "2026-10-28T10:00:00Z" },
-      { t: "item", id: "a", item: item("a", "lead", "2026-10-28T10:00:00Z", { message: { ...message("a"), seq: 7 } }), side: "them", first: true, last: true },
-      { t: "item", id: "b", item: item("b", "human", "2026-10-28T10:01:00Z", { message: { ...message("b"), seq: 9 } }), side: "me", first: true, last: true },
-      { t: "item", id: "c", item: item("c", "human", "2026-10-28T10:02:00Z"), side: "me", first: true, last: true },
+      { t: "item", id: "a", item: item("a", "lead", "2026-10-28T10:00:00Z", { message: { ...message("a"), seq: 7 } }), side: "them", first: true },
+      { t: "item", id: "b", item: item("b", "human", "2026-10-28T10:01:00Z", { message: { ...message("b"), seq: 9 } }), side: "me", first: true },
+      { t: "item", id: "c", item: item("c", "human", "2026-10-28T10:02:00Z"), side: "me", first: true },
       { t: "unread", id: "unread" },
     ];
     expect(seenSeq(rows)).toBe(9);
@@ -406,7 +406,7 @@ describe("seenSeq", () => {
 });
 
 describe("streamingAt", () => {
-  const row = (id: string, state: ChatMessage["state"]): ThreadRow => ({ t: "item", id, item: item(id, "lead", "2026-10-28T10:00:00Z", { message: { ...message(id), state } }), side: "them", first: true, last: true });
+  const row = (id: string, state: ChatMessage["state"]): ThreadRow => ({ t: "item", id, item: item(id, "lead", "2026-10-28T10:00:00Z", { message: { ...message(id), state } }), side: "them", first: true });
 
   it("finds the reply streaming in at the newest end, under the turn line", () => {
     expect(streamingAt([{ t: "turn", id: "turn" }, row("a", "streaming"), row("b", "final")])).toBe(1);

@@ -16,7 +16,6 @@ import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
-import { Tail, TAIL_REACH } from "./Bubble";
 import { Icon, type IconName } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
@@ -55,24 +54,18 @@ export type OpenedImage = { readonly chatKey: Key; readonly attachmentId: string
 const uriOf = (a: AttachmentGetOutput): string => `data:${a.mime};base64,${a.dataB64}`;
 
 /**
- * A picture in the thread, sized as Messages sizes one (../bubble.ts): its own shape, a soft block while it loads. The
- * last of a burst has the tail, cut from the picture. Every picture is drawn TAIL_REACH taller than its box, tail or
- * not, so it keeps its scale when it lifts into the menu without one.
+ * A picture in the thread, sized as Messages sizes one (../bubble.ts): its own shape, a soft block while it loads.
  */
 export function ImageBubble({
   chatKey,
   attachmentId,
   name,
   onOpen,
-  side,
-  tail = false,
 }: {
   chatKey: Key;
   attachmentId: string;
   name: string;
   onOpen: (a: OpenedImage) => void;
-  side: "me" | "them";
-  tail?: boolean;
 }) {
   const t = useTheme();
   const screen = useWindowDimensions();
@@ -106,15 +99,11 @@ export function ImageBubble({
       accessibilityHint="Opens it full screen"
       onPress={() => onOpen({ chatKey, attachmentId, shown: got })}
     >
-      {({ pressed }) => {
-        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: height + TAIL_REACH }} resizeMode="cover" accessibilityIgnoresInvertColors />;
-        return (
-          <View style={pressed && styles.pressed}>
-            <View style={[styles.image, { width, height, backgroundColor: t.fillQuiet }]}>{picture}</View>
-            {tail ? <Tail side={side} picture={{ node: picture, size: { width, height } }} /> : null}
-          </View>
-        );
-      }}
+      {({ pressed }) => (
+        <View style={[styles.image, { width, height, backgroundColor: t.fillQuiet }, pressed && styles.pressed]}>
+          <Image source={{ uri: uriOf(got) }} style={{ width, height }} resizeMode="cover" accessibilityIgnoresInvertColors />
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -136,7 +125,7 @@ export const GLYPHS: Readonly<Record<FileGlyph, { readonly icon: IconName; reado
  * hub and opens the share sheet with the file as itself, its preview on top: Save to Files, or open it in Numbers,
  * Pages or another app. Nothing is read before the tap: a card costs no bytes.
  */
-export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tail = false }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; tail?: boolean }) {
+export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean }) {
   const t = useTheme();
   const session = useSession();
   // undefined: not read yet, or shared; "reading"; or why the hub couldn't give it (a tap reads it again).
@@ -163,7 +152,6 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tai
       }}
       style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(screen.width), FILE_WIDTH) }, pressed && styles.pressed]}
     >
-      {tail ? <Tail side={mine ? "me" : "them"} fill={fill} /> : null}
       <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : glyph.tint(t) }]}>
         <Icon name={glyph.icon} size={20} color="#FFFFFF" />
       </View>

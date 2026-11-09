@@ -1,6 +1,6 @@
 // A chat as the phone lays it out, iMessage's way: a lead message of several parts is several bubbles, and its blocks
 // are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
-// said in words). Messages from one side in a burst group, tight, with the tail on the last; a time line goes between
+// said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import type { ChatItem } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
@@ -221,7 +221,7 @@ const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
 export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
-  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly last: boolean }
+  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean }
   /** The lead is mid-turn: the turn line (screens/TurnLine.tsx), what it does now. */
   | { readonly t: "turn"; readonly id: string }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
@@ -234,7 +234,7 @@ export type ThreadRow =
 export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
   if (a === b) return true;
   if (a.t !== b.t || a.id !== b.id) return false;
-  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.last === b.last && sameItem(a.item, b.item);
+  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && sameItem(a.item, b.item);
   if (a.t === "day" && b.t === "day") return a.at === b.at;
   return true;
 };
@@ -275,8 +275,7 @@ export const threadRows = (items: readonly ChatItem[], working = false, readSeq?
     if (prev === undefined || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
     prevDay = day;
     const side = sideOf(item);
-    const next = items[i + 1];
-    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), last: i + 1 === firstUnread || !joins(item, next) });
+    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item) });
     prev = item;
   }
   if (working) rows.push({ t: "turn", id: "turn" });
