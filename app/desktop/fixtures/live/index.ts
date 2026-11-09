@@ -149,6 +149,52 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   return f;
 };
 
+/**
+ * live-turn: three agents thinking in the strip while the lead's turn line before it comes, changes step, says "Worked for"
+ * and goes, over and over (every CYCLE_MS from 1.5 s), so the band's motion can be recorded frame by frame.
+ */
+const CYCLE_MS = 7_000;
+const withTurns = (f: Fixture): Fixture => {
+  const turn = Fixture.from(f, "live-turn", "The live strip with 3 agents while the lead's turn line comes and goes, again and again.");
+  const now = Date.parse(turn.now);
+  const projects = turn.snapshot?.["projects"];
+  const first = Array.isArray(projects) ? (projects[0] as JsonObject | undefined) : undefined;
+  const machineId = typeof first?.["machineId"] === "string" ? first["machineId"] : "devbox";
+  const projectId = typeof first?.["projectId"] === "string" ? first["projectId"] : "storefront";
+  const lead = `lead:${machineId}/${projectId}`;
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  // Every agent thinking, so the now-line's words carry the scan over the strip's glass.
+  const agents = turn.live[0]?.["lanes"];
+  const lanes = (Array.isArray(agents) ? agents : []).map((l) => {
+    const lane = l as JsonObject;
+    return lane["activity"] === undefined ? lane : { ...lane, activity: { activity: { kind: "thinking" }, since: at(-4_000) } };
+  });
+  turn.live = [{ ...turn.live[0], lanes }];
+  let seq = Math.max(Number(turn.snapshot?.["cursor"] ?? 0), ...turn.events.map((e) => Number(e["seq"] ?? 0)));
+  const waiting = (ms: number, leadWorking: boolean) =>
+    turn.later(ms, "event", {
+      seq: ++seq,
+      at: at(ms),
+      type: "chat.waiting",
+      summary: leadWorking ? "The lead is working" : "The lead is idle",
+      machineId,
+      projectId,
+      data: { projectRef: { machineId, projectId }, needsYou: false, leadWorking, lastSeq: 4, lastMessageAt: at(0) },
+    });
+  const doing = (ms: number, activity: JsonObject | undefined) =>
+    turn.later(ms, "live", { at: at(ms), full: true, lanes: [...lanes, ...(activity === undefined ? [] : [{ laneId: lead, status: "working", activity: { activity, since: at(ms) } }])] });
+  waiting(0, false);
+  for (let k = 0; k < 6; k++) {
+    const t = 1_500 + k * CYCLE_MS;
+    doing(t, { kind: "tool", name: "plan", server: "fleetd" });
+    waiting(t, true);
+    doing(t + 1_200, { kind: "read", path: "src/checkout/summary/rounding.ts" });
+    doing(t + 2_400, undefined);
+    waiting(t + 2_400, false);
+  }
+  return turn;
+};
+
 export default defineGroup({
-  fixtures: (base) => [fromBase(base("typical"), 0), fromBase(base("typical"), 3), fromBase(base("typical"), 20)],
+  fixtures: (base) => [fromBase(base("typical"), 0), fromBase(base("typical"), 3), fromBase(base("typical"), 20), withTurns(fromBase(base("typical"), 3))],
 });
