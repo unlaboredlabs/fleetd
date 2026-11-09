@@ -4,7 +4,7 @@ import { leadLaneId } from "./desktop";
 
 const KEY = "devbox/p1";
 const ref = { machineId: "devbox", projectId: "p1" };
-const base = { chatStates: {}, requests: [], leadActivity: {} };
+const base = { chatStates: {}, requests: [], leadActivity: {}, running: {} };
 
 describe("a project's bot on the phone", () => {
   it("is idle, done with a new reply, at work while its lead works, and needs you over all", () => {
@@ -19,5 +19,14 @@ describe("a project's bot on the phone", () => {
     expect(botOf(waiting, KEY)).toBe("needs");
     const asked = { ...base, requests: [{ requestId: "Q1", projectRef: ref, kind: "approval", state: "open", text: "", createdAt: "" }] } as never;
     expect(botOf(asked, KEY)).toBe("needs");
+  });
+
+  it("works while its agents do, its lead idle or thinking, as the desktop's", () => {
+    const agents = { ...base, running: { [KEY]: 2 } };
+    expect(botOf(agents, KEY)).toBe("working");
+    expect(botOf(agents, KEY, true)).toBe("working");
+    const thinking = { ...agents, chatStates: { [KEY]: { projectRef: ref, needsYou: false, leadWorking: true } }, leadActivity: { [leadLaneId(ref)]: { kind: "thinking" } } } as never;
+    expect(botOf(thinking, KEY)).toBe("working");
+    expect(botOf({ ...base, running: { "devbox/p2": 1 } }, KEY)).toBe("idle");
   });
 });

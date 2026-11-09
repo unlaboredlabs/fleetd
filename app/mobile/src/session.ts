@@ -84,6 +84,9 @@ export class Session {
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The open chat, when the link dropped with its latest page shown: a replay after the drop keeps it going. */
   #resumable: Key | null = null;
+  /** An orders_board read on its way, and another one asked for meanwhile. */
+  #boarding = false;
+  #boardAgain = false;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
@@ -469,6 +472,25 @@ export class Session {
     if (r.output.admin === true) void loadRun(this.updates);
   }
 
+  /** The open orders, for who works where (store.ts running): one read at a time, and one more if asked meanwhile, as
+   * an order's agents come in bursts of events. */
+  async #readBoard(): Promise<void> {
+    if (this.#boarding) {
+      this.#boardAgain = true;
+      return;
+    }
+    this.#boarding = true;
+    try {
+      do {
+        this.#boardAgain = false;
+        const r = await this.#client.call("orders_board", {});
+        if (r.ok) this.#dispatch({ t: "board", orders: r.output.orders });
+      } while (this.#boardAgain);
+    } finally {
+      this.#boarding = false;
+    }
+  }
+
   async #readRequests(): Promise<void> {
     const r = await this.#client.call("requests_list", OPEN_REQUESTS);
     if (r.ok) this.#dispatch({ t: "requests", requests: r.output.requests });
@@ -506,6 +528,7 @@ export class Session {
     if (frame.t === "state") this.#onState(frame.state, wasLive);
     if (frame.t === "snapshot") {
       void this.#readRequests();
+      void this.#readBoard();
       // After the snapshot: an older build's pins go up only for this hub's own chats.
       void this.#pins.read();
       void this.#readLatest();
@@ -527,6 +550,7 @@ export class Session {
       for (const listener of this.#eventListeners) listener(frame.event);
       const effects = effectsOf(frame.event);
       if (effects.requests) void this.#readRequests();
+      if (effects.board) void this.#readBoard();
       if (effects.snapshot) this.#client.resync();
       if (effects.pins) void this.#pins.read();
       if (effects.info) void this.#readInfo();

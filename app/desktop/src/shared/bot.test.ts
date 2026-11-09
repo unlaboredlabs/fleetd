@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceRig, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PAINT, PEBBLE, setRigState, STEP, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PEBBLE, setRigState, STEP, UP, type BotState, type Rig } from "./bot";
 
 const run = (r: Rig, seconds: number, calm = false, each?: (r: Rig) => void) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
@@ -21,7 +21,7 @@ const largestStep = (r: Rig, seconds: number): number => {
 
 describe("the bot", () => {
   it("paints one palette, light and dark, as hex", () => {
-    for (const p of [PAINT.light, PAINT.dark, PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
+    for (const p of [PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("draws every state as a body and two closed eyes", () => {

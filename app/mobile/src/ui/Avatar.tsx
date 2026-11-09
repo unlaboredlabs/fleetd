@@ -1,8 +1,8 @@
-// A chat's or a person's avatar, a circle as iOS draws a contact's: its picture once one was given (project_avatar_set,
-// person_avatar_set), else for a project its bot (Being, in the state the project is in), else its initials on a soft top-to-bottom gradient of a color picked from its name, as chat apps
-// draw a person's. A
-// picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows at once on
-// the next launch; one not seen before fades in over the bot.
+// A chat's or a person's avatar: its picture once one was given (project_avatar_set, person_avatar_set), in a circle as
+// iOS draws a contact's, else for a project its bot (Being, in the state the project is in), which has no circle, else
+// its initials in a circle on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a
+// person's. A picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows
+// at once on the next launch; one not seen before fades in over the bot, which then goes, so it never moves unseen.
 import { File, Paths } from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
@@ -114,11 +114,18 @@ export function Avatar({
   const project = picture !== undefined && "machineId" in picture ? `${picture.machineId}/${picture.projectId}` : undefined;
   const state = useBot(project);
   const drawn = bot ?? state;
+  // The picture that has come in over the bot, which goes from under it.
+  const [covers, setCovers] = useState<string | undefined>(undefined);
   if (drawn !== undefined) {
+    const uri = shown.uri;
     return (
-      <View accessible={false} style={[styles.base, box]}>
-        <Being state={drawn} size={size} />
-        {shown.uri === undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
+      <View accessible={false} style={{ width: size, height: size }}>
+        {uri !== undefined && covers === uri ? null : <Being state={drawn} size={size} />}
+        {uri === undefined ? null : (
+          <View style={[StyleSheet.absoluteFill, styles.base, box]}>
+            <Picture key={uri} uri={uri} fade={shown.fresh} onShown={() => setCovers(uri)} />
+          </View>
+        )}
       </View>
     );
   }
@@ -138,8 +145,9 @@ export function Avatar({
   );
 }
 
-/** The picture over the letters: at once when it was on disk, else faded in as it loads. */
-function Picture({ uri, fade }: { uri: string; fade: boolean }) {
+/** The picture over the letters or the bot: at once when it was on disk, else faded in as it loads; `onShown` once it
+ * covers them. */
+function Picture({ uri, fade, onShown }: { uri: string; fade: boolean; onShown?: () => void }) {
   const opacity = useRef(new Animated.Value(fade ? 0 : 1)).current;
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { opacity }]}>
@@ -150,7 +158,10 @@ function Picture({ uri, fade }: { uri: string; fade: boolean }) {
         fadeDuration={0}
         accessibilityIgnoresInvertColors
         onLoad={() => {
-          if (fade) Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+          if (!fade) return onShown?.();
+          Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start(({ finished }) => {
+            if (finished) onShown?.();
+          });
         }}
       />
     </Animated.View>

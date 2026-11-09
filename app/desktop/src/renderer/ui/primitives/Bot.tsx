@@ -4,13 +4,13 @@
 // theme. It arrives settled in its state; ui/lib/botLife.ts then moves it on its springs, and a new `state` blends from
 // wherever it is.
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import { BODY, drawnAt, frameOf, LARGE, matrixAttr, newRig, PEBBLE, VIEW_BOX, type BotState, type FreePaint } from "../../../shared/bot";
+import { BODY, drawnAt, frameOf, LARGE, matrixAttr, newRig, PEBBLE, VIEW_BOX, type BotState, type Paint } from "../../../shared/bot";
 import { bringToLife, type Living } from "../lib/botLife";
 import s from "./Bot.module.css";
 
-const KEYS: readonly (keyof FreePaint)[] = ["body", "eye", "glowA"];
+const KEYS: readonly (keyof Paint)[] = ["body", "eye", "glowA"];
 const PAINTED = Object.fromEntries(KEYS.flatMap((k) => [[`--l-${k}`, String(PEBBLE.light[k])], [`--d-${k}`, String(PEBBLE.dark[k])]])) as CSSProperties;
-const v = (k: keyof FreePaint) => `var(--${k})`;
+const v = (k: keyof Paint) => `var(--${k})`;
 
 export function Bot({ state, size }: { state: BotState; size: number }) {
   // A gradient's url(#…) wants a plain id.
