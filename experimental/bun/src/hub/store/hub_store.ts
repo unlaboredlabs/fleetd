@@ -98,6 +98,8 @@ export const MACHINE_TABLES = [
 export const MACHINE_KEEPS = [
   "events",
   "time_spans",
+  // The spans' hourly digests, kept as long as the spans.
+  "time_digests",
   "time_orders",
   "time_lead_runs",
   "time_wakes",

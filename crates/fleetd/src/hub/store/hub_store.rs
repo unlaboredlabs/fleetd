@@ -89,6 +89,8 @@ pub(crate) const MACHINE_TABLES: &[&str] = &[
 pub(super) const MACHINE_KEEPS: &[&str] = &[
     "events",
     "time_spans",
+    // The spans' hourly digests (the Bun hub's), kept as long as the spans.
+    "time_digests",
     "time_orders",
     "time_lead_runs",
     "time_wakes",

@@ -17,6 +17,7 @@ import { projectDirName } from "../memory/index.ts";
 import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { MACHINE_TABLES, store } from "../store/hub_store.ts";
+import { resetHours } from "../time/store.ts";
 
 /** Tables with the Navi's rows by `machine_id` and `project_id`. */
 const BY_PROJECT = [
@@ -218,7 +219,7 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
     strings("SELECT sha256 AS v FROM attachments WHERE project = ? OR workstream_id IN (SELECT value FROM json_each(?))", key, ordersJson),
   );
   c.query("DELETE FROM attachments WHERE project = ? OR workstream_id IN (SELECT value FROM json_each(?))").run(key, ordersJson);
-  for (const table of ["navi_ask_orders", "order_env", "time_orders", "time_paths"]) {
+  for (const table of ["navi_ask_orders", "order_env", "time_orders", "time_paths", "time_order_ci"]) {
     c.query(`DELETE FROM ${table} WHERE workstream_id IN (SELECT value FROM json_each(?))`).run(ordersJson);
   }
   c.query(
@@ -239,6 +240,8 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
     .all(m, p, threadsJson)
     .map((row) => row.label_id);
   c.query(`DELETE ${spans}`).run(m, p, threadsJson);
+  // The hourly digests hold its spans' sums, threads and tasks: every hour is built again without them.
+  resetHours(c);
   for (const label of labels) {
     c.query("DELETE FROM time_labels WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM time_spans WHERE label_id = ?1)").run(label);
   }

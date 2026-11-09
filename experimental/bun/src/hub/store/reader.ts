@@ -3,6 +3,7 @@
 // insights) run side by side.
 import { ToolError } from "../../shared/errors.ts";
 import type { TimeJob } from "../time/reads.ts";
+import type { Upkept, UpkeepJob } from "../time/upkeep.ts";
 import type { Params } from "./db.ts";
 import type { ReadReply, ReadRequest } from "./read-worker.ts";
 
@@ -54,6 +55,11 @@ export class Reader {
   /** A Time read answered whole on a worker (time/reads.ts); a refusal comes back as its ToolError. */
   time(job: TimeJob): Promise<unknown> {
     return this.send((id) => ({ id, time: job }));
+  }
+
+  /** The Time digests' upkeep, worked out on a worker for the hub thread to store (time/upkeep.ts). */
+  upkeep(job: UpkeepJob): Promise<Upkept> {
+    return this.send((id) => ({ id, upkeep: job })) as Promise<Upkept>;
   }
 
   private send(request: (id: number) => ReadRequest): Promise<unknown> {

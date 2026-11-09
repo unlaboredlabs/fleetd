@@ -1,9 +1,9 @@
 // The time area's start (crates/fleetd/src/hub/time/mod.rs `Time::start`, and its wiring in hub/serve): the
-// event-log projector, the hourly prune, and the node link's `spans` and `hb` frames.
+// event-log projector, the hourly prune, the digests' upkeep, and the node link's `spans` and `hb` frames.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
 import { link } from "../link/index.ts";
-import { time } from "./index.ts";
+import { startUpkeep, time } from "./index.ts";
 import type { SpansFrame } from "./ingest.ts";
 import { startProjector } from "./project.ts";
 
@@ -11,6 +11,7 @@ export function start(hub: Hub): void {
   const t = time(hub);
   void startProjector(hub);
   t.startPrune();
+  startUpkeep(hub);
   const l = link(hub);
   const offs = [
     l.on("hb", (machineId, frame) => {
