@@ -13,7 +13,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "postinstall": "patch-package",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc-rs --noEmit -p .",
     "test": "vitest run",
     "native": "expo prebuild --clean --no-install",
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/icons.ts"
@@ -67,6 +67,7 @@
     "patch-package": "8.0.1",
     "playwright-core": "1.64.1",
     "structured-headers": "^0.4.1",
+    "tsc-rs": "0.8.0",
     "typescript": "~6.0.3",
     "vitest": "5.0.5"
   }
