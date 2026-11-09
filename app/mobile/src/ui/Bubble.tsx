@@ -1,4 +1,4 @@
-// iMessage's bubble: the person's in the accent on the right, the lead's grey on the left, and the tail only on a
+// iMessage's bubble: the person's in the deep accent on the right, the lead's grey on the left, and the tail only on a
 // burst's last. Its geometry is Messages' own, measured (../bubble.ts). The tail is iOS 26's hook under the bottom
 // corner, two shapes: a turned bar in the bubble's color, then a circle of the ground over the pinch. No SVG needed.
 // A picture's tail is cut from the picture, as Messages': the bar shows it through (Tail's `picture`).
@@ -12,7 +12,7 @@ import { useTheme } from "../theme";
 export function Bubble({ side, tail, children, tone }: { side: "me" | "them"; tail: boolean; children: ReactNode; tone?: "accent" | "neutral" | "danger" }) {
   const t = useTheme();
   const shade = tone ?? (side === "me" ? "accent" : "neutral");
-  const fill = shade === "accent" ? t.accentFill : shade === "danger" ? t.danger : t.bubble;
+  const fill = shade === "accent" ? t.accentDeep : shade === "danger" ? t.danger : t.bubble;
   const mine = side === "me";
   const { width } = useWindowDimensions();
   return (

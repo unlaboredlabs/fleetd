@@ -23,10 +23,9 @@
   border-radius: var(--radius-md);
   background: var(--raised);
 }
+/* Focused, its edge darkens to a control's, as the chat's composer does (chat/composer.module.css). */
 .box:has(> .input:focus-visible) {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  border-color: var(--control-border);
 }
 .input {
   flex: 1;

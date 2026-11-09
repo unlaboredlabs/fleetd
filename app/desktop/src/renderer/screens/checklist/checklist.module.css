@@ -186,7 +186,7 @@
   text-decoration: none;
 }
 .link:hover {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
 }
 .agent {
