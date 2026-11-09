@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Desktops, desktops, macScreen } from "../src/node/desktop/index.ts";
+import { packed } from "../src/node/desktop/mac/capture.ts";
 import { answer, command, install, launchedPid, split, COMMAND_TIMEOUT, OUTPUT_CHARS } from "../src/node/desktop/mac/agent_desktop.ts";
 import { parse, state } from "../src/node/desktop/mac/console.ts";
 import { blockedBy, MacLent, observes } from "../src/node/desktop/mac/index.ts";
@@ -101,6 +102,18 @@ test("the gate says exactly why, and how to fix it", () => {
   expect(capture.fix).toContain("Privacy_ScreenCapture");
   expect(capture.fix).toContain("launchctl kickstart -k");
   expect(blockedBy("agents", on, true, false)!.fix).toContain("Privacy_Accessibility");
+});
+
+test("a capture's rows come out packed BGRA, whatever their stride and byte order", () => {
+  // Two pixels a row, rows padded to 12 bytes.
+  const rows = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 0, 0]);
+  expect([...packed(rows, 2, 2, 12, true)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  // ARGB in memory: each pixel's bytes reversed.
+  expect([...packed(rows, 2, 2, 12, false)]).toEqual([4, 3, 2, 1, 8, 7, 6, 5, 12, 11, 10, 9, 16, 15, 14, 13]);
+  const tight = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+  const out = packed(tight, 1, 2, 4, true);
+  expect([...out]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  expect(out.buffer).not.toBe(tight.buffer);
 });
 
 test("keys go by their Mac keycodes", () => {

@@ -291,7 +291,7 @@ test("stopping the node ends its live sessions: reported, their browsers closed"
   expect(t.link.calls.at(-1)).toMatchObject({ op: "browser_session", args: { state: "recorded" } });
 });
 
-test("the node's hello lists what its screens answer: browsers on a node, the Mac's own on the agents' Mac", async () => {
+test("the node's hello lists what its screens answer: browsers on a node, and on the agents' Mac its own screen, hosted for agents elsewhere", async () => {
   const { start: startMac } = await import("../src/node/mac_tool/index.ts");
   const listed = (agentsMac: boolean) => {
     const t = testNode("devbox", agentsMac ? { agentsMac: true } : {});
@@ -304,7 +304,9 @@ test("the node's hello lists what its screens answer: browsers on a node, the Ma
     return t.node.area("caps").list();
   };
   expect(listed(false)).toEqual(["browser", "session_host", "session_seal", "session_end"]);
-  expect(listed(true)).toEqual(["agents_mac", ...(process.platform === "darwin" ? ["mac_tool"] : [])]);
+  // As Rust's (node/link.rs `hello`, its Mac screen a session it hosts): without session_host and session_seal the hub
+  // read the Mac as an older fleetd that hosts only its own agents' screens, and refused every agent's Mac screen.
+  expect(listed(true)).toEqual(["browser", "session_host", "session_seal", "session_end", "agents_mac", ...(process.platform === "darwin" ? ["mac_tool"] : [])]);
 });
 
 test("one recording has one upload at a time, however often housekeeping runs while it goes", async () => {
