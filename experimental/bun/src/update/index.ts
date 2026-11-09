@@ -407,21 +407,7 @@ export function installedExe(): string {
   }
 }
 
-/** The bytes of the binary this process runs, whatever has been installed over its path since. */
-export function runningBinary(): Uint8Array {
-  if (process.platform === "linux") return readFileSync("/proc/self/exe");
-  if (kept) return kept;
-  throw new Error("this process's binary wasn't kept when it started");
-}
-let kept: Uint8Array | undefined;
-/** Called first thing on macOS: holds this process's binary before anything can install over its path. */
-export function keepRunningBinary(): void {
-  if (process.platform !== "linux") {
-    try {
-      kept = readFileSync(process.execPath);
-    } catch {}
-  }
-}
+export { keepRunningBinary, runningBinary } from "./running.ts";
 
 /** The file beside `path` that a new one is written to before it is renamed over `path`. */
 export const staging = (path: string) => join(dirname(path), `.${basename(path)}.new`);
