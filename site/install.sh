@@ -9,7 +9,7 @@
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
 # --app); the app then updates itself. The app needs macOS 12: on an older Mac the installer stops before changing
 # anything, unless --no-app. It replaces the earlier GPUI app in the same place; the new app takes over its
-# hub key when it first opens. Every download is checked against the release's SHA256SUMS. Safe to run again; it
+# hub key when it first opens. Every download is checked against the release's checksums. Safe to run again; it
 # replaces what it installed.
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 # With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
@@ -64,9 +64,45 @@ sha256() {
   fi
 }
 
-# fetch <asset> <dest>: download one release asset and check it against SHA256SUMS. A release going up replaces its
-# assets first and SHA256SUMS last, so a mismatch reads both again, twice, 10 s apart, before it refuses.
+# pinned <asset> <sha256>: the name the release keeps <asset>'s build under for good (publish.sh): the first 16 hex
+# digits of its SHA-256 before its extension (.zip, .AppImage), else at its end.
+pinned() {
+  hex="$(printf '%s' "$2" | cut -c1-16)"
+  case "$1" in
+    *.zip | *.AppImage) printf '%s-%s.%s\n' "${1%.*}" "$hex" "${1##*.}" ;;
+    *) printf '%s-%s\n' "$1" "$hex" ;;
+  esac
+}
+
+# pin <asset>: release.json's SHA-256 for <asset> (its sha256 map), or nothing.
+pin() {
+  [ -f "$tmp/release.json" ] || return 0
+  name="$(printf '%s' "$1" | sed 's/[.]/\\./g')"
+  tr -d ' \t\r\n' < "$tmp/release.json" | sed -n "s/.*\"sha256\":{[^}]*\"$name\":\"\([0-9a-f]\{64\}\)\".*/\1/p"
+}
+
+# lists: the release's release.json, else (a release from before it) its SHA256SUMS, into $tmp.
+lists() {
+  curl -fsSL --retry 3 -o "$tmp/release.json" "$base/release.json" 2>/dev/null && return 0
+  rm -f "$tmp/release.json"
+  curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+}
+
+# fetch <asset> <dest>: download one release asset and check it. Edge republishes its names in place, and a reader can
+# get one build's checksums and another's bytes under them, so a release.json that pins <asset> names its build's own
+# copy, which never changes: its checksum and bytes are always one build's. A release without pins is checked against
+# SHA256SUMS: one going up replaces its assets first and SHA256SUMS last, so a mismatch reads both again, twice, 10 s
+# apart, before it refuses.
 fetch() {
+  expected="$(pin "$1")"
+  if [ -n "$expected" ]; then
+    file="$(pinned "$1" "$expected")"
+    curl -fsSL --retry 3 -o "$2" "$base/$file" || die "download failed: $base/$file"
+    actual="$(sha256 "$2")"
+    [ "$actual" = "$expected" ] || die "checksum mismatch for $1 (expected $expected, got $actual); not installing"
+    return 0
+  fi
+  [ -f "$tmp/SHA256SUMS" ] || curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
   tries=0
   while :; do
     expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$tmp/SHA256SUMS")"
@@ -355,7 +391,8 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t fleetd)"
   trap 'rm -rf "$tmp"' EXIT
   trap 'exit 1' INT TERM
-  if ! curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"; then
+  # release.json first: it names the channel's build and pins its assets (fetch). A release without one has SHA256SUMS.
+  if ! lists; then
     # Until the first edge build is out, the nightly release has the newest; from then on it is a copy of edge.
     if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
       base="https://github.com/$REPO/releases/download/nightly"
@@ -365,13 +402,12 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
       warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
       base="https://github.com/$REPO/releases/latest/download"
     fi
-    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" ||
-      die "could not download $base/SHA256SUMS (is there a $channel release yet?)"
+    lists || die "could not download $base/release.json or $base/SHA256SUMS (is there a $channel release yet?)"
   fi
 
   # The edge release holds the hub's build until main moves on: then this machine gets the newer one, and says so.
-  if [ "$channel" = edge ] && [ -n "$hub_version" ]; then
-    edge_now="$(curl -fsSL --retry 3 "$base/release.json" 2>/dev/null | tr -d '\n' | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)"
+  if [ "$channel" = edge ] && [ -n "$hub_version" ] && [ -f "$tmp/release.json" ]; then
+    edge_now="$(tr -d '\n' < "$tmp/release.json" | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     if [ -n "$edge_now" ] && [ "$edge_now" != "$hub_version" ]; then
       say "your hub runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the hub level, press Update in the app on your main machine (or run fleetd update on the hub)."
     fi

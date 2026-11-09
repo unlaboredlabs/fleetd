@@ -2,10 +2,17 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
-with the install line, the philosophy (three lines set big and a paragraph), then three short sections, each with its own clip of the app (`showcase-*`). It is dark until
+with the bot beside the headline and the install line, the philosophy (three lines set big and a paragraph), then five
+short sections, each with its own clip or still of the app (`showcase-*`). It is dark until
 the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
 `light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
+
+The bot is the app's own: `pebble.js` is `app/desktop`'s bot code (`src/shared/bot.ts`, the rig, and
+`src/renderer/ui/lib/botLife.ts`, its canvas and clock) bundled by `pnpm site:pebble` in `app/desktop`, and
+`src/shared/bot.site.test.ts` fails while it is stale, so run that after changing either. The hero's bot takes its first
+glance within a second of load, then changes state every 3 s or so (working, done, a glance, needs you); it waits off
+screen or in a hidden tab, and stays still with reduced motion. The bots beside the sections are still poses.
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
@@ -23,11 +30,21 @@ a cut:
 | `team` | Your team in one chat | checkout's chat: Bob's earlier request, Sam's ask, Alice's beside it under her name, and the lead answering both |
 | `screens` | Watch an agent's screen, and take over | a writer's live browser; then the iPhone simulator's sign-in asking for you, Take over, the code, Hand back |
 
+The sections without a clip have stills, each a part of a registered QA screen (`app/desktop/qa/registry.ts`) on its
+fixture, `showcase-<still>-<theme>.jpg` at 2x with a `-small` twin at 1x, in `light` and `dark`:
+
+| still | section | shows |
+|---|---|---|
+| `dms` | Agents message each other, in the open | an agent's work, its DMs to and from other agents among its steps (`dms-relays`) |
+| `dmlog` | Agents message each other, in the open | the project's log of DMs, who read each and when (`dms-relays`) |
+| `cloud` | Cloud machines that sleep until there's work | Settings › Machines: the hub's machines and the boat.dev ones under them (`machines-cloud`) |
+
 Each is `showcase-<clip>-<theme>.webm` (VP9, 2800x1800, 60 fps) with an H.264 `.mp4` twin for browsers without VP9
 (1792x1152 at 60 fps, level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,
 so nothing is dropped), its poster `showcase-<clip>-<theme>.jpg`, and a half-size `-small` twin of each for small
 screens, in `light` and `dark`. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in
-place (`app/desktop/qa/showcase.spec.ts`, one test per clip and theme, `-g "showcase team"` for one; it needs
+place (`app/desktop/qa/showcase.spec.ts`, one test per clip or still and theme, `-g "showcase team"` for one,
+`-g "showcase still"` for the stills; it needs
 Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in `app/desktop`); the screens' pages are
 `fixtures/showcase/media/`, drawn by `node fixtures/showcase/media.ts`. The page shows each poster first and plays its
 clip once the frame is near the screen, the half-size one on a small screen; with reduced motion it keeps the poster

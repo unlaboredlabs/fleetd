@@ -19,6 +19,8 @@ const scopes = process.platform === "linux" && Bun.which("systemctl") !== null &
 afterAll(() => {
   // Only what this test started: its hosts by pid, its node units by name.
   for (const pid of hosts) {
+    // Never 0 or less: kill(0) signals this whole process group, the test runner with it.
+    if (!(pid > 0)) continue;
     try {
       process.kill(pid, "SIGKILL");
     } catch {}

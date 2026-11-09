@@ -9,13 +9,15 @@
 # It downloads the release's app zip and checks the submission's ticket covers that exact code (the cdhash of each
 # architecture), so it never staples a ticket onto a different build. Without SUBMISSION it takes the newest
 # accepted submission of the app whose ticket matches. Then it staples, requires Gatekeeper to say
-# "accepted, source=Notarized Developer ID", and replaces the zip and its SHA256SUMS line as publish.sh writes them.
+# "accepted, source=Notarized Developer ID", and replaces the zip and its SHA256SUMS line as publish.sh writes them:
+# the new zip and its blockmap go up pinned too (pinned.sh), before the feed that names them, and release.json's sha256
+# line for the zip (when it pins its builds) goes up last, with SHA256SUMS.
 # Without SUBMISSION, "nothing to do yet" (no notary key, an edge build running, nothing accepted) exits 0. With it,
 # the submission must cover the app.
 #
 # The `nightly` release is publish.sh's copy of edge for builds from before the rename (D203), and is never stapled on
 # its own: TAG=edge (TAG=nightly means it too) staples edge, then copies edge's app zip, its feed (with the copy's
-# nightly-named version) and edge's SHA256SUMS to nightly whenever nightly's line for the zip differs from edge's. So
+# nightly-named version, naming the plain zip, as nightly holds no pins) and edge's SHA256SUMS to nightly whenever nightly's line for the zip differs from edge's. So
 # both hold the same bytes under the same checksums, and a copy cut short is made on the next run.
 # Env: TAG, GH_TOKEN, NOTARY_KEY_ID, NOTARY_ISSUER, NOTARY_KEY_P8_BASE64, optional SUBMISSION.
 set -euo pipefail
@@ -36,6 +38,8 @@ if rolling && building; then
   exit 0
 fi
 here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=.github/release/pinned.sh
+. "$here/pinned.sh"
 p8="${RUNNER_TEMP:?}/fleetd-notary.p8"
 trap 'rm -f "$p8"' EXIT
 (umask 077 && printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$p8")
@@ -51,7 +55,7 @@ staple() {
   local asset="$1" name="$2" feed="${3:-}"
   local work="$RUNNER_TEMP/staple-$name"
   rm -rf "$work" && mkdir -p "$work/app"
-  local files=(-p "$asset" -p SHA256SUMS)
+  local files=(-p "$asset" -p SHA256SUMS -p release.json)
   [ -z "$feed" ] || files+=(-p "$feed")
   if ! gh release download "$TAG" "${files[@]}" -D "$work" 2>/dev/null || [ ! -f "$work/$asset" ]; then
     echo "no $asset on $TAG"
@@ -132,6 +136,18 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
     maps=("$asset.blockmap")
   fi
   (cd "$work/out" && shasum -a 256 "$asset" ${maps[@]+"${maps[@]}"}) > "$work/new"
+  local sum pin
+  sum="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/new")"
+  pin="$(pinned "$asset" "$sum")"
+  mkdir -p "$work/pins"
+  cp "$work/out/$asset" "$work/pins/$pin"
+  [ -z "$feed" ] || cp "$work/out/$asset.blockmap" "$work/pins/$pin.blockmap"
+  # Its pin in release.json, when that pins the release's builds.
+  local lists=("$work/out/SHA256SUMS")
+  if [ -f "$work/release.json" ] && jq -e '.sha256' "$work/release.json" > /dev/null; then
+    jq --arg a "$asset" --arg s "$sum" '.sha256[$a] = $s' "$work/release.json" > "$work/out/release.json"
+    lists+=("$work/out/release.json")
+  fi
   awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
   cat "$work/out/SHA256SUMS"
   local now
@@ -141,9 +157,10 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
     echo "the $TAG $asset changed while stapling; leaving the new one alone"
     return 0
   fi
+  gh release upload "$TAG" "$work/pins/"* --clobber
   gh release upload "$TAG" "$work/out/$asset" --clobber
   [ -z "$feed" ] || gh release upload "$TAG" "$work/out/$asset.blockmap" "$work/out/$feed" --clobber
-  gh release upload "$TAG" "$work/out/SHA256SUMS" --clobber
+  gh release upload "$TAG" "${lists[@]}" --clobber
   echo "stapled and replaced $asset on $TAG"
 }
 
@@ -166,7 +183,7 @@ mirror() {
     echo "the edge $asset changed while copying; leaving it to the next run"
     return 0
   }
-  sed 's/^\(version: .*\)-edge\./\1-nightly./' "$work/edge/$feed" > "$work/nightly/$feed"
+  unpinned "$work/edge/$feed" | sed 's/^\(version: .*\)-edge\./\1-nightly./' > "$work/nightly/$feed"
   if building; then
     echo "an edge build started while copying; leaving it to the next run"
     return 0

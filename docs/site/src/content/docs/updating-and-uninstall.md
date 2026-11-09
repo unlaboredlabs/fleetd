@@ -11,10 +11,10 @@ Keep fleetd up to date, or remove it.
 
 The hub looks for a newer build on its channel every 2 minutes. When it finds one, it downloads it ahead, checks it
 against the checksum the release's `release.json` lists for it and keeps it, and its machines fetch it too. Each build
-has its own download that never changes, so a release republished mid-download can't swap in another build. Each downloads the build packed, about
-a third of its size, and checks it once unpacked; a cut-off download goes on from where it stopped. Nothing is installed
-yet. For owners and admins, **Update** then shows under your name at the bottom of the sidebar; a click shows what's new
-in a few lines and **Update now**. Members see nothing until an update runs.
+has its own download that never changes, so a release republished mid-download can't swap in another build. Each
+downloads the build packed, about a third of its size, and checks it once unpacked; a cut-off download goes on from
+where it stopped. Nothing is installed yet. For owners and admins, **Update** then shows under your name at the bottom
+of the sidebar; a click shows what's new in a few lines and **Update now**. Members see nothing until an update runs.
 
 Click **Update now**. Since the build is already downloaded and checked, an update only swaps it in and restarts, in
 order:
@@ -130,11 +130,11 @@ fleetd update --check
 fleetd update
 ```
 
-It replaces the CLI, checked against the checksum in the release's `release.json`, then restarts the hub and node services that run this
-binary: the hub at once, the node once its agents finish the step they're on (2 minutes at most; `--now` doesn't
-wait). On a machine that runs agents, it then moves Claude Code to the version the new fleetd was tested
-with, as the app's update does. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>` on the hub
-also copies the hub's binary to a worker.
+It replaces the CLI, checked against the checksum in the release's `release.json`, then restarts the hub and node
+services that run this binary: the hub at once, the node once its agents finish the step they're on (2 minutes at most;
+`--now` doesn't wait). On a machine that runs agents, it then moves Claude Code to the version the new fleetd was tested
+with, as the app's update does. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>`
+on the hub also copies the hub's binary to a worker.
 
 `fleetd status` and `fleetd doctor` say when the CLI, the hub and the nodes run different versions.
 

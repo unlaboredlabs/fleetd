@@ -25,19 +25,28 @@
   /* Half its one-line height (8 + 28 + 8): round ends, which stay round as it grows. */
   border-radius: 22px;
 }
-.box::before {
+/* The lift is a layer of its own under the glass (::after): a blurred layer is drawn again, blur and all, whenever
+   anything on its surface changes, and a shadow on it would widen that surface, so each key press would blur more of
+   the page (and the live strip's capsule over the pill with it). */
+.box::before,
+.box::after {
   content: "";
   position: absolute;
-  z-index: -1;
   inset: 0;
   border-radius: inherit;
+  pointer-events: none;
+}
+.box::before {
+  z-index: -1;
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
   box-shadow:
     inset 0 0 0 1px var(--glass-edge),
-    inset 0 1px 0 var(--glass-rim),
-    var(--glass-lift);
-  pointer-events: none;
+    inset 0 1px 0 var(--glass-rim);
+}
+.box::after {
+  z-index: -2;
+  box-shadow: var(--glass-lift);
 }
 /* What goes with the words takes a row of its own over them; the clip, the words and the buttons share the last. */
 .box > :not(.lead, .input, .tools) {
@@ -48,8 +57,7 @@
 .box:has(> .input:focus-visible)::before {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--control-border) 55%, transparent),
-    inset 0 1px 0 var(--glass-rim),
-    var(--glass-lift);
+    inset 0 1px 0 var(--glass-rim);
 }
 /* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
 @media (prefers-reduced-transparency: reduce) {

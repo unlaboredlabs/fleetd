@@ -67,7 +67,8 @@ jobs:
       - name: Type check (tsc-rs)
         if: steps.scope.outputs.run == 'true'
         run: bun run typecheck
-      - run: bun test
+      # A worker per runner core, each test file in a fresh process of its own (--parallel implies --isolate).
+      - run: bun test --parallel=4
         if: steps.scope.outputs.run == 'true'
       - run: bun run compile
         if: steps.scope.outputs.run == 'true'

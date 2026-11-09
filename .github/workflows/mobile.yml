@@ -80,7 +80,8 @@ jobs:
             site/vercel.json
 
   mobile:
-    # Types (with the desktop modules the app imports) and the client's unit tests.
+    # Types (with the desktop modules the app imports) and the client's unit tests. Its name is a fast check in
+    # .fleetd/train.json: rename both in one PR.
     name: mobile
     needs: mobile-scope
     if: ${{ !cancelled() && !inputs.ios && needs.mobile-scope.outputs.app != 'false' }}
@@ -101,13 +102,16 @@ jobs:
       - run: npm test
 
   android:
-    # A release APK, debug-signed (installable with adb or by opening it on the phone), for arm64 phones and x86_64
-    # emulators.
+    # A release APK, debug-signed (installable with adb or by opening it on the phone). A push to main and a manual run
+    # build it for arm64 phones and x86_64 emulators; a pull request (and the train's batch) for x86_64 alone, what the
+    # hub's Android emulators install: the same code compiled once, not twice. mobile-release.yml keeps every ABI.
     name: mobile (android)
     needs: mobile-scope
     if: ${{ !cancelled() && !inputs.ios && needs.mobile-scope.outputs.app != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a,x86_64' }}
     defaults:
       run:
         working-directory: app/mobile
@@ -129,7 +133,7 @@ jobs:
       - run: npx expo prebuild --platform android --clean --no-install
       - name: Build
         working-directory: app/mobile/android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures="$ABIS"
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-android-apk

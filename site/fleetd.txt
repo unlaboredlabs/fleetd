@@ -13,7 +13,7 @@ Quick start: https://fleetd.sh/docs/quick-start
 GitHub:      https://github.com/unlaboredlabs/fleetd
 
 
-SOFTWARE ISN'T AN ASSET. IT'S 12 EXPERIMENTS A NIGHT. KEEP ONE. DROP THE REST.
+SOFTWARE ISN'T AN ASSET. IT'S A DOZEN EXPERIMENTS. KEEP ONE. DROP THE REST.
 Agents made building cheap, so stop polishing one bet for months. Ship a dozen
 experiments tonight, see what people actually use, and drop the rest without
 regret. fleetd is built for that pace: a lead plans the work, agents build it
@@ -34,6 +34,14 @@ Clip: showcase-team-dark.webm, showcase-team-light.webm. Still:
 showcase-team-dark.jpg. More: https://fleetd.sh/docs/people
 
 
+AGENTS MESSAGE EACH OTHER, IN THE OPEN
+When one agent learns something another needs, it tells it directly. Every
+message shows on the agent's work and in the project's log, with who read it
+and when.
+Stills: showcase-dms-dark.jpg, showcase-dmlog-dark.jpg.
+More: https://fleetd.sh/docs/desktop-app#dms
+
+
 WATCH AN AGENT'S SCREEN, AND TAKE OVER
 Agents test in a real browser or iPhone simulator while you watch. When one
 needs a code or a login, take over, then hand back.
@@ -41,9 +49,16 @@ Clip: showcase-screens-dark.webm, showcase-screens-light.webm. Still:
 showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
 
 
-Each clip is the fleetd app on sample data, with the waits cut short. Each has
-an H.264 .mp4 twin and a -small size.
+CLOUD MACHINES THAT SLEEP UNTIL THERE'S WORK
+When your own machines are full, work can go to a few machines on your own
+boat.dev account. They wake for it and go back to sleep when idle, within the
+budget you set.
+Still: showcase-cloud-dark.jpg. More: https://fleetd.sh/docs/cloud-machines
+
+
+Each clip and still is the fleetd app on sample data, with the waits cut short.
+Each clip has an H.264 .mp4 twin and a -small size.
 
 Docs: https://fleetd.sh/docs
 
-fleetd · MIT
+fleetd · MIT · Written in TypeScript, on Bun.

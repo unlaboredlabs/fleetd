@@ -63,10 +63,12 @@ const initialHubs = ((): readonly HubEntry[] => {
   }
 })();
 const vibrancy = process.argv.includes("--fleetd-vibrancy");
+const softwareCompositing = process.argv.includes("--fleetd-software-compositing");
 
 const api: FleetdApi = {
   fixture,
   vibrancy,
+  softwareCompositing,
   version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,

@@ -256,6 +256,14 @@
   --traffic-lights-inset: 84px;
 }
 
+/* Chromium composites without a GPU (main/index.ts): the glass is the page's raised tone, as with Reduce transparency.
+   On the CPU a backdrop blur is drawn again whenever anything on it changes, so each key press in the composer's pill
+   cost a blur. */
+:root[data-compositing="software"] {
+  --glass: var(--raised);
+  --glass-blur: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 0ms;
