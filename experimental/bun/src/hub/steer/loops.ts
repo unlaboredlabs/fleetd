@@ -8,7 +8,9 @@ import { ToolError } from "../../shared/errors.ts";
 import { taskHooks } from "../tasks/ports.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { writeQueue } from "../queue/index.ts";
-import { expired, holdUnrun, onReceipt, rehold, send, sweep, takeHeld } from "./index.ts";
+import type { Task } from "../../shared/contracts.ts";
+import { list, sendMessage } from "./dm.ts";
+import { expired, holdUnrun, onReceipt, rehold, send, steerTasks, sweep, takeHeld } from "./index.ts";
 
 export function start(hub: Hub): void {
   executors(hub).sinks.steer = (machineId, receipt) => onReceipt(hub, machineId, receipt);
@@ -37,6 +39,24 @@ export function start(hub: Hub): void {
     const task = TaskRecords.get(hub.db.conn, taskId)?.task;
     if (!task) throw new ToolError("not_found", `No task ${taskId}.`, "Call orders_board to see open orders and their agents.");
     return { task, next: `${steer.id} ${steer.detail ?? "sent"}: its next reply acknowledges it.`, steerId: steer.id };
+  });
+  // A task's agent writes to others of its project; a lead reads what they wrote.
+  leadCalls(hub).register("agent_message", async (caller, call) => {
+    if (caller.agent.kind !== "task") {
+      throw new ToolError("invalid", "agent_message is one agent's message to others, and this call comes from no task.", "A lead steers its agents with message_agent.");
+    }
+    const { to, text } = call as { to?: unknown; text?: unknown };
+    if (!Array.isArray(to) || typeof text !== "string" || !text) throw new ToolError("invalid", "Not an agent message.");
+    const from = TaskRecords.get(hub.db.conn, caller.agent.taskId)?.task;
+    if (!from) throw new ToolError("not_found", `No task ${caller.agent.taskId}.`, "Call orders_board to see open orders and their agents.");
+    const deliver = (sender: Task, message: string, taskId: string, body: string, crid: string) =>
+      send(hub, { kind: "agent", from: sender, message }, { target: { taskId }, text: body, mode: "queue", refs: [], attached: [], clientRequestId: crid });
+    return await sendMessage(hub, deliver, (id) => steerTasks(hub).askedAt(id), from, to.map(String), text);
+  });
+  leadCalls(hub).register("agent_messages", async (caller, call) => {
+    const { taskId, before, limit } = call as { taskId?: unknown; before?: unknown; limit?: unknown };
+    const page = list(hub.db, caller.projectRef, typeof taskId === "string" ? taskId : undefined, typeof before === "string" ? before : undefined, typeof limit === "number" ? limit : 20);
+    return { ...page, ...(page.more ? { next: "Older ones remain: call again with before, the id of the oldest here." } : {}) };
   });
   const timer = setInterval(() => {
     const closed = sweep(hub);

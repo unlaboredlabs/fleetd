@@ -226,6 +226,9 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
        (SELECT automation_id FROM automations WHERE machine_id = ? AND project_id = ?)`,
   ).run(m, p);
   c.query("DELETE FROM automations WHERE machine_id = ? AND project_id = ?").run(m, p);
+  // What its agents wrote to each other: each message's recipients, then the messages.
+  c.query("DELETE FROM agent_message_to WHERE message_n IN (SELECT n FROM agent_messages WHERE machine_id = ? AND project_id = ?)").run(m, p);
+  c.query("DELETE FROM agent_messages WHERE machine_id = ? AND project_id = ?").run(m, p);
   // The time inspector's spans of its sessions, whose labels hold its commands, searches, URLs and paths: the spans,
   // then each label no other span uses.
   const spans = `FROM time_spans WHERE machine_id = ?1

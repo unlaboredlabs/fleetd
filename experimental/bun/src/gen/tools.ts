@@ -177,6 +177,7 @@ export const TOOLS = {
   status_get: { scope: "read", module: "src/hub/status" },
   steer_send: { scope: "operate", module: "src/hub/steer" },
   steer_withdraw: { scope: "operate", module: "src/hub/steer" },
+  agent_messages: { scope: "read", module: "src/hub/steer" },
   chat_send: { scope: "operate", module: "src/hub/chat" },
   chat_history: { scope: "read", module: "src/hub/chat" },
   chat_nudge_clear: { scope: "operate", module: "src/hub/chat" },

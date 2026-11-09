@@ -12,6 +12,7 @@ import d6 from "../../../../../crates/fleetd/assets/prompts/lead.wake.md" with {
 import d7 from "../../../../../crates/fleetd/assets/prompts/chat.human.md" with { type: "text" };
 import d8 from "../../../../../crates/fleetd/assets/prompts/chat.agent.md" with { type: "text" };
 import d9 from "../../../../../crates/fleetd/assets/prompts/steer.message.md" with { type: "text" };
+import dAgentMessage from "../../../../../crates/fleetd/assets/prompts/agent.message.md" with { type: "text" };
 import d10 from "../../../../../crates/fleetd/assets/prompts/task.brief.write.md" with { type: "text" };
 import d11 from "../../../../../crates/fleetd/assets/prompts/task.brief.read.md" with { type: "text" };
 import d12 from "../../../../../crates/fleetd/assets/prompts/task.brief.review.md" with { type: "text" };
@@ -174,6 +175,17 @@ export const ENTRIES: RegistryEntry[] = [
     default: d9,
     placeholders: "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
     rules: [],
+  },
+  {
+    id: "agent.message",
+    kind: "msg",
+    group: "messages",
+    audience: "task",
+    title: "Agent message",
+    sentWhen: "per agent_message, from another agent of the project, at the agent's next tool boundary or with its next run",
+    default: dAgentMessage,
+    placeholders: "id!=the message, M<n>; from!=the sending agent, T<n>; fromTitle=its title; scope!=the task (T<n> (kind) for W<n>); text!=the words",
+    rules: [{ id: "peer-not-lead", label: "a peer's note: the brief and the lead outrank it", needle: "your brief and your lead outrank it", enforced: "prompt" }],
   },
   {
     id: "task.brief.write",

@@ -23,17 +23,20 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
+import { onSteer } from "./dm.ts";
 import * as steers from "./store.ts";
 
 export const STEER_TEXT_MAX = 20_000;
 /** How long a steer may wait for its next receipt on a thread that is no longer running. */
 export const RECEIPT_GRACE_MS = 120_000;
 
-/** Who sends a steer: a person's key, or a lead for a task of its own project. */
-export type By = { kind: "human"; caller: Caller } | { kind: "lead"; project: ProjectRef };
+/** Who sends a steer: a person's key, a lead for a task of its own project, or a task's agent for another agent of its
+ * project (one recipient of its agent message, `dm.ts`). */
+export type By = { kind: "human"; caller: Caller } | { kind: "lead"; project: ProjectRef } | { kind: "agent"; from: Task; message: string };
 
-const stored = (by: By) => (by.kind === "human" ? `key:${by.caller.keyId}` : "lead");
-const steerBy = (by: By): SteerBy => (by.kind === "human" ? { kind: "human", keyName: by.caller.name } : { kind: "lead" });
+const stored = (by: By) => (by.kind === "human" ? `key:${by.caller.keyId}` : by.kind === "lead" ? "lead" : `agent:${by.from.taskId}`);
+const steerBy = (by: By): SteerBy =>
+  by.kind === "human" ? { kind: "human", keyName: by.caller.name } : by.kind === "lead" ? { kind: "lead" } : { kind: "agent", taskId: by.from.taskId, messageId: by.message };
 
 export type SteerRequest = {
   target: SteerTarget;
@@ -51,6 +54,12 @@ export type SteerTasks = {
   message(caller: { projectRef: ProjectRef; by: string }, taskId: string, text: string): Promise<void>;
   /** Takes `message` back out of the task's pending message; false once it went out. */
   takeBack(taskId: string, message: string): Promise<boolean>;
+  /** Keeps another agent's message for a task's next run without starting one (tasks `holdMessage`). */
+  holdMessage(taskId: string, text: string): Promise<void>;
+  /** When the task asked the `ask_lead` question no message has answered yet. */
+  askedAt(taskId: string): number | undefined;
+  /** Whether the task keeps a wait_ci open. */
+  hasCiWait(taskId: string): boolean;
 };
 
 /** The tasks area's part: set by it when it starts; until then a steer to a task that isn't running can't be held. */
@@ -60,6 +69,11 @@ export const steerTasks = (hub: Hub) =>
       throw new NotImplemented("src/hub/tasks (a task's next-run message)");
     },
     takeBack: async () => false,
+    holdMessage: async () => {
+      throw new NotImplemented("src/hub/tasks (a task's next-run message)");
+    },
+    askedAt: () => undefined,
+    hasCiWait: () => false,
   }));
 
 type Resolved = { workstreamId: string; title: string; task?: Task; thread: ThreadRef };
@@ -98,7 +112,13 @@ function resolve(hub: Hub, by: By, target: SteerTarget): Resolved {
   if (by.kind === "human") {
     if (!allows(by.caller, "read", r.machineId)) throw notFound(`task ${target.taskId}`);
     requireRole(by.caller, "operate", r.machineId);
-  } else if (!sameRef(by.project, r)) throw notFound(`task ${target.taskId} in this project`);
+  } else if (by.kind === "lead") {
+    if (!sameRef(by.project, r)) throw notFound(`task ${target.taskId} in this project`);
+  } else if (!sameRef(by.from.projectRef, r)) {
+    throw new ToolError("not_found", `There is no agent ${target.taskId} in your project.`, "Call `agents` to see your project's agents and their ids.");
+  } else if (by.from.taskId === target.taskId) {
+    throw invalid(`${target.taskId} is you.`, "Call `agents` to find the agent you mean, or ask your lead with ask_lead.");
+  }
   if (task.state === "cancelled") throw invalid(`${target.taskId} was cancelled.`, "Spawn a new task for the remaining work.");
   if (!task.threadRef) throw invalid(`${target.taskId} has not started yet.`, "Wait for it to start, or cancel it and spawn it with the new prompt.");
   return { workstreamId: task.workstreamId, title: records.workstreamGet(task.workstreamId)?.title ?? "", task, thread: task.threadRef };
@@ -119,6 +139,11 @@ function references(refs: string[], attached: string[]): string {
 /** What the agent receives (`steer.message`, editable like every prompt). */
 function message(hub: Hub, steer: Steer, to: Resolved, by: By, req: SteerRequest): string {
   const scope = to.task ? `${to.task.taskId} (${to.task.kind}) for ${to.workstreamId}` : `${to.workstreamId} '${oneLine(to.title, 80)}'`;
+  if (by.kind === "agent") {
+    return prompts(hub.db)
+      .forThread(to.thread.machineId, to.thread.threadId)
+      .render("agent.message", { id: by.message, from: by.from.taskId, fromTitle: oneLine(by.from.title, 80), scope, text: oneLine(req.text, STEER_TEXT_MAX) });
+  }
   return prompts(hub.db)
     .forThread(to.thread.machineId, to.thread.threadId)
     .render("steer.message", {
@@ -156,6 +181,7 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
     text,
     stage: "queued",
     queuedAt: isoMs(now),
+    ...(to.task && to.task.state !== "running" ? { held: true } : {}),
   };
   const ins = steers.insert(hub.db, { steer: draft, ...(to.task ? { taskId: to.task.taskId } : {}), by: stored(by), queuedMs: now, request: crid });
   let steer = ins.steer;
@@ -164,6 +190,22 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
   if (by.kind === "human" && to.task) tellLead(hub, steer, to.task);
   const body = message(hub, steer, to, by, req);
   steers.keepMessage(hub.db, steer.id, body);
+  // An agent never starts another's run: one that has ended keeps the message for a run something else starts (a
+  // Monitor or wait_ci of its own, its lead), unless it waits for an answer, which this may be.
+  const seam = steerTasks(hub);
+  if (by.kind === "agent" && to.task && ["done", "failed", "idle"].includes(to.task.state) && seam.askedAt(to.task.taskId) === undefined) {
+    const id = to.task.taskId;
+    steer = {
+      ...steer,
+      detail: seam.hasCiWait(id)
+        ? `${id} has finished and waits on wait_ci: it gets this when that wakes it`
+        : `${id} has finished and isn't waiting on ${by.from.taskId}: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it`,
+    };
+    steers.put(hub.db, steer);
+    steers.hold(hub.db, steer.id, body);
+    await seam.holdMessage(id, body);
+    return steers.get(hub.db, steer.id)?.steer ?? steer;
+  }
   // A task that is not running gets it with its next run: held until then, and sent tagged with that run.
   if (to.task && to.task.state !== "running") {
     steer = { ...steer, detail: `queued until ${to.task.taskId} starts; it gets this with its next run` };
@@ -223,10 +265,12 @@ export function takeHeld(hub: Hub, taskId: string, thread: ThreadRef, clientRequ
   const runId = sendRunId(thread, clientRequestId);
   const leader: Steer = { ...last, runId, thread };
   delete leader.detail;
+  delete leader.held;
   steers.bind(hub.db, leader);
   const riders: string[] = [];
   for (const r of held) {
     const rider: Steer = { ...r, runId, thread, detail: `sent with ${taskId}'s next run, together with ${leader.id}` };
+    delete rider.held;
     try {
       steers.ride(hub.db, rider, leader.id);
       riders.push(rider.id);
@@ -243,7 +287,7 @@ export function holdUnrun(hub: Hub, taskId: string, runId: string): string[] {
   for (const { steer, message: m } of steers.ofRun(hub.db, taskId, runId)) {
     if (steer.deliveredAt !== undefined || (steer.stage !== "queued" && steer.stage !== "failed")) continue;
     const text = m ?? steer.text;
-    const again: Steer = { ...steer, stage: "queued", detail: `its run never began; it goes again with ${taskId}'s resumed run` };
+    const again: Steer = { ...steer, stage: "queued", held: true, detail: `its run never began; it goes again with ${taskId}'s resumed run` };
     try {
       steers.put(hub.db, again);
       steers.hold(hub.db, again.id, text);
@@ -260,7 +304,7 @@ export function rehold(hub: Hub, id: string): void {
   for (const one of [id, ...steers.riders(hub.db, id).map((r) => r.id)]) {
     const got = steers.get(hub.db, one);
     if (!got || !("taskId" in got.steer.target)) continue;
-    const steer: Steer = { ...got.steer, detail: `queued until ${got.steer.target.taskId} starts; it gets this with its next run` };
+    const steer: Steer = { ...got.steer, held: true, detail: `queued until ${got.steer.target.taskId} starts; it gets this with its next run` };
     try {
       steers.put(hub.db, steer);
       steers.hold(hub.db, steer.id);
@@ -360,7 +404,7 @@ function summary(s: Steer): string {
   const to = targetName(s);
   switch (s.stage) {
     case "queued":
-      return `${s.id} to ${to}: '${oneLine(s.text, 120)}'`;
+      return s.by.kind === "agent" ? `${s.id} from ${s.by.taskId} to ${to}: '${oneLine(s.text, 120)}'` : `${s.id} to ${to}: '${oneLine(s.text, 120)}'`;
     case "delivered":
       return s.how === "stopped" && s.stoppedTool !== undefined ? `${s.id} reached ${to}: it stopped \`${oneLine(s.stoppedTool, 80)}\`` : `${s.id} reached ${to}`;
     case "acknowledged":
@@ -389,6 +433,7 @@ function emit(hub: Hub, steer: Steer, type: HubEventType): void {
     data.by = steer.by;
   }
   if (type === "steer.failed" && steer.detail !== undefined) data.reason = steer.detail;
+  if (steer.held !== undefined) data.held = steer.held;
   try {
     events(hub).append({
       at: isoMs(nowMs(hub.clock)),
@@ -401,6 +446,7 @@ function emit(hub: Hub, steer: Steer, type: HubEventType): void {
   } catch (error) {
     console.error("steer event append failed:", error);
   }
+  if (steer.by.kind === "agent" && !queued) onSteer(hub, steer);
 }
 
 /** Withdraws a steer still queued: from the hub's offline queue, or from claude's own queue. Only its sender may. */
@@ -424,6 +470,7 @@ export async function withdraw(hub: Hub, caller: Caller, id: string): Promise<St
     steers.unhold(hub.db, id);
     steer = { ...steer, stage: "withdrawn" };
     delete steer.detail;
+    delete steer.held;
     steers.put(hub.db, steer);
     emit(hub, steer, "steer.withdrawn");
     return steer;

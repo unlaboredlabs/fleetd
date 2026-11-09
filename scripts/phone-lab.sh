@@ -9,7 +9,8 @@
 # foreground with no service, under $TMPDIR/phone-lab (FLEETD_HOME and HOME both there, never ~/.fleetd), the hub on
 # this machine's tailnet address (`tailscale ip -4`; PHONE_LAB_HOST another) at a free port, so the Mac reaches it.
 # tests/lab/phoneLab.ts seeds it: four projects, two with a picture, chats with the person's messages and the lead's
-# replies, and an order waiting on an approval. No real claude runs: the leads are the lab's claude stand-in, which
+# replies, an order waiting on an approval, and inventory's agents writing to each other (agent_message, every outcome,
+# tests/lab/factory/agentMessages.ts). No real claude runs: the leads are the lab's claude stand-in, which
 # answers a new message `lab-ok`. `down` stops only the PIDs `up` started.
 #
 # The fleetd it runs is FLEETD_BIN, else this checkout's target/release/fleetd, else the fleetd on PATH. Needs Node 24

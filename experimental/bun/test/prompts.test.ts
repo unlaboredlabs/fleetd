@@ -12,7 +12,7 @@ test("refs are git blob SHAs, as the Rust hub makes them", () => {
 });
 
 test("the registry and the retired list are the Rust tables", () => {
-  expect(ENTRIES.length + RETIRED.length).toBe(84);
+  expect(ENTRIES.length + RETIRED.length).toBe(85);
   for (const r of RETIRED) {
     expect(ENTRIES.some((e) => e.id === r.id)).toBe(false);
     if (r.target) expect(ENTRIES.some((e) => e.id === r.target)).toBe(true);

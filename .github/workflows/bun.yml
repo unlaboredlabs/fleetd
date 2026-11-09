@@ -122,6 +122,23 @@ jobs:
           path: ${{ runner.temp }}/factory-lead-wake/*/logs/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Agent-messages lab scenario, all Bun
+        id: agent-messages
+        if: steps.scope.outputs.run == 'true'
+        working-directory: ${{ github.workspace }}
+        # Agents of the lab's project write to each other from their own sessions (agent_message), and the person reads
+        # every outcome back with agent_messages: delivered, refused, not woken and woke.
+        run: node tests/lab/factory/run.ts agent-messages
+        env:
+          FLEETD_BIN: ${{ github.workspace }}/experimental/bun/dist/fleetd
+          FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory-agent-messages
+      - if: failure() && steps.agent-messages.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bun-agent-messages-logs
+          path: ${{ runner.temp }}/factory-agent-messages/*/logs/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Self-healing lab scenario, a Rust hub with the Bun node
         id: self-healing
         if: steps.scope.outputs.run == 'true'
