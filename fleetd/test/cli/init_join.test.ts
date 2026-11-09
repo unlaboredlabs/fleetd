@@ -1,10 +1,12 @@
 // `fleetd init --join <hub> --code <code> --no-service`, the line `fleetd pair --worker` prints, run by the compiled
-// binary against a hub on a scratch home: the checklist's join and worker steps, and the node enrolled. Its claude and
-// git lines are this machine's own. With --no-service nothing goes to systemd or launchd; `machine add --local` copies
-// the binary into its own scratch home.
+// binary against a hub on a scratch home: the checklist's join and worker steps, and the node enrolled. Its claude is a
+// stand-in on PATH (CI's runner has none, and a join refuses a machine without one); its git line is this machine's
+// own. With --no-service nothing goes to systemd or launchd; `machine add --local` copies the binary into its own
+// scratch home.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { TESTED } from "../../src/node/runner/claude.ts";
 import { Fleet } from "./golden.ts";
 
 let bunBin = "";
@@ -30,13 +32,18 @@ async function join_() {
   // The worker is another fleetd home on this machine; its hub is the one above.
   const worker = new Fleet("init-join-worker");
   fleets.push(worker);
+  const bin = join(worker.home, "stand-in");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho '${TESTED} (Claude Code)'\n`, { mode: 0o755 });
   const proc = Bun.spawn([bunBin, "init", "--join", fleet.hubUrl, "--code", code, "--machine-id", "builder-1", "--no-service"], {
     cwd: worker.cwd,
-    env: { ...worker.env(), PATH: process.env.PATH ?? "" },
+    env: { ...worker.env(), PATH: `${bin}:${process.env.PATH ?? ""}` },
     stdout: "pipe",
     stderr: "pipe",
   });
   const [stdout, stderr, exit] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  // A join that wrote no node.json fails with its own words, not ENOENT.
+  if (!existsSync(join(worker.home, "node", "node.json"))) throw new Error(`init --join exited ${exit} without node.json\nstdout: ${stdout}\nstderr: ${stderr}`);
   const node = JSON.parse(readFileSync(join(worker.home, "node", "node.json"), "utf8"));
   const shown = worker.normalize({ code: exit, stdout, stderr: stderr.replaceAll(fleet.hubUrl, "HUBURL") });
   return { shown, node };
