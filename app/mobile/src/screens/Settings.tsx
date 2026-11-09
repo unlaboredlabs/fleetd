@@ -1,7 +1,7 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // their name, their role on the hub), which a tap offers to give or take away a photo; then the hub (how the link is,
-// its address and version), for an admin its update, Import Memory, this phone (its notifications, name and app), and
-// Disconnect, which asks first.
+// its address and version), for an admin its update, the Vault (screens/vault) on a hub that has one, Import Memory,
+// this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -22,6 +22,7 @@ import { removeMyPicture } from "./manage/api";
 import { errorWords } from "./manage/parts";
 import { fromLibrary } from "./manage/pick";
 import { UpdateFleetd } from "./UpdateFleetd";
+import { vaultShown } from "./vault/model";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -139,6 +140,11 @@ export function Settings() {
         ) : null}
       </ListSection>
       <UpdateFleetd />
+      {vaultShown(hub) ? (
+        <ListSection footer="Logins, cards, addresses and variables your agents use without seeing them.">
+          <ListRow title="Vault" onPress={() => navigation.navigate("Vault")} />
+        </ListSection>
+      ) : null}
       <ListSection header="Memory">
         <ListRow title="Import Memory" detail="What another assistant knows about you" onPress={() => navigation.navigate("ImportMemory")} />
       </ListSection>

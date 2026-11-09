@@ -64,6 +64,8 @@ import { StatusBarTap } from "../ui/StatusBarTap";
 import { arrivedReplies, bubbleActions, bubbleLabel, spokenText } from "../spoken";
 import { ApprovalCard, ApprovalOutcomeLine } from "./ApprovalCard";
 import { ArtifactCard } from "./artifacts/ArtifactCard";
+import { ImportCard } from "./vault/ImportCard";
+import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
@@ -816,6 +818,15 @@ function ItemView({
   }
   const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
+  const vaultImport = (item.message as { vaultImport?: VaultImportCard } | undefined)?.vaultImport;
+  if (vaultImport !== undefined)
+    return vaultImport.state === "open" ? (
+      <View style={[styles.card, styles.groupGap]}>
+        <ImportCard card={vaultImport} />
+      </View>
+    ) : (
+      <ImportCard card={vaultImport} />
+    );
   const published = item.message?.artifact;
   if (published !== undefined) return <ArtifactCard published={published} when={bubbleTime(item.at, now)} onPress={() => actions.openArtifact(published.name, published.version)} />;
   if (side === "center") return <Event text={item.text} />;
