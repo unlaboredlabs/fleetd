@@ -12,6 +12,7 @@ import {
   FLAVOUR,
   helperPath,
   HttpFeed,
+  keptHelper,
   parseChannel,
   parseFlavour,
   parseSums,
@@ -162,6 +163,30 @@ test("the swap keeps the previous binary, and a restore puts it back", () => {
     { name: "fleetd-hub.service", unit: "hub" },
     { name: "fleetd-node.service", unit: "node" },
   ]);
+});
+
+test("an update keeps the session host it replaces, and a rollback puts it back with the binary", async () => {
+  const dir = join(home.dir, "rollback");
+  mkdirSync(dir);
+  const p = plan(dir);
+  writeFileSync(helperPath(p.exe), "old rust build");
+  const rust = new TextEncoder().encode("new rust build");
+  const s = new Map([[assetOf("rust"), sha256Hex(rust)]]);
+  const feed = { get: async () => rust };
+  // The update moves the session host to the new release, keeping the one it ran beside the previous binary.
+  writeFileSync(keptHelper(p.prev), "kept by an earlier update");
+  await updateHelper(feed, s, p.exe, p.prev);
+  expect([readFileSync(helperPath(p.exe), "utf8"), readFileSync(keptHelper(p.prev), "utf8")]).toEqual(["new rust build", "old rust build"]);
+  // The new build doesn't come up: the watcher puts both back.
+  expect((await finish(p, fakePorts("1.0.0").ports)).state).toBe("rolled_back");
+  expect([readFileSync(p.exe, "utf8"), readFileSync(helperPath(p.exe), "utf8")]).toEqual(["old", "old rust build"]);
+  // A session host already the release's isn't replaced, and nothing stale is left to put back.
+  writeFileSync(helperPath(p.exe), "new rust build");
+  await updateHelper(feed, s, p.exe, p.prev);
+  expect(existsSync(keptHelper(p.prev))).toBe(false);
+  writeFileSync(p.exe, "new");
+  restore(p.exe, p.prev);
+  expect([readFileSync(p.exe, "utf8"), readFileSync(helperPath(p.exe), "utf8")]).toEqual(["old", "new rust build"]);
 });
 
 /** A service manager and a clock that move on as the watcher looks. */

@@ -8,8 +8,11 @@ import { type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
+import { selfArgv } from "../agents_mac/grants.ts";
+import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient } from "./client.ts";
-import { Host } from "./host.ts";
+import { FOLDER_DAYS, Host, sweep } from "./host.ts";
+import { installShim, launchEnv } from "./shim.ts";
 
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
@@ -38,8 +41,16 @@ export function start(node: Node): void {
       const frame = f as unknown as MacCallFrame;
       void h.answer(frame).then((answer) => toHub(node, { t: "mac_result", ...answer }));
     });
+    startHousekeeping(node, h);
     return;
   }
+  // Every agent session here gets `mac` first on its PATH, and the forwarding agent-device while it holds a simulator.
+  try {
+    installShim(node.home, selfArgv());
+  } catch (e) {
+    console.warn(`${new Date().toISOString()} WARN the agents' \`mac\` command was not written {"error":${JSON.stringify(String(e))}}`);
+  }
+  node.area("launch").contribute({ env: (thread, path) => launchEnv(node.home, thread, path) });
   const c = client(node);
   node.area("local").on("mac", async (session, frame) => {
     try {
@@ -67,11 +78,35 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
 }
 const sweeps = new WeakMap<Host, Timer>();
 
+/** How often the Mac looks for agents' folders nothing touched for FOLDER_DAYS. */
+export const SWEEP_EVERY = 6 * 3600_000;
+/** How often the Mac looks for a change to the menu bar's activity. */
+export const ACTIVITY_EVERY = 2_000;
+const housekeeping = new WeakMap<Host, Timer[]>();
+
+/** The Mac's own upkeep while the node runs (host.rs `Host::start`): old agents' folders swept now and every
+ * SWEEP_EVERY, and what agents do on it written for the menu bar whenever it changes (activity.rs). */
+function startHousekeeping(node: Node, h: Host): void {
+  const clean = () => {
+    try {
+      sweep(h.root, FOLDER_DAYS);
+    } catch (e) {
+      console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`);
+    }
+  };
+  let last: Activity | undefined;
+  const write = () => (last = writeActivity(node.home, h.activity(), last));
+  clean();
+  write();
+  housekeeping.set(h, [setInterval(clean, SWEEP_EVERY), setInterval(write, ACTIVITY_EVERY)]);
+}
+
 /** Every job on the Mac ends with its node, and every simulator it lent. */
 export async function stop(node: Node): Promise<void> {
   if (!isAgentsMac(node)) return;
   const h = host(node);
   h.stop();
   clearInterval(sweeps.get(h));
+  for (const t of housekeeping.get(h) ?? []) clearInterval(t);
   await h.sims?.shutdown();
 }

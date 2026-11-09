@@ -988,7 +988,7 @@ class Drive {
       const s = await sums(feed);
       if (!isBuild(kept, s, asset)) await checkedTo(feed, s, asset, kept);
       // The session host beside a Bun build moves with it.
-      await updateHelper(feed, s, exe);
+      await updateHelper(feed, s, exe, prev);
     });
     let previous: Uint8Array;
     try {

@@ -4,13 +4,16 @@
 // (its own index, never the agent's) and sends only what the Mac lacks as a thin pack; a pull brings a file or a
 // folder (as a tar.gz) back into the worktree.
 //
-// TODO(bun): simulators' agent-device forwarder on the PATH (`sim_start`), the action log of the session's runs, and
-// following a background run to its end.
+// While the session holds a simulator, its `agent-device` is the forwarder (./shim.ts), which runs each command there.
+//
+// TODO(bun): the action log of the session's runs, and following a background run to its end.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
+import { selfArgv } from "../agents_mac/grants.ts";
 import { hubCall, type Node } from "../browser/node.ts";
 import { type Done, type Envelope, openAnswer, PIECE, PULL_MAX, PUSH_MAX, sealStep, type Step } from "./protocol.ts";
+import { installForwarder, removeForwarder } from "./shim.ts";
 
 /** How long a step may take: a first push indexes a whole tree on the Mac. Past the hub's own wait. */
 export const SEND_WAIT = 180_000;
@@ -187,6 +190,15 @@ export class MacClient {
     }
   }
 
+  /** Puts the forwarding agent-device first on the session's PATH, as the session now holds a simulator. */
+  private forward(thread: string): void {
+    try {
+      installForwarder(this.node.home, thread, selfArgv());
+    } catch (e) {
+      throw failed(`agent-device wasn't put on your PATH: ${(e as Error).message}`);
+    }
+  }
+
   /** The agent's `fleetd mac` call, for its session `thread`, from its worktree `worktree`. */
   async call(thread: string, worktree: string, call: MacCall): Promise<Record<string, unknown>> {
     const mac = await this.find(thread, worktree);
@@ -220,12 +232,20 @@ export class MacClient {
           ...(call.device ? { device: call.device } : {}),
           ...(call.wait ? { wait: true } : {}),
         });
-        if (done.step === "sim_start") return { step: "sim_start", udid: done.udid, device: done.device };
+        if (done.step === "sim_start") {
+          this.forward(thread);
+          return { step: "sim_start", udid: done.udid, device: done.device };
+        }
         if (done.step === "sim_queued") return { step: "sim_queued", place: done.place, secs: done.secs ?? null, why: done.why };
         throw failed("the Mac answered sim start with another step's");
       }
-      case "sim_end":
-        return { step: "sim_end", ended: (await one({ step: "sim_end" }, "sim_end")).ended };
+      case "sim_end": {
+        const done = one({ step: "sim_end" }, "sim_end");
+        // Whatever the Mac answers, agent-device is this machine's own again.
+        await done.catch(() => {});
+        removeForwarder(this.node.home, thread);
+        return { step: "sim_end", ended: (await done).ended };
+      }
       default:
         throw refuse(`fleetd mac doesn't know ${(call as { step?: string }).step}`);
     }

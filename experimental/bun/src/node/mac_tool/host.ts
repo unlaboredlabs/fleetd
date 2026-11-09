@@ -4,8 +4,8 @@
 // from the project's mirror, its jobs, the files it put and pulls. The answer goes back sealed with the step's key.
 //
 // iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them.
-//
-// TODO(bun): the menu bar's activity, and the sweep of folders untouched for FOLDER_DAYS.
+// What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts); a folder nothing touched for FOLDER_DAYS
+// goes, with its snapshot in the mirror (`sweep`).
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -14,6 +14,7 @@ import {
   ftruncateSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readSync,
   realpathSync,
   rmSync,
@@ -24,6 +25,7 @@ import {
 import { dirname, basename, isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { ToolError } from "../../shared/errors.ts";
+import { type Activity, clipCommand, type JobActivity, type SimActivity } from "./activity.ts";
 import type { MacSims } from "../device/ios/sims.ts";
 import type { MacCaller, MacCallFrame, MacResultFrame, McpToolError } from "../../shared/screens_wire.ts";
 import {
@@ -43,6 +45,8 @@ import {
   type Step,
 } from "./protocol.ts";
 
+/** An agent's folder nothing touched for this many days goes. */
+export const FOLDER_DAYS = 3;
 /** A foreground job nobody followed for this long ends: its agent stopped waiting for it. */
 export const FOREGROUND_IDLE = 60_000;
 /** How long `logs` waits for output while the job runs. */
@@ -132,7 +136,7 @@ function masker(named: MacEnv[]): (text: string) => string {
 export class Host {
   /** Nonces seen within twice the skew. */
   private readonly seen = new Map<string, number>();
-  private readonly jobs = new Map<string, { next: number; jobs: Map<number, Job> }>();
+  private readonly jobs = new Map<string, { project: string; next: number; jobs: Map<number, Job> }>();
   /** The Mac's iOS simulators, where it has them (node/device/ios). */
   sims: MacSims | undefined;
 
@@ -273,7 +277,7 @@ export class Host {
   private start(agent: Agent, args: string[], named: MacEnv[], background: boolean): Done {
     if (args.every((a) => a.trim() === "")) throw refuse("mac run needs a command", "mac run -- <command line>");
     let mine = this.jobs.get(agent.name);
-    if (!mine) this.jobs.set(agent.name, (mine = { next: 0, jobs: new Map() }));
+    if (!mine) this.jobs.set(agent.name, (mine = { project: agent.project, next: 0, jobs: new Map() }));
     const running = [...mine.jobs.values()].filter((j) => j.exit === undefined).length;
     if (running >= RUNNING_MAX) {
       throw refuse(`you have ${running} jobs running on the Mac, the most at once`, "end some with mac kill (mac ps lists them)");
@@ -376,10 +380,66 @@ export class Host {
     return true;
   }
 
+  /** What agents do on the Mac now, for the menu bar: the simulators they hold and the jobs they run, oldest first. */
+  activity(): Activity {
+    const simulators: SimActivity[] = [...(this.sims?.held ?? [])]
+      .map(([agent, held]) => ({ agent, projectId: held.project, device: held.device, sinceMs: held.sinceMs }))
+      .sort((a, b) => a.sinceMs - b.sinceMs || (a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0));
+    const jobs: JobActivity[] = [...this.jobs]
+      .flatMap(([agent, mine]) =>
+        [...mine.jobs]
+          .filter(([, j]) => j.exit === undefined)
+          .map(([job, j]) => ({ agent, projectId: mine.project, job, command: clipCommand(j.command), startedMs: j.startedMs })),
+      )
+      .sort((a, b) => a.startedMs - b.startedMs || (a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0) || a.job - b.job);
+    return { simulators, jobs };
+  }
+
   /** Every job ends with the node. */
   stop(): void {
     for (const [agent, mine] of this.jobs) for (const job of mine.jobs.keys()) this.kill(agent, job);
   }
+}
+
+/** Removes the agents' folders under `root` nothing touched for `days` (by their `.used`), with their snapshots in the
+ * mirrors; folders whose names start with a dot (the mirrors, the shared cache) stay. */
+export function sweep(root: string, days: number, now = Date.now()): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  const old = now - days * 86_400_000;
+  const gone: string[] = [];
+  for (const name of names) {
+    if (name.startsWith(".")) continue;
+    let used: number;
+    try {
+      used = statSync(join(root, name, ".used")).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (used < old) {
+      rmSync(join(root, name), { recursive: true, force: true });
+      gone.push(name);
+    }
+  }
+  if (gone.length === 0) return gone;
+  let mirrors: string[];
+  try {
+    mirrors = readdirSync(join(root, ".mirrors"));
+  } catch {
+    return gone;
+  }
+  for (const mirror of mirrors) {
+    const dir = join(root, ".mirrors", mirror);
+    const run = (args: string[]) => Bun.spawnSync(["git", "-C", dir, ...args], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+    for (const name of gone) run(["update-ref", "-d", `refs/fleetd/${name}`]);
+    run(["worktree", "prune"]);
+    run(["gc", "--auto", "--quiet"]);
+  }
+  return gone;
 }
 
 const SIGNALS: Record<string, number> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };

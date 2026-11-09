@@ -21,7 +21,11 @@ and how each step goes back. Steps marked **[approval]** change the live fleet: 
   sessions under that Rust build, and every Bun update brings it along to the same release.
 - **The rollback.** `fleetd update --flavour rust` on a Bun machine installs the release's Rust build at the same
   path and restarts. If the Bun build won't even start, the Rust build beside it is the rollback, with no
-  download (below).
+  download (below). A Bun update that doesn't come up healthy is rolled back by its watcher as any update is, and
+  that puts back the session host too: the update keeps the one it replaces beside the previous build
+  (`update/fleetd.prev.session-host`), so the machine is back on one release's pair.
+- **New machines.** `curl -fsSL https://fleetd.sh | FLEETD_FLAVOUR=bun sh` installs the Bun build with its session
+  host. A cloud machine a hub creates installs the hub's own flavour (hub/cloud/setup.sh passes it).
 - **Same database.** Both flavours run the same migration files (crates/fleetd/src/hub/store/migrations; the Bun
   build embeds them) with the same runner and checksums, and the node's `sessions.sqlite` has the same schema in
   both. A rollback to the same release's Rust build never meets a migration it doesn't know.
@@ -72,7 +76,17 @@ Nothing here needs approval. Stop if any check fails.
 
    It ends `db-check: the Bun build opens these in place`. `would run …` names migrations the live hub hasn't run
    yet (it runs an older build); that's fine as long as the schema after them is the same.
-5. **Note what runs now**, to compare after each step: the hub's version (Settings › Hub › Updates), each machine's
+5. **Wake one boat slot from a throwaway Bun hub [approval]** (it uses the human's boat.dev key and starts a VM).
+   The Bun hub's SSH tunnel to a cloud machine is tested only against an ssh2 server, never boat's own OpenSSH
+   sshd. Start a Bun hub with a FLEETD_HOME of its own, never the live one (`fleetd hub start --home …` from the
+   Bun build, FLEETD_HOME set on every fleetd call), and in its Settings › Hub › Machines › Cloud machines save
+   the boat key, an environment that exists on the boat account, and one machine; then Create. Check: the slot
+   wakes, its setup finishes (`~/fleetd-setup.log` on the VM ends at `done`), it joins the throwaway hub through
+   the tunnel and shows online, its `SHA256SUMS` line is `fleetd-bun-linux-x64`, and an agent run on it ends. Then
+   `fleetd cloud stop` on the throwaway hub, delete its machine at boat.dev (named `fleetd-<its hub id>-…`), stop
+   that hub by its PID, and delete its home. Each hub's machines carry its own hub id as their label, so neither
+   hub's stop touches the other's.
+6. **Note what runs now**, to compare after each step: the hub's version (Settings › Hub › Updates), each machine's
    status and version (`fleetd_status`), the open orders, the merge train's queue.
 
 ## The steps
@@ -144,8 +158,10 @@ Checks, before the next machine: it's online on its version (`fleetd_status`), i
 Rollback: `~/.fleetd/bin/fleetd update --flavour rust` on it, or the offline copy of `fleetd-session-host` above,
 then `systemctl --user restart fleetd-node`.
 
-Cloud machines (Settings › Hub › Machines › Cloud machines) aren't switched: a new one installs the Rust build, and
-a Bun hub runs them as before.
+Cloud machines (Settings › Hub › Machines › Cloud machines): a new one installs the hub's flavour, so once the hub
+runs Bun, new ones come up Bun. The ones made before stay Rust, and a Bun hub runs them as before. To move one, run
+`fleetd update --flavour bun` on it while it's awake, or Reset it while it's asleep (that deletes its disk). After a
+hub rollback, new ones come up Rust again; Bun ones keep working.
 
 ### 3. The agents' Mac, last **[approval]**
 

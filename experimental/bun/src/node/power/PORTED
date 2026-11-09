@@ -1,2 +1,4 @@
 link:node→hub `slept` send
 loop:node loop `power::run`
+mod:`node/power/clock.rs`
+mod:`node/power/inhibit.rs`

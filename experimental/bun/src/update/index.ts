@@ -375,12 +375,25 @@ export function assetOf(flavour: Flavour): string {
  * Rust build a switch back can put in place without a download. */
 export const helperPath = (exe: string) => join(dirname(exe), HELPER);
 
+/** Where an update keeps the session host it replaced, beside the previous binary `prev`, for `restore`. */
+export const keptHelper = (prev: string) => `${prev}.session-host`;
+
 /** Brings the session host beside `exe` to the release `s` names, when there is one there: it moves with the Bun build,
- * so the two are always one release's. */
-export async function updateHelper(feed: Feed, s: Map<string, string>, exe: string): Promise<void> {
+ * so the two are always one release's. With `prev`, the update's previous binary, the session host it replaces is kept
+ * beside it (`keptHelper`), so a rollback puts both back; one kept by an earlier update goes first. */
+export async function updateHelper(feed: Feed, s: Map<string, string>, exe: string, prev?: string): Promise<void> {
   const path = helperPath(exe);
   const asset = assetOf("rust");
+  if (prev !== undefined) rmSync(keptHelper(prev), { force: true });
   if (!existsSync(path) || isBuild(path, s, asset)) return;
+  if (prev !== undefined) {
+    try {
+      mkdirSync(dirname(prev), { recursive: true });
+      replaceFileFrom(keptHelper(prev), path);
+    } catch (e) {
+      throw new Failure("install", `couldn't keep the session host for a rollback: ${errText(e)}; nothing was changed`);
+    }
+  }
   await checkedTo(feed, s, asset, path);
 }
 
@@ -471,8 +484,11 @@ export function swap(exe: string, next: string, previous: Uint8Array, prev: stri
   }
 }
 
-/** Puts the binary `swap` kept back at `exe`. */
-export const restore = (exe: string, prev: string) => replaceFileFrom(exe, prev);
+/** Puts the binary `swap` kept back at `exe`, and the session host `updateHelper` kept beside it, if it kept one. */
+export function restore(exe: string, prev: string): void {
+  replaceFileFrom(exe, prev);
+  if (existsSync(keptHelper(prev))) replaceFileFrom(helperPath(exe), keptHelper(prev));
+}
 
 /** An io error's words as Rust prints them: "No such file or directory (os error 2)". */
 export function errText(e: unknown): string {
