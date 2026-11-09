@@ -18,6 +18,22 @@ describe("what an event reads again", () => {
     expect(effectsOf(event("project.settings")).info).toBe(false);
   });
 
+  it("an agent starting, ending or moving reads the orders board again, which counts each project's agents at work", () => {
+    expect(effectsOf(event("task.started")).board).toBe(true);
+    expect(effectsOf(event("workstream.closed")).board).toBe(true);
+    expect(effectsOf(event("chat.message")).board).toBe(false);
+    const p1 = { machineId: "devbox", projectId: "p1" };
+    const lane = (laneId: string, role: string, status: string) => ({ laneId, role, status, title: laneId });
+    const orders = [
+      { projectRef: p1, lanes: [lane("lead", "lead", "working"), lane("a", "writer", "working"), lane("b", "reviewer", "starting"), lane("c", "writer", "done")] },
+      // The same agent on a second order counts once.
+      { projectRef: p1, lanes: [lane("a", "writer", "working")] },
+      { projectRef: { machineId: "devbox", projectId: "p2" }, lanes: [lane("d", "writer", "failed")] },
+    ] as never;
+    const s = reduce(initial({ phase: "live", hub: "http://devbox:4790" } as never), { t: "board", orders });
+    expect(s.running).toEqual({ "devbox/p1": 2 });
+  });
+
   it("opens a chat on the newest messages the list holds, shown until its latest page starts it over", () => {
     const m = (seq: number): ChatMessage => ({ messageId: `m${String(seq)}`, projectRef: { machineId: "m1", projectId: "p" }, seq, author: "lead", text: "hi", attachments: [], createdAt: "2026-11-07T10:00:00.000Z", state: "final" });
     const s = { ...initial({ phase: "live", hub: "http://devbox:4790" } as never), latest: { "m1/p": [m(8), m(9)] } };

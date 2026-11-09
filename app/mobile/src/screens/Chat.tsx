@@ -26,7 +26,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
@@ -39,6 +39,7 @@ import { parseInline } from "../markdown";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
+import { useBot, useJustDone } from "../ui/botState";
 import { bubble as metrics, jumbo } from "../bubble";
 import { Bubble, Jumbo } from "../ui/Bubble";
 import { Button } from "../ui/Button";
@@ -175,16 +176,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
   const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
+  // Its bot: done a moment after the lead's turn ends, as the desktop's chat title.
+  const bot = useBot(chatKey, useJustDone(working));
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;
     navigation.setOptions({
-      headerTitle: () => <ChatTitle picture={project} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />,
+      headerTitle: () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />,
       title,
     });
-    // A picture or icon set or removed (here or on another device) draws the header again: its id or names are all that change.
-  }, [navigation, title, status, working, link, project?.avatar, project?.icon?.face, project?.icon?.color, openInfo]);
+    // A picture set or removed (here or on another device) draws the header again: its id is all that changes.
+  }, [navigation, title, status, working, link, project?.avatar, bot, openInfo]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   // The list's native tag, for the bars' scroll edge effect: it is mounted once the screen is.
@@ -546,7 +549,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             fallback={<LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />}
           >
             <ChatBar top={insets.top} onBack={() => navigation.goBack()} onInfo={openInfo}>
-              <ChatTitle picture={project} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
+              <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
             </ChatBar>
           </EdgeEffect>
         ) : null}
@@ -661,14 +664,14 @@ function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: () =>
 }
 
 /** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's chat apps draw it. Tapped, its Info, as Messages'. */
-function ChatTitle({ picture, title, status, busy, onPress }: { picture: Pictured | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void }) {
+function ChatTitle({ picture, bot, title, status, busy, onPress }: { picture: Pictured | undefined; bot: BotState | undefined; title: string; status: string | undefined; busy: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
     // The glass gives the press its own response: no dimming, which glass doesn't draw under.
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={status === undefined ? title : `${title}, ${status}`} accessibilityHint="Shows the chat's info">
       <Glass interactive style={styles.titleGlass}>
         <View style={styles.title}>
-          <Avatar name={title} size={30} picture={picture} />
+          <Avatar name={title} size={30} picture={picture} bot={bot} />
           <View style={styles.titleText}>
             <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               {title}
