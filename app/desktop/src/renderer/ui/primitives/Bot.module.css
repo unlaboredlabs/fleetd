@@ -1,29 +1,17 @@
 /* The bot's paint (Bot.tsx): its light colors, or in the dark theme its dark ones. Its eyes dim by --dim and glow by
-   --glow, which ui/lib/botLife.ts writes with each frame (a dimmed eye gives up shared/bot.ts DIMMED). */
+   --glow, which ui/lib/botLife.ts writes with each frame (a dimmed eye gives up shared/bot.ts DIMMED). Its hops and
+   slumps reach past its box, so nothing of its own clips them. */
 .bot {
   display: block;
+  overflow: visible;
   --dim: 0;
   --glow: 0;
-  --field: var(--l-field);
-  --hi: var(--l-hi);
   --body: var(--l-body);
-  --lo: var(--l-lo);
-  --sheen: var(--l-sheen);
-  --sheenA: var(--l-sheenA);
-  --shadow: var(--l-shadow);
-  --shadowA: var(--l-shadowA);
   --eye: var(--l-eye);
   --glowA: var(--l-glowA);
 }
 :global([data-theme="dark"]) .bot {
-  --field: var(--d-field);
-  --hi: var(--d-hi);
   --body: var(--d-body);
-  --lo: var(--d-lo);
-  --sheen: var(--d-sheen);
-  --sheenA: var(--d-sheenA);
-  --shadow: var(--d-shadow);
-  --shadowA: var(--d-shadowA);
   --eye: var(--d-eye);
   --glowA: var(--d-glowA);
 }
