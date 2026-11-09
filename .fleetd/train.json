@@ -13,6 +13,7 @@
   "afterMerge": [
     "desktop-budgets",
     "fleetd (macos)",
+    "ios simulators",
     "desktop-macos",
     "qa / qa (macos-latest, 1/3)",
     "qa / qa (macos-latest, 2/3)",
