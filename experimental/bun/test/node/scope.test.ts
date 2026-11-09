@@ -112,7 +112,8 @@ test.skipIf(!linux)("a scope that fails never fails the session", async () => {
   // The user manager went away.
   let f = fakes("bus", "echo 'Failed to connect to bus' >&2; exit 1");
   let started = await spawnScoped(f.scope, f.host, sleeps(0), "s1", build);
-  expect(started.failed).toBe("systemd-run exit status: 1");
+  // Its exit status when the exit event came before /proc showed it gone; under load /proc can be first.
+  expect(["systemd-run exit status: 1", "systemd-run exited"]).toContain(started.failed!);
   expect(await ended(started.child)).toBe(0);
   // Hung on the bus: killed at the timeout.
   f = fakes("hung", "while :; do sleep 0.05; done");
