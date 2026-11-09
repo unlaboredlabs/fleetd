@@ -38,9 +38,9 @@ use std::time::Duration;
 
 use super::config::NodeConfig;
 use fleetd_contracts::node_link::{
-    CAP_AGENTS_MAC, CAP_BROWSER, CAP_LINK_DEFLATE, CAP_MAC_TOOL, CAP_PROJECT_SETTINGS,
-    CAP_SCREEN_SETTINGS, CAP_SELF_UPDATE, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_IOS,
-    CAP_SESSION_SEAL, CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacCheckId, MacHealth,
+    CAP_AGENTS_MAC, CAP_BROWSER, CAP_BUILD_BUN, CAP_BUILD_RUST, CAP_LINK_DEFLATE, CAP_MAC_TOOL,
+    CAP_PROJECT_SETTINGS, CAP_SCREEN_SETTINGS, CAP_SELF_UPDATE, CAP_SESSION_END, CAP_SESSION_HOST,
+    CAP_SESSION_IOS, CAP_SESSION_SEAL, CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, MacCheckId, MacHealth,
 };
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::SessionCall;
@@ -88,8 +88,10 @@ pub fn ios_config(
 /// host. `tool`: the Mac's tool is on (macOS),
 /// so it lists [`CAP_MAC_TOOL`] too, once.
 pub fn capabilities(others: impl IntoIterator<Item = String>, tool: bool) -> Vec<String> {
-    const KEPT: [&str; 12] = [
+    const KEPT: [&str; 14] = [
         CAP_MAC_TOOL,
+        CAP_BUILD_RUST,
+        CAP_BUILD_BUN,
         CAP_SELF_UPDATE,
         CAP_UPDATE_FETCH,
         CAP_UPDATE_HOLD,

@@ -3,7 +3,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { byMachine, defaultTiming, type Held, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
+import { byMachine, defaultTiming, type Held, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type NodeUpdate, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
 import { busyWords, healthUrl, updateSummary } from "../src/hub/update/ports.ts";
 import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
 import { sha256Hex } from "../src/update/index.ts";
@@ -26,6 +26,11 @@ class Fake implements UpdatePorts {
   version = OLD;
   plans: Plan[] = [];
   updated: string[] = [];
+  /** The updates they were sent, in the same order. */
+  sent: NodeUpdate[] = [];
+  /** The flavour a node from before flavours (none named) runs, by machine: it ignores the one it is told and comes
+   * back on this one, naming it. Absent: the hub's. */
+  ownFlavour = new Map<string, "rust" | "bun">();
   fetched: string[] = [];
   claude: string[] = [];
   holds = 0;
@@ -105,14 +110,18 @@ class Fake implements UpdatePorts {
     this.claude.push(`${m}@${v}`);
     return { ok: true, message: `Claude Code ${v} installed` };
   }
-  async updateNode(m: string, update: { version: string }) {
+  async updateNode(m: string, update: NodeUpdate) {
     this.updated.push(m);
+    this.sent.push(update);
     const answer = this.answer(m);
     if (answer.ok) {
       // It restarts and links again on the new build.
       setTimeout(() => {
         const f = this.facts.find((x) => x.machineId === m)!;
         f.version = update.version;
+        // A node that knows flavours comes back on the one it was told; one from before them on its own, which it names
+        // from then on.
+        f.flavour = f.flavour !== undefined ? (update.flavour ?? f.flavour) : (this.ownFlavour.get(m) ?? "bun");
         f.liveSince = this.now + 1;
         this.now += 2;
         for (const w of this.waiters.splice(0)) w();
@@ -508,6 +517,49 @@ test("a cloud machine that wakes mid-run catches up as the run ends", async () =
   expect(caught).toBe("restarting");
   expect(after.status()!.finishedAt).toBeDefined();
   expect(fake.updated).toContain("m1");
+  await resumed;
+});
+
+// boat-2 and boat-3, 9 Nov: Rust cloud machines woke to the Bun hub of the same version, counted as current, and never
+// switched. A node on the other flavour is behind whatever its version: its catch-up and the next update send it the
+// hub's build, flavour named, and it counts as current only once it runs Bun. A node that names no flavour (older than
+// any hub that sends one) is taken at its version.
+test("a Rust-reporting node is behind a Bun hub of its version, and told to switch to Bun", async () => {
+  const dir = join(home.dir, "flavour");
+  const fake = new Fake(dir, [
+    { name: "boat-2", version: NEW, flavour: "rust", cloud: true, claude: "2.1.314 (Claude Code)" },
+    { name: "boat-3", version: NEW, cloud: true, claude: "2.1.314 (Claude Code)" },
+  ]);
+  fake.version = NEW;
+  const u = updatesIn(dir, fake);
+  u.setSettings(true, undefined);
+  expect(u.autoAt()).toBe(fake.now);
+
+  expect(await u.catchUp("m0")).toBe("restarting");
+  expect(fake.sent).toEqual([{ version: NEW, channel: "stable", flavour: "bun" }]);
+  await until(() => fake.facts[0]!.flavour === "bun");
+  expect(await u.catchUp("m0")).toBe("current");
+  expect(fake.updated).toEqual(["m0"]);
+  expect(u.autoAt()).toBeUndefined();
+
+  // No flavour said: current at the hub's version, never asked.
+  expect(await u.catchUp("m1")).toBe("current");
+  expect(fake.updated).toEqual(["m0"]);
+});
+
+// A node from before flavours (every live one when this shipped) ignores the hub's flavour, installs its own flavour of
+// the hub's build and comes back naming it. That isn't a failed update put back: the run asks it again, and it switches
+// in the same run.
+test("a node from before flavours comes back as build_rust and switches to Bun in the same run", async () => {
+  const dir = join(home.dir, "before-flavours");
+  const fake = new Fake(dir, [{ name: "boat-2" }]);
+  fake.ownFlavour.set("m0", "rust");
+  const { after, resumed } = await restarted(dir, fake);
+  await until(() => after.status()?.finishedAt !== undefined);
+  expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  expect(fake.updated).toEqual(["m0", "m0"]);
+  expect(fake.sent.map((u) => u.flavour)).toEqual(["bun", "bun"]);
+  expect(fake.facts[0]!.flavour).toBe("bun");
   await resumed;
 });
 

@@ -602,7 +602,8 @@ fn hex(digest: &[u8]) -> String {
 }
 
 /// Which implementation a fleetd build is: this Rust one, or the Bun/TypeScript port (experimental/bun). Each updates to
-/// its own flavour's asset, so a machine changes flavour only when `fleetd update --flavour` says so.
+/// its own flavour's asset, so a machine changes flavour only when `fleetd update --flavour` says so, or its hub's
+/// update names the other one (`NodeUpdate::flavour`, node/update.rs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Flavour {
     Rust,
@@ -622,6 +623,24 @@ impl Flavour {
         match self {
             Self::Rust => "rust",
             Self::Bun => "bun",
+        }
+    }
+
+    /// As a node update names it (`NodeUpdate::flavour`).
+    pub fn wire(self) -> fleetd_contracts::node_link::BuildFlavour {
+        use fleetd_contracts::node_link::BuildFlavour;
+        match self {
+            Self::Rust => BuildFlavour::Rust,
+            Self::Bun => BuildFlavour::Bun,
+        }
+    }
+
+    /// The capability a node of this flavour lists at its hello (`CAP_BUILD_RUST`, `CAP_BUILD_BUN`).
+    pub fn cap(self) -> &'static str {
+        use fleetd_contracts::node_link::{CAP_BUILD_BUN, CAP_BUILD_RUST};
+        match self {
+            Self::Rust => CAP_BUILD_RUST,
+            Self::Bun => CAP_BUILD_BUN,
         }
     }
 }

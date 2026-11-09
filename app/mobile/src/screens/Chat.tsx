@@ -728,7 +728,7 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
       </Animated.View>
     );
   }
-  const item = <ItemView item={row.item} side={row.side} first={row.first} last={row.last} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const item = <ItemView item={row.item} side={row.side} first={row.first} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
   const body =
     row.side === "center" ? (
       item
@@ -778,7 +778,6 @@ function ItemView({
   item,
   side,
   first,
-  last,
   chatKey,
   title,
   canAnswer,
@@ -787,7 +786,6 @@ function ItemView({
   item: ChatItem;
   side: "me" | "them" | "center";
   first: boolean;
-  last: boolean;
   chatKey: Key;
   title: string;
   canAnswer: boolean;
@@ -846,11 +844,11 @@ function ItemView({
                       }
                     : undefined
                 }
-                bubble={(tail) =>
+                bubble={
                   replied === undefined && jumbo(words) > 0 ? (
                     <Jumbo side="me" text={words} count={jumbo(words)} />
                   ) : (
-                    <Bubble side="me" tail={tail && last && files.length === 0}>
+                    <Bubble side="me">
                       {replied === undefined ? null : <Quote who={quotedWho} quote={replied.quote} onAccent onPress={quotedId === undefined ? undefined : () => actions.jumpTo(quotedId)} />}
                       <Markdown text={words} ink={t.onAccentDeep} onAccent fit holdsBlocks={false} />
                     </Bubble>
@@ -865,7 +863,7 @@ function ItemView({
         {files.map((b, i) => (
           // Each in a view of its own, the last's holding the mark of a slow send: one tree from sending to sent.
           <View key={i}>
-            <MediaView bubble={b} chatKey={chatKey} mine actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
+            <MediaView bubble={b} chatKey={chatKey} mine actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
             {i === files.length - 1 ? <SendWait state={item.state} at={item.at} /> : null}
           </View>
         ))}
@@ -892,7 +890,6 @@ function ItemView({
         <BubbleView
           key={i}
           bubble={b}
-          tail={last && files.length === 0 && i === parts.length - 1}
           canAnswer={canAnswer}
           chatKey={chatKey}
           actions={actions}
@@ -903,7 +900,7 @@ function ItemView({
         />
       ))}
       {files.map((b, i) => (
-        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
+        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
       ))}
     </View>
   );
@@ -983,7 +980,7 @@ function Quote({ who, quote, onAccent, onPress }: { who: string; quote: string; 
   );
 }
 
-/** A text bubble that lifts with its menu when held: Reply, Copy, Select Text. Lifted, it has no tail: its mask is the thread's ground. */
+/** A text bubble that lifts with its menu when held: Reply, Copy, Select Text. */
 function HeldBubble({
   bubble,
   text,
@@ -994,7 +991,7 @@ function HeldBubble({
   onPress,
   said,
 }: {
-  bubble: (tail: boolean) => ReactNode;
+  bubble: ReactNode;
   text: string;
   mine: boolean;
   /** When it was sent, in full: the menu's title. */
@@ -1030,12 +1027,12 @@ function HeldBubble({
       voiceActions={voice}
       radius={BUBBLE_RADIUS}
       align={mine ? "right" : "left"}
-      preview={bubble(false)}
+      preview={bubble}
       onPress={onPress}
       accessibilityRole={onPress === undefined ? undefined : "button"}
       accessibilityHint={onPress === undefined ? undefined : "Sends it again"}
     >
-      {bubble(true)}
+      {bubble}
     </HoldMenu>
   );
 }
@@ -1057,7 +1054,6 @@ function MediaView({
   actions,
   when,
   target,
-  tail,
   said,
 }: {
   bubble: BubbleData;
@@ -1066,8 +1062,6 @@ function MediaView({
   actions: ThreadActions;
   when: string;
   target?: { id: string; part: number; who: string } | undefined;
-  /** The burst's last: it has the tail (not lifted in the menu, as a bubble's). */
-  tail: boolean;
   said: Said;
 }) {
   const session = useSession();
@@ -1086,9 +1080,9 @@ function MediaView({
   ];
   const view = (held: boolean) =>
     bubble.kind === "image" ? (
-      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} onOpen={held ? () => undefined : actions.openImage} side={mine ? "me" : "them"} tail={tail && !held} />
+      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} onOpen={held ? () => undefined : actions.openImage} />
     ) : (
-      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} tail={tail && !held} />
+      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} />
     );
   return (
     <HoldMenu
@@ -1106,7 +1100,6 @@ function MediaView({
 
 function BubbleView({
   bubble,
-  tail,
   canAnswer,
   chatKey,
   actions,
@@ -1116,7 +1109,6 @@ function BubbleView({
   said,
 }: {
   bubble: BubbleData;
-  tail: boolean;
   canAnswer: boolean;
   chatKey: Key;
   actions: ThreadActions;
@@ -1137,11 +1129,11 @@ function BubbleView({
           said={said}
           text={bubble.text}
           target={target}
-          bubble={(withTail) =>
+          bubble={
             jumbo(bubble.text) > 0 ? (
               <Jumbo side="them" text={bubble.text} count={jumbo(bubble.text)} />
             ) : (
-              <Bubble side="them" tail={withTail && tail}>
+              <Bubble side="them">
                 <Markdown text={bubble.text} ink={t.label} fit={fit} streaming={!fit} />
               </Bubble>
             )
@@ -1150,11 +1142,11 @@ function BubbleView({
       );
     case "image":
     case "file":
-      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} when={when} target={target} tail={tail} said={said} />;
+      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} when={when} target={target} said={said} />;
     case "ask":
       return (
         <View style={styles.ask}>
-          <Bubble side="them" tail={tail}>
+          <Bubble side="them">
             <Markdown text={bubble.question} ink={t.label} fit />
           </Bubble>
           {canAnswer ? (

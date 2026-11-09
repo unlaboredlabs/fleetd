@@ -13,7 +13,7 @@ use fleetd_contracts::mcp::{
     HUB_UPDATE_MACHINES_MAX, HubChannel, HubUpdateData, HubUpdateOutput, HubUpdatePhase,
     UpdatePart, UpdatePartKind, UpdateRun, UpdateStage, UpdateState,
 };
-use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
+use fleetd_contracts::node_link::{BuildFlavour, NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::{List, Text};
 use serde_json::json;
 
@@ -25,7 +25,7 @@ use crate::hub::store::test_clock::ManualClock;
 use crate::update::finish::{Plan, Verdict};
 use crate::update::service::Service;
 use crate::update::tests::{FakeFeed, FakeRunner};
-use crate::update::{BoxFuture, Channel, Feed};
+use crate::update::{BoxFuture, Channel, Feed, Flavour};
 
 const OLD: &str = "0.0.0-nightly.202610251000+aaaaaaa";
 const NEW: &str = "0.0.0-nightly.202610261056+1b563d7";
@@ -61,6 +61,11 @@ struct Fake {
     nodes: Mutex<Vec<NodeFacts>>,
     answers: HashMap<String, Answer>,
     asked: Mutex<Vec<String>>,
+    /// The updates they were sent, in the same order.
+    sent: Mutex<Vec<NodeUpdate>>,
+    /// The flavour a node from before flavours (none named) runs, by machine: it ignores the one it is told and comes
+    /// back on this one, naming it. Absent: the hub's.
+    own_flavour: HashMap<String, Flavour>,
     /// The nodes asked to fetch the build ahead.
     fetched: Mutex<Vec<String>>,
     /// Bumped when a test moves a node's link.
@@ -100,6 +105,8 @@ impl Fake {
             nodes: Mutex::default(),
             answers: HashMap::new(),
             asked: Mutex::default(),
+            sent: Mutex::default(),
+            own_flavour: HashMap::new(),
             fetched: Mutex::default(),
             links: tokio::sync::watch::channel(0).0,
             claude: HashMap::new(),
@@ -123,6 +130,7 @@ impl Fake {
             machine_id: MachineId::unchecked(name),
             name: name.into(),
             version: version.into(),
+            flavour: None,
             live_since: online.then_some(1),
             can_update,
             can_fetch: can_update,
@@ -260,9 +268,10 @@ impl UpdatePorts for Fake {
     fn update_node<'a>(
         &'a self,
         machine_id: &'a MachineId,
-        _: &'a NodeUpdate,
+        update: &'a NodeUpdate,
     ) -> BoxFuture<'a, Result<NodeAnswer, String>> {
         self.asked.lock().unwrap().push(machine_id.to_string());
+        self.sent.lock().unwrap().push(update.clone());
         let answer = self.answers.get(machine_id.as_str()).cloned();
         let result = match answer {
             Some(Answer::BackOn(version)) => {
@@ -276,6 +285,18 @@ impl UpdatePorts for Fake {
                 {
                     n.live_since = Some(i64::MAX / 2);
                     n.version = version.into();
+                    // A node that knows flavours comes back on the one it was told; one from before them on its own,
+                    // which it names from then on.
+                    n.flavour = match (n.flavour, update.flavour) {
+                        (Some(_), Some(BuildFlavour::Bun)) => Some(Flavour::Bun),
+                        (Some(_), _) => Some(Flavour::Rust),
+                        (None, _) => Some(
+                            self.own_flavour
+                                .get(machine_id.as_str())
+                                .copied()
+                                .unwrap_or(Flavour::Rust),
+                        ),
+                    };
                 }
                 Ok((result(true, None, "restarting"), Said(None)))
             }
@@ -2392,6 +2413,76 @@ async fn a_cloud_machine_that_slept_through_an_update_catches_up_at_its_hello() 
         .unwrap_err();
     assert!(why.contains("fleetd update"), "{why}");
     assert_eq!(fake.asked.lock().unwrap().len(), 1);
+}
+
+/// boat-2 and boat-3, 9 Nov: cloud machines on one flavour woke to a hub of the other at the same version, and counted
+/// as current, so they never switched. A node on the other flavour is behind whatever its version: its catch-up and the
+/// next update send it the hub's build, flavour named, and it counts as current only once it runs that flavour. A node
+/// that names no flavour (older than any hub that sends one) is taken at its version.
+#[tokio::test]
+async fn a_node_on_the_other_flavour_is_behind_and_told_the_hubs() {
+    use super::NodeCatchUp;
+    let home = tempfile::tempdir().unwrap();
+    let fake = Fake::new(home.path(), b"new")
+        .node("boat-2", NEW, true, true, Some(Answer::BackOn(NEW)))
+        .node("boat-3", NEW, true, true, Some(Answer::BackOn(NEW)));
+    *fake.running.lock().unwrap() = NEW.into();
+    for n in fake.nodes.lock().unwrap().iter_mut() {
+        n.claude = Some("2.1.314 (Claude Code)".into());
+        if n.machine_id.as_str() == "boat-2" {
+            n.flavour = Some(Flavour::Bun);
+        }
+    }
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.set_settings(Some(true), None).unwrap();
+    assert!(updates.auto_at().is_some(), "due: boat-2 is behind the hub");
+
+    let boat = MachineId::unchecked("boat-2");
+    assert_eq!(updates.catch_up(&boat).await, Ok(NodeCatchUp::Restarting));
+    let sent = fake.sent.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].version.as_str(), NEW);
+    assert_eq!(sent[0].flavour, Some(BuildFlavour::Rust), "the hub's own");
+    assert_eq!(updates.catch_up(&boat).await, Ok(NodeCatchUp::Current));
+    assert_eq!(
+        fake.nodes.lock().unwrap()[0].flavour,
+        Some(Flavour::Rust),
+        "switched"
+    );
+    assert_eq!(updates.auto_at(), None, "nothing behind any more");
+
+    // No flavour said: current at the hub's version, never asked.
+    let quiet = MachineId::unchecked("boat-3");
+    assert_eq!(updates.catch_up(&quiet).await, Ok(NodeCatchUp::Current));
+    assert_eq!(*fake.asked.lock().unwrap(), ["boat-2"]);
+}
+
+/// A node from before flavours (every live one when this shipped) ignores the hub's flavour, installs its own flavour
+/// of the hub's build and comes back naming it. That isn't a failed update put back: the run asks it again, and it
+/// switches in the same run.
+#[tokio::test]
+async fn a_node_from_before_flavours_switches_in_the_same_run() {
+    let home = tempfile::tempdir().unwrap();
+    let mut fake =
+        Fake::new(home.path(), b"new").node("mac", OLD, true, true, Some(Answer::BackOn(NEW)));
+    fake.own_flavour.insert("mac".into(), Flavour::Bun);
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Done);
+    assert_eq!(*fake.asked.lock().unwrap(), ["mac", "mac"]);
+    let told: Vec<_> = fake
+        .sent
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|u| u.flavour)
+        .collect();
+    assert_eq!(told, [Some(BuildFlavour::Rust); 2]);
+    assert_eq!(fake.nodes.lock().unwrap()[0].flavour, Some(Flavour::Rust));
 }
 
 /// A machine an update left behind (the devbox's node, 7 Nov, found a newer edge build out after waiting for its agents,

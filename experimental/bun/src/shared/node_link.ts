@@ -80,6 +80,10 @@ export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
 export const CAP_LINK_DEFLATE = "link_deflate";
 export const CAP_GATED_RESUME = "gated_resume";
+/** The node runs the Rust build of its `nodeVersion`, or the Bun one, and takes `NodeUpdate.flavour`. A node listing
+ * neither is older and says nothing of its flavour. */
+export const CAP_BUILD_RUST = "build_rust";
+export const CAP_BUILD_BUN = "build_bun";
 
 /** What the hub lists in its welcome. */
 export const HUB_CAP_SESSION_ROUTE = "session_route";
@@ -223,8 +227,9 @@ export type NodeActionKind =
   | "hold"
   | "screens";
 
-/** The build a node updates to. Edge goes out as `nightly`, its name before D203. */
-export type NodeUpdate = { version: string; channel: HubChannel | "nightly" };
+/** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
+ * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
+export type NodeUpdate = { version: string; channel: HubChannel | "nightly"; flavour?: string };
 
 /** Hub -> node: the doctor's probe and the hub's update of its nodes. Its fields are single words. */
 export type NodeAction = {

@@ -33,7 +33,7 @@ import {
   type UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { checkedTo, channelOf, type Channel, Failure, type Feed, isBuild, release, replaceFile, restore, sums, swap, updateHelper } from "../../update/index.ts";
+import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, release, replaceFile, restore, sums, swap, updateHelper } from "../../update/index.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
@@ -64,6 +64,8 @@ export type NodeFacts = {
   machineId: string;
   name: string;
   version: string;
+  /** The flavour its node runs, as its hello said (`build_rust`, `build_bun`); undefined from a node before flavours. */
+  flavour?: Flavour;
   /** When its current link went live, ms; undefined while offline. */
   liveSince?: number;
   canUpdate: boolean;
@@ -81,7 +83,20 @@ export type NodeFacts = {
 
 /** A node's answer to a `node_action` (node_link.rs `NodeActionResult`). */
 export type NodeActionResult = { ok: boolean; message: string; stage?: UpdateStage; steps?: number };
-export type NodeUpdate = { version: string; channel: HubChannel };
+export type NodeUpdate = { version: string; channel: HubChannel; flavour?: Flavour };
+
+/**
+ * The node runs `to` or newer, of the hub's flavour: one on the other flavour is behind whatever its version, so the
+ * hub's update switches it. A node that names no flavour is taken at its version: it is older than any hub that sends
+ * one, and the update it gets brings it to a build that names it.
+ */
+export const runs = (n: NodeFacts, to: string) => atLeast(n.version, to) && (n.flavour === undefined || n.flavour === FLAVOUR);
+
+/** Its build in words: its version, with its flavour when that isn't the hub's. */
+const buildLabel = (n: NodeFacts) => (n.flavour !== undefined && n.flavour !== FLAVOUR ? `${versionLabel(n.version)} (${n.flavour})` : versionLabel(n.version));
+
+/** The update that brings a node to `to`, the hub's build: its version and channel, and the hub's flavour. */
+const nodeUpdate = (to: string, channel: HubChannel): NodeUpdate => ({ version: head(to, 200), channel, flavour: FLAVOUR });
 /** A node's answer to its update, and its second, sent only when its restart was refused. */
 export type NodeAnswer = [NodeActionResult, { tryTake(): NodeActionResult | undefined }];
 
@@ -392,7 +407,7 @@ export class Updates {
       ports.releaseBuild() &&
       ports.nodes().some((n) => {
         const refused = last?.parts.some((p) => p.part === "node" && p.machineId === n.machineId && refusedForGood(p)) ?? false;
-        return n.liveSince !== undefined && n.canUpdate && !refused && !atLeast(n.version, running);
+        return n.liveSince !== undefined && n.canUpdate && !refused && !runs(n, running);
       })
     );
   }
@@ -613,9 +628,9 @@ export class Updates {
     });
     if (failed !== undefined) return this.checked(failed);
     this.checked(undefined);
-    const update: NodeUpdate = { version: head(to, 200), channel: channel === "stable" ? "stable" : "edge" };
+    const update = nodeUpdate(to, channel === "stable" ? "stable" : "edge");
     for (const node of ports.nodes()) {
-      if (node.liveSince !== undefined && node.canFetch && !atLeast(node.version, to)) ports.fetchOnNode(node.machineId, update);
+      if (node.liveSince !== undefined && node.canFetch && !runs(node, to)) ports.fetchOnNode(node.machineId, update);
     }
     this.ready_ = to;
   }
@@ -644,7 +659,7 @@ export class Updates {
     this.save(run);
     const to = run.to;
     void this.drive(run.id, async (d) => {
-      const update: NodeUpdate = { version: to, channel: this.run?.channel ?? "edge" };
+      const update = nodeUpdate(to, this.run?.channel ?? "edge");
       await d.updateNode(ports, machineId, update);
       await d.updateClaude(ports, machineId);
       d.settleNodes("failed", "the update of this node stopped without a result");
@@ -806,9 +821,9 @@ export class Updates {
     const node = ports.nodes().find((n) => n.machineId === machineId);
     if (!node) throw new Error(`${machineId} isn't linked`);
     const running = ports.running();
-    if (!atLeast(node.version, running)) {
-      if (!node.canUpdate) throw new Error(`its fleetd ${versionLabel(node.version)} can't update itself: run \`fleetd update\` on it`);
-      const [answer] = await ports.updateNode(machineId, { version: head(running, 200), channel: channelOf(running, true) === "edge" ? "edge" : "stable" });
+    if (!runs(node, running)) {
+      if (!node.canUpdate) throw new Error(`its fleetd ${buildLabel(node)} can't update itself: run \`fleetd update\` on it`);
+      const [answer] = await ports.updateNode(machineId, nodeUpdate(running, channelOf(running, true) === "edge" ? "edge" : "stable"));
       if (!answer.ok) throw new Error(answer.message);
       return "restarting";
     }
@@ -1029,9 +1044,9 @@ class Drive {
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && p.state === "waiting").map((p) => p.machineId);
-    const update: NodeUpdate = { version: head(to, 200), channel: run.channel };
+    const update = nodeUpdate(to, run.channel);
     for (const node of ports.nodes()) {
-      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && !atLeast(node.version, to)) {
+      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && !runs(node, to)) {
         ports.fetchOnNode(node.machineId, update);
       }
     }
@@ -1080,7 +1095,7 @@ class Drive {
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && !settled(p.state)).map((p) => p.machineId!);
-    const update: NodeUpdate = { version: head(to, 200), channel: run.channel };
+    const update = nodeUpdate(to, run.channel);
     await Promise.allSettled(
       waiting.map(async (m) => {
         await this.updateNode(ports, m, update);
@@ -1101,7 +1116,7 @@ class Drive {
     const label = versionLabel(to);
     // Never backwards: a node on `to` or newer is settled as it is, whenever it is looked at.
     const current = (node: NodeFacts) => {
-      const at = atLeast(node.version, to);
+      const at = runs(node, to);
       if (at) this.setPart(machineId, "current", undefined, `already runs ${versionLabel(node.version)}`);
       return at;
     };
@@ -1164,37 +1179,47 @@ class Drive {
       off();
     }
     if (this.stopped()) return;
-    this.setPart(machineId, "downloading", undefined, `downloading ${label}`);
-    const asked = this.u.clockNow();
-    let refusal: NodeAnswer[1];
-    try {
-      const [r, second] = await ports.updateNode(machineId, update);
-      if (!r.ok) return this.setPart(machineId, "failed", r.stage ?? "download", r.message);
-      refusal = second;
-    } catch (e) {
-      return this.setPart(machineId, "failed", "download", (e as Error).message);
-    }
-    this.setPart(machineId, "restarting", undefined, `restarting on ${label}`);
-    const back = asked + this.u.timing.nodeBack;
-    for (;;) {
-      const ch = ports.nodeChanged(machineId);
-      const n = facts();
-      if (n && n.liveSince !== undefined && n.liveSince > asked) {
-        if (n.version === to) return this.setPart(machineId, "done", undefined, `runs ${label}`);
-        return this.setPart(machineId, "rolled_back", "health", `${label} didn't come up healthy, so ${versionLabel(n.version)} was put back and runs again`);
+    // A node that names no flavour (from before them) comes back on its own flavour of `to`, then names it.
+    let named = node.flavour !== undefined;
+    ask: for (;;) {
+      this.setPart(machineId, "downloading", undefined, `downloading ${label}`);
+      const asked = this.u.clockNow();
+      let refusal: NodeAnswer[1];
+      try {
+        const [r, second] = await ports.updateNode(machineId, update);
+        if (!r.ok) return this.setPart(machineId, "failed", r.stage ?? "download", r.message);
+        refusal = second;
+      } catch (e) {
+        return this.setPart(machineId, "failed", "download", (e as Error).message);
       }
-      const r = refusal.tryTake();
-      if (r) return this.setPart(machineId, "failed", r.stage ?? "restart", r.message);
-      if (this.u.clockNow() >= back) {
-        return this.setPart(
-          machineId,
-          "failed",
-          "health",
-          `didn't come back within ${Math.floor(this.u.timing.nodeBack / 60_000)} min: check the fleetd node service on ${node.name}`,
-        );
+      this.setPart(machineId, "restarting", undefined, `restarting on ${label}`);
+      const back = asked + this.u.timing.nodeBack;
+      for (;;) {
+        const ch = ports.nodeChanged(machineId);
+        const n = facts();
+        if (n && n.liveSince !== undefined && n.liveSince > asked) {
+          if (n.version === to && runs(n, to)) return this.setPart(machineId, "done", undefined, `runs ${label}`);
+        // A node from before flavours took its own flavour of `to`, and now names it: asked again, it switches in this
+        // same run. Not put back: nothing failed.
+        if (n.version === to && !named && n.flavour !== undefined) {
+          named = true;
+          continue ask;
+        }
+          return this.setPart(machineId, "rolled_back", "health", `${label} didn't come up healthy, so ${buildLabel(n)} was put back and runs again`);
+        }
+        const r = refusal.tryTake();
+        if (r) return this.setPart(machineId, "failed", r.stage ?? "restart", r.message);
+        if (this.u.clockNow() >= back) {
+          return this.setPart(
+            machineId,
+            "failed",
+            "health",
+            `didn't come back within ${Math.floor(this.u.timing.nodeBack / 60_000)} min: check the fleetd node service on ${node.name}`,
+          );
+        }
+        if (this.stopped()) return;
+        await this.nodeWait(ch);
       }
-      if (this.stopped()) return;
-      await this.nodeWait(ch);
     }
   }
 
