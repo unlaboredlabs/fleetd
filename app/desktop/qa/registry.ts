@@ -277,6 +277,8 @@ export const fixtures = [
   "showcase-pins",
   // ...and with only billing pinned: a lone pin in the sidebar's middle (W574).
   "showcase-pin",
+  // ...and with billing and Ada pinned: two side by side, a small gap between them (W577).
+  "showcase-pins-two",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -1097,29 +1099,42 @@ export const screens: readonly Screen[] = [
       await grid.nth(1).getByRole("button").hover();
     },
   },
-  // W574: a lone pin takes the whole row, centred in the sidebar however wide it is, not in the grid's left half: at
-  // the sidebar's narrowest and at its widest.
-  ...(["Home", "End"] as const).map(
-    (end): Screen => ({
-      id: "shell",
-      route: CHAT,
-      fixtures: ["showcase-pin"],
-      variant: end === "Home" ? "pin-one-narrowest" : "pin-one-widest",
-      open: async (page) => {
-        const edge = page.getByRole("separator", { name: "Resize the sidebar" });
-        await edge.focus();
-        await edge.press(end);
-        await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute(end === "Home" ? "aria-valuemin" : "aria-valuemax")) ?? "");
-        const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"]').first();
-        const pin = grid.locator("> [data-reorder-row]").getByRole("button");
-        await expect(pin).toHaveCount(1);
-        await expect(async () => {
-          const [g, b] = await Promise.all([grid.boundingBox(), pin.boundingBox()]);
-          if (g === null || b === null) throw new Error("the pin isn't on screen");
-          expect(Math.abs(b.x + b.width / 2 - (g.x + g.width / 2))).toBeLessThan(1);
-        }).toPass();
-      },
-    }),
+  // W577: the pins are a compact group, centred in the sidebar at every width: fixed cells a small gap apart, two to a
+  // row, a third under the first, a lone pin (W574) in the middle. One, two and three pins, at the sidebar's narrowest
+  // and at its widest.
+  ...(["showcase-pin", "showcase-pins-two", "showcase-pins"] as const).flatMap((fixture) =>
+    (["Home", "End"] as const).map(
+      (end): Screen => ({
+        id: "shell",
+        route: CHAT,
+        fixtures: [fixture],
+        variant: `pins-${{ "showcase-pin": "one", "showcase-pins-two": "two", "showcase-pins": "three" }[fixture]}-${end === "Home" ? "narrowest" : "widest"}`,
+        open: async (page) => {
+          const edge = page.getByRole("separator", { name: "Resize the sidebar" });
+          await edge.focus();
+          await edge.press(end);
+          await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute(end === "Home" ? "aria-valuemin" : "aria-valuemax")) ?? "");
+          const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"]').first();
+          const slots = grid.locator("> [data-reorder-row]");
+          await expect(slots).toHaveCount({ "showcase-pin": 1, "showcase-pins-two": 2, "showcase-pins": 3 }[fixture]);
+          await expect(async () => {
+            const g = await grid.boundingBox();
+            // A lone pin's place is the whole row: its own middle is the one to check.
+            const lone = (await slots.count()) === 1;
+            const boxes = await Promise.all((await slots.all()).map((slot) => (lone ? slot.getByRole("button") : slot).boundingBox()));
+            if (g === null || boxes.some((b) => b === null)) throw new Error("the pins aren't on screen");
+            const cells = boxes.flatMap((b) => (b === null ? [] : [b]));
+            // The group's middle is the sidebar's, whatever its width.
+            const left = Math.min(...cells.map((b) => b.x));
+            const right = Math.max(...cells.map((b) => b.x + b.width));
+            expect(Math.abs((left + right) / 2 - (g.x + g.width / 2))).toBeLessThan(1);
+            // Two to a row, a small gap apart, never each in half of a wide sidebar.
+            const [a, b] = cells;
+            if (a !== undefined && b !== undefined) expect(b.x - (a.x + a.width)).toBeLessThan(12);
+          }).toPass();
+        },
+      }),
+    ),
   ),
   // W574: Ada dragged up from the list beside billing's lone pin joins the pins after it, the two to a row; then billing
   // dragged down out of the pins leaves them, and Ada's pin sits alone in the middle; Ada out too, and back through the
@@ -1182,6 +1197,43 @@ export const screens: readonly Screen[] = [
         el.style.paddingBottom = "";
         el.scrollTop = 0;
       });
+    },
+  },
+  // W577: the same drags in the widest sidebar, where the pins' group sits in its middle: Ada let go just right of
+  // billing's lone pin joins after it, Ada dropped on billing's place swaps the two, and billing dragged down out of
+  // the pins leaves Ada alone.
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pin"],
+    variant: "pin-drag-widest",
+    open: async (page) => {
+      const edge = page.getByRole("separator", { name: "Resize the sidebar" });
+      await edge.focus();
+      await edge.press("End");
+      await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const pins = nav.locator('[class*="pins"]').first().locator("> [data-reorder-row]");
+      const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 12 });
+        await page.mouse.up();
+      };
+      const middle = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const ada = await middle(nav.locator("[data-reorder-row]").filter({ hasText: "Ada" }).first());
+      const billing = await middle(pins.first().getByRole("button"));
+      await drag(ada, { x: billing.x + 40, y: billing.y });
+      await expect(pins).toHaveText([/billing/u, /Ada/u]);
+      await drag(await middle(pins.nth(1)), await middle(pins.first()));
+      await expect(pins).toHaveText([/Ada/u, /billing/u]);
+      const right = await middle(pins.nth(1));
+      await drag(right, { x: right.x, y: ada.y + 60 });
+      await expect(pins).toHaveText([/Ada/u]);
     },
   },
   {

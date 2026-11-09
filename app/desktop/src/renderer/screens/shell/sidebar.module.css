@@ -479,25 +479,27 @@
 
 /* The pinned chats, as the phone shows them (mobile screens/Pinned.tsx, after Messages): large round pictures, two to
    a row however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture; a breath below them, no
-   line, and the list goes on. */
+   line, and the list goes on. Their places are a fixed width, a small gap apart, the group centred in the sidebar: a
+   wide one leaves room either side rather than between them, a narrow one shares its width out. */
 .pins {
+  --pin-w: 104px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
   justify-content: center;
-  gap: 2px;
+  gap: 2px var(--space-1);
   margin-bottom: var(--space-3);
   border-radius: var(--radius-lg);
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
-/* A pin's place, half the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin sits centred in it,
+/* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin sits centred in it,
    and only the pin is raised under the pointer, as compact as its shade. */
 .pinSlot {
   display: flex;
   justify-content: center;
   min-width: 0;
 }
-/* A lone pin takes the whole row, so it sits in the sidebar's middle rather than its left half, its name still
-   stopping at half the grid; a second one brings the two columns back. */
+/* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, its name still
+   stopping at a cell's width; a second one brings the two columns back. */
 .pinSlot:only-child {
   grid-column: 1 / -1;
 }
@@ -551,7 +553,7 @@
   color: var(--text);
 }
 /* A pin: its shade, open or hovered, hugs the picture and name, 8 px around them on a row's corners, the same at
-   every sidebar width; a long name stops at its half of the grid. */
+   every sidebar width; a long name stops at its cell's width. */
 .pinCell {
   display: flex;
   flex-direction: column;
