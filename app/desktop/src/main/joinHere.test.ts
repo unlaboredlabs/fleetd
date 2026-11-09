@@ -76,6 +76,28 @@ describe("joining this computer", () => {
     expect(JSON.stringify(seen)).not.toContain(CODE);
   });
 
+  // Edge republishes its names in place: a cache's SHA256SUMS and the next build under the plain name can reach one
+  // reader. release.json pins the build's own copy, so the join installs the build it names, checked against it.
+  it("installs the edge build release.json pinned, whatever the plain name and SHA256SUMS hold by then", async () => {
+    const { p, dir, fetched } = ports();
+    const next = new TextEncoder().encode("#!/bin/sh\necho the next build\n");
+    const pinned = `fleetd-bun-linux-x64-${SUM.slice(0, 16)}`;
+    const download = (url: string): Promise<Uint8Array> => {
+      fetched.push(url);
+      if (url.endsWith("/release.json"))
+        return Promise.resolve(new TextEncoder().encode(JSON.stringify({ cliVersion: "0.9.0-nightly.20261020", sha256: { "fleetd-bun-linux-x64": SUM } })));
+      if (url.endsWith("/SHA256SUMS")) return Promise.resolve(new TextEncoder().encode(`${SUM}  fleetd-bun-linux-x64\n`));
+      return Promise.resolve(url.endsWith(`/${pinned}`) ? BUILD : next);
+    };
+    const end = await joinHere({ ...p, download }, "laptop", () => undefined);
+    expect(end.state, end.message).toBe("done");
+    expect(fetched).toEqual([
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json",
+      `https://github.com/unlaboredlabs/fleetd/releases/download/edge/${pinned}`,
+    ]);
+    expect(fs.readFileSync(path.join(dir, "bin", "fleetd"))).toEqual(Buffer.from(BUILD));
+  });
+
   it("installs nothing when the build doesn't match SHA256SUMS", async () => {
     const { p, dir, ran } = ports({ sums: `${"a".repeat(64)}  fleetd-bun-linux-x64\n` });
     const end = await joinHere(p, "laptop", () => undefined);

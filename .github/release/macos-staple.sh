@@ -62,8 +62,6 @@ staple() {
     return 0
   fi
   [ -z "$feed" ] || [ -f "$work/$feed" ] || die "$TAG has $asset but no $feed"
-  local published
-  published="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/SHA256SUMS")"
   ditto -x -k "$work/$asset" "$work/app"
   local app="$work/app/fleetd.app"
   [ -d "$app" ] || die "$asset has no fleetd.app"
@@ -150,11 +148,14 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   fi
   awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
   cat "$work/out/SHA256SUMS"
-  local now
-  gh release download "$TAG" -p SHA256SUMS -O "$work/now" --clobber
-  now="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/now")"
-  if [ "$now" != "$published" ] || { rolling && building; }; then
-    echo "the $TAG $asset changed while stapling; leaving the new one alone"
+  # The lists it rewrites are the ones stapling started from, whole: a build that published meanwhile (even one that
+  # left the app alone) keeps its own, never rolled back to these.
+  mkdir -p "$work/now"
+  gh release download "$TAG" -p SHA256SUMS -p release.json -D "$work/now" --clobber
+  if ! cmp -s "$work/now/SHA256SUMS" "$work/SHA256SUMS" ||
+    { [ -f "$work/release.json" ] && ! cmp -s "$work/now/release.json" "$work/release.json"; } ||
+    { rolling && building; }; then
+    echo "the $TAG release changed while stapling; leaving the new one alone"
     return 0
   fi
   gh release upload "$TAG" "$work/pins/"* --clobber

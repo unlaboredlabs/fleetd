@@ -6,8 +6,9 @@
 //   1. machine_join: a one-time code from the hub, asked by main, so the code never reaches the page;
 //   2. the build of the hub's own version for this OS and CPU (its v<version> release; an Edge hub, the edge release,
 //      which holds the hub's build until main moves on and its newest after: the hub's Update brings it level), and
-//      SHA256SUMS;
-//   3. the build checked against SHA256SUMS: a mismatch installs nothing;
+//      its checksum: on edge, which republishes its names in place, the build's pinned copy and its SHA-256 from the
+//      same release.json, so the checksum and the bytes are always one build's; elsewhere SHA256SUMS;
+//   3. the build checked against that checksum: a mismatch installs nothing;
 //   4. put in place as <fleetd dir>/bin/fleetd by renaming, never by writing into a running binary;
 //   5. `fleetd init --join <hub> --code <code> --machine-id <id>`: it enrolls the node and runs it as a user service.
 // The page then waits for the machine to come online, from the hub's own events.
@@ -21,7 +22,7 @@ import type { CallOutcome } from "../shared/hub";
 import type { JoinHere, JoinStep, ThisComputer } from "../shared/joinHere";
 import { isEdge } from "../shared/pairing";
 import { feedUrl } from "./update-feed";
-import { parseCli } from "./update-release";
+import { parseCli, parsePin, pinnedName } from "./update-release";
 
 export interface JoinPorts {
   /** A hub call, as the page's go through main. */
@@ -85,7 +86,7 @@ const TITLES = {
   look: "check that this computer isn't part of a hub yet",
   code: "get a one-time code from the hub",
   download: (asset: string) => `download ${asset}`,
-  check: "check it against the release's SHA256SUMS",
+  check: "check it against the release's checksum",
   install: "put it in place",
   join: "enroll the node and start its service",
 } as const;
@@ -182,8 +183,8 @@ const lastLines = (text: string, n = 15): string => text.trim().split("\n").slic
 export type Installed = { readonly ok: true; readonly bin: string; readonly version: string } | { readonly ok: false; readonly message: string };
 
 /**
- * Steps 2–4 of a join: the hub's own `version` built for this computer (`asset`), downloaded with SHA256SUMS, checked
- * against them, and put in place as <fleetd dir>/bin/fleetd by renaming. The edge release keeps only its newest
+ * Steps 2–4 of a join: the hub's own `version` built for this computer (`asset`), downloaded with its checksum, checked
+ * against it, and put in place as <fleetd dir>/bin/fleetd by renaming. The edge release keeps only its newest
  * build: once main moved on past an Edge hub's, that newer one is installed (same channel, same link protocol), and
  * the hub's own Update then brings the hub level, so a hub behind never stops a join; `step.newer` hears which, before
  * the download. `step.next` starts each of the three steps and `step.done` ends it; a failure ends the step it is in,
@@ -199,35 +200,47 @@ export async function installBuild(
   const { next, done } = step;
   next();
   const { base, edge } = releaseFor(version, ports.baseOverride);
-  let sums: string;
+  let expected: string | undefined;
+  let against = "SHA256SUMS";
   let build: Uint8Array;
   let installs = version;
   try {
+    let pin: string | null = null;
     if (edge) {
-      // The edge release moves on: past the hub's build, its newest is what there is.
-      installs = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`)))) ?? version;
+      // The edge release moves on: past the hub's build, its newest is what there is. Its release.json pins that
+      // build's own copy, which edge never replaces, so the checksum and the bytes below are one build's.
+      const release: unknown = JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`)));
+      installs = parseCli(release) ?? version;
+      pin = parsePin(release, asset);
       step.newer?.(installs);
     }
-    try {
-      sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
-    } catch (error) {
-      // A hub built from source runs a version no release was made for.
-      if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
-        return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
+    if (pin !== null) {
+      expected = pin;
+      against = "release.json";
+      build = await ports.download(`${base}/${pinnedName(asset, pin)}`);
+    } else {
+      let sums: string;
+      try {
+        sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
+      } catch (error) {
+        // A hub built from source runs a version no release was made for.
+        if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
+          return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
+        }
+        throw error;
       }
-      throw error;
+      expected = expectedSum(sums, asset);
+      build = await ports.download(`${base}/${asset}`);
     }
-    build = await ports.download(`${base}/${asset}`);
   } catch (error) {
     return fail(`Couldn't download fleetd: ${error instanceof Error ? error.message : String(error)}. Check this computer's connection, then try again.`);
   }
   done();
 
   next();
-  const expected = expectedSum(sums, asset);
   const actual = createHash("sha256").update(build).digest("hex");
   if (expected === undefined) return fail(`The release lists no ${asset}, so there is nothing to check it against; nothing was installed.`);
-  if (expected !== actual) return fail(`${asset} doesn't match SHA256SUMS (expected ${expected}, got ${actual}); nothing was installed.`);
+  if (expected !== actual) return fail(`${asset} doesn't match ${against} (expected ${expected}, got ${actual}); nothing was installed.`);
   done();
 
   next();
