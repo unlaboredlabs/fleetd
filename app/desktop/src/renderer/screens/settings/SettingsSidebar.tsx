@@ -1,23 +1,26 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
-// one flat list of pages in three groups (D211), with nothing to pick or unfold. You: General, Your accounts, Your
-// memory, Your devices, Hubs. Projects: the list of projects, each opening its pages under tabs (Frames.tsx). Hub, for
-// the hub's owners and admins only: People, Machines, Updates, Every project (its four pages under tabs), Hub accounts,
-// and Setup, always, saying how many required steps are left.
-import { ArrowLeft, Brain, CircleArrowUp, FolderGit2, KeyRound, Layers, ListChecks, Network, Server, SlidersHorizontal, Smartphone, UserRound, Users } from "lucide-react";
+// one flat list of pages in three groups (D211), with nothing to pick or unfold. You: General, Your accounts, Vault,
+// Your memory, Your devices, Hubs. Projects: the list of projects, each opening its pages under tabs (Frames.tsx). Hub,
+// for the hub's owners and admins only: People, Machines, Updates, Every project (its four pages under tabs), Hub
+// accounts, Vault (the items every project uses), and Setup, always, saying how many required steps are left. Vault's
+// rows show only on a hub that serves it.
+import { ArrowLeft, Brain, CircleArrowUp, FolderGit2, KeyRound, Layers, ListChecks, LockKeyhole, Network, Server, SlidersHorizontal, Smartphone, UserRound, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
-import { useHub, useToolQuery } from "../../src/data/react";
+import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useSettledAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
 import { formatRoute, isEveryProject, isProjectTab, tabHref, useSettingsRoute, type SettingsRoute, type Tab } from "./route";
 import { openOption, optionsFor, PAGE_LABEL, pagePath, searchSettings } from "./search";
+import { vaultServed } from "./vaultModel";
 import s from "./settings.module.css";
 
 /** You's pages. */
 const YOU: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "general", icon: <SlidersHorizontal /> },
   { tab: "accounts", icon: <UserRound /> },
+  { tab: "vault", icon: <LockKeyhole /> },
   { tab: "your-memory", icon: <Brain /> },
   { tab: "devices", icon: <Smartphone /> },
   { tab: "hubs", icon: <Network /> },
@@ -30,6 +33,7 @@ const HUB_PAGES: ReadonlyArray<{ tab: HubTab; icon: ReactNode; label?: string }>
   { tab: "hub.updates", icon: <CircleArrowUp /> },
   { tab: "hub.profiles", icon: <Layers />, label: "Every project" },
   { tab: "hub.accounts", icon: <KeyRound /> },
+  { tab: "hub.vault", icon: <LockKeyhole /> },
   { tab: "hub.setup", icon: <ListChecks /> },
 ];
 
@@ -42,8 +46,9 @@ const noInput = {};
 export function SettingsSidebar({ onBack }: { onBack: () => void }) {
   const route = useSettingsRoute();
   const administers = useSettledAdministers();
+  const vault = useData((st) => vaultServed(st.features));
   const [query, setQuery] = useState("");
-  const results = searchSettings(query, optionsFor(administers));
+  const results = searchSettings(query, optionsFor(administers, vault));
   const searching = query.trim() !== "";
 
   return (
@@ -96,14 +101,14 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
       ) : (
         <>
           <SidebarSection title="You">
-            {YOU.map((p) => (
+            {YOU.filter((p) => vault || p.tab !== "vault").map((p) => (
               <SidebarItem key={p.tab} label={PAGE_LABEL[p.tab]} icon={p.icon} current={route.tab === p.tab} onClick={() => go(tabHref(p.tab))} />
             ))}
           </SidebarSection>
           <SidebarSection label="Projects">
             <SidebarItem label="Projects" icon={<FolderGit2 />} current={isProjectTab(route.tab)} onClick={() => go(formatRoute({ tab: "projects" }))} />
           </SidebarSection>
-          {administers ? <HubGroup route={route} /> : null}
+          {administers ? <HubGroup route={route} vault={vault} /> : null}
         </>
       )}
     </Sidebar>
@@ -115,14 +120,14 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
  * its page, and Setup, always listed, with how many required steps are left while some are. With several hubs, which
  * one they manage is picked on the page (admin/HubPages.tsx).
  */
-function HubGroup({ route }: { route: SettingsRoute }) {
+function HubGroup({ route, vault }: { route: SettingsRoute; vault: boolean }) {
   const { id } = useHub();
   const setup = useToolQuery("setup_list", noInput);
   const left = setup.data?.requiredLeft ?? 0;
   const open = (tab: HubTab) => navigate({ id: "settings", tab, at: id });
   return (
     <SidebarSection title="Hub" label="Hub">
-      {HUB_PAGES.map((p) => (
+      {HUB_PAGES.filter((p) => vault || p.tab !== "hub.vault").map((p) => (
         <SidebarItem
           key={p.tab}
           label={p.label ?? PAGE_LABEL[p.tab]}

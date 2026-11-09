@@ -63,7 +63,8 @@ An agent runs as the OS user its machine's node runs as, which is usually you, w
 - your files: your home, your projects, and any key or token kept in them;
 - your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;
 - fleetd's own files in `~/.fleetd`: the node's key, and the secrets the node holds for the work it runs: projects'
-  secret variables, Claude tokens, and each person's sealed 1Password service account token.
+  secret variables, Claude tokens, and each person's sealed 1Password service account token. On the hub's machine,
+  that includes the [vault](#vault)'s root key and database, so the whole vault.
 
 fleetd keeps those values out of agents' environments and transcripts, but an agent that goes looking can read the
 files they are in. Keeping agents out takes a separate OS user, which fleetd doesn't set up on its own (on the agents'
@@ -116,10 +117,36 @@ every other secret:
 Like project secrets, the value is in the claude process's environment. Any process of the node's OS user can read
 it, so the machine's owner and any agent running there could reach it, as [People](#people) says of the hub.
 
+## The vault {#vault}
+
+The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted on the hub.
+
+- **At rest.** Each item is sealed with AES-256-GCM under a data key of its own, made new at every change, and that
+  key is wrapped by the vault's root key. Each ciphertext is bound to its item, kind, scope and version, so one moved
+  into another row or scope doesn't open. The root key is in `~/.fleetd/vault/root.key` (0600 in a 0700 folder),
+  outside `~/.fleetd/hub`, or in the system keychain, or behind a passphrase. A copy of the hub's database alone
+  opens no value; it does show labels, login sites, a card's brand and last four digits, an address's country,
+  variable names, secret fingerprints and the activity log.
+- **In transit.** The app seals what you type to the hub's own box key, even inside TLS. The hub seals a fill or a
+  variable to the one node that uses it, and a reveal to a one-time key the app makes for it.
+- **Use.** A fill goes only to the node hosting that browser session, for an item the session's project, order or
+  person may use, on one of the item's sites; cards only at a purchase recorded in that session. Fills are rate-limited
+  and every use, refusal and reveal is in the activity log, never with a value. Agents have no tool to show, create,
+  change, delete or share an item.
+- **Reveal.** Only from a person's device, by the item's owner (for a project's, its creator or an admin; for the
+  hub's, an admin), behind Touch ID or a system confirm on the desktop and Face ID or the passcode on the phone, at
+  most 30 an hour. On Linux and Windows the desktop's confirm is one click: lock your computer when you leave it.
+- **Its limit.** Agents run as the same OS user as the node, and on the hub's machine as the hub
+  ([above](#agent-reach)): an agent there can read the root key file and the database, so the whole vault, much as it
+  could read every node secret before. A passphrase keeps the key off the disk, but not from a process of the same
+  user that waits for the next unlock. The vault narrows everything else: what leaks through transcripts, logs,
+  recordings and the agent's tools, and what a machine that isn't the hub ever holds.
+
 ## Secrets and commands {#secrets}
 
-- **Secrets never reach the hub in plain text.** The app seals each value to the target node's key (a libsodium
-  sealed box). The hub relays it without storing it and keeps only its fingerprint.
+- **Secrets never reach the hub in plain text.** The app seals each value to the hub's own key for the
+  [vault](#vault), or to the target node's key on a hub without one (a libsodium sealed box). Lists keep only a
+  secret's fingerprint.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as stored**, and only after a person approves it.
 

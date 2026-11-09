@@ -1,6 +1,6 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
-// its agents' environment variables, linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
+// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
@@ -46,6 +46,7 @@ import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
+import { vaultServed } from "./vaultModel";
 
 type Echo = { ok: boolean; text: string };
 type Ref = { machineId: string; projectId: string };
@@ -114,6 +115,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
 function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
   const summary = useData((d) => d.projects[projectKey(ref)]);
+  const vault = useData((d) => vaultServed(d.features));
   // A folder rather than a git repo: the hub knows no repo of its own.
   const plain = !(summary?.repos ?? []).some((r) => isOwn(r, ref));
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
@@ -149,7 +151,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
       </SettingsSection>
       <RepoSection settings={settings}>
-        <EnvSetting env={settings.env} projectRef={ref} />
+        {vault ? <EnvInVault count={settings.env.length} projectRef={ref} /> : <EnvSetting env={settings.env} projectRef={ref} />}
       </RepoSection>
       <SettingsSection title="Safety">
         <ApprovalsSetting projectRef={ref} />
@@ -383,6 +385,22 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
         }
       />
     </>
+  );
+}
+
+/** On a hub with a vault, the project's variables live in its Vault tab: one line here says so and links there. */
+function EnvInVault({ count, projectRef }: { count: number; projectRef: Ref }) {
+  return (
+    <SettingsRow
+      reveal="projects.env"
+      title="Environment variables"
+      line={`Given to every agent the project starts, and kept in the project's vault now. ${count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}`}
+      control={
+        <Button variant="secondary" onClick={() => navigate({ id: "settings", tab: "project-vault", for: `${projectRef.machineId}/${projectRef.projectId}` })}>
+          Open Vault
+        </Button>
+      }
+    />
   );
 }
 

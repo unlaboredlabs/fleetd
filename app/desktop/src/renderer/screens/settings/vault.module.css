@@ -1,0 +1,54 @@
+/* Settings › Vault: what the soft groups (parts.tsx, groups.module.css) don't hold. The search bar with its filter and
+   plus; a revealed value, kept as typed; the dialogs' forms and lists of ticks; and the lead's import card in a chat. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.search {
+  flex: 1;
+  min-width: 10rem;
+}
+.value,
+.mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+.value {
+  white-space: pre-wrap;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.picks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 22rem;
+  overflow-y: auto;
+}
+/* A lead's import card in its chat: one thing that stands apart from the messages around it. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 30rem;
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+}
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}

@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
@@ -79,6 +80,12 @@ const api: FleetdApi = {
     claudeAccount: (hub, request) => ipcRenderer.invoke(IPC.claudeAccountSubmit, hub, request) as Promise<CallOutcome>,
     onePassword: (hub, request) => ipcRenderer.invoke(IPC.onePasswordSubmit, hub, request) as Promise<CallOutcome>,
     cloudKey: (hub, request) => ipcRenderer.invoke(IPC.cloudKeySubmit, hub, request) as Promise<CallOutcome>,
+  },
+  vault: {
+    save: (hub, request) => ipcRenderer.invoke(IPC.vaultSave, hub, request) as Promise<CallOutcome>,
+    reveal: (hub, request) => ipcRenderer.invoke(IPC.vaultReveal, hub, request) as Promise<VaultRevealOutcome>,
+    copy: (hub, request) => ipcRenderer.invoke(IPC.vaultCopy, hub, request) as Promise<{ ok: true } | { ok: false; error: HubError }>,
+    unlock: (hub, request) => ipcRenderer.invoke(IPC.vaultUnlock, hub, request) as Promise<CallOutcome>,
   },
   github: {
     createApp: (hub, request) => ipcRenderer.invoke(IPC.githubAppCreate, hub, request) as Promise<CallOutcome>,

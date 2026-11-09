@@ -62,22 +62,22 @@ the value goes: a line in an env file, a file, or a variable for one order's age
 ![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, folded to one line; below it, one line for the agents at work.](/docs/img/chat-secret.png)
 
 1. Type or paste the value in the masked field: up to 64 KB.
-2. The app seals it to that machine's key (a libsodium sealed box). The field clears once the value is saved; if
+2. The app seals it to the hub's own key (a libsodium sealed box). The field clears once the value is saved; if
    saving fails, what you typed stays so you can click Retry.
-3. The hub passes the sealed value on without storing it.
+3. The hub keeps it in the [vault](/docs/vault), encrypted, as a variable of the project (an env file line or a file)
+   or of the order, and delivers it to the machine. A machine that's offline gets it once it's back.
 4. The node writes it with mode `0600`.
 5. The lead sees only its fingerprint, never the value. The value never enters the chat.
 
-:::caution
-The target machine must be online when you enter the secret. Nothing is queued.
-:::
+The saved value is then listed in the project's Vault, where you can change or delete it. A hub without the vault
+(an older one) seals the value to the machine's key instead, keeps nothing, and needs the machine online.
 
 If you don't want to give a secret, or a command isn't needed after all, say so in the chat; the lead takes the request
 back.
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
-For a secret every agent of a project should have, such as a test API key, set it in the project's settings instead:
+For a secret every agent of a project should have, such as a test API key, add it to the project's Vault instead:
 see [Environment variables](/docs/projects#env).
 
 ### A variable an agent asks for {#order-variables}
@@ -91,8 +91,8 @@ value. The lead relays it to you as a secret request whose item says **for W27's
   and no other project's see it.
 - It is masked like a project's secret, as `***NAME***`, in everything those agents report.
 - A value entered after the order closed is refused.
-- It goes when the order closes, done or stopped: the node forgets it, and the hub drops its record (name,
-  fingerprint and size). A machine offline then forgets it once it is back.
+- It goes when the order closes, done or stopped: the node forgets it, and the hub deletes it from the vault. A
+  machine offline then forgets it once it is back.
 - Its limits are a project variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
   together with the project's stay under 512 KiB.
 

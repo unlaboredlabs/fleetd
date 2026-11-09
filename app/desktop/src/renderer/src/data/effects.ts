@@ -107,6 +107,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
+  // A vault item made, changed, shared or deleted, or used (an audit row): the Vault's lists, the open item and its
+  // activity; a card's label shows in Payments too.
+  if (type === "vault.changed" || type === "vault.used") out.push({ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" });
+  if (type === "vault.changed") out.push({ tool: "navi_purchases" }, { tool: "vault_status" });
   // An MCP server's sign-in started, finished, failed or ended, or the server was removed: Integrations reads again.
   if (type === "mcp.oauth") out.push({ tool: "mcp_servers_get" });
   // A name published again is a new version: the list, and the open artifact's list of versions.

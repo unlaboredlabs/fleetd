@@ -112,10 +112,14 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
-**Settings › Your accounts › 1Password** is each person's own too: a 1Password service account token that agents
-fill logins with in your orders and your Only me projects, unless the project has its own (see
-[Logins from 1Password](/docs/browser-sessions#1password)). Its tools are `onepassword_get`, `onepassword_set`,
-`onepassword_remove` and `onepassword_test`.
+**Settings › You › Vault** is each person's own too: the logins, cards, addresses and variables your work uses
+([Vault](/docs/vault)). Nobody else lists them or sees their activity, admins included, unless you share one with a
+project, whose agents can then fill it but never see it. The hub's own items (Settings › Hub › Vault, such as a team
+card) are listed for everyone and changed and shown only by owners and admins.
+
+**Settings › Your accounts › 1Password** is optional: a 1Password service account token to [import from into the
+vault](/docs/vault#import) (see [Logins from 1Password](/docs/browser-sessions#1password)). Its tools are
+`onepassword_get`, `onepassword_set`, `onepassword_remove` and `onepassword_test`.
 
 ## Who did what {#attribution}
 

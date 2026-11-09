@@ -20,6 +20,7 @@ export interface SettingsOption {
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
   accounts: "Your accounts",
+  vault: "Vault",
   "your-memory": "Your memory",
   devices: "Your devices",
   hubs: "Hubs",
@@ -28,6 +29,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   instructions: "Instructions & memory",
   automations: "Automations",
   prompts: "Prompts",
+  "project-vault": "Vault",
   "hub.people": "People",
   "hub.machines": "Machines",
   "hub.updates": "Updates",
@@ -36,12 +38,13 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "hub.instructions": "Instructions & memory",
   "hub.prompts": "Prompts",
   "hub.accounts": "Hub accounts",
+  "hub.vault": "Vault",
   "hub.setup": "Setup",
 };
 
 /** Where a search result is, beside its name: the page, and for a Hub page its group, as the sidebar nests them. */
 export const pagePath = (tab: Tab): string =>
-  !isHubTab(tab) ? PAGE_LABEL[tab] : tab === "hub.profiles" || tab === "hub.tools" || tab === "hub.instructions" || tab === "hub.prompts" ? `Every project › ${PAGE_LABEL[tab]}` : `Hub › ${PAGE_LABEL[tab]}`;
+  tab === "project-vault" ? "Project › Vault" : !isHubTab(tab) ? PAGE_LABEL[tab] : tab === "hub.profiles" || tab === "hub.tools" || tab === "hub.instructions" || tab === "hub.prompts" ? `Every project › ${PAGE_LABEL[tab]}` : `Hub › ${PAGE_LABEL[tab]}`;
 
 /** "Dock" is the Mac's word for it. (No window in the unit tests.) */
 export const BADGE = typeof window !== "undefined" && window.fleetd.platform === "darwin" ? "Dock badge" : "App icon badge";
@@ -70,6 +73,8 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "github.account", label: "Your GitHub", tab: "accounts", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
   { key: "onepassword", label: "1Password", tab: "accounts", keywords: ["1password", "one password", "password", "logins", "sign in", "vault", "fill", "credentials"] },
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
+  page("vault", ["vault", "passwords", "logins", "cards", "credit card", "addresses", "address", "variables", "env", "secrets", "api key", "token", "activity", "audit"]),
+  { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
   page("devices", ["devices", "phone", "signed in", "keys"]),
@@ -101,6 +106,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("instructions", ["custom instructions", "rules", "my text", "project"]),
   { key: "memory", label: "Project memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules"] },
   { key: "projects.memory", label: "Refresh memory every night", tab: "instructions", keywords: ["refresh", "nightly", "dreaming", "tidy", "memory"] },
+  { key: "project-vault", label: "Project vault", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token", "logins", "cards"] },
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
   page("prompts", ["templates", "system prompt"]),
   ...Object.entries(ENTRIES).map(([id, e]) => ({ key: `prompt:${id}`, label: e.name, tab: "prompts" as const, keywords: ["prompt", id], prompt: id })),
@@ -136,11 +142,19 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
   { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.accounts", keywords: ["claude", "api key", "members", "allow"] },
   { key: "admin.github", label: "GitHub App", tab: "hub.accounts", keywords: ["github", "app", "manifest", "installation", "webhook"] },
+  page("hub.vault", ["vault", "team card", "shared login", "every project", "hub-wide", "cards", "logins", "addresses"]),
+  { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
   page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps", "checklist"]),
 ];
 
-/** What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. */
-export const optionsFor = (administers: boolean): ReadonlyArray<SettingsOption> => (administers ? OPTIONS : OPTIONS.filter((o) => !isHubTab(o.tab)));
+const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];
+
+/**
+ * What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. The Vault's
+ * pages only on a hub that serves it (`vault`).
+ */
+export const optionsFor = (administers: boolean, vault = true): ReadonlyArray<SettingsOption> =>
+  OPTIONS.filter((o) => (administers || !isHubTab(o.tab)) && (vault || !VAULT_TABS.includes(o.tab)));
 
 const words = (q: string) => q.toLowerCase().split(/\s+/u).filter(Boolean);
 

@@ -71,6 +71,7 @@ export default defineConfig({
             "steering",
             "automations",
             "approvals-and-secrets",
+            "vault",
             "people",
             "desktop-app",
             "mobile",

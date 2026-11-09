@@ -73,14 +73,15 @@ export const hasItem = (view: PanelView): boolean => {
 };
 
 /**
- * Settings' pages, in one window (D211): You (General, Your accounts, Your memory, Your devices, Hubs); a project's (Project, Agents, Instructions
- * & memory, Automations and Prompts), all of the one project picked under Projects (`for`); and the Hub group, for the
+ * Settings' pages, in one window (D211): You (General, Your accounts, Vault, Your memory, Your devices, Hubs); a project's (Project, Agents,
+ * Instructions & memory, Automations, Prompts and Vault), all of the one project picked under Projects (`for`); and the Hub group, for the
  * hub's owners and admins only: People, Machines, Updates, Every project's Profiles, Tools & skills, Instructions & memory and
- * Prompts, Hub accounts, and Setup. A Hub page's tab is `hub.<page>`, its path `#/settings/hub/<page>`.
+ * Prompts, Hub accounts, the hub's Vault, and Setup. A Hub page's tab is `hub.<page>`, its path `#/settings/hub/<page>`.
  */
 export const SETTINGS_TABS = [
   "general",
   "accounts",
+  "vault",
   "your-memory",
   "devices",
   "hubs",
@@ -89,6 +90,7 @@ export const SETTINGS_TABS = [
   "instructions",
   "automations",
   "prompts",
+  "project-vault",
   "hub.people",
   "hub.machines",
   "hub.updates",
@@ -97,6 +99,7 @@ export const SETTINGS_TABS = [
   "hub.instructions",
   "hub.prompts",
   "hub.accounts",
+  "hub.vault",
   "hub.setup",
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];

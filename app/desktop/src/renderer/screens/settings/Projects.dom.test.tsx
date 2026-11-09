@@ -97,6 +97,8 @@ let repoAnswers: Record<string, Settings>;
 let onlyMe: boolean;
 /** The approvals read fails this many more times. */
 let approvalsFail: number;
+/** The hub's app features: "vault" moves the variables into the project's Vault tab. */
+let features: string[];
 /** A frame from the hub, once rendered. */
 let send: (frame: HubFrame) => void;
 /** How long the hub takes over a call that ends the list above. */
@@ -115,6 +117,7 @@ beforeEach(() => {
   onlyMe = false;
   approvalsFail = 0;
   readMs = 0;
+  features = [];
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -214,7 +217,7 @@ const render = async (page: "project" | "instructions" = "project") => {
     await Promise.resolve();
   });
   await act(async () => {
-    listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+    listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1, features } });
     listener(snapshotWith(repos, onlyMe));
     await new Promise((r) => setTimeout(r, 0));
   });
@@ -259,6 +262,16 @@ describe("Settings → Projects", () => {
     expect(text).toContain("secret · 5ec2e7a1");
     expect(text).not.toContain("2 there now");
     expect(document.querySelector('[aria-label="Worktrees"]')).toBeNull();
+  });
+
+  it("on a hub with a vault, says how many variables there are and opens the project's Vault instead", async () => {
+    features = ["vault"];
+    await render();
+    const env = document.querySelector<HTMLElement>("section[aria-label='Environment variables']");
+    expect(env?.textContent).toContain("2 variables.");
+    expect(document.body.textContent).not.toContain("secret · 5ec2e7a1");
+    await click(button("Open Vault"));
+    expect(window.location.hash).toBe("#/settings/project-vault?for=devbox/p1");
   });
 
   it("sends a new secret only through main's sealing, never as a hub call", async () => {

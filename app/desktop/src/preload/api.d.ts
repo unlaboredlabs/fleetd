@@ -1,9 +1,9 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, CloudKeyRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, CloudKeyRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
@@ -61,6 +61,17 @@ export interface FleetdApi {
      * as the hub keeps it; nothing returns the key.
      */
     cloudKey(hub: HubId, request: CloudKeyRequest): Promise<CallOutcome>;
+  };
+  /** The vault's values (main/vault.ts): sealed on the way in, shown only after Touch ID or a confirm. */
+  readonly vault: {
+    /** Main seals the typed fields to the hub's own key and calls vault_save. The output is the item's metadata. */
+    save(hub: HubId, request: VaultSaveRequest): Promise<CallOutcome>;
+    /** After Touch ID or a confirm, the fields asked for, opened in main. Show them briefly; never keep them. */
+    reveal(hub: HubId, request: VaultRevealRequest): Promise<VaultRevealOutcome>;
+    /** After Touch ID or a confirm, main copies the field and empties the clipboard a minute later; the page never sees it. */
+    copy(hub: HubId, request: VaultCopyRequest): Promise<{ ok: true } | { ok: false; error: HubError }>;
+    /** A passphrase-mode vault after a restart: main seals the passphrase to the hub's own key and calls vault_unlock. */
+    unlock(hub: HubId, request: VaultUnlockRequest): Promise<CallOutcome>;
   };
   readonly github: {
     /**

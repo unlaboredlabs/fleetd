@@ -8,6 +8,7 @@ import { ENV_VALUE_MAX_BYTES, SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
 import { MAC_PANES } from "./macSetup";
 import { IPC, type InvokeChannel } from "./channels";
+import type { HubError } from "./hub";
 
 /** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
 export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
@@ -253,6 +254,48 @@ export const CloudKeyRequest = z.strictObject({
 });
 export type CloudKeyRequest = z.infer<typeof CloudKeyRequest>;
 
+const VaultId = z.string().regex(/^V[0-9a-f]{32}$/u);
+/** A field's name as a kind has it: `password`, `number`, `postalCode`. */
+const VaultField = z.string().regex(/^[a-zA-Z0-9]{1,32}$/u);
+/** What an item is called in Touch ID's prompt and the confirm: "Amazon's password", its label and a field's name. */
+const VaultLabel = z.string().min(1).max(200);
+/** The hub's longest item label (vault fields.ts LABEL_MAX). */
+const VAULT_LABEL_MAX = 120;
+
+/**
+ * A vault item to save (Settings › Vault): its readable part as vault_save takes it, and the fields as typed, which
+ * main seals to the hub's own key (main/vault.ts). An edit sends only the fields typed; the hub merges them.
+ */
+export const VaultSaveRequest = z.strictObject({
+  itemId: VaultId.optional(),
+  kind: z.enum(["login", "card", "address", "env"]).optional(),
+  scope: z.enum(["person", "project", "order", "hub"]).optional(),
+  machineId: z.string().min(1).max(64).optional(),
+  projectId: z.string().min(1).max(200).optional(),
+  workstreamId: z.string().min(1).max(64).optional(),
+  label: z.string().max(VAULT_LABEL_MAX).optional(),
+  sites: z.array(z.string().min(1).max(253)).max(20).optional(),
+  envName: EnvName.optional(),
+  secret: z.boolean().optional(),
+  billingAddress: VaultId.optional(),
+  // ENV_VALUE_MAX_BYTES UTF-8 bytes at most for a variable's value; the hub checks each kind's bytes.
+  fields: z.record(VaultField, z.string().max(ENV_VALUE_MAX_BYTES)).optional(),
+});
+export type VaultSaveRequest = z.infer<typeof VaultSaveRequest>;
+
+/** Some of an item's fields to show, after Touch ID or a confirm naming `label`. */
+export const VaultRevealRequest = z.strictObject({ itemId: VaultId, label: VaultLabel, fields: z.array(VaultField).min(1).max(12) });
+export type VaultRevealRequest = z.infer<typeof VaultRevealRequest>;
+export type VaultRevealOutcome = { readonly ok: true; readonly fields: Record<string, string> } | { readonly ok: false; readonly error: HubError };
+
+/** One field to copy, main keeping it from the page: a card's `expiry` copies as MM/YY. */
+export const VaultCopyRequest = z.strictObject({ itemId: VaultId, label: VaultLabel, field: VaultField });
+export type VaultCopyRequest = z.infer<typeof VaultCopyRequest>;
+
+/** The passphrase of a hub whose vault key is in passphrase mode, after a restart. */
+export const VaultUnlockRequest = z.strictObject({ passphrase: z.string().min(1).max(1024) });
+export type VaultUnlockRequest = z.infer<typeof VaultUnlockRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -365,6 +408,10 @@ export const REQUESTS = {
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
   [IPC.cloudKeySubmit]: z.tuple([HubId, CloudKeyRequest]),
+  [IPC.vaultSave]: z.tuple([HubId, VaultSaveRequest]),
+  [IPC.vaultReveal]: z.tuple([HubId, VaultRevealRequest]),
+  [IPC.vaultCopy]: z.tuple([HubId, VaultCopyRequest]),
+  [IPC.vaultUnlock]: z.tuple([HubId, VaultUnlockRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),
