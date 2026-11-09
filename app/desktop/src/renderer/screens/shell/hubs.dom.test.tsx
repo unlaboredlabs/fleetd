@@ -389,3 +389,36 @@ it("with one hub, shows no name and no group: the sidebar is as it always was", 
   act(() => rowNamed("storefront")?.click());
   expect(window.location.hash).toBe("#/project/devbox/storefront");
 });
+
+it("says which hub a new project goes to with several hubs, the hub on screen first, and nothing with one", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("a1b2").send(live());
+  });
+  await settle();
+  act(() => {
+    window.location.hash = "#/projects/add?at=a1b2";
+  });
+  // The sheet loads in a chunk of its own.
+  await act(() => import("../projects/AddProjectScreen"));
+  await settle();
+  await settle();
+  const picker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+  expect(picker()?.textContent).toContain("Acme");
+  act(() => root.unmount());
+  root = createRoot(host);
+
+  await mount([{ id: "hub", label: "devbox" }]);
+  act(() => hub("hub").send(live()));
+  act(() => {
+    window.location.hash = "#/projects/add";
+  });
+  await settle();
+  await settle();
+  expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
+  expect(picker()).toBeNull();
+});

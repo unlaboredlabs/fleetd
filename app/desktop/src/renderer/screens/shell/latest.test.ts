@@ -56,6 +56,15 @@ describe("a chat's newest line", () => {
     expect(latestOf([merged, said, mine])).toEqual({ text: "ship it", at: mine.createdAt, seq: merged.seq, person: { id: "p_me", name: "Sam" } });
   });
 
+  it("takes a streamed reply once it is final: the streaming copy moves nothing, the final one with the same seq is the line", () => {
+    const before = { text: "ship it", at: "2026-11-08T09:00:00.000Z", seq: 4, person: { id: "p_me", name: "Sam" } };
+    const opened = message({ text: "", state: "streaming", seq: 5, createdAt: "2026-11-08T09:05:00.000Z" });
+    const streaming = latestOf([opened], before);
+    expect(streaming).toEqual(before);
+    const final = latestOf([{ ...opened, text: "Done, merged.", state: "final" }], streaming);
+    expect(final).toEqual({ text: "Done, merged.", at: "2026-11-08T09:05:00.000Z", seq: 5 });
+  });
+
   it("keeps the line it had when only fleetd's own lines came since", () => {
     const before = { text: "On it.", at: "2026-11-08T09:00:00.000Z", seq: 4 };
     expect(latestOf([message({ author: "system", text: "Agent started", seq: 9 })], before)).toEqual({ ...before, seq: 9 });

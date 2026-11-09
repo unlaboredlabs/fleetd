@@ -73,10 +73,14 @@ export const lineOf = (m: ChatMessage): string | null => {
   return line === "" ? null : line;
 };
 
-/** The newest line among `messages` (any order), and the newest seq among them. */
+/**
+ * The newest line among `messages` (any order), and the newest seq among them that is settled. A reply still
+ * streaming is not looked at yet: its final copy comes with the same seq, and it must still be one to read.
+ */
 export const latestOf = (messages: readonly ChatMessage[], before?: Latest): Latest => {
   const newest = [...messages].sort((a, b) => b.seq - a.seq);
-  const seq = Math.max(before?.seq ?? 0, newest[0]?.seq ?? 0);
+  const settled = newest.find((m) => m.state !== "streaming")?.seq ?? 0;
+  const seq = Math.max(before?.seq ?? 0, settled);
   for (const m of newest) {
     if (before !== undefined && m.seq <= before.seq && before.text !== "") break;
     const text = lineOf(m);
