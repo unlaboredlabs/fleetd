@@ -26,7 +26,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, emptyChat, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
@@ -34,7 +34,7 @@ import { useCanStop } from "../stopProbe";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { DraftReply } from "../drafts";
 import { changeDraft } from "../draftsStore";
-import { refOf, type Key } from "../store";
+import { openingChat, refOf, type Key } from "../store";
 import { parseInline } from "../markdown";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
@@ -85,6 +85,8 @@ const BAR_BUTTON = 44;
 
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
+/** How many rows a thread draws first (FlatList's own default). */
+const INITIAL_ROWS = 10;
 
 /**
  * What a chat's thread does that its rows need: replies, the image viewer, jumping to a message, who wrote one. The
@@ -110,12 +112,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const { state, session } = useHub();
   const prefs = usePrefs();
   const chatKey = route.params.key;
+  // Opened again after the app was closed: drawn where it was scrolled to from its first frame (cache.ts OpenChat).
+  const [reopened] = useState(route.params.at);
   const insets = useSafeAreaInsets();
   // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above).
   const top = Platform.OS === "ios" ? insets.top + BAR : 0;
   const project = state.projects?.[chatKey];
   const chatState = state.chatStates[chatKey];
-  const chat = state.chats[chatKey] ?? emptyChat;
+  const chat = state.chats[chatKey] ?? openingChat(state.latest[chatKey]);
   const olderError = state.olderErrors[chatKey];
   const sends = state.sends[chatKey];
   const items = useMemo(() => chatItems(chat, sends ?? []), [chat, sends]);
@@ -206,7 +210,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const toNewest = () => list.current?.scrollToOffset({ offset: newestEnd(), animated: !reduce });
 
   // Scrolled away from the newest: the seq it was at, so the button down counts what came since.
-  const [awayFrom, setAwayFrom] = useState<number | null>(null);
+  const [awayFrom, setAwayFrom] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AWAY ? items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0) : null));
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
@@ -219,6 +223,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height };
     // How far from the newest end, wherever the keyboard puts it.
     const y = e.nativeEvent.contentOffset.y - newestEnd();
+    session.scrolledTo(chatKey, { offset: y < AWAY / 3 ? 0 : Math.round(y) });
     if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
   };
@@ -236,7 +241,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     const sub = AppState.addEventListener("change", (s) => setActive(s === "active"));
     return () => sub.remove();
   }, []);
-  const [placed, setPlaced] = useState(false);
+  const [placed, setPlaced] = useState(reopened !== undefined);
   const reading = placed && focused && active;
   const lastSeq = chatState?.lastSeq;
   useEffect(() => {
@@ -252,6 +257,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // FlatList takes these once.
   const onViewable = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
     onScreen.current = viewableItems.map((v) => v.item as ThreadRow);
+    // What shows, for the cache: the thread opens on it again after the app is closed.
+    const rows = viewableItems.reduce((n, v) => Math.max(n, (v.index ?? 0) + 1), 0);
+    const seqs = onScreen.current.flatMap((r) => (r.t === "item" && r.item.message !== undefined ? [r.item.message.seq] : []));
+    if (rows > 0) session.scrolledTo(seen.current.chatKey, { rows, oldestSeq: seqs.length === 0 ? undefined : Math.min(...seqs) });
     readSeen();
   }).current;
   const viewability = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 300 }).current;
@@ -288,7 +297,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // The message it lands on, measured as it's drawn, for aimOf.
   const hitId = useMemo(() => messageId ?? (requestId === undefined ? undefined : cardOf(items, requestId)), [messageId, requestId, items]);
   const hit = useRef<{ id: string; length: number } | null>(null);
-  const landed = useRef<string | null>(null);
+  // Opened again where it was left: it has landed already.
+  const landed = useRef<string | null>(reopened === undefined ? null : `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`);
   const [moving, setMoving] = useState(false);
   useLayoutEffect(() => {
     const wanted = `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`;
@@ -468,6 +478,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               scrollsToTop={false}
               renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={lift} />}
               data={loading && items.length === 0 ? [] : newestFirst}
+              // Opened again where it was left: there from its first frame, with every row down to the newest drawn.
+              {...(reopened === undefined ? {} : { contentOffset: { x: 0, y: reopened.offset }, initialNumToRender: Math.max(INITIAL_ROWS, reopened.rows + 2) })}
               keyExtractor={(r) => r.id}
               contentContainerStyle={styles.list}
               contentInsetAdjustmentBehavior="never"

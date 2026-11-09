@@ -141,6 +141,9 @@ describe("tapping a notification", () => {
     expect(chatAt({ t: "approval", requestId: "Q7" }, [open])).toEqual({ key: "devbox/shop", requestId: "Q7" });
     // Answered meanwhile: the app just opens.
     expect(chatAt({ t: "approval", requestId: "Q7" }, [])).toBeNull();
+    // Kept from before the app was closed, and not among them: it may be new, so the hub's read is waited for.
+    expect(chatAt({ t: "approval", requestId: "Q7" }, [], false)).toBeUndefined();
+    expect(chatAt({ t: "approval", requestId: "Q7" }, [open], false)).toEqual({ key: "devbox/shop", requestId: "Q7" });
   });
 
   it("opens the live view of a screen whose agent asks for you, over its chat", () => {
