@@ -1,7 +1,7 @@
 // The chat as rows: day dividers, a quiet time where the conversation picked up again after a pause, messages as
 // bubbles grouped by author (a run from one author within a few minutes draws as one stack; an agent's names it once),
 // event one-liners (fleetd's own messages among them), inline items, where you stopped reading, and the top of the
-// history. The live strip isn't a row: it is docked to the composer (live/LiveStrip.tsx).
+// history. The live strip isn't a row: it floats over the composer (live/LiveStrip.tsx).
 import type { ChatItem } from "../../src/data/chat";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";

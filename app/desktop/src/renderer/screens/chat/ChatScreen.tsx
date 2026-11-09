@@ -1,13 +1,15 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
-// gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
-// top. The conversation scrolls on under the window's top row, where its title floats as a glass capsule that says what
-// needs you after the name (what the lead waits on you for, a block, what there is to look at, a red main), and is
-// just the name when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
-// divider. Its settings (where its connections, sign-ins and approvals are) are a click away in a capsule beside the
-// title; your own (Only me) project with no repo has its name in the box and everyday starters, not a codebase's.
+// gated command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass
+// island over the conversation, which runs on behind it and keeps clear of it at its end; the live strip floats as a
+// capsule in a band just over it. The conversation scrolls on under the window's top row too, where its title floats
+// as a glass capsule that says what needs you after the name (what the lead waits on you for, a block, what there is to
+// look at, a red main), and is just the name when nothing does; an empty chat asks what to do. It opens where you
+// stopped reading, under a "New" divider. Its settings (where its connections, sign-ins and approvals are) are a click
+// away in a capsule beside the title; your own (Only me) project with no repo has its name in the box and everyday
+// starters, not a codebase's.
 import { Settings } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, Capsule, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
@@ -33,6 +35,9 @@ import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useJustDone } from "../projects/botState";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
+
+/** The gap between the conversation's last row and the island's band, px (--space-2). */
+const ISLAND_CLEAR = 8;
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
@@ -140,6 +145,35 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     setSent((n) => n + 1);
   }, []);
   const layer = useDataLayer();
+  // The island's room at the conversation's end: from its band's top to the screen's bottom, and a gap over it. The
+  // band counts as tall whether anything floats in it or not, so only the pill growing with its words changes it: at
+  // the end, the last message rides up with it (ChatList); scrolled up, nothing moves. The list's own box never
+  // resizes. The pill's height and the room go on the stage as --island-h and --island-inset, for CSS by the island.
+  const stage = useRef<HTMLDivElement>(null);
+  const island = useRef<HTMLDivElement>(null);
+  const [inset, setInset] = useState<number>();
+  const [latestSlot, setLatestSlot] = useState<HTMLSpanElement | null>(null);
+  const missing = data.missing;
+  useLayoutEffect(() => {
+    const st = stage.current;
+    const el = island.current;
+    if (st === null || el === null) return;
+    const measure = () => {
+      const pill = el.lastElementChild;
+      if (!(pill instanceof HTMLElement)) return;
+      st.style.setProperty("--island-h", `${String(pill.offsetHeight)}px`);
+      // The band's own height, not as tall as it is now: the strip's lanes open upward over the conversation.
+      const band = parseFloat(getComputedStyle(st).getPropertyValue("--island-band-h")) || 0;
+      const room = st.clientHeight - (el.offsetTop + pill.offsetTop) + band + ISLAND_CLEAR;
+      st.style.setProperty("--island-inset", `${String(room)}px`);
+      setInset(room);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    ro.observe(st);
+    return () => ro.disconnect();
+  }, [missing]);
   const targets = waiting?.targets;
   const waitedOn = targets?.[0]?.id;
   const mark = useMemo(() => (shown?.at === undefined ? undefined : { ...shown, at: shown.at }), [shown]);
@@ -288,53 +322,60 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           </Button>
         </div>
       ) : null}
-      {data.missing ? (
-        <div className={s.loading} role="status">
-          <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
-        </div>
-      ) : rows === undefined && data.loadError !== undefined ? (
-        <div className={s.loading} role="alert">
-          <Text tone="quiet">Couldn’t load the conversation.</Text>
-          <IdChip label="Details" id={data.loadError.message} kind="error" size="xs" tone="quiet" />
-          <Button variant="secondary" onClick={data.retry}>
-            Retry
-          </Button>
-        </div>
-      ) : rows === undefined && offline ? (
-        <div className={s.loading} role="status">
-          <Text tone="quiet">Offline. The conversation shows once you’re connected.</Text>
-        </div>
-      ) : rows === undefined ? (
-        <div className={s.loading}>
-          <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
-        </div>
-      ) : empty ? (
-        <EmptyChat project={project} title={title} plain={plain} />
-      ) : (
-        <BubbleActionsContext.Provider value={actions}>
-          <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
-        </BubbleActionsContext.Provider>
-      )}
-      {data.missing ? null : (
-        <div className={s.composer}>
-          <ChatComposer
-            project={project}
-            autoFocus
-            recall={recall}
-            onSent={onSent}
-            replyTo={replyTo}
-            onCancelReply={() => setReplyTo(undefined)}
-            who={who}
-            top={
-              strip ? (
+      <div ref={stage} className={s.stage}>
+        {data.missing ? (
+          <div className={s.loading} role="status">
+            <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
+          </div>
+        ) : rows === undefined && data.loadError !== undefined ? (
+          <div className={s.loading} role="alert">
+            <Text tone="quiet">Couldn’t load the conversation.</Text>
+            <IdChip label="Details" id={data.loadError.message} kind="error" size="xs" tone="quiet" />
+            <Button variant="secondary" onClick={data.retry}>
+              Retry
+            </Button>
+          </div>
+        ) : rows === undefined && offline ? (
+          <div className={s.loading} role="status">
+            <Text tone="quiet">Offline. The conversation shows once you’re connected.</Text>
+          </div>
+        ) : rows === undefined ? (
+          <div className={s.loading}>
+            <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
+          </div>
+        ) : empty ? (
+          <EmptyChat project={project} title={title} plain={plain} />
+        ) : (
+          <BubbleActionsContext.Provider value={actions}>
+            <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
+          </BubbleActionsContext.Provider>
+        )}
+        <div className={s.fade} aria-hidden />
+        {data.missing ? null : (
+          // The island: the band, where the live strip floats as a capsule while agents run, over the pill. Drawn over
+          // the conversation by design (data-floats, for the QA checks).
+          <div ref={island} className={s.island} data-floats="">
+            <div className={s.band} data-band="">
+              {strip ? (
                 <Boundary part="the live strip">
                   <LiveStrip project={project} />
                 </Boundary>
-              ) : null
-            }
-          />
-        </div>
-      )}
+              ) : null}
+              {/* Latest ↓, while scrolled up: at the band's end, the strip giving way to it. */}
+              <span ref={setLatestSlot} className={s.latestSlot} />
+            </div>
+            <ChatComposer
+              project={project}
+              autoFocus
+              recall={recall}
+              onSent={onSent}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(undefined)}
+              who={who}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

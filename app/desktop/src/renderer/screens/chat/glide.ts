@@ -1,8 +1,9 @@
 // New bubbles glide in (decision ui.bubble-entrance: option A of the bubble-motion report). The conversation moves as
 // one sheet: a new message, or the last one growing (a streamed reply's text taking its dots' place, a picture
-// loading), adds its height under the end the reader is at, and the rows are drawn where they were, the new one hanging
-// below the list's edge at the composer's top, then spring up by that height. So a bubble comes out from behind the
-// box with the rows above it, and nothing ever crosses anything. It is one additive transform on the rows (composite
+// loading, the composer's island growing), adds its height under the end the reader is at, and the rows are drawn
+// where they were, the new one hanging behind the composer's glass island (the list runs on under it to the window's
+// edge), then spring up by that height. So a bubble rises from behind the island with the rows above it, and nothing
+// ever crosses anything. It is one additive transform on the rows (composite
 // "add"): a burst sums, and a reply arriving mid-glide adds its height to the motion already running, with no restart.
 // The bubble itself only fades in (view.module.css .enter); text never scales. Scrolled up, or with reduced motion,
 // the list takes its new place at once.

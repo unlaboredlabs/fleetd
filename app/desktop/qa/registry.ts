@@ -354,7 +354,7 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
 export const screens: readonly Screen[] = [
-  // F2 (A4): the live strip docked to the top of the project's composer. live-0 draws no strip.
+  // F2 (A4): the live strip, a glass capsule floating just over the project's composer island. live-0 draws no strip.
   {
     id: "chat",
     route: CHAT,
@@ -455,7 +455,10 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       const box = page.getByRole("textbox", { name: "Message the lead" });
-      await expect(page.getByText(/stops its step and sends now/)).toBeVisible();
+      // The pill has no line of hints: Send's says how.
+      await page.getByRole("button", { name: "Send" }).hover();
+      await expect(page.getByRole("tooltip").getByText(/stops its step and sends now/)).toBeVisible();
+      await page.mouse.move(0, 0);
       await box.fill(CHAT_SENDS.now);
       await box.press("ControlOrMeta+Enter");
       await expect(box).toHaveValue("");

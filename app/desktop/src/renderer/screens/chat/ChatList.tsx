@@ -4,6 +4,7 @@
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button, cx, StateGlyph, Text, useBeatRef, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -288,6 +289,10 @@ export function ChatList(props: {
   entering?: ReadonlyMap<string, Arrival> | undefined;
   /** It scrolls under the window's top row: its first row starts below it, and a row shown is brought in below it. */
   under?: boolean;
+  /** The composer's island floats over the list's end: its room there, px, which the last row scrolls clear of. */
+  inset?: number | undefined;
+  /** Where Latest goes: the end of the island's band, beside the live strip rather than under it. */
+  latestSlot?: HTMLElement | null | undefined;
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
@@ -389,6 +394,27 @@ export function ChatList(props: {
     unpin.current?.();
     virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
   };
+  const latestButton = (
+    // A press keeps the cursor in the box: it would otherwise go to the button, which then goes.
+    <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
+      {latest} <span aria-hidden>↓</span>
+    </Button>
+  );
+  const { latestSlot } = props;
+
+  // The composer's island growing or shrinking with its words changes the room at the end. At the end, the end stays in
+  // view: the last row rides up with the island (glide.ts sees the list grow and glides on its growing spring; with
+  // reduced motion it is there at once). Scrolled up, nothing moves.
+  const { inset } = props;
+  const insetWas = useRef(inset);
+  useLayoutEffect(() => {
+    const was = insetWas.current;
+    insetWas.current = inset;
+    const v = virtualizer.current;
+    const el = v?.scrollElement;
+    if (!v || !el || was === undefined || inset === undefined || was === inset) return;
+    if (el.scrollHeight - (inset - was) - el.scrollTop - el.clientHeight <= 24) v.scrollToOffset(el.scrollHeight - el.clientHeight);
+  }, [inset]);
 
   useEffect(() => {
     const v = virtualizer.current;
@@ -404,8 +430,10 @@ export function ChatList(props: {
         items={rows}
         getKey={(r) => r.key}
         estimateSize={56}
-        // The composer's room above its box is the list's, so a new bubble comes out from behind the box.
-        paddingEnd={8}
+        // The list runs on behind the composer's island; its end keeps the island's room, so the last row scrolls
+        // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
+        // until then, a one-line island's.
+        paddingEnd={inset ?? 100}
         followOutput
         startAtEnd
         paddingStart={props.under === true ? TOP_BAR : 0}
@@ -422,14 +450,11 @@ export function ChatList(props: {
           />
         )}
       />
-      {latest !== undefined ? (
-        <div className={s.latest}>
-          {/* A press keeps the cursor in the box: it would otherwise go to the button, which then goes. */}
-          <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
-            {latest} <span aria-hidden>↓</span>
-          </Button>
-        </div>
-      ) : null}
+      {latest === undefined ? null : latestSlot ? (
+        createPortal(latestButton, latestSlot)
+      ) : (
+        <div className={s.latest}>{latestButton}</div>
+      )}
     </div>
   );
 }

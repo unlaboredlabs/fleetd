@@ -43,15 +43,45 @@
   contain: layout;
   container-type: inline-size;
 }
+/* With no island to hold it (ChatList's latestSlot), over the conversation's end. */
 .latest {
   position: fixed;
-  bottom: var(--space-3);
+  z-index: 3;
+  bottom: var(--island-inset);
   left: 50%;
   transform: translateX(-50%);
 }
+/* In the island's band: at its end, a glass capsule like the strip's, which gives way to it. */
+.latestSlot {
+  flex: none;
+  display: flex;
+  margin-inline-start: auto;
+}
+.latestSlot:empty {
+  display: none;
+}
+.latest > button,
+.latestSlot > button {
+  height: var(--row);
+  border-color: transparent;
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .latest > button,
+  .latestSlot > button {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
+}
 /*
  * The conversation always keeps its scrollbar's room (base.css draws scrollbars 10 px wide, on every platform), so
- * its column doesn't shift as it starts to scroll; the composer keeps the same room on its right, so the box's
+ * its column doesn't shift as it starts to scroll; the island keeps the same room on its right, so the pill's
  * edges line up with the messages' text at every width.
  */
 .scroller {
@@ -61,18 +91,65 @@
 .scroller > * {
   overflow-y: clip;
 }
-.composer {
+/*
+ * Under the header: the conversation, full height, and the composer's island floating over its end. The island is the
+ * messages' column (its right keeps the scrollbar's room, so the pill's edges line up with the messages' text at every
+ * width), this far up from the window's edge; the conversation runs on behind it and keeps its room at its end
+ * (ChatScreen measures it into --island-inset), so the last message scrolls clear of it.
+ */
+.stage {
+  --island-h: 44px;
+  --island-inset: calc(var(--island-gap) + var(--island-h) + var(--island-band-h) + var(--space-2));
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.island {
   --gutter: 10px;
-  flex: none;
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: var(--island-gap);
   box-sizing: border-box;
-  width: 100%;
   max-width: calc(var(--measure) + 2 * var(--pad) + var(--gutter));
   margin: 0 auto;
-  /* No room above the box: that is the list's (ChatList's paddingEnd), whose edge is the box's top. */
-  padding: 0 calc(var(--pad) + var(--gutter)) var(--space-3) var(--pad);
+  padding: 0 calc(var(--pad) + var(--gutter)) 0 var(--pad);
+  /* Only what floats in it takes the pointer: the conversation behind its empty band still scrolls and clicks. */
+  pointer-events: none;
 }
-.composer:empty {
-  display: none;
+.island > * {
+  pointer-events: auto;
+}
+/* Over the pill: a band as tall as a capsule and its gaps, empty or not, where the live strip floats while agents run
+   (and what the lead is doing beside it). The capsules sit on its bottom, a gap over the pill; the strip's lanes open
+   it upward, over the conversation, which keeps its place (ChatScreen counts the band at its own height). */
+.band {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1-5);
+  box-sizing: border-box;
+  min-height: var(--island-band-h);
+  padding-bottom: 6px;
+  container-type: inline-size;
+  pointer-events: none;
+}
+.band > * {
+  pointer-events: auto;
+}
+/* The window's bottom edge: what scrolls past under the island softens there rather than being cut. Clear of the
+   scrollbar on the right. */
+.fade {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 10px;
+  bottom: 0;
+  height: calc(var(--island-gap) + var(--space-4));
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg) 92%, transparent), color-mix(in srgb, var(--bg) 50%, transparent) 50%, transparent);
+  pointer-events: none;
 }
 
 /* Rows: the reading measure, centred, with the window's inset on narrow widths. */
@@ -710,7 +787,7 @@ span.changeUndo {
   text-overflow: ellipsis;
 }
 
-/* An empty chat: what to ask, just above the box. */
+/* An empty chat: what to ask, just above the island. */
 .empty {
   flex: 1;
   min-height: 0;
@@ -719,8 +796,7 @@ span.changeUndo {
   justify-content: flex-end;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  /* With the room the composer no longer keeps above its box. */
-  padding-bottom: calc(var(--space-4) + var(--space-2));
+  padding-bottom: var(--island-inset);
 }
 .emptyBody {
   display: flex;
