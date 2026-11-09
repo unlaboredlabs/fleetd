@@ -112,6 +112,7 @@ pub enum DeliveredHow {
 }
 
 /// Who sent a steer.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SteerBy {
