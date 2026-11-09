@@ -5,7 +5,7 @@ import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/a
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
 import { self, start as startMac } from "../src/node/mac_tool/index.ts";
-import { binDir, forwarder, forwarderDir, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
+import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { publicKeyOf } from "../src/shared/sealed_box.ts";
@@ -204,7 +204,10 @@ test("the menu bar's activity: agents' simulators and running jobs, oldest first
 test("an agent node writes `mac` at its start and puts it on every session's PATH; the agents' Mac doesn't", () => {
   const agent = testNode("devbox");
   cleanups.push(agent.done);
+  // A session that held a simulator across the node's restart: its forwarder names the node before's pin.
+  installForwarder(agent.node.home, "t8", ["/gone/fleetd-bun-1"]);
   startMac(agent.node);
+  expect(readFileSync(join(forwarderDir(agent.node.home, "t8"), "agent-device"), "utf8")).toBe(forwarder(self(agent.node)));
   const bin = join(binDir(agent.node.home), "mac");
   expect(readFileSync(bin, "utf8")).toMatch(/^#!\/bin\/sh\n# fleetd's: .*\nexec '.+' mac "\$@"\n$/);
   // The node's own command, pinned once (a compiled build's copy under bin/): the shim runs it.

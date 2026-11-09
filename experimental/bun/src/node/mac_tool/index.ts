@@ -12,7 +12,7 @@ import { pinSelf } from "../self_exe.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient } from "./client.ts";
 import { FOLDER_DAYS, Host, sweep } from "./host.ts";
-import { installShim, launchEnv } from "./shim.ts";
+import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
@@ -49,6 +49,8 @@ export function start(node: Node): void {
   // Every agent session here gets `mac` first on its PATH, and the forwarding agent-device while it holds a simulator.
   try {
     installShim(node.home, self(node));
+    // Sessions holding a simulator kept their forwarder across the restart; the pin it ran was the node before's.
+    refreshForwarders(node.home, self(node));
   } catch (e) {
     console.warn(`${new Date().toISOString()} WARN the agents' \`mac\` command was not written {"error":${JSON.stringify(String(e))}}`);
   }
