@@ -391,6 +391,23 @@ describe("board", () => {
     expect(place(k, "T11", app, cloud)).toEqual(on());
   });
 
+  test("the machine's own agent limit decides the burst, not the fleet cap or the project's max", () => {
+    // Fleet cap 64 and the project's own max 64, as on a live hub: devbox's limit is what a person set it to.
+    const k = Kit.on(64, [machine("devbox", 22), machine("boat-1", 3)]);
+    const app = project_("app", "devbox");
+    k.board.setCap(64, { projectRef: app, maxAgents: 64 });
+    k.board.setMachine("devbox", 20);
+    // Below it, nothing goes to a cloud machine, however many run.
+    for (let n = 1; n <= 20; n++) expect(place(k, `T${n}`, app, ["boat-1"])).toEqual(on());
+    // At it, the next one bursts.
+    expect(place(k, "T21", app, ["boat-1"])).toEqual(on("boat-1"));
+    // Lowered to 10 with 20 running: every new one bursts while the cloud has room, then waits for devbox.
+    k.board.setMachine("devbox", 10);
+    expect(place(k, "T22", app, ["boat-1"])).toEqual(on("boat-1"));
+    expect(place(k, "T23", app, ["boat-1"])).toEqual(on("boat-1"));
+    expect(place(k, "T24", app, ["boat-1"])).toEqual({ kind: "full", reason: "machine cap: 20 of 10 running on devbox-box (set)" });
+  });
+
   test("a hydrated cloud machine goes before one just woken", () => {
     const { k, app } = cloudKit();
     for (let n = 1; n <= 2; n++) expect(place(k, `T${n}`, app, [])).toEqual(on());
