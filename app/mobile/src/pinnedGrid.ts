@@ -11,11 +11,15 @@ const PER_ROW = 3;
 const MOST = 84;
 const APART = 0.25;
 
-/** A cell's width and its avatar's, for a screen `width` points across with an 8 pt inset on each side. */
-export const gridSize = (width: number): { readonly cell: number; readonly avatar: number } => {
+/**
+ * A cell's width, its avatar's and the grid's own (three cells, so a fourth never joins a row on a wide screen), for a
+ * screen `width` points across with an 8 pt inset on each side.
+ */
+export const gridSize = (width: number): { readonly cell: number; readonly avatar: number; readonly row: number } => {
   const room = Math.floor((width - 16) / PER_ROW);
   const avatar = Math.min(MOST, Math.floor(room / (1 + APART)));
-  return { cell: Math.round(avatar * (1 + APART)), avatar };
+  const cell = Math.round(avatar * (1 + APART));
+  return { cell, avatar, row: cell * PER_ROW };
 };
 
 /**

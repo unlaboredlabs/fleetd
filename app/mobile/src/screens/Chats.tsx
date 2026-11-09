@@ -505,7 +505,7 @@ function HitRow({ hit, picture, title, separator, onPress }: { hit: MessageHit; 
           <Avatar name={title} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
             <View style={styles.top}>
-              <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>
+              <Text style={[type.headline, styles.nameText, styles.chatName, { color: t.label }]} numberOfLines={1}>
                 {title}
               </Text>
               <Text style={[type.footnote, { color: t.secondary }]}>{listTime(hit.at, now)}</Text>
