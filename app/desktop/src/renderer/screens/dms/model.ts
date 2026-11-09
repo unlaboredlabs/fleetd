@@ -19,7 +19,8 @@ const clock = (at: string | undefined, fmt: (iso: string) => string): string => 
 
 /** "T2567 has finished and isn’t waiting on T2584" without a closing full stop, so a sentence can go on after it. */
 const clause = (detail: string | undefined): string | undefined => {
-  const d = detail?.trim().replace(/[.\s]+$/u, "");
+  // The hub writes straight apostrophes; the app's words use curly ones.
+  const d = detail?.trim().replace(/[.\s]+$/u, "").replace(/'/gu, "’");
   return d === undefined || d === "" ? undefined : d;
 };
 
@@ -59,6 +60,13 @@ export function cardReceipt(t: AgentMessageTo, received: boolean, fmt: (iso: str
       return `Not sent${why === undefined ? "" : `: ${why}`}.`;
   }
 }
+
+/**
+ * A sent card's receipt for one of several recipients, after its id ("T2577: Delivered at its next step, 23:02."); a
+ * refused wake names it already ("Didn’t wake T2567: …"), so it isn't said twice.
+ */
+export const cardReceiptFor = (t: AgentMessageTo, fmt: (iso: string) => string): string =>
+  t.outcome === "not_woken" ? cardReceipt(t, false, fmt) : `${t.taskId}: ${cardReceipt(t, false, fmt)}`;
 
 /** A receipt in the log, for one recipient: what it did with the DM, in a few words after its id. */
 export function logReceipt(t: AgentMessageTo): string {
