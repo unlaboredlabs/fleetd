@@ -96,7 +96,8 @@ disk, and snapshots of it that may be stored outside the EU.
   pastes it, and its private half never leaves the hub. boat.dev puts the public half on each machine the hub wakes.
   Settings › Hub › Machines › Cloud machines shows it.
 - **Your network stays closed.** boat.dev never gets an address of your hub, your tailnet or your LAN. A tunnel
-  carries only the node's connections to the hub, and every call through it needs the node's key, as on any machine.
+  carries only the node's connections to the hub, and every call through it needs the node's key, as on any machine;
+  with an `http://` [Claude endpoint](#claude-endpoint), also its connections to that endpoint and nowhere else.
 - **Reset is the wipe.** Stopping keeps the disk; [Reset](#reset) deletes it, with every key on it.
 
 ## Set it up {#setup}
@@ -171,6 +172,21 @@ The hub dials out; nothing dials in to it:
 
 The hub needs outbound access to boat.dev's API and its machines' SSH ports (TCP), which any network with internet
 access has.
+
+### The hub's Claude endpoint {#claude-endpoint}
+
+The hub's API key in Settings › Hub accounts › Claude may name an endpoint only the hub's network reaches, such as a
+proxy at a tailnet address (`http://100.x.y.z:8317`). Cloud machines need no Tailscale or VPN for it: the tunnel
+carries it.
+
+- With an `http://` endpoint, the hub asks for a second reverse forward: the machine's `127.0.0.1:47901` goes to the
+  endpoint, dialled by the hub for each connection. The machine is handed `http://127.0.0.1:47901` as its endpoint,
+  with the endpoint's path kept.
+- An `https://` endpoint names a host its certificate must match, so it is handed as it is and must be reachable from
+  boat.dev.
+- With no endpoint (a plain Anthropic key), there is no second forward and nothing changes.
+- If the endpoint doesn't answer the hub, each awake cloud machine shows as degraded with why ("the hub's Claude
+  endpoint at 100.x.y.z:8317 doesn't answer the hub: …"); it clears once the endpoint answers.
 
 ## The machines list {#list}
 

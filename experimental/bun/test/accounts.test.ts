@@ -4,6 +4,7 @@ import { registerAll } from "../src/gen/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { CONNECT_REFUSAL, Setup, type Whose, whoseForLead, whoseForTask } from "../src/hub/claude_accounts/index.ts";
+import { bring } from "../src/hub/cloud/claude.ts";
 import { fakeNodePort, type Link } from "../src/hub/cloud/node.ts";
 import { Outbox } from "../src/hub/cloud/outbox.ts";
 import { forTask as opForTask } from "../src/hub/onepassword/index.ts";
@@ -192,6 +193,28 @@ test("only admins set the hub's API, and its key reaches the nodes sealed, never
   await call(ann, "claude_hub_api_remove", {});
   expect(link.calls.at(-1)).toEqual(["lab", { op: "claude_account_secret", account: { kind: "hub" } }]);
   expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
+});
+
+test("a cloud machine is handed the hub's http:// endpoint at its tunnel's loopback port; others as it is", async () => {
+  const { hub, link, call, ann } = setup();
+  hub.db.conn.run("INSERT INTO node_keys (machine_id, pub_key, pool) VALUES ('mac', 'k', 1)");
+  await call(ann, "claude_hub_api_set", {
+    sealed: [
+      { machineId: "lab", sealed: SEALED },
+      { machineId: "mac", sealed: SEALED },
+    ],
+    endpoint: "http://100.104.249.49:8317/v1",
+  });
+  expect(link.calls).toEqual([
+    ["lab", { op: "claude_account_secret", account: { kind: "hub" }, set: { sealed: SEALED, endpoint: "http://100.104.249.49:8317/v1" } }],
+    ["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { sealed: SEALED, endpoint: "http://127.0.0.1:47901/v1" } }],
+  ]);
+  // Its catch-up as it wakes sets the same.
+  expect(await bring(hub, "mac")).toEqual({ current: { kind: "hub" } });
+  expect(link.calls.at(-1)).toEqual(["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { endpoint: "http://127.0.0.1:47901/v1" } }]);
+  // An https:// one names a host its certificate must match: handed as it is.
+  await call(ann, "claude_hub_api_set", { endpoint: "https://llm.example/v1" });
+  expect(link.calls.at(-1)).toEqual(["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { endpoint: "https://llm.example/v1" } }]);
 });
 
 test("a person connects their own subscription; a sleeping cloud machine forgets it as it wakes", async () => {
