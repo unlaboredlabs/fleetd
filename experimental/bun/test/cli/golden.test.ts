@@ -19,7 +19,9 @@ const feed = Bun.serve({
 });
 const feedAt = (dir: string) => ({ FLEETD_BASE_URL: `http://127.0.0.1:${feed.port}/${dir}` });
 
-type Case = { name: string; argv: string[]; cwd?: string; /** Compared live only: its output names this machine's own resolver or tools. */ live?: boolean; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void> };
+/** A no-node case's run: the CLI's 20 s wait for a restarting node, and room to spare. */
+const NO_NODE_MS = 45_000;
+type Case = { name: string; argv: string[]; cwd?: string; /** Compared live only: its output names this machine's own resolver or tools. */ live?: boolean; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void>; /** Longer than CASE_MS a binary. */ ms?: number };
 
 /** No hub needed: usage, parse errors, and what opens the hub's database directly. */
 const OFFLINE: Case[] = [
@@ -152,9 +154,10 @@ const OFFLINE: Case[] = [
   { name: "mac-pull", argv: ["mac", "pull"] },
   { name: "mac-sim", argv: ["mac", "sim"] },
   { name: "mac-sim-device", argv: ["mac", "sim", "start", "--device="] },
-  { name: "mac-ps-no-node", argv: ["mac", "ps"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" } },
-  { name: "mac-run-no-node", argv: ["mac", "run", "--", "ls", "-la"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" } },
-  { name: "agent-device-no-node", argv: ["agent-device", "snapshot"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" } },
+  // With no node listening, a call waits 20 s for one restarting before it says so.
+  { name: "mac-ps-no-node", argv: ["mac", "ps"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" }, ms: NO_NODE_MS },
+  { name: "mac-run-no-node", argv: ["mac", "run", "--", "ls", "-la"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" }, ms: NO_NODE_MS },
+  { name: "agent-device-no-node", argv: ["agent-device", "snapshot"], env: { FLEETD_NODE_SOCK: "/nonexistent/node.sock" }, ms: NO_NODE_MS },
   // init only ever with --no-service and an address nothing answers at: it must never start a service.
   { name: "init-plain", argv: ["init", "--no-service", "--listen", "127.0.0.1:1"] },
   { name: "init-identity", argv: ["init", "--no-service", "--listen", "127.0.0.1:1", "--url", "http://devbox.example:1", "--git-identity", "Dev <dev@example.com>"] },
@@ -413,7 +416,7 @@ describe("offline", () => {
       } finally {
         for (const f of fleets) await f.stop();
       }
-    }, CASE_MS);
+    }, (c.ms ?? CASE_MS) * (RUST ? 2 : 1));
   }
 });
 
