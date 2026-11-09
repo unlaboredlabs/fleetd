@@ -20,6 +20,7 @@ export {
   Textarea,
   Checkbox,
   Switch,
+  Toggle,
   RadioGroup,
   Radio,
   type InputProps,

@@ -10,9 +10,9 @@ import { Button, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { when } from "../live/when";
 import { openUpdates } from "../updates/state";
+import { SettingsListRow } from "../settings/parts";
 import { projectsLine, whoOf } from "./model";
 import s from "../settings/settings.module.css";
-import a from "../admin/admin.module.css";
 
 /** A hub from before hub links answers that it has no such tool: it needs updating, not a retry. */
 export const lacksLinks = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
@@ -57,36 +57,28 @@ export function IssuedRow({ link, now, who }: { link: IssuedLink; now: number; w
   const used = link.revokedAt !== undefined ? `Revoked ${when(link.revokedAt, now)}` : link.lastUsedAt === undefined ? "Not used yet" : `Last used ${when(link.lastUsedAt, now)}`;
   const made = `Made ${when(link.createdAt, now)} on ${link.device}`;
   return (
-    <div className={a.row} role="listitem" aria-label={`Link for ${link.label}`} data-revoked={revoked || undefined}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong={!revoked} tone={revoked ? "quiet" : "default"}>{`For ${link.label}`}</Text>
-          {who === true ? (
-            <Text size="xs" tone="quiet">
-              {`as ${whoOf(link)}`}
-            </Text>
-          ) : null}
-        </div>
-        <Text size="xs" tone="quiet">
-          {`${projectsLine(link, titleOf)} · ${used} · ${made}`}
-        </Text>
-        {error === undefined ? null : (
-          <p role="alert" className={s.alertLine}>
-            <Text size="xs" tone="danger">{`Not revoked: ${error}`}</Text>
-          </p>
-        )}
-      </div>
-      <div className={a.controls}>
-        {revoked ? (
-          <Text size="sm" tone="quiet">
-            Revoked
-          </Text>
-        ) : (
+    <SettingsListRow
+      name={`For ${link.label}`}
+      label={`Link for ${link.label}`}
+      data={{ "data-revoked": revoked ? "" : undefined }}
+      meta={who === true ? `as ${whoOf(link)}` : undefined}
+      {...(revoked ? { state: { word: "Revoked", tone: "quiet" as const } } : {})}
+      controls={
+        revoked ? undefined : (
           <Button size="sm" variant="ghost" disabled={!live || busy} onClick={revoke}>
             {busy ? "Revoking…" : "Revoke"}
           </Button>
-        )}
-      </div>
-    </div>
+        )
+      }
+    >
+      <Text size="sm" tone="quiet">
+        {`${projectsLine(link, titleOf)} · ${used} · ${made}`}
+      </Text>
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="sm" tone="danger">{`Not revoked: ${error}`}</Text>
+        </p>
+      )}
+    </SettingsListRow>
   );
 }

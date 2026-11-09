@@ -3,7 +3,7 @@
 // which fleetd the hub and each machine run. The hub row's popover says the same in short.
 import { useEffect } from "react";
 import { Text } from "../../ui";
-import { PageHead, PagePart } from "../settings/parts";
+import { GroupNote, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
 import { AutoUpdates } from "../updates/AutoUpdates";
 import { loadRun, retryMachine, startOver, startUpdate, updateNow } from "../updates/flow";
 import { useFlowDeps, useUpdatesView } from "../updates/hooks";
@@ -11,7 +11,6 @@ import { hubStanding, type AppAction, type Retry } from "../updates/model";
 import { runApp } from "../updates/UpdatesHost";
 import { HubSection, Line, UpdatesSheet } from "../updates/UpdatesSheet";
 import s from "../settings/settings.module.css";
-import u from "../updates/updates.module.css";
 
 export function UpdatesPage() {
   const view = useUpdatesView();
@@ -29,17 +28,23 @@ export function UpdatesPage() {
       <div className={s.column}>
         <PageHead title="Updates">Which fleetd the hub and its machines run, and how they move to a newer one.</PageHead>
         {view.hub === null || standing === null ? (
-          <Text size="sm" tone="quiet">
-            Connect to the hub to see its version and its machines&apos;.
-          </Text>
+          <SettingsSection>
+            <GroupNote>Connect to the hub to see its version and its machines&apos;.</GroupNote>
+          </SettingsSection>
         ) : (
           <>
             {view.update !== null || view.progress !== null ? null : (
-              <div className={u.head} data-updates-standing>
-                <Text strong tone={standing.tone === "quiet" ? "default" : standing.tone}>
-                  <Line text={standing.text} />
-                </Text>
-              </div>
+              <SettingsSection>
+                <SettingsRow
+                  label="Where the hub stands"
+                  title={
+                    <Text tone={standing.tone === "quiet" ? "default" : standing.tone}>
+                      <Line text={standing.text} />
+                    </Text>
+                  }
+                  data={{ "data-updates-standing": "" }}
+                />
+              </SettingsSection>
             )}
             <UpdatesSheet
               view={view}
@@ -50,9 +55,9 @@ export function UpdatesPage() {
               onApp={(a: AppAction) => runApp(a)}
               auto={<AutoUpdates />}
               versions={
-                <PagePart title="Versions" reveal="hub.updates.versions" intro="Updates go to the hub, then every machine, then this app.">
+                <SettingsSection title="Versions" reveal="hub.updates.versions" intro="Updates go to the hub, then every machine, then this app.">
                   <HubSection part={view.hub} nodes={view.nodes} />
-                </PagePart>
+                </SettingsSection>
               }
             />
           </>

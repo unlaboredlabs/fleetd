@@ -1,34 +1,3 @@
-/*
- * Settings' Hub group. Calm, like Settings: rows sit between hairlines, with no boxes, no tinted edges and nothing that
- * pulses. Every row sizes to its content.
- */
-
-.list {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  max-width: 720px;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-1) var(--space-4);
-  align-items: center;
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--hairline);
-}
-.row:last-child {
-  border-bottom: 1px solid var(--hairline);
-}
-
-.who {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .name {
   display: flex;
   align-items: baseline;
@@ -36,25 +5,20 @@
   min-width: 0;
 }
 
-.controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .role {
-  min-width: 7.5rem;
+  width: 7.5rem;
 }
 
-/* The one-time link: its text, selectable, and Copy beside it. */
+/* The one-time link, last in Invite someone's group: its text, selectable, and Copy beside it. */
 .created {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 720px;
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+.inviteName {
+  width: 220px;
 }
 
 .link {
@@ -77,90 +41,6 @@
   max-width: 420px;
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-/* A machine's row opens its page: the name's link covers the whole row (its ::after), a chevron trails it, and the
-   row lights on hover, deepens while pressed and takes the focus ring. Repair and Remove sit above the link. The row
-   reaches a step past the column on each side, so its text stays in line with the heading above. */
-.openRow {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  margin-inline: calc(-1 * var(--space-2));
-  padding-inline: var(--space-2);
-  transition: background-color var(--dur-quick);
-}
-.openRow:has(.machineLink:hover) {
-  background: var(--hover);
-}
-.openRow:has(.machineLink:active) {
-  background: var(--selected);
-}
-.openRow:has(.machineLink:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.openRow .controls {
-  position: relative;
-  z-index: 1;
-}
-.machineLink {
-  color: inherit;
-  text-decoration: none;
-}
-.machineLink::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  cursor: pointer;
-}
-.machineLink:focus-visible {
-  outline: none;
-}
-.chevron {
-  width: 16px;
-  height: 16px;
-  color: var(--faint);
-  transition: color var(--dur-quick);
-}
-.openRow:has(.machineLink:hover) .chevron,
-.openRow:has(.machineLink:focus-visible) .chevron {
-  color: var(--quiet);
-}
-
-/* A machine's checklist: one item per row between hairlines, a still glyph on the title's first line. */
-.checklist {
-  display: flex;
-  flex-direction: column;
-  max-width: 720px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.item {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  column-gap: var(--space-3);
-  align-items: start;
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--hairline);
-}
-.item:last-child {
-  border-bottom: 1px solid var(--hairline);
-}
-.item > :first-child {
-  margin-top: 4px;
-}
-.itemBody {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
 .fix,
 .login {
   display: flex;
@@ -177,6 +57,13 @@
   max-width: 560px;
 }
 
+/* The machine list: a search for roles, screens or caps lands on it. */
+.revealed {
+  scroll-margin-top: var(--space-4);
+}
+.revealed:focus {
+  outline: none;
+}
 /* The machine list lines up with Add machine above it. */
 .machines {
   max-width: 680px;
@@ -191,15 +78,14 @@
   min-width: 0;
 }
 
-/* With several hubs: the hub the Hub group manages, named above every page, a hairline under it. */
+/* With several hubs: the hub the Hub group manages, named above every page, in line with its column's groups. */
 .managing {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-2) var(--space-6);
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-2) var(--space-6) 0 calc(var(--space-6) + var(--space-4));
 }
 /* The hubs to manage, as a segmented control: the one managed now raised. */
 .hubChoices {
@@ -253,17 +139,6 @@
   max-width: 1040px;
 }
 
-/* Cloud machines (boat.dev): their group heads like the list above it, its kill switch at the right. */
-.groupHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.danger {
-  color: var(--danger);
-}
 /* A link in running text, opened in the browser. */
 .textLink {
   padding: 0;

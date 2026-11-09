@@ -9,7 +9,7 @@
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
 // and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Separator, Text, cx } from "../../ui";
+import { Button, Text, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
@@ -20,7 +20,7 @@ import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame } from "../settings/Frames";
-import { PagePart, PageHead } from "../settings/parts";
+import { PageHead, SettingsSection } from "../settings/parts";
 import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
 import { isEveryProject, type SettingsRoute } from "../settings/route";
@@ -148,7 +148,6 @@ function Machines() {
       <div className={s.column}>
         <PageHead title="Machines">The computers that run this hub&apos;s agents.</PageHead>
         <AddMachine open={open} />
-        <Separator />
         <MachineList
           onRepair={(r) => {
             setOpen({ view: r, at: Date.now() });
@@ -156,9 +155,9 @@ function Machines() {
           }}
         />
         <FleetCapNote />
-        <PagePart title="Recordings" reveal="hub.recordings">
+        <SettingsSection title="Recordings" reveal="hub.recordings">
           <Recordings />
-        </PagePart>
+        </SettingsSection>
         <CloudPart />
       </div>
     </div>
@@ -186,12 +185,10 @@ function ToolsAndSkills() {
     <div className={s.scroll} data-screen="settings.hub.tools">
       <div className={s.column}>
         <PageHead title="Tools & skills">What every project&apos;s agents get. A project&apos;s own come with them, on its Agents page.</PageHead>
-        <PagePart title="MCP servers" reveal="hub.mcp">
+        <SettingsSection title="MCP servers" reveal="hub.mcp">
           <HubMcpServers />
-        </PagePart>
-        <PagePart title="Skills" reveal="hub.skills">
-          <HubSkills />
-        </PagePart>
+        </SettingsSection>
+        <HubSkills />
       </div>
     </div>
   );
@@ -203,9 +200,9 @@ function InstructionsAndMemory() {
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
         <PageHead title="Instructions & memory">What every project&apos;s agents are told.</PageHead>
-        <PagePart title="Instructions" reveal="hub.instructions">
+        <SettingsSection title="Instructions" reveal="hub.instructions">
           <HubInstructions />
-        </PagePart>
+        </SettingsSection>
         <SharedMemory />
       </div>
     </div>

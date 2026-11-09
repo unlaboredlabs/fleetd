@@ -85,7 +85,7 @@ afterEach(() => {
 
 const settle = () => act(() => new Promise((r) => setTimeout(r, 0)));
 const click = (name: string) => {
-  const found = [...host.querySelectorAll("button")].find((b) => b.textContent === name);
+  const found = [...host.querySelectorAll("button")].find((b) => b.textContent === name || b.getAttribute("aria-label") === name);
   if (!found) throw new Error(`no ${name} button`);
   act(() => found.click());
 };

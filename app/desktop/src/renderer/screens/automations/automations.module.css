@@ -1,56 +1,21 @@
+/* Automations: each one a row of the page's soft group (settings/parts.tsx), its actions and runs under it. */
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.cardHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
-}
-
-.chips {
-  display: inline-flex;
-  gap: var(--space-2);
-}
-
-.editor {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border-strong, var(--border));
-  border-radius: var(--radius-md);
+/* Its state word, beside its name. */
+.state {
+  margin-left: var(--space-2);
 }
 
 .scheduleRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
-}
-
-.url {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-md);
 }
 
 .runs {

@@ -4,16 +4,16 @@
 // only owners and admins get the way there.
 import { useEffect, useState } from "react";
 import { isEdge } from "../../../shared/pairing";
-import { Button, Radio, RadioGroup, Switch, Text, THEME_MODES, useTheme } from "../../ui";
+import { Button, Segmented, THEME_MODES, useTheme } from "../../ui";
 import { useAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import { AutoUpdates } from "../updates/AutoUpdates";
 import { useUpdatesView } from "../updates/hooks";
-import { hubStanding } from "../updates/model";
+import { hubStanding, type AppPart } from "../updates/model";
 import { runApp } from "../updates/UpdatesHost";
-import { AppSection, Line } from "../updates/UpdatesSheet";
+import { Command, Line, Notes, Raw } from "../updates/UpdatesSheet";
 import { Notifications } from "./Notifications";
-import { PageHead, PagePart, Setting } from "./parts";
+import { GroupNote, PageHead, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import s from "./settings.module.css";
 
 export function General() {
@@ -22,17 +22,15 @@ export function General() {
     <div className={s.scroll} data-screen="settings.general">
       <div className={s.column}>
         <PageHead title="General" />
-        <Setting reveal="general.appearance" label="Appearance" help="Match system follows the OS as it changes.">
-          <RadioGroup className={s.radios} value={mode} onValueChange={(v) => {
-              const m = THEME_MODES.find((x) => x.value === v);
-              if (m) setMode(m.value);
-            }} aria-label="Appearance">
-            {THEME_MODES.map((m) => (
-              <Radio key={m.value} value={m.value} label={m.label} />
-            ))}
-          </RadioGroup>
-        </Setting>
-        <PresenceSetting />
+        <SettingsSection>
+          <SettingsRow
+            reveal="general.appearance"
+            title="Appearance"
+            line="Match system follows the OS as it changes."
+            control={<Segmented label="Appearance" options={THEME_MODES} value={mode} onChange={setMode} />}
+          />
+          <PresenceSetting />
+        </SettingsSection>
         <Notifications />
         <Versions />
       </div>
@@ -50,27 +48,57 @@ function Versions() {
   const channel = view.app === null ? null : isEdge(view.app.raw) ? "Edge" : "Stable";
   const hub = hubStanding(view);
   return (
-    <PagePart title="Version" reveal="general.updates" intro={channel === null ? undefined : `This app follows the ${channel} channel.`}>
-      {view.app === null ? <Text tone="quiet">Loading…</Text> : <AppSection part={view.app} onApp={runApp} />}
-      {hub === null ? (
-        <Text size="sm" tone="quiet">
-          Connect to a hub to see whether it is up to date.
-        </Text>
-      ) : (
-        <div className={s.inline} data-hub-standing>
-          <Text size="sm" tone={hub.tone === "quiet" ? "quiet" : hub.tone}>
-            <Line text={hub.text} />
-          </Text>
-          {administers ? (
-            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
+    <SettingsSection title="Version" reveal="general.updates" intro={channel === null ? undefined : `This app follows the ${channel} channel.`}>
+      {view.app === null ? <GroupNote>Loading…</GroupNote> : <AppRow part={view.app} />}
+      <SettingsRow
+        title="The hub and its machines"
+        line={hub === null ? "Connect to a hub to see whether it is up to date." : <span data-hub-standing><Line text={hub.text} /></span>}
+        lineTone={hub === null || hub.tone === "quiet" ? "quiet" : hub.tone}
+        control={
+          hub !== null && administers ? (
+            <Button variant="secondary" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
               Open Hub › Updates
             </Button>
-          ) : null}
-        </div>
-      )}
+          ) : undefined
+        }
+      />
       {/* A member: whom to ask to update the hub or turn Update automatically on. */}
-      {hub === null || administers ? null : <AutoUpdates />}
-    </PagePart>
+      {hub === null || administers ? null : (
+        <GroupNote>
+          <AutoUpdates />
+        </GroupNote>
+      )}
+    </SettingsSection>
+  );
+}
+
+/** This app: its version and channel, Check for updates (or the update's own action), and what's new. */
+function AppRow({ part }: { part: AppPart }) {
+  const { action } = part;
+  return (
+    <SettingsRow
+      title={<Line text={part.title} />}
+      label="This app"
+      line={part.detail === undefined ? undefined : <Line text={part.detail} />}
+      data={{ "data-updates-part": "app" }}
+      control={
+        <>
+          <Raw version={part.raw} />
+          {action === undefined ? null : (
+            <Button variant="secondary" disabled={part.busy === true} onClick={() => runApp(action.run)}>
+              {action.label}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {part.command === undefined && part.notes.lines.length === 0 ? null : (
+        <>
+          {part.command === undefined ? null : <Command command={part.command} />}
+          <Notes notes={part.notes} />
+        </>
+      )}
+    </SettingsRow>
   );
 }
 
@@ -87,14 +115,13 @@ function PresenceSetting() {
     };
   }, []);
   return (
-    <Setting reveal="general.presence" label="Time in the app" help="Used to measure your time per merged PR.">
-      <Switch
-        label="Tell the hub when I'm using the app"
-        description="Once a minute: whether the app is in front and which project is open. Never what you type or see."
-        checked={on ?? true}
-        disabled={on === null}
-        onCheckedChange={(next) => void window.fleetd.app.presence(next).then(setOn)}
-      />
-    </Setting>
+    <SwitchRow
+      reveal="general.presence"
+      title="Tell the hub when I'm using the app"
+      line="Once a minute: whether the app is in front and which project is open, to measure your time per merged PR. Never what you type or see."
+      checked={on ?? true}
+      disabled={on === null}
+      onCheckedChange={(next) => void window.fleetd.app.presence(next).then(setOn)}
+    />
   );
 }

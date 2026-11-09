@@ -7,7 +7,7 @@
 // removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
-import { ChevronRight } from "lucide-react";
+import { FolderX, Server } from "lucide-react";
 import { useState, type RefCallback } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -18,6 +18,7 @@ import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjec
 import { CallError } from "../../src/data/queries";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { useReveal } from "../settings/search";
+import { GroupNote, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { toHash } from "../shell/routes";
 import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
 import { ownMachines } from "./cloudModel";
@@ -46,60 +47,51 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
   };
   return (
     <>
-    <section ref={marked} className={`${a.section} ${a.machines}`} aria-labelledby="machines-list" tabIndex={-1}>
-      <div className={a.who}>
-        <Text strong id="machines-list">
-          This hub's machines
-        </Text>
-        <Text size="xs" tone="quiet">
-          Open one for its role, screens and max agents.
-        </Text>
+      <div ref={marked} tabIndex={-1} className={a.revealed}>
+        <SettingsSection title="This hub's machines" intro="Open one for its role, screens and max agents.">
+          {machines === undefined ? (
+            <GroupNote>Loading…</GroupNote>
+          ) : machines.length === 0 ? (
+            <GroupNote>No machines yet. Add one above.</GroupNote>
+          ) : (
+            <SettingsList label="Machines">
+              {machines.map((m) => (
+                <SettingsListRow
+                  key={m.machineId}
+                  label={m.name}
+                  icon={<Server />}
+                  name={m.name}
+                  state={{ word: STATUS[m.status], tone: m.status === "online" ? "quiet" : m.status === "degraded" ? "warning" : "danger" }}
+                  open={{ href: toHash({ id: "settings", tab: "hub.machines", machine: m.machineId }) }}
+                  controls={
+                    <>
+                      {m.status === "online" ? null : (
+                        <Button variant="ghost" onClick={() => onRepair(repairOf(m.machineId, hosts))}>
+                          Repair
+                        </Button>
+                      )}
+                      <Button variant="ghost" onClick={() => setRemoving(m)}>
+                        Remove
+                      </Button>
+                    </>
+                  }
+                >
+                  {m.machineId === m.name ? null : (
+                    <Text size="sm" tone="quiet">
+                      {m.machineId}
+                    </Text>
+                  )}
+                  {statusLine(m) === null ? null : (
+                    <Text size="sm" tone={m.status === "degraded" ? "warning" : "quiet"}>
+                      {statusLine(m)}
+                    </Text>
+                  )}
+                </SettingsListRow>
+              ))}
+            </SettingsList>
+          )}
+        </SettingsSection>
       </div>
-      {machines === undefined ? (
-        <Text tone="quiet">Loading…</Text>
-      ) : machines.length === 0 ? (
-        <Text size="sm" tone="quiet">
-          No machines yet. Add one above.
-        </Text>
-      ) : (
-        <div className={a.list} role="list" aria-label="Machines">
-          {machines.map((m) => (
-            <div key={m.machineId} className={`${a.row} ${a.openRow}`} role="listitem" aria-label={m.name}>
-              <div className={a.who}>
-                <div className={a.name}>
-                  <a className={a.machineLink} href={toHash({ id: "settings", tab: "hub.machines", machine: m.machineId })}>
-                    <Text strong>{m.name}</Text>
-                  </a>
-                  <Text size="xs" tone={m.status === "online" ? "quiet" : m.status === "degraded" ? "warning" : "danger"}>
-                    {STATUS[m.status]}
-                  </Text>
-                </div>
-                {m.machineId === m.name ? null : (
-                  <Text size="xs" tone="quiet">
-                    {m.machineId}
-                  </Text>
-                )}
-                {statusLine(m) === null ? null : (
-                  <Text size="xs" tone={m.status === "degraded" ? "warning" : "default"}>
-                    {statusLine(m)}
-                  </Text>
-                )}
-              </div>
-              <div className={a.controls}>
-                {m.status === "online" ? null : (
-                  <Button size="sm" variant="ghost" onClick={() => onRepair(repairOf(m.machineId, hosts))}>
-                    Repair
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={() => setRemoving(m)}>
-                  Remove
-                </Button>
-              </div>
-              <ChevronRight className={a.chevron} aria-hidden />
-            </div>
-          ))}
-        </div>
-      )}
       {removing === null ? null : (
         <RemoveDialog
           machine={removing}
@@ -108,9 +100,8 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
           onRemoved={(id) => setRemoved((was) => new Set([...was, id]))}
         />
       )}
-    </section>
-    <LeftoverProjects />
-    <CloudGroup />
+      <LeftoverProjects />
+      <CloudGroup />
     </>
   );
 }
@@ -121,35 +112,29 @@ function LeftoverProjects() {
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   if (projects.length === 0 && removing === null) return null;
   return (
-    <section className={`${a.section} ${a.machines}`} aria-labelledby="machines-leftovers">
-      <Text strong id="machines-leftovers">
-        Left from removed machines
-      </Text>
-      <Text size="sm" tone="quiet">
-        These projects' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in
-        fleetd.
-      </Text>
-      <div className={a.list} role="list" aria-label="Projects left from removed machines">
+    <SettingsSection
+      title="Left from removed machines"
+      intro="These projects' machines are no longer in this hub, so no machine holds their files. Removing one forgets it in fleetd."
+    >
+      <SettingsList label="Projects left from removed machines">
         {projects.map((p) => (
-          <div key={`${p.machineId}/${p.projectId}`} className={a.row} role="listitem" aria-label={p.title}>
-            <div className={a.who}>
-              <Text strong>{p.title}</Text>
-              <Text size="xs" tone="quiet">{`${p.machineId} · ${p.workspaceRoot}`}</Text>
-            </div>
-            <div className={a.controls}>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setRemoving({ machineId: p.machineId, projectId: p.projectId, title: p.title, path: p.workspaceRoot })}
-              >
+          <SettingsListRow
+            key={`${p.machineId}/${p.projectId}`}
+            label={p.title}
+            icon={<FolderX />}
+            name={p.title}
+            controls={
+              <Button variant="ghost" onClick={() => setRemoving({ machineId: p.machineId, projectId: p.projectId, title: p.title, path: p.workspaceRoot })}>
                 Remove
               </Button>
-            </div>
-          </div>
+            }
+          >
+            <Text size="sm" tone="quiet">{`${p.machineId} · ${p.workspaceRoot}`}</Text>
+          </SettingsListRow>
         ))}
-      </div>
+      </SettingsList>
       <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
-    </section>
+    </SettingsSection>
   );
 }
 

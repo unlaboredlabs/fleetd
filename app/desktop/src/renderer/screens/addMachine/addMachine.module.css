@@ -1,34 +1,43 @@
+/* A Settings section (DESIGN.md, soft groups): a quiet label, then its rows in one soft group with no lines; what
+   isn't rows (steps, a form, notes) in line with the label's words. */
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  max-width: 680px;
+  gap: var(--space-3);
   min-width: 0;
+}
+.panel > :not(.rows) {
+  padding-inline: var(--space-4);
+}
+.panel > .rows {
+  margin-top: calc(-1 * var(--space-1));
 }
 
 .head {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 2px;
+}
+.label {
+  margin: 0;
 }
 
-/* Rows separated by space and a hairline, never a box per row. */
 .rows {
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
+  border-radius: var(--radius-group);
+  background: var(--group);
 }
 .row {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-6);
   min-width: 0;
-  padding: var(--space-3) 0;
-}
-.row + .row {
-  border-top: 1px solid var(--hairline);
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
 }
 .rowText {
   display: flex;
@@ -107,15 +116,16 @@
   max-width: 360px;
 }
 
-/* The line to paste: the machine voice between hairlines, wrapping where it must, with Copy beside it. */
+/* The line to paste: the machine voice on the group's soft fill, wrapping where it must, with Copy beside it. */
 .line {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  margin-inline: calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-group);
+  background: var(--group);
 }
 .lineText {
   flex: 1;

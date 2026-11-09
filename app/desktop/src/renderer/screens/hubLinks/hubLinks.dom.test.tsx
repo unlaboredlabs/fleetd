@@ -153,7 +153,7 @@ const render = async (page: React.ReactNode) => {
 };
 
 const button = (text: string, within: ParentNode = document) => {
-  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.getAttribute("aria-label") === text);
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };

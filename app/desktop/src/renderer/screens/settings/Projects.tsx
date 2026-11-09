@@ -7,7 +7,7 @@
 // seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
 // sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
-import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
+import { Button, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { MemoryRefreshJob, ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
 import { refreshRuns, refreshSchedule } from "../automations/model";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
@@ -26,7 +26,7 @@ import { McpServersSection } from "./Integrations";
 import { ApprovalsSetting } from "./Approvals";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
-import { NoProject, PageHead, Setting } from "./parts";
+import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import { PictureSetting } from "./Picture";
 import {
   countAfter,
@@ -41,7 +41,7 @@ import {
   type EnvKind,
   type PastedVar,
 } from "./projectModel";
-import { RepoSetting } from "./RepoSetting";
+import { RepoSection } from "./RepoSetting";
 import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
@@ -143,54 +143,45 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   };
   return (
     <>
-      <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
-      <Separator />
-      <NameSetting settings={settings} />
-      <Separator />
-      <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
-      <Separator />
-      <RepoSetting settings={settings} />
-      <Separator />
-      <EnvSetting env={settings.env} projectRef={ref} />
-      <Separator />
-      <LinkedHubs project={ref} />
-      <Separator />
-      <ApprovalsSetting projectRef={ref} />
-      <Separator />
-      <McpServersSection projectRef={ref} />
-      <Separator />
-      <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
-      <Separator />
-      <SkillsSetting projectRef={ref} />
-      <Separator />
-      <PaymentsSetting projectRef={ref} />
-      <Separator />
-      <ArchiveSetting projectRef={ref} title={settings.title} archivedAt={summary?.archivedAt} />
-      <Separator />
-      <Setting
-        reveal="projects.delete"
-        label="Delete project"
-        help="Stops it and erases everything fleetd keeps for it, its worktrees too."
-      >
-        <Text size="sm" tone="quiet">
-          {gone
-            ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
-            : plain
-              ? "Its folder stays unless you tick it when you delete."
-              : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}
-        </Text>
-        <div className={s.inline}>
-          <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>
-            {checking ? "Checking its worktrees…" : "Delete project…"}
-          </Button>
-        </div>
-        {unknown !== null ? (
-          <Text size="xs" tone="quiet">
-            Deleting needs its machine to list its worktrees first: {unknown}
-          </Text>
-        ) : null}
-        <Problem text={blocked} />
-      </Setting>
+      <SettingsSection title="Project">
+        <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
+        <NameSetting settings={settings} />
+        <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
+      </SettingsSection>
+      <RepoSection settings={settings}>
+        <EnvSetting env={settings.env} projectRef={ref} />
+      </RepoSection>
+      <SettingsSection title="Safety">
+        <ApprovalsSetting projectRef={ref} />
+      </SettingsSection>
+      <SettingsSection title="What its lead can use">
+        <LinkedHubs project={ref} />
+        <McpServersSection projectRef={ref} />
+        <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
+        <SkillsSetting projectRef={ref} />
+        <PaymentsSetting projectRef={ref} />
+      </SettingsSection>
+      <SettingsSection title="Archive or delete">
+        <ArchiveSetting projectRef={ref} title={settings.title} archivedAt={summary?.archivedAt} />
+        <SettingsRow
+          reveal="projects.delete"
+          title="Delete project"
+          line={
+            unknown !== null
+              ? `Deleting needs its machine to list its worktrees first: ${unknown}`
+              : gone
+                ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
+                : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
+          }
+          control={
+            <DangerButton disabled={unknown !== null || checking} onClick={() => void open()}>
+              {checking ? "Checking its worktrees…" : "Delete project…"}
+            </DangerButton>
+          }
+        >
+          <Problem text={blocked} />
+        </SettingsRow>
+      </SettingsSection>
       <RemoveProjectDialog project={deleting} onClose={() => setDeleting(null)} onRemoved={onDeleted} />
     </>
   );
@@ -219,14 +210,10 @@ function useSave() {
   return { busy, echo, save };
 }
 
-function EchoLine({ echo }: { echo: Echo | null }) {
-  if (!echo) return null;
+/** What a save did, as its row's line (its `lineTone` the echo's): read out as it appears. */
+function EchoText({ echo }: { echo: Echo }) {
   return (
-    <div role={echo.ok ? "status" : "alert"}>
-      <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
-        {echo.text}
-      </Text>
-    </div>
+<span role={echo.ok ? "status" : "alert"}>{echo.text}</span>
   );
 }
 
@@ -243,23 +230,38 @@ function NameSetting({ settings }: { settings: Settings }) {
   const [draft, setDraft] = useState(settings.title);
   const { busy, echo, save } = useSave();
   const title = draft.trim();
+  // Rename shows once the name differs; an empty one says why it can't be saved.
+  const dirty = draft !== settings.title;
   return (
-    <Setting reveal="projects.name" label="Name" help="How fleetd shows the project. Its folder keeps its own name.">
-      <Truncate size="sm" tone="quiet" mono>
-        {settings.workspaceRoot}
-      </Truncate>
-      <div className={s.inline}>
-        <Input aria-label="Project name" value={draft} maxLength={200} onChange={(e) => setDraft(e.target.value)} />
-        <Button
-          variant="primary"
-          disabled={busy || title === "" || title === settings.title}
-          onClick={() => save({ machineId: settings.machineId, projectId: settings.projectId, title }, `Renamed to ${title}.`)}
-        >
-          {busy ? "Saving…" : "Rename"}
-        </Button>
-      </div>
-      <EchoLine echo={echo} />
-    </Setting>
+    <SettingsRow
+      reveal="projects.name"
+      title="Name"
+      lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
+      line={
+        <>
+          <span className={s.lineBlock}>
+            {echo !== null ? <EchoText echo={echo} /> : dirty && title === "" ? "A project needs a name." : "How fleetd shows the project. Its folder keeps its own name."}
+          </span>
+          <Truncate size="sm" tone="quiet" mono>
+            {settings.workspaceRoot}
+          </Truncate>
+        </>
+      }
+      control={
+        <>
+          <Input aria-label="Project name" className={s.nameField} value={draft} maxLength={200} onChange={(e) => setDraft(e.target.value)} />
+          {dirty ? (
+            <Button
+              variant="primary"
+              disabled={busy || title === "" || title === settings.title}
+              onClick={() => save({ machineId: settings.machineId, projectId: settings.projectId, title }, `Renamed to ${title}.`)}
+            >
+              {busy ? "Saving…" : "Rename"}
+            </Button>
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
@@ -267,18 +269,23 @@ function NameSetting({ settings }: { settings: Settings }) {
 function OnlyMeSetting({ settings, onlyMe }: { settings: Settings; onlyMe: boolean }) {
   const { busy, echo, save } = useSave();
   return (
-    <Setting reveal="projects.only-me" label="Only me" help="Who on this hub sees and uses the project: its chat, its agents and its settings.">
-      <Switch
-        label="Only me"
-        description={onlyMe ? "Only you see it. Turn it off to share it with everyone on this hub." : "Everyone on this hub sees it. Turn it on to keep it to yourself."}
-        checked={onlyMe}
-        disabled={busy}
-        onCheckedChange={(on) =>
-          save({ machineId: settings.machineId, projectId: settings.projectId, onlyMe: on }, on ? "Only you see it now." : "Everyone on this hub sees it now.")
-        }
-      />
-      <EchoLine echo={echo} />
-    </Setting>
+    <SwitchRow
+      reveal="projects.only-me"
+      title="Only me"
+      line={
+        echo !== null ? (
+          <EchoText echo={echo} />
+        ) : onlyMe ? (
+          "Only you see it. Turn it off to share it with everyone on this hub."
+        ) : (
+          "Everyone on this hub sees it. Turn it on to keep it to yourself."
+        )
+      }
+      lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
+      checked={onlyMe}
+      disabled={busy}
+      onCheckedChange={(on) => save({ machineId: settings.machineId, projectId: settings.projectId, onlyMe: on }, on ? "Only you see it now." : "Everyone on this hub sees it now.")}
+    />
   );
 }
 
@@ -295,22 +302,20 @@ function ArchiveSetting({ projectRef, title, archivedAt }: { projectRef: Ref; ti
     setBusy(false);
   };
   return (
-    <Setting
+    <SettingsRow
       reveal="projects.archive"
-      label="Archive"
-      help="Takes it out of the sidebar and stops its lead. Its chat, memory, folder and settings stay, and it comes back as it was."
-    >
-      {archived ? (
-        <Text size="sm" tone="quiet">
-          {`Archived ${when(archivedAt, now)}. Its lead doesn’t start until you bring it back.`}
-        </Text>
-      ) : null}
-      <div className={s.inline}>
+      title="Archive"
+      line={
+        archived
+          ? `Archived ${when(archivedAt, now)}. Its lead doesn’t start until you bring it back.`
+          : "Takes it out of the sidebar and stops its lead. Its chat, memory, folder and settings stay, and it comes back as it was."
+      }
+      control={
         <Button variant={archived ? "primary" : "secondary"} disabled={busy} onClick={() => void act()}>
           {busy ? (archived ? "Bringing it back…" : "Archiving…") : archived ? "Bring back" : "Archive"}
         </Button>
-      </div>
-    </Setting>
+      }
+    />
   );
 }
 
@@ -336,10 +341,18 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
     );
   };
   return (
-    <Setting reveal="projects.memory" label="Refresh every night" help="The lead tidies this project's memory overnight.">
-      <Switch
-        label="Refresh memory every night"
-        description="On a day with chat or orders, the lead adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
+    <>
+      <SwitchRow
+        reveal="projects.memory"
+        title="Refresh memory every night"
+        line={
+          echo !== null ? (
+            <EchoText echo={echo} />
+          ) : (
+            "On a day with chat or orders, the lead adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
+          )
+        }
+        lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
         checked={on}
         disabled={busy}
         onCheckedChange={(next) =>
@@ -349,19 +362,27 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
           )
         }
       />
-      {job ? (
-        <Text size="xs" tone="quiet">
-          {`${refreshSchedule(job)} · ${refreshRuns(job)}`}
-        </Text>
-      ) : null}
-      <div className={s.inline}>
-        <Button size="sm" disabled={!on || running} onClick={run}>
-          {running ? "Refreshing…" : "Run now"}
-        </Button>
-      </div>
-      <EchoLine echo={echo} />
-      <EchoLine echo={ran} />
-    </Setting>
+      <SettingsRow
+        title="Refresh now"
+        lineTone={ran !== null && !ran.ok ? "danger" : "quiet"}
+        line={
+          ran !== null ? (
+            <EchoText echo={ran} />
+          ) : !on ? (
+            "Turn the nightly refresh on to run it."
+          ) : job ? (
+            `${refreshSchedule(job)} · ${refreshRuns(job)}`
+          ) : (
+            "Runs the nightly refresh once, now."
+          )
+        }
+        control={
+          <Button variant="secondary" disabled={!on || running} onClick={run}>
+            {running ? "Refreshing…" : "Run now"}
+          </Button>
+        }
+      />
+    </>
   );
 }
 
@@ -375,45 +396,59 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
     setEditing(null);
     setEcho({ ok: true, text });
   };
+  const full = env.length >= ENV_MAX;
   return (
-    <Setting
+    <SettingsRow
       reveal="projects.env"
-      label="Environment variables"
-      help="Given to every agent the project starts. Secrets are never shown again."
+      title="Environment variables"
+      line={
+        echo !== null ? (
+          <EchoText echo={echo} />
+        ) : full ? (
+          `Given to every agent the project starts. It holds the most it can, ${String(ENV_MAX)}: remove one to add another.`
+        ) : (
+          "Given to every agent the project starts. Secrets are never shown again."
+        )
+      }
+      lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
+      control={
+        <>
+          <Button variant="ghost" onClick={() => setEditing({ kind: "paste" })}>
+            Paste .env
+          </Button>
+          <AddButton label="Add variable" disabled={full} onClick={() => setEditing({ kind: "new" })} />
+        </>
+      }
     >
-      {env.length === 0 ? (
-        <Text size="sm" tone="quiet">
-          None yet.
-        </Text>
-      ) : (
-        <div role="list" aria-label="Environment variables" className={s.stack}>
+      {env.length === 0 ? null : (
+        <SettingsList label="Environment variables">
           {env.map((v) => (
-            <div key={v.name} role="listitem" className={s.inline}>
-              <Text mono strong size="sm">
-                {v.name}
-              </Text>
+            <SettingsListRow
+              key={v.name}
+              label={v.name}
+              name={
+                <Text mono size="sm">
+                  {v.name}
+                </Text>
+              }
+              controls={
+                <>
+                  <Button variant="ghost" onClick={() => setEditing({ kind: "edit", v })}>
+                    Edit
+                  </Button>
+                  <Button variant="ghost" onClick={() => setEditing({ kind: "remove", v })}>
+                    Remove
+                  </Button>
+                </>
+              }
+            >
               <Truncate size="sm" tone="quiet" mono>
                 {shownValue(v)}
               </Truncate>
-              <Button size="sm" variant="ghost" onClick={() => setEditing({ kind: "edit", v })}>
-                Edit
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditing({ kind: "remove", v })}>
-                Remove
-              </Button>
-            </div>
+            </SettingsListRow>
           ))}
-        </div>
+        </SettingsList>
       )}
-      <div className={s.inline}>
-        <Button onClick={() => setEditing({ kind: "new" })} disabled={env.length >= ENV_MAX}>
-          Add variable
-        </Button>
-        <Button variant="ghost" onClick={() => setEditing({ kind: "paste" })}>
-          Paste .env
-        </Button>
-      </div>
-      <EchoLine echo={echo} />
       {editing?.kind === "new" || editing?.kind === "edit" ? (
         <EnvEditor
           env={env}
@@ -446,7 +481,7 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
           }}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }
 

@@ -1,11 +1,12 @@
 // Hub › Updates' content, laid out from the view: one overall state with the Update button and what's new (or a
 // quiet Start over beside a run that stopped moving), one line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed,
-// Update automatically, and every part's steps behind Details. Hairlines between lines, no boxes; still, never an animation.
+// Update automatically, and every part's steps behind Details. Soft groups (settings/parts.tsx), no lines; still, never an animation.
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, copyText, InlineCode, Text } from "../../ui";
 import { splitLabels, type Notes as NotesOf } from "../../../shared/updates";
 import type { AppAction, AppPart, HubPart, PartLine, PartRow, Retry, UpdatesView } from "./model";
+import { GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
 import s from "./updates.module.css";
 
 /** Inline `code` in a plain line, as the release notes and the hub's lines may carry. */
@@ -31,7 +32,7 @@ function Labels({ text }: { text: string }) {
   );
 }
 
-function Command({ command, note }: { command: string; note?: string | undefined }) {
+export function Command({ command, note }: { command: string; note?: string | undefined }) {
   const [copied, setCopied] = useState(false);
   return (
     <>
@@ -53,7 +54,7 @@ function Command({ command, note }: { command: string; note?: string | undefined
 }
 
 /** A raw version, small and selectable, with Copy: what a bug report or `fleetd update --channel` wants. */
-function Raw({ version }: { version: string | undefined }) {
+export function Raw({ version }: { version: string | undefined }) {
   const [copied, setCopied] = useState(false);
   if (version === undefined) return null;
   return (
@@ -75,23 +76,29 @@ export function Notes({ notes }: { notes: NotesOf }) {
       <Text size="xs" tone="quiet" strong>
         What’s new
       </Text>
-      <ul className={s.notes}>
-        {notes.lines.map((note, i) => (
-          <li key={i}>
-            <Text size="sm">
-              <Line text={note} />
-            </Text>
-          </li>
-        ))}
-        {notes.more ? (
-          <li>
-            <Text size="sm" tone="quiet">
-              And more
-            </Text>
-          </li>
-        ) : null}
-      </ul>
+      <NoteLines notes={notes} />
     </>
+  );
+}
+
+function NoteLines({ notes }: { notes: NotesOf }) {
+  return (
+    <ul className={s.notes}>
+      {notes.lines.map((note, i) => (
+        <li key={i}>
+          <Text size="sm">
+            <Line text={note} />
+          </Text>
+        </li>
+      ))}
+      {notes.more ? (
+        <li>
+          <Text size="sm" tone="quiet">
+            And more
+          </Text>
+        </li>
+      ) : null}
+    </ul>
   );
 }
 
@@ -135,32 +142,34 @@ export function AppSection({ part, onApp }: { part: AppPart; onApp: (action: App
 /** The hub or a machine: its name, where it stands or how its update goes, and its raw version. */
 function Row({ row }: { row: PartRow }) {
   return (
-    <li className={s.row} data-updates-row={row.key}>
-      <Text size="sm" strong>
-        {row.name}
-      </Text>
+    <SettingsListRow name={row.name} label={row.name} data={{ "data-updates-row": row.key }}>
       <Text size="sm" tone={row.tone === "quiet" ? "quiet" : row.tone}>
         <Line text={row.status} />
       </Text>
       <Raw version={row.raw} />
-    </li>
+    </SettingsListRow>
   );
 }
 
+/** The hub and each machine, rows of a group, then what's new in the hub's version. */
 export function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView["nodes"] }) {
   return (
-    <section className={s.step} aria-label="The hub and its machines" data-updates-part="hub">
-      <ul className={s.rows}>
+    <>
+      <SettingsList label="The hub and its machines">
         <Row row={part} />
         {nodes.map((node) => (
           <Row key={node.key} row={node} />
         ))}
-      </ul>
-      <Notes notes={part.notes} />
-      <Text size="xs" tone="faint">
+      </SettingsList>
+      {part.notes.lines.length === 0 ? null : (
+        <SettingsRow title="What’s new">
+          <NoteLines notes={part.notes} />
+        </SettingsRow>
+      )}
+      <GroupNote>
         <Line text="A machine without the app updates with `fleetd update`." />
-      </Text>
-    </section>
+      </GroupNote>
+    </>
   );
 }
 
@@ -168,56 +177,49 @@ function Overall({ view, onUpdate, onStartOver, onUpdateNow }: { view: UpdatesVi
   const { update, progress, startOver, updateNow } = view;
   if (update === null && progress === null) return null;
   return (
-    <section className={s.overall} aria-label="Update" data-updates-part="all">
-      <div className={s.head}>
-        <div className={s.words}>
-          {progress === null ? null : (
-            <div role={progress.tone === "danger" ? "alert" : "status"}>
-              <Text tone={progress.tone === "quiet" ? "default" : progress.tone} strong>
+    <SettingsSection title="Update" data={{ "data-updates-part": "all" }}>
+      <SettingsRow
+        label="Update"
+        title={
+          progress === null ? (
+            <Line text={update?.title ?? ""} />
+          ) : (
+            <span role={progress.tone === "danger" ? "alert" : "status"}>
+              <Text tone={progress.tone === "quiet" ? "default" : progress.tone}>
                 <Line text={progress.text} />
               </Text>
-            </div>
-          )}
-          {update === null || progress !== null ? null : (
-            <Text strong>
-              <Line text={update.title} />
-            </Text>
-          )}
-          {update === null ? null : (
-            <Text size="sm" tone="quiet">
-              {update.note}
-            </Text>
-          )}
-          {startOver === null ? null : (
-            <Text size="sm" tone="quiet" data-updates-start-over>
-              {startOver.note}
-            </Text>
-          )}
-        </div>
-        {update === null ? null : (
-          <div className={s.actions}>
-            <Button variant="primary" onClick={onUpdate}>
-              {update.label}
-            </Button>
-          </div>
-        )}
+            </span>
+          )
+        }
+        line={update?.note}
+        control={
+          <>
+            {update === null ? null : (
+              <Button variant="primary" onClick={onUpdate}>
+                {update.label}
+              </Button>
+            )}
+            {startOver === null ? null : (
+              <Button variant="ghost" onClick={onStartOver}>
+                Start over
+              </Button>
+            )}
+            {!updateNow ? null : (
+              <Button variant="ghost" onClick={onUpdateNow} data-updates-now>
+                Update now
+              </Button>
+            )}
+          </>
+        }
+      >
         {startOver === null ? null : (
-          <div className={s.actions}>
-            <Button variant="ghost" onClick={onStartOver}>
-              Start over
-            </Button>
-          </div>
+          <Text size="sm" tone="quiet" data-updates-start-over>
+            {startOver.note}
+          </Text>
         )}
-        {!updateNow ? null : (
-          <div className={s.actions}>
-            <Button variant="ghost" onClick={onUpdateNow} data-updates-now>
-              Update now
-            </Button>
-          </div>
-        )}
-      </div>
-      {update === null || progress !== null ? null : <Notes notes={update.notes} />}
-    </section>
+        {update === null || progress !== null ? null : <Notes notes={update.notes} />}
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
@@ -225,26 +227,25 @@ function Overall({ view, onUpdate, onStartOver, onUpdateNow }: { view: UpdatesVi
 function PartLineRow({ line, onRetry }: { line: PartLine; onRetry: (retry: Retry) => void }) {
   const { retry } = line;
   return (
-    <li className={s.line} data-updates-line-of={line.key} data-state={line.tone}>
-      <Text size="sm" strong className={s.lineName}>
-        {line.name}
-      </Text>
-      <span className={s.lineSays} title={line.reason}>
-        <Text size="sm" tone={line.tone === "quiet" ? "default" : line.tone}>
-          {line.state}
+    <SettingsListRow
+      name={line.name}
+      label={line.name}
+      state={{ word: line.state, tone: line.tone === "quiet" ? "default" : line.tone }}
+      data={{ "data-updates-line-of": line.key, "data-state": line.tone }}
+      controls={
+        retry === undefined ? undefined : (
+          <Button size="sm" variant="ghost" onClick={() => onRetry(retry)}>
+            {line.label ?? "Retry"}
+          </Button>
+        )
+      }
+    >
+      {line.reason === undefined ? null : (
+        <Text size="sm" tone="quiet">
+          <Line text={line.reason} />
         </Text>
-        {line.reason === undefined ? null : (
-          <Text size="sm" tone="quiet" className={s.lineWhy}>
-            <Line text={line.reason} />
-          </Text>
-        )}
-      </span>
-      {retry === undefined ? null : (
-        <Button variant="ghost" onClick={() => onRetry(retry)}>
-          {line.label ?? "Retry"}
-        </Button>
       )}
-    </li>
+    </SettingsListRow>
   );
 }
 
@@ -271,11 +272,13 @@ export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry
     <div className={s.parts} data-screen="updates">
       <Overall view={view} onUpdate={onUpdate} onStartOver={onStartOver} onUpdateNow={onUpdateNow} />
       {view.lines.length === 0 ? null : (
-        <ul className={s.lines} aria-label="Each part">
-          {view.lines.map((line) => (
-            <PartLineRow key={line.key} line={line} onRetry={onRetry} />
-          ))}
-        </ul>
+        <SettingsSection title="Each part">
+          <SettingsList label="Each part">
+            {view.lines.map((line) => (
+              <PartLineRow key={line.key} line={line} onRetry={onRetry} />
+            ))}
+          </SettingsList>
+        </SettingsSection>
       )}
       {auto}
       {versions ?? (
@@ -287,7 +290,11 @@ export function UpdatesSheet({ view, onUpdate, onStartOver, onUpdateNow, onRetry
           </div>
           {open ? (
             <div className={s.details} data-updates-details>
-              {view.hub === null ? null : <HubSection part={view.hub} nodes={view.nodes} />}
+              {view.hub === null ? null : (
+                <SettingsSection>
+                  <HubSection part={view.hub} nodes={view.nodes} />
+                </SettingsSection>
+              )}
               {view.app === null ? null : <AppSection part={view.app} onApp={onApp} />}
             </div>
           ) : null}
