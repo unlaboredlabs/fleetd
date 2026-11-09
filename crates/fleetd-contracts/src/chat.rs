@@ -281,6 +281,9 @@ pub struct ChatMessage {
     /// A system line "Published …": a lead, task or Navi published an artifact (`artifact_publish`); the app shows a
     /// card that opens it.
     pub artifact: Option<crate::artifacts::ArtifactPublished>,
+    /// A system line with an import card: a lead proposed importing items from 1Password into the vault
+    /// (`vault_import_propose`); the person answers with `vault_import`.
+    pub vault_import: Option<crate::vault::VaultImportCard>,
     /// The lead flagged it for the person's look (`nudge`).
     pub nudge: Option<ChatNudge>,
 }

@@ -11,7 +11,8 @@
 //!   card's number, expiry and code never reach the Navi, the chat, a transcript, a recording or a log.
 //! - The Navi clicks Pay itself; a bank's confirmation (3-D Secure) goes to the person with `request_takeover`.
 //!
-//! fleetd keeps only the card's `op://vault/item` reference, per Navi ([`NaviCard`]).
+//! fleetd keeps only the card's reference, per Navi ([`NaviCard`]): a vault card (`vault:V…`), whose claim carries it
+//! sealed to the node (`sealedCard`), or for one release a 1Password `op://vault/item`.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
@@ -30,6 +31,19 @@ brand!(
     /// A 1Password item: `op://<vault>/<item>`, a Credit Card item's whole, by its vault's and its own name or ID.
     OpItemReference, name = "OpItemReference", pattern = r"^op://[^/?\r\n]+/[^/?\r\n]+$"
 );
+
+brand!(
+    /// The card a project pays with: a vault card, `vault:V<32 hex>`, or (for one release) a 1Password Credit Card
+    /// item, `op://<vault>/<item>`.
+    CardRef, name = "CardRef", pattern = r"^(vault:V[0-9a-f]{32}|op://[^/?\r\n]+/[^/?\r\n]+)$"
+);
+
+impl CardRef {
+    /// The vault item it names, for a `vault:` card.
+    pub fn vault_item(&self) -> Option<crate::vault::VaultItemId> {
+        crate::vault::VaultItemId::new(self.strip_prefix("vault:")?).ok()
+    }
+}
 
 brand!(
     /// A website's host, lowercase, with no scheme, port or path, of two labels at least: `shop.example.com`, never a
@@ -115,12 +129,17 @@ pub struct PurchaseClaimCall {
 }
 
 /// What the node may fill for a claimed purchase.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PurchaseClaimed {
     pub request_id: ChatRequestId,
     pub domain: ShopDomain,
-    pub card: OpItemReference,
+    pub card: CardRef,
+    /// A vault card: its fields sealed to the node hosting the browser (`crypto_box_seal` of the utf8 JSON of a
+    /// [`crate::vault::CardSecret`]), issued once per purchase within its window. Absent: an `op://` card, which the
+    /// node reads from 1Password.
+    pub sealed_card: Option<crate::secrets::SealedSecret>,
 }
 
 /// The node's lead call once a claimed fill is done. `typed` false: nothing reached the page, and the purchase may
@@ -152,16 +171,25 @@ pub struct Purchase {
     pub filled_at: Option<Timestamp>,
 }
 
-/// The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.
+/// The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is
+/// kept.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NaviCard {
     #[serde(rename = "ref")]
-    pub reference: OpItemReference,
+    pub reference: CardRef,
+    /// A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.
+    pub label: Option<String>,
+    pub brand: Option<crate::vault::CardBrand>,
+    pub last4: Option<crate::vault::CardLast4>,
 }
 
 impl NaviCard {
     /// How the card is named to the person: its item and its vault, `Visa (Personal)`.
     pub fn label(&self) -> String {
+        if let Some(label) = &self.label {
+            return label.clone();
+        }
         let rest = self.reference.trim_start_matches("op://");
         match rest.split_once('/') {
             Some((vault, item)) => format!("{item} ({vault})"),
@@ -248,6 +276,15 @@ mod tests {
         assert_eq!(card.label(), "Visa (Personal)");
         assert!(OpItemReference::new("op://Personal/Visa/number").is_err());
         assert!(on_domain("pay.shop.example.com", "shop.example.com"));
+        let vault = CardRef::new("vault:V0123456789abcdef0123456789abcdef").unwrap();
+        assert!(vault.vault_item().is_some());
+        assert!(
+            CardRef::new("op://Personal/Visa")
+                .unwrap()
+                .vault_item()
+                .is_none()
+        );
+        assert!(CardRef::new("vault:V01").is_err());
         assert!(!on_domain("evilshop.example.com", "shop.example.com"));
     }
 }

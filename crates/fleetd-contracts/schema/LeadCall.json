@@ -1,5 +1,12 @@
 {
   "$defs": {
+    "AddressPart": {
+      "enum": [
+        "shipping",
+        "billing"
+      ],
+      "type": "string"
+    },
     "AgentMessageCall": {
       "description": "`agent_message`: a task's agent writes to another agent of its project. A running one takes it at its next tool\nboundary; one that isn't running gets it with its next run (held until then), which a message from an agent never\nstarts, except as the answer to a question the recipient is waiting on (`ask_lead`).",
       "properties": {
@@ -424,6 +431,19 @@
           "properties": {
             "op": {
               "const": "fill_credential",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/FillAddressCall",
+          "properties": {
+            "op": {
+              "const": "fill_address",
               "type": "string"
             }
           },
@@ -1225,12 +1245,40 @@
         }
       ]
     },
-    "FillCredentialCall": {
-      "description": "`fill_credential`: the node reads a 1Password reference and types its value into the page, only on the item's own\nwebsite, then submits the field's form in the same step; the value never comes back. From the first fill on, the\nsession refuses whatever would read a filled value back.",
+    "FillAddressCall": {
+      "description": "`fill_address`: the node fills a vault address into the page's form (its fields found by `autocomplete`, then by\nname and label), only at a checkout recorded in this session, on the item's sites, or on a site of one of the same\nperson's vault logins. The values never come back.",
       "properties": {
+        "item": {
+          "$ref": "#/$defs/VaultItemName",
+          "description": "The address, by id or label; absent: the only one visible, or the one labelled \"Home\"."
+        },
+        "part": {
+          "$ref": "#/$defs/AddressPart",
+          "description": "Which of the form's addresses, when it has two."
+        },
+        "target": {
+          "description": "A CSS selector inside the form to fill; absent: the page's address form.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "FillCredentialCall": {
+      "description": "`fill_credential`: the node types a vault login's field (`item`, `field`) into the page, only on the item's own\nwebsite, then submits the field's form in the same step; the value never comes back. `ref` (a 1Password reference)\nis an alias for one release: the vault item imported from it, else 1Password. From the first fill on, the session\nrefuses whatever would read a filled value back.",
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/LoginFillField",
+          "description": "The login's field: `username`, `password` or `otp` (a one-time code). With item."
+        },
+        "item": {
+          "$ref": "#/$defs/VaultItemName",
+          "description": "A vault login, by its id (`V…`) or its label (`Amazon`), as vault_items lists it."
+        },
         "ref": {
           "$ref": "#/$defs/OpReference",
-          "description": "A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code."
+          "description": "A 1Password secret reference instead of item: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time\ncode."
         },
         "submit": {
           "description": "False to fill without submitting, for a field before the last of its form (a username before its password).\nAbsent: true.",
@@ -1244,7 +1292,6 @@
         }
       },
       "required": [
-        "ref",
         "target"
       ],
       "type": "object"
@@ -2356,8 +2403,85 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/VaultFillCall",
+          "description": "Made by the node hosting a browser session for its fills from the vault (vault.rs), never by the session itself.",
+          "properties": {
+            "op": {
+              "const": "vault_fill",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/VaultFilledCall",
+          "properties": {
+            "op": {
+              "const": "vault_filled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/VaultItemsCall",
+          "description": "An agent's `vault_items`: the vault items its session may use, never a value.",
+          "properties": {
+            "op": {
+              "const": "vault_items",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/VaultImportSearchCall",
+          "description": "A lead's search of its person's 1Password for items to import, and its proposal (an import card in the chat).",
+          "properties": {
+            "op": {
+              "const": "vault_import_search",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/VaultImportProposeCall",
+          "properties": {
+            "op": {
+              "const": "vault_import_propose",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "LoginFillField": {
+      "description": "A vault login's field that `fill_credential` fills.",
+      "enum": [
+        "username",
+        "password",
+        "otp"
+      ],
+      "type": "string"
     },
     "MacCall": {
       "description": "What `fleetd mac` asks of its own node, for the agent session its process runs in.",
@@ -2612,6 +2736,10 @@
         "reason"
       ],
       "type": "object"
+    },
+    "OpItemReference": {
+      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
+      "type": "string"
     },
     "OpReference": {
       "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
@@ -3762,6 +3890,209 @@
         }
       },
       "type": "object"
+    },
+    "VaultFillCall": {
+      "description": "`vault_fill`: the node hosting a browser session asks for one item's field for the page it's on. The hub knows the\nsession's project, order and person from its own records, never from the call; it checks the item is visible to\nthem, of the right kind and on the page's site, within the rate limits, writes an audit row (`pending`), and\nanswers with the value sealed to the node hosting the session.",
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/VaultFillField"
+        },
+        "frame": {
+          "description": "The frame's address, when the field is in a frame.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/VaultItemName",
+          "description": "The item, by id or unique label; or `ref`."
+        },
+        "page": {
+          "description": "The page's address, as the node read it.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "ref": {
+          "$ref": "#/$defs/OpReference",
+          "description": "An `op://` reference (one release): the item imported from it."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "field",
+        "page"
+      ],
+      "type": "object"
+    },
+    "VaultFillField": {
+      "description": "What a `vault_fill` fills.",
+      "oneOf": [
+        {
+          "enum": [
+            "username",
+            "password"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "otp",
+          "description": "A one-time code the hub makes from the login's seed.",
+          "type": "string"
+        },
+        {
+          "const": "address",
+          "description": "An address item's fields.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultFilledCall": {
+      "description": "`vault_filled`: how the fill went, for its audit row. `typed` false: nothing reached the page.",
+      "properties": {
+        "auditId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "message": {
+          "description": "What it filled, or why not, in plain words; never a value.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "typed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "auditId",
+        "ok",
+        "typed"
+      ],
+      "type": "object"
+    },
+    "VaultImportProposeCall": {
+      "description": "`vault_import_propose` (leads only): put an import card in the chat for the person to confirm with one tap.",
+      "properties": {
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/OpItemReference"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope",
+          "description": "Where they go; absent: the person's own."
+        },
+        "why": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "refs",
+        "why"
+      ],
+      "type": "object"
+    },
+    "VaultImportSearchCall": {
+      "description": "`vault_import_search` (leads only): search the person's 1Password for items to import. Titles, kinds and sites,\nnever values.",
+      "properties": {
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/VaultKind"
+          },
+          "type": "array"
+        },
+        "query": {
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "VaultItemName": {
+      "description": "an item's id or label: 1 to 120 characters on one line, not starting with a space or punctuation",
+      "pattern": "^[^\\s!-/:-@\\[-`{-~][^\\r\\n]{0,119}$",
+      "type": "string"
+    },
+    "VaultItemsCall": {
+      "description": "`vault_items`: the items this session may use, optionally only those for a site or of a kind. Labels, kinds,\nsites and fields present; cards by label only; never a value.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "site": {
+          "description": "A host: `amazon.com`.",
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VaultKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "login",
+            "card",
+            "address"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "env",
+          "description": "An environment variable for agents' sessions.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "VaultScope": {
+      "description": "Whose an item is, and so who lists, changes and reveals it, and which work uses it.",
+      "oneOf": [
+        {
+          "const": "person",
+          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
+          "type": "string"
+        },
+        {
+          "const": "order",
+          "description": "One order's variable (`workstreamId` too): that order's agents. Gone when the order closes.",
+          "type": "string"
+        },
+        {
+          "const": "hub",
+          "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
+          "type": "string"
+        }
+      ]
     },
     "WaitCiCall": {
       "description": "`wait_ci`: a task asks to be woken when a GitHub Actions run (its URL) or the checks on a PR's head (the PR's URL)\nfinish, or with `merged`, when the PR merges. Its thread then continues with one line: the outcome and the failing\njobs, or the merge (or why the PR won't merge).",

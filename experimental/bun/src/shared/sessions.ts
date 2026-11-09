@@ -22,6 +22,7 @@ import type {
   McpTransport,
   McpValueName,
   OnePasswordCard,
+  OpItemReference,
   PersonId,
   ProfileName,
   ProjectId,
@@ -34,6 +35,9 @@ import type {
   SteerStage,
   ThreadId,
   Timestamp,
+  VaultImportCandidate,
+  VaultImportError,
+  VaultKind,
   WorkstreamId,
   WorktreeSetup,
 } from "./contracts.ts";
@@ -182,6 +186,9 @@ export type SessionCall =
   | { op: "onepassword_token"; personId: PersonId; sealed?: SealedSecret }
   | { op: "onepassword_test"; personId: PersonId }
   | { op: "onepassword_cards"; personId: PersonId; projectId?: ProjectId }
+  | { op: "vault_adopt"; to: BoxPublicKey }
+  | { op: "vault_import_read"; personId: PersonId; refs: OpItemReference[]; to: BoxPublicKey }
+  | { op: "vault_import_search"; personId: PersonId; query: string; kinds?: VaultKind[] }
   | { op: "claude_models" }
   | { op: "project_worktrees"; projectId: ProjectId }
   | ({ op: "launch" } & SessionLaunch)
@@ -221,6 +228,31 @@ export type SessionCall =
   | { op: "read_image"; sessionId: ThreadId; path: string; offset?: number; file?: boolean };
 
 export type SessionCallOp = SessionCall["op"];
+
+/** vault.rs `VaultAdoptVar`: one variable a node holds, its value sealed to the hub, in `vault_adopt`'s answer. */
+export type VaultAdoptVar = {
+  scope: "project" | "order";
+  projectId: ProjectId;
+  orderId?: WorkstreamId;
+  name: EnvVarName;
+  secret: boolean;
+  sealed: SealedSecret;
+  fingerprint: SecretFingerprint;
+  bytes: number;
+};
+
+/** vault.rs `VaultAdoptSink`: one `env:` or `file:` sink a node holds, its value read from the sink and sealed. */
+export type VaultAdoptSink = {
+  secretKey: string;
+  kind: "env" | "file";
+  path: string;
+  envName?: EnvVarName;
+  sealed: SealedSecret;
+  fingerprint: SecretFingerprint;
+};
+
+/** vault.rs `VaultImportRead`: one 1Password item read for import; `sealed` opens to `VaultImportedFields`. */
+export type VaultImportRead = { ref: OpItemReference; kind: VaultKind; sealed: SealedSecret };
 
 /** The most of an image one `read_image` reply carries, decoded. */
 export const IMAGE_PIECE_BYTES = 8 * 1024 * 1024;
@@ -339,6 +371,9 @@ export type SessionOutput =
   | { kind: "onepassword_saved"; fingerprint?: SecretFingerprint }
   | { kind: "onepassword_tested"; vaults?: string[]; error?: string }
   | { kind: "onepassword_carded"; cards?: OnePasswordCard[]; error?: string }
+  | { kind: "vault_adopted"; vars: VaultAdoptVar[]; sinks: VaultAdoptSink[] }
+  | { kind: "vault_import_read"; items: VaultImportRead[]; errors: VaultImportError[] }
+  | { kind: "vault_import_found"; items: VaultImportCandidate[]; error?: string }
   | { kind: "claude_models"; models: ApiModel[]; error?: string }
   | { kind: "skills"; skills: RepoSkill[] }
   | { kind: "image"; name: string; mime: AttachmentMime; bytes: number; dataB64: string };

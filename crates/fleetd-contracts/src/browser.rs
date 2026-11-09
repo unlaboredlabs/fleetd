@@ -479,6 +479,7 @@ pub enum BrowserCall {
     SessionStart(SessionStartCall),
     SessionEnd(SessionEndCall),
     FillCredential(FillCredentialCall),
+    FillAddress(FillAddressCall),
     RequestTakeover(RequestTakeoverCall),
     Desktop(DesktopCall),
     Device(DeviceCall),
@@ -494,6 +495,7 @@ impl BrowserCall {
             Self::SessionStart(_) => "session_start",
             Self::SessionEnd(_) => "session_end",
             Self::FillCredential(_) => "fill_credential",
+            Self::FillAddress(_) => "fill_address",
             Self::RequestTakeover(_) => "request_takeover",
             Self::Desktop(_) => "desktop",
             Self::Device(_) => "device",
@@ -588,20 +590,85 @@ pub struct SessionStartCall {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionEndCall {}
 
-/// `fill_credential`: the node reads a 1Password reference and types its value into the page, only on the item's own
-/// website, then submits the field's form in the same step; the value never comes back. From the first fill on, the
-/// session refuses whatever would read a filled value back.
+/// `fill_credential`: the node types a vault login's field (`item`, `field`) into the page, only on the item's own
+/// website, then submits the field's form in the same step; the value never comes back. `ref` (a 1Password reference)
+/// is an alias for one release: the vault item imported from it, else 1Password. From the first fill on, the session
+/// refuses whatever would read a filled value back.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FillCredentialCall {
-    /// A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code.
+    /// A vault login, by its id (`V…`) or its label (`Amazon`), as vault_items lists it.
+    pub item: Option<crate::vault::VaultItemName>,
+    /// The login's field: `username`, `password` or `otp` (a one-time code). With item.
+    pub field: Option<LoginFillField>,
+    /// A 1Password secret reference instead of item: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time
+    /// code.
     #[serde(rename = "ref")]
-    pub reference: OpReference,
+    pub reference: Option<OpReference>,
     /// The field to fill: a CSS selector (`input[name=password]`, `#otp`).
     pub target: Text<1, 500>,
     /// False to fill without submitting, for a field before the last of its form (a username before its password).
     /// Absent: true.
     pub submit: Option<bool>,
+}
+impl FillCredentialCall {
+    /// What it fills: a vault login's field, or a 1Password reference. The node refuses any other mix: agent-mcp
+    /// checks each field on its own, as the Bun build's mirrors it.
+    pub fn source(&self) -> Result<FillSource<'_>, &'static str> {
+        match (&self.item, self.field, &self.reference) {
+            (Some(item), Some(field), None) => Ok(FillSource::Vault(item, field)),
+            (None, None, Some(reference)) => Ok(FillSource::OnePassword(reference)),
+            (Some(_), None, None) => Err("item goes with its field: username, password or otp"),
+            _ => Err("give item and field, or ref"),
+        }
+    }
+}
+
+/// A `fill_credential`'s source, by [`FillCredentialCall::source`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FillSource<'a> {
+    Vault(&'a crate::vault::VaultItemName, LoginFillField),
+    OnePassword(&'a OpReference),
+}
+
+/// A vault login's field that `fill_credential` fills.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginFillField {
+    Username,
+    Password,
+    Otp,
+}
+
+impl LoginFillField {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Username => "username",
+            Self::Password => "password",
+            Self::Otp => "otp",
+        }
+    }
+}
+
+/// `fill_address`: the node fills a vault address into the page's form (its fields found by `autocomplete`, then by
+/// name and label), only at a checkout recorded in this session, on the item's sites, or on a site of one of the same
+/// person's vault logins. The values never come back.
+#[skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FillAddressCall {
+    /// The address, by id or label; absent: the only one visible, or the one labelled "Home".
+    pub item: Option<crate::vault::VaultItemName>,
+    /// Which of the form's addresses, when it has two.
+    pub part: Option<AddressPart>,
+    /// A CSS selector inside the form to fill; absent: the page's address form.
+    pub target: Option<Text<1, 500>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AddressPart {
+    Shipping,
+    Billing,
 }
 
 brand!(
@@ -1009,6 +1076,32 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn a_fill_names_a_vault_login_and_its_field_or_a_reference() {
+        let call: FillCredentialCall = serde_json::from_value(
+            json!({ "item": "Amazon", "field": "password", "target": "#ap_password" }),
+        )
+        .unwrap();
+        assert!(matches!(
+            call.source(),
+            Ok(FillSource::Vault(_, LoginFillField::Password))
+        ));
+        for bad in [
+            json!({ "item": "Amazon", "target": "#f" }),
+            json!({ "field": "password", "target": "#f" }),
+            json!({ "target": "#f" }),
+            json!({ "item": "Amazon", "field": "password", "ref": "op://Team/Shop/password", "target": "#f" }),
+        ] {
+            let call: FillCredentialCall = serde_json::from_value(bad.clone()).unwrap();
+            assert!(call.source().is_err(), "{bad}");
+        }
+        let pin = json!({ "item": "Amazon", "field": "pin", "target": "#f" });
+        assert!(serde_json::from_value::<FillCredentialCall>(pin).is_err());
+        let address: BrowserCall =
+            serde_json::from_value(json!({ "op": "fill_address", "part": "billing" })).unwrap();
+        assert_eq!(address.op(), "fill_address");
     }
 
     #[test]

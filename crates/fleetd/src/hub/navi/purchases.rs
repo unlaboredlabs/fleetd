@@ -16,7 +16,7 @@ use fleetd_contracts::mcp::{
     ErrorCode, McpToolError, NaviCardSetInput, NaviCardSetOutput, NaviPurchasesInput,
     NaviPurchasesOutput,
 };
-use fleetd_contracts::purchase::{NaviCard, OpItemReference, PurchaseLogEntry};
+use fleetd_contracts::purchase::{CardRef, NaviCard, PurchaseLogEntry};
 
 use super::store;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, error, is_human, require};
@@ -68,8 +68,13 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
 pub fn card(hub: &Hub, r: &ProjectRef) -> Result<Option<NaviCard>, crate::hub::store::StoreError> {
     let kept = hub.db.with(|c| Ok(store::card(c, r)?))?;
     Ok(kept
-        .and_then(|k| OpItemReference::new(k).ok())
-        .map(|reference| NaviCard { reference }))
+        .and_then(|k| CardRef::new(k).ok())
+        .map(|reference| NaviCard {
+            reference,
+            label: None,
+            brand: None,
+            last4: None,
+        }))
 }
 
 /// Exchanges and brokers: paying one buys holdings, which is trading (crypto included), whatever the basket says.
@@ -347,7 +352,12 @@ async fn card_set(
     let r = navi_ref(&hub, input.machine_id, input.project_id)?;
     let reference = input.card.as_ref().map(|c| c.as_str());
     hub.db.with(|c| Ok(store::set_card(c, &r, reference)?))?;
-    let card = input.card.map(|reference| NaviCard { reference });
+    let card = input.card.map(|reference| NaviCard {
+        reference,
+        label: None,
+        brand: None,
+        last4: None,
+    });
     let next = Some(match &card {
         Some(card) => format!(
             "The project pays with {} from now on, with no ask at each purchase.",

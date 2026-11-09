@@ -1588,8 +1588,9 @@ output!(NaviPurchasesOutput {
 input!(NaviCardSetInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card.
-    card: Option<crate::purchase::OpItemReference>,
+    /// A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported
+    /// into the vault, then set); absent: the Navi has no card.
+    card: Option<crate::purchase::CardRef>,
 });
 output!(NaviCardSetOutput {
     card: Option<crate::purchase::NaviCard>,
@@ -3740,6 +3741,210 @@ output!(OnePasswordCardsOutput {
     error: Option<String>,
 });
 
+// vault_*: the vault (W549, vault.rs): logins, cards, addresses and variables, sealed on the hub. Human keys only (the
+// handlers check, by the scope table): agents fill and inject through their nodes and never list, read or change items
+// here. No value crosses in the clear: `vault_save` takes the fields sealed to the hub's box key
+// (`vault_status.hubBoxKey`), `vault_reveal` answers sealed to the one-time key the app sends.
+input!(
+    #[serde(remote = "Self")]
+    VaultListInput {
+        /// Only this scope's items; absent: every item the caller sees.
+        scope: Option<crate::vault::VaultScope>,
+        /// A project's items: with projectId.
+        machine_id: Option<MachineId>,
+        project_id: Option<ProjectId>,
+        /// With projectId: every item that project's work may use instead (its own, its owner's shared with it or of
+        /// an Only me project, and the hub's), as Payments' card picker lists them.
+        usable: Option<bool>,
+        kind: Option<crate::vault::VaultKind>,
+        /// Only items whose label, site or variable name contains it.
+        query: Option<Line<0, 200>>,
+        /// The trash instead: items deleted in the last 30 days.
+        trash: Option<bool>,
+    }
+);
+checked!(VaultListInput, |input| {
+    if input.project_id.is_some() != input.machine_id.is_some() {
+        return Err("projectId goes with its machineId".into());
+    }
+    Ok(())
+});
+output!(VaultListOutput {
+    items: Vec<crate::vault::VaultItemSummary>,
+});
+input!(VaultGetInput {
+    item_id: crate::vault::VaultItemId,
+});
+output!(VaultGetOutput {
+    item: crate::vault::VaultItemSummary,
+    /// Its last 20 audit rows, newest first.
+    activity: Vec<crate::vault::VaultAuditEntry>,
+});
+// A new item (no `itemId`: `kind`, `scope`, its scope's ids, `label` and `sealed`), or a change to one (`itemId`):
+// `sealed` absent changes only what's given of the label, sites and billing address; present, it holds only the
+// changed fields, merged into the stored ones (a field set to "" is cleared; absent or null keeps it). The hub
+// works out the metadata from the merged value.
+input!(
+    #[serde(remote = "Self")]
+    VaultSaveInput {
+        item_id: Option<crate::vault::VaultItemId>,
+        kind: Option<crate::vault::VaultKind>,
+        scope: Option<crate::vault::VaultScope>,
+        /// A project's or an order's item.
+        machine_id: Option<MachineId>,
+        project_id: Option<ProjectId>,
+        workstream_id: Option<WorkstreamId>,
+        label: Option<crate::vault::VaultLabel>,
+        /// A login's or address's sites: hosts, a pasted URL cut to its host by the app.
+        sites: Option<List<crate::purchase::ShopDomain, 0, 50>>,
+        /// kind env: its name.
+        env_name: Option<crate::project_settings::EnvVarName>,
+        /// kind env: never shown in lists. Absent on a new variable: secret.
+        secret: Option<bool>,
+        /// kind card: an address item.
+        billing_address: Option<crate::vault::VaultItemId>,
+        /// `crypto_box_seal(hubBoxKey, utf8 JSON of the kind's fields)`: LoginSecret, CardSecret, AddressSecret,
+        /// EnvSecret.
+        sealed: Option<SealedSecret>,
+    }
+);
+checked!(VaultSaveInput, |input| {
+    if input.item_id.is_none()
+        && (input.kind.is_none()
+            || input.scope.is_none()
+            || input.label.is_none()
+            || input.sealed.is_none())
+    {
+        return Err("a new item takes kind, scope, label and sealed".into());
+    }
+    if input.project_id.is_some() != input.machine_id.is_some() {
+        return Err("projectId goes with its machineId".into());
+    }
+    Ok(())
+});
+output!(VaultSaveOutput {
+    item: crate::vault::VaultItemSummary,
+});
+input!(VaultDeleteInput {
+    item_id: crate::vault::VaultItemId,
+    /// Gone for good now instead of the trash: only an item already in the trash.
+    purge: Option<bool>,
+});
+output!(VaultDeleteOutput {
+    item_id: crate::vault::VaultItemId,
+    /// In the trash until 30 days later; absent once purged.
+    deleted_ms: Option<Count>,
+});
+input!(VaultRestoreInput {
+    item_id: crate::vault::VaultItemId,
+});
+output!(VaultRestoreOutput {
+    item: crate::vault::VaultItemSummary,
+});
+input!(VaultRevealInput {
+    item_id: crate::vault::VaultItemId,
+    /// The fields to reveal, as the kind names them: `password`, `number`, `value`.
+    fields: List<Line<1, 40>, 1, 12, true>,
+    /// The app's one-time X25519 public key for this reveal.
+    reply_key: crate::secrets::BoxPublicKey,
+});
+output!(VaultRevealOutput {
+    /// `crypto_box_seal(replyKey, utf8 JSON {field: value})`.
+    sealed: SealedSecret,
+});
+input!(VaultShareSetInput {
+    item_id: crate::vault::VaultItemId,
+    /// A person item's projects, replacing those before; empty: only its owner's own work.
+    projects: UniqueList<ProjectRef, 0, 200>,
+});
+output!(VaultShareSetOutput {
+    item: crate::vault::VaultItemSummary,
+});
+input!(
+    #[serde(remote = "Self")]
+    VaultAuditInput {
+        item_id: Option<crate::vault::VaultItemId>,
+        machine_id: Option<MachineId>,
+        project_id: Option<ProjectId>,
+        /// Rows before this one (its `n`), for the next page.
+        before: Option<Positive>,
+        /// At most; default 100.
+        limit: Option<Int<1, 500>>,
+    }
+);
+checked!(VaultAuditInput, |input| {
+    if input.project_id.is_some() != input.machine_id.is_some() {
+        return Err("projectId goes with its machineId".into());
+    }
+    Ok(())
+});
+output!(VaultAuditOutput {
+    /// Newest first.
+    entries: Vec<crate::vault::VaultAuditEntry>,
+    /// More rows before the last one.
+    more: bool,
+});
+input!(VaultStatusInput {});
+output!(VaultStatusOutput {
+    #[serde(flatten)]
+    status: crate::vault::VaultStatus,
+});
+input!(VaultUnlockInput {
+    /// The passphrase, sealed to the hub's box key.
+    sealed: SealedSecret,
+});
+output!(VaultUnlockOutput {
+    #[serde(flatten)]
+    status: crate::vault::VaultStatus,
+});
+input!(VaultRotateInput {});
+output!(VaultRotateOutput {
+    key_id: crate::vault::VaultKeyId,
+    /// The items whose data keys it wrapped again.
+    rewrapped: Count,
+});
+input!(VaultImportSearchInput {
+    query: Line<0, 200>,
+    kinds: Option<Vec<crate::vault::VaultKind>>,
+    /// Where to search; default: the first machine online that holds the caller's token.
+    machine_id: Option<MachineId>,
+});
+output!(VaultImportSearchOutput {
+    items: Vec<crate::vault::VaultImportCandidate>,
+    /// Why nothing could be searched, the token masked; absent when it worked.
+    error: Option<String>,
+});
+// Import from 1Password: a lead's proposal (`proposalId`, its ticked `refs` or all; `dismiss` to close it), or the
+// person's own pick (`refs`).
+input!(
+    #[serde(remote = "Self")]
+    VaultImportInput {
+        proposal_id: Option<crate::vault::VaultImportId>,
+        refs: Option<UniqueList<crate::purchase::OpItemReference, 1, 50>>,
+        /// Where they go; default: the proposal's, else the caller's own.
+        scope: Option<crate::vault::VaultScope>,
+        machine_id: Option<MachineId>,
+        project_id: Option<ProjectId>,
+        dismiss: Option<bool>,
+    }
+);
+checked!(VaultImportInput, |input| {
+    if input.proposal_id.is_none() && input.refs.is_none() {
+        return Err("give proposalId or refs".into());
+    }
+    if input.dismiss == Some(true) && input.proposal_id.is_none() {
+        return Err("dismiss goes with a proposalId".into());
+    }
+    if input.project_id.is_some() != input.machine_id.is_some() {
+        return Err("projectId goes with its machineId".into());
+    }
+    Ok(())
+});
+output!(VaultImportOutput {
+    items: Vec<crate::vault::VaultItemSummary>,
+    errors: Vec<crate::vault::VaultImportError>,
+});
+
 // sidebar_order_get, sidebar_order_set: a person's own order of the projects and Navis in their sidebar (W214,
 // `hub/sidebar_order`), the same on each of their desktops; nobody else's sidebar follows it.
 /// The most projects and Navis an order names.
@@ -3918,6 +4123,20 @@ tools! {
     onepassword_remove => OnePasswordRemove, Operate, OnePasswordRemoveInput, OnePasswordRemoveOutput;
     onepassword_test => OnePasswordTest, Operate, OnePasswordTestInput, OnePasswordTestOutput;
     onepassword_cards => OnePasswordCards, Operate, OnePasswordCardsInput, OnePasswordCardsOutput;
+    // Human keys only (the handlers check, by the vault's scope table): the vault (vault.rs).
+    vault_list => VaultList, Read, VaultListInput, VaultListOutput;
+    vault_get => VaultGet, Read, VaultGetInput, VaultGetOutput;
+    vault_save => VaultSave, Operate, VaultSaveInput, VaultSaveOutput;
+    vault_delete => VaultDelete, Operate, VaultDeleteInput, VaultDeleteOutput;
+    vault_restore => VaultRestore, Operate, VaultRestoreInput, VaultRestoreOutput;
+    vault_reveal => VaultReveal, Operate, VaultRevealInput, VaultRevealOutput;
+    vault_share_set => VaultShareSet, Operate, VaultShareSetInput, VaultShareSetOutput;
+    vault_audit => VaultAudit, Read, VaultAuditInput, VaultAuditOutput;
+    vault_status => VaultStatus, Read, VaultStatusInput, VaultStatusOutput;
+    vault_unlock => VaultUnlock, Admin, VaultUnlockInput, VaultUnlockOutput;
+    vault_rotate => VaultRotate, Admin, VaultRotateInput, VaultRotateOutput;
+    vault_import_search => VaultImportSearch, Operate, VaultImportSearchInput, VaultImportSearchOutput;
+    vault_import => VaultImport, Operate, VaultImportInput, VaultImportOutput;
     // Human keys only (the set handler checks): a person's own sidebar order.
     sidebar_order_get => SidebarOrderGet, Read, SidebarOrderGetInput, SidebarOrderGetOutput;
     sidebar_order_set => SidebarOrderSet, Read, SidebarOrderSetInput, SidebarOrderSetOutput;

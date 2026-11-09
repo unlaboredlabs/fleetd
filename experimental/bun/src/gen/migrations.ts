@@ -151,6 +151,7 @@ import m147 from "../../../../crates/fleetd/src/hub/store/migrations/20261108210
 import m148 from "../../../../crates/fleetd/src/hub/store/migrations/202611082200_person_avatars.sql" with { type: "text" };
 import m149 from "../../../../crates/fleetd/src/hub/store/migrations/202611082210_train_waits.sql" with { type: "text" };
 import m150 from "../../../../crates/fleetd/src/hub/store/migrations/202611082300_agent_messages.sql" with { type: "text" };
+import m151 from "../../../../crates/fleetd/src/hub/store/migrations/202611091303_vault.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -304,4 +305,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611082200_person_avatars", sql: m148 },
   { name: "202611082210_train_waits", sql: m149 },
   { name: "202611082300_agent_messages", sql: m150 },
+  { name: "202611091303_vault", sql: m151 },
 ];

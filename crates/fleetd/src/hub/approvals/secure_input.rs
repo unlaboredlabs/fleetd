@@ -51,6 +51,7 @@ impl Approvals {
             )),
             env_name: None,
             fingerprint: None,
+            seal_to: None,
         });
         let new = NewRequest {
             project_ref: contract_project(project),

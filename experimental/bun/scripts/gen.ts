@@ -53,6 +53,7 @@ const HUB_AREAS: Record<string, Area> = {
   train: "hub-train+github", reviews: "hub-train+github", prs: "hub-train+github", checks: "hub-train+github",
   github_app: "hub-train+github",
   approvals: "hub-approvals+secrets+updates+cloud", onepassword: "hub-approvals+secrets+updates+cloud",
+  vault: "hub-approvals+secrets+updates+cloud",
   mcp_oauth: "hub-approvals+secrets+updates+cloud", mcp_servers: "hub-approvals+secrets+updates+cloud",
   claude_accounts: "hub-approvals+secrets+updates+cloud", integrations: "hub-approvals+secrets+updates+cloud",
   update: "hub-approvals+secrets+updates+cloud", cloud: "hub-approvals+secrets+updates+cloud",

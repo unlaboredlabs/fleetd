@@ -434,6 +434,9 @@ pub struct SecretRequest {
     pub env_name: Option<EnvName>,
     /// Set once the node has written the sink; the value itself never reaches the hub in plain text.
     pub fingerprint: Option<SecretFingerprint>,
+    /// The key the app seals the value to: the hub's own box key, for a sink the vault keeps (`env:`, `file:`,
+    /// `order:`). Absent: the sink machine's, as before.
+    pub seal_to: Option<crate::secrets::BoxPublicKey>,
 }
 
 /// One human request, as stored and as every client shows it.

@@ -320,6 +320,29 @@ pub enum SessionCall {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project_id: Option<ProjectId>,
     },
+    /// The migration into the vault: every variable the node keeps (`project-env/`, `order-env/`) and every `env:` and
+    /// `file:` sink (`secret-sinks.json`, each value read from its sink), each sealed to the hub's box key (`to`). The
+    /// files stay: they are the delivery target. Only nodes listing [`crate::node_link::CAP_VAULT`] get it.
+    VaultAdopt {
+        to: crate::secrets::BoxPublicKey,
+    },
+    /// Read 1Password items for import with a person's token, each item's fields sealed to the hub (`to`); the values
+    /// never reach the hub in the clear. Only nodes listing [`crate::node_link::CAP_VAULT`] get it.
+    #[serde(rename_all = "camelCase")]
+    VaultImportRead {
+        person_id: crate::people::PersonId,
+        refs: Vec<crate::purchase::OpItemReference>,
+        to: crate::secrets::BoxPublicKey,
+    },
+    /// Search a person's 1Password for items to import: overviews only (title, category, websites, vault, reference),
+    /// never a value. Only nodes listing [`crate::node_link::CAP_VAULT`] get it.
+    #[serde(rename_all = "camelCase")]
+    VaultImportSearch {
+        person_id: crate::people::PersonId,
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kinds: Option<Vec<crate::vault::VaultKind>>,
+    },
     /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.
     ClaudeModels,
@@ -860,6 +883,21 @@ pub enum SessionOutput {
     OnePasswordCards {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cards: Vec<crate::purchase::OnePasswordCard>,
+        error: Option<String>,
+    },
+    /// Answer to `vault_adopt`: the node's variables and sinks, each sealed to the hub.
+    VaultAdopted {
+        vars: Vec<crate::vault::VaultAdoptVar>,
+        sinks: Vec<crate::vault::VaultAdoptSink>,
+    },
+    /// Answer to `vault_import_read`: each item read, sealed to the hub, and each that couldn't be.
+    VaultImportRead {
+        items: Vec<crate::vault::VaultImportRead>,
+        errors: Vec<crate::vault::VaultImportError>,
+    },
+    /// Answer to `vault_import_search`: the token's matching items, else why not, the token masked.
+    VaultImportFound {
+        items: Vec<crate::vault::VaultImportCandidate>,
         error: Option<String>,
     },
     /// Answer to `claude_models`: each model's id and display name, else why they weren't read, the key masked.

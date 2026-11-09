@@ -204,7 +204,23 @@ pub async fn fill_from(
     given: Option<onepassword::Credential>,
 ) -> Result<BrowserCallResult, McpToolError> {
     let started = Instant::now();
-    let reference = call.reference.to_string();
+    let reference = match call.source() {
+        Ok(fleetd_contracts::browser::FillSource::OnePassword(reference)) => reference.to_string(),
+        Ok(fleetd_contracts::browser::FillSource::Vault(..)) => {
+            return Err(refuse(
+                ErrorCode::Failed,
+                "Filling a vault item needs fleetd's Bun build on this machine.",
+                "fill with ref: op://… meanwhile, or ask the person to run `fleetd update --flavour bun`",
+            ));
+        }
+        Err(why) => {
+            return Err(refuse(
+                ErrorCode::Invalid,
+                why,
+                "call fill_credential again",
+            ));
+        }
+    };
     let target = call.target.to_string();
     let submit = call.submit != Some(false);
     let session = broker.live(thread).ok_or_else(|| {

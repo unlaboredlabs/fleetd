@@ -323,6 +323,7 @@ impl Chat {
                 worktrees_kept: new.worktrees_kept,
                 skill_saved: new.skill_saved,
                 artifact: new.artifact,
+                vault_import: None,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 nudge: None,
                 parts: attachments::show(

@@ -73,6 +73,9 @@ pub(crate) const MACHINE_TABLES: &[&str] = &[
     "artifact_versions",
     "browser_sessions",
     "screen_waits",
+    "vault_shares",
+    "vault_deliveries",
+    "vault_imports",
 ];
 
 /// Tables with a `machine_id` that [`HubStore::machine_remove`] keeps. The event log, the time inspector and the
@@ -98,6 +101,8 @@ pub(super) const MACHINE_KEEPS: &[&str] = &[
     "changes",
     "navi_erases",
     "pair_codes",
+    // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
+    "vault_audit",
 ];
 
 /// [`HubStore::machine_remove`]'s deletes, in the caller's transaction. How many rows went.
@@ -118,6 +123,9 @@ fn forget_machine(conn: &rusqlite::Connection, m: &str) -> rusqlite::Result<usiz
         "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
         "DELETE FROM navi_asks WHERE from_machine_id = ?",
         "DELETE FROM session_places WHERE origin_machine = ?",
+        // Its projects' and orders' items; a person's and the hub's name no machine (a NULL machine_id, so not in
+        // MACHINE_TABLES, whose rows the orphan sweep reads as strings).
+        "DELETE FROM vault_items WHERE machine_id = ?",
     ] {
         n += conn.prepare_cached(sql)?.execute([m])?;
     }
@@ -313,6 +321,7 @@ impl HubStore {
                    OR (checkout_machine_id = ?1 AND checkout_project_id = ?2)",
                 "DELETE FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?",
                 "DELETE FROM session_places WHERE origin_machine = ? AND project_id = ?",
+                "DELETE FROM vault_items WHERE machine_id = ? AND project_id = ?",
             ] {
                 n += conn.prepare_cached(sql)?.execute([m, p])?;
             }

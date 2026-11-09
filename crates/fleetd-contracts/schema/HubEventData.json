@@ -390,6 +390,28 @@
       "type": "string",
       "x-open": true
     },
+    "CardBrand": {
+      "enum": [
+        "visa",
+        "mastercard",
+        "amex",
+        "discover",
+        "diners",
+        "jcb",
+        "unionpay",
+        "other"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "CardLast4": {
+      "pattern": "^[0-9]{4}$",
+      "type": "string"
+    },
+    "CardRef": {
+      "pattern": "^(vault:V[0-9a-f]{32}|op://[^/?\\r\\n]+/[^/?\\r\\n]+)$",
+      "type": "string"
+    },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
       "type": "string"
@@ -926,6 +948,10 @@
         "updatedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "Set when the text was last appended to, or an item's state changed."
+        },
+        "vaultImport": {
+          "$ref": "#/$defs/VaultImportCard",
+          "description": "A system line with an import card: a lead proposed importing items from 1Password into the vault\n(`vault_import_propose`); the person answers with `vault_import`."
         },
         "worktreesKept": {
           "$ref": "#/$defs/WorktreesKept",
@@ -1904,6 +1930,12 @@
         "usage.resumed": {
           "$ref": "#/$defs/UsageEventData"
         },
+        "vault.changed": {
+          "$ref": "#/$defs/VaultChangedData"
+        },
+        "vault.used": {
+          "$ref": "#/$defs/VaultUsedData"
+        },
         "work.claimed": {
           "$ref": "#/$defs/WorkEventData"
         },
@@ -1981,6 +2013,8 @@
         "thread.waiting",
         "usage.breaker",
         "usage.resumed",
+        "vault.changed",
+        "vault.used",
         "work.claimed",
         "work.ended",
         "work.landed",
@@ -2333,10 +2367,20 @@
       "type": "object"
     },
     "NaviCard": {
-      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "description": "The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
       "properties": {
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "label": {
+          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
+          "type": "string"
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
         "ref": {
-          "$ref": "#/$defs/OpItemReference"
+          "$ref": "#/$defs/CardRef"
         }
       },
       "required": [
@@ -3987,6 +4031,252 @@
       "required": [
         "threadId",
         "kind"
+      ],
+      "type": "object"
+    },
+    "VaultAuditAction": {
+      "oneOf": [
+        {
+          "enum": [
+            "fill",
+            "fill_refused",
+            "reveal",
+            "create",
+            "update",
+            "delete",
+            "restore",
+            "share",
+            "import",
+            "rotate",
+            "unlock"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "inject",
+          "description": "A session launched with the item among its variables.",
+          "type": "string"
+        },
+        {
+          "const": "deliver",
+          "description": "The item's value was sent to a machine (env file or sink).",
+          "type": "string"
+        },
+        {
+          "const": "purchase",
+          "description": "A card filled for a recorded purchase.",
+          "type": "string"
+        },
+        {
+          "const": "adopt",
+          "description": "The migration took it in (`vault_adopt`), or found the node's value differs from the hub's record.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "VaultAuditOutcome": {
+      "oneOf": [
+        {
+          "enum": [
+            "ok",
+            "refused",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "pending",
+          "description": "A fill handed to the node, until its `vault_filled`.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultChangedData": {
+      "description": "`vault.changed`: an item was made, changed, deleted, restored or shared. Never a value; vault_list reads it.",
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope"
+        }
+      },
+      "required": [
+        "itemId",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "VaultImportCard": {
+      "description": "A chat message's import card (`ChatMessage.vaultImport`): a lead proposed importing these items; the person ticks\nand taps Import (the `vault_import` tool with `proposalId`) or Dismiss. The only confirm in the vault.",
+      "properties": {
+        "answeredMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "imported": {
+          "description": "How many were imported, once answered.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/VaultImportCardItem"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "proposalId": {
+          "$ref": "#/$defs/VaultImportId"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope",
+          "description": "Where the items go unless the person picks another: the person's own by default."
+        },
+        "state": {
+          "$ref": "#/$defs/VaultImportState"
+        },
+        "why": {
+          "description": "The lead's reason, one line.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposalId",
+        "why",
+        "scope",
+        "items",
+        "state"
+      ],
+      "type": "object"
+    },
+    "VaultImportCardItem": {
+      "description": "One item of an import card.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        },
+        "site": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "title",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "VaultImportId": {
+      "pattern": "^VP[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "VaultImportState": {
+      "enum": [
+        "open",
+        "imported",
+        "dismissed"
+      ],
+      "type": "string"
+    },
+    "VaultItemId": {
+      "pattern": "^V[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "VaultKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "login",
+            "card",
+            "address"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "env",
+          "description": "An environment variable for agents' sessions.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "VaultScope": {
+      "description": "Whose an item is, and so who lists, changes and reveals it, and which work uses it.",
+      "oneOf": [
+        {
+          "const": "person",
+          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
+          "type": "string"
+        },
+        {
+          "const": "order",
+          "description": "One order's variable (`workstreamId` too): that order's agents. Gone when the order closes.",
+          "type": "string"
+        },
+        {
+          "const": "hub",
+          "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultUsedData": {
+      "description": "`vault.used`: an audit row was written. vault_audit reads it.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/VaultAuditAction"
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/VaultAuditOutcome"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "itemId",
+        "n",
+        "action",
+        "outcome"
       ],
       "type": "object"
     },

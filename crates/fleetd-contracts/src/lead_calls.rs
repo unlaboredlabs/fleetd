@@ -407,6 +407,14 @@ pub enum LeadCall {
     SkillSave(SkillSaveCall),
     /// A Navi's final Confirm or Submit click on a site, through its approval mode (hub/navi/confirm.rs).
     ConfirmStep(crate::navi::ConfirmStepCall),
+    /// Made by the node hosting a browser session for its fills from the vault (vault.rs), never by the session itself.
+    VaultFill(crate::vault::VaultFillCall),
+    VaultFilled(crate::vault::VaultFilledCall),
+    /// An agent's `vault_items`: the vault items its session may use, never a value.
+    VaultItems(crate::vault::VaultItemsCall),
+    /// A lead's search of its person's 1Password for items to import, and its proposal (an import card in the chat).
+    VaultImportSearch(crate::vault::VaultImportSearchCall),
+    VaultImportPropose(crate::vault::VaultImportProposeCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -656,6 +664,11 @@ pub enum LeadCallResult {
     ChatRead(ChatReadResult),
     SkillSave(SkillSaveResult),
     ConfirmStep(crate::navi::ConfirmStepResult),
+    VaultFill(crate::vault::VaultFillResult),
+    VaultFilled(crate::vault::VaultFilledResult),
+    VaultItems(crate::vault::VaultItemsResult),
+    VaultImportSearch(crate::vault::VaultImportSearchResult),
+    VaultImportPropose(crate::vault::VaultImportProposeResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

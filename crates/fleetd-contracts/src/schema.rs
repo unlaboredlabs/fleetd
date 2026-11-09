@@ -25,6 +25,7 @@ use crate::tasks::{AgentsCapData, FetchFailedData, TaskEventData};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
 use crate::usage::UsageEventData;
+use crate::vault::{VaultChangedData, VaultSealedShapes, VaultUsedData};
 
 pub const META_SCHEMA: &str = "https://json-schema.org/draft/2020-12/schema";
 
@@ -111,6 +112,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(crate::people::ChatPinsData: ChatPins);
         data!(crate::machine_setup::MachineAddStepData: MachineAddStep);
         data!(crate::mcp::HubUpdateData: HubUpdate);
+        data!(VaultChangedData: VaultChanged);
+        data!(VaultUsedData: VaultUsed);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
@@ -251,6 +254,7 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         ChatMessage,
         ChatBlock,
         ProjectChatState,
+        VaultSealedShapes,
     );
     out.insert("McpTools", mcp_tools_document_for(side));
     out.insert("HubEventData", hub_event_data_document_for(side));

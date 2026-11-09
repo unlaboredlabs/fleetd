@@ -59,6 +59,7 @@ pub mod time;
 pub mod train;
 pub mod ts;
 pub mod usage;
+pub mod vault;
 pub mod verification;
 pub mod wakes;
 pub mod work;

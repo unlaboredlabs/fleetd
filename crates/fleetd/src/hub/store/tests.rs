@@ -1537,6 +1537,17 @@ fn machine_tables(c: &rusqlite::Connection) -> Vec<(String, Vec<Column>)> {
 /// A row of `machine`'s in each of `tables`, under project `p-shared` and thread `t-shared`.
 fn seed_machine(c: &rusqlite::Connection, tables: &[(String, Vec<Column>)], machine: &str, n: i64) {
     for (t, columns) in tables {
+        if t == "vault_items" {
+            // Its checks hold each scope to its ids: a project's variable.
+            c.execute(
+                "INSERT INTO vault_items (item_id, kind, scope, machine_id, project_id, env_name, label, meta, sealed,
+                   key_id, version, created_ms, created_by, updated_ms, updated_by)
+                 VALUES (?1, 'env', 'project', ?2, 'p-shared', 'X', 'X', '{}', x'00', 'k1', 1, ?3, 's', ?3, 's')",
+                rusqlite::params![format!("V-{machine}"), machine, n],
+            )
+            .unwrap();
+            continue;
+        }
         let values: Vec<String> = columns
             .iter()
             .map(|(name, ty, nullable)| match name.as_str() {
@@ -1596,8 +1607,14 @@ fn removing_a_machine_forgets_its_rows_and_leaves_anothers_with_the_same_project
     // their own rule.
     for (t, columns) in &tables {
         let by_id = columns.iter().any(|(name, ..)| name == "machine_id");
-        let own_rule =
-            ["repos", "navi_asks", "session_places", "slot_claims"].contains(&t.as_str());
+        let own_rule = [
+            "repos",
+            "navi_asks",
+            "session_places",
+            "slot_claims",
+            "vault_items",
+        ]
+        .contains(&t.as_str());
         assert!(
             MACHINE_TABLES.contains(&t.as_str()) || MACHINE_KEEPS.contains(&t.as_str()) || own_rule,
             "{t} names a machine: add it to MACHINE_TABLES, or to MACHINE_KEEPS with why"
@@ -1662,7 +1679,8 @@ fn forgetting_a_removed_machines_project_leaves_its_other_project_and_anothers_w
             1,
             "devbox's row in {t} stays"
         );
-        let own_rule = ["repos", "navi_asks", "session_places"].contains(&t.as_str());
+        let own_rule =
+            ["repos", "navi_asks", "session_places", "vault_items"].contains(&t.as_str());
         let forgot = !MACHINE_KEEPS.contains(&t.as_str())
             && (own_rule
                 || (MACHINE_TABLES.contains(&t.as_str())
