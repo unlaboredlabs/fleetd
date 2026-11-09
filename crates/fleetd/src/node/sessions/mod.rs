@@ -32,10 +32,10 @@ use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::project_settings::{ProjectWorktree, ProjectWorktrees};
 use fleetd_contracts::sessions::{
-    CloneProgressFrame, FOLDER_TAKEN, FailureClass, ItemKind, ItemStatus, MachineEvent,
-    MachineEventFrame, MessageRole, PENDING_INPUT_MAX, PendingPermission, PermissionDecision,
-    ProjectInfo, RunEnd, RunFailure, RunInfo, RunStatus, RunUsage, RunnerInfo, SendAccepted,
-    SendMode, SendNow, SessionCall, SessionCallFrame, SessionChanges, SessionError,
+    CloneProgressFrame, FOLDER_TAKEN, FailureClass, ItemKind, ItemStatus, LoginStatus,
+    MachineEvent, MachineEventFrame, MessageRole, PENDING_INPUT_MAX, PendingPermission,
+    PermissionDecision, ProjectInfo, RunEnd, RunFailure, RunInfo, RunStatus, RunUsage, RunnerInfo,
+    SendAccepted, SendMode, SendNow, SessionCall, SessionCallFrame, SessionChanges, SessionError,
     SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult, SessionRole,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
     ThreadMessage, ThreadSnapshot, WorktreeBase,
@@ -4778,12 +4778,35 @@ impl SessionService {
         self.inner.config.runner_env()
     }
 
+    /// The runner as this machine's work runs it: on its own login, or, while that is logged out, on the Claude account
+    /// the hub sealed to this node, as a session on it runs. A cloud machine has no login of its own, only the hub's,
+    /// and read as logged out it was degraded and every message to its agents refused.
+    async fn probe(&self) -> RunnerInfo {
+        let mut env = self.inner.config.runner_env();
+        let info = self.inner.runner.probe(&env).await;
+        if info.login != LoginStatus::LoggedOut {
+            return info;
+        }
+        let home = &self.inner.config.home;
+        let Some(Ok((vars, _))) = super::claude_accounts::held(home)
+            .map(|account| super::claude_accounts::env_for(home, &account))
+        else {
+            return info;
+        };
+        super::claude_accounts::put_on(&mut env, vars);
+        let on_account = self.inner.runner.probe(&env).await;
+        if on_account.login == LoginStatus::LoggedIn {
+            on_account
+        } else {
+            info
+        }
+    }
+
     /// Probes the runner now, whatever the last probe said: after Claude Code was installed.
     pub async fn reprobe(&self) -> RunnerInfo {
         let _probing = self.inner.probing.lock().await;
         let started = Instant::now();
-        let env = self.inner.config.runner_env();
-        let info = self.inner.runner.probe(&env).await;
+        let info = self.probe().await;
         let shown = info.clone();
         self.health_changed(|h| h.probed(info, started));
         self.health().info().unwrap_or(shown)
@@ -4804,8 +4827,7 @@ impl SessionService {
             return info;
         }
         let started = Instant::now();
-        let env = self.inner.config.runner_env();
-        let info = self.inner.runner.probe(&env).await;
+        let info = self.probe().await;
         let shown = info.clone();
         self.health_changed(|h| h.probed(info, started));
         self.health().info().unwrap_or(shown)

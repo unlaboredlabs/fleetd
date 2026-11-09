@@ -35,7 +35,7 @@ import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
-import { accountSecrets, envFor, putOn } from "../actions/accounts.ts";
+import { accountSecrets, envFor, held, putOn } from "../actions/accounts.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
 import * as mcp from "../actions/mcp.ts";
 import { fallback as onepasswordFallback } from "../actions/onepassword.ts";
@@ -2173,7 +2173,19 @@ export class SessionService {
 
   async #probe(): Promise<RunnerInfo> {
     const started = Date.now();
-    const info = await claude.probe(this.config.claudeBin, runnerEnv(this.config));
+    const env = runnerEnv(this.config);
+    let info = await claude.probe(this.config.claudeBin, env);
+    // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. A cloud
+    // machine has no login of its own, only the hub's, and read as logged out it was degraded and every message to
+    // its agents refused.
+    const account = info.login === "logged_out" ? held(this.home) : undefined;
+    if (account) {
+      try {
+        putOn(env, envFor(this.home, account).vars);
+        const onAccount = await claude.probe(this.config.claudeBin, env);
+        if (onAccount.login === "logged_in") info = onAccount;
+      } catch {}
+    }
     // No session host: claude may be fine, but no session starts here. Both hubs read a logged-in runner as able to
     // take sessions whatever its problem says (runner_problem), so its login goes out as unknown: the hub shows the
     // machine degraded with this problem, and places no task here.
