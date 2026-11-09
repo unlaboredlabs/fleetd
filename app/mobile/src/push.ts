@@ -244,14 +244,15 @@ export interface ChatAt {
 
 /**
  * The chat a tapped notification opens: its own, or the approval's, scrolled to the card that answers it. An approval
- * that didn't say its chat is found among the open requests: undefined until they are read, null once they are and it
- * isn't there (answered meanwhile), when the app just opens.
+ * that didn't say its chat is found among the open requests (`read`: read from the hub since the app started, not
+ * only kept from before): undefined until they are read, null once they are and it isn't there (answered meanwhile),
+ * when the app just opens.
  */
-export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefined): ChatAt | null | undefined => {
+export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefined, read = requests !== undefined): ChatAt | null | undefined => {
   if (route.t === "chat") return { key: route.key };
   if (route.t === "screen") return { key: route.key, sessionId: route.sessionId };
   const key = route.key ?? requests?.find((r) => r.requestId === route.requestId)?.projectRef;
-  if (key === undefined) return requests === undefined ? undefined : null;
+  if (key === undefined) return read ? null : undefined;
   return { key: typeof key === "string" ? key : keyOf(key), requestId: route.requestId };
 };
 

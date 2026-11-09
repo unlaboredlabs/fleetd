@@ -44,9 +44,10 @@ export type RootParams = {
   /**
    * `messageId`: a search hit; `requestId`: an approval, at its card. Either is scrolled to and lit for a moment.
    * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again (a
-   * chat's own, with no message or approval, at its newest).
+   * chat's own, with no message or approval, at its newest). `at`: opened again after the app was closed, scrolled
+   * where it was (cache.ts OpenChat): `offset` points up from its newest end, its newest `rows` drawn from the first.
    */
-  Chat: { key: Key; messageId?: string; requestId?: string; tap?: number };
+  Chat: { key: Key; messageId?: string; requestId?: string; tap?: number; at?: { offset: number; rows: number } };
   /** A project's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
   Screen: { key: Key; sessionId: string };
 } & ManageParams;
