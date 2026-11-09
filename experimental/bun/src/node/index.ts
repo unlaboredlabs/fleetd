@@ -12,6 +12,7 @@ import { registerAreas, stopAreas } from "./areas.ts";
 import { agentsMac, isAgentsMac, mayJoin } from "./agents_mac/index.ts";
 import { helloCapabilities, refusedOnMac } from "./link/tool_only.ts";
 import { findHelper } from "./runner/helper.ts";
+import { current as currentScope } from "./runner/scope.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
 import { GatedRuns } from "./gated/index.ts";
@@ -221,6 +222,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const identity = loadOrCreateIdentity(home);
   const boxKey = loadOrCreateBoxKey(home);
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
+  // Probed now rather than by the first spawn.
+  void currentScope();
   const sessions = await SessionService.start(configFor(home, fleetdDir(), nativeBin(), boxKey));
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
@@ -303,6 +306,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx);
         void runNodeAction(frame as unknown as NodeAction, {
           hold: () => sessions.hold(),
+          unhostedMidStep: () => sessions.unhostedMidStep(),
+          scoped: async () => (await currentScope()) !== undefined,
           claude: {
             installer: new RealClaude(sessions.config.claudeBin, runnerEnv(sessions.config)),
             binary: sessions.config.claudeBin,

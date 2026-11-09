@@ -21,6 +21,7 @@ import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
+import { current as currentScope } from "../runner/scope.ts";
 import { HostLink, LaunchError, launch as launchHost, marker, shutdown, startOf, stop as stopHost, sweep, type SessionCommand } from "../runner/host.ts";
 import { applyProjectEnv, copyProjectEnv, forgetOrderVars, forgetProjectEnv, orderEnvFile, orderVarsForSpawn, projectSecrets, projectVars } from "../secrets/env.ts";
 import { writeAtomic } from "../secrets/files.ts";
@@ -1117,6 +1118,8 @@ export class SessionService {
         args: claude.args(spec),
         cwd: spec.cwd,
         env: { ...claude.spawnEnv(spec, mark) },
+        // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
+        ...(existsSync(this.config.claudeBin) ? { scope: await currentScope() } : {}),
       });
     } catch (error) {
       if (error instanceof LaunchError && error.refused?.missing && !existsSync(this.config.claudeBin))
@@ -2013,6 +2016,15 @@ export class SessionService {
   }
 
   /** Holds every agent's tool call that hasn't started yet (node/hold.rs); how many sessions are mid-step. */
+  /**
+   * How many sessions that aren't hosted are mid-step, holding none: the node's restart cuts their step off, while hosted
+   * ones carry on through it (`hold` with `unhosted`). Every session here runs under a host (none starts without one),
+   * so none.
+   */
+  unhostedMidStep(): number {
+    return 0;
+  }
+
   hold(): number {
     const path = join(this.home, "update", "hold");
     mkdirSync(join(this.home, "update", "held"), { recursive: true });
