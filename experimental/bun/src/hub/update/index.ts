@@ -11,7 +11,7 @@
 // back, takes it from there (`resume`): it reads the watcher's verdict, then updates the nodes, all at once, and
 // learns how each came back from the version it reconnects with. Each machine whose node runs the new build then
 // brings its Claude Code to the version that build was tested with.
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type {
   AutoUpdateResult,
@@ -25,7 +25,7 @@ import type {
   UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { checkedTo, channelOf, type Channel, Failure, type Feed, isBuild, release, replaceFile, restore, sums, swap, verifiedTo } from "../../update/index.ts";
+import { checkedTo, channelOf, type Channel, Failure, type Feed, isBuild, release, replaceFile, restore, sums, swap, updateHelper } from "../../update/index.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
@@ -845,12 +845,10 @@ class Drive {
     const kept = this.u.kept();
     const prev = join(this.u.dir, "fleetd.prev");
     await this.u.withFetching(async () => {
-      if (existsSync(kept)) {
-        const s = await sums(feed);
-        if (!isBuild(kept, s, asset)) await checkedTo(feed, s, asset, kept);
-      } else {
-        await verifiedTo(feed, asset, kept);
-      }
+      const s = await sums(feed);
+      if (!isBuild(kept, s, asset)) await checkedTo(feed, s, asset, kept);
+      // The session host beside a Bun build moves with it.
+      await updateHelper(feed, s, exe);
     });
     let previous: Uint8Array;
     try {

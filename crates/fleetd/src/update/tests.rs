@@ -663,6 +663,20 @@ fn builds_follow_their_channel() {
     assert!(Channel::parse("beta").is_err());
 }
 
+/// Each flavour updates to its own asset, so a Rust build never installs the Bun one unless told to (and back).
+#[test]
+fn each_flavour_has_its_own_asset() {
+    assert_eq!(FLAVOUR, Flavour::Rust);
+    assert_eq!(cli_asset(), asset_of(Flavour::Rust));
+    let rust = asset_of(Flavour::Rust).unwrap();
+    let bun = asset_of(Flavour::Bun).unwrap();
+    assert!(rust.starts_with("fleetd-") && !rust.starts_with("fleetd-bun-"));
+    assert_eq!(bun, rust.replacen("fleetd-", "fleetd-bun-", 1));
+    assert_eq!(Flavour::parse("bun"), Ok(Flavour::Bun));
+    assert_eq!(Flavour::parse("rust").map(Flavour::as_str), Ok("rust"));
+    assert!(Flavour::parse("ts").is_err());
+}
+
 /// Nightly is what Edge was called before D203: a build from then, and `--channel nightly` or
 /// `FLEETD_CHANNEL=nightly` in someone's script, all follow edge.
 #[test]

@@ -1,9 +1,13 @@
-//! `fleetd update [--check] [--channel edge|stable] [--now]`: replaces this binary with the latest build of a release
+//! `fleetd update [--check] [--channel edge|stable] [--flavour rust|bun] [--now]`: replaces this binary with the latest build of a release
 //! channel, then restarts the hub and node services that run this binary: the hub at once, the node once its agents
 //! finish the step they're on (it holds the ones that haven't started, node/hold.rs), 2 minutes at most; `--now`
 //! doesn't wait. What a restart cuts off carries on by itself afterwards (see `crate::update`). The desktop app's
 //! Update button does the same through the hub (`hub_update`), for the hub and every node; this is the way for a
 //! machine without the app.
+//!
+//! `--flavour bun` switches the machine to the Bun build of the channel's release (experimental/bun), with the release's
+//! Rust build beside it as its session host (`crate::update::HELPER`); the Bun build's `--flavour rust` switches back.
+//! Each flavour then updates to its own builds (docs/cutover/bun.md).
 //!
 //! The desktop app updates itself (electron-updater, app/desktop/src/main/updater.ts). This only replaces the GPUI app
 //! the Electron one succeeded, which can't.
@@ -16,7 +20,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::update::service::{self, Service};
-use crate::update::{Channel, HttpFeed, replace_file};
+use crate::update::{Channel, FLAVOUR, Flavour, HELPER, HttpFeed, asset_of, replace_file};
 
 pub use crate::version;
 
@@ -28,6 +32,9 @@ pub struct UpdateArgs {
     /// edge or stable (nightly, Edge's earlier name, is edge). Default: the channel this build came from.
     #[arg(long)]
     pub channel: Option<String>,
+    /// rust or bun: the implementation to switch this machine to. Default: the one it runs.
+    #[arg(long)]
+    pub flavour: Option<String>,
     /// Restart the node without waiting for its agents to finish their step.
     #[arg(long)]
     pub now: bool,
@@ -43,10 +50,19 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         None => Channel::of(current, option_env!("FLEETD_VERSION").is_some()),
     };
     let channel_name = channel.as_str();
+    let flavour = match args.flavour.as_deref() {
+        Some(f) => Flavour::parse(f).map_err(|e| anyhow!(e))?,
+        None => FLAVOUR,
+    };
+    let switching = flavour != FLAVOUR;
     let feed = HttpFeed::new(channel.base_url());
     let release = crate::update::release(&feed).await?;
 
-    let cli_latest = release.cli_version.as_deref().filter(|v| *v != current);
+    // A switch installs the other flavour's build of the newest release, even one of this version.
+    let cli_latest = release
+        .cli_version
+        .as_deref()
+        .filter(|v| switching || *v != current);
     let app = installed_app();
     if let Some(a) = &app {
         a.tidy();
@@ -71,6 +87,13 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         .filter(|v| cli_latest.is_none() && *v != current && *v != "0.0.0");
 
     match (cli_latest, release.cli_version.as_deref()) {
+        (Some(v), _) if switching => println!(
+            "fleetd {} ({}) -> {} ({}) ({channel_name})",
+            crate::version_shown(current),
+            FLAVOUR.as_str(),
+            crate::version_shown(v),
+            flavour.as_str()
+        ),
         (Some(v), _) => println!(
             "fleetd {} -> {} ({channel_name})",
             crate::version_shown(current),
@@ -94,7 +117,12 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     }
     let restart_due = !services.is_empty() && (cli_latest.is_some() || pending.is_some());
     if args.check || (!restart_due && gpui.is_none()) {
-        if args.check && (cli_latest.is_some() || gpui.is_some()) {
+        if args.check && switching {
+            println!(
+                "run `fleetd update --flavour {}` to install",
+                flavour.as_str()
+            );
+        } else if args.check && (cli_latest.is_some() || gpui.is_some()) {
             println!("run `fleetd update` to install");
         } else if args.check && pending.is_some() {
             println!("run `fleetd update` to restart it");
@@ -108,10 +136,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
                 "this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh"
             );
         }
-        let asset = crate::update::cli_asset().map_err(|e| anyhow!(e))?;
-        crate::update::verified_to(&feed, &asset, &exe)
-            .await
-            .with_context(|| format!("replacing {}", exe.display()))?;
+        install(&feed, flavour, &exe).await?;
         println!("updated {}", exe.display());
     }
     if restart_due {
@@ -133,6 +158,25 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         println!("updated {}", app.path().display());
         println!("if the earlier fleetd app is open, quit it and open the new one");
     }
+    Ok(())
+}
+
+/// Puts the release's `flavour` build at `exe`. A Bun build gets the release's Rust one beside it first, as its session
+/// host ([`HELPER`]), which is also the Rust build a switch back can put in place without a download.
+async fn install(feed: &HttpFeed, flavour: Flavour, exe: &Path) -> Result<()> {
+    let sums = crate::update::sums(feed).await?;
+    if flavour == Flavour::Bun {
+        let helper = exe.with_file_name(HELPER);
+        let rust = asset_of(Flavour::Rust).map_err(|e| anyhow!(e))?;
+        crate::update::checked_to(feed, &sums, &rust, &helper)
+            .await
+            .with_context(|| format!("putting the session host at {}", helper.display()))?;
+        println!("put the Rust build beside it as {}", helper.display());
+    }
+    let asset = asset_of(flavour).map_err(|e| anyhow!(e))?;
+    crate::update::checked_to(feed, &sums, &asset, exe)
+        .await
+        .with_context(|| format!("replacing {}", exe.display()))?;
     Ok(())
 }
 

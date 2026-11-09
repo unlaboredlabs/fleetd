@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { UpdateStage } from "../../shared/contracts.ts";
 import { VERSION } from "../../shared/version.ts";
 import { HEALTH_WAIT_SECS, readVerdict, start as startWatcher, upPath, type Plan } from "../../update/finish.ts";
-import { baseUrl, checkedTo, cliAsset, Failure, HttpFeed, installedExe, isBuild, release, replaceFile, restore, runningBinary, sums, swap, type Feed } from "../../update/index.ts";
+import { baseUrl, checkedTo, cliAsset, Failure, HttpFeed, installedExe, isBuild, release, replaceFile, restore, runningBinary, sums, swap, updateHelper, type Feed } from "../../update/index.ts";
 import { isHubService, services, type Service } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
 
@@ -132,6 +132,7 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
       }
     } else {
       if (!isBuild(fetched(p), s, p.asset)) await checkedTo(feed, s, p.asset, fetched(p));
+      await updateHelper(feed, s, p.exe);
       swap(p.exe, fetched(p), running, prev);
     }
     rmSync(fetched(p), { force: true });

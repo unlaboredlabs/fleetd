@@ -601,8 +601,45 @@ fn hex(digest: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Which implementation a fleetd build is: this Rust one, or the Bun/TypeScript port (experimental/bun). Each updates to
+/// its own flavour's asset, so a machine changes flavour only when `fleetd update --flavour` says so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flavour {
+    Rust,
+    Bun,
+}
+
+impl Flavour {
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name {
+            "rust" => Ok(Self::Rust),
+            "bun" => Ok(Self::Bun),
+            other => Err(format!("unknown flavour {other:?}: use rust or bun")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rust => "rust",
+            Self::Bun => "bun",
+        }
+    }
+}
+
+/// The flavour this build is.
+pub const FLAVOUR: Flavour = Flavour::Rust;
+
+/// The Rust build a Bun one hosts its sessions under, beside it (experimental/bun/src/node/runner/helper.ts). It is
+/// also the Rust build a switch back to Rust can put in place without downloading anything (docs/cutover/bun.md).
+pub const HELPER: &str = "fleetd-session-host";
+
 /// This platform's CLI asset: `fleetd-<os>-<arch>`.
 pub fn cli_asset() -> Result<String, String> {
+    asset_of(FLAVOUR)
+}
+
+/// This platform's asset of `flavour`: `fleetd-<os>-<arch>` for Rust, `fleetd-bun-<os>-<arch>` for Bun.
+pub fn asset_of(flavour: Flavour) -> Result<String, String> {
     let os = if cfg!(target_os = "macos") {
         "darwin"
     } else {
@@ -613,7 +650,10 @@ pub fn cli_asset() -> Result<String, String> {
         "aarch64" => "arm64",
         other => return Err(format!("no fleetd release build for {other}")),
     };
-    Ok(format!("fleetd-{os}-{arch}"))
+    Ok(match flavour {
+        Flavour::Rust => format!("fleetd-{os}-{arch}"),
+        Flavour::Bun => format!("fleetd-bun-{os}-{arch}"),
+    })
 }
 
 /// The installed binary this process was started from: the path the services name. Linux shows a binary replaced
