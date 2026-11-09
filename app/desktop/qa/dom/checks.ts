@@ -250,7 +250,9 @@ export function runChecks(opts: CheckOptions): Finding[] {
   const fixedParent = (el: Element) => el.parentElement !== null && style(el.parentElement).position === "fixed";
   const occluders = [...document.body.querySelectorAll("*")].filter((el) => {
     const s = style(el);
-    return (s.position === "sticky" || s.position === "fixed" || fixedParent(el) || el.closest("[data-floats]") !== null) && opaque(s) && !hidden(el);
+    // Glass drawn under a box's content (its ::before, as the composer's pill does) hides what is under it as well.
+    const floats = s.position === "sticky" || s.position === "fixed" || fixedParent(el) || el.closest("[data-floats]") !== null;
+    return floats && (opaque(s) || opaque(getComputedStyle(el, "::before"))) && !hidden(el);
   });
   // `v` minus `hit` (a rect inside it): what is left above, below, and beside it, at most four pieces.
   const minus = (v: Rect, hit: Rect): Rect[] =>

@@ -4,6 +4,7 @@
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button, cx, StateGlyph, Text, useBeatRef, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -290,6 +291,8 @@ export function ChatList(props: {
   under?: boolean;
   /** The composer's island floats over the list's end: its room there, px, which the last row scrolls clear of. */
   inset?: number | undefined;
+  /** Where Latest goes: the end of the island's band, beside the live strip rather than under it. */
+  latestSlot?: HTMLElement | null | undefined;
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
@@ -391,6 +394,13 @@ export function ChatList(props: {
     unpin.current?.();
     virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
   };
+  const latestButton = (
+    // A press keeps the cursor in the box: it would otherwise go to the button, which then goes.
+    <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
+      {latest} <span aria-hidden>↓</span>
+    </Button>
+  );
+  const { latestSlot } = props;
 
   // The composer's island growing or shrinking with its words changes the room at the end. At the end, the end stays in
   // view: the last row rides up with the island (glide.ts sees the list grow and glides on its growing spring; with
@@ -440,14 +450,11 @@ export function ChatList(props: {
           />
         )}
       />
-      {latest !== undefined ? (
-        <div className={s.latest}>
-          {/* A press keeps the cursor in the box: it would otherwise go to the button, which then goes. */}
-          <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
-            {latest} <span aria-hidden>↓</span>
-          </Button>
-        </div>
-      ) : null}
+      {latest === undefined ? null : latestSlot ? (
+        createPortal(latestButton, latestSlot)
+      ) : (
+        <div className={s.latest}>{latestButton}</div>
+      )}
     </div>
   );
 }

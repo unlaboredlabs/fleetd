@@ -12,6 +12,10 @@
  * hairline inside its edge, a brighter rim along its top and a soft lift under it.
  */
 .box {
+  position: relative;
+  /* Its glass under its words (::before), not on it: a backdrop filter on the box would make it the containing block of
+     the fixed `$` list (SkillPicker), which is placed in the window's coordinates. */
+  isolation: isolate;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
@@ -20,12 +24,20 @@
   padding: var(--space-2);
   /* Half its one-line height (8 + 28 + 8): round ends, which stay round as it grows. */
   border-radius: 22px;
+}
+.box::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
   box-shadow:
     inset 0 0 0 1px var(--glass-edge),
     inset 0 1px 0 var(--glass-rim),
     var(--glass-lift);
+  pointer-events: none;
 }
 /* What goes with the words takes a row of its own over them; the clip, the words and the buttons share the last. */
 .box > :not(.lead, .input, .tools) {
@@ -33,7 +45,7 @@
 }
 /* Focused, its edge darkens a step towards a control's (the caret shows where typing goes): a dark ring around the
    whole pill would weigh more than the words in it, and it has the cursor most of the time. */
-.box:has(> .input:focus-visible) {
+.box:has(> .input:focus-visible)::before {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--control-border) 55%, transparent),
     inset 0 1px 0 var(--glass-rim),
@@ -41,7 +53,7 @@
 }
 /* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
 @media (prefers-reduced-transparency: reduce) {
-  .box {
+  .box::before {
     background: var(--raised);
     backdrop-filter: none;
   }

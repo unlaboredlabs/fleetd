@@ -43,15 +43,25 @@
   contain: layout;
   container-type: inline-size;
 }
-/* A glass capsule at the right end of the island's band, its right edge on the pill's: the live strip's capsule
-   starts from the band's left. */
+/* With no island to hold it (ChatList's latestSlot), over the conversation's end. */
 .latest {
   position: fixed;
   z-index: 3;
-  bottom: calc(var(--island-gap) + var(--island-h) + 6px);
-  right: calc(max(0px, (100% - var(--measure) - 2 * var(--pad) - 10px) / 2) + var(--pad) + 10px);
+  bottom: var(--island-inset);
+  left: 50%;
+  transform: translateX(-50%);
 }
-.latest > button {
+/* In the island's band: at its end, a glass capsule like the strip's, which gives way to it. */
+.latestSlot {
+  flex: none;
+  display: flex;
+  margin-inline-start: auto;
+}
+.latestSlot:empty {
+  display: none;
+}
+.latest > button,
+.latestSlot > button {
   height: var(--row);
   border-color: transparent;
   border-radius: 999px;
@@ -63,7 +73,8 @@
     var(--glass-lift);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .latest > button {
+  .latest > button,
+  .latestSlot > button {
     background: var(--raised);
     backdrop-filter: none;
   }

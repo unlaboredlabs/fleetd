@@ -152,6 +152,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const stage = useRef<HTMLDivElement>(null);
   const island = useRef<HTMLDivElement>(null);
   const [inset, setInset] = useState<number>();
+  const [latestSlot, setLatestSlot] = useState<HTMLSpanElement | null>(null);
   const missing = data.missing;
   useLayoutEffect(() => {
     const st = stage.current;
@@ -346,7 +347,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <EmptyChat project={project} title={title} plain={plain} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
-            <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} />
+            <ChatList rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
           </BubbleActionsContext.Provider>
         )}
         <div className={s.fade} aria-hidden />
@@ -360,6 +361,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                   <LiveStrip project={project} />
                 </Boundary>
               ) : null}
+              {/* Latest ↓, while scrolled up: at the band's end, the strip giving way to it. */}
+              <span ref={setLatestSlot} className={s.latestSlot} />
             </div>
             <ChatComposer
               project={project}
