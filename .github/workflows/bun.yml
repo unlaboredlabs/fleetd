@@ -96,6 +96,11 @@ jobs:
         run: cargo test --locked -q -p fleetd --test session_host
         env:
           FLEETD_BIN: ${{ github.workspace }}/experimental/bun/dist/fleetd
+      # The compiled binary, run as a user runs it: a closed pipe, a second fleet's FLEETD_HOME, the installer and a
+      # node restart that re-adopts a hosted session (test/blackbox).
+      - name: Black-box tests on the binary
+        if: steps.scope.outputs.run == 'true'
+        run: bun run blackbox
       - uses: actions/setup-node@v7
         if: steps.scope.outputs.run == 'true'
         with:
