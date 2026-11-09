@@ -234,6 +234,12 @@ export type NodeAction = {
   claude?: string;
   code?: string;
   screens?: unknown;
+  /**
+   * `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and count
+   * only the sessions mid-step that aren't hosted (a Navi's); else hold every one, as without it. An older node ignores
+   * it and holds every one, answering no `hosted`.
+   */
+  unhosted?: boolean;
 };
 
 /** How long a `hold` lasts unless the hub asks again. */
@@ -249,8 +255,15 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
+  /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */
   steps?: number;
   hosts?: HostCheck[];
+  /**
+   * `hold` with `unhosted`: the host protocol of the node's session hosts, when each runs in a systemd scope of its own
+   * that outlives the node, so its agent carries on through the restart. Absent without scopes (their hosts die with
+   * the node), and from an older node.
+   */
+  hosted?: number;
 };
 
 /** Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. */

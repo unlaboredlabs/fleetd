@@ -2,6 +2,7 @@
 // the hold ahead of an update, Claude Code's install and its login from the app. Each always answers, in plain words.
 // Screen settings are the screens' areas' (node/browser and the rest) and answer as not done until they take them.
 import { exec, headUtf16, type Env } from "../util.ts";
+import { PROTOCOL as HOST_PROTOCOL } from "../runner/host.ts";
 import { ALREADY, bringTo, type Claude } from "../runner/install.ts";
 import type { Logins } from "../runner/login.ts";
 import type { NodeAction, NodeActionResult } from "../wire.ts";
@@ -24,6 +25,10 @@ export async function probeHost(): Promise<NonNullable<NodeActionResult["probe"]
 export type ActionHooks = {
   /** Holds every agent's tool call that hasn't started yet; how many sessions are still mid-step. */
   hold?: () => number;
+  /** How many sessions that aren't hosted are mid-step, holding none (`hold` with `unhosted`). */
+  unhostedMidStep?: () => number;
+  /** Whether this machine's session hosts start in systemd scopes of their own, which outlive the node (scope.ts). */
+  scoped?: () => Promise<boolean>;
   /** The machine's Claude Code, and its login, with the runner's environment. */
   claude?: { installer: Claude; binary: string; env: () => Env; logins: Logins; reprobe: () => Promise<{ login: string }> };
   /** A self-update: install `update` and restart (node/update). */
@@ -42,6 +47,12 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
     case "probe":
       return answer(frame.id, true, "probed", { probe: await probeHost() });
     case "hold": {
+      // Hosts outlive the node only in scopes of their own: without one a host shares the node's cgroup.
+      const scoped = frame.unhosted === true && (await hooks.scoped?.()) === true;
+      if (scoped) {
+        const steps = hooks.unhostedMidStep?.() ?? 0;
+        return answer(frame.id, true, `hosted agents carry on; ${steps} not hosted mid-step`, { steps, hosted: HOST_PROTOCOL });
+      }
       const steps = hooks.hold?.() ?? 0;
       return answer(frame.id, true, `holding; ${steps} mid-step`, { steps });
     }

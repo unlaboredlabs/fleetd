@@ -2,9 +2,9 @@
 # Bun port map
 
 Every HTTP route, /app message, MCP tool, node link message, session and lead call, agent-mcp tool, CLI command,
-background loop and heartbeat field in the Rust tree, with the Bun module that ports it (the Rust module's path under
-`src/`). To tick an item when its module does it and a test covers it, add its `<!-- key -->` as a line of
-`src/<module>/PORTED` (sorted), then run `bun run gen`.
+background loop, heartbeat field and module without a wire surface in the Rust tree, with the Bun module that ports it
+(the Rust module's path under `src/`). To tick an item when its module does it and a test covers it, add its
+`<!-- key -->` as a line of `src/<module>/PORTED` (sorted), then run `bun run gen`.
 
 ## hub-core
 
@@ -437,6 +437,10 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] heartbeat `load.limits` → `src/node/load` <!-- hb:heartbeat `load.limits` -->
 - [x] heartbeat `load.disk` → `src/node/load` <!-- hb:heartbeat `load.disk` -->
 - [x] heartbeat `load.network` → `src/node/load` <!-- hb:heartbeat `load.network` -->
+
+### Modules without a wire surface
+
+- [x] `node/runner/scope.rs` → `src/node/runner` (each session host in a systemd scope of its own, so agents outlive the node's restart) <!-- mod:`node/runner/scope.rs` -->
 
 ## node-browser+screens
 
