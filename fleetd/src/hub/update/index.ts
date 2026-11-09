@@ -33,7 +33,7 @@ import {
   type UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, release, replaceFile, restore, sums, swap, retireHelper } from "../../update/index.ts";
+import { build, checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, replaceFile, restore, type Sums, swap, retireHelper } from "../../update/index.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
@@ -598,22 +598,21 @@ export class Updates {
     const feed = ports.feed(channel);
     const at = hhmm(this.now());
     let to: string | undefined;
+    let s: Sums;
     try {
-      to = (await release(feed)).cliVersion;
+      ({ cliVersion: to, sums: s } = await build(feed));
     } catch (e) {
       return this.checked(`couldn't look at the ${channel} channel at ${at}: ${(e as Error).message}`);
     }
     if (to === undefined) return this.checked(`the ${channel} channel had no fleetd build at ${at}`);
-    if (to === running) {
+    if (!newer(to, running)) {
       this.ready_ = undefined;
       return this.checked(undefined);
     }
     const label = versionLabel(to);
     let asset: string;
-    let s: Map<string, string>;
     try {
       asset = ports.asset();
-      s = await sums(feed);
     } catch (e) {
       return this.checked(`couldn't download ${label} ahead: ${(e as Error).message}`);
     }
@@ -979,9 +978,10 @@ class Drive {
     const ch: Channel = channel === "stable" ? "stable" : "edge";
     const feed = ports.feed(ch);
     const running = ports.running();
-    const to = (await release(feed)).cliVersion;
+    // The build and its checksums from one read: what downloads below is that build, whatever edge publishes meanwhile.
+    const { cliVersion: to, sums: s } = await build(feed);
     if (to === undefined) throw new Failure("download", `the ${ch} channel has no fleetd build yet`);
-    if (to === running) return undefined;
+    if (!newer(to, running)) return undefined;
     if (!ports.releaseBuild()) {
       throw new Failure("install", "the hub runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh");
     }
@@ -1009,7 +1009,6 @@ class Drive {
     const kept = this.u.kept();
     const prev = join(this.u.dir, "fleetd.prev");
     await this.u.withFetching(async () => {
-      const s = await sums(feed);
       if (!isBuild(kept, s, asset)) await checkedTo(feed, s, asset, kept);
       // A Rust session host an older build kept beside it is no longer needed: kept for a rollback only.
       retireHelper(exe, prev);
@@ -1257,6 +1256,10 @@ class Drive {
 }
 
 /** The hub's and the nodes' parts by machine (the hub's under ""), for a quick look. */
+/** The channel's build `to` is one to update to from `running`: not the same, and not an older one of the same channel,
+ * as a release.json a cache kept from before the hub's own build names. */
+const newer = (to: string, running: string) => to !== running && versionCmp(to, running) !== -1;
+
 export function byMachine(run: UpdateRun): Map<string, UpdatePart> {
   return new Map(run.parts.filter((p) => p.part !== "claude").map((p) => [p.machineId ?? "", p]));
 }

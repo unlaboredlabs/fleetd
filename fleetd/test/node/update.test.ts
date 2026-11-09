@@ -58,6 +58,27 @@ test("a fetched build is installed by the update that follows, the running one k
   }
 });
 
+test("a node whose release edge republishes mid-update installs the build its release.json pinned", async () => {
+  const home = tempHome();
+  try {
+    const p = place(home.dir);
+    // Its release.json names 1.1.0 and pins its build; the plain name and SHA256SUMS are already the next build's.
+    const pin = `fleetd-linux-x64-${sha("new build").slice(0, 16)}`;
+    const files: Record<string, string> = {
+      "release.json": JSON.stringify({ cliVersion: "1.1.0", sha256: { "fleetd-linux-x64": sha("new build") } }),
+      SHA256SUMS: `${sha("the next build")}  fleetd-linux-x64\n`,
+      "fleetd-linux-x64": "the next build",
+      [pin]: "new build",
+    };
+    const feed: Feed = { get: async (name) => new TextEncoder().encode(files[name] ?? "") };
+    const answer = await run({ version: "1.1.0", channel: "edge" }, p.home, { place: p, feed, previous: () => new TextEncoder().encode("old build"), startWatcher: () => {} });
+    expect(answer.message).toBe("restarting on 1.1.0");
+    expect(readFileSync(p.exe, "utf8")).toBe("new build");
+  } finally {
+    home.done();
+  }
+});
+
 // An update naming another flavour (a hub from before Rust's removal, asking for the Rust build) is refused at the
 // install stage, which the hub takes as final, and changes nothing. Told its own flavour, or none, the node is current.
 test("a node told another flavour refuses, and changes nothing", async () => {

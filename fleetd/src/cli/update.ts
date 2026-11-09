@@ -57,6 +57,7 @@ export async function run(args: { check: boolean; channel?: string; now: boolean
   const named = args.channel ?? process.env.FLEETD_CHANNEL;
   const channel = named !== undefined ? parseChannel(named) : channelOf(current, releaseBuild);
   const feed = new HttpFeed(baseUrl(channel));
+  // The build and its checksums from one read, so what installs below is the build this names.
   const rel = await release(feed);
   const cliLatest = rel.cliVersion !== undefined && rel.cliVersion !== current ? rel.cliVersion : undefined;
   const exe = installedExe();
@@ -77,7 +78,8 @@ export async function run(args: { check: boolean; channel?: string; now: boolean
   if (cliLatest !== undefined) {
     if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
     try {
-      const s = await sums(feed);
+      // A release from before pins lists its checksums in SHA256SUMS.
+      const s = rel.sums ?? (await sums(feed));
       await checkedTo(feed, s, cliAsset(), exe);
       // This build hosts sessions itself, so a Rust session host an older build kept beside it goes.
       retireHelper(exe);

@@ -28,13 +28,21 @@ import { versionLabel, versionShown } from "../src/update/version.ts";
 import { tempHome } from "./helpers.ts";
 
 const build = new TextEncoder().encode("#!/bin/sh\necho new build\n".repeat(2000));
+const next = new TextEncoder().encode("#!/bin/sh\necho the next build\n");
 let cutOnce = true;
 let downloads = 0;
 
 /** A release server written by hand over TCP, so a body can be cut off for real (Bun.serve would fix its length). */
 function answer(path: string, range: string | undefined): { head: string; body: Uint8Array; cut?: number } {
   const text = (status: string, body: string, type = "text/plain") => ({ head: `HTTP/1.1 ${status}\r\ncontent-type: ${type}\r\n`, body: new TextEncoder().encode(body) });
+  // A release from before pins: its release.json names no checksums, its SHA256SUMS does.
+  if (path === "/rel/release.json") return text("200 OK", JSON.stringify({ cliVersion: "1.0.0" }));
   if (path === "/rel/SHA256SUMS") return text("200 OK", `${sha256Hex(build)}  fleetd-linux-x64\n${"0".repeat(64)} *fleetd-bad\n`);
+  // One whose names edge republished after its release.json was read: the plain name and SHA256SUMS are the next build's.
+  if (path === "/pinned/release.json") return text("200 OK", JSON.stringify({ cliVersion: "1.0.0", sha256: { "fleetd-linux-x64": sha256Hex(build) } }));
+  if (path === "/pinned/SHA256SUMS") return text("200 OK", `${sha256Hex(next)}  fleetd-linux-x64\n`);
+  if (path === "/pinned/fleetd-linux-x64") return { head: "HTTP/1.1 200 OK\r\n", body: next };
+  if (path === `/pinned/fleetd-linux-x64-${sha256Hex(build).slice(0, 16)}`) return { head: "HTTP/1.1 200 OK\r\n", body: build };
   if (path === "/rel/fleetd-bad") return text("200 OK", "not it");
   if (path === "/down/release.json") return text("503 Service Unavailable", "boom");
   if (path === "/rel/fleetd-linux-x64") {
@@ -96,6 +104,12 @@ test("a build lands only when it matches its SHA256SUMS line, resuming a cut-off
   expect((missing as Failure).message).toBe("`fleetd-darwin-arm64` is not in the release");
   const down = await new HttpFeed(`${base}/down`).get("release.json").catch((e) => (e as Error).message);
   expect(down).toBe(`GET \`${base}/down/release.json\`: 503 Service Unavailable`);
+});
+
+test("a release that pins its builds downloads the pinned one, whatever its plain name and SHA256SUMS say now", async () => {
+  const path = join(home.dir, "pinned");
+  await verifiedTo(new HttpFeed(`${base}/pinned`), "fleetd-linux-x64", path);
+  expect(Buffer.compare(readFileSync(path), Buffer.from(build))).toBe(0);
 });
 
 test("channels, sums, release APIs and version labels read as the Rust ones", () => {

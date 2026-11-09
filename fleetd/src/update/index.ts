@@ -7,6 +7,12 @@
 // `releases/latest/download/`. When one answers a server error or doesn't answer, the same asset comes through the
 // releases API instead, checked the same way. `FLEETD_BASE_URL` points at another asset directory.
 //
+// Edge republishes those names in place after every merge, and GitHub's downloads can serve one build's release.json, an
+// older SHA256SUMS from a cache and the next build's binary to the same reader (a hub on Nov 9 failed its update so). So
+// an update reads one file, release.json, for both the build and its checksums (`sha256`), and downloads each CLI build
+// under its pinned name, `<asset>-<first 16 hex digits of its SHA-256>`, which never changes once uploaded
+// (publish.sh). A release from before those pins has neither: its checksums come from SHA256SUMS and its plain names.
+//
 // The Rust build downloads a release's packed `<asset>.lzma` when its SHA256SUMS lists one; Bun has no LZMA decoder,
 // so this port always takes the plain asset, which every release has beside it, checked against the same line.
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync, chmodSync, copyFileSync, realpathSync } from "node:fs";
@@ -206,8 +212,18 @@ export class HttpFeed implements Feed {
   }
 }
 
-/** The channel's release.json: its newest CLI's version. */
-export async function release(feed: Feed): Promise<{ cliVersion?: string }> {
+/** A build's checksums, asset to SHA-256. `pinned`: they are release.json's, and each asset downloads under its pinned
+ * name (`pinnedName`); else they are a SHA256SUMS', for assets under their plain names. */
+export type Sums = Map<string, string> & { pinned?: boolean };
+
+/** The name a build's asset keeps for good in its release: `<asset>-<first 16 hex digits of its SHA-256>`. */
+export const pinnedName = (asset: string, sha256: string) => `${asset}-${sha256.slice(0, 16)}`;
+
+/** The file `asset` downloads as: its pinned name when the sums pin it. */
+const fileOf = (s: Sums, asset: string) => (s.pinned ? pinnedName(asset, s.get(asset)!) : asset);
+
+/** The channel's release.json: its newest CLI's version, and that build's checksums when it pins them. */
+export async function release(feed: Feed): Promise<{ cliVersion?: string; sums?: Sums }> {
   let bytes: Uint8Array;
   try {
     bytes = await feed.get("release.json");
@@ -215,16 +231,32 @@ export async function release(feed: Feed): Promise<{ cliVersion?: string }> {
     throw downloadFailure("couldn't read the release", why(e));
   }
   try {
-    const v = JSON.parse(new TextDecoder().decode(bytes)) as { cliVersion?: unknown };
+    const v = JSON.parse(new TextDecoder().decode(bytes)) as { cliVersion?: unknown; sha256?: unknown };
     if (v === null || typeof v !== "object") throw new Error("invalid type: expected struct Release");
-    return typeof v.cliVersion === "string" ? { cliVersion: v.cliVersion } : {};
+    const cliVersion = typeof v.cliVersion === "string" ? v.cliVersion : undefined;
+    let sums: Sums | undefined;
+    if (v.sha256 !== undefined) {
+      const listed = v.sha256 as Record<string, unknown>;
+      if (listed === null || typeof listed !== "object" || !Object.values(listed).every((h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h))) {
+        throw new Error("sha256: expected a SHA-256 per asset");
+      }
+      sums = Object.assign(new Map(Object.entries(listed as Record<string, string>)), { pinned: true });
+    }
+    return { ...(cliVersion !== undefined ? { cliVersion } : {}), ...(sums ? { sums } : {}) };
   } catch (e) {
     throw new Failure("download", `the release's release.json is not valid: ${why(e)}`);
   }
 }
 
+/** The channel's newest build, its version and its checksums from the same release.json; a release from before pins
+ * reads its SHA256SUMS too. */
+export async function build(feed: Feed): Promise<{ cliVersion?: string; sums: Sums }> {
+  const r = await release(feed);
+  return { ...r, sums: r.sums ?? (await sums(feed)) };
+}
+
 /** The release's SHA256SUMS. */
-export async function sums(feed: Feed): Promise<Map<string, string>> {
+export async function sums(feed: Feed): Promise<Sums> {
   let bytes: Uint8Array;
   try {
     bytes = await feed.get("SHA256SUMS");
@@ -241,27 +273,30 @@ function downloadFailure(what: string, e: string): Failure {
 }
 const notKept = (path: string, e: unknown) => new Failure("install", `couldn't keep the downloaded build at \`${path}\`: ${why(e)}`);
 
-/** A checked download in memory: the release's SHA256SUMS line for `name`, and the asset's bytes that match it. */
-export async function verified(feed: Feed, name: string): Promise<Uint8Array> {
-  const [s, bytes] = await Promise.allSettled([sums(feed), feed.get(name)]);
-  if (s.status === "rejected") throw s.reason;
-  if (!s.value.has(name)) throw notInRelease(name);
-  if (bytes.status === "rejected") throw downloadFailed(name, why(bytes.reason));
-  matchSums(s.value, name, sha256Hex(bytes.value));
-  return bytes.value;
+/** A checked download in memory: the asset `s` lists as `name`, its bytes matching its checksum there. */
+export async function verified(feed: Feed, s: Sums, name: string): Promise<Uint8Array> {
+  if (!s.has(name)) throw notInRelease(name);
+  let bytes: Uint8Array;
+  try {
+    bytes = await feed.get(fileOf(s, name));
+  } catch (e) {
+    throw downloadFailed(name, why(e));
+  }
+  matchSums(s, name, sha256Hex(bytes));
+  return bytes;
 }
 
-/** `verified` straight into `path`: it lands only when it matches; otherwise `path` is as it was. */
+/** The newest build's `name` straight into `path`: it lands only when it matches; otherwise `path` is as it was. */
 export async function verifiedTo(feed: Feed, name: string, path: string): Promise<void> {
-  return checkedTo(feed, await sums(feed), name, path);
+  return checkedTo(feed, (await build(feed)).sums, name, path);
 }
 
 /** `verifiedTo` against sums already read. */
-export async function checkedTo(feed: Feed, s: Map<string, string>, name: string, path: string): Promise<void> {
+export async function checkedTo(feed: Feed, s: Sums, name: string, path: string): Promise<void> {
   if (!s.has(name)) throw notInRelease(name);
   const part = staging(path);
   try {
-    const actual = await downloadTo(feed, name, part);
+    const actual = await downloadTo(feed, name, fileOf(s, name), part);
     matchSums(s, name, actual);
     try {
       renameSync(part, path);
@@ -274,8 +309,8 @@ export async function checkedTo(feed: Feed, s: Map<string, string>, name: string
   }
 }
 
-/** Streams `name` into a new file at `part`, hashing it on the way: its SHA-256. */
-async function downloadTo(feed: Feed, name: string, part: string): Promise<string> {
+/** Streams the asset `name`, as the release's `file`, into a new file at `part`, hashing it on the way: its SHA-256. */
+async function downloadTo(feed: Feed, name: string, file: string, part: string): Promise<string> {
   try {
     mkdirSync(dirname(part), { recursive: true });
   } catch (e) {
@@ -298,8 +333,8 @@ async function downloadTo(feed: Feed, name: string, part: string): Promise<strin
       sha.update(chunk);
     };
     try {
-      if (feed.stream) await feed.stream(name, sink);
-      else sink(await feed.get(name));
+      if (feed.stream) await feed.stream(file, sink);
+      else sink(await feed.get(file));
     } catch (e) {
       throw downloadFailed(name, why(e));
     }
@@ -335,7 +370,7 @@ export function isBuild(path: string, s: Map<string, string>, asset: string): bo
 }
 
 /** `sha256sum` output: `<hex>  <name>` per line (`*<name>` in binary mode). */
-export function parseSums(text: string): Map<string, string> {
+export function parseSums(text: string): Sums {
   const out = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
     const m = /^(\S+)\s(.*)$/.exec(line);
