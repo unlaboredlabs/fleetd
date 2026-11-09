@@ -221,8 +221,11 @@ test("cmd_check gets its cmd_result; the hub beats every heartbeatMs", async () 
   const run = links.commands.run("worker-11", { cwd: "/srv", argv: ["git", "status"], timeoutSec: 5 });
   const asked = await node.next((f) => f.t === "cmd_check");
   expect(asked).toMatchObject({ cwd: "/srv", argv: ["git", "status"], timeoutSec: 5 });
+  // Running there: an update of the machine waits for it.
+  expect([links.commands.checksRunning("worker-11"), links.commands.checksRunning("worker-12")]).toEqual([1, 0]);
   node.send({ t: "cmd_result", id: asked.id, exitCode: 0, outputTail: "clean", timedOut: false });
   expect(await run).toMatchObject({ exitCode: 0, outputTail: "clean" });
+  expect(links.commands.checksRunning("worker-11")).toBe(0);
   await expect(links.commands.run("worker-11", { cwd: "rel", argv: ["x"] })).rejects.toThrow("cwd must be absolute, got rel");
   links.timings = saved;
   node.close();

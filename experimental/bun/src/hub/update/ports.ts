@@ -3,6 +3,7 @@
 import claudeVersionRs from "../../../../../crates/fleetd/src/node/runner/claude/version.rs" with { type: "text" };
 import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";
+import { approvals } from "../approvals/index.ts";
 import { executors } from "../executor/index.ts";
 import { link } from "../link/index.ts";
 import { events } from "../store/events.ts";
@@ -13,7 +14,7 @@ import { baseUrl, cliAsset, HttpFeed, installedExe, runningBinary } from "../../
 import { isHubService, services } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
-import type { NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
+import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
 
 /** The Claude Code version this fleetd was tested with (node/runner/claude/version.rs `TESTED`). */
 export const CLAUDE_TESTED = /pub const TESTED: &str = "([^"]+)";/.exec(claudeVersionRs)?.[1] ?? "";
@@ -25,11 +26,26 @@ export function healthUrl(host: string, port: number): string {
   return h.includes(":") ? `http://[${h}]:${port}` : `http://${h}:${port}`;
 }
 
-/** What runs on the machine that its node's restart would end (machine_roles `live_on`), when that area says. */
+/**
+ * What runs on the machine that its node's restart would end: live sessions (machine_roles `live_on`, when that area
+ * says), the approved commands running there (from the database, so one that ran across the hub's own restart counts
+ * at once, before its node links again), and the checks and regenerations the hub runs there (the train's
+ * `cmd_check`s). Agents' runs carry on by themselves, so they aren't in it.
+ */
 function busy(hub: Hub, machineId: string): string | undefined {
   const liveOn = hub.peek<(m: string) => number>("machine_roles_live");
-  const n = liveOn?.(machineId) ?? 0;
-  return n === 0 ? undefined : n === 1 ? "1 live session" : `${n} live sessions`;
+  return busyWords(liveOn?.(machineId) ?? 0, approvals(hub).runningOn(machineId), link(hub).commands.checksRunning(machineId));
+}
+
+/** `busy` in words: "1 live session and 2 approved commands"; undefined when nothing runs. */
+export function busyWords(sessions: number, approved: number, checks: number): string | undefined {
+  const count = (n: number, one: string, many: string) => (n === 0 ? undefined : n === 1 ? `1 ${one}` : `${n} ${many}`);
+  const words = [
+    count(sessions, "live session", "live sessions"),
+    count(approved, "approved command", "approved commands"),
+    count(checks, "check", "checks"),
+  ].filter((w) => w !== undefined);
+  return words.length === 0 ? undefined : words.join(" and ");
 }
 
 const result = (frame: Record<string, unknown>): NodeActionResult => ({
@@ -91,9 +107,10 @@ export function hubPorts(hub: Hub): UpdatePorts {
         throw new Error(words(e));
       }
     },
-    async holdNode(machineId) {
+    async holdNode(machineId, unhosted): Promise<Held> {
       try {
-        return result((await commands().holdNode(machineId)) as Record<string, unknown>).steps ?? 0;
+        const frame = (await commands().holdNode(machineId, unhosted)) as Record<string, unknown>;
+        return { steps: result(frame).steps ?? 0, ...(typeof frame.hosted === "number" ? { hosted: frame.hosted } : {}) };
       } catch (e) {
         throw new Error(words(e));
       }

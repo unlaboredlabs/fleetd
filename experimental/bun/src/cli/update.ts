@@ -1,6 +1,6 @@
 // `fleetd update [--check] [--channel edge|stable] [--flavour rust|bun] [--now]` (crates/fleetd/src/cli/update.rs), on
 // src/update: replaces this binary with the latest build of a release channel, then restarts the hub and node services
-// that run it: the hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 10
+// that run it: the hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 2
 // minutes at most; `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
 //
 // `--flavour rust` switches the machine back to the release's Rust build, at the same path; the Rust build's
