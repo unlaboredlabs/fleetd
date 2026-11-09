@@ -259,6 +259,23 @@ fn account_var(account: &ClaudeAccount) -> &'static str {
     }
 }
 
+/// The account to probe the runner on while the machine's own claude is logged out: the hub's API key, else a person's
+/// subscription (the first by id). What the hub sealed to this node is what its work runs on: a cloud machine has no
+/// login of its own.
+pub fn held(home: &Path) -> Option<ClaudeAccount> {
+    if path(home, &ClaudeAccount::Hub).exists() {
+        return Some(ClaudeAccount::Hub);
+    }
+    let person_id = std::fs::read_dir(home.join(DIR))
+        .ok()?
+        .filter_map(|e| {
+            let name = e.ok()?.file_name().into_string().ok()?;
+            fleetd_contracts::people::PersonId::new(name.strip_suffix(".json")?).ok()
+        })
+        .min_by(|a, b| a.as_str().cmp(b.as_str()))?;
+    Some(ClaudeAccount::Person { person_id })
+}
+
 /// `env` with the account's variables in place of every credential and gateway the machine's own setup set.
 pub fn put_on(env: &mut Vars, account_vars: Vars) {
     env.retain(|(k, _)| !ACCOUNT_CLEARS.contains(&k.as_str()));
