@@ -5945,8 +5945,8 @@ export type ProjectGetOutput = {
 };
 
 /**
- * A built-in icon: a glass being with a face of its own, on a round field of a color. The apps ship each one as
- * images (app/shared/bot-icons builds them).
+ * A built-in icon: a soft-black being with a face of its own, on a round field of a pale tint of a color. The apps
+ * draw it as vector shapes (app/desktop/src/shared/botAvatar.ts).
  */
 export type ProjectIcon = {
   color: IconColor;

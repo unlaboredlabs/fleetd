@@ -5,11 +5,12 @@
 // photo chosen after a face (iconPick.ts) shows, and Done keeps it.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
-import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { ICON_COLORS, ICON_FACES, type IconColor, type IconFace, type ProjectIcon } from "../../desktop";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { colorsOf, ICON_COLORS, ICON_FACES, type IconColor, type IconFace, type ProjectIcon } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { shape, space, useTheme } from "../../theme";
-import { Avatar, iconSource } from "../../ui/Avatar";
+import { Avatar } from "../../ui/Avatar";
+import { Being } from "../../ui/Being";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
@@ -81,7 +82,6 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
         <View style={styles.faces}>
           {ICON_FACES.map((f) => {
             const on = !hasPicture && f.id === current.face;
-            const source = iconSource({ face: f.id, color: current.color }, FACE);
             return (
               <Pressable
                 key={f.id}
@@ -92,7 +92,9 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
                 style={({ pressed }) => [styles.face, pressed && styles.pressed]}
               >
                 <View style={[styles.ring, { borderColor: on ? t.accent : "transparent" }]}>
-                  {source === undefined ? null : <Image source={source} style={styles.faceImage} fadeDuration={0} />}
+                  <View style={styles.faceImage}>
+                    <Being face={f.id} color={current.color} size={FACE} />
+                  </View>
                 </View>
               </Pressable>
             );
@@ -104,6 +106,8 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
         <View style={styles.swatches}>
           {ICON_COLORS.map((c) => {
             const on = !hasPicture && c.id === current.color;
+            // Each swatch is its avatar's ground.
+            const field = colorsOf(c.id, t.dark).field;
             return (
               <View key={c.id} style={styles.swatchCell}>
                 <Pressable
@@ -112,9 +116,9 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
                   accessibilityState={{ checked: on }}
                   hitSlop={4}
                   onPress={() => choose({ face: current.face, color: c.id })}
-                  style={({ pressed }) => [styles.swatchRing, { borderColor: on ? c.field : "transparent" }, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.swatchRing, { borderColor: on ? t.accent : "transparent" }, pressed && styles.pressed]}
                 >
-                  <View style={[styles.swatch, { backgroundColor: c.field }, t.dark && styles.swatchDark]} />
+                  <View style={[styles.swatch, { backgroundColor: field, borderColor: t.dark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.1)" }]} />
                 </Pressable>
               </View>
             );
@@ -141,13 +145,12 @@ const styles = StyleSheet.create({
   faces: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-around", rowGap: space.sm },
   face: { width: "33.3%", alignItems: "center" },
   ring: { width: FACE + 10, height: FACE + 10, borderRadius: (FACE + 10) / 2, borderWidth: 2.5, alignItems: "center", justifyContent: "center" },
-  faceImage: { width: FACE, height: FACE },
+  faceImage: { width: FACE, height: FACE, borderRadius: FACE / 2, overflow: "hidden" },
   // Two rows of six.
   swatches: { flexDirection: "row", flexWrap: "wrap", rowGap: space.md },
   swatchCell: { width: `${String(100 / 6)}%`, alignItems: "center" },
   swatchRing: { width: SWATCH + 10, height: SWATCH + 10, borderRadius: (SWATCH + 10) / 2, borderWidth: 2.5, alignItems: "center", justifyContent: "center" },
-  swatch: { width: SWATCH, height: SWATCH, borderRadius: SWATCH / 2 },
-  // On dark grounds a dark color (Graphite) keeps a light edge.
-  swatchDark: { borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.22)" },
+  // A pale ground keeps a hairline edge on the card.
+  swatch: { width: SWATCH, height: SWATCH, borderRadius: SWATCH / 2, borderWidth: StyleSheet.hairlineWidth },
   pressed: { transform: [{ scale: 0.94 }] },
 });
