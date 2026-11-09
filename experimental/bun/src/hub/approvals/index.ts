@@ -552,6 +552,17 @@ export class Approvals {
   }
 
   /**
+   * The approved commands running on the machine, as the hub's database records them: approved and sent to its node,
+   * with no result yet. Kept across a hub restart, as each one's run goes on (node/gated), so an update of the machine
+   * waits for them before restarting its node, which would cut them off.
+   */
+  runningOn(machineId: string): number {
+    return this.listQuiet({ states: ["approved"], kind: "approval" }).filter(
+      (r) => r.gated !== undefined && r.projectRef.machineId === machineId && r.evidence?.startsWith(RUNNING) === true,
+    ).length;
+  }
+
+  /**
    * Approved commands the hub never saw finish: one it never sent goes back to the person, never run late; one that
    * was running is asked of its node once it links again (`recover`), never silently lost.
    */

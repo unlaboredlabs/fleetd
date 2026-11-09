@@ -311,9 +311,14 @@ test("a command whose run spans a restart or a dropped link reports its kept res
   const b = fake.approvals();
   b.reopenUnfinished();
   await Bun.sleep(5);
+  // They still count as running there, from the database, though this hub process never sent them: an update of
+  // lab-a waits for them.
+  expect([b.runningOn("lab-a"), b.runningOn("lab-b")]).toEqual([2, 0]);
   fake.linked = true;
   await fake.wokenTimes(2);
   expect([fake.request("Q1").state, fake.request("Q1").evidence]).toEqual(["ran", "exit 2 on lab-a, approved by human:desk"]);
+  // Their results came.
+  expect(b.runningOn("lab-a")).toBe(0);
   const q2 = fake.request("Q2");
   expect(q2.state).toBe("open");
   expect(q2.evidence).toBe(
