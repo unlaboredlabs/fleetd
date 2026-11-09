@@ -27,7 +27,7 @@ test("a session whose Monitor died with the last node is woken after the restart
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
     retryScheduleMs: [50, 50, 50],
     idleReapMs: 60_000,
   };

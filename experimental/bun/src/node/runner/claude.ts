@@ -1,6 +1,6 @@
 // The claude runner's spawn side (crates/fleetd/src/node/runner/claude/mod.rs, guide.rs, conformance.rs): the tools
 // fleetd keeps from agents, claude's argv for a session, the environment it starts with, and the zero-cost probe of
-// the installed claude. The stream-json mapping itself runs in the Rust `fleetd session-host` (./host.ts).
+// the installed claude. The stream-json mapping itself runs in each session's host (./host/mapper.ts).
 import { existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

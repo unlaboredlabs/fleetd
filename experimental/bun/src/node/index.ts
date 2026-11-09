@@ -1,6 +1,6 @@
 // `fleetd node …` (crates/fleetd/src/node/mod.rs): the node's link to its hub, its sessions, the lead socket, cmd
-// checks, sealed secrets, approved commands and node actions. A session's claude runs under the Rust binary's
-// `fleetd session-host` (FLEETD_NATIVE_BIN, else `fleetd` on PATH), which outlives the node.
+// checks, sealed secrets, approved commands and node actions. A session's claude runs under a host of its own, this
+// binary's `fleetd session-host` (./runner/host.ts), which outlives the node.
 import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
@@ -11,7 +11,6 @@ import { Node } from "./api.ts";
 import { registerAreas, stopAreas } from "./areas.ts";
 import { agentsMac, isAgentsMac, mayJoin } from "./agents_mac/index.ts";
 import { helloCapabilities, refusedOnMac } from "./link/tool_only.ts";
-import { findHelper } from "./runner/helper.ts";
 import { current as currentScope } from "./runner/scope.ts";
 import { runCmdCheck } from "./cmd/index.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
@@ -21,7 +20,7 @@ import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame } from
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
-import { pin as pinHelper } from "./self_exe.ts";
+import { pinSelf } from "./self_exe.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
 import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
 import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
@@ -197,12 +196,6 @@ export function machineFingerprint(): string | undefined {
   return undefined;
 }
 
-/** The session-host helper (./runner/helper.ts): the Rust build that hosts sessions and runs agent-mcp; never this
- * binary. Undefined when the machine has none, which the node reports as degraded. */
-export function nativeBin(): string | undefined {
-  return findHelper();
-}
-
 type Flags = Record<string, string | true>;
 function parseFlags(argv: string[], known: Set<string>): Flags | string {
   const flags: Flags = {};
@@ -348,8 +341,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
   // Probed now rather than by the first spawn.
   void currentScope();
-  // Before any session starts: they're hosted by, and start their fleetd tools from, the helper's pinned copy.
-  const sessions = await SessionService.start(configFor(home, fleetdDir(), pinHelper(home, nativeBin()), boxKey));
+  // Before any session starts: they're hosted by, and start their fleetd tools from, the node's pinned copy.
+  const sessions = await SessionService.start(configFor(home, fleetdDir(), pinSelf(home), boxKey));
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
   const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");

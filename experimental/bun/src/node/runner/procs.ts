@@ -7,6 +7,8 @@ export type Proc = {
   pid: number;
   ppid: number;
   pgid: number;
+  /** Linux: its session id (`/proc/<pid>/stat` field 6). */
+  sid?: number;
   /** Linux: start time in clock ticks since boot (`/proc/<pid>/stat` field 22). Undefined on macOS. */
   start?: number;
   zombie: boolean;
@@ -19,8 +21,8 @@ export function parseStat(pid: number, stat: string): Proc | undefined {
   const f = stat.slice(close + 1).trim().split(/\s+/);
   const [ppid, pgid] = [Number(f[1]), Number(f[2])];
   if (f[0] === undefined || !Number.isInteger(ppid) || !Number.isInteger(pgid)) return undefined;
-  const start = Number(f[19]);
-  return { pid, ppid, pgid, zombie: f[0] === "Z", ...(Number.isInteger(start) ? { start } : {}) };
+  const [sid, start] = [Number(f[3]), Number(f[19])];
+  return { pid, ppid, pgid, zombie: f[0] === "Z", ...(Number.isInteger(sid) ? { sid } : {}), ...(Number.isInteger(start) ? { start } : {}) };
 }
 
 export function statOf(pid: number): Proc | undefined {

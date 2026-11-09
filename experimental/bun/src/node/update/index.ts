@@ -31,7 +31,7 @@ import {
   runningBinary,
   sums,
   swap,
-  updateHelper,
+  retireHelper,
   type Feed,
   type Flavour,
 } from "../../update/index.ts";
@@ -181,9 +181,9 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
       }
     } else {
       if (!isBuild(fetched(p), s, asset)) await checkedTo(feed, s, asset, fetched(p));
-      // Staying on Bun: its session host moves with it. Back to Rust: the Rust build needs none, and the one beside it
-      // stays as it is.
-      if (flavour === "bun") await updateHelper(feed, s, p.exe, prev);
+      // Staying on Bun: a Rust session host an older build kept beside it is kept for a rollback only. Back to Rust: the
+      // one beside it stays as it is.
+      if (flavour === "bun") retireHelper(p.exe, prev);
       swap(p.exe, fetched(p), running, prev);
     }
     rmSync(fetched(p), { force: true });

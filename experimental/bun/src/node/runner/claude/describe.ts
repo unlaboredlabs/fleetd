@@ -52,5 +52,5 @@ export function setupLine(s: ClaudeSetup): string {
  * gets, as the node probes and starts them (`runnerEnv(configFor(…))`, as the Rust wizard's `session_env`): the
  * user's own setup, `~/.fleetd/claude.env`, and node.json's `claudeConfigDir`. */
 export async function describe(binary: string = claudeBinary(), env?: Env): Promise<ClaudeSetup> {
-  return fromInfo(await probe(binary, env ?? runnerEnv(configFor(defaultNodeHome(), fleetdDir(), ""))));
+  return fromInfo(await probe(binary, env ?? runnerEnv(configFor(defaultNodeHome(), fleetdDir(), []))));
 }

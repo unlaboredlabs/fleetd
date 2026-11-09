@@ -39,7 +39,7 @@ test("a task keeps its scratch dir across its sessions and a node restart, until
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
   };
   const scratch = (id: string) => join(node, "tmp", createHash("sha256").update(id).digest("hex").slice(0, 16));
   let service = await SessionService.start(config);

@@ -1,7 +1,7 @@
 // Ports the core of crates/fleetd/src/update/tests.rs: the checked download from a local fake release (never the real
 // release server), the swap, and the watcher with fake ports.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { finish, type Plan, type Ports, readVerdict, run } from "../src/update/finish.ts";
 import {
@@ -20,7 +20,7 @@ import {
   restore,
   sha256Hex,
   swap,
-  updateHelper,
+  retireHelper,
   verifiedTo,
 } from "../src/update/index.ts";
 import { servicesIn } from "../src/update/service.ts";
@@ -115,33 +115,22 @@ test("channels, sums, release APIs and version labels read as the Rust ones", ()
   expect(versionShown("0.0.0-nightly.202601051300")).toBe("Edge · Jan 5, 13:00 UTC (0.0.0-nightly.202601051300)");
 });
 
-test("each flavour has its own asset, and the Rust session host beside a Bun build moves with it", async () => {
+test("each flavour has its own asset, and a Rust session host beside a Bun build goes", async () => {
   expect(FLAVOUR).toBe("bun");
   expect(cliAsset()).toBe(assetOf("bun"));
   expect(assetOf("bun")).toBe(assetOf("rust").replace("fleetd-", "fleetd-bun-"));
   expect(parseFlavour("rust")).toBe("rust");
   expect(() => parseFlavour("ts")).toThrow('unknown flavour "ts": use rust or bun');
-  const rust = new TextEncoder().encode("the rust build");
-  const s = new Map([[assetOf("rust"), sha256Hex(rust)]]);
-  const asked: string[] = [];
-  const feed = {
-    get: async (name: string) => {
-      asked.push(name);
-      return rust;
-    },
-  };
   const dir = join(home.dir, "flavour");
   mkdirSync(dir);
   const exe = join(dir, "fleetd");
-  // No session host beside it (one on PATH, say): nothing to move.
-  await updateHelper(feed, s, exe);
+  // None beside it: nothing to do.
+  retireHelper(exe);
   expect(existsSync(helperPath(exe))).toBe(false);
+  // One an older Bun build kept: this build hosts sessions itself, so it goes, and nothing is downloaded.
   writeFileSync(helperPath(exe), "the previous rust build");
-  await updateHelper(feed, s, exe);
-  expect(readFileSync(helperPath(exe), "utf8")).toBe("the rust build");
-  // Already the release's: not downloaded again.
-  await updateHelper(feed, s, exe);
-  expect(asked).toEqual([assetOf("rust")]);
+  retireHelper(exe);
+  expect(existsSync(helperPath(exe))).toBe(false);
 });
 
 test("the swap keeps the previous binary, and a restore puts it back", () => {
@@ -165,28 +154,25 @@ test("the swap keeps the previous binary, and a restore puts it back", () => {
   ]);
 });
 
-test("an update keeps the session host it replaces, and a rollback puts it back with the binary", async () => {
+test("an update keeps the Rust session host an older build left, and a rollback puts it back with the binary", async () => {
   const dir = join(home.dir, "rollback");
   mkdirSync(dir);
   const p = plan(dir);
   writeFileSync(helperPath(p.exe), "old rust build");
-  const rust = new TextEncoder().encode("new rust build");
-  const s = new Map([[assetOf("rust"), sha256Hex(rust)]]);
-  const feed = { get: async () => rust };
-  // The update moves the session host to the new release, keeping the one it ran beside the previous binary.
+  // The update moves it beside the previous binary, dropping one an earlier update kept.
   writeFileSync(keptHelper(p.prev), "kept by an earlier update");
-  await updateHelper(feed, s, p.exe, p.prev);
-  expect([readFileSync(helperPath(p.exe), "utf8"), readFileSync(keptHelper(p.prev), "utf8")]).toEqual(["new rust build", "old rust build"]);
-  // The new build doesn't come up: the watcher puts both back.
+  retireHelper(p.exe, p.prev);
+  expect([existsSync(helperPath(p.exe)), readFileSync(keptHelper(p.prev), "utf8")]).toEqual([false, "old rust build"]);
+  // The new build doesn't come up: the watcher puts both back, for the older build that needs it.
   expect((await finish(p, fakePorts("1.0.0").ports)).state).toBe("rolled_back");
   expect([readFileSync(p.exe, "utf8"), readFileSync(helperPath(p.exe), "utf8")]).toEqual(["old", "old rust build"]);
-  // A session host already the release's isn't replaced, and nothing stale is left to put back.
-  writeFileSync(helperPath(p.exe), "new rust build");
-  await updateHelper(feed, s, p.exe, p.prev);
+  // With none beside the binary, nothing stale is left to put back.
+  rmSync(helperPath(p.exe));
+  retireHelper(p.exe, p.prev);
   expect(existsSync(keptHelper(p.prev))).toBe(false);
   writeFileSync(p.exe, "new");
   restore(p.exe, p.prev);
-  expect([readFileSync(p.exe, "utf8"), readFileSync(helperPath(p.exe), "utf8")]).toEqual(["old", "new rust build"]);
+  expect([readFileSync(p.exe, "utf8"), existsSync(helperPath(p.exe))]).toEqual(["old", false]);
 });
 
 /** A service manager and a clock that move on as the watcher looks. */

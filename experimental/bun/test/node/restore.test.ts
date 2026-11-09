@@ -37,7 +37,7 @@ test("a task whose worktree and branch were lost in a crash resumes from origin/
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
   };
   let service = await SessionService.start(config);
   let n = 0;

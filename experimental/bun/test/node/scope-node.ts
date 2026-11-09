@@ -24,7 +24,7 @@ if (left && alive(left.hostPid)) {
 } else {
   const scope = mode === "scoped" ? await current() : undefined;
   if (mode === "scoped" && !scope) throw new Error("no systemd scope here");
-  await launch({ exe, dir: hostDir, sessionId: "s1", program: "claude", args: [], cwd: dir, env: { PATH: process.env.PATH ?? "" }, ...(scope ? { scope } : {}) });
+  await launch({ fleetd: [exe], dir: hostDir, sessionId: "s1", program: "claude", args: [], cwd: dir, env: { PATH: process.env.PATH ?? "" }, ...(scope ? { scope } : {}) });
   writeFileSync(join(dir, "launched"), String(readRegistration(hostDir)?.hostPid ?? 0));
 }
 setInterval(() => {}, 60_000);

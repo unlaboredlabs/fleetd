@@ -41,7 +41,7 @@ test("a worker's launch gets the areas' variables and plugin folders; a plain se
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: host,
+    fleetd: [host],
   });
   const launch = new LaunchArea();
   launch.contribute({ env: (thread, path) => [["PATH", `/screens/bin:${path}`], ["ANDROID_SERIAL", `emulator-${thread}`]], pluginDirs: () => ["/screens/agent-device"] });

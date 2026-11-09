@@ -4,7 +4,7 @@
 // minutes at most; `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
 //
 // `--flavour rust` switches the machine back to the release's Rust build, at the same path; the Rust build's
-// `--flavour bun` switches it here. A Bun update brings the Rust session host beside it along (updateHelper).
+// `--flavour bun` switches it here. A Bun update retires a Rust session host an older build kept beside it (retireHelper).
 //
 // Not here: replacing the pre-Electron GPUI app (the Rust CLI's App migration), which no Bun-built machine has.
 import { spawnSync } from "node:child_process";
@@ -53,7 +53,7 @@ async function askHub(): Promise<string | undefined> {
 }
 
 export async function run(args: { check: boolean; channel?: string; flavour?: string; now: boolean }): Promise<void> {
-  const { FLAVOUR, HttpFeed, assetOf, baseUrl, channelOf, checkedTo, installedExe, parseChannel, parseFlavour, release, sums, updateHelper } = await import(
+  const { FLAVOUR, HttpFeed, assetOf, baseUrl, channelOf, checkedTo, installedExe, parseChannel, parseFlavour, release, sums, retireHelper } = await import(
     "../update/index.ts"
   );
   const { isHubService, services: servicesOf } = await import("../update/service.ts");
@@ -88,9 +88,10 @@ export async function run(args: { check: boolean; channel?: string; flavour?: st
     if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
     try {
       const s = await sums(feed);
-      // Staying on Bun: its session host moves with it first. Back to Rust: the Rust build needs none.
-      if (flavour === "bun") await updateHelper(feed, s, exe);
       await checkedTo(feed, s, assetOf(flavour), exe);
+      // Staying on Bun: the new build hosts sessions itself, so a Rust session host beside it goes. Back to Rust: it
+      // needs none.
+      if (flavour === "bun") retireHelper(exe);
     } catch (error) {
       throw new Error(`replacing ${exe}: ${(error as Error).message}`);
     }

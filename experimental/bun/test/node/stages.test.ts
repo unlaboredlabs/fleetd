@@ -52,7 +52,7 @@ test("a worker's launch and its claude's spawn time the Rust node's stages", asy
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
   });
   const stages: Record<string, string[]> = {};
   const log = console.log;

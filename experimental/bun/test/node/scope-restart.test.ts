@@ -44,7 +44,7 @@ async function until(what: string, fn: () => boolean, ms = 30_000) {
   }
 }
 
-/** The session host: the fake one (fake-host.ts) as a binary of its own, as the Rust `fleetd session-host` is. */
+/** The session host: the fake one (fake-host.ts) as a binary of its own. */
 function hostBinary(): string {
   const out = join(home.dir, "fleetd-session-host");
   if (!existsSync(out)) {

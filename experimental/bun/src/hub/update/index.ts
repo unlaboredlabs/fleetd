@@ -33,7 +33,7 @@ import {
   type UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, release, replaceFile, restore, sums, swap, updateHelper } from "../../update/index.ts";
+import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, release, replaceFile, restore, sums, swap, retireHelper } from "../../update/index.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
@@ -1011,8 +1011,8 @@ class Drive {
     await this.u.withFetching(async () => {
       const s = await sums(feed);
       if (!isBuild(kept, s, asset)) await checkedTo(feed, s, asset, kept);
-      // The session host beside a Bun build moves with it.
-      await updateHelper(feed, s, exe, prev);
+      // A Rust session host an older build kept beside it is no longer needed: kept for a rollback only.
+      retireHelper(exe, prev);
     });
     let previous: Uint8Array;
     try {

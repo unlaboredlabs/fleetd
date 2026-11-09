@@ -12,7 +12,6 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync, chmodSync, copyFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { UpdateStage } from "../shared/contracts.ts";
-import { HELPER } from "../node/runner/helper.ts";
 import { VERSION } from "../shared/version.ts";
 import { edgeStamp } from "./version.ts";
 
@@ -372,30 +371,30 @@ export function assetOf(flavour: Flavour): string {
   return flavour === "rust" ? `fleetd-${os}-${arch}` : `fleetd-bun-${os}-${arch}`;
 }
 
-/** The session host beside the Bun build at `exe` (node/runner/helper.ts): the release's Rust build, which is also the
- * Rust build a switch back can put in place without a download. */
-export const helperPath = (exe: string) => join(dirname(exe), HELPER);
+/** The Rust session host that Bun builds before the TypeScript one kept beside them (`fleetd-session-host`). */
+export const helperPath = (exe: string) => join(dirname(exe), "fleetd-session-host");
 
 /** Where an update keeps the session host it replaced, beside the previous binary `prev`, for `restore`. */
 export const keptHelper = (prev: string) => `${prev}.session-host`;
 
-/** Brings the session host beside `exe` to the release `s` names, when there is one there: it moves with the Bun build,
- * so the two are always one release's. With `prev`, the update's previous binary, the session host it replaces is kept
- * beside it (`keptHelper`), so a rollback puts both back; one kept by an earlier update goes first. */
-export async function updateHelper(feed: Feed, s: Map<string, string>, exe: string, prev?: string): Promise<void> {
+/** Retires the Rust session host beside `exe`: this build hosts sessions itself, so none is downloaded any more. With
+ * `prev`, the update's previous binary, it is kept beside that (`keptHelper`) so a rollback to a build that needs it
+ * puts both back; one kept by an earlier update goes first. Without, it goes. Hosts already running from it carry on:
+ * they run from the node's pinned copy, or from the file itself, which a rename or unlink doesn't stop. */
+export function retireHelper(exe: string, prev?: string): void {
   const path = helperPath(exe);
-  const asset = assetOf("rust");
   if (prev !== undefined) rmSync(keptHelper(prev), { force: true });
-  if (!existsSync(path) || isBuild(path, s, asset)) return;
-  if (prev !== undefined) {
-    try {
-      mkdirSync(dirname(prev), { recursive: true });
-      replaceFileFrom(keptHelper(prev), path);
-    } catch (e) {
-      throw new Failure("install", `couldn't keep the session host for a rollback: ${errText(e)}; nothing was changed`);
-    }
+  if (!existsSync(path)) return;
+  if (prev === undefined) {
+    rmSync(path, { force: true });
+    return;
   }
-  await checkedTo(feed, s, asset, path);
+  try {
+    mkdirSync(dirname(prev), { recursive: true });
+    renameSync(path, keptHelper(prev));
+  } catch (e) {
+    throw new Failure("install", `couldn't keep the session host for a rollback: ${errText(e)}; nothing was changed`);
+  }
 }
 
 /** The installed binary this process was started from: the path the services name. */
