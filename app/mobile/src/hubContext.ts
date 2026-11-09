@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
 import type { SkillOrigin } from "./desktop";
 import type { Paired } from "./hub/pair";
+import type { AgentMessage } from "./screens/dms/model";
 import type { Filter } from "./lists";
 import type { Session } from "./session";
 import type { Key, State } from "./store";
@@ -89,6 +90,9 @@ export type ChatInfoParams = {
   Artifact: { key: Key; name: string; version?: number | undefined };
   /** An artifact's versions, on Android (iOS picks them from the bar's menu); `shown`, the one open under it. */
   ArtifactVersions: { key: Key; name: string; shown?: number | undefined };
+  /** Its agents' DMs to each other, newest first (screens/dms), and one of them with who got it when. */
+  Dms: { key: Key };
+  Dm: { key: Key; message: AgentMessage };
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;
