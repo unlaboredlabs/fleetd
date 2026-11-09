@@ -14,12 +14,13 @@ const files = ["App.tsx", ...sources("src")].map((f) => ({ f, src: readFileSync(
 const read = (f: string): string => files.find((x) => x.f === f)?.src ?? "";
 
 describe("iOS 26 chrome", () => {
-  it("keeps glass off the content: buttons in cards and forms, and the thread's day chips", () => {
+  it("keeps glass off the content: buttons in cards and forms, and the thread's day labels", () => {
     expect(read("src/ui/Button.tsx")).not.toMatch(/<Glass\b/u);
     const chat = read("src/screens/Chat.tsx");
     const day = chat.slice(chat.indexOf('if (row.t === "day")'), chat.indexOf('if (row.t === "unread")'));
-    expect(day).toContain("styles.timeChip");
-    expect(day).not.toMatch(/<Glass\b/u);
+    expect(day).toContain("dayLine(row.at, now)");
+    // Just the date: no glass, capsule or rule around it.
+    expect(day).not.toMatch(/<Glass\b|backgroundColor/u);
   });
 
   it("never fades glass in or out", () => {

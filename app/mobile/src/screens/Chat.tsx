@@ -707,10 +707,8 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
   if (row.t === "day") {
     return (
       <View style={styles.timeRow} accessibilityRole="header">
-        {/* A quiet capsule, not glass: glass is for what floats over the thread, not what scrolls in it. */}
-        <View style={[styles.timeChip, { backgroundColor: t.fillQuiet }]}>
-          <Text style={[type.caption, styles.strong, { color: t.secondary }]}>{dayLine(row.at, now)}</Text>
-        </View>
+        {/* Just the date, centred and quiet, as in Messages: no capsule or rule around it. */}
+        <Text style={[type.caption, styles.strong, { color: t.secondary }]}>{dayLine(row.at, now)}</Text>
       </View>
     );
   }
@@ -1298,8 +1296,7 @@ const styles = StyleSheet.create({
   titleGlass: { borderRadius: 22, borderCurve: "continuous" },
   title: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: 240, paddingLeft: 6, paddingRight: space.lg, paddingVertical: 5 },
   titleText: { flexShrink: 1 },
-  timeRow: { alignItems: "center", marginTop: space.lg, marginBottom: space.xs },
-  timeChip: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
+  timeRow: { alignItems: "center", marginTop: space.lg + space.xs, marginBottom: space.sm },
   unreadBar: { alignItems: "center", paddingVertical: 5, marginTop: space.md, marginHorizontal: -space.md },
   strong: { fontWeight: "600" },
   groupGap: { marginTop: metrics.burstGap },
