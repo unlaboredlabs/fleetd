@@ -515,6 +515,39 @@ async fn a_failed_claude_step_leaves_the_cloud_machine_not_ready() {
     assert!(hub.cloud.ready(&hub, &m("boat-1")));
 }
 
+/// A new cloud machine's first hello finds its claude not logged in, so the hub logs `machine.degraded`, never
+/// `machine.online`: the catch-up that brings the hub's Claude configuration waited for one of those, so boat-1 never
+/// became ready and the pool deleted it as never joined (Nov 8 and 9). Its degraded hello starts the catch-up too.
+#[tokio::test]
+async fn a_cloud_machine_whose_first_hello_is_degraded_is_caught_up() {
+    let (hub, _home) = hub();
+    let current: Current = Arc::new(Mutex::new(OLD));
+    let devbox = Fake::default();
+    machine(&hub, "devbox", &box_key());
+    machine(&hub, "boat-1", &box_key());
+    enroll_pool(&hub, "boat-1");
+    link(&hub, "devbox", 1, &devbox, &current).await;
+    hub_api_on(&hub, &["devbox"]).await;
+    let boat = Fake::default();
+    link(&hub, "boat-1", 2, &boat, &current).await;
+    tokio::spawn(super::catch_up::run(hub.clone()));
+    tokio::task::yield_now().await;
+    let degraded = serde_json::from_value(json!({
+        "at": AT, "type": "machine.degraded", "machineId": "boat-1",
+        "summary": "boat-1 is degraded: claude is not logged in",
+    }))
+    .unwrap();
+    hub.events.append(degraded).unwrap();
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !hub.cloud.ready(&hub, &m("boat-1")) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(ready.is_ok(), "boat-1 was never caught up");
+    assert_eq!(held_on(&hub)["boat-1"], OLD);
+}
+
 /// The setup script's own Rust step on an image that ships Rust (boat's does, W468): rustup-init, which refuses to
 /// install beside a Rust on the PATH unless `RUSTUP_INIT_SKIP_PATH_CHECK=yes`, installs into the agents' home, and the
 /// step's check passes. A stand-in rustup-init with the real one's PATH check; `sudo` and `curl` are fakes.
@@ -618,7 +651,8 @@ struct SetupRun {
 /// runs only `sudo -u` (the agent is the test's own user), `curl` serves stand-in installers, `gh` is one nobody logged
 /// in (it answers git's credential calls from `GH_TOKEN`, as the real one does), and git and bash are real. The image
 /// ships a Rust of its own on the PATH, which the stand-in rustup-init warns about on stderr. `fail` names a stand-in
-/// installer that fails: `claude`. `None` when bash or git can't run here.
+/// installer that fails: `claude`, or how `fleetd init` fails: `claude login`, `join`. `None` when bash or git can't run
+/// here.
 fn run_setup(fail: Option<&str>) -> Option<SetupRun> {
     let script = render(&SetupScript {
         hub_url: "http://127.0.0.1:47900".into(),
@@ -702,11 +736,19 @@ chmod +x "$CARGO_HOME/bin/rustup"
 "#,
     )
     .unwrap();
-    std::fs::write(
-        serve.join("fleetd"),
-        "mkdir -p \"$HOME/.fleetd/node\"\necho '{}' > \"$HOME/.fleetd/node/node.json\"\n",
-    )
-    .unwrap();
+    // `fleetd init --join` as each ends: joined; enrolled, then 1 on claude not logged in; refused before enrolling.
+    let enroll = "mkdir -p \"$HOME/.fleetd/node\"\nprintf '{\\n  \"enrolled\": true\\n}\\n' > \"$HOME/.fleetd/node/node.json\"\n";
+    let fleetd = match fail {
+        Some("claude login") => format!(
+            "{enroll}echo '  ✗ claude on boat-1   not logged in' >&2\n\
+             echo \"   Run fleetd init to continue; it keeps what's done.\" >&2\nexit 1\n"
+        ),
+        Some("join") => {
+            "echo 'fleetd: the hub refused the code: it was used already' >&2\nexit 1\n".to_owned()
+        }
+        _ => enroll.to_owned(),
+    };
+    std::fs::write(serve.join("fleetd"), fleetd).unwrap();
     let s = serve.display();
     write(
         bin.join("curl"),
@@ -809,6 +851,43 @@ fn a_failed_setup_step_says_its_step_and_last_line() {
     assert!(
         !run.stdout.contains("fleetd cloud setup: Rust"),
         "stops at the failing step"
+    );
+}
+
+/// A new cloud machine's claude is never logged in at its join: the hub brings its Claude configuration at the catch-up.
+/// `fleetd init` ends 1 on it, which failed boat-1's setup at `fleetd` (Nov 8 and 9), so its node's settings and pre-stop
+/// hook were never written, and the pool deleted it as never joined. A join that enrolled goes on to the end.
+#[test]
+fn a_join_that_enrolled_goes_on_though_claude_isnt_logged_in_yet() {
+    let Some(run) = run_setup(Some("claude login")) else {
+        return;
+    };
+    let log = std::fs::read_to_string(run.home.join("fleetd-setup.log")).unwrap_or_default();
+    assert!(run.ok, "{}{}\nlog:\n{log}", run.stdout, run.stderr);
+    assert_eq!(run.stderr, "", "nothing on boat's error");
+    assert!(
+        run.stdout.lines().any(|l| l == "fleetd cloud setup: done"),
+        "{}",
+        run.stdout
+    );
+    assert!(log.contains("claude on boat-1   not logged in"), "{log}");
+    assert!(run.home.join(".boat/pre-stop").exists());
+}
+
+/// A join that never enrolled still fails at `fleetd`, with init's own last line.
+#[test]
+fn a_join_that_didnt_enroll_fails_at_fleetd() {
+    let Some(run) = run_setup(Some("join")) else {
+        return;
+    };
+    assert!(!run.ok);
+    assert_eq!(
+        run.stderr,
+        "fleetd cloud setup failed at: fleetd: fleetd: the hub refused the code: it was used already\n"
+    );
+    assert!(
+        !run.stdout
+            .contains("fleetd cloud setup: the node's settings")
     );
 }
 

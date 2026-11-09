@@ -1,5 +1,6 @@
-// A cloud machine's catch-up (crates/fleetd/src/hub/cloud/catch_up.rs): at each of its hellos, before it counts as
-// ready for work, the hub delivers it, in order: its build (a node behind the hub's updates and restarts; one on it
+// A cloud machine's catch-up (crates/fleetd/src/hub/cloud/catch_up.rs): at each of its hellos (machine.online,
+// machine.linked, or machine.degraded: a new one's claude isn't logged in until this brings the hub's Claude
+// configuration), before it counts as ready for work, the hub delivers it, in order: its build (a node behind the hub's updates and restarts; one on it
 // gets the Claude Code it was tested with), what it must forget (cloud_outbox), the hub's Claude configuration
 // resealed to it, its worktrees due to go, and its orders' GH_TOKENs again. Only a catch-up whose update and Claude
 // steps went through makes it ready: a failed one is tried again a minute later, up to RETRIES times.
@@ -125,7 +126,7 @@ export async function run(hub: Hub): Promise<void> {
   while (!signal.aborted) {
     let page;
     try {
-      page = await log.wait({ cursor, types: ["machine.online", "machine.linked"], timeoutSec: 3600 }, signal);
+      page = await log.wait({ cursor, types: ["machine.online", "machine.linked", "machine.degraded"], timeoutSec: 3600 }, signal);
     } catch (e) {
       console.warn("cloud catch-up: machine links not read:", e);
       await pause(1000, signal);

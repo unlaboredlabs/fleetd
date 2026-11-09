@@ -1,7 +1,8 @@
 //! A cloud machine's catch-up (review B1): fleetd acts on machines that are online, so a cloud machine, asleep most of
 //! the time, misses what happened meanwhile. At each of its hellos (its node linked: `machine.online`, or
-//! `machine.linked` after a quick restart), before it counts as ready for work ([`super::Cloud::ready`]), the hub
-//! delivers it, in this order:
+//! `machine.linked` after a quick restart, or `machine.degraded`: a new one's claude isn't logged in until this brings
+//! the hub's Claude configuration), before it counts as ready for work ([`super::Cloud::ready`]), the hub delivers it,
+//! in this order:
 //! 1. its build: a node behind the hub's is updated and restarts, and the rest waits for that next hello; one on the
 //!    hub's build gets the Claude Code it was tested with (`Updates::catch_up`);
 //! 2. what it must forget, kept while it slept ([`super::outbox`]);
@@ -176,6 +177,7 @@ pub async fn run(hub: Arc<Hub>) {
             types: Some(vec![
                 HubEventType::MachineOnline,
                 HubEventType::MachineLinked,
+                HubEventType::MachineDegraded,
             ]),
             machine_id: None,
             timeout_sec: 3600,
