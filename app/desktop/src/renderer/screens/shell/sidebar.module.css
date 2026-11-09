@@ -484,25 +484,33 @@
   gap: 2px;
   margin-bottom: var(--space-3);
 }
-/* A pin's cell, which lifts and moves inside the grid (ui/lib/reorder's grid): raised under the pointer on the
-   sidebar's own round corners. */
+/* A pin's place, half the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin sits centred in it,
+   and only the pin is raised under the pointer, as compact as its shade. */
 .pinSlot {
   display: flex;
+  justify-content: center;
   min-width: 0;
 }
 .pins > [data-reorder-row][data-lifted] {
-  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
 }
+.pins > [data-lifted] .pinCell {
+  background: var(--raised);
+  box-shadow: 0 2px 8px var(--shadow), 0 0 0 1px var(--hairline);
+}
+/* A pin: its shade, open or hovered, hugs the picture and name, 8 px around them on a row's corners, the same at
+   every sidebar width; a long name stops at its half of the grid. */
 .pinCell {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1-5);
   min-width: 0;
-  padding: var(--space-2) var(--space-1) var(--space-1-5);
+  max-width: 100%;
+  padding: var(--space-2);
   border: none;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--quiet);
   font: inherit;
@@ -521,23 +529,6 @@
 .pinCell:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-.pinFace {
-  position: relative;
-  display: inline-flex;
-}
-/* While its lead works: a small typing bubble rising off the picture's top left, cut from it by the sidebar's tone. */
-.typing {
-  position: absolute;
-  top: -5px;
-  left: -9px;
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 20px;
-  border: 2px solid var(--pin-cut, var(--sidebar));
-  border-radius: 999px;
-  background: var(--bubble);
 }
 .pinName {
   display: flex;
