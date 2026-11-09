@@ -158,9 +158,10 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
 /**
  * A pinned chat, as the phone draws its pins (mobile screens/Pinned.tsx, after Messages): a large round picture, its
  * name under it, two to a row over the list. New, the name speaks up with the dot beside it (the warning's when it
- * waits on you); while its lead works, a small typing bubble rises from the picture.
+ * waits on you); while its lead works, a small typing bubble rises from the picture. While ⌘ (Ctrl) is held, its jump
+ * number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1 onwards.
  */
-function PinCell({ p, current, asOf, ...rest }: Omit<RowProps, "jump">) {
+function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   const m = mark(p);
   const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
   const dot = p.want !== undefined ? "want" : p.unread ? "new" : undefined;
@@ -182,7 +183,11 @@ function PinCell({ p, current, asOf, ...rest }: Omit<RowProps, "jump">) {
         ) : null}
       </span>
       <span className={s.pinName}>
-        {dot === undefined ? null : <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden />}
+        {jump !== null ? (
+          <span className={s.jump}>{jump}</span>
+        ) : dot === undefined ? null : (
+          <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden />
+        )}
         <span className={s.pinTitle}>{p.project.title}</span>
       </span>
     </button>
@@ -363,7 +368,7 @@ function ProjectGroup(props: {
                 return (
                   <div key={key} className={s.pinSlot} {...pins.row(key)}>
                     <ContextMenu menu={menu(p)}>
-                      <PinCell p={p} current={sameProject(open, p.project)} asOf={asOf} onClick={() => openRow(p)} />
+                      <PinCell p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
                     </ContextMenu>
                   </div>
                 );
