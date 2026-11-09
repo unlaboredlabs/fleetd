@@ -44,6 +44,14 @@ describe("direct", () => {
     expect(Math.max(...moves.slice(1).map((m, i) => Math.abs(m - (moves[i] ?? m))))).toBeLessThan(6);
   });
 
+  it("shows only on its way to a click and just after, and is hidden at rest and on its way home", () => {
+    for (const s of steps) expect(at(s.at).pointer.alpha).toBeGreaterThan(0.99);
+    // Resting between the two clicks, and back home at the end.
+    expect(at(2950).pointer.alpha).toBeLessThan(0.05);
+    expect(at(take[1] - o.fade).pointer.alpha).toBeLessThan(0.05);
+    for (const d of run) expect(d.pointer.alpha).toBeGreaterThanOrEqual(0), expect(d.pointer.alpha).toBeLessThanOrEqual(1);
+  });
+
   it("dips as it clicks and springs back", () => {
     const scales = ticks.filter((t) => t >= 3900 && t < 4200).map((t) => at(t).pointer.scale);
     expect(Math.min(...scales)).toBeLessThan(0.9);
