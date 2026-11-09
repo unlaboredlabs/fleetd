@@ -260,7 +260,7 @@ export class Host {
             "do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines",
           );
         }
-        return [await this.sims.start(agent, step.device), none];
+        return [await this.sims.start(agent, step.device, step.wait ?? false), none];
       case "sim_end":
         return [{ step: "sim_end", ended: this.sims?.end(agent.name) ?? false }, none];
       default:

@@ -1,4 +1,5 @@
 // A node answer as an MCP tool result (crates/fleetd/src/cli/agent_mcp.rs `browser_result`, `tool_result`).
+import { HUB_UNREACHABLE } from "../../node/lead/index.ts";
 import { at, display, isObject, rustJson } from "./json.ts";
 
 export type ToolResult = { content: Record<string, unknown>[]; isError: boolean };
@@ -148,7 +149,9 @@ export function toolResult(answer: Record<string, unknown>): ToolResult {
   }
   const error = answer.error;
   const message = at(error, "message");
-  let words = `Refused: ${typeof message === "string" ? message : "the hub refused the call"}`;
+  const said = typeof message === "string" ? message : "the hub refused the call";
+  // The node couldn't reach a restarting hub: nothing refused the call.
+  let words = said === HUB_UNREACHABLE ? said : `Refused: ${said}`;
   const fix = at(error, "fix");
   if (typeof fix === "string") words += `\nNext: ${fix}`;
   return text(words, true);

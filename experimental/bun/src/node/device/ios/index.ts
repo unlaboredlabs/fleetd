@@ -11,7 +11,7 @@ import type { IosHealth } from "../../../shared/contracts.ts";
 import { ToolError } from "../../../shared/errors.ts";
 import { writeAtomic } from "../../secrets/files.ts";
 import { VERSION } from "../agent_device.ts";
-import { clear, clearHomes, findGolden, type Golden, type Lent, Pool, prepare, type RunnerStarter, startRunner, waitingWords } from "./pool.ts";
+import { clear, clearHomes, findGolden, type Golden, type Lent, Pool, prepare, type RunnerStarter, startRunner, type Waiting, waitingWords } from "./pool.ts";
 import { iosRuntimes, pick, Simctl } from "./simctl.ts";
 import { iosDir, setDir } from "./wrapper.ts";
 
@@ -134,6 +134,12 @@ function simWords(e: ToolError): ToolError {
   return new ToolError(e.code, e.message.replaceAll("iOS sessions", "iOS simulators"), e.fix?.replaceAll("session_start", "mac sim start"));
 }
 
+/** `waitingWords` for `mac sim start`, as its refusal. */
+export function simWaiting(waiting: Waiting): ToolError {
+  const [message, fix] = waitingWords(waiting);
+  return simWords(new ToolError("failed", message, fix));
+}
+
 type Prep = { at: "ready"; pool: Pool } | { at: "wanted" } | { at: "preparing" } | { at: "starting" } | { at: "missing"; why: string };
 
 export type SimulatorsOptions = {
@@ -239,6 +245,13 @@ export class Simulators {
 
   /** A booted clone from the warm pool for `mac sim start`, and its device and runtime's names. */
   lend(): [Lent, string] {
+    const taken = this.lendOrWait();
+    if ("waiting" in taken) throw simWaiting(taken.waiting);
+    return taken.lent;
+  }
+
+  /** `lend`, or with none warm yet about how long until one is. */
+  lendOrWait(): { lent: [Lent, string] } | { waiting: Waiting } {
     let pool: Pool;
     try {
       pool = this.pool();
@@ -246,24 +259,22 @@ export class Simulators {
       throw e instanceof ToolError ? simWords(e) : e;
     }
     const taken = pool.take();
-    if ("waiting" in taken) {
-      const [message, fix] = waitingWords(taken.waiting);
-      throw simWords(new ToolError("failed", message, fix));
-    }
-    return [taken.lent, `${pool.golden.deviceTypeName} on ${pool.golden.runtimeName}`];
+    if ("waiting" in taken) return taken;
+    return { lent: [taken.lent, `${pool.golden.deviceTypeName} on ${pool.golden.runtimeName}`] };
   }
 
-  /** `lend` of the device type `wanted`: the golden's type is a warm clone, any other made for this agent alone. */
-  async lendType(wanted: string): Promise<[Lent, string]> {
+  /** `lendOrWait` of the device type `wanted` (`mac sim start --device`): the golden's type is a warm clone, any other
+   * a simulator made and booted for this agent alone. */
+  async lendType(wanted: string): Promise<{ lent: [Lent, string] } | { waiting: Waiting }> {
     let pool: Pool;
     try {
       pool = this.pool();
     } catch (e) {
       throw e instanceof ToolError ? simWords(e) : e;
     }
-    if (wanted === pool.golden.deviceTypeName || wanted === pool.golden.deviceType) return this.lend();
+    if (wanted === pool.golden.deviceTypeName || wanted === pool.golden.deviceType) return this.lendOrWait();
     try {
-      return await pool.make(wanted);
+      return { lent: await pool.make(wanted) };
     } catch (e) {
       throw new ToolError(
         "failed",
@@ -271,6 +282,11 @@ export class Simulators {
         "check the name against xcrun simctl list devicetypes (mac run), or use mac sim start without --device for the Mac's iPhone",
       );
     }
+  }
+
+  /** About how long until the `nth` clone from now is ready (Pool.readyIn); undefined while there is no pool. */
+  readyIn(nth: number): number | undefined {
+    return this.prep.at === "ready" ? this.prep.pool.readyIn(nth) : undefined;
   }
 
   warm(): number {

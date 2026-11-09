@@ -1,14 +1,14 @@
 // What the hub has a node run: cmd checks confined to its roots, sealed secrets written to their sinks, approved
 // commands that read them back (scrubbed from their output) and keep their result for a gated_resume, node actions,
 // and lead calls relayed over the link with the calling process's session named by the kernel.
-import { expect, setDefaultTimeout, test } from "bun:test";
+import { expect, jest, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runNodeAction } from "../../src/node/actions/index.ts";
 import { runCmdCheck, scrubValues } from "../../src/node/cmd/index.ts";
 import { GatedRuns } from "../../src/node/gated/index.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
-import { LeadRelay, answerLine, attribute, serveLeadSocket } from "../../src/node/lead/index.ts";
+import { HUB_UNREACHABLE, LeadRelay, answerLine, attribute, serveLeadSocket } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
 import { deliverSecret, envFileWith, parseSecretSink, secretEnvName, type SecretsContext } from "../../src/node/secrets/index.ts";
 import { orderEnvFile, orderVarsForSpawn } from "../../src/node/secrets/env.ts";
@@ -120,6 +120,48 @@ test("a lead call goes out under a node id and its answer comes back under the c
   await Bun.sleep(0);
   detach();
   expect((await dropped).error?.code).toBe("machine_offline");
+});
+
+/** Moves the fake clock by `ms`, letting what it wakes run. */
+async function tick(ms: number): Promise<void> {
+  jest.advanceTimersByTime(ms);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+}
+
+// The hub restarting for an update drops the link for seconds: a call made meanwhile waits for it to come back and is
+// answered. Past a minute down, a call waits only 5 s as before.
+test("a call rides through the hub restarting", async () => {
+  jest.useFakeTimers();
+  try {
+    const relay = new LeadRelay();
+    relay.attach(() => {}, [])();
+    const frame = { id: "cli-1", cwd: "/w", call: { op: "decisions_search", query: "health" } };
+    let answer: unknown;
+    const calling = relay.call(frame).then((a) => (answer = a));
+    await tick(8_000);
+    expect(answer).toBeUndefined();
+    const sent: NodeFrame[] = [];
+    const detach = relay.attach((f) => sent.push(f), []);
+    await tick(0);
+    expect(sent[0]).toMatchObject({ t: "lead_call", call: { op: "decisions_search" } });
+    relay.resolve({ id: (sent[0] as unknown as { id: string }).id, result: { op: "decisions_search", decisions: [] } });
+    await calling;
+    expect(answer).toEqual({ id: "cli-1", result: { op: "decisions_search", decisions: [] } });
+
+    detach();
+    await tick(60_000);
+    const started = Date.now();
+    let late: { error?: { message: string } } | undefined;
+    const lateCall = relay.call(frame).then((a) => (late = a));
+    await tick(4_999);
+    expect(late).toBeUndefined();
+    await tick(1);
+    await lateCall;
+    expect(Date.now() - started).toBe(5_000);
+    expect(late?.error?.message).toBe(HUB_UNREACHABLE);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test("the session a call comes from is the process's, never the frame's claim", () => {

@@ -1,5 +1,6 @@
-//! `review_read`: an author reads every finding of its PRs' latest reviews, whole, a reviewer those of the one PR it
-//! reviews, and a lead its project's. Read-only; a PR that is not the caller's is refused, whoever's it is.
+//! `review_read`: an author reads every finding of its PRs' latest reviews, whole, and of any other PR of its project it
+//! names (one it builds on), a reviewer those of the one PR it reviews, and a lead its project's. Read-only; another
+//! project's PR is refused, and so is any PR but its own for a reviewer.
 use std::collections::HashSet;
 
 use fleetd_contracts::ids::Timestamp;
@@ -28,15 +29,15 @@ pub fn review_read(
         _ => None,
     };
     let picked = call.pr.as_ref().map(|p| p.as_str().trim());
-    let mine = caller_prs(hub, caller, task, picked.is_some())?;
+    let (mine, reviewer) = caller_prs(hub, caller, task, picked.is_some())?;
     let prs = match picked {
         None => mine,
         Some(wanted) => {
             let matching: Vec<PrUrl> = mine.into_iter().filter(|pr| names(wanted, pr)).collect();
             if matching.is_empty() {
                 let whose = match task {
-                    Some(id) => format!("{id}'s"),
-                    None => "this project's".to_owned(),
+                    Some(id) if reviewer => format!("{id}'s"),
+                    _ => "this project's".to_owned(),
                 };
                 return Err(McpToolError::new(
                     ErrorCode::Forbidden,
@@ -62,14 +63,15 @@ pub fn review_read(
     Ok(ReviewReadResult { prs, next })
 }
 
-/// The caller's PRs, newest first: a task's own (its PR and the Changes it wrote; a review task's, the PR it reviews), a
-/// lead's project's (those in the merge queue, or every one it knows when `all`).
+/// The caller's PRs, newest first, and whether it is a reviewer: a task's own (its PR and the Changes it wrote; a review
+/// task's, the PR it reviews), a lead's project's (those in the merge queue). With `all`, a lead and an author get every
+/// PR the project knows too, after an author's own; a reviewer still gets only the PR it reviews.
 fn caller_prs(
     hub: &Hub,
     caller: &LeadCaller,
     task: Option<&TaskId>,
     all: bool,
-) -> Result<Vec<PrUrl>, McpToolError> {
+) -> Result<(Vec<PrUrl>, bool), McpToolError> {
     let project = &caller.project_ref;
     let changes = crate::hub::prs::project_changes(hub, project);
     let mut prs: Vec<PrUrl> = Vec::new();
@@ -89,7 +91,7 @@ fn caller_prs(
             // A reviewer reads the earlier reviews of the one PR it reviews, to check its blocking findings were
             // fixed, and no other PR's.
             if own.kind == TaskKind::Review {
-                return Ok(own.pr.into_iter().collect());
+                return Ok((own.pr.into_iter().collect(), true));
             }
             prs.extend(
                 changes
@@ -99,7 +101,7 @@ fn caller_prs(
             );
             prs.extend(own.pr);
         }
-        None => {
+        None if !all => {
             let queued = |s: ChangeState| {
                 !matches!(
                     s,
@@ -109,18 +111,25 @@ fn caller_prs(
             prs.extend(
                 changes
                     .iter()
-                    .filter(|c| all || queued(c.state))
+                    .filter(|c| queued(c.state))
                     .filter_map(|c| PrUrl::new(c.pr_url.as_str()).ok()),
             );
-            if all {
-                let tasks = crate::hub::prs::project_tasks(hub, project);
-                prs.extend(tasks.into_iter().filter_map(|t| t.pr));
-            }
         }
+        None => {}
+    }
+    // A PR named, the lead and an author may read any of the project's: an author the one it is stacked on, say.
+    if all {
+        prs.extend(
+            changes
+                .iter()
+                .filter_map(|c| PrUrl::new(c.pr_url.as_str()).ok()),
+        );
+        let tasks = crate::hub::prs::project_tasks(hub, project);
+        prs.extend(tasks.into_iter().filter_map(|t| t.pr));
     }
     let mut seen = HashSet::new();
     prs.retain(|pr| seen.insert(pr_key(pr.as_str())));
-    Ok(prs)
+    Ok((prs, false))
 }
 
 /// Whether `wanted`, a PR's URL or its number (`#7`, `7`), names `pr`.

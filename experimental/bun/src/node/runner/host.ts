@@ -1,15 +1,17 @@
 // A session's host (crates/fleetd/src/node/runner/host.rs), the native piece the Bun node keeps: the Rust binary's
 // `fleetd session-host <dir> <session id> -- <claude> <args…>` owns the session's claude, runs the stream mapper, the
-// kill ladder and the transcript, and outlives the node. The node starts it detached (a session of its own), waits for
-// its registration (`host.json`), and talks to its socket (`sock`), one JSON object per line:
+// kill ladder and the transcript, and outlives the node. The node starts it detached (a session of its own and, where
+// systemd answers, a scope of its own that the node's unit doesn't stop: scope.ts), waits for its registration
+// (`host.json`), and talks to its socket (`sock`), one JSON object per line:
 // - host → node: `{"seq":n,"event":<RunnerEvent>}`; the host keeps each until acknowledged and resends what it kept;
 // - node → host: `{"ack":n}` once the service applied events up to n, `{"command":<SessionCommand>}`, and `"stop"`.
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
+import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
 
 /** Bumped when the lines between a host and a node change incompatibly (host.rs PROTOCOL). */
 export const PROTOCOL = 1;
@@ -245,6 +247,8 @@ export type Launch = {
   args: string[];
   cwd: string;
   env: Env;
+  /** This machine's scope (scope.ts `current`), when systemd answers. */
+  scope?: Scope;
 };
 
 export class LaunchError extends Error {
@@ -256,21 +260,16 @@ export class LaunchError extends Error {
   }
 }
 
-/** Starts a session's host detached from the node and connects to it once it registered. */
+/**
+ * Starts a session's host detached from the node (a session and, with `scope`, a scope of its own that the node's unit
+ * doesn't stop) and connects to it once it registered.
+ */
 export async function launch(l: Launch): Promise<HostLink> {
   prepare(l.dir);
   const log = openSync(join(l.dir, "host.log"), "w");
-  let child: ReturnType<typeof spawn>;
+  let child: ChildProcess;
   try {
-    // A session's whole tree goes before the node and the hub when memory runs out.
-    const [exe, argv] = agentSpawn(l.exe, [COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args]);
-    child = spawn(exe, argv, {
-      cwd: l.cwd,
-      env: l.env,
-      stdio: ["ignore", "ignore", log],
-      // A session of its own: no signal for the node's group or terminal reaches it.
-      detached: true,
-    });
+    child = await startHost(l, log);
   } catch (error) {
     closeSync(log);
     throw new LaunchError(`no host came up: it didn't start: ${(error as Error).message}`);
@@ -296,6 +295,30 @@ export async function launch(l: Launch): Promise<HostLink> {
   } catch (error) {
     throw new LaunchError(`no host came up: it doesn't answer: ${(error as Error).message}`);
   }
+}
+
+/**
+ * The host's process, its stderr to `log`: detached (a session of its own), at the agents' OOM score, and in a scope of
+ * its own that isn't `PartOf=` the node's unit when `l.scope` works, else without one (scope.ts says so once).
+ */
+export async function startHost(l: Launch, log: number): Promise<ChildProcess> {
+  const started = await spawnScoped(
+    l.scope && hostScope(l.scope),
+    l.exe,
+    [COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args],
+    l.sessionId,
+    (program, argv, scope) =>
+      // A session's whole tree goes before the node and the hub when memory runs out.
+      spawn(...agentSpawn(program, argv), {
+        cwd: l.cwd,
+        env: { ...l.env, ...scope?.env },
+        stdio: ["ignore", "ignore", log],
+        // A session of its own: no signal for the node's group or terminal reaches it.
+        detached: true,
+      }),
+  );
+  if (started.failed !== undefined) scopeFailed(started.failed);
+  return started.child;
 }
 
 /** Makes `dir` empty and private, stopping a host a previous spawn of the session left there. */
