@@ -108,6 +108,7 @@ export function PictureSetting({ project }: { project: Pictured }) {
           type="button"
           className={p.target}
           data-dragging={dragging || undefined}
+          data-bot={hasPicture ? undefined : true}
           aria-label={`Upload an image for ${project.title}`}
           disabled={busy}
           onClick={() => input.current?.click()}

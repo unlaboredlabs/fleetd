@@ -42,6 +42,15 @@ describe("arrivalsOf", () => {
     expect(steps(arrivalsOf(held, [hub("b", 5), hub("c", 6)], true, NOW + 20))).toEqual({});
   });
 
+  it("enters a streamed reply once, as it starts, and not again once written", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
+    const writing = arrivalsOf(opened, [hub("a", 1), hub("s", 2, "lead", { state: "streaming" })], true, NOW + 10);
+    expect(writing.entering.get("s")).toEqual({ at: NOW + 10, step: 0 });
+    const done = arrivalsOf(writing, [hub("a", 1), hub("s", 2)], true, NOW + 600);
+    expect(done.entering.get("s")).toEqual({ at: NOW + 10, step: 0 });
+    expect(arrivalsOf(done, [hub("a", 1), hub("s", 2), hub("t", 3)], true, NOW + 700).entering.get("t")).toEqual({ at: NOW + 700, step: 0 });
+  });
+
   it("forgets an entrance once its moment is past", () => {
     const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
     const next = arrivalsOf(opened, [hub("a", 1), hub("b", 2)], true, NOW);

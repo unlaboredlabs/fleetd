@@ -294,7 +294,7 @@ function BubbleLine(props: {
 /** What Not needed sends, under the questions the lead waits on: the lead reads it as your answer. */
 export const SKIP = "Not needed: skip that and go on without an answer.";
 
-/** The lead writing, as a line: it enters with the message, and its text enters again once written. */
+/** The lead writing, as a line: it enters with the message, and its text takes its place once written, without entering again. */
 function TypingLine({ enter }: { enter: Arrival | undefined }) {
   const e = useEnter(enter);
   return (

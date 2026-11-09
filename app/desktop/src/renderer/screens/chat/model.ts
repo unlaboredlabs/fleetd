@@ -331,7 +331,8 @@ export interface Arrival {
 
 /**
  * Which messages enter with motion, carried from one chat update to the next. Only what arrives while the chat is
- * open and current does: a lead reply, your send, a streamed reply's text once it is written. What the chat opened
+ * open and current does: a lead reply, your send, a streamed reply as the lead starts writing (once: its text then
+ * takes the dots' place without entering again, and the list glides to make room for it). What the chat opened
  * with, older pages loading above, and what a held chat (a drop, a reconnect not yet read back) and the page that
  * replaces it bring all show still.
  */
@@ -361,8 +362,10 @@ export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[
     // Your send, once the hub echoes it, is the bubble already shown: the same key.
     const key = phaseKey(i);
     const seq = i.message?.seq;
-    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity) || known.has(`${rowKeyOf(i)}~`);
-    if (!still && !known.has(key) && newer && enters(i)) entering.set(rowKeyOf(i), { at: nowMs, step: step++ });
+    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity);
+    // Its dots entered: written, it is the same message, growing.
+    const written = key !== `${rowKeyOf(i)}~` && known.has(`${rowKeyOf(i)}~`);
+    if (!still && !known.has(key) && !written && newer && enters(i)) entering.set(rowKeyOf(i), { at: nowMs, step: step++ });
     known.add(key);
     if (seq !== undefined && seq > newest) newest = seq;
   }

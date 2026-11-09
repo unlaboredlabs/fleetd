@@ -1,7 +1,8 @@
 // The bot every project and Navi wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
-// of ink on a pale mist with two light eyes and no mouth. Its motion says what it is doing: idle, thinking, working,
-// needs you, done, or an error.
+// of calm slate with two light eyes and no mouth, standing free with no circle behind it (Pebble, from the
+// avatar-no-circle report, without its contact shadow). Its motion says what it is doing: idle, thinking, working,
+// needs you, done, or an error. (The phone still draws it in its circle, on PAINT, until it moves to PEBBLE too.)
 //
 // It is all here, pure, so both apps draw and move it alike. One rig: every frame is drawn from a few channels (the
 // lids, the eyes' size and look, the body's squash, lift and lean, the eyes' glow and dim). Each channel is a damped
@@ -9,8 +10,9 @@
 // display frame. A bot's clock never restarts and each loop's amplitude is a spring too, so a state change moves only
 // the targets: the bot blends from its current pose and phase, and an arrival nudges the body's speed, never its place.
 // With reduced motion the loops, blinks and glances stop and each state settles, critically damped, into its still pose.
-// Below 44 px the rig sizes itself for small use: larger, slightly wider eyes, 0.8 of the body motion, a closed eye never
-// thinner than 1 px, and no glow.
+// Below 44 px, as drawn (drawnAt: a free bot's box shows only its body, so a 36 px box draws it at 45), the rig sizes
+// itself for small use: larger, slightly wider eyes, 0.8 of the body motion, a closed eye never thinner than 1 px, and
+// no glow.
 //
 // In a list an idle bot waits for its turn (moment: a blink or a glance, one bot at a time), and sleeps between
 // them; a bot in any other state, or one that lives on its own (solo, a large one), keeps moving. Asleep its clock
@@ -63,12 +65,38 @@ export const oklch = (l: number, c: number, h: number): string => {
 
 // ---- The drawing, in a 100×100 box
 
-/** A round crown, full shoulders and a flat seat it rests on, at SEAT. */
+/** A round crown, full shoulders and a flat seat it rests on, at SEAT. Its bounds are x 14.5 to 85.5, y 22 to 85. */
 export const BODY = "M50 22C66.2 22 79.6 33.2 83.2 50.6C85.9 63.6 84.2 75.6 72.4 81.4C66.2 84.4 58.6 85 50 85C41.4 85 33.8 84.4 27.6 81.4C15.8 75.6 14.1 63.6 16.8 50.6C20.4 33.2 33.8 22 50 22Z";
 const SEAT_X = 50;
 const SEAT_Y = 85;
 
-/** What a bot is painted with: one palette for every bot, low chroma everywhere. */
+/** The part of the 100 box a free bot shows: the body at 80% of the drawing, centred on its optical centre (50, 54.6),
+ * halfway from its bounds' centre to its area's centroid, which sits low, so its weight lands on a row's centre line.
+ * Its hops and slumps reach past the box, so whatever holds it never clips it. */
+export const CROP = { x: 10, y: 14.6, w: 80 } as const;
+export const VIEW_BOX = `${CROP.x} ${CROP.y} ${CROP.w} ${CROP.w}`;
+/** The size a free bot in a `box` px box is drawn at, as if its whole 100 box showed: its size for newRig. */
+export const drawnAt = (box: number): number => {
+  "worklet";
+  return (box * 100) / CROP.w;
+};
+
+/** A free bot's paint (Pebble): one flat body and its eyes, the same for every bot. */
+export interface FreePaint {
+  readonly body: string;
+  /** Its eyes, and their glow's strength at its fullest. */
+  readonly eye: string;
+  readonly glowA: number;
+}
+
+/** One calm dusk slate (hue 258, low chroma) in both themes: dark enough in light for white eyes to read at 20 px
+ * (about 5.5:1), light enough in dark to stand off the screen and still keep Done's crescents (about 4:1). */
+export const PEBBLE: { readonly light: FreePaint; readonly dark: FreePaint } = {
+  light: { body: oklch(0.5, 0.062, 258), eye: oklch(0.99, 0.006, 258), glowA: 0.35 },
+  dark: { body: oklch(0.6, 0.06, 258), eye: oklch(0.995, 0.004, 258), glowA: 0.4 },
+};
+
+/** A bot in its circle (the phone's, until it moves to PEBBLE): one palette for every bot, low chroma everywhere. */
 export interface Paint {
   /** The round ground it sits on. */
   readonly field: string;
@@ -296,7 +324,7 @@ export interface Rig {
 
 /** The size from which a bot lives on its own, rather than taking turns in a list. */
 export const LARGE = 80;
-/** Below this the small-size rules apply. */
+/** Below this size, as drawn, the small-size rules apply. */
 export const SMALL = 44;
 
 const rnd = (r: Rig): number => {

@@ -189,13 +189,11 @@
      glide, and only what is live moves. */
   --ease-snap: cubic-bezier(0.2, 0, 0, 1);
   --dur-quick: 140ms;
-  /* Arriving: a chat bubble rises a few pixels into place as it fades in, never scaled; a reply's bubbles a beat
-     apart. Your own send is quicker still: you made it happen. A list row rises less. */
-  --dur-enter: 200ms;
-  --dur-enter-mine: 140ms;
-  --ease-enter: var(--ease-snap);
-  --enter-rise: 6px;
-  --enter-scale: 1;
+  /* Arriving: a chat bubble rides up with the rows above it on a spring (screens/chat/glide.ts) and fades in over
+     its first 100 ms, never scaled; a reply's bubbles a beat apart. A list row rises a few pixels. */
+  --dur-enter: 100ms;
+  --dur-enter-mine: 100ms;
+  --ease-enter: var(--ease-out);
   --enter-stagger: 50ms;
   --dur-row-in: 160ms;
   --row-rise: 3px;
@@ -214,9 +212,10 @@
   :root {
     --dur-fast: 0ms;
     --dur-base: 0ms;
-    /* A bubble still fades in, in place: nothing moves. */
-    --enter-rise: 0px;
-    --enter-scale: 1;
+    /* A bubble still fades in, in place, a little longer: nothing glides. Your send is quicker. */
+    --dur-enter: 200ms;
+    --dur-enter-mine: 140ms;
+    --ease-enter: var(--ease-snap);
     --enter-stagger: 0ms;
     --row-rise: 0px;
     --dur-spring: 0ms;
