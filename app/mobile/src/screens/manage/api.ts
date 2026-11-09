@@ -1,6 +1,6 @@
 // The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
 // desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
-// orders_board, checklist_get, pr_list, profiles_list, skills_list), Rename (project_settings_set's title), Only me
+// orders_board, checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title), Only me
 // (its onlyMe), Archive, its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent
 // Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
@@ -99,6 +99,8 @@ export interface Info {
   readonly profiles?: ProfilesListOutput;
   /** Its skills, for its Skills row's count. */
   readonly skills?: readonly SkillSummary[];
+  /** How many DMs its agents sent each other, for its row's count. */
+  readonly dms?: number;
   /** The first read that failed, said under the sections; what did come is shown. */
   readonly error?: HubError;
 }
@@ -107,11 +109,11 @@ export interface Info {
 export const withPart = (shown: Info, got: Info): Info => ({ ...shown, ...got, ...(shown.error === undefined ? {} : { error: shown.error }) });
 
 /**
- * Its screen's reads, side by side; its skills only from a hub that keeps them (`skills`). Each read is handed to
+ * Its screen's reads, side by side; its skills and its agents' DMs' count only from a hub that keeps them (`has`). Each read is handed to
  * `part` as it lands, so a slow one (pr_list waits on GitHub, seconds on a cold cache) holds up none of the others;
  * the promise answers them all, with the first that failed.
  */
-export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: boolean, part?: (got: Info) => void): Promise<Info> => {
+export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, has: { readonly skills: boolean; readonly dms: boolean }, part?: (got: Info) => void): Promise<Info> => {
   const projectRef = ref(p);
   const since = new Date(nowMs - MERGES_DAYS * 86_400_000).toISOString();
   let all: Info = {};
@@ -128,7 +130,8 @@ export const readInfo = async (hub: Hub, p: ProjectRef, nowMs: number, skills: b
     land(hub.call("orders_board", { projectRef }), (r) => (r.ok ? { orders: r.output.orders } : failed(r))),
     land(hub.call("pr_list", { projectRef, closedSince: since }), (r) => (r.ok ? { prs: r.output.prs } : failed(r))),
     land(hub.call("profiles_list", { projectRef }), (r) => (r.ok ? { profiles: r.output } : failed(r))),
-    ...(skills ? [land(hub.call("skills_list", { projectRef }), (r) => (r.ok ? { skills: r.output.skills } : failed(r)))] : []),
+    ...(has.skills ? [land(hub.call("skills_list", { projectRef }), (r) => (r.ok ? { skills: r.output.skills } : failed(r)))] : []),
+    ...(has.dms ? [land(hub.call("agent_messages", { projectRef, limit: 1 }), (r) => (r.ok ? { dms: r.output.total } : failed(r)))] : []),
   ]);
   return all;
 };
