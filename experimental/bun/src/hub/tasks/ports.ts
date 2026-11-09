@@ -245,6 +245,11 @@ export interface TaskPorts {
   prFound(taskId: TaskId): void;
   /** What the thread waits on a human for, if anything. */
   pendingQuestion(thread: ThreadRef): Promise<string | undefined>;
+  /**
+   * Executors' view of the thread: its latest assistant message whole, which its summary keeps only the ends of.
+   * Undefined when the node could not say; plain ports never can.
+   */
+  latestText?(thread: ThreadRef): Promise<string | undefined>;
   /** A node command (`cmd_check`); undefined when the node could not run it. */
   runCommand(machineId: MachineId, cwd: string, argv: string[], timeoutSec: number): Promise<CmdOutput | undefined>;
   workstream(id: WorkstreamId): Workstream | undefined;
@@ -461,6 +466,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
       const pending = ex().tracked(thread)?.pending;
       return pending ? pendingQuestionText(pending) : undefined;
     },
+    latestText: (thread) => ex().views.latestText(thread).catch(() => undefined),
     runCommand: async (m, cwd, argv, timeoutSec) => {
       try {
         const out = (await link(hub).commands.run(m, { cwd, argv, timeoutSec })) as { exitCode?: number | null; outputTail?: string };

@@ -103,7 +103,9 @@ export async function leadCall(hub: Hub, t: Tasks, caller: LeadCaller, call: Lea
             throw new ToolError("not_found", `There is no task ${c.taskId} in your project.`, "Call `agents` without taskId.");
           }
           const next = listNext(hub, t, r, [task]);
-          return { tasks: [task], ...(next !== undefined ? { next } : {}) };
+          // Its whole result, when the tail cuts it: only this per-task read carries it.
+          const fullResult = t.fullResult(task.taskId);
+          return { tasks: [task], ...(fullResult !== undefined ? { fullResult } : {}), ...(next !== undefined ? { next } : {}) };
         }
         const listed = t.list({
           projectRef: r,

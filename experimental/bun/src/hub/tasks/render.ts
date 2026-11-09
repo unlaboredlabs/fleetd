@@ -55,6 +55,20 @@ export function resultText(text: string, max: number): string {
   return `${head}\n…\n${tail}${line}`;
 }
 
+/** A task's whole final result, as `agents` with taskId returns it: room for a long report, cut past it. */
+export const FULL_RESULT_CAP = 32 * 1024;
+
+/**
+ * A finished task's whole result, as `agents` with its taskId returns it: undefined when `resultText` keeps it whole in
+ * TAIL_MAX, else its first FULL_RESULT_CAP units, then a last line saying where it was cut.
+ */
+export function fullResultText(text: string): string | undefined {
+  const t = text.trim();
+  if (t.length <= TAIL_MAX) return undefined;
+  if (t.length <= FULL_RESULT_CAP) return t;
+  return `${jsPrefix(t, FULL_RESULT_CAP).trimEnd()}\n\n[cut at ${FULL_RESULT_CAP / 1024} KB of ${Math.ceil(t.length / 1024)} KB]`;
+}
+
 // --- the branch, the task's prompt and its lines (render.rs) ---
 
 const SLUG_MAX = 40;
@@ -197,9 +211,13 @@ export function taskResultLines(taskId: string, title: string, result: TaskResul
     ended,
     title,
     place: place.length === 0 ? "" : ` (${place.join(", ")})`,
-    result: result.tail,
+    result: withWholeHint(taskId, result.tail),
   });
 }
+
+/** A result tail `resultText` cut, with a last line on reading it whole. */
+const withWholeHint = (taskId: string, tail: string) =>
+  tail.includes("\n…\n") ? `${tail}\n(Cut: \`agents\` with taskId ${taskId} has it whole, in fullResult.)` : tail;
 
 /** `" [branch]"`, or nothing. */
 const branchPlace = (task: Task) => (task.branch !== undefined ? ` [${task.branch}]` : "");
