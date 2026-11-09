@@ -32,10 +32,14 @@ import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
-import { backTo, infoOptions, manageScreens, newChatOptions, pushed } from "./src/screens/manage";
+import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { ImportMemory } from "./src/screens/ImportMemory";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
+import { Vault } from "./src/screens/vault/Vault";
+import { VaultEdit } from "./src/screens/vault/VaultEdit";
+import { VaultImport } from "./src/screens/vault/VaultImport";
+import { VaultItem } from "./src/screens/vault/VaultItem";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
 import type { State } from "./src/store";
@@ -365,7 +369,8 @@ function ChatsHome() {
 
 /**
  * Settings, from the avatar on Chats: a stack of its own with its large title, as the chat's Info, and a way back.
- * Import Memory is pushed over it, with a small title and the system's back button.
+ * Import Memory is pushed over it, with a small title and the system's back button; the Vault with a large title of
+ * its own, as iOS's Passwords, its items pushed over it and its forms as sheets.
  */
 function SettingsScreens() {
   const t = useTheme();
@@ -374,6 +379,10 @@ function SettingsScreens() {
     <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
+      <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultEdit" component={VaultEdit} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultImport" component={VaultImport} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }
