@@ -1,9 +1,13 @@
 /* The sidebar (Sidebar.tsx, You.tsx): chats as rows of picture, name and newest line, and you at the foot. No labels,
-   no borders, no cards: rows are set apart by space alone, the one you have open by a soft rounded fill. Names are the
-   one strong voice; everything under them is quiet until something is new. Tokens only, so the theme's neutral accent
-   and both themes follow. */
+   no borders, no cards: rows are set apart by space alone, the one you have open by a soft fill, a capsule as the top
+   bar's pill is (W580). Names are the one strong voice; everything under them is quiet until something is new. The
+   theme's tokens for every colour, so its neutral accent and both themes follow. */
 
 .sidebar {
+  /* A row's rounding, half its 56 px: a capsule. A pin's, lifted or focused, and the pins' own when a chat is dragged
+     over them. */
+  --row-round: 28px;
+  --pin-round: 24px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -37,20 +41,21 @@
 .rows > [data-gliding="up"] {
   position: relative;
   z-index: 1;
-  border-radius: var(--radius-lg);
+  border-radius: var(--row-round);
   background: var(--sidebar);
 }
 
-/* A chat's row: 36 px picture, 8 px around it. */
+/* A chat's row: a 56 px capsule, its 40 px picture 8 px in, so the picture's round sits concentric in the row's end;
+   the far end's words stop a little short of its curve. */
 .row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
-  padding: var(--space-2);
+  padding: var(--space-2) 14px var(--space-2) var(--space-2);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--row-round);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -88,11 +93,12 @@
   min-width: 0;
 }
 
+/* A step up from the body's size: the names are what the list is read by. */
 .name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-md);
+  font-size: 14px;
   font-weight: var(--weight-strong);
   line-height: var(--leading-md);
   white-space: nowrap;
@@ -174,8 +180,8 @@
   background: var(--warning);
 }
 
-/* With several hubs: a hub's group heading, its name quiet; a click collapses it. A colour, when the hub has one, is a
-   short bar before the name: it says which group, never a state. */
+/* With several hubs: a hub's group heading, its name in the text's own colour and weight, small; a click collapses it.
+   A colour, when the hub has one, is a short bar before the name: it says which group, never a state. */
 .groupHead {
   display: flex;
   align-items: center;
@@ -188,19 +194,22 @@
   border: none;
   border-radius: var(--radius-md);
   background: none;
-  color: var(--quiet);
-  font-size: var(--text-xs);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
   line-height: var(--leading-xs);
   text-align: left;
   cursor: pointer;
-}
-.groupHead:hover {
-  color: var(--text);
 }
 .groupHead > svg {
   flex: none;
   width: 12px;
   height: 12px;
+  color: var(--quiet);
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.groupHead:hover > svg {
+  color: var(--text);
 }
 .groupMark {
   flex: none;
@@ -211,6 +220,8 @@
 .groupAside {
   flex: none;
   color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
 }
 
 /* Loading: the rows' own shapes, still (no shimmer, so nothing repaints). */
@@ -227,8 +238,8 @@
 }
 .ghostAvatar {
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--hover);
 }
@@ -477,42 +488,44 @@
   white-space: nowrap;
 }
 
-/* The pinned chats, as the phone shows them (mobile screens/Pinned.tsx, after Messages): large round pictures, two to
-   a row however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture; a breath below them, no
-   line, and the list goes on. Their places are a fixed width, a small gap apart, the group centred in the sidebar: a
-   wide one leaves room either side rather than between them, a narrow one shares its width out. */
+/* The pinned chats, after the phone's (mobile screens/Pinned.tsx, after Messages): large round pictures, two to a row
+   however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture in a small capsule; a breath below
+   them, no line, and the list goes on. Their places are a fixed width and touch, so two 72 px pictures stand 16 px
+   apart, a pair; the group is centred in the sidebar, and a wide one leaves room either side rather than between
+   them. The narrowest sidebar, once its list scrolls, is a hair short of two places: there the group reaches that
+   hair into the list's own padding rather than squeeze the pair. */
 .pins {
-  --pin-w: 104px;
+  --pin-w: 88px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
+  grid-template-columns: repeat(2, var(--pin-w));
   justify-content: center;
-  gap: 2px var(--space-1);
-  margin-bottom: var(--space-3);
-  border-radius: var(--radius-lg);
+  gap: var(--space-1) 0;
+  margin: 0 min(0px, calc((100% - 2 * var(--pin-w)) / 2)) var(--space-3);
+  border-radius: var(--pin-round);
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
-/* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin sits centred in it,
-   and only the pin is raised under the pointer, as compact as its shade. */
+/* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin fills it. */
 .pinSlot {
   display: flex;
   justify-content: center;
   min-width: 0;
 }
-/* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, its name still
-   stopping at a cell's width; a second one brings the two columns back. */
+/* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, still a place wide; a
+   second one brings the two columns back. */
 .pinSlot:only-child {
   grid-column: 1 / -1;
-}
-.pinSlot:only-child .pinCell {
-  max-width: 50%;
 }
 .pins > [data-reorder-row][data-lifted] {
   background: transparent;
   box-shadow: none;
 }
+/* Lifted, a pin is one thing in the hand: a soft plate under its picture and name. */
 .pins > [data-lifted] .pinCell {
   background: var(--raised);
   box-shadow: 0 2px 8px var(--shadow), 0 0 0 1px var(--hairline);
+}
+.pins > [data-lifted] .pinCell .pinName {
+  background: transparent;
 }
 /* A chat dragged up over the pins, to join them: they take the hover's shade. A pin dragged down out of them, to
    leave: its picture and name fade a step. */
@@ -523,9 +536,9 @@
   opacity: 0.6;
 }
 .rows > [data-lifted] {
-  border-radius: var(--radius-lg);
+  border-radius: var(--row-round);
 }
-/* With nothing pinned, the first pin's place while a chat is dragged: a slim, quiet strip over the list, shaded as
+/* With nothing pinned, the first pin's place while a chat is dragged: a slim, quiet capsule over the list, shaded as
    the pins are once a drop would pin. */
 .pinZone {
   display: flex;
@@ -534,7 +547,7 @@
   gap: var(--space-1-5);
   height: 40px;
   margin-bottom: var(--space-2);
-  border-radius: var(--radius-lg);
+  border-radius: 20px;
   background: var(--hover);
   color: var(--quiet);
   font-size: var(--text-xs);
@@ -552,32 +565,26 @@
   background: var(--selected);
   color: var(--text);
 }
-/* A pin: its shade, open or hovered, hugs the picture and name, 8 px around them on a row's corners, the same at
-   every sidebar width; a long name stops at its cell's width. */
+/* A pin: the picture stands free, and the name under it, in the text's own colour, sits in a small capsule that takes
+   the shade while the pin is open or under the pointer, as the top bar's pill does. A long name stops at its place's
+   width, and is whole in its tooltip (Sidebar.tsx). */
 .pinCell {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-1);
+  width: var(--pin-w);
   min-width: 0;
   max-width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-1) 0;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--pin-round);
   background: transparent;
-  color: var(--quiet);
+  color: var(--text);
   font: inherit;
-  transition: background-color var(--dur-quick) var(--ease-snap);
-}
-.pinCell:hover {
-  background: var(--hover);
-}
-.pinCell[aria-current="page"] {
-  background: var(--selected);
-  color: var(--text);
-}
-.pinCell[data-unread] {
-  color: var(--text);
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    box-shadow var(--dur-quick) var(--ease-snap);
 }
 .pinCell:focus-visible {
   outline: 2px solid var(--accent);
@@ -590,6 +597,16 @@
   gap: var(--space-1);
   max-width: 100%;
   min-width: 0;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: 12px;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.pinCell:hover .pinName {
+  background: var(--hover);
+}
+.pinCell[aria-current="page"] .pinName {
+  background: var(--selected);
 }
 .pinName > .dot {
   flex: none;
@@ -599,8 +616,9 @@
 .pinTitle {
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-sm);
   white-space: nowrap;
   text-overflow: ellipsis;
 }

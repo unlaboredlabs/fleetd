@@ -167,6 +167,29 @@ describe("one list", () => {
     expect(button("Home").querySelector("[class*=pinName] [class*=dot]")).not.toBeNull();
   });
 
+  it("shows a pinned name whole in a tooltip only when it is cut short", async () => {
+    // happy-dom has no layout: a pinned name's text is as wide as its letters here, in a place 88 px wide.
+    const width = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? this.textContent.length * 8 : 0;
+    });
+    const box = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? 72 : 0;
+    });
+    const long = row("Rewrite the pricing page headline");
+    mount([{ ...long, pinned: true }, { ...ADA, pinned: true }, STOREFRONT]);
+    const tip = () => document.querySelector("[role='tooltip']")?.textContent;
+
+    act(() => button("Ada").focus());
+    await settle();
+    expect(tip()).toBeUndefined();
+
+    act(() => button("Rewrite").focus());
+    await settle();
+    expect(tip()).toBe("Rewrite the pricing page headline");
+    width.mockRestore();
+    box.mockRestore();
+  });
+
   it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
     const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
     mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);

@@ -174,8 +174,9 @@
   --leading-lg: 24px;
   --leading-xl: 28px;
   --leading-display: 34px;
-  /* Two weights only. */
+  /* Two weights, and a medium between them for a name that stands alone under its picture (the sidebar's pins). */
   --weight-regular: 400;
+  --weight-medium: 500;
   --weight-strong: 600;
 
   /* The 4 px grid; use these steps only. */

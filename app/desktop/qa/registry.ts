@@ -184,6 +184,8 @@ export const fixtures = [
   "sidebar-reasons",
   // Each project's bot in a color of its own (fixtures/sidebar).
   "sidebar-colors",
+  // Three pinned: a long name, one that waits on you, one with a new reply (fixtures/sidebar).
+  "sidebar-pins",
   // Several hubs: Personal and Acme in one sidebar, and Acme unreachable beside Personal.
   "sidebar-hubs",
   "sidebar-hubs-offline",
@@ -1183,9 +1185,9 @@ export const screens: readonly Screen[] = [
   },
   // W565: the flush sidebar with its pinned chats, two to a row as on the phone (big round pictures, the name under,
   // a dot when new, no bubble while the lead works, but storefront's own picture has the working glyph beside its
-  // name; no line before the list; one open and one hovered, each shade hugging its picture and name), and the top
-  // bar's one pill, at rest with its chevron towards the panel; then the pill opening the panel, pressed, its chevron
-  // turned back.
+  // name; no line before the list; one open and one hovered, the shade a capsule around each one's name, W580), and
+  // the top bar's one pill, at rest with its chevron towards the panel; then the pill opening the panel, pressed, its
+  // chevron turned back.
   {
     id: "shell",
     route: CHAT,
@@ -1205,9 +1207,62 @@ export const screens: readonly Screen[] = [
       await grid.nth(1).getByRole("button").hover();
     },
   },
-  // W577: the pins are a compact group, centred in the sidebar at every width: fixed cells a small gap apart, two to a
-  // row, a third under the first, a lone pin (W574) in the middle. One, two and three pins, at the sidebar's narrowest
-  // and at its widest.
+  // W580: the list's sizes. The pinned names are 13/18 in the text's colour, each in a 24 px capsule: medium at rest,
+  // semibold with the dot inside the capsule for inventory, which waits on you, and docs, with its new reply. The
+  // rows are 56 px capsules, their names 14/20 semibold, each 40 px picture as far from the row's top as from its
+  // end. "Rewrite the pricing…" is cut short under its picture: under the pointer its capsule takes the shade, and
+  // its tooltip has the name whole.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-pins"],
+    variant: "pin-names",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const pins = nav.locator('[class*="pins"] > [data-reorder-row]').getByRole("button");
+      await expect(pins).toHaveCount(3);
+      const type = (at: Locator) =>
+        at.evaluate((el) => {
+          const { fontSize, fontWeight, lineHeight, color } = getComputedStyle(el);
+          return { fontSize, fontWeight, lineHeight, color };
+        });
+      const text = await nav.evaluate((el) => getComputedStyle(el).color);
+      const names = pins.locator('[class*="pinTitle"]');
+      expect(await type(names.nth(0))).toEqual({ fontSize: "13px", fontWeight: "500", lineHeight: "18px", color: text });
+      // docs' reply arrives once the app is open.
+      await expect(pins.nth(2)).toHaveAttribute("data-unread", "true");
+      for (const i of [1, 2]) {
+        expect(await type(names.nth(i))).toEqual({ fontSize: "13px", fontWeight: "600", lineHeight: "18px", color: text });
+        const dot = await pins.nth(i).locator('[class*="dot"]').boundingBox();
+        const capsule = await pins.nth(i).locator('[class*="pinName"]').boundingBox();
+        if (dot === null || capsule === null) throw new Error("the pin's dot isn't on screen");
+        expect(dot.x).toBeGreaterThan(capsule.x);
+      }
+      for (const capsule of await pins.locator('[class*="pinName"]').all()) expect((await capsule.boundingBox())?.height).toBe(24);
+      const row = nav.locator('[class*="rows"] > [data-reorder-row]').first().getByRole("button");
+      const box = await row.boundingBox();
+      const picture = await row.locator('[class*="avatar"]').first().boundingBox();
+      if (box === null || picture === null) throw new Error("the first row isn't on screen");
+      expect(box.height).toBe(56);
+      expect(await row.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("28px");
+      expect([picture.width, picture.height]).toEqual([40, 40]);
+      expect(picture.x - box.x).toBe(picture.y - box.y);
+      expect(await type(row.locator('[class*="name"]').first())).toEqual({ fontSize: "14px", fontWeight: "600", lineHeight: "20px", color: text });
+      expect(await type(row.locator('[class*="line"]').first())).toMatchObject({ fontSize: "13px", lineHeight: "18px" });
+      await pins.nth(0).hover();
+      await expect(page.getByRole("tooltip")).toHaveText(/^Rewrite the pricing .+ both variants$/u);
+      // A name that fits has no tooltip. The pointer travels there as a hand moves it: the tooltip is over its way.
+      const fits = await pins.nth(2).boundingBox();
+      if (fits === null) throw new Error("no third pin");
+      await page.mouse.move(fits.x + fits.width / 2, fits.y + fits.height / 2, { steps: 12 });
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await pins.nth(0).hover();
+      await page.getByRole("tooltip").waitFor();
+    },
+  },
+  // W577, W580: the pins are a compact group, centred in the sidebar at every width: 72 px pictures 16 px apart, their
+  // places touching, two to a row, a third under the first, a lone pin (W574) in the middle. One, two and three pins,
+  // at the sidebar's narrowest and at its widest.
   ...(["showcase-pin", "showcase-pins-two", "showcase-pins"] as const).flatMap((fixture) =>
     (["Home", "End"] as const).map(
       (end): Screen => ({
@@ -1234,9 +1289,14 @@ export const screens: readonly Screen[] = [
             const left = Math.min(...cells.map((b) => b.x));
             const right = Math.max(...cells.map((b) => b.x + b.width));
             expect(Math.abs((left + right) / 2 - (g.x + g.width / 2))).toBeLessThan(1);
-            // Two to a row, a small gap apart, never each in half of a wide sidebar.
+            // Two to a row, their places touching, never each in half of a wide sidebar; and their pictures 16 px apart.
             const [a, b] = cells;
-            if (a !== undefined && b !== undefined) expect(b.x - (a.x + a.width)).toBeLessThan(12);
+            if (a !== undefined && b !== undefined) expect(Math.abs(b.x - (a.x + a.width))).toBeLessThan(0.5);
+            const pictures = await Promise.all((await slots.all()).map((slot) => slot.locator('[class*="pinCell"] > :first-child').boundingBox()));
+            const [p, q] = pictures;
+            if (p == null) throw new Error("the pins' pictures aren't on screen");
+            for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([72, 72]);
+            if (q != null) expect(q.x - (p.x + p.width)).toBeCloseTo(16, 0);
           }).toPass();
         },
       }),

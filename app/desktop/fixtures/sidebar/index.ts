@@ -1,6 +1,7 @@
 // The sidebar's reasons (status-rows' eight projects): a lead waiting on a reply, two commands to approve, a secret
 // to enter, Status's blocked projects, agents at work, and a reply that arrives after the app opened (docs), which
-// shows bold until you look. And the same projects' bots, each in a color of its own.
+// shows bold until you look. And the same projects' bots, each in a color of its own; and three of them pinned (W580):
+// a name too long for its place, one that waits on you, one with a new reply.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -65,8 +66,8 @@ export const BOT_COLORED: Readonly<Record<string, string>> = {
   "Rewrite the pricing": "teal",
 };
 
-const colors = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "sidebar-colors", "Sidebar: each project's bot in a color of its own, mobile in slate, the default.");
+/** `f`'s projects, each bot in its color (BOT_COLORED). */
+const colored = (f: Fixture): Fixture => {
   if (f.snapshot !== undefined) {
     f.snapshot["projects"] = arr(f.snapshot["projects"]).map((p) => {
       const title = asText(obj(p)["title"]);
@@ -74,6 +75,11 @@ const colors = (base: Fixture): Fixture => {
       return color === undefined ? p : { ...obj(p), avatarColor: color };
     });
   }
+  return f;
+};
+
+const colors = (base: Fixture): Fixture => {
+  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: each project's bot in a color of its own, mobile in slate, the default."));
   // storefront's settings, where its color is picked.
   const storefront = obj(arr(f.snapshot?.["projects"]).find((p) => obj(p)["title"] === "storefront"));
   const ref = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };
@@ -84,6 +90,22 @@ const colors = (base: Fixture): Fixture => {
   f.answer(PROJECT_TOOLS.purchases, ref, { purchases: [] });
   projectSections(f, ref);
   return f;
+};
+
+/**
+ * The sidebar's reasons with three chats pinned: "Rewrite the pricing…", whose name is cut short under its picture
+ * (whole in its tooltip), inventory, which waits on you, and docs, whose reply arrives once the app is open.
+ */
+const pins = (base: Fixture): Fixture => {
+  const f = colored(Fixture.from(reasons(base), "sidebar-pins", "Sidebar: three pinned, a long name, one that waits on you and one with a new reply."));
+  const ref = (title: string): JsonObject => {
+    const p = arr(f.snapshot?.["projects"])
+      .filter(isObject)
+      .find((x) => asText(x["title"]).startsWith(title));
+    if (p === undefined) throw new Error(`status-rows has no ${title}`);
+    return { machineId: p["machineId"] ?? "", projectId: p["projectId"] ?? "" };
+  };
+  return f.answer("chat_pins_get", {}, { pins: [ref("Rewrite the pricing"), ref("inventory"), ref("docs")], set: true });
 };
 
 /** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project (the showcase's too). */
@@ -121,5 +143,5 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
 };
 
 export default defineGroup({
-  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), hubs(base, false), hubs(base, true)],
+  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), pins(base("status-rows")), hubs(base, false), hubs(base, true)],
 });

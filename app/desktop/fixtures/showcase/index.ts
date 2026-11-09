@@ -626,7 +626,7 @@ const pinnedOne = (base: Fixture): Fixture => {
   return f.answer("chat_pins_get", {}, { pins: [ref("billing")], set: true });
 };
 
-/** The showcase with billing and Ada pinned: two pins side by side, a small gap between them at every sidebar width. */
+/** The showcase with billing and Ada pinned: two pins side by side, their pictures 16 px apart at every sidebar width. */
 const pinnedTwo = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "showcase-pins-two", "The showcase with billing and Ada pinned.");
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
