@@ -31,24 +31,32 @@ const named = (names: string[]) => names.map((n) => `\`${n}\``).join(", ");
 
 /** Why a ready PR's own head keeps it out of a batch, by its fast set and the checks the batch skips; undefined: it may join. */
 export function ownChecks(runs: CheckRun[], statuses: CommitStatus[], fast: Fast | undefined, batch: string[]): string | undefined {
-  if (runs.length === 0 && statuses.length === 0) return "its own head has no checks yet";
+  return ownVerdict(runs, statuses, fast, batch).why;
+}
+
+/** A check that failed on a PR's own head, with its log (the run's page, the status's target). */
+export type Red = { name: string; url?: string };
+
+/** `ownChecks`, with the checks of it that failed. */
+function ownVerdict(runs: CheckRun[], statuses: CommitStatus[], fast: Fast | undefined, batch: string[]): { why?: string; red: Red[] } {
+  if (runs.length === 0 && statuses.length === 0) return { why: "its own head has no checks yet", red: [] };
   const judged = ownJudged(runs, fast, batch);
-  const red = judged.filter(isRed).map((r) => r.name);
+  const red: Red[] = judged.filter(isRed).map((r) => (r.html_url ? { name: r.name, url: r.html_url } : { name: r.name }));
   const set = fast?.set ?? [];
   const wanted: string[] = [];
   for (const name of [...set, ...batch]) if (!wanted.includes(name) && !runs.some((r) => next.gatedName(name, r.name))) wanted.push(name);
   const missing: string[] = [];
   for (const name of wanted) {
-    const state = statuses.find((s) => s.context === name)?.state;
-    if (state === "success") continue;
-    if (state === "failure" || state === "error") red.push(name);
+    const status = statuses.find((s) => s.context === name);
+    if (status?.state === "success") continue;
+    if (status?.state === "failure" || status?.state === "error") red.push(status.target_url ? { name, url: status.target_url } : { name });
     else missing.push(name);
   }
   const running = judged.filter((r) => r.status !== "completed").map((r) => r.name);
-  if (red.length > 0) return `its own head's ${named(red)} failed`;
-  if (running.length > 0) return `its own head's ${named(running)} still running`;
-  if (missing.length > 0) return `its own head hasn't reported ${named(missing)} yet`;
-  return undefined;
+  if (red.length > 0) return { why: `its own head's ${named(red.map((r) => r.name))} failed`, red };
+  if (running.length > 0) return { why: `its own head's ${named(running)} still running`, red };
+  if (missing.length > 0) return { why: `its own head hasn't reported ${named(missing)} yet`, red };
+  return { red };
 }
 
 /** The runs of `runs` that `ownChecks` judges a PR's own head by. */
@@ -169,14 +177,17 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   const base = head.pull.base.ref;
   const members: Candidate[] = [];
   const left: [Candidate, string][] = [];
+  const reds = new Map<string, Red[]>();
   if (cands.length >= 2) {
     for (const c of cands) {
-      const why =
-        members.length === BATCH_MAX
-          ? `the batch is full (${BATCH_MAX} PRs)`
-          : c.pull.base.ref !== base
-            ? `it merges into ${c.pull.base.ref}, and this batch into ${base}`
-            : await ownCi(t, repo, c.change, base);
+      let why: string | undefined;
+      if (members.length === BATCH_MAX) why = `the batch is full (${BATCH_MAX} PRs)`;
+      else if (c.pull.base.ref !== base) why = `it merges into ${c.pull.base.ref}, and this batch into ${base}`;
+      else {
+        const own = await ownCiRed(t, repo, c.change, base);
+        if (own.red.length > 0) reds.set(c.change.changeId, own.red);
+        why = own.why;
+      }
       if (why === undefined) members.push(c);
       else left.push([c, why]);
     }
@@ -191,6 +202,9 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   for (const c of cands) {
     const why = taken.some((x) => x.change.changeId === c.change.changeId) ? undefined : left.find(([l]) => l.change.changeId === c.change.changeId)?.[1];
     leftOut(t, repo, c.change, why);
+    // One that goes alone is told by its CI instead.
+    const red = reds.get(c.change.changeId);
+    if (why !== undefined && red) await tellOwnRed(t, c.change, red);
   }
   // A PR its own CI already tested on the base as it is now needs no label.
   const tested = members.length < 2 && (await testedAlone(t, head.change, head.pull));
@@ -294,18 +308,23 @@ function readyError(t: Train, change: Change, message: string): void {
 
 /** Why the Change's own head keeps it out of a batch into `base`; undefined when it may join. */
 export async function ownCi(t: Train, repo: string, change: Change, base: string): Promise<string | undefined> {
+  return (await ownCiRed(t, repo, change, base)).why;
+}
+
+/** `ownCi`, with the checks that failed on the head. */
+async function ownCiRed(t: Train, repo: string, change: Change, base: string): Promise<{ why?: string; red: Red[] }> {
   let runs: CheckRun[];
   try {
     runs = await t.github.checkRuns(repo, change.headSha);
   } catch (error) {
-    return `its checks could not be read: GitHub: ${(error as Error).message}`;
+    return { why: `its checks could not be read: GitHub: ${(error as Error).message}`, red: [] };
   }
   const fast = await t.fast(repo, base);
   const workflows = await next.workflows(t, repo, base);
-  if (!workflows) return "its workflows could not be read for the checks a batch skips";
+  if (!workflows) return { why: "its workflows could not be read for the checks a batch skips", red: [] };
   const sha = change.headSha;
   const skipWhy = await next.rerunCancelledSkips(t, repo, sha, runs, workflows.batch);
-  if (skipWhy !== undefined) return skipWhy;
+  if (skipWhy !== undefined) return { why: skipWhy, red: [] };
   runs = next.provenRuns(runs, workflows.batch);
   const batch = next.batchNames(workflows);
   // A check of the fast set whose job its tree doesn't define can't run on its head: the batch's CI decides it.
@@ -322,17 +341,34 @@ export async function ownCi(t: Train, repo: string, change: Change, base: string
     try {
       statuses = await t.github.statuses(repo, change.headSha);
     } catch (error) {
-      return `its statuses could not be read: GitHub: ${(error as Error).message}`;
+      return { why: `its statuses could not be read: GitHub: ${(error as Error).message}`, red: [] };
     }
   }
-  const why = ownChecks(runs, statuses, fast, batch);
+  const verdict = ownVerdict(runs, statuses, fast, batch);
   // Still running, none failed: a check GitHub left pending under a finished run goes again (`rerunStale`).
   const judged = ownJudged(runs, fast, batch);
-  if (why !== undefined && !judged.some(isRed)) {
+  if (verdict.why !== undefined && !judged.some(isRed)) {
     const stale = await rerunStale(t, repo, sha, judged);
-    if (stale) return stale.why;
+    if (stale) return { why: stale.why, red: verdict.red };
   }
-  return why;
+  // Green: a later red head is told again (`tellOwnRed`).
+  if (verdict.why === undefined) t.ownRedTold.delete(change.changeId);
+  return verdict;
+}
+
+/**
+ * Tells the author of a ready Change left out of the batch for its own head's red checks (`red`, each with its log):
+ * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, in memory, so a
+ * restart may tell one again.
+ */
+async function tellOwnRed(t: Train, change: Change, red: Red[]): Promise<void> {
+  const head = change.headSha;
+  if (t.ownRedTold.get(change.changeId) === head) return;
+  t.ownRedTold.set(change.changeId, head);
+  const url = red.find((r) => r.url)?.url;
+  const log = url ? ` (log: ${url})` : "";
+  const names = named(red.map((r) => r.name));
+  await t.tellAuthor(change, `the merge train leaves it out of every batch: its own head's ${names} failed on ${short(head)}${log}`);
 }
 
 /** Records why this pass left a ready Change out of the batch (`LEFT_OUT`); undefined clears an earlier reason. */
@@ -465,7 +501,10 @@ async function follower(t: Train, repo: string, base: string, ahead: Stage, k: n
   const picked: Candidate[] = [];
   for (const c of cands) {
     if (picked.length === BATCH_MAX) break;
-    if (c.pull.base.ref === base && (await ownCi(t, repo, c.change, base)) === undefined) picked.push(c);
+    if (c.pull.base.ref !== base) continue;
+    const own = await ownCiRed(t, repo, c.change, base);
+    if (own.why === undefined) picked.push(c);
+    else if (own.red.length > 0) await tellOwnRed(t, c.change, own.red);
   }
   if (picked.length === 0) return undefined;
   const building = (["ready", "reviewing"] as ChangeState[]).flatMap((from) => advance(t, picked.filter((m) => m.change.state === from), from, "rebasing"));

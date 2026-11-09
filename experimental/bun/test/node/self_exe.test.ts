@@ -3,7 +3,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pinFrom } from "../../src/node/self_exe.ts";
+import { forwarderDir, installForwarder, refreshForwarders } from "../../src/node/mac_tool/shim.ts";
+import { pinFrom, pinSelf } from "../../src/node/self_exe.ts";
 import { tempHome } from "../helpers.ts";
 
 const cleanups: (() => void)[] = [];
@@ -61,4 +62,48 @@ test.if(process.platform === "linux" || process.platform === "darwin")("a gone n
   writeFileSync(helper, "");
   pinFrom(helper, home, 999999996, process.platform);
   expect(existsSync(used)).toBe(true);
+});
+
+test("a compiled node pins itself for agents' mac, apart from the session host's pins; from source it runs Bun with its entry", () => {
+  const dir = tempHome();
+  cleanups.push(dir.done);
+  const home = join(dir.dir, "node");
+  const installed = join(dir.dir, "fleetd");
+  writeFileSync(installed, "#!/bin/sh\necho bun build\n");
+  chmodSync(installed, 0o755);
+  expect(pinSelf(home, "/src/main.ts", "/usr/bin/bun")).toEqual(["/usr/bin/bun", "/src/main.ts"]);
+  const helper = pinFrom(installed, home, process.pid);
+  const [pinned, ...rest] = pinSelf(home, "/$bunfs/root/fleetd", installed);
+  expect(rest).toEqual([]);
+  expect(pinned).toBe(join(home, "bin", `fleetd-bun-${process.pid}`));
+  // An update renamed over the installed binary leaves the pin as it was, and the session host's pin stays.
+  writeFileSync(`${installed}.new`, "#!/bin/sh\necho newer\n");
+  renameSync(`${installed}.new`, installed);
+  expect(Bun.spawnSync([pinned!]).stdout.toString()).toBe("bun build\n");
+  expect(existsSync(helper)).toBe(true);
+});
+
+test("a node restarted under a session that holds a simulator points its forwarder at the new pin, as the old one goes", () => {
+  const dir = tempHome();
+  cleanups.push(dir.done);
+  const home = join(dir.dir, "node");
+  const installed = join(dir.dir, "fleetd");
+  writeFileSync(installed, '#!/bin/sh\necho "fleetd $@"\n');
+  chmodSync(installed, 0o755);
+  // The node before pinned itself and wrote the session's forwarder at `mac sim start`; its pid is gone now.
+  const before = pinFrom(installed, home, 999999990, process.platform, "fleetd-bun-");
+  installForwarder(home, "t1", [before]);
+  const fwd = join(forwarderDir(home, "t1"), "agent-device");
+  // The new node's pin sweeps the old one: the forwarder as it was can't start.
+  const [now] = pinSelf(home, "/$bunfs/root/fleetd", installed);
+  expect(existsSync(before)).toBe(false);
+  expect(Bun.spawnSync([fwd, "snapshot"], { stderr: "pipe" }).exitCode).toBe(127);
+  expect(refreshForwarders(home, [now!])).toBe(1);
+  const out = Bun.spawnSync([fwd, "snapshot"]);
+  expect(out.exitCode).toBe(0);
+  expect(out.stdout.toString()).toBe("fleetd mac agent-device snapshot\n");
+  // Sessions without a simulator get none.
+  mkdirSync(join(home, "sessions", "t2"), { recursive: true });
+  expect(refreshForwarders(home, [now!])).toBe(1);
+  expect(existsSync(forwarderDir(home, "t2"))).toBe(false);
 });

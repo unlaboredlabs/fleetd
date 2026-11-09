@@ -384,3 +384,60 @@ test("an agent's claude launches with agent-browser at this node's proxy, under 
   await t.local.call("session_start", { purpose: "look" }, "t7");
   expect(JSON.parse(await Bun.file(env.AGENT_BROWSER_ACTION_POLICY!).text())).toEqual({ default: "allow", deny: ["connect"] });
 });
+
+test("after each of the agent's commands the page's DOM goes into the trace, once per change, scrubbed", async () => {
+  let html = '<html><body><input value="hunter2-value"></body></html>';
+  let deliver: (text: string) => void = () => {};
+  const browser: Transport = {
+    send(text) {
+      const m = JSON.parse(text) as { id: number; method: string };
+      const result =
+        m.method === "Target.getTargets"
+          ? { targetInfos: [{ targetId: "P1", type: "page", url: "https://shop.test/" }] }
+          : m.method === "Target.attachToTarget"
+            ? { sessionId: "broker-s" }
+            : m.method === "DOM.getDocument"
+              ? { root: { nodeId: 1 } }
+              : m.method === "DOM.getOuterHTML"
+                ? { outerHTML: html }
+                : m.method === "Target.getTargetInfo"
+                  ? { targetInfo: { url: "https://shop.test/", title: "Shop" } }
+                  : {};
+      queueMicrotask(() => deliver(JSON.stringify({ id: m.id, result })));
+      return true;
+    },
+    onMessage: (fn) => (deliver = fn),
+    onClose: () => {},
+    close: () => {},
+  };
+  const { broker, link, local, node } = nodeWith(async () => ({ cdp: new Cdp(browser) }));
+  const parts: Record<string, unknown>[] = [];
+  link.answer = async (op, args) => {
+    if (op !== "browser_recording_part") return {};
+    parts.push(args);
+    return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
+  };
+  broker.secretsFor("t7", [["LOGIN", "hunter2-value"]]);
+  await local.call("session_start", { purpose: "buy" }, "t7");
+  const at = "2026-11-08T12:00:00.000Z";
+  const item = (command: string) => ({ id: command, status: "completed", title: command, startedAt: at, completedAt: at, updatedAt: at, kind: { type: "command", command, exitCode: 0 } });
+  node.area("items").ended("t7", item("agent-browser snapshot") as never);
+  node.area("items").ended("t7", item("agent-browser snapshot -i") as never);
+  await broker.live("t7")!.flushCaptures();
+  html = "<html><body>Thanks</body></html>";
+  node.area("items").ended("t7", item("agent-browser click @e1") as never);
+  const ended = (await local.call("session_end", {}, "t7")) as { files: { file: string }[] };
+  expect(ended.files.map((f) => f.file).sort()).toEqual(["actions", "dom"]);
+  for (let i = 0; i < 200 && !parts.some((p) => p.file === "dom"); i++) await Bun.sleep(10);
+  const dom = parts
+    .filter((p) => p.file === "dom")
+    .map((p) => Buffer.from(String(p.dataB64), "base64").toString())
+    .join("")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l) as { seq: number; url: string; title: string; html: string });
+  // The page as the first command left it, unchanged by the second, then changed by the third.
+  expect(dom.map((d) => d.seq)).toEqual([1, 3]);
+  expect(dom[0]).toMatchObject({ url: "https://shop.test/", title: "Shop", html: '<html><body><input value="***LOGIN***"></body></html>' });
+  expect(dom[1]!.html).toBe("<html><body>Thanks</body></html>");
+});

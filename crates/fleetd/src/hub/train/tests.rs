@@ -7067,6 +7067,70 @@ async fn a_pr_left_out_of_a_batch_says_why() {
     assert!(!why(&red).is_some_and(|e| e.starts_with(super::batch::LEFT_OUT)));
 }
 
+/// W539: a writer's ready PR the batch leaves out for its own head's red check hears of it once per head, with the
+/// check and its log, though it waits on no CI; the next pass doesn't tell it again, and a green read of its own CI
+/// forgets it, so a later red one tells again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_left_out_for_its_own_red_head_tells_its_writer_once() {
+    let kit = kit_on(&REPOS[0]);
+    let pr = kit.open_pr(8, "r", &[add("r1.txt", "r\n")]);
+    let red_runs = json!([run(1, "build", Some("failure"))]);
+    let heads = &kit.gh.head_runs;
+    heads
+        .lock()
+        .unwrap()
+        .insert(kit.head_of("r"), red_runs.clone());
+    let (_, red) = kit.author_task(Some(&pr)).await;
+    let told = || {
+        kit.host
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(to, _)| to == "T1")
+            .map(|(_, m)| m.clone())
+            .collect::<Vec<_>>()
+    };
+    let pair = async |prs: [(i64, &'static str); 2]| {
+        for (n, file) in prs {
+            kit.enqueue(kit.open_pr(n, &format!("g{n}"), &[add(file, "g\n")]))
+                .await;
+        }
+    };
+
+    pair([(7, "g7.txt"), (10, "g10.txt")]).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 10]);
+    assert_eq!(
+        kit.get(&red).last_error.as_deref(),
+        Some("not in this batch: its own head's `build` failed")
+    );
+    let head = kit.get(&red).head_sha;
+    let sent = told();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(
+        sent[0].contains(&format!(
+            "its own head's `build` failed on {} (log: https://github.com/{REPO}/actions/runs/1/job/1)",
+            short(head.as_str())
+        )),
+        "{}",
+        sent[0]
+    );
+
+    // Left out again on the next pass: no second message for the same head.
+    pair([(11, "g11.txt"), (12, "g12.txt")]).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(told().len(), 1);
+
+    // Green on its own head, then red again: told again.
+    heads.lock().unwrap().remove(&kit.head_of("r"));
+    assert_eq!(kit.train.own_ci(REPO, &kit.get(&red), "main").await, None);
+    heads.lock().unwrap().insert(kit.head_of("r"), red_runs);
+    pair([(13, "g13.txt"), (14, "g14.txt")]).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(told().len(), 2);
+}
+
 /// D204: CI that skips its macOS jobs on the batch PR (`!endsWith(github.head_ref, 'train/batch')`). A PR joins a batch
 /// only once its own head passed them, or skipped them: `desktop-macos` needs `macos scope`, whose run passed on that
 /// head, with or without its "no work for desktop-macos" notice (a re-run drops it). One still running, failed or not

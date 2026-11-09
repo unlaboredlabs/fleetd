@@ -321,6 +321,11 @@ const MODULES_WITHOUT_A_WIRE: [rust: string, module: string, what: string][] = [
   ["node/store.rs", "node/sessions", "steps older than 30 days pruned; the span outbox bounded with a gap span"],
   ["node/worktree.rs", "node/worktree", "token-marked checkouts fetch with their order's GITHUB_TOKEN; a review at its PR's head"],
   ["node/runner/process.rs", "node/runner", "processes a task left running (the host's `.left` record) ended with the task"],
+  ["node/session_route.rs", "node/session_route", "every kind of screen placed elsewhere: the session's secrets sealed to the runner, none to the agents' Mac, each step masked"],
+  ["node/device/remote.rs", "node/device", "a screen hosted for another machine runs sealed agent-device steps in its own folder; the agent's forwarder is node/mac_tool's"],
+  ["node/desktop/session.rs", "node/desktop", "desktop and Mac screen recordings: video, action log, scrubbed, uploaded"],
+  ["node/browser/upload.rs", "node/browser", "recordings a stopped node left, every kind's and a Rust node's iOS ones, ended and uploaded"],
+  ["node/mask.rs", "node/browser", "the thorough masker and Scrub every screen's recording and DOM trace go through"],
 ];
 for (const [rust, module, what] of MODULES_WITHOUT_A_WIRE) {
   if (!existsSync(join(CRATE, rust))) throw new Error(`gen: crates/fleetd/src/${rust} is gone: update MODULES_WITHOUT_A_WIRE`);

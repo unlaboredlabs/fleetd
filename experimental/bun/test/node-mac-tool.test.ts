@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
-import { start as startMac } from "../src/node/mac_tool/index.ts";
-import { binDir, forwarder, forwarderDir, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
+import { self, start as startMac } from "../src/node/mac_tool/index.ts";
+import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { publicKeyOf } from "../src/shared/sealed_box.ts";
@@ -39,7 +39,7 @@ function setup() {
   writeFileSync(join(wt, "app.txt"), "v1\n");
   writeFileSync(join(wt, ".gitignore"), "build/\n");
   cleanups.push(macHome.done, agent.done, work.done, () => host.stop());
-  return { host, client: new MacClient(agent.node), wt, macRoot: join(macHome.dir, "mac"), secret, caller };
+  return { host, client: new MacClient(agent.node, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller };
 }
 
 test("push, run, logs and pull: the agent's worktree on the Mac, its job's output, and its files back", async () => {
@@ -81,7 +81,8 @@ test("push, run, logs and pull: the agent's worktree on the Mac, its job's outpu
   await client.call("t1", wt, { step: "pull", path: "build" });
   expect(readFileSync(join(wt, "build", "out", "a.txt"), "utf8")).toBe("built\n");
   // Never outside the agent's folder on the Mac, or outside the worktree here.
-  await expect(client.call("t1", wt, { step: "pull", path: "/etc/hostname" })).rejects.toThrow("outside your folder on the Mac");
+  // A file that is there, on any OS: this worktree's own, outside the agent's folder on the Mac.
+  await expect(client.call("t1", wt, { step: "pull", path: join(wt, "app.txt") })).rejects.toThrow("outside your folder on the Mac");
   await expect(client.call("t1", wt, { step: "pull", path: "app.txt", to: "../x" })).rejects.toThrow("outside your worktree");
 }, 30_000);
 
@@ -128,7 +129,7 @@ test("mac sim start puts the forwarding agent-device first on the session's PATH
   const fwd = forwarderDir(agentHome, "t1");
   expect(await client.call("t1", wt, { step: "sim_start" })).toEqual({ step: "sim_start", udid: "U1", device: "iPhone 17" });
   const script = readFileSync(join(fwd, "agent-device"), "utf8");
-  expect(script).toContain(" mac agent-device \"$@\"");
+  expect(script).toContain("exec '/pinned/fleetd-bun-1' mac agent-device \"$@\"");
   expect(statSync(join(fwd, "agent-device")).mode & 0o777).toBe(0o700);
   expect(launchEnv(agentHome, "t1", "/usr/bin")[0]?.[1]).toBe(`${fwd}:${binDir(agentHome)}:/usr/bin`);
   expect(await client.call("t1", wt, { step: "sim_end" })).toEqual({ step: "sim_end", ended: true });
@@ -145,21 +146,45 @@ test("the Mac sweeps agents' folders nothing touched for FOLDER_DAYS, with their
   writeFileSync(join(macRoot, "T8", ".used"), "");
   const now = Date.now();
   // Two days on, nothing goes; four days on from T7's last step, it goes, and T8 (touched since) stays.
-  expect(sweep(macRoot, FOLDER_DAYS, now + 2 * 86_400_000)).toEqual([]);
+  expect(await sweep(macRoot, FOLDER_DAYS, now + 2 * 86_400_000)).toEqual([]);
   const old = (now - 4 * 86_400_000) / 1000;
   utimesSync(join(macRoot, "T7", ".used"), old, old);
-  expect(sweep(macRoot, FOLDER_DAYS, now)).toEqual(["T7"]);
+  expect(await sweep(macRoot, FOLDER_DAYS, now)).toEqual(["T7"]);
   expect(existsSync(join(macRoot, "T7"))).toBe(false);
   expect(existsSync(join(macRoot, "T8"))).toBe(true);
   expect(existsSync(join(macRoot, ".cache")) || existsSync(mirror)).toBe(true);
   expect(ref()).not.toBe(0);
 }, 30_000);
 
+test("a big sweep leaves the node's event loop free while it removes", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const root = join(home.dir, "mac");
+  const big = join(root, "T9");
+  for (let d = 0; d < 20; d++) {
+    mkdirSync(join(big, "DerivedData", `d${d}`), { recursive: true });
+    for (let f = 0; f < 50; f++) writeFileSync(join(big, "DerivedData", `d${d}`, `f${f}.o`), "x");
+  }
+  writeFileSync(join(big, ".used"), "");
+  const old = (Date.now() - 4 * 86_400_000) / 1000;
+  utimesSync(join(big, ".used"), old, old);
+  // A timer standing in for the node's link: a sweep run on the loop would let it fire only once it had finished.
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  const swept = sweep(root, FOLDER_DAYS);
+  const ticksAtStart = ticks;
+  expect(await swept).toEqual(["T9"]);
+  clearInterval(timer);
+  expect(ticksAtStart).toBe(0);
+  expect(ticks).toBeGreaterThan(0);
+  expect(existsSync(big)).toBe(false);
+});
+
 test("the menu bar's activity: agents' simulators and running jobs, oldest first, written only when it changes", async () => {
   const { host, client, wt } = setup();
   await client.call("t1", wt, { step: "push" });
   const run = (await client.call("t1", wt, { step: "run", args: [`sleep 5 # ${"x".repeat(300)}`], background: true })) as { job: number };
-  host.sims = { held: new Map([["T7", { project: "p1", device: "iPhone 17", sinceMs: 5 }]]), touch: () => {}, env: () => undefined } as never;
+  host.sims = { activity: () => [{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }], touch: () => {}, env: () => undefined } as never;
   const now = host.activity();
   expect(now.simulators).toEqual([{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }]);
   expect(now.jobs).toEqual([expect.objectContaining({ agent: "T7", projectId: "p1", job: run.job })]);
@@ -179,9 +204,14 @@ test("the menu bar's activity: agents' simulators and running jobs, oldest first
 test("an agent node writes `mac` at its start and puts it on every session's PATH; the agents' Mac doesn't", () => {
   const agent = testNode("devbox");
   cleanups.push(agent.done);
+  // A session that held a simulator across the node's restart: its forwarder names the node before's pin.
+  installForwarder(agent.node.home, "t8", ["/gone/fleetd-bun-1"]);
   startMac(agent.node);
+  expect(readFileSync(join(forwarderDir(agent.node.home, "t8"), "agent-device"), "utf8")).toBe(forwarder(self(agent.node)));
   const bin = join(binDir(agent.node.home), "mac");
   expect(readFileSync(bin, "utf8")).toMatch(/^#!\/bin\/sh\n# fleetd's: .*\nexec '.+' mac "\$@"\n$/);
+  // The node's own command, pinned once (a compiled build's copy under bin/): the shim runs it.
+  expect(readFileSync(bin, "utf8")).toBe(shim(self(agent.node)));
   expect(statSync(bin).mode & 0o777).toBe(0o755);
   const path = new Map(agent.node.area("launch").env("t9", "/usr/bin")).get("PATH");
   expect(path).toBe(`${forwarderDir(agent.node.home, "t9")}:${binDir(agent.node.home)}:/usr/bin`);
