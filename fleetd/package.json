@@ -6,11 +6,11 @@
     "gen": "bun scripts/gen.ts && bun scripts/docs.ts && bun scripts/setup-fixtures.ts",
     "gen:check": "bun scripts/gen.ts --check && bun scripts/docs.ts --check && bun scripts/setup-fixtures.ts --check",
     "typecheck": "tsc-rs -p tsconfig.json",
-    "test": "bun test",
+    "test": "bun test --parallel=4",
     "compile": "bun build --compile --minify --bytecode --sourcemap --root . src/main.ts src/hub/store/read-worker.ts src/hub/projects/avatar-worker.ts --outfile dist/fleetd",
     "smoke": "bun scripts/smoke.ts",
     "blackbox": "FLEETD_BIN=dist/fleetd bun test test/blackbox",
-    "check": "bun run gen:check && bun run typecheck && bun test && bun run compile && bun run smoke",
+    "check": "bun run gen:check && bun run typecheck && bun test --parallel=4 && bun run compile && bun run smoke",
     "docs": "bun scripts/docs.ts"
   },
   "devDependencies": {
