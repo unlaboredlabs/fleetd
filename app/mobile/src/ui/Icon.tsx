@@ -91,6 +91,9 @@ const SYMBOLS = {
   trashFill: ["trash.fill", "delete"],
   edit: ["pencil", "edit"],
   eye: ["eye", "visibility"],
+  moveUp: ["arrow.up", "arrow_upward"],
+  moveDown: ["arrow.down", "arrow_downward"],
+  noSection: ["folder.badge.minus", "folder_off"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

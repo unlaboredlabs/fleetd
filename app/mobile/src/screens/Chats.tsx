@@ -8,7 +8,9 @@
 // it, as a chat swipes in Messages (ui/SwipeRow.tsx); hold it or a pinned avatar for the same in iOS's own menu
 // (ui/HoldMenu.tsx). A filter or a search shows the pinned chats as rows. Pins are kept per person on the hub
 // (pins.ts); mute and read live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
-// the hub again.
+// the hub again. Under the pins, the chats in none of the person's sections come first, then each section under its
+// quiet label (Sections.tsx), which folds it at a tap; a chat's hold menu moves it to one. A filter or a search is a
+// flat list, with no labels.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -20,9 +22,10 @@ import { listTime } from "../chatView";
 import { useHub, type ChatsParams, type RootParams } from "../hubContext";
 import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
-import { MAX_PINNED, pinsOf, togglePin } from "../prefs";
+import { MAX_PINNED, pinsOf, sectionsOf, togglePin } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
+import { sectionLines, type SectionLine } from "../sections";
 import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
@@ -44,10 +47,13 @@ import { unreachable } from "../link";
 import { useHubWord, useLinkDown } from "./linkHeader";
 import { newChatItem } from "./manage";
 import { PinnedGrid } from "./Pinned";
+import { SectionLabel, useSectionMenus } from "./Sections";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
 const AVATAR = 56;
+/** How long the line that says why a change to the sections was taken back stays. */
+const REFUSED_MS = 6000;
 /**
  * The person's avatar in the bar: drawn at 38 pt over a 34 pt view, as iOS sizes the bar's glass circle to the view
  * (45 pt round, the same as +'s) and a wider one would stretch it into a capsule. It fills the glass, as in Messages.
@@ -64,7 +70,11 @@ export const searchBar = bottomBar
   ? ({ placeholder: "Search", placement: "integrated", allowToolbarIntegration: true, hideWhenScrolling: false } as const)
   : ({ placeholder: "Search", placement: "stacked", hideWhenScrolling: false } as const);
 
-type Line = { readonly t: "head"; readonly key: string; readonly title: string } | { readonly t: "chat"; readonly key: string; readonly row: ChatRow } | { readonly t: "hit"; readonly key: string; readonly hit: MessageHit };
+type Line =
+  | { readonly t: "head"; readonly key: string; readonly title: string }
+  | { readonly t: "chat"; readonly key: string; readonly row: ChatRow }
+  | { readonly t: "hit"; readonly key: string; readonly hit: MessageHit }
+  | (Extract<SectionLine, { t: "section" }> & { readonly key: string });
 
 /** Keys the list held when it was last drawn: one that turns up later rises in (ui/motion.ts rowIn), once. */
 const useArrived = (keys: readonly string[]): ReadonlySet<string> => {
@@ -148,8 +158,11 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const all = chatList(state, prefs, "all", pins);
   const shown = chatList(state, prefs, filter, pins);
   const split = useMemo(() => pinnedSplit(shown ?? [], pins, filter, query), [shown, pins, filter, query]);
+  const sections = sectionsOf(prefs, paired.hub);
   const lines = useMemo((): readonly Line[] => {
     if (shown === undefined || all === undefined) return [];
+    // Sections are the whole list's: a filter's is flat. A chat keeps its key in or out of a section, so a move slides it.
+    if (query === "" && filter === "all") return sectionLines(split.rows, sections, prefs.folded).map((l) => (l.t === "chat" ? { t: "chat", key: l.row.key, row: l.row } : { ...l, key: `s:${l.section.id}` }));
     if (query === "") return split.rows.map((row) => ({ t: "chat", key: row.key, row }));
     const chats = all.filter((r) => matchesName(r.project.title, query));
     const sources: Record<Key, ChatMessage[]> = {};
@@ -159,7 +172,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       ...(chats.length === 0 ? [] : [{ t: "head" as const, key: "h:chats", title: "Chats" }, ...chats.map((row) => ({ t: "chat" as const, key: `c:${row.key}`, row }))]),
       ...(hits.length === 0 ? [] : [{ t: "head" as const, key: "h:messages", title: "Messages" }, ...hits.map((hit) => ({ t: "hit" as const, key: `m:${hit.messageId}`, hit }))]),
     ];
-  }, [shown, all, split, query, state.corpus, state.latest, state.chats, state.projects]);
+  }, [shown, all, split, query, filter, sections, prefs.folded, state.corpus, state.latest, state.chats, state.projects]);
   const arrived = useArrived(lines.map((l) => l.key));
   const pinArrived = useArrived(split.grid.map((r) => r.key));
 
@@ -170,6 +183,25 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     haptics.warning();
     Alert.alert(`You can pin up to ${String(MAX_PINNED)} chats`, "Unpin one to pin this one.");
   };
+  const sectionMenus = useSectionMenus(session, sections);
+  const sectionsShown = lines.flatMap((l) => (l.t === "section" ? [l.section.id] : []));
+  const holdActions = (row: ChatRow): readonly MenuItem[] => [...rowActions(row, pin), sectionMenus.moveItem(row)];
+  // A change to the sections the hub refused is taken back: a quiet line over the list says why, for a while.
+  const [refused, setRefused] = useState<string>();
+  useEffect(
+    () =>
+      session.onSectionsRefused((words) => {
+        haptics.warning();
+        setRefused(words);
+      }),
+    [session],
+  );
+  useEffect(() => {
+    if (refused === undefined) return;
+    const gone = setTimeout(() => setRefused(undefined), REFUSED_MS);
+    return () => clearTimeout(gone);
+  }, [refused]);
+  useAnnounce(refused);
   const counts = { unread: all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0, needsYou: all?.filter((r) => r.approvals > 0).length ?? 0 };
   const choices = filterChoices(counts);
   const pick = (f: Filter) => {
@@ -263,25 +295,32 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
                 {hubSays.line.text}
               </Text>
             )}
+            {refused === undefined ? null : (
+              <Text style={[type.footnote, styles.slow, { color: t.secondary }]} accessibilityLiveRegion="polite">
+                {refused}
+              </Text>
+            )}
             {Platform.OS === "android" && query === "" && all !== undefined && all.length > 0 ? <Filters choices={choices} value={filter} onChange={pick} counts={counts} /> : null}
-            {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} arrived={pinArrived} onOpen={(row) => open(row.key)} menu={(row) => rowActions(row, pin)} label={rowLabel} />}
+            {split.grid.length === 0 ? null : <PinnedGrid rows={split.grid} arrived={pinArrived} onOpen={(row) => open(row.key)} menu={holdActions} label={rowLabel} />}
           </>
         }
         // Every chat pinned: the grid is the list, with nothing under it.
         ListEmptyComponent={split.grid.length > 0 ? undefined : empty}
         renderItem={({ item: line, index }) => {
           const next = lines[index + 1];
-          const separator = next !== undefined && next.t !== "head";
+          const separator = next !== undefined && next.t !== "head" && next.t !== "section";
           return (
             <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
               {line.t === "head" ? (
                 <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
                   {line.title}
                 </Text>
+              ) : line.t === "section" ? (
+                <SectionLabel line={line} items={sectionMenus.labelItems(line.section, sectionsShown)} />
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} />
+                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} more={sectionMenus.moveItem(line.row)} />
               )}
             </Animated.View>
           );
@@ -289,6 +328,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       />
       {/* After the list: the screen's first view is the scroll view the bars follow. */}
       <Toolbar filters={choices} selected={filter} label={filterLabel(filter)} onSelect={pick} />
+      {sectionMenus.asking}
     </>
   );
 }
@@ -399,9 +439,9 @@ const FILLED: Partial<Record<IconName, IconName>> = { read: "readFill", unread: 
 
 /**
  * A chat row that swipes, as in Messages: right for read (blue, a full swipe's) and pin (orange), left for mute
- * (indigo, a full swipe's too).
+ * (indigo, a full swipe's too). `more`: what its hold menu offers after those (Move to Section…).
  */
-function SwipingChat({ row, separator, onPress, onPin }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void }) {
+function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: MenuItem }) {
   const t = useTheme();
   const acts = rowActions(row, onPin);
   const [read, pin, mute] = acts;
@@ -410,7 +450,7 @@ function SwipingChat({ row, separator, onPress, onPin }: { row: ChatRow; separat
     <SwipeRow id={row.key} leading={[swipe(read, t.blue), swipe(pin, t.orange)]} trailing={[swipe(mute, t.indigo)]}>
       {(tap, lifted) => (
         <HoldMenu
-          items={acts}
+          items={[...acts, more]}
           radius={ROW_RADIUS}
           color={t.bg}
           onPress={tap(onPress)}

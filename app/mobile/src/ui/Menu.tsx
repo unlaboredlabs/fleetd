@@ -1,9 +1,10 @@
 // A context menu as iOS 26 draws one: what was pressed lifted over a blurred screen, and a glass menu of
 // actions beside it (each a word, then its symbol). It fades in as the desktop's menus do (--dur-fast, ease-out) and
-// closes at once. Tapping outside closes it; VoiceOver's escape gesture does too.
+// closes at once. Tapping outside closes it; VoiceOver's escape gesture does too. More actions than the screen is tall
+// scroll.
 import { BlurView } from "expo-blur";
 import { useEffect, type ReactNode } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { space, type, useTheme } from "../theme";
@@ -39,13 +40,13 @@ const GAP = 8;
 
 /** Where the lifted view and the menu go: the view stays where it was when it can, moved up or cut short when the menu wouldn't fit. */
 const placeMenu = (at: Rect, rows: number, screen: { width: number; height: number }, insets: { top: number; bottom: number }, align: "left" | "right") => {
-  const menuH = rows * ROW;
   const top = insets.top + GAP;
   const bottom = screen.height - insets.bottom - GAP;
-  const height = Math.min(at.height, bottom - top - menuH - GAP);
+  const menuH = Math.min(rows * ROW, bottom - top - GAP);
+  const height = Math.max(0, Math.min(at.height, bottom - top - menuH - GAP));
   const y = Math.max(top, Math.min(at.y, bottom - menuH - GAP - height));
   const left = align === "left" ? Math.max(space.md, at.x) : Math.min(screen.width - space.md - WIDTH, at.x + at.width - WIDTH);
-  return { preview: { x: at.x, y, width: at.width, height }, menu: { x: Math.max(space.md, left), y: y + height + GAP } };
+  return { preview: { x: at.x, y, width: at.width, height }, menu: { x: Math.max(space.md, left), y: y + height + GAP, height: menuH } };
 };
 
 export function Menu({
@@ -78,7 +79,7 @@ export function Menu({
   }, [at]);
   if (at === null) return null;
   const rows = items.length + (title === undefined ? 0 : 1);
-  const place = above ? { preview: at, menu: { x: Math.max(space.md, at.x), y: at.y - rows * ROW - GAP } } : placeMenu(at, rows, screen, insets, align);
+  const place = above ? { preview: at, menu: { x: Math.max(space.md, at.x), y: at.y - rows * ROW - GAP, height: rows * ROW } } : placeMenu(at, rows, screen, insets, align);
   const fade = FadeIn.duration(reduce ? 0 : dur.fast).easing(ease.out);
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -96,7 +97,7 @@ export function Menu({
           </View>
         )}
         <Glass style={[styles.menu, { left: place.menu.x, top: place.menu.y }]}>
-          <View accessibilityRole="menu" accessibilityViewIsModal>
+          <ScrollView style={{ maxHeight: place.menu.height }} bounces={false} accessibilityRole="menu" accessibilityViewIsModal>
             {title === undefined ? null : (
               <View style={styles.titleRow}>
                 <Text style={[type.footnote, { color: t.secondary }]} numberOfLines={2}>
@@ -122,7 +123,7 @@ export function Menu({
                 <Icon name={item.icon} size={19} color={item.destructive === true ? t.danger : t.label} />
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </Glass>
       </Animated.View>
     </Modal>

@@ -60,7 +60,7 @@ export function HoldMenu({
   color?: string | undefined;
   align?: "left" | "right";
   onPress?: (() => void) | undefined;
-  accessibilityRole?: "button" | undefined;
+  accessibilityRole?: "button" | "header" | undefined;
   accessibilityLabel?: string | undefined;
   accessibilityHint?: string | undefined;
   /** What VoiceOver can do inside the view, a finger's taps there (a link, a code block's Copy): after the menu's actions. */

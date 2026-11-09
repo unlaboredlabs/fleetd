@@ -17,6 +17,7 @@ export type {
   ChatFile,
   AvatarCrop,
   ChatReplyTo,
+  ChatSection,
   ChatDelta,
   ChatHistoryOutput,
   ChatMessage,
