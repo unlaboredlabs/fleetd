@@ -47,7 +47,7 @@ use crate::hub::store::{iso_ms, now_ms};
 use crate::node::runner::claude::install;
 use crate::update::finish::{self, HEALTH_WAIT_SECS, Health, Plan, Verdict};
 use crate::update::service::Service;
-use crate::update::{BoxFuture, Channel, Failure, Feed};
+use crate::update::{BoxFuture, Channel, FLAVOUR, Failure, Feed, Flavour};
 
 pub mod ports;
 pub mod tools;
@@ -61,6 +61,8 @@ pub struct NodeFacts {
     pub machine_id: MachineId,
     pub name: String,
     pub version: String,
+    /// The flavour its node runs, as its hello said (`build_rust`, `build_bun`); None from a node before flavours.
+    pub flavour: Option<Flavour>,
     /// When its current link went live, ms; None while offline.
     pub live_since: Option<i64>,
     /// Its node lists `self_update`.
@@ -80,6 +82,34 @@ pub struct NodeFacts {
     /// What runs on it that can't carry on through its node's restart (live sessions), in words; None when
     /// nothing does. Agents' runs aren't in it: they carry on by themselves.
     pub busy: Option<String>,
+}
+
+impl NodeFacts {
+    /// Its node runs `to` or newer, of the hub's flavour: one on the other flavour is behind whatever its version, so
+    /// the hub's update switches it (a node that names no flavour is taken at its version: it is older than any hub
+    /// that sends one, and the update it gets brings it to a build that names it).
+    pub fn runs(&self, to: &str) -> bool {
+        crate::at_least(&self.version, to) && self.flavour.is_none_or(|f| f == FLAVOUR)
+    }
+
+    /// Its build in words: its version, with its flavour when that isn't the hub's.
+    pub fn build_label(&self) -> String {
+        match self.flavour {
+            Some(f) if f != FLAVOUR => {
+                format!("{} ({})", crate::version_label(&self.version), f.as_str())
+            }
+            _ => crate::version_label(&self.version),
+        }
+    }
+}
+
+/// The update that brings a node to `to`, the hub's build: its version and channel, and the hub's flavour.
+fn node_update(to: &str, channel: HubChannel) -> NodeUpdate {
+    NodeUpdate {
+        version: text(to),
+        channel,
+        flavour: Some(FLAVOUR.wire()),
+    }
 }
 
 /// What a cloud machine's catch-up did about its build ([`Updates::catch_up`]).
@@ -390,10 +420,7 @@ impl Updates {
                             && refused_for_good(p)
                     })
                 });
-                n.live_since.is_some()
-                    && n.can_update
-                    && !refused
-                    && !crate::at_least(&n.version, &running)
+                n.live_since.is_some() && n.can_update && !refused && !n.runs(&running)
             })
     }
 
@@ -649,15 +676,15 @@ impl Updates {
         }
         drop(fetching);
         self.checked(None);
-        let update = NodeUpdate {
-            version: text(&to),
-            channel: match channel {
+        let update = node_update(
+            &to,
+            match channel {
                 Channel::Stable => HubChannel::Stable,
                 Channel::Edge => HubChannel::Edge,
             },
-        };
+        );
         for node in ports.nodes() {
-            if node.live_since.is_some() && node.can_fetch && !crate::at_least(&node.version, &to) {
+            if node.live_since.is_some() && node.can_fetch && !node.runs(&to) {
                 ports.fetch_on_node(&node.machine_id, &update);
             }
         }
@@ -705,10 +732,7 @@ impl Updates {
         let this = Arc::clone(self);
         let machine_id = machine_id.clone();
         self.drive(&run.id, async move {
-            let update = NodeUpdate {
-                version: to,
-                channel: this.status().map_or(HubChannel::Edge, |r| r.channel),
-            };
+            let update = node_update(&to, this.status().map_or(HubChannel::Edge, |r| r.channel));
             this.update_node(&*ports, &machine_id, &update).await;
             this.update_claude(&*ports, &machine_id).await;
             this.settle_nodes(
@@ -1233,15 +1257,12 @@ impl Updates {
             .filter(|p| p.part == UpdatePartKind::Node && p.state == UpdateState::Waiting)
             .filter_map(|p| p.machine_id.as_ref())
             .collect();
-        let update = NodeUpdate {
-            version: text(to),
-            channel: run.channel,
-        };
+        let update = node_update(to, run.channel);
         for node in ports.nodes() {
             if waiting.contains(&&node.machine_id)
                 && node.live_since.is_some()
                 && node.can_fetch
-                && !crate::at_least(&node.version, to)
+                && !node.runs(to)
             {
                 ports.fetch_on_node(&node.machine_id, &update);
             }
@@ -1368,10 +1389,7 @@ impl Updates {
             .filter(|p| p.part == UpdatePartKind::Node && !p.state.settled())
             .filter_map(|p| p.machine_id.clone())
             .collect();
-        let update = NodeUpdate {
-            version: text(&to),
-            channel,
-        };
+        let update = node_update(&to, channel);
         // Stopped with this task (start over), and driving its run as it does.
         let mut jobs = tokio::task::JoinSet::new();
         for machine_id in waiting {
@@ -1407,7 +1425,7 @@ impl Updates {
         let label = crate::version_label(to);
         // Never backwards: a node on `to` or newer is settled as it is, whenever it is looked at.
         let current = |node: &NodeFacts| {
-            let at = crate::at_least(&node.version, to);
+            let at = node.runs(to);
             if at {
                 self.set_part(
                     Some(machine_id),
@@ -1546,7 +1564,11 @@ impl Updates {
         loop {
             let changed = ports.node_changed(machine_id);
             match facts(ports) {
-                Some(n) if n.live_since.is_some_and(|at| at > asked) && n.version == to => {
+                Some(n)
+                    if n.live_since.is_some_and(|at| at > asked)
+                        && n.version == to
+                        && n.runs(to) =>
+                {
                     return self.set_part(
                         Some(machine_id),
                         UpdateState::Done,
@@ -1561,7 +1583,7 @@ impl Updates {
                         Some(UpdateStage::Health),
                         format!(
                             "{label} didn't come up healthy, so {} was put back and runs again",
-                            crate::version_label(&n.version)
+                            n.build_label()
                         ),
                     );
                 }
@@ -1619,21 +1641,18 @@ impl Updates {
             .find(|n| &n.machine_id == machine_id)
             .ok_or_else(|| format!("{machine_id} isn't linked"))?;
         let running = ports.running();
-        if !crate::at_least(&node.version, &running) {
+        if !node.runs(&running) {
             if !node.can_update {
                 return Err(format!(
                     "its fleetd {} can't update itself: run `fleetd update` on it",
-                    crate::version_label(&node.version)
+                    node.build_label()
                 ));
             }
             let channel = match Channel::of(&running, true) {
                 Channel::Edge => HubChannel::Edge,
                 Channel::Stable => HubChannel::Stable,
             };
-            let update = NodeUpdate {
-                version: text(&running),
-                channel,
-            };
+            let update = node_update(&running, channel);
             let (answer, _) = ports.update_node(machine_id, &update).await?;
             if !answer.ok {
                 return Err(answer.message.to_string());

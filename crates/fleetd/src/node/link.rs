@@ -784,6 +784,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_LINK_DEFLATE.to_owned(),
             fleetd_contracts::node_link::CAP_GATED_RESUME.to_owned(),
             fleetd_contracts::node_link::CAP_HAS_FILE.to_owned(),
+            crate::update::FLAVOUR.cap().to_owned(),
         ]
         .into_iter()
         .chain(

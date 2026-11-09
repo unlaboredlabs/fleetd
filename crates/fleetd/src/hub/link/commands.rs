@@ -685,6 +685,7 @@ mod tests {
         let update = NodeUpdate {
             version: Text::unchecked("0.0.0-edge.202610261056+1b563d7".to_owned()),
             channel: fleetd_contracts::mcp::HubChannel::Edge,
+            flavour: None,
         };
         let asking = {
             let commands = commands.clone();

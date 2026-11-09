@@ -19,6 +19,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import {
   CAP_AGENTS_MAC,
   CAP_BROWSER,
+  CAP_BUILD_BUN,
+  CAP_BUILD_RUST,
   CAP_LINK_DEFLATE,
   CAP_MAC_TOOL,
   CAP_PROJECT_SETTINGS,
@@ -61,6 +63,8 @@ export function iosConfig(config: Record<string, unknown> | undefined, tool: boo
 
 const KEPT = new Set([
   CAP_MAC_TOOL,
+  CAP_BUILD_RUST,
+  CAP_BUILD_BUN,
   CAP_SELF_UPDATE,
   CAP_UPDATE_FETCH,
   CAP_UPDATE_HOLD,

@@ -349,7 +349,8 @@ export const sha256Hex = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").u
 export const fileSha256Hex = (path: string) => new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
 
 /** Which implementation a build is (update/mod.rs `Flavour`): each updates to its own flavour's asset, so a machine
- * changes flavour only when `fleetd update --flavour` says so. */
+ * changes flavour only when `fleetd update --flavour` says so, or its hub's update names the other one
+ * (`NodeUpdate.flavour`, node/update). */
 export type Flavour = "rust" | "bun";
 
 /** The flavour this build is. */
