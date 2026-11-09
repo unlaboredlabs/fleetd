@@ -856,7 +856,7 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 
 ### review_read
 
-Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. Another project's reviews are refused.
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1273,7 +1273,7 @@ Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current
 
 ### review_read (task)
 
-Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. Another project's reviews are refused.
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
