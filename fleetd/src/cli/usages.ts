@@ -367,3 +367,13 @@ Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcod
 $FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent; pod (CocoaPods) and the Mac's other
 Homebrew commands are on the PATH there. None of your secrets go to the Mac unless you name them with --env NAME. Every mac run lands in your action log.
 `;
+
+export const VAULT_USAGE = `  vault key --store <file|keyring|passphrase>
+             move the vault's root key: a file beside the hub (the default), this machine's
+             keychain, or a file locked with a passphrase (read from stdin; the vault then stays
+             locked after each restart until an owner or admin unlocks it in the app)
+  vault recovery-code
+             print the vault key's recovery code, to keep somewhere other than the hub
+  vault restore-key
+             take the vault key back from its recovery code (read from stdin)
+`;

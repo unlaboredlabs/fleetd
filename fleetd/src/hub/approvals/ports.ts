@@ -8,6 +8,7 @@ import type {
   HumanRequest,
   McpServer,
   NaviApprovals,
+  PersonRef,
   ProjectRef,
   ToolPreview,
 } from "../../shared/contracts.ts";
@@ -130,6 +131,13 @@ export type ApprovalHooks = {
   shellRefused(command: string): string | undefined;
   /** An action the checker never judges (navi/checker.rs `always_asks`). */
   alwaysAsks(action: Action): boolean;
+  /** The key a new secret request's value is sealed to (the vault's: the hub's own); undefined: the sink machine's. */
+  vaultSealTo(): string | undefined;
+  /**
+   * A secret sealed to the hub's key, kept in the vault and delivered from there: the node's fingerprint and the size.
+   * Undefined for one sealed to the sink machine's key, which goes the old way.
+   */
+  vaultSecret(request: HumanRequest, sealed: string, by: { name: string; person?: PersonRef; machines: string[] }): Promise<{ fingerprint: string; bytes: number } | undefined>;
 };
 
 export const NOT_PORTED_ORDERS = "The Bun hub can't set an order's variable yet (src/hub/projects: order_env).";
@@ -153,6 +161,8 @@ export const defaultHooks = (): ApprovalHooks => ({
   visitCarriesData: () => false,
   shellRefused: () => undefined,
   alwaysAsks: () => false,
+  vaultSealTo: () => undefined,
+  vaultSecret: async () => undefined,
 });
 
 /** The rest of the hub approvals reads or wakes, over the hub's own store. */

@@ -25,7 +25,7 @@ import type {
 export type * from "./types.ts";
 
 /** The calls a runner's node makes for a session it hosts for an agent on another machine (hub/browser/calls.rs). */
-export const HOSTED_OPS: readonly string[] = ["browser_session", "browser_recording_part", "browser_takeover"];
+export const HOSTED_OPS: readonly string[] = ["browser_session", "browser_recording_part", "browser_takeover", "vault_fill", "vault_filled", "vault_items"];
 
 /** Whose session a runner hosts under `threadId` (hub/machine_roles sets it). */
 export type Hosts = (runner: MachineId, threadId: ThreadId) => HostedCaller | undefined;
@@ -164,7 +164,7 @@ export class LeadCalls {
     }
     const agent = this.agentOf(thread, projectRef);
     checkCall(agent, frame.call);
-    const caller: LeadCaller = { by: leadBy(projectRef), projectRef, agent };
+    const caller: LeadCaller = { by: leadBy(projectRef), projectRef, agent, via: machineId };
     if (frame.threadId !== undefined) caller.threadId = frame.threadId;
     return await handler(caller, frame.call);
   }
@@ -186,6 +186,7 @@ export class LeadCalls {
       projectRef: hosted.projectRef,
       agent: hosted.agent,
       threadId: hosted.threadId,
+      via: machineId,
     };
     return Promise.resolve().then(() => handler(caller, call));
   }

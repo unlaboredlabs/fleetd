@@ -20,12 +20,15 @@ const TOKENS = new RegExp(
   "g",
 );
 
-/** `Bearer <token>`, `https://user:pass@host` and `SOME_TOKEN=value`: the name stays, the value goes. */
+/**
+ * `Bearer <token>`, `https://user:pass@host` and `SOME_TOKEN=value`: the name stays, the value goes. A vault call's
+ * `sealed` box and a `passphrase` count too (W549).
+ */
 const ASSIGNED = new RegExp(
   [
     String.raw`(?<pre>\bbearer\s+)(?<bearer>[A-Za-z0-9._~+/=-]{16,})`,
     String.raw`(?<scheme>\b[a-z][a-z0-9+.-]*:\/\/)(?<userinfo>[^\s/@:]+:[^\s/@]+)@`,
-    String.raw`(?<name>\b[A-Za-z0-9_.-]*(?:secret|token|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)(?<value>[^\s"'\x60,;)}\]]{8,})`,
+    String.raw`(?<name>\b[A-Za-z0-9_.-]*(?:secret|token|passw(?:or)?d|passphrase|sealed|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_]*["']?\s*[:=]\s*["']?)(?<value>[^\s"'\x60,;)}\]]{8,})`,
   ].join("|"),
   "gi",
 );

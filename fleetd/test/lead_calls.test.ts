@@ -79,7 +79,7 @@ test("cwd matching: the deepest root wins, siblings sharing a prefix don't count
 test("a person's shell acts on the project its cwd is in, and the result carries the op", async () => {
   const frame = await answer("/work/app/tools/x", DECIDE);
   expect(frame).toEqual({ id: "c1", result: { echoed: "decide", op: "decide" } });
-  expect(seen.at(-1)).toEqual({ projectRef: { machineId: "devbox", projectId: "p2" }, by: "lead:devbox/p2", agent: { kind: "person" } });
+  expect(seen.at(-1)).toEqual({ projectRef: { machineId: "devbox", projectId: "p2" }, by: "lead:devbox/p2", agent: { kind: "person" }, via: "devbox" });
 });
 
 test("a cwd outside every workspace is refused, naming the roots", async () => {
@@ -164,6 +164,7 @@ test("a runner's browser call for a session it hosts is answered in the agent's 
     by: "lead:devbox/p3",
     agent: { kind: "task", taskId: "T5" },
     threadId: "th-other",
+    via: "runner1",
   });
   // Anything else from the runner is its own, and it has no projects.
   expect(error(await answer("/anywhere", DECIDE, "key-1", "runner1"))?.code).toBe("forbidden");

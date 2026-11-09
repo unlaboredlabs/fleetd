@@ -34,8 +34,9 @@ export function personOnly(r: HumanRequest): boolean {
   return !!r.gated && (r.gated.class === "money" || pays(r.gated.argv[0] ?? ""));
 }
 
-/** A NaviCard's `op://vault/item` as "item (vault)". */
+/** A NaviCard as the person reads it: a vault card's label, or an `op://vault/item` as "item (vault)". */
 export function cardLabel(card: NaviCard): string {
+  if (card.label) return card.label;
   const rest = card.ref.replace(/^(op:\/\/)+/, "");
   const at = rest.indexOf("/");
   return at < 0 ? rest : `${rest.slice(at + 1)} (${rest.slice(0, at)})`;

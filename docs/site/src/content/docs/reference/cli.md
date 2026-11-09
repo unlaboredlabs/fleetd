@@ -686,3 +686,27 @@ fleetd work drop [C<n>] --key-file <key> [--hub <url>]
 ```
 
 end your claim as dropped (by default the one on this branch): you stop, or leave it to someone else
+
+### fleetd vault key {#vault-key}
+
+```text
+fleetd vault key --store <file|keyring|passphrase>
+```
+
+move the vault's root key: a file beside the hub (the default), this machine's keychain, or a file locked with a passphrase (read from stdin; the vault then stays locked after each restart until an owner or admin unlocks it in the app)
+
+### fleetd vault recovery-code {#vault-recovery-code}
+
+```text
+fleetd vault recovery-code
+```
+
+print the vault key's recovery code, to keep somewhere other than the hub
+
+### fleetd vault restore-key {#vault-restore-key}
+
+```text
+fleetd vault restore-key
+```
+
+take the vault key back from its recovery code (read from stdin)

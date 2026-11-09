@@ -44,6 +44,8 @@ export type LeadCaller = {
   agent: CallerAgent;
   /** The session the call names, when it names one (a hosted call: the agent's session on its own machine). */
   threadId?: ThreadId;
+  /** The machine whose node sent the call: the project's own, or the runner hosting a session for it. */
+  via?: string;
 };
 
 /** The agent a runner's node hosts a session for, on another machine (hub/machine_roles). */

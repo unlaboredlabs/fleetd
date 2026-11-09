@@ -38,6 +38,7 @@ import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { adoptSoon, envIntoVault } from "../vault/aliases.ts";
 
 export const PROJECT_ENV_MAX = 100;
 /** Largest value of one variable, plain or secret: 64 KiB. */
@@ -369,37 +370,42 @@ export function register(tools: Registry): void {
     if (total > ENV_TOTAL_MAX_BYTES) {
       throw new ToolError("invalid", envTotalOver(total), "Remove or shorten some, or put large values in files on the machine.");
     }
-    nodeReady(hub, m);
-    let saved;
-    try {
-      saved = await projectEnv(hub, m, r.projectId, set, remove);
-    } catch (error) {
-      throw fromExecutor(error);
-    }
-    // Every checkout of the project's repos gets them too, sealed to the same machine (W79).
-    const missed: string[] = [];
-    for (const checkout of otherCheckouts(hub, r)) {
+    // The vault keeps them now (W549): a plain value, or a secret sealed to the hub's key, goes straight in. An older
+    // app seals a secret to the node's key: it is forwarded as before and moves into the vault from the node.
+    const { forNode, missed } = await envIntoVault(hub, caller, r, set, remove);
+    if (forNode.set.length > 0 || forNode.remove.length > 0) {
+      nodeReady(hub, m);
+      let saved;
       try {
-        await projectEnv(hub, m, checkout.projectId, set, remove);
+        saved = await projectEnv(hub, m, r.projectId, forNode.set, forNode.remove);
       } catch (error) {
-        missed.push(`${checkout.projectId} (${(error as Error).message})`);
+        throw fromExecutor(error);
       }
+      // Every checkout of the project's repos gets them too, sealed to the same machine (W79).
+      for (const checkout of otherCheckouts(hub, r)) {
+        try {
+          await projectEnv(hub, m, checkout.projectId, forNode.set, forNode.remove);
+        } catch (error) {
+          missed.push(`${checkout.projectId} (${(error as Error).message})`);
+        }
+      }
+      const rows: EnvRow[] = forNode.set.map((v) => {
+        if (v.kind === "plain") return { name: v.name, value: v.value, bytes: Buffer.byteLength(v.value) };
+        const fingerprint = saved.find((x) => x.name === v.name)?.fingerprint;
+        if (fingerprint === undefined) {
+          throw new ToolError("failed", `${m}'s node saved ${v.name} but sent no fingerprint for it.`, `Update fleetd on ${m}, then set ${v.name} again.`);
+        }
+        return { name: v.name, fingerprint, bytes: setBytes(v) };
+      });
+      s.envApply(r, rows, forNode.remove, isoMs(hub.clock.now()));
+      adoptSoon(hub, m);
     }
-    const rows: EnvRow[] = set.map((v) => {
-      if (v.kind === "plain") return { name: v.name, value: v.value, bytes: Buffer.byteLength(v.value) };
-      const fingerprint = saved.find((x) => x.name === v.name)?.fingerprint;
-      if (fingerprint === undefined) {
-        throw new ToolError("failed", `${m}'s node saved ${v.name} but sent no fingerprint for it.`, `Update fleetd on ${m}, then set ${v.name} again.`);
-      }
-      return { name: v.name, fingerprint, bytes: setBytes(v) };
-    });
-    s.envApply(r, rows, remove, isoMs(hub.clock.now()));
     return {
       env: s.env(r),
       next:
         missed.length === 0
           ? "Every claude the node starts for the project from now on gets them; running sessions get them at their next start."
-          : `The project has them, but these repo checkouts don't: ${missed.join(", ")}. Set them again to retry.`,
+          : `The project has them, but these didn't take: ${missed.join(", ")}. Set them again to retry.`,
     };
   });
 }

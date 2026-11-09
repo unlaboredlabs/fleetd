@@ -21,7 +21,7 @@ ${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_AP
 projects:
 ${U.PROJECT_USAGE}${U.NAVI_USAGE}
 running by hand:
-${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.CLOUD_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}`;
+${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.CLOUD_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
 
 /** `fleetd <command> … --help` (or `-h`): that command's usage. After `--` they are arguments. */
 export function helpFor(argv: string[]): string | undefined {
@@ -82,6 +82,8 @@ export function helpFor(argv: string[]): string | undefined {
         return U.CHAT_USAGE;
       case "work":
         return U.WORK_USAGE;
+      case "vault":
+        return U.VAULT_USAGE;
       default:
         return undefined;
     }
@@ -183,6 +185,8 @@ export async function main(argv: string[]): Promise<number> {
         return emit(await (await import("./prompts.ts")).promptsCommand(rest));
       case "instructions":
         return emit(await (await import("./prompts.ts")).instructionsCommand(rest));
+      case "vault":
+        return emit(await (await import("./vault.ts")).vaultCommand(rest));
       case "hub":
         if (sub === "key") return emit((await import("./hub_key.ts")).hubKey(argv.slice(2)));
         process.stderr.write(`fleetd: unknown hub command '${sub ?? ""}'\n\n${usageText()}`);

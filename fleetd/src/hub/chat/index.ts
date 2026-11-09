@@ -24,6 +24,7 @@ import type {
   ProjectRef,
   RememberedItem,
   SkillSaved,
+  VaultImportCard,
   WorktreesKept,
 } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
@@ -65,6 +66,7 @@ export type NewMessage = {
   worktreesKept?: WorktreesKept;
   skillSaved?: SkillSaved;
   artifact?: ArtifactPublished;
+  vaultImport?: VaultImportCard;
   skills?: string[];
   by?: string;
   person?: PersonRef;
@@ -122,6 +124,7 @@ export function serialize(m: ChatMessage): string {
     "skills",
     "skillSaved",
     "artifact",
+    "vaultImport",
     "nudge",
   ];
   for (const k of rest) if (m[k] !== undefined && m[k] !== null) o[k] = m[k];
@@ -311,6 +314,7 @@ export class Chat {
       if (n.worktreesKept !== undefined) message.worktreesKept = n.worktreesKept;
       if (n.skillSaved !== undefined) message.skillSaved = n.skillSaved;
       if (n.artifact !== undefined) message.artifact = n.artifact;
+      if (n.vaultImport !== undefined) message.vaultImport = n.vaultImport;
       if (n.skills && n.skills.length > 0) message.skills = n.skills;
       const parts = show(c, r, author === "lead" && !n.streaming ? partsOf(text) : undefined);
       if (parts) message.parts = parts;
@@ -354,6 +358,15 @@ export class Chat {
   /** A remembered line's new state, in place. */
   setRemembered(message: ChatMessage, remembered: RememberedItem): ChatMessage {
     message.remembered = remembered;
+    message.updatedAt = this.nowTs();
+    this.put(message);
+    this.announce(message);
+    return message;
+  }
+
+  /** A vault import card's state, in place, once the person imports or dismisses it. */
+  setVaultImport(message: ChatMessage, card: VaultImportCard): ChatMessage {
+    message.vaultImport = card;
     message.updatedAt = this.nowTs();
     this.put(message);
     this.announce(message);

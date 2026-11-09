@@ -55,6 +55,7 @@ export const APP_FEATURES = [
   "navi_asks",
   "screen_open",
   "navi_skills",
+  "vault",
   "browser_navigate",
   "screen_thumbs",
   "artifacts",
