@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, HubState } from "../../desktop";
-import { countValue, dmsShown, glyphOf, joinPages, logOf, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, type AgentMessage, type DmReceipt } from "./model";
+import { countValue, dmsShown, glyphOf, joinPages, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, withNewest, withOlder, type AgentMessage, type DmReceipt } from "./model";
 
 const AT = "2026-11-08T23:04:00.000Z";
 const P = { machineId: "devbox", projectId: "fleetd" };
@@ -84,18 +84,20 @@ describe("a project's DMs between agents", () => {
     expect(joinPages([a, b], [b, c]).map((m) => m.id)).toEqual(["M3", "M2", "M1"]);
   });
 
-  it("keeps the older pages read when a receipt reads the newest page again, its rows' outcomes fresh", () => {
-    // M5..M4 read first, then M3..M2 as the person scrolled; one more page is left.
-    const first = { messages: [dm("M5", [to("T1", "held")]), dm("M4", [])], more: true };
-    const older = { messages: [dm("M3", []), dm("M2", [])], more: true };
-    expect(logOf(first, older).messages.map((m) => m.id)).toEqual(["M5", "M4", "M3", "M2"]);
-    // A new DM and a receipt: the newest page now holds M6..M5, M5 delivered.
-    const fresh = { messages: [dm("M6", []), dm("M5", [to("T1", "delivered")])], more: true };
-    const shown = logOf(fresh, logOf(first, older));
+  it("lays a fresh newest page over the whole log as shown, losing no row, as the screen reads them", () => {
+    // The screen's own calls: the first read, an older page as the person scrolls, then a new DM and a receipt.
+    let shown = withNewest(null, { messages: [dm("M5", [to("T1", "held")]), dm("M4", [])], more: true });
+    shown = withOlder(shown, { messages: [dm("M3", []), dm("M2", [])], more: true });
+    expect(shown.messages.map((m) => m.id)).toEqual(["M5", "M4", "M3", "M2"]);
+    // The newest page now holds M6..M5 (M4 fell off it), M5 delivered: M4 stays, under it.
+    shown = withNewest(shown, { messages: [dm("M6", []), dm("M5", [to("T1", "delivered")])], more: true });
     expect(shown.messages.map((m) => m.id)).toEqual(["M6", "M5", "M4", "M3", "M2"]);
     expect(shown.messages[1]?.to[0]?.outcome).toBe("delivered");
     expect(shown.more).toBe(true);
-    // With nothing read past it, the newest page is the log.
-    expect(logOf(fresh, null)).toEqual({ messages: fresh.messages, more: true });
+    // Two more DMs push M5 off the newest page too; the next older page reads from M2 and ends the log.
+    shown = withNewest(shown, { messages: [dm("M8", []), dm("M7", [])], more: true });
+    shown = withOlder(shown, { messages: [dm("M1", [])], more: false });
+    expect(shown.messages.map((m) => m.id)).toEqual(["M8", "M7", "M6", "M5", "M4", "M3", "M2", "M1"]);
+    expect(shown.more).toBe(false);
   });
 });
