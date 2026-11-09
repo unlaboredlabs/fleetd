@@ -82,6 +82,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
         ...(home === undefined ? {} : { home }),
         enrollOnly: v.flag("enroll-only"),
         ...(dir ? { claudeConfigDir: dir } : {}),
+        mac: v.flag("mac"),
       });
     }
     case "run": {

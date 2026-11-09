@@ -78,3 +78,71 @@ test("a lead call written in two pieces cut inside a character reaches the hub w
     home.done();
   }
 });
+
+test("an answer past the socket's buffer reaches its caller whole", async () => {
+  const home = tempHome();
+  try {
+    // A screenshot's or a long `mac run` output's size: far past a Unix socket's send buffer, which Bun's sockets
+    // don't buffer beyond.
+    const big = "x".repeat(2 << 20);
+    const relay = new LeadRelay();
+    relay.attach((f) => queueMicrotask(() => relay.resolve({ id: String(f.id), result: { big } })), []);
+    const path = join(home.dir, "node.sock");
+    const stop = await serveLeadSocket(path, { relay, identify: () => ({ kind: "outside" }), maskFor: () => new Masker() });
+    const chunks: Uint8Array[] = [];
+    await new Promise<void>((resolve) => {
+      void Bun.connect({
+        unix: path,
+        socket: {
+          open(s) {
+            s.write(`${JSON.stringify({ t: "lead_call", id: "x1", cwd: "/w", call: { op: "fleetd_status" } })}\n`);
+          },
+          // Read slowly, so the node's writes fill the socket and wait for it to drain.
+          async data(_s, chunk) {
+            chunks.push(new Uint8Array(chunk));
+            await Bun.sleep(1);
+          },
+          close: () => resolve(),
+        },
+      });
+    });
+    const text = new TextDecoder().decode(Buffer.concat(chunks));
+    expect(text.endsWith("\n")).toBe(true);
+    expect(JSON.parse(text).result.big.length).toBe(big.length);
+    stop();
+  } finally {
+    home.done();
+  }
+});
+
+test("a command past the host socket's buffer reaches the session host whole", async () => {
+  const home = tempHome();
+  try {
+    let got = "";
+    let done!: () => void;
+    const whole = new Promise<void>((r) => (done = r));
+    const server = Bun.listen({
+      unix: join(home.dir, "sock"),
+      socket: {
+        // Read slowly, so the node's writes fill the socket and wait for it to drain.
+        async data(_s, chunk) {
+          got += new TextDecoder().decode(chunk);
+          await Bun.sleep(1);
+          if (got.includes("\n")) done();
+        },
+      },
+    });
+    writeFileSync(join(home.dir, "host.json"), JSON.stringify({ protocol: 1, hostPid: process.pid, pid: process.pid, marker: "" }));
+    const link = await HostLink.connect(home.dir);
+    // A message with a pasted image's size.
+    const text = "y".repeat(2 << 20);
+    expect(link.send({ UserMessage: { text } } as never)).toBe(true);
+    await Promise.race([whole, Bun.sleep(10_000)]);
+    const line = got.slice(0, got.indexOf("\n"));
+    expect(JSON.parse(line).command.UserMessage.text.length).toBe(text.length);
+    link.detached = true;
+    server.stop(true);
+  } finally {
+    home.done();
+  }
+});

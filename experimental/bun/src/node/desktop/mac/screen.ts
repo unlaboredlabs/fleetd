@@ -1,17 +1,15 @@
 // The Mac's own screen, read and driven by the node (crates/fleetd/src/node/desktop/mac/capture.rs, input.rs), under its
-// own Screen Recording and Accessibility grants. Input goes as CGEvents through bun:ffi. Every CoreGraphics call it
-// makes takes and returns plain values: a CGPoint argument is passed as its two doubles, which both the arm64 and the
-// x86_64 calling conventions place where the struct would go.
+// own Screen Recording and Accessibility grants. Frames come from ScreenCaptureKit at the display's points
+// (capture.ts); input goes as CGEvents through bun:ffi. Every CoreGraphics call it makes takes and returns plain values:
+// a CGPoint argument is passed as its two doubles, which both the arm64 and the x86_64 calling conventions place where
+// the struct would go.
 //
-// Where the Rust node captures with ScreenCaptureKit (Objective-C blocks, which bun:ffi can't make), this reads the
-// screen with macOS's own `screencapture` (cursor shown) and scales it to the screen's points with Bun.Image: a few
-// frames a second rather than ten. The pointer's place comes from HIToolbox's HIGetMousePosition, which writes it to
-// memory and returns that memory's address (not a status), since CGEventGetLocation returns a struct.
+// The pointer's place comes from HIToolbox's HIGetMousePosition, which writes it to memory and returns that memory's
+// address (not a status), since CGEventGetLocation returns a struct.
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { rmSync } from "node:fs";
-import { join } from "node:path";
-import { QUALITY, type Raw, type Screen, type Shot } from "../screen.ts";
+import { jpeg, type Raw, type Screen, type Shot } from "../screen.ts";
 import { parseChord } from "../x11.ts";
+import { Capture } from "./capture.ts";
 import { ofChar, ofSym, SHIFT } from "./keys.ts";
 
 const LEFT_DOWN = 1;
@@ -85,14 +83,12 @@ export class MacScreen implements Screen {
   private last: [number, number] = [0, 0];
   private queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(
-    private readonly api: Api,
-    /** Where a grab is written before it is scaled. */
-    private readonly shotFile: string,
-  ) {}
+  private readonly capture = new Capture();
 
-  static open(scratch: string): MacScreen {
-    return new MacScreen(open(), join(scratch, "screen.png"));
+  private constructor(private readonly api: Api) {}
+
+  static open(): MacScreen {
+    return new MacScreen(open());
   }
 
   size(): [number, number] {
@@ -104,19 +100,13 @@ export class MacScreen implements Screen {
     return true;
   }
 
-  /** The screen as `screencapture` gives it (a PNG at the display's pixels); `encode` scales it to points. */
-  async grabRaw(): Promise<Raw> {
-    const proc = Bun.spawn(["/usr/sbin/screencapture", "-x", "-C", "-t", "png", this.shotFile], { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
-    const [code, said] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
-    if (code !== 0) throw new Error(`screencapture failed: ${said.trim() || `exit status ${code}`}`);
-    const data = new Uint8Array(await Bun.file(this.shotFile).arrayBuffer());
-    rmSync(this.shotFile, { force: true });
-    const [width, height] = this.size();
-    return { data, width, height };
+  /** The main display in BGRA at its points, the pointer drawn. */
+  grabRaw(): Promise<Raw> {
+    return this.capture.grab(this.size());
   }
 
-  async encode(raw: Raw): Promise<Uint8Array> {
-    return new Bun.Image(raw.data).resize(raw.width, raw.height, { fit: "fill" }).jpeg({ quality: QUALITY }).bytes();
+  encode(raw: Raw): Promise<Uint8Array> {
+    return jpeg(raw.data, raw.width, raw.height);
   }
 
   async grab(): Promise<Shot> {
@@ -274,5 +264,7 @@ export class MacScreen implements Screen {
     return next;
   }
 
-  close(): void {}
+  close(): void {
+    this.capture.close();
+  }
 }
