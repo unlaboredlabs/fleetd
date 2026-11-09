@@ -9,7 +9,9 @@
 // that changes under it (a move from another desktop, a row added or gone): rows go by key, never by an index from
 // before. A click that didn't move is still a click. Only transform changes, on the rows' wrappers, so nothing lays out
 // mid-drag; with reduced motion the rows still move with the pointer but nothing glides. Each move is announced
-// (`status`, for a role="status" region).
+// (`status`, for a role="status" region). A grid (`grid`, the sidebar's pinned chats) works the same in two dimensions:
+// the lifted cell rides the pointer both ways, drops on the cell nearest its centre, and the cells it passes slide one
+// cell back along the reading order; ⌥← / ⌥→ move it one cell, ⌥↑ / ⌥↓ a row.
 //
 // Pure helpers first, so the arithmetic is unit-tested; the hook is the pointer and keyboard glue.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
@@ -78,20 +80,50 @@ export const shiftOf = (i: number, from: number, over: number, size: number): nu
   return 0;
 };
 
+/** A place on screen, from its list's top left. */
+export interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** In a grid, the cell whose centre is nearest `at`. */
+export const nearest = (centres: readonly Point[], at: Point): number =>
+  centres.reduce((best, c, i) => {
+    const b = centres[best] ?? c;
+    return Math.hypot(c.x - at.x, c.y - at.y) < Math.hypot(b.x - at.x, b.y - at.y) ? i : best;
+  }, 0);
+
+/** In a grid, how far cell `i` slides while the cell from `from` is over `over`: into the place of the one before or after. */
+export const gridShiftOf = (i: number, from: number, over: number, slots: readonly Point[]): Point => {
+  const to = from < over && i > from && i <= over ? i - 1 : over < from && i >= over && i < from ? i + 1 : i;
+  const a = slots[i];
+  const b = slots[to];
+  return a === undefined || b === undefined ? { x: 0, y: 0 } : { x: b.x - a.x, y: b.y - a.y };
+};
+
+/** A transform moving an element by `x`, `y`: a list's rows only ever move up and down, so theirs says just that. */
+const translate = (x: number, y: number): string => (x === 0 ? `translateY(${String(y)}px)` : `translate(${String(x)}px, ${String(y)}px)`);
+
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 const reduced = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** Each row's top on screen, from its list's top: transforms and glides under way included. */
-const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, number> =>
-  new Map([...els].map(([key, el]) => [key, el.getBoundingClientRect().top - (el.parentElement?.getBoundingClientRect().top ?? 0)]));
+/** Each row's top left on screen, from its list's: transforms and glides under way included. */
+const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, Point> =>
+  new Map(
+    [...els].map(([key, el]) => {
+      const box = el.getBoundingClientRect();
+      const list = el.parentElement?.getBoundingClientRect();
+      return [key, { x: box.left - (list?.left ?? 0), y: box.top - (list?.top ?? 0) }];
+    }),
+  );
 
 /**
  * The rows put back where they were on screen (`from`, as onScreen read them before the DOM changed) and let glide to
  * their places over `ms`, all in this frame: a row with nowhere to go, or new, just sits in its place. Returns the
  * rows gliding.
  */
-const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>, ms: number, ease: string): HTMLElement[] => {
+const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, Point>, ms: number, ease: string): HTMLElement[] => {
   // No row was on screen (the list's first rows, as the app opens): none has a place to glide from, and reading theirs
   // would lay out the whole window in the middle of its first paint.
   if (from.size === 0) return [];
@@ -105,11 +137,13 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>
   const gliding: HTMLElement[] = [];
   for (const [key, el] of els) {
     const was = from.get(key);
-    const by = was === undefined ? 0 : was - (now.get(key) ?? was);
-    if (ms > 0 && Math.abs(by) >= 0.5) {
-      el.style.transform = `translateY(${String(by)}px)`;
+    const at = now.get(key) ?? was;
+    const bx = was === undefined || at === undefined ? 0 : was.x - at.x;
+    const by = was === undefined || at === undefined ? 0 : was.y - at.y;
+    if (ms > 0 && (Math.abs(bx) >= 0.5 || Math.abs(by) >= 0.5)) {
+      el.style.transform = translate(Math.abs(bx) >= 0.5 ? bx : 0, by);
       // Which way it goes, so a list can draw the rows going up over the ones they pass (data-gliding="up").
-      el.dataset["gliding"] = by > 0 ? "up" : "down";
+      el.dataset["gliding"] = by > 0 || (by === 0 && bx > 0) ? "up" : "down";
       gliding.push(el);
     } else el.style.transition = "";
   }
@@ -132,6 +166,8 @@ export interface ReorderOptions<K extends string> {
   readonly name: (key: K) => string;
   /** How the rows glide to new places: SETTLE_MS on --ease-out unless a list says (the sidebar's spring). */
   readonly settle?: { readonly ms: number; readonly ease: string } | undefined;
+  /** The rows are cells of a grid this many columns wide, in reading order: they move both ways. */
+  readonly grid?: { readonly columns: number } | undefined;
 }
 
 interface Press<K> {
@@ -145,15 +181,19 @@ interface Press<K> {
   /** Ends it at once: no drop, nothing called back (the list unmounting). */
   stop: () => void;
   readonly startY: number;
+  readonly startX: number;
   readonly pointerId: number;
   lifted: boolean;
   centres: number[];
   tops: number[];
   heights: number[];
+  /** A grid's cells at the lift: their top lefts, centres and sizes, on screen. */
+  cells: { readonly at: Point; readonly centre: Point; readonly w: number; readonly h: number }[];
   bounds: readonly [number, number];
   over: number;
-  /** The pointer's last height. */
+  /** The pointer's last place. */
   y: number;
+  x: number;
   scroller: HTMLElement | null;
   /** The scroller's scrollTop at the lift: the rows' measures are from then. */
   scroll0: number;
@@ -173,6 +213,8 @@ interface Moving<K> {
   readonly from: number;
   readonly over: number;
   readonly size: number;
+  /** A grid's cells, from its top left: where each one sits, for the ones that slide aside. */
+  readonly slots?: readonly Point[];
 }
 
 export interface Reorder<K extends string> {
@@ -236,7 +278,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
   // getSnapshotBeforeUpdate), and nothing drawn depends on it.
   const lifted = moving !== null;
   const placed = useRef({ showing, lifted });
-  const first = useRef<ReadonlyMap<K, number> | null>(null);
+  const first = useRef<ReadonlyMap<K, Point> | null>(null);
   /* eslint-disable react-hooks/refs */
   if (first.current === null && (showing !== placed.current.showing || (placed.current.lifted && !lifted))) first.current = onScreen(els.current);
   /* eslint-enable react-hooks/refs */
@@ -323,14 +365,17 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       finish: () => undefined,
       stop: () => undefined,
       startY: e.clientY,
+      startX: e.clientX,
       pointerId: e.pointerId,
       lifted: false,
       centres: [],
       tops: [],
       heights: [],
+      cells: [],
       bounds: [at, at],
       over: at,
       y: e.clientY,
+      x: e.clientX,
       scroller: null,
       scroll0: 0,
       frame: 0,
@@ -346,6 +391,26 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       // The measures are from the lift: a list scrolled since moved every row by as much, the lifted one with them.
       const scrolled = p.scroller === null ? 0 : p.scroller.scrollTop - p.scroll0;
       const [lo, hi] = p.bounds;
+      const own = p.cells[p.from];
+      if (own !== undefined) {
+        // A grid's cell: both ways, kept inside the grid, and over the cell its centre is nearest.
+        const left = Math.min(...p.cells.map((c) => c.at.x));
+        const top = Math.min(...p.cells.map((c) => c.at.y));
+        const right = Math.max(...p.cells.map((c) => c.at.x + c.w));
+        const bottom = Math.max(...p.cells.map((c) => c.at.y + c.h));
+        const dx = clamp(p.x - p.startX, left - own.at.x, right - own.at.x - own.w);
+        const dy = clamp(p.y - p.startY + scrolled, top - own.at.y, bottom - own.at.y - own.h);
+        el.style.transform = translate(dx, dy);
+        const over = nearest(
+          p.cells.map((c) => c.centre),
+          { x: own.centre.x + dx, y: own.centre.y + dy },
+        );
+        if (over !== p.over) {
+          p.over = over;
+          setMoving((m) => (m === null ? m : { ...m, over }));
+        }
+        return;
+      }
       const top = p.tops[p.from] ?? 0;
       const bottom = top + (p.heights[p.from] ?? 0);
       const travel = clamp(p.y - p.startY + scrolled, (p.tops[lo] ?? top) - top, (p.tops[hi] ?? 0) + (p.heights[hi] ?? 0) - bottom);
@@ -394,8 +459,9 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       const el = els.current.get(key);
       if (el === undefined) return;
       p.y = ev.clientY;
+      p.x = ev.clientX;
       if (!p.lifted) {
-        if (Math.abs(p.y - p.startY) < LIFT_PX) return;
+        if (Math.hypot(p.x - p.startX, p.y - p.startY) < LIFT_PX) return;
         const { shown: order, showing: now } = latest.current;
         const from = order.indexOf(key);
         if (from < 0) return p.stop();
@@ -406,6 +472,14 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         p.tops = rects.map((r) => r?.top ?? 0);
         p.heights = rects.map((r) => r?.height ?? 0);
         p.centres = rects.map((r) => (r === undefined ? 0 : r.top + r.height / 2));
+        if (latest.current.grid !== undefined) {
+          p.cells = rects.map((r) => ({
+            at: { x: r?.left ?? 0, y: r?.top ?? 0 },
+            centre: { x: (r?.left ?? 0) + (r?.width ?? 0) / 2, y: (r?.top ?? 0) + (r?.height ?? 0) / 2 },
+            w: r?.width ?? 0,
+            h: r?.height ?? 0,
+          }));
+        }
         p.bounds = [0, order.length - 1];
         p.scroller = scrollerOf(el);
         p.scroll0 = p.scroller?.scrollTop ?? 0;
@@ -418,7 +492,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         } catch {
           // A pointer already gone: the window's listeners still see it.
         }
-        setMoving({ key, from, over: from, size: p.heights[from] ?? 0 });
+        setMoving({ key, from, over: from, size: p.heights[from] ?? 0, ...(p.cells.length === 0 ? {} : { slots: p.cells.map((c) => c.at) }) });
       }
       p.low = Math.min(p.low, p.y);
       p.high = Math.max(p.high, p.y);
@@ -460,7 +534,12 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
   const row = (key: K): ReturnType<Reorder<K>["row"]> => {
     const at = shown.indexOf(key);
     const raised = moving?.key === key || landing === key;
-    const shift = moving === null || raised ? 0 : shiftOf(at, moving.from, moving.over, moving.size);
+    const shift: Point =
+      moving === null || raised
+        ? { x: 0, y: 0 }
+        : moving.slots === undefined
+          ? { x: 0, y: shiftOf(at, moving.from, moving.over, moving.size) }
+          : gridShiftOf(at, moving.from, moving.over, moving.slots);
     return {
       ref: (el) => {
         if (el === null) els.current.delete(key);
@@ -472,10 +551,13 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         begin(e, key, at);
       },
       onKeyDown: (e) => {
-        if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || moving !== null) return;
+        // A list's rows move a place with ⌥↑ / ⌥↓; a grid's cells a cell with ⌥← / ⌥→ and a row with ⌥↑ / ⌥↓.
+        const columns = options.grid?.columns;
+        const step = { ArrowUp: -(columns ?? 1), ArrowDown: columns ?? 1, ...(columns === undefined ? {} : { ArrowLeft: -1, ArrowRight: 1 }) }[e.key];
+        if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || step === undefined || moving !== null) return;
         e.preventDefault();
-        const up = e.key === "ArrowUp";
-        const to = clamp(at + (up ? -1 : 1), 0, shown.length - 1);
+        const up = step < 0;
+        const to = clamp(at + step, 0, shown.length - 1);
         if (to === at) {
           setStatus(`${name(key)} is already ${up ? "first" : "last"}`);
           return;
@@ -491,7 +573,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       },
       // An avatar's image would start the browser's own drag.
       onDragStart: (e) => e.preventDefault(),
-      style: shift === 0 ? undefined : { transform: `translateY(${String(shift)}px)` },
+      style: shift.x === 0 && shift.y === 0 ? undefined : { transform: translate(shift.x, shift.y) },
       "data-reorder-row": "",
       ...(raised ? { "data-lifted": "" as const } : {}),
     };

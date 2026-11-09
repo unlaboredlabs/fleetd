@@ -1,11 +1,11 @@
-// The app frame: the sidebar of projects floating inset down the left (the macOS traffic lights sit in its top row,
-// over the window's translucent material), the top row floating over the screen beside it (the window's drag region,
-// where a chat floats its title and actions as glass, and the agents capsule that opens the panel), and the
-// screen the route names: a project's lead chat, with its agents, PRs and checklist in the panel on the right (panel.tsx), or
+// The app frame: the sidebar of projects flush down the left, its own soft tone (the macOS traffic lights sit in its
+// top row, over the window's translucent material), the top row floating over the screen beside it (the window's drag
+// region, where a chat floats its pill as glass: its picture and name, which opens the panel), and the screen the
+// route names: a project's lead chat, with its agents, PRs and checklist in the panel on the right (panel.tsx), or
 // Status, Time or Settings. Navigation is the hash (routes.ts); `#/` opens the project you last had open. With several
 // hubs the screen is on its route's hub, inside that hub's scope, and each hub has a watcher
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge. The sidebar and the
-// panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the agents capsule opens
+// panel have no toggle icon: ⌘B, ⌥⌘B, the View menu and the palette show and hide them, and the chat's pill opens
 // the panel too. ⌘K, not a button, opens the palette.
 import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
@@ -24,7 +24,7 @@ import { dropRows, publishRows, useHubRows } from "./hubRows";
 import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
-import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
+import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
@@ -290,15 +290,16 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // The chat's conversation scrolls under the top row; every other screen starts below it.
   const under = chrome && shown.id === "project";
   const top = <TopBar />;
+  // The chat's pill opens and closes the panel.
+  const handle = useMemo(() => ({ shown: panel.shown, toggle: panel.toggle }), [panel.shown, panel.toggle]);
 
   return (
     <div ref={root} className={s.root} data-screen="shell" style={{ "--sidebar-w": `${String(sidebarPx)}px` } as CSSProperties}>
+      <PanelHandleProvider value={handle}>
       <AppFrame
         translucent
         topBar={top}
         under={under}
-        // At the window's top right, open or closed, so the click that opened the panel closes it in the same place.
-        corner={chrome && panel.project !== null ? <PanelToggle panel={panel} /> : undefined}
         sidebarTop={settings ? undefined : <NewButton go={go} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
@@ -348,6 +349,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
           </div>
         </div>
       </AppFrame>
+      </PanelHandleProvider>
       <PaletteHost />
       <ProjectsHost />
       <UpdatesOf hubs={hubs} on={route.at} />

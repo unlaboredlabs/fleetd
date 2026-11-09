@@ -4,10 +4,11 @@
 // a way back above it; one screen takes the whole section, its way back in its own line. Sections, views, rows and Back are all routes (shell/routes.ts), so links from the chat, Status
 // and the palette open the same views. Only the open view's pane is mounted and reads from the hub; the counts on the
 // tabs read only what is cheap.
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Settings } from "lucide-react";
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { Boundary } from "../../src/Boundary";
 import { useData, useToolQuery } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
 import { Button, TabPanel, Tabs, cx } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { hasItem, listView, panelRoute, projectSkills, type PanelView, type ProjectKey } from "../shell/routes";
@@ -75,6 +76,16 @@ export function ProjectPanel({ project, view: routed, onWide }: { project: Proje
       <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features))}>
         <div className={s.head}>
           <SectionTabs count={count} features={features} extra={extra} />
+          <Button
+            variant="quiet"
+            iconOnly
+            className={s.headTool}
+            aria-label="Project settings"
+            title="The project’s settings: its connections, sign-ins, approvals and memory"
+            onClick={() => navigate({ id: "settings", tab: "projects", for: projectKey(project) })}
+          >
+            <Settings />
+          </Button>
         </div>
         {section === SKILL ? (
           // No tab names it, so no tab panel either.

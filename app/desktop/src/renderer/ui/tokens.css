@@ -60,6 +60,11 @@
   --glass-rim: #ffffffd9;
   --glass-lift: 0 1px 2px #0000000f, 0 6px 18px -6px #00000029;
   --glass-pressed: #00000012;
+  /* A glass button (the chat's pill): a step brighter under the pointer, and a clear step deeper while what it opens
+     shows, its edge firmer too. Laid over the glass, so the material stays. */
+  --glass-hover: #0000000a;
+  --glass-open: #0000001f;
+  --glass-edge-open: #0000002e;
   /* One restrained tint per agent role (live/chips.rs role_tint), clear of the accent and the status colours. */
   --role-implementer: #126c64;
   --role-reviewer: #6244bd;
@@ -100,6 +105,8 @@
   --hover: #ffffff0d;
   --selected: #ffffff17;
   --hairline: #323230;
+  /* The sidebar's edge: in dark its tone sits too close to --bg's to part them on its own. */
+  --side-edge: #00000059;
   --border: #4a4a46;
   --bubble: #30302e;
   --group: #262625;
@@ -126,6 +133,9 @@
   --glass-rim: #ffffff12;
   --glass-lift: 0 1px 2px #0000004d, 0 8px 22px -6px #00000080;
   --glass-pressed: #ffffff1a;
+  --glass-hover: #ffffff0f;
+  --glass-open: #ffffff24;
+  --glass-edge-open: #ffffff2e;
   --role-implementer: #6ccbc0;
   --role-reviewer: #bba8f5;
   --role-verifier: #e79bcd;
@@ -185,18 +195,17 @@
   /* The window's top row, which floats over the screen (no bar of its own); the main process centres the macOS traffic
      lights in it (shared/frame.ts TOP_BAR). */
   --top-bar-height: 52px;
-  /* How far the sidebar floats in from the window's edges, as a macOS 26 sidebar does. */
-  --side-inset: 8px;
-  --side-radius: 12px;
+  /* How far a glass capsule (the chat's pill) sits in from the top row's top and bottom edges. */
+  --glass-inset: 8px;
   /* The glass's blur, the same in both themes. */
   --glass-blur: blur(24px) saturate(180%);
   /* The chat's composer floats as a glass island over the conversation: this far in from the window's bottom edge,
      with a band above it as tall as a capsule and its gap, where the live strip floats (the conversation keeps clear
      of both, screens/chat ChatList). */
-  --island-gap: 12px;
+  --island-gap: 18px;
   --island-band-h: 36px;
   --sidebar-w: 264px;
-  --measure: 680px;
+  --measure: 880px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;
   /* Room for the macOS traffic lights in the hiddenInset title bar; 0 elsewhere (<html data-platform>). */
@@ -235,6 +244,11 @@
      curve --ease-snap approximates, sampled), from rest and settling without overshoot. */
   --dur-spring: 360ms;
   --ease-spring: linear(0, 0.056 5%, 0.177 10%, 0.316 15%, 0.449 20%, 0.566 25%, 0.665 30%, 0.744 35%, 0.807 40%, 0.855 45%, 0.893 50%, 0.921 55%, 0.942 60%, 0.958 65%, 0.969 70%, 0.978 75%, 0.984 80%, 0.988 85%, 0.992 90%, 0.994 95%, 1);
+  /* The project's panel: a spring that leaves at speed and settles without overshoot (critically damped, launched with
+     half its natural velocity), in a little slower than out. The chat beside glides with it on the same curve. */
+  --dur-panel-in: 280ms;
+  --dur-panel-out: 220ms;
+  --ease-panel: linear(0, 0.196 5%, 0.372 10%, 0.519 15%, 0.638 20%, 0.731 25%, 0.802 30%, 0.855 35%, 0.896 40%, 0.925 45%, 0.947 50%, 0.962 55%, 0.974 60%, 0.982 65%, 0.988 70%, 0.992 75%, 0.995 80%, 0.997 85%, 0.998 90%, 0.999 95%, 1);
   /* Loops are not CSS animations: they step on the app's one beat, 120 ms (ui/lib/beat). */
 }
 
@@ -253,5 +267,7 @@
     --enter-stagger: 0ms;
     --row-rise: 0px;
     --dur-spring: 0ms;
+    --dur-panel-in: 0ms;
+    --dur-panel-out: 0ms;
   }
 }

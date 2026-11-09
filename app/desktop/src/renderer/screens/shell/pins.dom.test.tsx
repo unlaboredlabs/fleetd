@@ -232,7 +232,7 @@ describe("a row dropped in the sidebar", () => {
     });
     await settle();
     const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
-    const titles = () => rows().map((r) => r.querySelector("[class*=name]")?.textContent);
+    const titles = () => rows().map((r) => r.querySelector("[class*=name], [class*=pinTitle]")?.textContent);
     expect(titles()).toEqual(["a", "b", "c"]);
 
     // a dragged past b and let go.
@@ -274,7 +274,7 @@ describe("the rows around a row dragged in the sidebar", () => {
   const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
   afterEach(() => layout.mockReset());
   const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
-  const nameOf = (r: HTMLElement) => r.querySelector("[class*=name]")?.textContent ?? "";
+  const nameOf = (r: HTMLElement) => r.querySelector("[class*=name], [class*=pinTitle]")?.textContent ?? "";
   const titles = () => rows().map(nameOf);
   const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
   const slot = (el: HTMLElement) => (el.parentElement === null ? 0 : [...el.parentElement.children].indexOf(el) * ROW);

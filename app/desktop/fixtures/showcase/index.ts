@@ -16,7 +16,8 @@ import path from "node:path";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { firstProject, writeChat } from "../kit/chat.ts";
-import { asText, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { arr } from "../kit/stress.ts";
 import type { Change } from "../../src/shared/contracts";
 import { changesAnswers } from "../../src/renderer/screens/train/fixture.ts";
 import { MEMORY_REFRESHED } from "../lead/index.ts";
@@ -589,6 +590,20 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   return f.settleAt(0);
 };
 
+/** The showcase with three chats pinned (design exploration: the sidebar's pinned grid). */
+const pinned = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "showcase-pins", "The showcase with storefront, billing and Ada pinned.");
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  const ref = (title: string) => {
+    const p = projects.find((x) => x["title"] === title);
+    return { machineId: p?.["machineId"] ?? "", projectId: p?.["projectId"] ?? "" };
+  };
+  return f.answer("chat_pins_get", {}, { pins: [ref("storefront"), ref("billing"), ref("Ada")], set: true });
+};
+
 export default defineGroup({
-  fixtures: (base) => [build(base("typical"), base("chat-empty"))],
+  fixtures: (base) => {
+    const order = build(base("typical"), base("chat-empty"));
+    return [order, pinned(order)];
+  },
 });

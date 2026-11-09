@@ -12,7 +12,7 @@
 //
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
-import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
@@ -37,6 +37,9 @@ import s from "./sidebar.module.css";
 
 /** A chat's picture in its row: big enough to enjoy its face, the row 56 px around it. */
 const AVATAR = 36;
+/** A pinned chat's picture, PIN_COLUMNS to a row across the sidebar. */
+const PIN_AVATAR = 64;
+const PIN_COLUMNS = 2;
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
 export const SPRING = { ms: 360, ease: "var(--ease-spring)" } as const;
 
@@ -100,7 +103,6 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     };
   }
   if (p.working) return { node: <StateGlyph state="thinking" size="sm" />, tip: "The lead is working" };
-  if (p.pinned) return { node: <Pin className={s.pin} aria-hidden />, tip: "Pinned" };
   return null;
 };
 
@@ -148,6 +150,45 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
             </Tooltip>
           )}
         </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * A pinned chat, as the phone draws its pins (mobile screens/Pinned.tsx, after Messages): a large round picture, its
+ * name under it, two to a row over the list. New, the name speaks up with the dot beside it (the warning's when it
+ * waits on you); while its lead works, a small typing bubble rises from the picture. While ⌘ (Ctrl) is held, its jump
+ * number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1 onwards.
+ */
+function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
+  const m = mark(p);
+  const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
+  const dot = p.want !== undefined ? "want" : p.unread ? "new" : undefined;
+  return (
+    <button
+      type="button"
+      className={s.pinCell}
+      {...(current ? { "aria-current": "page" as const } : {})}
+      data-unread={dot !== undefined || undefined}
+      aria-description={tip}
+      {...rest}
+    >
+      <span className={s.pinFace}>
+        <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
+        {p.working || p.running > 0 ? (
+          <span className={s.typing} aria-hidden>
+            <StateGlyph state="thinking" size="sm" />
+          </span>
+        ) : null}
+      </span>
+      <span className={s.pinName}>
+        {jump !== null ? (
+          <span className={s.jump}>{jump}</span>
+        ) : dot === undefined ? null : (
+          <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden />
+        )}
+        <span className={s.pinTitle}>{p.project.title}</span>
       </span>
     </button>
   );
@@ -242,11 +283,14 @@ function ProjectGroup(props: {
   const layer = useDataLayer();
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);
   const pinned = useMemo(() => (rows ?? []).filter((p) => p.pinned).map((p) => p.key), [rows]);
+  const name = (key: string) => rowsByKey.get(key)?.project.title ?? "";
+  // The pins lift and move inside their grid, and the hub keeps your order; the other rows' order is their activity's,
+  // and they only glide to it.
+  const pins = useReorder({ keys: pinned, name, onMove: (order) => pin(layer, rows ?? [], order), settle: SPRING, grid: { columns: PIN_COLUMNS } });
   const reorder = useReorder({
-    keys: useMemo(() => rows?.map((p) => p.key) ?? [], [rows]),
-    name: (key) => rowsByKey.get(key)?.project.title ?? "",
-    // Only pinned rows lift: the others' order is their activity's. A pinned row dropped among them stays last of the pinned.
-    onMove: (order) => pin(layer, rows ?? [], order.filter((k) => pinned.includes(k))),
+    keys: useMemo(() => (rows ?? []).filter((p) => !p.pinned).map((p) => p.key), [rows]),
+    name,
+    onMove: () => undefined,
     settle: SPRING,
   });
   const at = named ? { at: hub.id } : {};
@@ -315,26 +359,41 @@ function ProjectGroup(props: {
           </Button>
         </div>
       ) : (
-        <div className={s.rows} {...reorder.list}>
-          {reorder.shown.map((key, i) => {
-            const p = rowsByKey.get(key);
-            if (p === undefined) return null;
-            const handle = reorder.row(key);
-            // Every row glides; only a pinned one lifts or moves with ⌥↑ / ⌥↓.
-            const wrap = p.pinned ? handle : { ref: handle.ref, style: handle.style, "data-reorder-row": handle["data-reorder-row"] };
-            const last = p.pinned && rowsByKey.get(reorder.shown[i + 1] ?? "")?.pinned !== true && i < reorder.shown.length - 1;
-            return (
-              <div key={key} {...wrap} data-pins-end={last || undefined}>
-                <ContextMenu menu={menu(p)}>
-                  <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
-                </ContextMenu>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          {pins.shown.length === 0 ? null : (
+            <div className={s.pins} {...pins.list}>
+              {pins.shown.map((key) => {
+                const p = rowsByKey.get(key);
+                if (p === undefined) return null;
+                return (
+                  <div key={key} className={s.pinSlot} {...pins.row(key)}>
+                    <ContextMenu menu={menu(p)}>
+                      <PinCell p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
+                    </ContextMenu>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className={s.rows} {...reorder.list}>
+            {reorder.shown.map((key) => {
+              const p = rowsByKey.get(key);
+              if (p === undefined) return null;
+              const handle = reorder.row(key);
+              // These glide as their order changes, and never lift.
+              return (
+                <div key={key} ref={handle.ref} style={handle.style} data-reorder-row={handle["data-reorder-row"]}>
+                  <ContextMenu menu={menu(p)}>
+                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
+                  </ContextMenu>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
       <span role="status" className={s.srOnly}>
-        {reorder.status}
+        {pins.status}
       </span>
       <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
     </section>

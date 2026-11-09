@@ -121,7 +121,8 @@ export const fixtures = [
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
-  // status-rows with search blocked by a usage pause on buildbox: the top bar's reason with Resume (fixtures/topbar).
+  // status-rows with search blocked by a usage pause on buildbox: the reason with Resume, over the composer
+  // (fixtures/topbar).
   "topbar-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
@@ -266,6 +267,8 @@ export const fixtures = [
   "only-me-files",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
+  // The showcase with storefront, billing and Ada pinned: the sidebar's pinned grid (W565).
+  "showcase-pins",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -545,7 +548,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
   },
-  // A red main is a warning in the top bar, in the hub's words, not a block (checkout's `ios sessions`).
+  // A red main is a warning over the composer, in the hub's words, not a block (checkout's `ios sessions`).
   {
     id: "chat",
     route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
@@ -556,14 +559,14 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-attention="warning"]')).toHaveText("ios sessions is red on main, fix in progress");
     },
   },
-  // A project blocked by its machine's usage pause: the reason in the top bar, with Resume (search, on buildbox).
+  // A project blocked by its machine's usage pause: the reason over the composer, with Resume (search, on buildbox).
   {
     id: "chat",
     route: "#/project/buildbox/558dc655-fbca-48f0-abf1-6977a0709ea9",
     fixtures: ["topbar-paused"],
     variant: "usage-paused",
     open: async (page) => {
-      const line = page.locator("header").locator('[data-attention="blocked"]');
+      const line = page.locator("[data-say]").locator('[data-attention="blocked"]');
       await expect(line).toContainText("Blocked: paused until Sun 23:40 UTC");
       await expect(line.getByRole("button", { name: /^Resume/u })).toBeVisible();
     },
@@ -612,7 +615,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Retry now" }).click();
       await expect(page.getByText(/Reconnecting…/u)).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry now" })).toBeDisabled();
-      await expect(page.locator("header").getByText(/^Offline, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Offline, as of/u)).toBeVisible();
     },
   },
   // Back online before the chat is read again: marked as last known, never as current; and when that read failed,
@@ -624,7 +627,7 @@ export const screens: readonly Screen[] = [
     variant: "reread",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Last known, as of/u)).toBeVisible();
       await expect(page.getByText("Earlier messages load once you’re connected.")).toHaveCount(0);
     },
   },
@@ -637,7 +640,7 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
       await expect(page.locator('[data-screen="chat"]').getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
   // An agent in the strip's lanes opens in the panel's agents, where its work is (the chat doesn't draw it itself):
@@ -711,7 +714,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
     },
   },
-  // The panel beside the chat, open on a first launch on its Agents tab, and closed with the agents capsule.
+  // The panel beside the chat, open on a first launch on its Agents tab, and closed with the chat's pill.
   {
     id: "shell",
     route: "#/",
@@ -1046,7 +1049,38 @@ export const screens: readonly Screen[] = [
       await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
     },
   },
-  // ...and in the smallest window, where it had hidden itself, shown with the agents capsule beside the chat.
+  // W565: the flush sidebar with its pinned chats, two to a row as on the phone (big round pictures, the name under,
+  // a dot when new, a typing bubble while the lead works, no line before the list), and the top bar's one pill, at rest
+  // with its chevron towards the panel; then the pill opening the panel, pressed, its chevron turned back.
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pins"],
+    variant: "pins",
+    open: async (page) => {
+      const pill = page.locator('[data-opens="panel"]');
+      if ((await pill.getAttribute("aria-pressed")) === "true") {
+        await pill.click();
+        await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
+      }
+      const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"] > [data-reorder-row]');
+      await expect(grid).toHaveCount(3);
+      await expect(pill).toHaveAttribute("aria-pressed", "false");
+    },
+  },
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pins"],
+    variant: "pill-open",
+    open: async (page) => {
+      const pill = page.locator('[data-opens="panel"]');
+      if ((await pill.getAttribute("aria-pressed")) !== "true") await pill.click();
+      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
+      await expect(pill).toHaveAttribute("aria-pressed", "true");
+    },
+  },
+  // ...and in the smallest window, where it had hidden itself, shown with the chat's pill.
   {
     id: "shell",
     route: "#/",
@@ -1342,8 +1376,8 @@ export const screens: readonly Screen[] = [
   },
   // W89 and W550: one header row. The panel runs from the window's top, its tabs beside the chat's floating title: the
   // two rows share a top and a height (the chat's row has no bar or line; the panel's tabs keep theirs), and the row
-  // carries no state word and no Max agents. The agents capsule stays at the row's end, so the click that closed the
-  // panel opens it again in the same place.
+  // carries no state word and no Max agents. The chat's pill stays at the row's start as the panel comes and goes, so
+  // the click that closed the panel opens it again in the same place.
   {
     id: "chat",
     route: `${CHAT}/agents`,
