@@ -2,6 +2,7 @@
 //! the source of every snapshot and replay, and what lets a session resume after the node restarts or crashes.
 //! Contract types are stored as JSON next to the few columns queries need.
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use fleetd_contracts::ids::Timestamp;
@@ -53,6 +54,7 @@ PRAGMA user_version = 2;
 
 /// The span outbox keeps at most this many rows, and none older than [`SPANS_KEPT_MS`], while the hub is away.
 /// Past either bound the oldest rows go and one `gap` span says how many, so the loss shows in coverage.
+/// The gap spans these drops add have keys under `node/gap/`.
 pub const SPANS_KEPT: i64 = 500_000;
 pub const SPANS_KEPT_MS: i64 = 7 * 24 * 3600 * 1000;
 const SPANS_DROP_BATCH: i64 = 5_000;
@@ -161,6 +163,9 @@ pub struct SessionRow {
 pub struct NodeStore {
     conn: Mutex<Connection>,
     events_kept: u64,
+    /// The rid of the last gap span the outbox's drops added (0 when none): later drops raise its count while it's
+    /// still in the outbox and not sent yet.
+    open_gap: AtomicI64,
 }
 
 impl NodeStore {
@@ -191,6 +196,7 @@ impl NodeStore {
         Ok(Self {
             conn: Mutex::new(conn),
             events_kept,
+            open_gap: AtomicI64::new(0),
         })
     }
 
@@ -486,8 +492,9 @@ impl NodeStore {
         })
     }
 
-    /// Appends spans to the outbox in one transaction, then holds the outbox to its bounds.
-    pub fn put_spans(&self, spans: &[SpanWire], now_ms: i64) -> StoreResult<()> {
+    /// Appends spans to the outbox in one transaction, then holds the outbox to its bounds. `sent` is the newest row
+    /// sent to the hub: a gap span past it may still take a later drop's count.
+    pub fn put_spans(&self, spans: &[SpanWire], now_ms: i64, sent: u64) -> StoreResult<()> {
         if spans.is_empty() {
             return Ok(());
         }
@@ -502,52 +509,105 @@ impl NodeStore {
                 ])?;
             }
             drop(stmt);
-            self.bound_spans(conn, now_ms)
+            self.bound_spans(conn, now_ms, sent)
         })
     }
 
-    /// Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`.
-    fn bound_spans(&self, conn: &Connection, now_ms: i64) -> StoreResult<()> {
+    /// Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`. A drop raises the count
+    /// of the last gap span the drops added while it's still here and not sent (the hub ignores a span it has
+    /// already), so a long outage costs one gap row, not one per span; else it adds a gap span, and leaves room for it.
+    /// A gap span dropped in turn passes its count on, unless it was sent.
+    fn bound_spans(&self, conn: &Connection, now_ms: i64, sent: u64) -> StoreResult<()> {
         loop {
-            let (min, max): (Option<i64>, Option<i64>) =
-                conn.query_row("SELECT MIN(rid), MAX(rid) FROM spans", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })?;
+            // Each bound a lookup, as a full outbox takes this on every put: one MIN and one MAX in the same SELECT
+            // scan the table, and so does the first young row's scan unless the oldest row is young.
+            let (min, max): (Option<i64>, Option<i64>) = conn.query_row(
+                "SELECT (SELECT MIN(rid) FROM spans), (SELECT MAX(rid) FROM spans)",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
             let (Some(min), Some(max)) = (min, max) else {
                 return Ok(());
             };
             let cutoff = now_ms - SPANS_KEPT_MS;
-            let first_young: Option<i64> = conn.query_row(
-                "SELECT MIN(rid) FROM spans WHERE at_ms >= ?1",
-                [cutoff],
-                |r| r.get(0),
-            )?;
+            let oldest: i64 =
+                conn.query_row("SELECT at_ms FROM spans WHERE rid = ?1", [min], |r| {
+                    r.get(0)
+                })?;
+            let first_young: Option<i64> = if oldest >= cutoff {
+                Some(min)
+            } else {
+                conn.query_row(
+                    "SELECT MIN(rid) FROM spans WHERE at_ms >= ?1",
+                    [cutoff],
+                    |r| r.get(0),
+                )?
+            };
             let by_age = first_young.map_or(max, |r| r - 1);
-            let by_count = max - SPANS_KEPT;
-            let upto = by_age.max(by_count).min(min + SPANS_DROP_BATCH - 1);
+            let upto = |room: i64| {
+                let by_count = if max - min + 1 > SPANS_KEPT {
+                    max - SPANS_KEPT + room
+                } else {
+                    min - 1
+                };
+                by_age.max(by_count).min(min + SPANS_DROP_BATCH - 1)
+            };
+            let open = match self.open_gap.load(Ordering::Relaxed) {
+                rid if rid > upto(0) && rid > sent as i64 => conn
+                    .query_row("SELECT json FROM spans WHERE rid = ?1", [rid], |r| {
+                        r.get::<_, String>(0)
+                    })
+                    .optional()?
+                    .map(|json| (rid, json)),
+                _ => None,
+            };
+            let upto = if open.is_some() { upto(0) } else { upto(1) };
             if upto < min {
                 return Ok(());
             }
             let (n, first, last, session): (i64, i64, i64, String) = conn.query_row(
-                "SELECT COUNT(*), MIN(at_ms), MAX(at_ms), MIN(session_id) FROM spans WHERE rid <= ?1",
-                [upto],
+                "WITH d AS (SELECT session_id, at_ms, json, rid > ?2 AND json_extract(json, '$.key') LIKE 'node/gap/%' AS gap
+                   FROM spans WHERE rid <= ?1)
+                 SELECT SUM(IIF(gap, COALESCE(json_extract(json, '$.extra.count'), 1), 1)),
+                   MIN(IIF(gap, json_extract(json, '$.startMs'), at_ms)),
+                   MAX(IIF(gap, json_extract(json, '$.endMs'), at_ms)), MIN(session_id) FROM d",
+                params![upto, sent as i64],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )?;
             conn.execute("DELETE FROM spans WHERE rid <= ?1", [upto])?;
-            let gap = serde_json::json!({
-                "key": format!("node/gap/{upto}"),
-                "kind": "gap",
-                "sessionId": session,
-                "startMs": first.max(0),
-                "endMs": last.max(first).max(0),
-                "status": "incomplete",
-                "extra": { "count": n, "reason": "the node's span outbox was full while the hub was away" },
-            });
-            conn.execute(
-                "INSERT INTO spans (session_id, at_ms, json) VALUES (?1, ?2, ?3)",
-                params![session, now_ms, gap.to_string()],
-            )?;
-            tracing::warn!(dropped = n, "span outbox full: dropped the oldest spans");
+            match open {
+                Some((rid, json)) => {
+                    let mut gap: serde_json::Value = serde_json::from_str(&json)?;
+                    let was = |field: &str| gap[field].as_i64();
+                    let (start, end) = (was("startMs"), was("endMs"));
+                    gap["startMs"] = start.map_or(first, |s| s.min(first)).max(0).into();
+                    gap["endMs"] = end.map_or(last, |e| e.max(last)).max(0).into();
+                    let count = gap["extra"]["count"].as_i64().unwrap_or(0) + n;
+                    gap["extra"]["count"] = count.into();
+                    conn.execute(
+                        "UPDATE spans SET at_ms = ?2, json = ?3 WHERE rid = ?1",
+                        params![rid, now_ms, gap.to_string()],
+                    )?;
+                }
+                None => {
+                    let gap = serde_json::json!({
+                        "key": format!("node/gap/{upto}"),
+                        "kind": "gap",
+                        "sessionId": session,
+                        "startMs": first.max(0),
+                        "endMs": last.max(first).max(0),
+                        "status": "incomplete",
+                        "extra": { "count": n, "reason": "the node's span outbox was full while the hub was away" },
+                    });
+                    conn.execute(
+                        "INSERT INTO spans (session_id, at_ms, json) VALUES (?1, ?2, ?3)",
+                        params![session, now_ms, gap.to_string()],
+                    )?;
+                    self.open_gap
+                        .store(conn.last_insert_rowid(), Ordering::Relaxed);
+                    tracing::warn!(dropped = n, "span outbox full: dropped the oldest spans");
+                }
+            }
         }
     }
 
@@ -749,6 +809,7 @@ fn decode_session(summary: &str, local: &str) -> StoreResult<SessionRow> {
 mod tests {
     use super::*;
     use fleetd_contracts::ids::ProjectId;
+    use fleetd_contracts::time::SpanKind;
 
     fn project(id: &str) -> ProjectInfo {
         ProjectInfo {
@@ -780,6 +841,57 @@ mod tests {
         assert_eq!(seqs(1), None);
         // A cursor from before the node's database was reset.
         assert_eq!(seqs(9), None);
+    }
+
+    #[test]
+    fn a_full_span_outbox_drops_its_oldest_rows_and_counts_them_in_one_gap_span() {
+        let store = NodeStore::open_memory(3).unwrap();
+        let now = 2_000_000_000_000_i64;
+        store
+            .lock()
+            .execute(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+                 INSERT INTO spans (session_id, at_ms, json) SELECT 's1', ?2, '{}' FROM n",
+                params![SPANS_KEPT, now],
+            )
+            .unwrap();
+        let span = |n: i64| -> SpanWire {
+            serde_json::from_value(serde_json::json!({
+                "key": format!("k{n}"), "kind": "run", "sessionId": "s1",
+                "startMs": now, "endMs": now, "status": "ok",
+            }))
+            .unwrap()
+        };
+        let rows = |store: &NodeStore| -> i64 {
+            store
+                .lock()
+                .query_row("SELECT COUNT(*) FROM spans", [], |r| r.get(0))
+                .unwrap()
+        };
+        let gaps = |store: &NodeStore| -> Vec<(u64, i64)> {
+            store
+                .spans_after(SPANS_KEPT as u64, 2000)
+                .unwrap()
+                .into_iter()
+                .filter(|(_, s)| s.kind == SpanKind::Gap)
+                .map(|(rid, s)| (rid, s.extra.and_then(|e| e.count).unwrap().get()))
+                .collect()
+        };
+        // Full to the cap: the first span drops the two oldest, one for itself and one for the gap span; each later
+        // one drops one more and raises that gap's count, and the prune ends every time.
+        for n in 0..1000 {
+            store.put_spans(&[span(n)], now, 0).unwrap();
+        }
+        assert_eq!(rows(&store), SPANS_KEPT);
+        let gap = SPANS_KEPT as u64 + 2;
+        assert_eq!(gaps(&store), vec![(gap, 1001)]);
+        // Once that gap span is sent, the hub has it: the next drop adds a new one.
+        store.put_spans(&[span(1000)], now, gap).unwrap();
+        assert_eq!(rows(&store), SPANS_KEPT);
+        assert_eq!(
+            gaps(&store),
+            vec![(gap, 1001), (SPANS_KEPT as u64 + 1003, 2)]
+        );
     }
 
     #[test]

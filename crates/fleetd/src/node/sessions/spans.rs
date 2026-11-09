@@ -243,11 +243,14 @@ impl SessionService {
             return;
         }
         let now = crate::node::runner::claude::mapper::Now::system().ms as i64;
-        if let Err(e) = self.store().put_spans(spans, now) {
+        // Held across the store, so the flusher can't send a gap span the outbox's drops are still counting into.
+        let mut st = self.st();
+        if let Err(e) = self.store().put_spans(spans, now, st.outbox.sent) {
             tracing::warn!(error = %e, "cannot store spans");
             return;
         }
-        self.st().outbox.added(spans.len() as u64, urgent);
+        st.outbox.added(spans.len() as u64, urgent);
+        drop(st);
         self.inner.span_wake.notify_one();
     }
 }
