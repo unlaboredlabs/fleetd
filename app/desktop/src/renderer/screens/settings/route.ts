@@ -35,7 +35,7 @@ export const formatRoute = (r: RouteParts): string =>
  * A project's pages, under tabs once a project is opened from Settings › Projects: all of that one project (`for`).
  * Projects without `for` is the list of projects.
  */
-export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations", "prompts"];
+export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations", "prompts", "project-vault"];
 export const isProjectTab = (tab: Tab): boolean => PROJECT_TABS.includes(tab);
 
 /** Hub › Every project's pages, under tabs as a project's are. */

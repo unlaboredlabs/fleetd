@@ -19,6 +19,7 @@ import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { KeptWorktrees } from "./KeptWorktrees";
 import { SkillSavedLine } from "./SkillSaved";
+import { VaultImportCardView } from "./VaultImportCard";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { TOP_BAR } from "../../../shared/frame";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
@@ -157,6 +158,14 @@ const RowView = memo(function RowView(props: {
           <div className={cx(s.quietRow, s.event)} data-entry="event">
             <SkillSavedLine project={project} saved={r.item.message.skillSaved} />
             <span className={s.eventTime}>{shortClock(r.item.at)}</span>
+          </div>
+        );
+      }
+      // A lead's proposal to import items from the person's 1Password into the vault: Import or Dismiss.
+      if (r.item.message?.vaultImport !== undefined) {
+        return (
+          <div className={s.quietRow} data-entry="event">
+            <VaultImportCardView card={r.item.message.vaultImport} at={shortClock(r.item.at)} />
           </div>
         );
       }

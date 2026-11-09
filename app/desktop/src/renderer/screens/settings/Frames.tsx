@@ -1,14 +1,15 @@
 // The pages Settings gathers in sets, under tabs in the content pane, so the sidebar stays one flat list: a project's
-// five (Project, Agents, Instructions & memory, Automations, Prompts), opened from Settings › Projects with a way back
-// to it in the window's top row, and Hub › Every project's four.
+// six (Project, Agents, Instructions & memory, Automations, Prompts, Vault), opened from Settings › Projects with a way
+// back to it in the window's top row, and Hub › Every project's four.
 import type { ReactNode } from "react";
 import { Button, Tab, TabList, Tabs } from "../../ui";
-import { useHub } from "../../src/data/react";
+import { useData, useHub } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
 import { PageFrame, scopeName, useProjects } from "./parts";
 import { parseScope } from "./editor";
 import { EVERY_PROJECT, formatRoute, PROJECT_TABS, type Tab as SettingsTab } from "./route";
 import { PAGE_LABEL } from "./search";
+import { vaultServed } from "./vaultModel";
 import s from "./settings.module.css";
 
 /** A set's pages as tabs above the page; picking one opens it. */
@@ -29,6 +30,9 @@ function PageTabs({ label, tabs, current, onOpen }: { label: string; tabs: Reado
 /** One project's pages: its name in the top row with the way back to Projects, its pages as tabs. */
 export function ProjectFrame({ project, tab, children }: { project: string; tab: SettingsTab; children: ReactNode }) {
   const projects = useProjects();
+  // Vault, only on a hub that serves it.
+  const vault = useData((st) => vaultServed(st.features));
+  const tabs = vault ? PROJECT_TABS : PROJECT_TABS.filter((t) => t !== "project-vault");
   const lead = (
     <Button variant="ghost" size="sm" onClick={() => navigate({ id: "settings", tab: "projects" })}>
       ‹ Projects
@@ -36,7 +40,7 @@ export function ProjectFrame({ project, tab, children }: { project: string; tab:
   );
   return (
     <PageFrame.Provider value={{ title: scopeName(parseScope(project), projects), lead }}>
-      <PageTabs label="Project" tabs={PROJECT_TABS} current={tab} onOpen={(t) => (window.location.hash = formatRoute({ tab: t, for: project }))} />
+      <PageTabs label="Project" tabs={tabs} current={tab} onOpen={(t) => (window.location.hash = formatRoute({ tab: t, for: project }))} />
       {children}
     </PageFrame.Provider>
   );

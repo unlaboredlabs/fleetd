@@ -1,15 +1,17 @@
 // Settings › Your accounts › 1Password (D235): the person's own 1Password service account token, which fill_credential
 // uses in the orders they start and in their Only-me projects when the project has no OP_SERVICE_ACCOUNT_TOKEN of its
 // own (that one wins). Pasted once: main seals it to every machine, and the page never gets it back. Test lists the
-// vaults it reads: agents run as the person on their machine, so it should read one vault, kept for fleetd (D313).
+// vaults it reads: agents run as the person on their machine, so it should read one vault, kept for fleetd (D313). On a
+// hub with a vault, it's only where items are imported from: fills use the vault.
 import { useState } from "react";
 import type { OnePasswordTest, OnePasswordToken } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { when } from "../live/when";
+import { vaultServed } from "./vaultModel";
 import { Button, Field, InlineCode, Input, Text } from "../../ui";
 import { sealedLine } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, useMachines } from "./claudeParts";
@@ -46,14 +48,23 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
   };
 }
 
+/** On a hub with a vault, 1Password is only where items come from (vault-design §6): fills use the vault. */
+const IMPORT_INTRO =
+  "Optional: a place to import logins, cards and addresses from into your vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
+
 export function OnePasswordSettings() {
   const live = useLive();
+  const vault = useData((st) => vaultServed(st.features));
   const read = useToolQuery("onepassword_get", noInput, { enabled: live });
   return (
     <SettingsSection
       title="1Password"
       reveal="onepassword"
-      intro="The logins your agents sign in to sites with, in the orders you start and your Only-me projects. They name a 1Password item and fleetd types the value in; no agent ever sees it."
+      intro={
+        vault
+          ? IMPORT_INTRO
+          : "The logins your agents sign in to sites with, in the orders you start and your Only-me projects. They name a 1Password item and fleetd types the value in; no agent ever sees it."
+      }
     >
       {!live ? (
         <GroupNote>Not connected. Connect to a hub to set up 1Password.</GroupNote>

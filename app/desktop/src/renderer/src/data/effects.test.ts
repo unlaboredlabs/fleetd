@@ -83,6 +83,14 @@ describe("event effects", () => {
     }
   });
 
+  it("a vault item changed or used: the Vault's lists, the open item and its activity read again, and Payments' card", () => {
+    expect(effectsOf(e("vault.used", { itemId: "V1", n: 3, action: "fill", outcome: "ok" }))).toEqual({
+      invalidate: [{ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" }],
+      resync: false,
+    });
+    expect(tools(e("vault.changed", { itemId: "V1", scope: "person" }))).toEqual(["vault_list", "vault_get", "vault_audit", "navi_purchases", "vault_status"]);
+  });
+
   it("your pins changed on another device: this sidebar reads them again, and nothing else", () => {
     expect(effectsOf(e("chat.pins"))).toEqual({ invalidate: [{ tool: "chat_pins_get" }], resync: false });
   });

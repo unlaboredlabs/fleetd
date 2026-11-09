@@ -117,7 +117,7 @@ point and pick up again later, from any of them.
 | Machines that run agents | `machines` | Required. |
 | Claude | `claude` | Required. The hub's API key on Settings › Hub accounts › Claude, your subscription in Settings › Your accounts › Claude, or each machine's own `claude auth login`. |
 | GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub accounts › GitHub, then each person connects theirs in Settings › Your accounts › GitHub; or `gh auth login` on the hub. |
-| 1Password | `onepassword` | Before the first login agents fill: a vault of fleetd's own, with only the logins and a low-limit or virtual card it needs, and a service account that reads only it, pasted in Settings › Your accounts › 1Password. Done once each saved token's Test reads one vault ([why](/docs/security#agent-reach)). |
+| Import from 1Password | `onepassword` | Optional. Agents fill logins and cards from fleetd's own [vault](/docs/vault); to import yours from 1Password, a service account that reads only a vault of fleetd's own, pasted in Settings › Your accounts › 1Password. Done once each saved token's Test reads one vault ([why](/docs/security#agent-reach)). |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
 | A Mac for agents | `mac` | Optional. One Mac every project's agents use for Xcode builds and iOS simulators: [the agents' Mac](/docs/agents-mac). |
 | Cloud machines (boat.dev) | `cloud` | Optional. Machines on your own boat.dev account that take work when yours are at their agent limit: [Cloud machines](/docs/cloud-machines). |

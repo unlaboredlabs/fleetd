@@ -191,42 +191,34 @@ shows them: as written, JSON- or HTML-escaped, URL-encoded or encoded as a form 
 longer string too. Each value filled from 1Password is masked so too, as `***op://…***`. A video can't be
 scrubbed: whatever showed on the page is in it.
 
-## Logins from 1Password {#1password}
+## Logins from the vault {#logins}
 
-An agent signs in to a site without seeing the password. It names a 1Password secret reference, and the node types
+An agent signs in to a site without seeing the password. It names a [vault](/docs/vault) login, and the node types
 the value into the page itself.
 
-1. **Save your service account token in Settings › Your accounts › 1Password.** In 1Password, make a vault for
-   fleetd with only the logins agents sign in with (and, for [purchases](/docs/projects#purchases), a low-limit or virtual card), then
-   [make a service account](https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/) that
-   reads only that vault: an agent on a machine could read whatever the token reads
-   ([why](/docs/security#agent-reach)). Paste its token (it starts with `ops_`) and press Save and test. The app seals it on
-   your computer to every machine and never shows it again; Test lists the vaults it can read, or says what 1Password
-   said, and asks for a new service account when it reads more than one. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Only me
-   projects' leads and agents. A shared project's lead and work nobody started (automations, train fixes) have no owner, so only a
-   variable serves them.
-   - **A project's own token wins**. One that should use another service account sets
-     `OP_SERVICE_ACCOUNT_TOKEN` as a secret [project variable](/docs/projects#env), or the lead asks for it with
-     `request_secret` (an [order's variable](/docs/approvals-and-secrets#order-variables)). Either is used instead of
-     yours, in every order of that project, whoever started it.
-   - The node keeps the token to itself: no agent, worktree setup command or MCP server gets it in its environment
-     (the node's 1Password helper reads it on its standard input, not from its environment either), and it is masked
-     like any secret.
-2. **Give each login item its website.** The node fills a field only on a page of the item's website (the same host,
-   or a subdomain of it), and submits only to a form that sends there. An item with no website fills nowhere. The
-   website is the one of exactly the item the reference names: by its ID, or by its title when no other item in that
-   vault has it (if two do, put the item's ID in the reference).
-3. **The agent fills and submits in one step.** It opens the login page with agent-browser, then calls
-   [`fill_credential`](/docs/reference/agent-tools#fill_credential) with the reference and the field's CSS selector:
-   `op://Agents/Shop/username` into `#email` with `submit: false`, then `op://Agents/Shop/password` into `#password`,
-   which submits the form. A one-time code is `op://Agents/Shop/one-time password?attribute=otp`.
+1. **Add the login to the vault** (Settings › You › Vault, or the project's Vault), with the websites it signs in to.
+   The node fills a field only on a page of one of those sites (the same host, or a subdomain of it), and submits only
+   to a form that sends there. A login with no site fills nowhere. Shared-hosting suffixes (`github.io`,
+   `vercel.app`, `netlify.app`, `pages.dev`, `herokuapp.com` and the like) match only as whole hosts.
+2. **The agent fills and submits in one step.** It opens the login page with agent-browser, then calls
+   [`fill_credential`](/docs/reference/agent-tools#fill_credential) with the item (its label, or its `V…` id) and
+   field, and the field's CSS selector: `item: "Shop", field: "username"` into `#email` with `submit: false`, then
+   `field: "password"` into `#password`, which submits the form. `field: "otp"` types the current one-time code,
+   made on the hub, so the seed never leaves it. `vault_items` lists the logins the agent may use, by label and site.
+3. **The hub checks before it sends.** The node hosting the browser asks the hub for the value. The hub checks, from
+   its own records, which project, order and person the session works for, that the item is one they may use
+   ([who uses what](/docs/vault#scopes)) and that the page is on its sites. Only then does it seal the value to that
+   node. Each fill, and each refusal, is in the item's activity.
 
-The node reads references with the 1Password SDK (`@1password/sdk` 0.5.0, run with Node.js and installed at the
-first fill under `~/.fleetd/node/browser/onepassword`; an install that takes over 3 minutes is stopped). A screen
-lists the vaults and a vault's items once, keeps what it read, except one-time codes, and waits and tries again when
-1Password rate-limits the token. Service accounts have hourly and daily read limits, and a
-machine stuck in a loop could use up the account's day for every machine, so agents are told not to retry a failed
-fill in a loop.
+## Logins from 1Password {#1password}
+
+1Password is only a place to [import from](/docs/vault#import) now: fills use the vault. Your service account token
+(Settings › You › Your accounts › 1Password) lets you and your leads search it and bring items in. Make it read one
+vault made for fleetd ([why](/docs/security#agent-reach)). For this release, `fill_credential` still takes an `op://`
+reference: it fills from the vault item imported from it, else reads 1Password as before and proposes importing the
+item. A project's own `OP_SERVICE_ACCOUNT_TOKEN` variable still serves those references, and the node keeps any token
+to itself (no agent, setup command or MCP server gets it in its environment). In the release after, `op://` references
+are refused.
 
 ### What keeps the value from the agent {#sealed}
 

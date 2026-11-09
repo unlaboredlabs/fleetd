@@ -5,7 +5,8 @@
 // (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
 // as a project's own pages are: Profiles, Tools & skills,
 // Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
-// and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), always listed,
+// and its GitHub App, github/AdminGithub.tsx); Vault (the cards, logins and addresses every project uses, and the vault
+// key, settings/Vault.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
 // and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
@@ -25,6 +26,7 @@ import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
 import { isEveryProject, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
+import { HubVault } from "../settings/Vault";
 import { AdminGithub } from "../github/AdminGithub";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
@@ -131,6 +133,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <Prompts where="hub" route={{ tab: "hub.prompts", prompt: route.prompt, for: null, view: route.view }} />;
     case "hub.accounts":
       return <HubAccounts me={me} />;
+    case "hub.vault":
+      return <HubVault />;
     case "hub.setup":
       return <Setup />;
   }

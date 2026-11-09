@@ -1,8 +1,8 @@
 // Settings (⌘, or the app menu), one window in three groups (D211), its sidebar one flat list of pages. You: General
 // (appearance, time in the app, notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs
-// on), Your memory (and Import memory), Your devices (and Pair a phone) and Hubs (this app's hubs and their links).
-// Projects: the list of projects, each opening its Project, Agents, Instructions & memory, Automations and Prompts
-// pages under tabs (Frames.tsx). Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every
+// on), Vault (the logins, cards, addresses and variables your agents use), Your memory (and Import memory), Your
+// devices (and Pair a phone) and Hubs (this app's hubs and their links). Projects: the list of projects, each opening
+// its Project, Agents, Instructions & memory, Automations, Prompts and Vault pages under tabs (Frames.tsx). Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every
 // teammate's work. The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into
 // one prompt. The shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
@@ -22,6 +22,7 @@ import { PageHead, useProjects } from "./parts";
 import { ProjectList } from "./ProjectList";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
+import { ProjectVault, YourVault } from "./Vault";
 import { isHubTab, isProjectTab, projectFor, useSettingsRoute } from "./route";
 import s from "./settings.module.css";
 
@@ -45,6 +46,8 @@ export function SettingsScreen() {
         <General />
       ) : tab === "accounts" ? (
         <YourAccounts />
+      ) : tab === "vault" ? (
+        <YourVault />
       ) : tab === "your-memory" ? (
         <YourMemoryPage />
       ) : tab === "devices" ? (
@@ -59,6 +62,8 @@ export function SettingsScreen() {
         <Instructions key={project} route={r} />
       ) : tab === "automations" ? (
         <Automations key={project} route={r} />
+      ) : tab === "project-vault" ? (
+        <ProjectVault project={project} />
       ) : (
         <Prompts route={r} />
       )}

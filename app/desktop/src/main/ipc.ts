@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
 import { artifactFrames } from "./artifactFrames";
@@ -14,6 +14,7 @@ import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
 import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitCloudKey } from "./secret";
 import { applyMenuState } from "./menuState";
+import { authorizer, copyVaultField, revealVaultItem, saveVaultItem, unlockVault } from "./vault";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
@@ -112,6 +113,41 @@ export const registerIpc = (
   handle(IPC.claudeAccountSubmit, (_event, id, request) => submitClaudeAccount(request, call(id)));
   handle(IPC.onePasswordSubmit, (_event, id, request) => submitOnePassword(request, call(id)));
   handle(IPC.cloudKeySubmit, (_event, id, request) => submitCloudKey(request, call(id)));
+  // A vault value is shown or copied only once the person proves they're here: Touch ID where this Mac has it, else a
+  // native confirm, which the page can't answer for them.
+  const vaultAuthorize = authorizer({
+    now: () => Date.now(),
+    authorize: async (what) => {
+      if (process.platform === "darwin" && systemPreferences.canPromptTouchID()) {
+        return systemPreferences.promptTouchID(what).then(
+          () => true,
+          () => false,
+        );
+      }
+      const verb = what.split(" ")[0] ?? "show";
+      const options = {
+        type: "question" as const,
+        buttons: [verb.charAt(0).toUpperCase() + verb.slice(1), "Cancel"],
+        defaultId: 0,
+        cancelId: 1,
+        message: `${what.charAt(0).toUpperCase()}${what.slice(1)}?`,
+        detail: "It's shown for 30 seconds, and a copy leaves the clipboard after a minute. Every reveal is in the vault's activity.",
+      };
+      const win = BrowserWindow.getFocusedWindow();
+      const answer = win === null ? await dialog.showMessageBox(options) : await dialog.showMessageBox(win, options);
+      return answer.response === 0;
+    },
+  });
+  handle(IPC.vaultSave, (_event, id, request) => saveVaultItem(request, call(id)));
+  handle(IPC.vaultReveal, (_event, id, request) => revealVaultItem(request, call(id), vaultAuthorize, id));
+  handle(IPC.vaultCopy, (_event, id, request) =>
+    copyVaultField(request, call(id), vaultAuthorize, id, {
+      readClipboard: () => clipboard.readText(),
+      writeClipboard: (text) => clipboard.writeText(text),
+      later: (fn, ms) => void setTimeout(fn, ms).unref(),
+    }),
+  );
+  handle(IPC.vaultUnlock, (_event, id, request) => unlockVault(request, call(id)));
   handle(IPC.systemHostName, () => hostName());
   // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a
   // time, as there is one fleetd dir here: asked again for the same hub while it runs, the page gets that one and

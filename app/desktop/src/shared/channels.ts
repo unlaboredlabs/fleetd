@@ -126,6 +126,14 @@ export const IPC = {
   onePasswordSubmit: "onepassword:submit",
   /** invoke(CloudKeyRequest) → CallOutcome. Main seals the hub's boat.dev key to the hub's own key, then calls cloud_key_set. */
   cloudKeySubmit: "cloud:key-submit",
+  /** invoke(VaultSaveRequest) → CallOutcome. Main seals the typed fields to the hub's own key, then calls vault_save. */
+  vaultSave: "vault:save",
+  /** invoke(VaultRevealRequest) → VaultRevealOutcome. Main asks for Touch ID (or a confirm), then opens vault_reveal's fields. */
+  vaultReveal: "vault:reveal",
+  /** invoke(VaultCopyRequest) → { ok } | { ok: false, error }. The same, then main copies the field; the page never sees it. */
+  vaultCopy: "vault:copy",
+  /** invoke(VaultUnlockRequest) → CallOutcome. Main seals the passphrase to the hub's own key, then calls vault_unlock. */
+  vaultUnlock: "vault:unlock",
   /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's file from the hub and opens it in this computer's app for its type. */
   fileOpen: "file:open",
   /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's file from the hub and saves it where the person picks. */

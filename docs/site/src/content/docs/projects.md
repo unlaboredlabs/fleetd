@@ -149,21 +149,23 @@ from the repo's default branch, freshly fetched (see [Which branch](#branches)).
 
 ### Environment variables {#env}
 
-Add one at a time with **Add variable**, or paste a `.env` file with **Paste .env**. A pasted file may use `export`,
-quotes and `#` comments, and a quoted value may run over several lines, as a certificate chain or a service account's
-JSON does. A name that looks like a credential (`STRIPE_KEY`, `GH_TOKEN`, `DB_PASSWORD`) starts as a secret, and each
-one can be switched.
+A project's variables live in its [Vault](/docs/vault): Settings › Projects › *project* › Vault (the project's
+General page has a line with **Open Vault**). Add one at a time with **+ › Variable**, or paste a `.env` file with
+**+ › Paste .env**. A pasted file may use `export`, quotes and `#` comments, and a quoted value may run over several
+lines, as a certificate chain or a service account's JSON does. A name that looks like a credential (`STRIPE_KEY`,
+`GH_TOKEN`, `DB_PASSWORD`) starts as a secret, and each one can be switched.
 
 | Kind | Where its value lives | Shown |
 |---|---|---|
-| Plain | The hub and the project's machine. | In the list. |
-| Secret | Only the project's machine. | Never again: only its fingerprint (the first 8 hex characters of its SHA-256) and its size. |
+| Plain | The hub's vault and the project's machine. | In the list. |
+| Secret | The hub's vault, encrypted, and the project's machine. | As dots; its creator or an admin can [show it](/docs/vault#reveal) behind Touch ID or Face ID. |
 
-A secret is sealed in the app to its machine's key, as a [secret request](/docs/approvals-and-secrets#secrets) is. The
-hub passes the sealed value on without storing or logging it. The node keeps the project's variables in a file of its
-own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every claude it starts for the project from then on.
-An agent already running gets a change at its next start. To change a secret, type a new value: the old one is never
-shown.
+A value is sealed in the app to the hub's own key. The hub keeps it encrypted in the vault and delivers it to the
+project's machine, sealed to that machine's key, whenever it changes or the machine comes back online. The node keeps
+the project's variables in a file of its own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every
+claude it starts for the project from then on. An agent already running gets a change at its next start. Your own
+variables (Settings › You › Vault) reach your Only me projects and the orders you start, unless the project or the
+order has the same name. Every start of an agent is in the vault's activity, by variable name.
 
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
 the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
@@ -176,8 +178,8 @@ Only exact matches are caught. Part of a line (`head -c 20` of a key, one field 
 encoding, or a value under 4 characters goes out as printed, so keep secrets out of output where you can. A line of a
 secret is masked even where the same text comes from somewhere else, such as a generic line of a JSON file.
 
-The hub and the app never get a secret's value: they see its name, its fingerprint and its size in bytes (the size
-counts toward the project's total).
+Lists show a secret by its name, fingerprint and size in bytes (the size counts toward the project's total), never
+its value.
 
 Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`, `CLAUDE_CODE_TMPDIR`) and every
 `FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
@@ -193,17 +195,14 @@ project's agents, at about 5 GB each: see [Heavy language servers are off](/docs
 | One value, plain or secret | 64 KiB, any number of lines, no NUL character |
 | All of a project's values together | 512 KiB: every one goes into every agent's environment, and the system refuses to start a process whose environment is too large |
 
-:::caution
-Setting a variable needs the project's machine online. Nothing is queued.
-:::
-
 An agent that needs a variable no one set asks its lead for it by name; the value you enter then reaches only that
 order's agents, until the order closes: see [A variable an agent asks for](/docs/approvals-and-secrets#order-variables).
 Each agent's brief lists the variables it gets by name.
 
 From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
-`setup` and `memoryRefresh`, and `project_env_set` sets and removes variables, a secret sealed to the machine's
-`boxPubKey`. `project_env_set` takes only a human key. Give either settings call a `repo` (a repo's name, such as
+`setup` and `memoryRefresh`, and the [vault's tools](/docs/vault#clients) set and remove variables. For one release,
+`project_env_set` (a secret sealed to the machine's `boxPubKey`) still works and its variables land in the vault. Both
+take only a human key. Give either settings call a `repo` (a repo's name, such as
 `api`) to read or set that repo's own `setup`; a repo with none of its own uses the project's.
 
 ### Setup commands {#setup}
@@ -470,25 +469,24 @@ not fleetd's rules.
 
 ## Purchases {#purchases}
 
-A project can book a hotel or a flight, or buy something online, with a card you keep in 1Password. You aren't asked
-(decision `projects.one-model`, D310): each purchase goes in its purchases log, fleetd fills the card into the
+A project can book a hotel or a flight, or buy something online, with a card in the [vault](/docs/vault). You aren't
+asked (decision `projects.one-model`, D310): each purchase goes in its purchases log, fleetd fills the card into the
 checkout, the lead never sees it, and the chat says what was paid. Any project's lead can pay, except an archived one's.
-Keep the card in fleetd's own vault, and make it a virtual card with a monthly limit or a low-limit card: an agent
-on the machine could read what the token reads ([why](/docs/security#agent-reach)).
+Make it a virtual card with a monthly limit or a low-limit card ([why](/docs/security#agent-reach)).
 
-1. **Pick a card.** In the project's settings, **Payments** lists the Credit Card items the project's 1Password token
-   reads: its own `OP_SERVICE_ACCOUNT_TOKEN` variable if it has one, else, in an [Only me](#only-me) project, yours
-   (Settings › Your accounts › 1Password). A shared project pays only with a variable of its own: without one it lists
-   no card and says to add it, as its checkout can't read your token. Pick one. fleetd keeps only its
-   `op://vault/item` reference.
+1. **Pick a card.** In the project's settings, **Payments › Pick a card…** lists the vault's cards the project's work
+   can use: its own, yours shared with it (or any of yours, in an [Only me](#only-me) project), and the hub's. **Add a
+   card…** and **Import from 1Password…** are beside the list, and pick the card they add. fleetd keeps `vault:<id>`.
+   On a hub without the vault, Payments lists the Credit Card items the project's 1Password token reads instead, and
+   keeps their `op://vault/item` reference; a hub with the vault imports that card once.
 2. **The lead records it.** At the checkout's payment step it calls `purchase_request` with the shop's domain and
    name, the total and currency, and what is in the basket. The page must be on that domain. Your chat shows its
    record: the shop, the total, each item, and the card.
-3. **The card is filled.** Within 15 minutes the lead calls `purchase_fill`. Its node reads the card from 1Password
-   and types the number, expiry, security code and name into the checkout's fields: on the shop's own page and in the
+3. **The card is filled.** Within 15 minutes the lead calls `purchase_fill`. The hub seals the card to the node
+   hosting its browser, once for that purchase, and the node types the number, expiry, security code and name into the checkout's fields: on the shop's own page and in the
    card frames of payment providers (Stripe, Adyen, Braintree, Checkout.com, Square, PayPal, Mollie, Worldpay), even
    when they're on another site. It fills once per purchase, and only on its shop. The chat gets a quiet line: "Paid
-   129.90 EUR at Hotel Adlon with Visa (Personal)".
+   129.90 EUR at Hotel Adlon with Visa ••4242". The card's activity in the vault lists each payment.
 4. **The lead pays.** It checks the total and clicks Pay or Book itself. If your bank asks to confirm (3-D Secure, a
    code, its app), it hands the browser to you with a takeover, and finishes once you hand it back.
 
