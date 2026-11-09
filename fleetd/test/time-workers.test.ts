@@ -87,4 +87,6 @@ test("time reads answer on a read worker while the event loop keeps ticking, as 
   } finally {
     t.done();
   }
-});
+  // Seeding and reading 60,000 spans takes ~3 s alone on a CI runner, more beside the other test files' workers: the
+  // time-digests tests' budget.
+}, 30_000);
