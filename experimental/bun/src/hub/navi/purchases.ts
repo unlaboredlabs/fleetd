@@ -35,6 +35,7 @@ import { leadCalls } from "../lead_calls/index.ts";
 import type { LeadCall, LeadCaller } from "../lead_calls/types.ts";
 import { link } from "../link/server.ts";
 import { store } from "../store/hub_store.ts";
+import { cardLabelOf, checkCardPick, purchaseSettled, sealedCardFor, vaultCardId } from "../vault/aliases.ts";
 import { isProject } from "./bridge.ts";
 import * as navis from "./store.ts";
 
@@ -43,13 +44,15 @@ export const OPS = ["purchase_open", "purchase_claim", "purchase_filled", "secur
 /** The most purchases `navi_purchases` lists. */
 const LOG_MAX = 200;
 
-/** An `op://<vault>/<item>` reference (fleetd-contracts purchase.rs `OpItemReference`). */
-const OP_ITEM = /^op:\/\/[^/?\r\n]+\/[^/?\r\n]+$/;
+/** A card reference (fleetd-contracts purchase.rs `CardRef`): a vault card, or for one release an `op://<vault>/<item>`. */
+const CARD_REF = /^(vault:V[0-9a-f]{32}|op:\/\/[^/?\r\n]+\/[^/?\r\n]+)$/;
 
-/** The Navi's card, if its person picked one. */
+/** The Navi's card, if its person picked one; a vault card with its label and last four digits. */
 export function card(hub: Hub, r: ProjectRef): NaviCard | undefined {
   const kept = navis.card(hub.db.conn, r);
-  return kept !== undefined && OP_ITEM.test(kept) ? { ref: kept } : undefined;
+  if (kept === undefined || !CARD_REF.test(kept)) return undefined;
+  const shown = cardLabelOf(hub, kept);
+  return { ref: kept, ...(shown ?? {}) } as NaviCard;
 }
 
 /** Exchanges and brokers: paying one buys holdings, which is trading (crypto included), whatever the basket says. */
@@ -117,7 +120,7 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
         throw new ToolError(
           "invalid",
           "You have no card to pay with.",
-          "ask the person to pick one: the project's Settings › Payments, from a Credit Card item in their 1Password; then ask again",
+          "ask the person to pick one: the project's Settings › Payments, from a card in fleetd's vault; then ask again",
         );
       }
       const opened = openPurchase(a, r, open, paysWith, noAsk);
@@ -129,10 +132,24 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
           : "end your turn on the checkout: the person approves or denies it in the chat, and you are woken with the answer",
       };
     }
-    case "purchase_claim":
-      return claimPurchase(a, r, text(call.requestId, "requestId"), text(call.sessionId, "sessionId"));
+    case "purchase_claim": {
+      const sessionId = text(call.sessionId, "sessionId");
+      const claimed = claimPurchase(a, r, text(call.requestId, "requestId"), sessionId);
+      // A vault card goes to the node hosting the checkout, sealed to it, once per claim.
+      if (vaultCardId(claimed.card) === undefined) return claimed;
+      let sealedCard: string | undefined;
+      try {
+        sealedCard = sealedCardFor(hub, r, claimed.card, claimed.requestId, caller.via ?? r.machineId, sessionId);
+      } catch (e) {
+        purchaseFilled(a, r, { requestId: claimed.requestId, ok: false, typed: false, message: (e as Error).message });
+        throw e;
+      }
+      return { ...claimed, ...(sealedCard !== undefined ? { sealedCard } : {}) };
+    }
     case "purchase_filled": {
-      const filled = purchaseFilled(a, r, filledOf(call));
+      const filledCall = filledOf(call);
+      purchaseSettled(hub, filledCall.requestId, filledCall.ok, filledCall.typed);
+      const filled = purchaseFilled(a, r, filledCall);
       if (call.ok === true && filled.purchase) paidLine(hub, r, filled.purchase);
       return { requestId: filled.requestId, state: filled.state };
     }
@@ -183,8 +200,8 @@ export function register(tools: Registry): void {
           : [],
       );
       const next = !paysWith
-        ? "No card yet: pick a Credit Card item from your 1Password (onepassword_cards, then project_card_set) so the " +
-          "project can pay; each purchase is recorded, with no ask."
+        ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the project can " +
+          "pay; each purchase is recorded, with no ask."
         : list.length === 0
           ? "No purchases yet."
           : undefined;
@@ -198,8 +215,9 @@ export function register(tools: Registry): void {
         throw new ToolError("forbidden", "Only a person picks the card a project pays with.", "Pick it in the app: the project's Settings › Payments.");
       }
       const r = naviRef(hub, input);
+      if (input.card !== undefined) checkCardPick(hub, caller, r, input.card);
       navis.setCard(hub.db.conn, r, input.card);
-      const paysWith = input.card !== undefined ? { ref: input.card } : undefined;
+      const paysWith = input.card !== undefined ? card(hub, r) : undefined;
       return {
         ...(paysWith ? { card: paysWith } : {}),
         next: paysWith

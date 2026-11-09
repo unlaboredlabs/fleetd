@@ -292,6 +292,8 @@ export class Approvals {
       workstreamId = sink.order;
     }
     const now = this.deps.clock.now();
+    // The vault keeps it (W549): the app seals it to the hub's key, and the hub delivers it to the sink.
+    const sealTo = this.deps.hooks.vaultSealTo();
     return this.create({
       projectRef: project,
       workstreamId,
@@ -301,6 +303,7 @@ export class Approvals {
         key: call.key,
         sink: call.sink,
         ...(call.envName !== undefined ? { envName: call.envName } : {}),
+        ...(sealTo !== undefined ? { sealTo } : {}),
       },
       at: isoMs(now),
       atMs: now,
@@ -359,6 +362,16 @@ export class Approvals {
     if (box === undefined) {
       throw refuse("not_found", `No machine ${m}.`, "Tell the lead in chat: it asks again with a sink on a known machine.");
     }
+    // Sealed to the hub's key: the vault keeps it and delivers it; sealed to the node's: relayed as before.
+    const kept =
+      sink.fill === undefined
+        ? await this.deps.hooks.vaultSecret(r, sealed, {
+            name: caller.name,
+            ...(caller.person ? { person: caller.person } : {}),
+            machines: [...new Set([sink.machineId, r.projectRef.machineId])],
+          })
+        : undefined;
+    if (kept !== undefined) return this.stored(caller, r, kept.fingerprint);
     if (box === null) {
       throw refuse("invalid", `${m}'s node takes no secrets: it publishes no box key.`, `Update fleetd on ${m} and restart its node.`);
     }
@@ -394,6 +407,12 @@ export class Approvals {
       );
       if (why !== undefined) throw refuse("failed", why, "Enter it again; the request is still open.");
     }
+    return this.stored(caller, r, fingerprint, `Saved on ${m}; the lead hears it in its next wake.`);
+  }
+
+  /** Marks a secret request stored with the node's fingerprint and wakes its lead. */
+  private async stored(caller: ApprovalCaller, r: HumanRequest, fingerprint: string, savedNext?: string): Promise<Record<string, unknown>> {
+    const id = r.requestId;
     const by = `human:${caller.name}`;
     const at = this.now();
     if (!isFingerprint(fingerprint)) {
@@ -420,7 +439,7 @@ export class Approvals {
         next: `Filled into ${saved.secureInput.label} on ${saved.secureInput.site.domain}; the lead never sees it.`,
       };
     }
-    return { requestId: id, fingerprint, next: `Saved on ${m}; the lead hears it in its next wake.` };
+    return { requestId: id, fingerprint, next: savedNext ?? "Kept in fleetd's vault and delivered to its machine; the lead hears it in its next wake." };
   }
 
   /** `gated_run`: opens the approval holding exactly this command, run in the project workspace by default. */

@@ -54,6 +54,11 @@ lead:lead call `task_list`
 lead:lead call `task_message`
 lead:lead call `task_spawn`
 lead:lead call `usage_resume`
+lead:lead call `vault_fill`
+lead:lead call `vault_filled`
+lead:lead call `vault_import_propose`
+lead:lead call `vault_import_search`
+lead:lead call `vault_items`
 lead:lead call `wait_ci`
 link:hub→node `lead_result` send
 link:node→hub `lead_call` handle

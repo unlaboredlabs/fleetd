@@ -82,6 +82,8 @@ export function helpFor(argv: string[]): string | undefined {
         return U.CHAT_USAGE;
       case "work":
         return U.WORK_USAGE;
+      case "vault":
+        return U.VAULT_USAGE;
       default:
         return undefined;
     }
@@ -183,6 +185,8 @@ export async function main(argv: string[]): Promise<number> {
         return emit(await (await import("./prompts.ts")).promptsCommand(rest));
       case "instructions":
         return emit(await (await import("./prompts.ts")).instructionsCommand(rest));
+      case "vault":
+        return emit(await (await import("./vault.ts")).vaultCommand(rest));
       case "hub":
         if (sub === "key") return emit((await import("./hub_key.ts")).hubKey(argv.slice(2)));
         process.stderr.write(`fleetd: unknown hub command '${sub ?? ""}'\n\n${usageText()}`);

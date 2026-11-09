@@ -149,7 +149,42 @@ export type SetupFacts = {
   cloud?: CloudFacts;
   /** Each person's saved 1Password token (D235), by their name, with its last Test. */
   onepassword: [name: string, test?: OnePasswordTest][];
+  /** The vault's root key (W549), as the hub loaded it. */
+  vault?: VaultKeyFacts;
 };
+
+/** What `hub/vault_key` reads. */
+export type VaultKeyFacts = {
+  mode: "file" | "keyring" | "passphrase";
+  path: string;
+  locked: boolean;
+  /** Why the key didn't load; absent when it did. */
+  problem?: string;
+  /** File or directory permissions open to other users. */
+  unsafe: string[];
+  recoverySaved: boolean;
+};
+
+/**
+ * `hub/vault_key`: the vault's root key loaded from outside the hub's home, with safe permissions, opening what it
+ * sealed; and its recovery code saved somewhere.
+ */
+export function vaultKey(f: VaultKeyFacts): DoctorCheck {
+  if (f.unsafe.length > 0) {
+    return hubEntry("vault_key", "fail", `The vault key is open to other users: ${f.unsafe.join("; ")}.`, manual(`run chmod 700 on its folder and chmod 600 on ${f.path}`));
+  }
+  if (f.problem !== undefined) {
+    return hubEntry("vault_key", "fail", `The vault key didn't load: ${trimDots(f.problem)}.`, manual("re-enter the recovery code with `fleetd vault restore-key` on the hub"));
+  }
+  if (f.locked) {
+    return hubEntry("vault_key", "warn", "The vault is locked until an owner or admin unlocks it with its passphrase: fills wait, variables already delivered keep working.", manual("unlock it in Settings › You › Vault"));
+  }
+  const where = f.mode === "file" ? `a file on this machine (${f.path})` : f.mode === "keyring" ? "this machine's keychain" : "a passphrase-locked file";
+  if (!f.recoverySaved) {
+    return hubEntry("vault_key", "warn", `The vault key is in ${where}, and its recovery code isn't saved yet: without both, cards and logins can't be opened again.`, manual("run `fleetd vault recovery-code` on the hub and keep the code somewhere safe"));
+  }
+  return hubEntry("vault_key", "ok", `The vault key is in ${where}; its recovery code is saved.`);
+}
 
 /** The setup checks the hub reads from its own state: someone else joined, the GitHub App. */
 export function setupChecks(facts: SetupFacts): DoctorCheck[] {
@@ -168,6 +203,7 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
   if (facts.cloud) out.push(...cloudChecks(facts.cloud));
   const vault = onepasswordVault(facts.onepassword);
   if (vault) out.push(vault);
+  if (facts.vault) out.push(vaultKey(facts.vault));
   return out;
 }
 
@@ -197,7 +233,7 @@ export function onepasswordVault(tokens: [string, OnePasswordTest?][]): DoctorCh
     }
     const vaults = t.vaults ?? [];
     if (vaults.length === 0) {
-      return ["warn", `${name}'s 1Password token reads no vault, so agents fill nothing with it.`, oneVault(name)];
+      return ["warn", `${name}'s 1Password token reads no vault, so nothing can be imported from it.`, oneVault(name)];
     }
     if (vaults.length === 1) return ["ok", `${name}'s 1Password token reads one vault, ${vaults[0]}.`, undefined];
     return [
