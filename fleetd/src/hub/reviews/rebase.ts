@@ -1,4 +1,4 @@
-// What a new head changed against the approved head it rebases (crates/fleetd/src/hub/reviews/rebase.rs), read from
+// What a new head changed against the approved head it rebases, read from
 // three diffs: the approved head's own patch, the new head's, and what the base gained in between. The PR's own changes
 // are compared block by block (each run of removed and added lines) by their lines and their place. Pure.
 

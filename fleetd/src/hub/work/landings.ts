@@ -1,4 +1,4 @@
-// The landing scanner (crates/fleetd/src/hub/work/landings.rs): every commit that reaches a watched base is recorded,
+// The landing scanner: every commit that reaches a watched base is recorded,
 // however it got there (the merge train, a PR merged by hand or by another tool, or a direct push), with plain git on
 // the project's machine, so it works on any host.
 //

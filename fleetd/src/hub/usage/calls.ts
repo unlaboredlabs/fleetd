@@ -1,4 +1,4 @@
-// The lead's `usage_resume` (crates/fleetd/src/hub/usage/calls.rs): the same resume as the MCP tool, scoped to the
+// The lead's `usage_resume`: the same resume as the MCP tool, scoped to the
 // machine its project runs on and at most once per LEAD_RESUME_EVERY_MS per machine, recorded as the lead's.
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";

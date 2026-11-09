@@ -1,4 +1,4 @@
-// What agents do on the agents' Mac right now, for the person at it (crates/fleetd/src/node/mac_tool/activity.rs):
+// What agents do on the agents' Mac right now, for the person at it:
 // the simulators lent to agents and the jobs they run (`mac run`, builds most of all). Only this node knows either, as
 // the hub passes the steps sealed. The node rewrites `<home>/mac-activity.json` whenever it changes, and the app's menu
 // bar on the Mac reads it (app/desktop/src/main/macSetup.ts), as setup reads mac-health.json. It names agents by their

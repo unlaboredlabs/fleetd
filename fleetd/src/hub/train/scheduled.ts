@@ -1,4 +1,4 @@
-// Scheduled runs on the base (crates/fleetd/src/hub/train/scheduled.rs). A workflow a schedule starts checks what pull
+// Scheduled runs on the base. A workflow a schedule starts checks what pull
 // requests don't, long after their merge. When the newest finished scheduled run of a workflow on the base failed, a
 // fix order opens for the project's lead: it names the failed jobs, the run's link and the commits since that
 // workflow's last green scheduled run. One failure opens one order; only a run that finished in the last day counts.

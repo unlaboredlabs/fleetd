@@ -1,4 +1,4 @@
-// `fleetd doctor` and how the CLI reaches the hub on this machine (crates/fleetd/src/cli/setup/doctor.rs): the CLI's
+// `fleetd doctor` and how the CLI reaches the hub on this machine: the CLI's
 // own key, kept 0600 in the hub home beside the database it was minted from, and every setup check run now
 // (doctor_list), the hub's setup steps first.
 import { join } from "node:path";

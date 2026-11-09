@@ -1,4 +1,4 @@
-// The lead's calls that open and withdraw requests (crates/fleetd/src/hub/approvals/tools.rs `register_lead_calls`):
+// The lead's calls that open and withdraw requests:
 // `gated_run`, `request_secret` and `request_withdraw`, through the lead-call registry.
 import type { HumanRequest } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

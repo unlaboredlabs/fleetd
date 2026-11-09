@@ -1,4 +1,4 @@
-// `fleetd agent-mcp --role lead|worker` (crates/fleetd/src/cli/agent_mcp.rs): the MCP server (stdio, one JSON-RPC
+// `fleetd agent-mcp --role lead|worker`: the MCP server (stdio, one JSON-RPC
 // message per line) the node puts in every lead's and task's `--mcp-config`. Each tool is one lead-side call, sent
 // through the node's socket with the session's `FLEETD_THREAD_ID`; the hub decides who may make it. The role only
 // picks which tools are listed. Results that take time (a task's result, an answer, an approval) arrive in a later

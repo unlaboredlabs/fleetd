@@ -1,6 +1,6 @@
 // automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
-// automation_run and automation_runs: Settings > Automations, and any MCP client with the grant
-// (crates/fleetd/src/hub/automations/tools.rs). Reads need read on the project's machine, writes operate there.
+// automation_run and automation_runs: Settings > Automations, and any MCP client with the grant.
+// Reads need read on the project's machine, writes operate there.
 // automation_list also gives the nightly memory refresh's row (src/hub/memory/refresh.ts).
 import type { Automation, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

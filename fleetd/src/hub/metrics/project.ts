@@ -1,4 +1,4 @@
-// Landed changes folded out of the event log (crates/fleetd/src/hub/metrics/project.rs): it walks the log in seq order
+// Landed changes folded out of the event log: it walks the log in seq order
 // from `time_cursors('metrics:events')` and wakes on each append; a replay writes the same rows.
 //
 // - `pr.merged`: a `train` row, timed from its order's request.

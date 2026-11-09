@@ -1,4 +1,4 @@
-// Task rows: the Task as JSON in `data`, plus the columns queries filter on (crates/fleetd/src/hub/tasks/records.rs).
+// Task rows: the Task as JSON in `data`, plus the columns queries filter on.
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { ProjectRef, Task, TaskCounts, TaskId, TaskState, ThreadRef, WorkstreamId } from "../../shared/contracts.ts";
 import type { WorktreeBase } from "../../shared/sessions.ts";

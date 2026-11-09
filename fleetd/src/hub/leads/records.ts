@@ -1,4 +1,4 @@
-// Leads, project settings and workstreams as stored (crates/fleetd/src/hub/leads/records.rs; tables `leads`,
+// Leads, project settings and workstreams as stored (tables `leads`,
 // `lead_mcp`, `workstreams`).
 import type { Database } from "bun:sqlite";
 import type { IntakeChannel, ProjectRef, Workstream, WorkstreamState } from "../../shared/contracts.ts";

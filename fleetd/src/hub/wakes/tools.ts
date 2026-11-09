@@ -1,4 +1,4 @@
-// wake_set, wake_list and wake_cancel (crates/fleetd/src/hub/wakes/tools.rs).
+// wake_set, wake_list and wake_cancel.
 import type { Wake } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";

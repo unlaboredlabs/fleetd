@@ -1,5 +1,5 @@
-// A node link frame from the other end that doesn't decode (a newer peer's field, a value out of range)
-// (crates/fleetd/src/link_frames.rs): that frame alone is refused, logged by its tag, id, size and the decode error
+// A node link frame from the other end that doesn't decode (a newer peer's field, a value out of range):
+// that frame alone is refused, logged by its tag, id, size and the decode error
 // (never its payload), answered when it was a request, and the link carries on. Only a flood of them ends the link:
 // a peer that sends that much it can't be read is broken.
 

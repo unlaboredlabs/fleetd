@@ -1,5 +1,5 @@
-// browser_sessions, browser_recording_get, browser_control, browser_retention_set and screens_count
-// (crates/fleetd/src/hub/browser/tools.rs): the app's Sessions view, its replay and its takeover.
+// browser_sessions, browser_recording_get, browser_control, browser_retention_set and screens_count:
+// the app's Sessions view, its replay and its takeover.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import type { BrowserControl, BrowserControlTo, BrowserSession } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

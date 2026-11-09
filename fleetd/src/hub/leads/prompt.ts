@@ -1,4 +1,4 @@
-// What a lead starts with (crates/fleetd/src/hub/leads/prompt.rs). Its system prompt holds its standing rules, which a
+// What a lead starts with. Its system prompt holds its standing rules, which a
 // compaction never summarizes: `lead.start` (a project with no repo's: `assistant.start`), its voice, `lead.profiles`
 // while the project allows more than the default, the human's custom instructions, then the memory. Its first message
 // holds the state it starts in: the digest, and, for a project with repos besides its own directory, those.

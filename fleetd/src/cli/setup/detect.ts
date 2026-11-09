@@ -1,4 +1,4 @@
-// What `fleetd init` finds on its own (crates/fleetd/src/cli/setup/detect.rs): Tailscale, the LAN address, SSH hosts,
+// What `fleetd init` finds on its own: Tailscale, the LAN address, SSH hosts,
 // local git repos, and the install command for a missing tool. Every probe here only reads.
 import { createSocket } from "node:dgram";
 import { readdirSync, readFileSync, statSync } from "node:fs";

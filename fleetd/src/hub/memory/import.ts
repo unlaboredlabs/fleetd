@@ -1,4 +1,4 @@
-// Import memory (Settings > Memory, crates/fleetd/src/hub/memory/import.rs): a person copies the `memory.export` prompt
+// Import memory (Settings > Memory): a person copies the `memory.export` prompt
 // into another assistant, pastes its answer back, and `memory_import` turns it into entries of their own memory.
 //
 // One model turn distills it: a session with no tools at all, on the person's own Claude choice (D200), in an Only me

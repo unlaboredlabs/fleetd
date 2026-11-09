@@ -1,4 +1,4 @@
-// `fleetd node …` (crates/fleetd/src/node/mod.rs): the node's link to its hub, its sessions, the lead socket, cmd
+// `fleetd node …`: the node's link to its hub, its sessions, the lead socket, cmd
 // checks, sealed secrets, approved commands and node actions. A session's claude runs under a host of its own, this
 // binary's `fleetd session-host` (./runner/host.ts), which outlives the node.
 import { refreshOwnUnit } from "../cli/setup/units.ts";

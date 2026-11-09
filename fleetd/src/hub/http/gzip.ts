@@ -1,4 +1,4 @@
-// gzip for the JSON the hub answers over HTTP (/link/v1, /mcp; crates/fleetd/src/hub/http/gzip.rs), only when the
+// gzip for the JSON the hub answers over HTTP (/link/v1, /mcp), only when the
 // request's Accept-Encoding offers it: a client that doesn't ask gets the same bytes as before. Event streams and
 // small answers stay as they are.
 import type { Route } from "./route.ts";

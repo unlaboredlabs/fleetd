@@ -1,4 +1,4 @@
-// Logins from 1Password, filled without the agent seeing them (crates/fleetd/src/node/browser/onepassword.rs). The node
+// Logins from 1Password, filled without the agent seeing them. The node
 // resolves an `op://` reference with the SDK helper (../actions/onepassword.ts, the Rust node's own script) and a
 // service account token: the project's or order's secret variable OP_SERVICE_ACCOUNT_TOKEN, else the token the person
 // whose work it is saved. The token never reaches an agent's environment. Each session keeps what it resolved (not

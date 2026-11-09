@@ -1,4 +1,4 @@
-// The lead digest (crates/fleetd/src/hub/leads/digest.rs): the code-rendered project state at the top of a lead's
+// The lead digest: the code-rendered project state at the top of a lead's
 // first message and every wake (the event lines follow it, `events`). It is the lead's real memory, so it stays small
 // (DIGEST_MAX_CHARS) and says plainly what was left out. A fixed format, not a prompt.
 import type { Decision, HumanRequest, ProjectRef, Workstream, WorkstreamState } from "../../shared/contracts.ts";

@@ -1,4 +1,4 @@
-// The offline write queue (crates/fleetd/src/hub/queue/mod.rs). Additive writes (lead messages, wake firings) to a
+// The offline write queue. Additive writes (lead messages, wake firings) to a
 // machine without a live node link wait here, in order, and go out when it comes back; each ends as one
 // write.delivered or write.expired event. Interrupts and launches are not additive, so they never come through here.
 import type { HubEvent, ThreadRef } from "../../shared/contracts.ts";

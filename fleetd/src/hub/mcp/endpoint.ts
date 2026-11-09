@@ -1,4 +1,4 @@
-// The MCP endpoint at /mcp (crates/fleetd/src/hub/mcp/mod.rs): Streamable HTTP with JSON responses only (POST; no
+// The MCP endpoint at /mcp: Streamable HTTP with JSON responses only (POST; no
 // GET stream, no DELETE), a static tool list, and the caller's bearer checked on every request, with the wire
 // behaviour older hubs had (Effect's `McpServer.layerHttp`): sessions from `initialize`, protocol negotiation, 202 for
 // notifications, and the same JSON-RPC errors. Bodies go out with their keys sorted, as serde_json writes them.

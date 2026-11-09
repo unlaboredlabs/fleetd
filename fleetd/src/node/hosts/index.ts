@@ -1,4 +1,4 @@
-// What this machine can host for sessions (crates/fleetd/src/node/hosts.rs, machine roles W46), sent with each
+// What this machine can host for sessions (machine roles W46), sent with each
 // heartbeat's `load.hosts`: a browser (the broker's Chrome, or its install on the first session), an Android emulator
 // (fleetd's own pinned one, node/device, with KVM), a Linux desktop (node/desktop adds its own line), and the agents'
 // Mac's own screen. Each says why in plain words. Read at most every few minutes. iOS simulators are no screen any

@@ -1,4 +1,4 @@
-// The agents' Mac (crates/fleetd/src/node/agents_mac/mod.rs, D298, docs: agents-mac.md): a Mac whose node runs in the
+// The agents' Mac (D298, docs: agents-mac.md): a Mac whose node runs in the
 // account logged in at its screen, joined with the installer's `--mac`, which sets node.json's `agentsMac`. It is a
 // tool every project's agents use from their own machines, never a runner:
 //

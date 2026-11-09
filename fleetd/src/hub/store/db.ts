@@ -1,4 +1,4 @@
-// The hub's SQLite database, the same file and schema as the Rust hub's (crates/fleetd/src/hub/store/db.rs): one
+// The hub's SQLite database, the same file and schema as the Rust hub's: one
 // connection for writes and short reads, and a read-only one on a worker thread for long reads (the Time view's), so
 // they never stall the event loop.
 import { Database, type SQLQueryBindings } from "bun:sqlite";

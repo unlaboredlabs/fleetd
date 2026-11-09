@@ -1,5 +1,5 @@
-// Commands the hub runs on a machine through its node: a request frame out, the matching reply back by id
-// (crates/fleetd/src/hub/link/commands.rs). `cmd` checks and the merge train's git steps (timeouts up to 30 min),
+// Commands the hub runs on a machine through its node: a request frame out, the matching reply back by id.
+// `cmd` checks and the merge train's git steps (timeouts up to 30 min),
 // sealed secrets, approved (gated) commands, the doctor's node actions, hosted sessions, the agents' Mac, and session
 // calls.
 import type { HubToNodeTag } from "../../shared/wire_tags.ts";

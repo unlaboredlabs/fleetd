@@ -1,4 +1,4 @@
-// A final lead message's bubbles (crates/fleetd/src/hub/chat/parts.rs). The lead separates bubbles with a blank line,
+// A final lead message's bubbles. The lead separates bubbles with a blank line,
 // as it separates paragraphs, so a reply reads the same in a client that shows `text` whole. A code fence is a bubble
 // of its own and never split; a list or table stays one bubble across the blank lines of a loose list. A
 // ```fleetd-block fence becomes a block when it passes `block`, and otherwise shows as the fence it is; a ```json or

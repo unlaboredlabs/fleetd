@@ -1,4 +1,4 @@
-// What the probe reads of a machine's Claude Code setup from its files (crates/fleetd/src/node/runner/claude/setup.rs):
+// What the probe reads of a machine's Claude Code setup from its files:
 // the proxy it goes through and where that is set, a person's name for its login, and the account variables its user
 // settings override. Nothing here calls the proxy or the Anthropic API.
 import { readFileSync } from "node:fs";

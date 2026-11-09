@@ -1,4 +1,4 @@
-// Steer receipts on the node (crates/fleetd/src/node/sessions/steers.rs). A send the hub tagged as a steer is tracked
+// Steer receipts on the node. A send the hub tagged as a steer is tracked
 // from dispatch to its end, each stage decided from claude's own frames: delivered when its run starts (how it was
 // taken in), acknowledged by the first assistant text after that, unacknowledged when its run ends without one,
 // withdrawn on a successful cancel, failed when it ended before claude took it in. Only tagged sends are tracked.

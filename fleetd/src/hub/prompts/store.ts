@@ -1,4 +1,4 @@
-// Where prompt texts live and which one a message gets (crates/fleetd/src/hub/prompts/store.rs). Overrides are files
+// Where prompt texts live and which one a message gets. Overrides are files
 // under `<hub home>/prompts` (`<id>.md`, `projects/<key>/<id>.md`, `<key>` a hash of the project ref), each with a
 // `base:` frontmatter naming the default it was edited from. Files are read on every resolve, so an edit reaches the
 // next session at once. Every text a session was given is kept in `prompt_versions`, and `session_prompts` pins each

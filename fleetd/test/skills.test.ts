@@ -1,4 +1,4 @@
-// The hub's skills (crates/fleetd/src/hub/skills/tests.rs, saves_tests.rs, install.rs tests).
+// The hub's skills (saves_tests.rs, install.rs tests).
 import { expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

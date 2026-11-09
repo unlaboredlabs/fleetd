@@ -1,5 +1,5 @@
 // A watched screen's live frames, fitted to what its slowest watcher's link takes (the hub's `kbps`), for every kind
-// of screen alike (crates/fleetd/src/node/browser/fit.rs). Without a budget each frame goes as its kind made it. With
+// of screen alike. Without a budget each frame goes as its kind made it. With
 // one, frames aim at AIM of it: each waits until the one before has had its time on the link, and when even MIN_FPS
 // frames a second at the kind's own quality wouldn't fit, a frame is encoded again at a lower one first (Bun's
 // libjpeg-turbo, off the event loop). Only the live view's copy: the session's video keeps every frame as it was.

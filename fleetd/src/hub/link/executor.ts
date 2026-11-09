@@ -1,4 +1,4 @@
-// The link's seam with the hub's executor (crates/fleetd/src/hub/executor `attach`, `detach_link`, `handle_frame`):
+// The link's seam with the hub's executor (`detach_link`, `handle_frame`):
 // each welcomed link's sessions go to it, and the session-side frames a node sends.
 import type { Hub } from "../api/hub.ts";
 import { type Executors, executors } from "../executor/index.ts";

@@ -1,4 +1,4 @@
-// The agent's only way to its session's browser (crates/fleetd/src/node/browser/proxy.rs): a CDP websocket on
+// The agent's only way to its session's browser: a CDP websocket on
 // 127.0.0.1 at `/devtools/browser/<token>`, one token per agent session, which the node puts in the session's
 // `AGENT_BROWSER_CDP`. A claude runs on through a node restart and keeps that environment, so the port and the tokens
 // do too: the port is kept in `browser/proxy.json`, with the key each token is signed with. Chrome itself has no

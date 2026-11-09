@@ -1,4 +1,4 @@
-// The leads area's start (crates/fleetd/src/hub/leads/mod.rs `Area::run`, wiring.rs `wire_area`, and hub/serve: the
+// The leads area's start (wiring.rs `wire_area`, and hub/serve: the
 // areas' lead calls, `wakes.start`, `prompts::start`): the real lead wakes behind `leadWakes(hub)`, the `brief_create`
 // and `close` calls, project_get's lead fields, and the loops: project removals, the leads of orders that wait for
 // their machine, and leads whose node cut their turn off.

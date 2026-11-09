@@ -1,4 +1,4 @@
-// Keys on the Mac (crates/fleetd/src/node/desktop/mac/keys.rs): the X keysyms the `desktop` tool and the live view name
+// Keys on the Mac: the X keysyms the `desktop` tool and the live view name
 // keys with (x11.ts `keysym`), as macOS virtual keycodes (Carbon's kVK_*, the ANSI layout's positions) with the Shift a
 // US layout needs, or as a modifier's flag. What no key types goes as the text a key event carries.
 

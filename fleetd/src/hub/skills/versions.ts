@@ -1,4 +1,4 @@
-// A hub-kept skill's history and its use (crates/fleetd/src/hub/skills/versions.rs, W238). Every write of its SKILL.md
+// A hub-kept skill's history and its use (W238). Every write of its SKILL.md
 // keeps a version in `skill_versions` (the newest SKILL_VERSIONS_KEPT); `skill_uses` holds a skill as one project's
 // sessions get it: turned off there, and when one of them last ran it.
 import type { Database } from "bun:sqlite";

@@ -1,4 +1,4 @@
-// What adding a project reads before it adds anything (crates/fleetd/src/hub/projects/mod.rs): the node calls behind
+// What adding a project reads before it adds anything: the node calls behind
 // it (executor/repos.rs: scan a machine for checkouts, look at a path, make a folder, clone, `gh repo list` there),
 // GitHub's view of a repository through the hub's gh, the machine a clone goes to, and project_discover. The node does
 // the filesystem and git work on its machine; gh runs on the hub machine, and `gh repo list` falls back to the target

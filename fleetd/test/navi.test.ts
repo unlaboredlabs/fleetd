@@ -1,4 +1,4 @@
-// Navis' and projects' list, archive, sites and approvals (crates/fleetd/src/hub/navi/mod.rs, tools.rs, sites.rs).
+// Navis' and projects' list, archive, sites and approvals (tools.rs, sites.rs).
 import { expect, test } from "bun:test";
 import { pasted, siteOf } from "../src/hub/navi/sites.ts";
 import * as navis from "../src/hub/navi/store.ts";

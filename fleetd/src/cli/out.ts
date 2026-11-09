@@ -1,4 +1,4 @@
-// How the project-style commands talk (crates/fleetd/src/cli/project.rs `Out`, `Stop`, `call`): a line per step,
+// How the project-style commands talk (`Stop`, `call`): a line per step,
 // cliclack style in a terminal, plain lines otherwise; a stop is what went wrong, its fix and the exit code.
 import { readFileSync } from "node:fs";
 import { eprintln, println } from "./common.ts";

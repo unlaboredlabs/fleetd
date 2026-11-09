@@ -1,4 +1,4 @@
-// What every area of the hub shares: one per hub, passed to every handler (crates/fleetd/src/hub/api/mod.rs `Hub`).
+// What every area of the hub shares: one per hub, passed to every handler.
 import type { Clock } from "../../shared/clock.ts";
 import { Auth } from "../auth/index.ts";
 import type { HubDb } from "../store/db.ts";

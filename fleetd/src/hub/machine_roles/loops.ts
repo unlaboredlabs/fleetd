@@ -1,4 +1,4 @@
-// Starts machine roles' wiring and loops (crates/fleetd/src/hub/machine_roles): `session_route` and `session_step`
+// Starts machine roles' wiring and loops: `session_route` and `session_step`
 // and the hosted callers (calls.rs), the agents' Mac's `mac_where` and `mac_send` (hub/mac_tool), and the loops
 // `run_prune` and `screens::run`. Each loop stops on `hub.shutdown`.
 import type { Hub } from "../api/hub.ts";

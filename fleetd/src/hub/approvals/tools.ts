@@ -1,4 +1,4 @@
-// The person's tools on requests (crates/fleetd/src/hub/approvals/tools.rs): secret_submit, approval_answer,
+// The person's tools on requests: secret_submit, approval_answer,
 // requests_list. The lead's calls that open and withdraw them are in lead_calls.ts.
 import type { HumanRequest } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

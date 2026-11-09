@@ -1,4 +1,4 @@
-// Who may start and steer agents (crates/fleetd/src/hub/tasks/policy.rs): enforced on every lead call by the hub,
+// Who may start and steer agents: enforced on every lead call by the hub,
 // whatever a prompt says or a tool list offers. A lead is depth 0 and its tasks depth 1; nothing goes deeper, so a
 // task's agent never starts another agent. A lead has at most `maxOpenTasks` tasks open at once.
 import { ToolError } from "../../shared/errors.ts";

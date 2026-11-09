@@ -1,4 +1,4 @@
-// `artifact_read` (crates/fleetd/src/hub/artifacts/tests.rs `an_agent_reads_its_projects_artifacts_and_only_those`):
+// `artifact_read`:
 // a task reads back a report another task published in its project, newest or one version; a task of another project
 // can't, and a report past the cap comes cut, with a note saying so.
 import { expect, test } from "bun:test";

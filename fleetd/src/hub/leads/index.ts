@@ -1,4 +1,4 @@
-// One lead per project (crates/fleetd/src/hub/leads/lead.rs): a thread on the project's machine, started with the lead
+// One lead per project: a thread on the project's machine, started with the lead
 // prompt plus the digest. A project with no repo's lead does its own work, from `assistant.start` in the assistant
 // role; no lead starts while its project is archived. `leads(hub)` is the area other areas read: `get` (a Lead with
 // its state off its thread), `list`, and `leadProfile`.

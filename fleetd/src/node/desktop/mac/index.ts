@@ -1,4 +1,4 @@
-// The agents' Mac's own screen (crates/fleetd/src/node/desktop/mac/mod.rs, D298): the GUI session the Mac's node runs
+// The agents' Mac's own screen (D298): the GUI session the Mac's node runs
 // in, as a screen kind (`session_start` kind mac). There is one such screen, so it is leased: the first session to start
 // holds it, and every other only observes (its screenshots, the pointer's place and agent-desktop's reading commands
 // work; its other actions are refused while another holds it, and its first one after the holder ends takes it). A

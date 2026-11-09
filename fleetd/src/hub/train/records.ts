@@ -1,4 +1,4 @@
-// Changes and trains in the hub database (crates/fleetd/src/hub/train/records.rs, contract.rs). Repos are keyed
+// Changes and trains in the hub database (contract.rs). Repos are keyed
 // lowercased.
 import type { Change, ChangeId, ChangeState, ProjectRef, TrainState, WorkstreamId } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";

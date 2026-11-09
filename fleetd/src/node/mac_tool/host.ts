@@ -1,4 +1,4 @@
-// The agents' Mac's node (crates/fleetd/src/node/mac_tool/host.rs, jobs.rs): each `mac_call` from the hub is one
+// The agents' Mac's node (jobs.rs): each `mac_call` from the hub is one
 // sealed step of an agent's, opened with this node's box key, checked (sealed for the session the hub names, lately,
 // never before), and run in that agent's own folder under `<home>/mac/<task or session>/`: its `repo/` checked out
 // from the project's mirror, its jobs, the files it put and pulls. The answer goes back sealed with the step's key.

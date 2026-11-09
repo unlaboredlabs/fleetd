@@ -1,4 +1,4 @@
-// `fleetd status` (crates/fleetd/src/cli/status.rs): the same rows as the app's Status screen, read from the hub
+// `fleetd status`: the same rows as the app's Status screen, read from the hub
 // (status_get). With `--watch` it reads them again after each event that can change one (events_wait).
 import { readFileSync } from "node:fs";
 import { ArgError, parse } from "./args.ts";

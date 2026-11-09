@@ -1,4 +1,4 @@
-// The safety-net sweep (crates/fleetd/src/hub/sweep/mod.rs): every 5 min, deterministic, no LLM. Built in: re-open
+// The safety-net sweep: every 5 min, deterministic, no LLM. Built in: re-open
 // streams for running threads that lost theirs. A machine offline is hub/outage's to page, once. Other areas add checks
 // with `sweep(hub).register` (overdue wakes, the doctor, spent codes); each check is isolated, so one failing does not
 // stop the rest.

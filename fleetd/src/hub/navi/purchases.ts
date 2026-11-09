@@ -1,4 +1,4 @@
-// A Navi's purchases (D265 navi.purchases; crates/fleetd/src/hub/navi/purchases.rs): the card it pays with, the
+// A Navi's purchases (D265 navi.purchases): the card it pays with, the
 // person's purchase log, and its node's calls.
 // - `navi_card_set`, from the owner's own device: the Credit Card item in their 1Password the Navi pays with, kept as
 //   its `op://vault/item` reference only (store.ts `card`, `setCard`).

@@ -1,4 +1,4 @@
-// The grant checks handlers share (crates/fleetd/src/hub/api/grants.rs), with the same words.
+// The grant checks handlers share, with the same words.
 import type { MachineId, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";

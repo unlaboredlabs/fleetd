@@ -1,4 +1,4 @@
-// The executor's project calls on a node (crates/fleetd/src/hub/executor/mod.rs `project_upsert`, `project_folder`,
+// The executor's project calls on a node (`project_folder`,
 // `project_remove`, `project_env`, `project_env_copy`, `order_env_drop`, `project_worktrees`).
 import type { EnvVarName, EnvVarSet, MachineId, ProjectId, ProjectWorktrees, SecretFingerprint, WorkstreamId } from "../../shared/contracts.ts";
 import type { EnvSecretSaved } from "../../shared/sessions.ts";

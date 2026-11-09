@@ -1,5 +1,5 @@
 // Repo rows: `repos`, one per repo of a project, with the node checkout holding its files (`checkout_*`) and the repo
-// and base its work lands on (crates/fleetd/src/hub/repos/store.rs).
+// and base its work lands on.
 import type { Database } from "bun:sqlite";
 import type { ProjectRef, ProjectRepo, RepoId, RepoName } from "../../shared/contracts.ts";
 import { scopeOf } from "../work/store.ts";

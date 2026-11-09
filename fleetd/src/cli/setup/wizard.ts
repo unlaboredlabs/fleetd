@@ -1,4 +1,4 @@
-// `fleetd init`'s guided setup (crates/fleetd/src/cli/setup/wizard.rs): a checklist of steps, each a question at a
+// `fleetd init`'s guided setup: a checklist of steps, each a question at a
 // terminal or its default without one (or with --yes). Ported: a worker joining a hub (`--join … --code …`, the line
 // `fleetd pair --worker` prints) and a joined worker run again, which keeps its enrolment and repairs what it runs.
 // The hub's own setup (where it listens, its logins, workers, a first project, the app) is listed in PORT_MAP.md.

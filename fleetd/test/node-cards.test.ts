@@ -1,4 +1,4 @@
-// A Navi's purchases and secure inputs in its browser (crates/fleetd/src/node/browser/tests/cards.rs and cards.rs's
+// A Navi's purchases and secure inputs in its browser (cards.rs's
 // tests), with a fake 1Password and a fake hub: an approved purchase's card fills into the payment provider's frame
 // once, a person's typed value into the site's own frame once, an approved passport from 1Password once, and the Navi
 // never sees any of them. Never a real vault or a real card.

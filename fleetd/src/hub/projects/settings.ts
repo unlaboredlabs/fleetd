@@ -1,4 +1,4 @@
-// A project's own settings (Settings › Projects in the app; crates/fleetd/src/hub/projects/settings.rs):
+// A project's own settings (Settings › Projects in the app):
 // `project_settings_get`, `project_settings_set` and `project_env_set`, and what the hub keeps of them:
 // `project_settings.memory_refresh` (on by default), `project_settings.setup` (each new worktree's commands) and the
 // `project_env` rows. A repo of the project can have its own `setup` (`repos.setup`).

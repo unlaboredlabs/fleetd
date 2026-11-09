@@ -1,4 +1,4 @@
-// The metrics tables (crates/fleetd/src/hub/metrics/store.rs): landed changes (idempotent on `(repo, unit_key)`), when
+// The metrics tables: landed changes (idempotent on `(repo, unit_key)`), when
 // each Change passed review, each repo's read state, the person's touches and identities, retention. Writes run
 // inside the caller's transaction; the same SQL as Rust.
 import type { Database } from "bun:sqlite";

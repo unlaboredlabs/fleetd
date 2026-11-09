@@ -1,5 +1,5 @@
 // Every command `fleetd machine add` runs on a worker, derived from what a read-only probe found there, and the
-// commands `machine remove` undoes it with (crates/fleetd/src/cli/setup/machine_plan.rs).
+// commands `machine remove` undoes it with.
 import type { GitIdentity } from "../common.ts";
 import { sortKeys } from "../json.ts";
 import type { Platform } from "./shared.ts";

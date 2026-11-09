@@ -1,4 +1,4 @@
-// The slot board's rules, without I/O (crates/fleetd/src/hub/slots/board.rs): the service in index.ts persists what
+// The slot board's rules, without I/O: the service in index.ts persists what
 // `takeOps` hands it and feeds it thread events, machine facts and the time.
 import type { MachineId, ProjectRef } from "../../shared/contracts.ts";
 import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";

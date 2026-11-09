@@ -1,4 +1,4 @@
-// What the node reports about its machine with each heartbeat (crates/fleetd/src/node/load.rs, busy.rs): CPUs, the
+// What the node reports about its machine with each heartbeat (busy.rs): CPUs, the
 // 1-minute load, memory, free disk where its worktrees live, its IPv4 (./network.ts), and the claude.ai usage windows its sessions last saw.
 // The screens' health (hosts, android, ios, desktop, mac) is the screens' modules' to add (`extra`).
 import { availableParallelism, loadavg } from "node:os";

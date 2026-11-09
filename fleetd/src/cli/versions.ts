@@ -1,4 +1,4 @@
-// Versions as people read them (crates/fleetd/src/lib.rs `version_label`, `version_shown`, `version_cmp`) and the one
+// Versions as people read them (`version_shown`, `version_cmp`) and the one
 // line `fleetd status` and `fleetd doctor` print when the CLI, the hub and the nodes differ (cli/versions.rs).
 import { VERSION } from "../shared/version.ts";
 import type { McpClient } from "./mcp_client.ts";

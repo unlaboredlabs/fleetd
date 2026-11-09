@@ -1,4 +1,4 @@
-// When the human asked for an order, for the time from order to merged (crates/fleetd/src/hub/leads/requested.rs). A
+// When the human asked for an order, for the time from order to merged. A
 // submitted order was asked for when it was submitted. One the lead opens was asked for at the earliest human chat
 // message its run took in, stamped as it opens; with none, it is when it opened, and says so.
 import type { PersonRef, ProjectRef, Workstream } from "../../shared/contracts.ts";

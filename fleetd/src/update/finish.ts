@@ -1,4 +1,4 @@
-// The watcher of a restart onto a new build (crates/fleetd/src/update/finish.rs). Whoever put the new binary in place
+// The watcher of a restart onto a new build. Whoever put the new binary in place
 // writes a Plan and starts `fleetd update-finish <plan>` from the binary it replaced, outside the service it restarts,
 // so the watcher works whatever the new build does. It restarts the service, waits for it to come up healthy on the
 // new build, and if it doesn't, puts the previous binary back and restarts that. Its Verdict goes to `plan.verdict`.

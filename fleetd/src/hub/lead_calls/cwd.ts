@@ -1,4 +1,4 @@
-// Which project a lead call's cwd belongs to (crates/fleetd/src/hub/link/cwd.rs). Pure.
+// Which project a lead call's cwd belongs to. Pure.
 
 /** Lexical normal form without a trailing slash (`path.posix.normalize`). The hub can't see the node's filesystem, so
  * symlinks stay as given. */

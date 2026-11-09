@@ -1,4 +1,4 @@
-// `fleetd hub start` (crates/fleetd/src/hub/serve/mod.rs): parses its flags, opens the database in `--home`, starts
+// `fleetd hub start`: parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
 import { refreshOwnUnit } from "../../cli/setup/units.ts";
 import { readFileSync } from "node:fs";
@@ -68,7 +68,7 @@ function parsed(values: { home?: string; listen?: string }): HubOptions | string
 }
 
 /**
- * The URL `fleetd init` saved in `<home>/setup.json` (crates/fleetd/src/hub/serve/mod.rs `configured_url`): undefined
+ * The URL `fleetd init` saved in `<home>/setup.json`: undefined
  * without one, when the file isn't valid, or for a wildcard address no device can dial.
  */
 export function configuredUrl(home: string): string | undefined {

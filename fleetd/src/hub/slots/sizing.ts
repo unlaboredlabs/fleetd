@@ -1,4 +1,4 @@
-// What one machine fits, from the facts its node reports with each heartbeat (crates/fleetd/src/hub/slots/sizing.rs).
+// What one machine fits, from the facts its node reports with each heartbeat.
 // Without I/O.
 //
 // - CPU: one agent per logical CPU less a reserve of one in eight (at least one).
@@ -22,7 +22,7 @@ export const UNMEASURED_WHY = "not measured yet";
 /** Decimal GB, as node.json spoke them. */
 const MEM_PER_AGENT = 2_000_000_000;
 const DISK_PER_AGENT = 5_000_000_000;
-/** A cloud machine's GB an agent (crates/fleetd/src/hub/cloud/setup.rs `MEM_PER_AGENT_GB`). */
+/** A cloud machine's GB an agent. */
 export const CLOUD_MEM_PER_AGENT_GB = 4;
 
 /** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */

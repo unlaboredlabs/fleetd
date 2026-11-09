@@ -1,4 +1,4 @@
-// The hub's side of every node's sessions (crates/fleetd/src/hub/executor/mod.rs `Executors`): the node link hands
+// The hub's side of every node's sessions: the node link hands
 // each welcomed socket over with `attach`, every session-side frame with `handleFrame`, and its close with
 // `detachLink`. The executor subscribes to the machine stream, keeps the hub's thread and project caches from it,
 // logs the transitions as events, and makes session calls, matching each reply to its call by frame id.

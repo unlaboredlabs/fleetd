@@ -1,4 +1,4 @@
-// One `gh` run (crates/fleetd/src/hub/train/github.rs `GhRunner`, `run_gh`): what the train, the PR views and the
+// One `gh` run (`run_gh`): what the train, the PR views and the
 // GitHub App ask of GitHub goes through the `gh` CLI on the hub machine. Tests fake the runner.
 
 export type GhOut = { exitCode: number; stdout: string; stderr: string };

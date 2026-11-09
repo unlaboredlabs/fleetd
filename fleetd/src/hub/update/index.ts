@@ -1,4 +1,4 @@
-// `hub_update` (crates/fleetd/src/hub/update/mod.rs): the hub updates itself to the newest build of its channel,
+// `hub_update`: the hub updates itself to the newest build of its channel,
 // then tells every connected node to do the same, with src/update's pieces. The hub restarts at once; a node too when
 // nothing its restart would cut off runs: its agents run under hosts in systemd scopes of their own, which carry on
 // through it, mid-step included. It waits only for a live session, an approved command, a check the hub runs there or

@@ -1,4 +1,4 @@
-// One live android session (crates/fleetd/src/node/device/session.rs): the emulator copy it was lent, scrcpy's stream
+// One live android session: the emulator copy it was lent, scrcpy's stream
 // of its screen (the video, and the frames a person watches), and the action log, a line per tool call of the agent's
 // that drove the device (its `agent-device` commands, fleetd's session tools), kept as a browser session's is
 // (node/browser/record.ts).

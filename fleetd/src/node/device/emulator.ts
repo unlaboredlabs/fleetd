@@ -1,4 +1,4 @@
-// The emulators sessions get (crates/fleetd/src/node/device/emulator.rs): `-read-only` copies of the node's virtual
+// The emulators sessions get: `-read-only` copies of the node's virtual
 // device, each booted from its Quick Boot snapshot (about 8 s on a KVM host) and thrown away with everything done in
 // it, and a warm pool of booted ones so a session starts from one at once while the pool boots the next behind it.
 import { readdirSync, readFileSync } from "node:fs";

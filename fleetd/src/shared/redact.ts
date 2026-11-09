@@ -1,5 +1,5 @@
 // Secrets out of text the app shows from places the hub doesn't control: an agent's transcript, a PR's description,
-// reviews and diff (crates/fleetd/src/hub/redact.rs). This catches credentials by their shape, so a token an agent
+// reviews and diff. This catches credentials by their shape, so a token an agent
 // printed or a diff added is never shown.
 
 export const SECRET = "[secret]";

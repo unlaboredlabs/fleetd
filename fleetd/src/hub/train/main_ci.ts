@@ -1,4 +1,4 @@
-// What Status needs from GitHub beyond the train's own reads (crates/fleetd/src/hub/train/main_ci.rs): main-branch CI
+// What Status needs from GitHub beyond the train's own reads: main-branch CI
 // per train repo, read in the train's pass at most once a minute.
 import type { CiState } from "../../shared/contracts.ts";
 import type { CheckRun } from "./github.ts";

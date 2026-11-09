@@ -1,4 +1,4 @@
-// Small shared pieces of the desktop area (crates/fleetd/src/node/desktop/display.rs `on_path`, `SIZE`).
+// Small shared pieces of the desktop area (`SIZE`).
 import { accessSync, constants, statSync } from "node:fs";
 import { join } from "node:path";
 

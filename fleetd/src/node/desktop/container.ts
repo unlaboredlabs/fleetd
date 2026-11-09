@@ -1,4 +1,4 @@
-// Desktop containers (crates/fleetd/src/node/desktop/container.rs): docker or podman, and the image they run. The image
+// Desktop containers: docker or podman, and the image they run. The image
 // is built on the node from DOCKERFILE: Debian 13 pinned by digest, its packages from snapshot.debian.org at a fixed
 // date, so every node builds the same Xvfb, window manager and xterm. Its tag carries a hash of the file, so a change
 // builds anew; it is the Rust node's tag, so either node uses the image the other built.

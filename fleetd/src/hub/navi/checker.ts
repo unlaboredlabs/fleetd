@@ -1,4 +1,4 @@
-// How a Navi's risky actions are approved, and what ran without asking (crates/fleetd/src/hub/navi/checker.rs). The
+// How a Navi's risky actions are approved, and what ran without asking. The
 // checker's turn itself comes with the approvals hooks.
 import type { Database } from "bun:sqlite";
 import type { AutoApproved, NaviApprovalMode, NaviApprovals, ProjectRef } from "../../shared/contracts.ts";

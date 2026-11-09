@@ -1,4 +1,4 @@
-// Masking a project's secret variables in what its agents' sessions report (crates/fleetd/src/node/mask.rs): every
+// Masking a project's secret variables in what its agents' sessions report: every
 // exact occurrence of a secret's value, its standard and URL-safe base64, its percent-encoding and its form encoding
 // becomes `***NAME***` before the node keeps or sends any of it. A value of several lines is also masked line by
 // line (each whole line of MIN_LINE characters or more, PEM armor excepted). Values under MIN_LEN are left alone.
@@ -124,7 +124,7 @@ export class Masker {
 }
 
 /**
- * What a screen's recording scrubs (crates/fleetd/src/node/browser/record.rs `Scrub`): its agent session's secrets,
+ * What a screen's recording scrubs: its agent session's secrets,
  * and each value filled into it, in every form a page or a trace may show them (`Masker.thorough`). A value too short
  * to mask wherever it appears (a card's 3-digit code, under MIN_LEN) is masked where it is a field's value: a whole
  * JSON string, and an HTML `value` attribute.

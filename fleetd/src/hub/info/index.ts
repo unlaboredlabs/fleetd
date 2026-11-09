@@ -1,4 +1,4 @@
-// `hub_info` (crates/fleetd/src/hub/info.rs): the hub's own fleetd build, and everything a restart of the hub (or of
+// `hub_info`: the hub's own fleetd build, and everything a restart of the hub (or of
 // one machine's node) would cut off now. An update restarts at once anyway: what it cuts off carries on by itself.
 import type { Change, HubBusyItem, HubBusyKind, HubEvent, MachineId, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

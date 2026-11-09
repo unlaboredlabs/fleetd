@@ -1,4 +1,4 @@
-// What the hub does for its cloud machines once they join (crates/fleetd/src/hub/cloud/mod.rs): whether a machine
+// What the hub does for its cloud machines once they join: whether a machine
 // is ready for work (caught up since its node last linked), and the pool checkouts being cloned.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";

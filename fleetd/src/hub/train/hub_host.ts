@@ -1,4 +1,4 @@
-// The hub's `TrainHost` (crates/fleetd/src/hub/train/hub_host.rs): the train and reviews reach other areas only
+// The hub's `TrainHost`: the train and reviews reach other areas only
 // through here. What isn't on main yet is read with `hub.peek(name)` under the names the lead set (D355), and answers
 // as if there were nothing while it is absent: Tasks' spawn, message and cancel (`tasks`), the order intake (`intake`,
 // the leads area's), the project policy's branch prefix (`policy`), the work ledger's landings (`work`) and machine

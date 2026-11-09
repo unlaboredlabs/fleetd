@@ -1,4 +1,4 @@
-// An emulator's screen and input, through scrcpy's server (crates/fleetd/src/node/device/scrcpy.rs): the node pushes the
+// An emulator's screen and input, through scrcpy's server: the node pushes the
 // pinned jar, starts it over adb and speaks its protocol itself (no scrcpy client, no window). Its H.264 stream is
 // decoded by ffmpeg into JPEG frames, which feed both the session's video (record.ts's VP9 encoder, as for a browser)
 // and whoever watches it live; a person's input goes back on its control socket as touches, scrolls, keys and text.

@@ -1,4 +1,4 @@
-// `fleetd push-relay` (crates/fleetd/src/push_relay/mod.rs, apns.rs, fcm.rs): the push relay (D218). A hub posts
+// `fleetd push-relay` (apns.rs, fcm.rs): the push relay (D218). A hub posts
 // each sealed notification here; the relay forwards it to APNs or FCM with the publisher's credentials, which only it
 // holds. It reads no notification: it sees a token, ciphertext and an opaque collapse key, keeps none of them and logs
 // none. Limits: a ciphertext of at most CIPHERTEXT_MAX, PER_TOKEN_PER_MIN pushes a minute to one token and

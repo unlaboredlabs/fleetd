@@ -1,4 +1,4 @@
-// The usage layer (crates/fleetd/src/hub/usage/service.rs). A lead or task thread that hits a usage limit is parked
+// The usage layer. A lead or task thread that hits a usage limit is parked
 // and sent one "continue" at its reset, leads first, then reviews, then writers. When one login fails the same way on
 // two threads within 10 minutes (or its proxy has no account at all), a breaker pauses new turns there with one
 // usage.breaker event, until the reset or usage_resume. A limit that names no reset is tried on one parked thread

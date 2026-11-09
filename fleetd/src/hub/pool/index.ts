@@ -1,4 +1,4 @@
-// Cloud machines on boat.dev (crates/fleetd/src/hub/pool/mod.rs, view.rs, life.rs, sweep.rs; D306): the hub keeps a
+// Cloud machines on boat.dev (view.rs, life.rs, sweep.rs; D306): the hub keeps a
 // small fixed pool of named boat machines (`boat-1`…`boat-N`), each an ordinary fleetd machine once it joins, stopped
 // when idle and resumed when work needs it. Each hub uses its owner's own boat key, sealed to the hub's box key.
 //

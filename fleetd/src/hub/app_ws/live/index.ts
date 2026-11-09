@@ -1,4 +1,4 @@
-// The live subscription on /app (crates/fleetd/src/hub/app_ws/live.rs `run`): per connection, a pump that turns what
+// The live subscription on /app: per connection, a pump that turns what
 // the hub already knows (thread activity, task and lead state, machine load, the slot board) into `live` frames,
 // sending only what changed. Board lanes at most once a second, focus lanes and streamed text at most 4 times a
 // second, machines at most every 5 s, slots at most once a second, within the connection's 32 KB/s. Latest wins: a

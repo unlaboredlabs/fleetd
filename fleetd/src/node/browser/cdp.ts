@@ -1,4 +1,4 @@
-// The node's DevTools connection to a session's Chrome (crates/fleetd/src/node/browser/cdp.rs): its own pipe
+// The node's DevTools connection to a session's Chrome: its own pipe
 // (`--remote-debugging-pipe`, NUL-framed JSON on fds 3 and 4), shared by the broker and the agent's proxy. The broker's
 // calls and the proxy's forwarded commands go under ids of the connection's own; each answer goes back to whoever
 // asked, under their id. Events go to the broker's listeners, and to the proxy unless they are on a session the

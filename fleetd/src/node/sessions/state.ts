@@ -1,4 +1,4 @@
-// The session service's decisions, kept pure (crates/fleetd/src/node/sessions/state.rs): a summary's derived fields,
+// The session service's decisions, kept pure: a summary's derived fields,
 // how runs close when a process ends, permission answers from policy, and the bounded copies of items that go over
 // the link.
 import { existsSync } from "node:fs";

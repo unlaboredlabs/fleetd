@@ -1,4 +1,4 @@
-// project_add (crates/fleetd/src/hub/projects/mod.rs `add`): add a path (a git checkout or a plain folder), make a new
+// project_add: add a path (a git checkout or a plain folder), make a new
 // folder (`create`), or clone a GitHub repository with progress events; then register it on its node and emit
 // `project.added` with its inspect. A clone cut off by a hub restart gets its `project.add_failed` at the next start.
 import type {

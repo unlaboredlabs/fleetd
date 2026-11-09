@@ -1,4 +1,4 @@
-// Reviews and comments the person left on a repo's git host, as touches (crates/fleetd/src/hub/metrics/host_acts.rs).
+// Reviews and comments the person left on a repo's git host, as touches.
 // The host sweep reads them through HostActs (GitHub first) and calls `read` per repo. A review's credit is estimated
 // and marked so. A touch on a PR fleetd wrote (a Change's, or a `fleetd/` head) counts toward minutes through fleetd;
 // one on any other PR toward the outside figure.

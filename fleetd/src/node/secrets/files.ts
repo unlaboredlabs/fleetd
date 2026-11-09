@@ -1,4 +1,4 @@
-// Writing secrets to disk as the Rust node does (crates/fleetd/src/node/secrets.rs `write_atomic`): a sibling temp file
+// Writing secrets to disk as the Rust node does: a sibling temp file
 // (exclusive create, 0600), fsync, then a rename over the target, so a reader sees the old file or the new one.
 import { closeSync, fsyncSync, openSync, renameSync, rmSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

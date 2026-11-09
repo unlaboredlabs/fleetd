@@ -1,4 +1,4 @@
-// A node restart for an update, run on the real CLI (crates/fleetd/tests/node_restart.rs): `fleetd node run` exits
+// A node restart for an update, run on the real CLI: `fleetd node run` exits
 // right after its own shutdown, with no fixed grace on top, which was most of the node's blackout. The node's hub is
 // unreachable throughout: stopping needs none. That the next start re-adopts a hosted session that ran on meanwhile is
 // sessions.test.ts's.

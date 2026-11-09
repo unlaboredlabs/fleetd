@@ -1,4 +1,4 @@
-// The Screens page's pictures (`screen_thumbs`, crates/fleetd/src/hub/browser/thumbs.rs): while an app shows the page,
+// The Screens page's pictures (`screen_thumbs`): while an app shows the page,
 // every THUMB_EVERY_SECS the hub takes one frame of each live screen and makes it small. It takes no capture of its
 // own: it watches each screen as a person's live view does, and its node answers a watch at once with the screen's
 // newest frame, so the watch ends as that frame lands. Each picture is made once, at most THUMB_SIDE a side (Bun's

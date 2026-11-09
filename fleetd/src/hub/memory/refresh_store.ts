@@ -1,4 +1,4 @@
-// The nightly memory refresh's stored state (crates/fleetd/src/hub/memory/refresh.rs: `get`, `put`, `you`, `record`,
+// The nightly memory refresh's stored state (`get`, `put`, `you`, `record`,
 // `line_items`, `put_line_items`, `listed`): table `memory_refreshes` per project, `memory_refresh_lines` per line.
 import type { MemoryRefreshed, MemoryRefreshRun, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";

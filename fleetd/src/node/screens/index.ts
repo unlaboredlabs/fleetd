@@ -1,4 +1,4 @@
-// The node's screens as one (crates/fleetd/src/node/screens.rs): the hub's `session_end` for a screen whose task ended
+// The node's screens as one: the hub's `session_end` for a screen whose task ended
 // (`browser::end_outlived` on the hub), which ends it whatever its kind, and `node_action` `screens`, a kind of screen
 // turned on or off or its idle timeout, written into node.json.
 //

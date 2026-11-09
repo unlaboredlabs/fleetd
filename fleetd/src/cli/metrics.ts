@@ -1,4 +1,4 @@
-// `fleetd metrics` (crates/fleetd/src/cli/metrics.rs): the factory's numbers (metrics_get), by calendar day in this
+// `fleetd metrics`: the factory's numbers (metrics_get), by calendar day in this
 // machine's zone. It only lays out what the hub computed; `--json` prints it as the hub sent it.
 import { ArgError, parse } from "./args.ts";
 import { eprintln, println, writeErr } from "./common.ts";

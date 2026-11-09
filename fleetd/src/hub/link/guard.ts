@@ -1,4 +1,4 @@
-// The disk guard (crates/fleetd/src/hub/link/guard.rs). A machine short of disk where its worktrees live (below the
+// The disk guard. A machine short of disk where its worktrees live (below the
 // node's `minFreeBytes`) takes no new agents until it is back clear of the floor by a margin. Agents already running
 // keep going. Load and memory never hold new agents back (D336). The node reports the figures with its heartbeat.
 import type { NodeLoad } from "../../shared/node_link.ts";

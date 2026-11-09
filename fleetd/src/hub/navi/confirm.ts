@@ -1,4 +1,4 @@
-// `confirm_step` (W239; crates/fleetd/src/hub/navi/confirm.rs): a Navi's lead calls it right before the final Confirm
+// `confirm_step` (W239): a Navi's lead calls it right before the final Confirm
 // or Submit click on a site that doesn't pay or order: booking a table, cancelling a subscription, sending a form, an
 // expense, a return, a post. Its lead is always asked for the call (the node's `LEAD_ASK`), so the call is a
 // permission prompt the approvals relay decides by the Navi's approval mode like a send: the checker's go, the

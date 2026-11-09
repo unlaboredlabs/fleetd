@@ -1,5 +1,5 @@
 // node/mask.ts: the masker every report goes through, the thorough one a screen's recording scrubs with, and the
-// recording's Scrub (crates/fleetd/src/node/mask.rs and browser/record.rs tests, ported).
+// recording's Scrub (browser/record.rs tests, ported).
 import { expect, test } from "bun:test";
 import { Masker, Scrub } from "../../src/node/mask.ts";
 

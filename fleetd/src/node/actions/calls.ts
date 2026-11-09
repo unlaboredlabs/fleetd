@@ -1,4 +1,4 @@
-// The session calls the node answers outside its sessions (crates/fleetd/src/node/sessions/mod.rs `call`): MCP
+// The session calls the node answers outside its sessions: MCP
 // servers' secrets and their Test, Claude accounts and the hub's model list, 1Password tokens, their Test and cards,
 // a Navi's sign-ins, repo clones and `gh repo list`, the landed log, a checkout's skills and an agent's images. The
 // session service hands each here (sessions/index.ts); a refusal is a CallRefusal.

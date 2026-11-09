@@ -1,4 +1,4 @@
-// Installing skills from a source, on the hub (crates/fleetd/src/hub/skills/install.rs): the sources `npx skills add`
+// Installing skills from a source, on the hub: the sources `npx skills add`
 // takes, fetched with git at one commit, which the skills are then pinned to. `owner/repo`, `owner/repo@skill`,
 // GitHub URLs (with `/tree/<ref>/<path>`), and any other git URL. An install fetches as the hub does, with its git
 // config and keys. Nothing is read through a symlink: a linked folder is no skill, a source path through a link is

@@ -1,4 +1,4 @@
-// MCP servers that sign in with OAuth (crates/fleetd/src/hub/mcp_oauth/mod.rs), with no fleetd-run OAuth app: the
+// MCP servers that sign in with OAuth, with no fleetd-run OAuth app: the
 // hub registers itself with the service where it may, else takes the person's own client. `mcp_oauth_start` discovers
 // where a saved server signs in and hands the app the service's sign-in page, opened with PKCE and a redirect to
 // `<hub>/oauth/callback`. The callback trades the code for the tokens (`finish`). The hub keeps them sealed to its own

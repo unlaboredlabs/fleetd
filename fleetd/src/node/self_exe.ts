@@ -1,4 +1,4 @@
-// The node's binary pinned where `fleetd update` can't replace it (crates/fleetd/src/node/self_exe.rs): the binary
+// The node's binary pinned where `fleetd update` can't replace it: the binary
 // its sessions' hosts run from, and their `fleetd agent-mcp`, hold hook, `mac` and forwarding agent-device. An update
 // writes a new binary beside the installed one and renames it over, so the installed path then names the new file; on
 // macOS that's the file a later start opens, which may not speak the running node's socket. At start the node

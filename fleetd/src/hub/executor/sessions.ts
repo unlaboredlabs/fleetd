@@ -1,4 +1,4 @@
-// The executor's session calls (crates/fleetd/src/hub/executor/mod.rs `launch`, `send`, `send_with`, `withdraw`,
+// The executor's session calls (`send`, `send_with`, `withdraw`,
 // `answer`, `interrupt`, `interrupt_now`, `runner_info`, `runner_refusal`, and the run reads the tasks area uses).
 import type { ClaudeAccount, DecidedBy, Effort, MachineId, PersonId, ProjectRef, ThreadRef, WorktreeSetup } from "../../shared/contracts.ts";
 import { CAP_PROFILE_NAMES, CAP_SYSTEM_PROMPT } from "../../shared/node_link.ts";

@@ -1,4 +1,4 @@
-// Sealed secrets from the hub (crates/fleetd/src/node/secrets.rs, `secret_deliver`): open the box with the node's
+// Sealed secrets from the hub (`secret_deliver`): open the box with the node's
 // X25519 key, write the sink under the command roots (mode 0600, atomically) and answer with its fingerprint.
 // Approved commands (`gated_run`) read the values back from those sinks, so a value never crosses the hub in either
 // direction. `<node home>/secret-sinks.json` remembers which sink holds which secret key; it holds no values.

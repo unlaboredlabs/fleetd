@@ -1,5 +1,5 @@
-// Usage limits from what the node reports about a failed run: its failure class, reset time and model
-// (crates/fleetd/src/hub/usage/classify.rs). The node's runner decides them; this only maps them. Pure.
+// Usage limits from what the node reports about a failed run: its failure class, reset time and model.
+// The node's runner decides them; this only maps them. Pure.
 import type { HubEvent } from "../../shared/contracts.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 

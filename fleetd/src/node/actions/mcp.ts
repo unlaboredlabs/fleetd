@@ -1,4 +1,4 @@
-// The MCP servers fleetd configures for its agents, on the node (crates/fleetd/src/node/mcp_servers.rs): their
+// The MCP servers fleetd configures for its agents, on the node: their
 // secrets (`mcp_secrets`), in `<node home>/mcp-secrets/global.json` and `<node home>/mcp-secrets/projects/<project>.json`;
 // each session's servers as its launch or a later send gave them, in `<session dir>/mcp-servers.json`; and the
 // `--mcp-config` written for each start of a session's claude, fleetd's own tools server always in it and last, so

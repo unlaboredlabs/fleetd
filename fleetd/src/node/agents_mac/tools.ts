@@ -1,4 +1,4 @@
-// What the agents' Mac installs for itself, pinned and checked by digest (crates/fleetd/src/node/agents_mac/tools.rs):
+// What the agents' Mac installs for itself, pinned and checked by digest:
 // Node.js, which agent-device runs on, into `<node home>/mac`; agent-device, which drives iOS simulators; and
 // agent-desktop, which drives the Mac's own apps. Nothing comes from the person's Homebrew, which agents can't write and
 // must not plant binaries in. CocoaPods alone does, and the tools check says how (checks.ts).

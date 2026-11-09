@@ -1,4 +1,4 @@
-// The node link's negotiated compression (`link_deflate`, crates/fleetd/src/link_deflate.rs), which /app's `deflate`
+// The node link's negotiated compression (`link_deflate`), which /app's `deflate`
 // reuses: RFC 7692 permessage-deflate done above the WebSocket. Each side keeps one Deflater for what it sends and one
 // Inflater for what it receives, for the life of one link: the window carries over between messages. A compressed
 // frame goes as a Binary message; a Text message is plain JSON and never touches either.

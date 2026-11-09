@@ -1,4 +1,4 @@
-// `people.changed` (crates/fleetd/src/hub/people/tools.rs `change`, `announce`, `account_removed`), and the seam other
+// `people.changed` (`announce`, `account_removed`), and the seam other
 // areas use to forget a person removed from the hub.
 import type { PeopleChange, PeopleChangedData, PersonId, PersonRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

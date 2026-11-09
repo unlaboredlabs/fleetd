@@ -1,4 +1,4 @@
-// One live desktop session (crates/fleetd/src/node/desktop/session.rs): the display it was lent (or the Mac's lease),
+// One live desktop session: the display it was lent (or the Mac's lease),
 // the node's connection to its screen (x11.ts, mac/screen.ts), the screen it reads ten times a second while anything
 // changes (the video, and the frames a person watches), and the action log, a line per `desktop` action and session
 // tool call as a browser session keeps it (node/browser/record.ts), each scrubbed of the session's secrets.

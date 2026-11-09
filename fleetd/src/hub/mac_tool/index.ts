@@ -1,4 +1,4 @@
-// The agents' Mac, the hub's half (D298; crates/fleetd/src/hub/mac_tool.rs): `mac_where` names the online machine whose
+// The agents' Mac, the hub's half (D298): `mac_where` names the online machine whose
 // node lists `mac_tool` and its key, `mac_send` passes one step an agent's node sealed to it on, with who the caller is,
 // and brings back the sealed answer. The hub never opens either. Every project's agents may use the Mac; Navis never.
 import { ToolError } from "../../shared/errors.ts";

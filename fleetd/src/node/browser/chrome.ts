@@ -1,4 +1,4 @@
-// A session's Chrome (crates/fleetd/src/node/browser/chrome.rs): Playwright's headless shell from the node's own
+// A session's Chrome: Playwright's headless shell from the node's own
 // install (installed at a pinned Playwright release where it is missing), with its DevTools pipe on fds 3 and 4 and no
 // debugging port. `sh` moves the pipe there from the stdin and stdout the node holds. A warm pool keeps one launched
 // for the next session. Each session takes a process of its own with a fresh, empty profile, and both are thrown away

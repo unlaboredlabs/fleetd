@@ -1,4 +1,4 @@
-// fleetd updating itself (crates/fleetd/src/update/mod.rs), shared by `fleetd update`, the hub's `hub_update` and a
+// fleetd updating itself, shared by `fleetd update`, the hub's `hub_update` and a
 // node its hub asks to: the release channel, the channel's files and a download checked against its SHA256SUMS, the
 // swap that keeps the binary it replaces, the services `fleetd init` made (service.ts), and the watcher that restarts
 // one and puts the previous build back if it doesn't come up (finish.ts).

@@ -1,4 +1,4 @@
-// The checklist (crates/fleetd/src/hub/checklist/tests.rs).
+// The checklist.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

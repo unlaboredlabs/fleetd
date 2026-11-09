@@ -1,4 +1,4 @@
-// `changes_list` (crates/fleetd/src/hub/train/tools.rs).
+// `changes_list`.
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import { requireRole } from "../api/grants.ts";

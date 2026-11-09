@@ -1,4 +1,4 @@
-// Claude Code's login from the app (crates/fleetd/src/node/claude_login.rs): `node_action` `claude_login` starts its
+// Claude Code's login from the app: `node_action` `claude_login` starts its
 // `auth login` on a terminal of its own (Bun's PTY), with the runner's environment so the login lands where sessions
 // read it, and answers with the sign-in URL it prints. `claude_login_code` types the code the page showed into the
 // waiting login. Claude Code keeps its token here: nothing of it is read or sent. One login at a time: a new one ends

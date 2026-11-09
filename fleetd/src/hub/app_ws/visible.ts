@@ -1,4 +1,4 @@
-// Which events a key reads, as events_wait and the app's stream filter them (crates/fleetd/src/hub/api/m1.rs):
+// Which events a key reads, as events_wait and the app's stream filter them:
 // events on machines it can read (`can_read`), never another person's Only me project's (navi/owner's `others` and
 // `about`), and never another person's sidebar order or pins (sidebar_order `someone_elses`).
 import type { HubEvent } from "../../shared/contracts.ts";

@@ -1,4 +1,4 @@
-// The node link's frames (crates/fleetd-contracts/src/node_link.rs), which the contracts don't render to TypeScript:
+// The node link's frames, which the contracts don't render to TypeScript:
 // typed here as far as the node's modules read and write them. One JSON object per WebSocket message, tagged by `t`.
 import type { HubToNodeTag, NodeToHubTag } from "../shared/wire_tags.ts";
 import * as link from "../shared/node_link.ts";

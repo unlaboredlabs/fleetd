@@ -1,4 +1,4 @@
-// `GET /oauth/callback` (crates/fleetd/src/hub/mcp_oauth/callback.rs): where a service sends the person's browser back
+// `GET /oauth/callback`: where a service sends the person's browser back
 // after they sign in to an MCP server. The hub finishes the sign-in and answers with a small page saying how it went;
 // the app, watching the server's sign-in, carries on by itself. The page loads nothing and is never cached.
 import type { Route } from "../http/route.ts";

@@ -1,4 +1,4 @@
-// A session's skills (crates/fleetd/src/node/skills.rs). Four sources, the first that has a name winning (SkillOrigin's
+// A session's skills. Four sources, the first that has a name winning (SkillOrigin's
 // order): the checkout's `.agents/skills` (skills.sh), its `.claude/skills` (Claude Code), then the project's and the
 // global skills the hub keeps, which ride on the launch and are kept beside the session's other files. At every start
 // the node copies the winners into a session-only plugin, `<home>/sessions/<id>/plugin` (`--plugin-dir`), so claude

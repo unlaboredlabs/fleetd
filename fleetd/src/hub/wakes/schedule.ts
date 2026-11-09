@@ -1,4 +1,4 @@
-// Pure wake-schedule math (crates/fleetd/src/hub/wakes/schedule.rs): IANA time-zone conversion, a 5-field cron parser,
+// Pure wake-schedule math: IANA time-zone conversion, a 5-field cron parser,
 // and "next run after". Local times that don't exist (the hour skipped when DST starts) move forward by the gap; local
 // times that happen twice take the first occurrence. This is Temporal's "compatible".
 import type { WakeSchedule } from "../../shared/contracts.ts";

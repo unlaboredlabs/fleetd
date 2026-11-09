@@ -1,4 +1,4 @@
-// Which PR a write task's result links (crates/fleetd/src/hub/tasks/pr.rs, D67). The host's PR for the task's branch
+// Which PR a write task's result links (D67). The host's PR for the task's branch
 // is the answer; a URL in the report counts only when the host can't be read, and only one on the project's own
 // remote. A URL is never taken for being the last one in the text. Also the remote forms of fleetd-contracts'
 // projects.rs (`short_remote`, `github_repo`) that the lookup reads.

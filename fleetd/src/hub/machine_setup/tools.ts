@@ -1,5 +1,5 @@
 // machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove, machine_join and
-// machine_claude_login (crates/fleetd/src/hub/machine_setup/tools.rs): an owner's or admin's device only, as
+// machine_claude_login: an owner's or admin's device only, as
 // everything on the Hub pages of the app's Settings.
 import type { MachineHost, MachineHostSource } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

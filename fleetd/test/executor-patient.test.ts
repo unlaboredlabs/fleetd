@@ -1,4 +1,4 @@
-// A busy node's slow answer (crates/fleetd/src/hub/executor/fake_node_tests.rs, #1301): a launch or a send with no
+// A busy node's slow answer (#1301): a launch or a send with no
 // answer goes again under the same frame id at doubling gaps for up to two minutes, and the first answer wins; only a
 // refusal, a dropped link or that much silence fails it.
 import { expect, jest, test } from "bun:test";

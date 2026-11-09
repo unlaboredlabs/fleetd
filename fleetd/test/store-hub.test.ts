@@ -1,4 +1,4 @@
-// The hub store (crates/fleetd/src/hub/store/tests.rs, its machine tests; hub/projects/icon_tests.rs's derived icon).
+// The hub store (its machine tests; hub/projects/icon_tests.rs's derived icon).
 import type { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { HubDb } from "../src/hub/store/db.ts";

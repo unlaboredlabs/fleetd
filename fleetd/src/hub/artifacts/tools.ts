@@ -1,4 +1,4 @@
-// artifacts_list and artifact_get: the chat's Artifacts tab (crates/fleetd/src/hub/artifacts/mod.rs).
+// artifacts_list and artifact_get: the chat's Artifacts tab.
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";

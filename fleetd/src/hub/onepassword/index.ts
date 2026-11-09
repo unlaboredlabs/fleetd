@@ -1,4 +1,4 @@
-// Each person's 1Password service account token (crates/fleetd/src/hub/onepassword/mod.rs, D235). The token comes
+// Each person's 1Password service account token (D235). The token comes
 // sealed to each machine's box key; the hub relays each box to its node and keeps only the fingerprint it answers
 // (`onepassword_tokens`), never a box or the token.
 //

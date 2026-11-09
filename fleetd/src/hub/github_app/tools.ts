@@ -1,7 +1,6 @@
 // `github_app_get` for everyone; `github_app_manifest`, `github_app_create`, `github_app_test` and `github_app_remove`
 // for an owner's or admin's device (Settings › Hub accounts › GitHub); `github_connect` and `github_disconnect` for a
-// person's own devices (Settings › Your accounts › GitHub). No key, secret or token crosses any of them
-// (crates/fleetd/src/hub/github_app/tools.rs).
+// person's own devices (Settings › Your accounts › GitHub). No key, secret or token crosses any of them.
 import type { Person, PersonGithub, PersonId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";

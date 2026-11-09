@@ -1,4 +1,4 @@
-// What `time_spans`, `time_breakdown` and `time_insights` answer (crates/fleetd/src/hub/time/tools.rs), read from any
+// What `time_spans`, `time_breakdown` and `time_insights` answer, read from any
 // connection to hub.sqlite: tools.ts runs them on the read worker (store/read-worker.ts), off the event loop, as Rust
 // ran them on its read-only connection. A fleet breakdown reads 200k spans and takes seconds; on the main connection
 // every other call waited behind it. Reads are bounded: at most MAX_ROWS spans per period are loaded, and a read that

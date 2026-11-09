@@ -1,4 +1,4 @@
-// The lead's `change_enqueue` (crates/fleetd/src/hub/train/calls.rs), and the review calls `review_verdict` and
+// The lead's `change_enqueue`, and the review calls `review_verdict` and
 // `review_read` (serve/wire.rs `CheckCalls`), registered in the lead-call registry.
 import type { Change } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

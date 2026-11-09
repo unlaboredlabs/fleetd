@@ -1,4 +1,4 @@
-// The app's people tools (crates/fleetd/src/hub/people/tools.rs): people_list for everyone; invite_create,
+// The app's people tools: people_list for everyone; invite_create,
 // invite_revoke, person_set and person_remove for an owner's or admin's device; device_revoke for a person's own
 // devices, or anyone's for an owner or admin.
 import type { AgentKeyInfo, Grant, HubRole, LeftProject, Person, Role } from "../../shared/contracts.ts";

@@ -1,6 +1,5 @@
 // checklist_get: the panel's Checklist tab. checklist_remove: a person takes items off it (Delete, Clear done); the
-// lead keeps the rest with its `checklist`, and hears of a removal at its next wake so it leaves those items off
-// (crates/fleetd/src/hub/checklist/tools.rs).
+// lead keeps the rest with its `checklist`, and hears of a removal at its next wake so it leaves those items off.
 import type { Registry } from "../api/registry.ts";
 import { requireRole } from "../api/grants.ts";
 import { renderEvent } from "../leads/events.ts";

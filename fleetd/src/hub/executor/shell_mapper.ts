@@ -1,5 +1,5 @@
 // Pure mapping from the node's machine stream (MachineEvent) to the hub's thread and project caches and the events
-// they derive (crates/fleetd/src/hub/executor/shell_mapper.rs). The executor feeds every event through
+// they derive. The executor feeds every event through
 // `applyMachineEvent`; nothing here does I/O.
 import type { ThreadSummary } from "../../shared/contracts.ts";
 import type {

@@ -1,4 +1,4 @@
-// `fleetd node join|run|grants|restart|flush` (crates/fleetd/src/cli/node.rs): the CLI parses the flags and refuses a
+// `fleetd node join|run|grants|restart|flush`: the CLI parses the flags and refuses a
 // usage mistake in the Rust CLI's words; the node itself (src/node) runs join, run and flush; grants is its to
 // port, and `restart` is the update service's (src/update).
 import { NotImplemented } from "../shared/errors.ts";

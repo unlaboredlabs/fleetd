@@ -1,4 +1,4 @@
-// `fleetd init` and `fleetd uninstall` (crates/fleetd/src/cli/setup/mod.rs). `init` without a terminal and without
+// `fleetd init` and `fleetd uninstall`. `init` without a terminal and without
 // --yes (or --join) only sets up the hub, as scripts expect: setup.json, and unless --no-service the user service
 // that runs it. The wizard (a terminal, --yes, --join, --step) is listed as not ported in PORT_MAP.md.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

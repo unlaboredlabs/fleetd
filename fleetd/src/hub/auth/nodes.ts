@@ -1,4 +1,4 @@
-// Node enrollment tokens and node keys (crates/fleetd/src/hub/auth/mod.rs): one-time `fle_` codes from
+// Node enrollment tokens and node keys: one-time `fle_` codes from
 // `fleetd pair --worker` and `machine add`, burned by a node's first hello, which records its ed25519 key.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";

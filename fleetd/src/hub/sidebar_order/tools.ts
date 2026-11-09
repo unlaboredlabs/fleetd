@@ -1,4 +1,4 @@
-// `sidebar_order_get` and `sidebar_order_set` (crates/fleetd/src/hub/sidebar_order/mod.rs): a person's sidebar order,
+// `sidebar_order_get` and `sidebar_order_set`: a person's sidebar order,
 // the same on each of their desktops. A set announces `sidebar.order`, which only that person's devices see.
 import type { SidebarOrderSetInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

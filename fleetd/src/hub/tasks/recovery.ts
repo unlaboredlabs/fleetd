@@ -1,4 +1,4 @@
-// Automatic recovery (crates/fleetd/src/hub/tasks/recovery.rs): a task whose run died (its node stopped, claude was
+// Automatic recovery: a task whose run died (its node stopped, claude was
 // killed, a stall) is resumed in its own thread and worktree with a note to continue, after a delay; one that keeps
 // dying for a real reason is not, and fails with a line for its lead to decide on. Pure: index.ts reads the facts and
 // carries the action out.

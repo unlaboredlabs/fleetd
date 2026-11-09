@@ -1,4 +1,4 @@
-// The board join (crates/fleetd/src/hub/orders/tests.rs and phase.rs's tests), and orders_board, order_get and
+// The board join (phase.rs's tests), and orders_board, order_get and
 // agents_list over a hub's rows.
 import { expect, test } from "bun:test";
 import { card, type Lookups, parkedReason, shortTitle, trainLive } from "../src/hub/orders/index.ts";

@@ -1,4 +1,4 @@
-// What the leads remember (crates/fleetd/src/hub/memory/mod.rs): plain markdown under `<hub home>/memory`, in no repo.
+// What the leads remember: plain markdown under `<hub home>/memory`, in no repo.
 // `people/<person>.md` is one person's own memory ("You", user scope, D212); a hub from before people keeps one shared
 // `user.md`. `<machine>/<project>/MEMORY.md` (the always-on part, then one `- [topic](topic.md)` line per topic) and its
 // topic files belong to one project and are never read for another. The hub is the only writer: a lead's `remember`

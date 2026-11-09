@@ -1,5 +1,5 @@
-// The text of an Office file a person sent (.docx, .xlsx, .pptx), which a lead's Read can't open
-// (crates/fleetd/src/hub/intake/office.rs): a Word document's paragraphs, an Excel workbook's sheets as CSV, a
+// The text of an Office file a person sent (.docx, .xlsx, .pptx), which a lead's Read can't open:
+// a Word document's paragraphs, an Excel workbook's sheets as CSV, a
 // PowerPoint deck's slides. The hub writes it beside the file (attachments.ts `place`). Read from the file's zip by hand
 // (stored or deflated entries only), and bounded however the file is built: each entry inflates to at most ENTRY_MAX and
 // the text stops at TEXT_MAX (UTF-8 bytes, as Rust counts).

@@ -1,4 +1,4 @@
-// Every text fleetd gives a model (crates/fleetd/src/hub/prompts/registry.rs), converted from the Rust table.
+// Every text fleetd gives a model, converted from the Rust table.
 // The shipped texts are crates/fleetd/assets/prompts/<id>.md, embedded at build.
 import type { RegistryEntry } from "./entry.ts";
 import instructions from "./defaults/instructions.md" with { type: "text" };

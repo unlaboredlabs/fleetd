@@ -1,4 +1,4 @@
-// The steer area's start (crates/fleetd/src/hub/steer/mod.rs `wire`, `run_sweep`): node receipts and the offline
+// The steer area's start (`run_sweep`): node receipts and the offline
 // queue's expiries reach the steers, the lead's `task message` goes through them, tasks reach the steers held for
 // their next run (`taskHooks(hub).steer`), and once a minute the sweep closes steers whose receipt can't come.
 import type { Hub } from "../api/hub.ts";

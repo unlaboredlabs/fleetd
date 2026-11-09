@@ -1,4 +1,4 @@
-// `fleetd mac` (crates/fleetd/src/cli/mac_tool.rs), the `mac` on every agent session's PATH: the agents' Mac, from an
+// `fleetd mac`, the `mac` on every agent session's PATH: the agents' Mac, from an
 // agent on any machine. Each command goes to the agent's own node, which seals it to the Mac. `mac run` prints the
 // command's output as it comes and exits with its exit code.
 import { ASK_EVERY } from "../node/mac_tool/queue.ts";

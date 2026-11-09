@@ -1,4 +1,4 @@
-// The agent's side of the agents' Mac (crates/fleetd/src/node/mac_tool/client.rs, push.rs): an agent's `fleetd mac`
+// The agent's side of the agents' Mac (push.rs): an agent's `fleetd mac`
 // comes to its node as the lead call `mac`, which this turns into sealed steps: `mac_where` names the Mac and its key,
 // each step goes with `mac_send`, and only this node opens the answers. A push snapshots the worktree as git sees it
 // (its own index, never the agent's) and sends only what the Mac lacks as a thin pack; a pull brings a file or a

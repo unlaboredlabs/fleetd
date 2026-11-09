@@ -1,5 +1,5 @@
 // What the PR views read from GitHub, through `gh` on the hub's machine, cached briefly so a burst of refetches costs
-// one call (crates/fleetd/src/hub/prs/github.rs): a repo's open or closed PRs a page at a time, most recently updated
+// one call: a repo's open or closed PRs a page at a time, most recently updated
 // first (one GraphQL query per page), one PR's detail (one query), and its changed files (REST, per page of 100, kept
 // per head so a page is read once per push). Only the PR views call this; nothing here runs on a timer. A failed read
 // is remembered for the same TTL, so a rate-limited or signed-out `gh` is asked again at most once a minute.

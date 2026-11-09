@@ -1,5 +1,4 @@
-// Running commands locally and on a machine over SSH, each with its stdin given up front
-// (crates/fleetd/src/cli/setup/ssh.rs).
+// Running commands locally and on a machine over SSH, each with its stdin given up front.
 import { q } from "./units.ts";
 
 export type SshTarget = {

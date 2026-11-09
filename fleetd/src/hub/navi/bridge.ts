@@ -1,4 +1,4 @@
-// A Navi's factory bridge (crates/fleetd/src/hub/navi/bridge.rs): a project's lead writes to another project's lead
+// A Navi's factory bridge: a project's lead writes to another project's lead
 // (`project_message`), reads the factory in one call (`factory_status`), and is woken when what it asked for changes.
 // Each message is an ask `N<n>`; the lead that opens an order for it passes `asked: "N<n>"` to `brief`, and from then
 // on `step` follows the order in the event log and wakes the asking lead with one line.

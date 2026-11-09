@@ -1,5 +1,5 @@
 // The seam between areas that wake a project's lead and the leads area that does it (D348): the Rust hub's
-// `hub.leads.wakes.trigger(r, Trigger)` (crates/fleetd/src/hub/leads/wakes.rs). Until the leads area starts and
+// `hub.leads.wakes.trigger(r, Trigger)`. Until the leads area starts and
 // replaces `trigger`, a wake goes nowhere.
 import type { ProjectRef, WorkstreamId } from "../../shared/contracts.ts";
 import type { Hub } from "./hub.ts";

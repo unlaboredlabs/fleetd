@@ -1,4 +1,4 @@
-// The MCP server tools (crates/fleetd/src/hub/mcp_servers/tools.rs). Saving a server relays each secret's boxes to
+// The MCP server tools. Saving a server relays each secret's boxes to
 // the nodes they were sealed to and records the fingerprints they answer; the boxes are never stored, logged or
 // returned.
 import type { McpScope, McpSealedOn, McpServer, McpServerSetInput, McpTestResult, McpValue, McpValueSet, ProjectRef } from "../../shared/contracts.ts";

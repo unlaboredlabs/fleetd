@@ -1,4 +1,4 @@
-// `fleetd cloud stop` (crates/fleetd/src/cli/cloud.rs): the cloud machines' kill switch (cloud_stop), the same as
+// `fleetd cloud stop`: the cloud machines' kill switch (cloud_stop), the same as
 // Settings › Cloud's "Stop all cloud machines".
 import { ArgError, parse } from "./args.ts";
 import { println, writeErr } from "./common.ts";

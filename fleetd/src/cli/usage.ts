@@ -1,4 +1,4 @@
-// `fleetd usage` (crates/fleetd/src/cli/usage.rs): each machine's usage pause (usage_status), and `fleetd usage resume
+// `fleetd usage`: each machine's usage pause (usage_status), and `fleetd usage resume
 // <machine>` to lift one now (usage_resume), the same as the app's Resume.
 import { ArgError, parse } from "./args.ts";
 import { isMachineId, println, writeErr } from "./common.ts";

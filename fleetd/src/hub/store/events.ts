@@ -1,5 +1,5 @@
-// The hub-global, append-only event log behind `events_wait` and the app stream
-// (crates/fleetd/src/hub/store/event_log.rs), over the same `events` table: a row's `data` is the event without its
+// The hub-global, append-only event log behind `events_wait` and the app stream,
+// over the same `events` table: a row's `data` is the event without its
 // seq, and seq is the row's AUTOINCREMENT key, so it never goes backwards past retention deletes.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubEvent, HubEventType, MachineId, ProjectRef } from "../../shared/contracts.ts";

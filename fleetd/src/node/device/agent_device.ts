@@ -1,4 +1,4 @@
-// The tool agents drive their emulator with (crates/fleetd/src/node/device/agent_device.rs): Callstack's agent-device,
+// The tool agents drive their emulator with: Callstack's agent-device,
 // as a CLI with its skill (its MCP mode costs ~64k tokens of tool definitions). The node installs it at a pinned
 // version under `<node home>/device/agent-device` and puts a wrapper of its own first on each session's PATH, with
 // Google's adb beside it. Each agent session gets its own agent-device home and state directory (so its own daemon),

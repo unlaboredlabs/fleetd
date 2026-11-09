@@ -1,6 +1,5 @@
 // pair_code_create: the app's Pair a phone, a `fleetd pair` code for one more device of the caller's person, with the
-// link to show as a QR. mac_code_create / mac_code_status: Add machine › A Mac for agents' six-digit code
-// (crates/fleetd/src/hub/pair/tools.rs).
+// link to show as a QR. mac_code_create / mac_code_status: Add machine › A Mac for agents' six-digit code.
 import type { Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { isHuman } from "../api/grants.ts";

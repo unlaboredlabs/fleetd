@@ -1,4 +1,4 @@
-// The hub's setup steps in the terminal (crates/fleetd/src/cli/setup/steps.rs): `fleetd init` and `fleetd doctor` list
+// The hub's setup steps in the terminal: `fleetd init` and `fleetd doctor` list
 // them (setup_list), one line each; `fleetd init --step <id>` opens one as a guide.
 import type { McpClient } from "../mcp_client.ts";
 import type { Failure } from "../common.ts";

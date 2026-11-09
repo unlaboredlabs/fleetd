@@ -1,4 +1,4 @@
-// `/link/v1/<op>` (crates/fleetd/src/hub/hub_links/serve.rs): what a link minted here may do, with its key as
+// `/link/v1/<op>`: what a link minted here may do, with its key as
 // `Authorization: Bearer flk_…`. Nothing else on the hub takes a link key, and nothing here administers anything.
 // - `GET hello`: the link's label, its person, the projects it reaches (and whether it is limited), the feed's start.
 // - `POST ask`: `project_message` as the link's person, "<person> via <label>".

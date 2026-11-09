@@ -1,4 +1,4 @@
-// What the agent's CDP proxy lets through (crates/fleetd/src/node/browser/proxy.rs `command_in`, credentials.rs
+// What the agent's CDP proxy lets through (credentials.rs
 // `sealed_refusal`), as an allowlist: a command goes to the browser only when it is one agent-browser itself sends.
 // The Rust proxy refuses named methods; three review rounds of #800 each found another method around such a list, so
 // here everything not on agent-browser's own list is refused, and a session that filled a login keeps a narrower one.

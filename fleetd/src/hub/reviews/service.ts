@@ -1,4 +1,4 @@
-// The merge train's review gate (crates/fleetd/src/hub/reviews/service.rs). Each time a Change enters `reviewing` the
+// The merge train's review gate. Each time a Change enters `reviewing` the
 // train hands it over with its current patch id; the gate spawns one fresh blocker-only reviewer for that patch through
 // Tasks and answers pending, or ready when a clean verdict is already bound to it. Every verdict is bound to the patch
 // id of the head it reviewed, and only verdicts bound to the Change's current patch id count. Blocking findings go back

@@ -1,4 +1,4 @@
-// A hash of the OS's id for this computer (crates/fleetd/src/fingerprint.rs `machine`): never the id itself, which
+// A hash of the OS's id for this computer: never the id itself, which
 // some tools treat as private. The hub gives its own in `hub_info`; a node gives its in its hello.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

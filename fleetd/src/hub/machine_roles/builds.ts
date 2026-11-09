@@ -1,4 +1,4 @@
-// A PR's build for a person's screen (crates/fleetd/src/hub/machine_roles/builds.rs): the newest of the PR head's CI
+// A PR's build for a person's screen: the newest of the PR head's CI
 // runs that uploaded an artifact named for the kind (an Android build: "android" or "apk" in its name), downloaded with
 // the hub's `gh`, the one file it holds (an .apk), at most FILE_MAX. And the hub's own sealed device steps that send
 // it to the screen's machine and install it there (node/device/remote.rs `seal_call`, `open_done`): each under a key of

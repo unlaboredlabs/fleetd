@@ -1,4 +1,4 @@
-// Credential sessions (crates/fleetd/src/node/browser/credentials.rs): everything about filling logins lives here,
+// Credential sessions: everything about filling logins lives here,
 // behind the seams the rest of the broker calls.
 // - `fillCredential`: the broker's entry point for an agent's `fill_credential`.
 // - `outgoing`: the proxy passes each message for the driver through it (by way of the session's `outgoing`).

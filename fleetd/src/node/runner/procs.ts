@@ -1,4 +1,4 @@
-// The machine's processes as the node sees them (crates/fleetd/src/node/runner/process.rs `table`, `descendants`,
+// The machine's processes as the node sees them (`descendants`,
 // `signal`): what the orphan sweeps (../sessions/proc.ts) and a task's end (./host.ts `endLeft`) look through. Each
 // process is known by pid and start time, so a pid the kernel has reused since is never signalled.
 import { readdirSync, readFileSync } from "node:fs";

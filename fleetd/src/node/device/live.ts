@@ -1,4 +1,4 @@
-// Android sessions' live view and takeover, as browser sessions have them (crates/fleetd/src/node/device/live.rs): the
+// Android sessions' live view and takeover, as browser sessions have them: the
 // hub's `browser_watch`, `browser_input` and `browser_control` for a device session come here. A watched device's
 // screen goes out through a pump that turns each new frame (scrcpy's) into a `browser_frame`, the newest only and
 // fitted to the watcher's link (browser/fit.ts); a person's mouse and keys become one finger, a scroll, a key or text.

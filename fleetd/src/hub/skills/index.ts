@@ -1,4 +1,4 @@
-// The skills the hub keeps (crates/fleetd/src/hub/skills/mod.rs): plain skill folders (a SKILL.md and its files) under
+// The skills the hub keeps: plain skill folders (a SKILL.md and its files) under
 // `<hub home>/skills`, in no repo. `global/<name>` is every project's; `projects/<machine>/<project>/<name>` is one
 // project's. A folder installed from a source keeps where from and its pin in `.fleetd-install.json`, a dot-file
 // sessions never get. The hub is the only writer, and every write here is synchronous, so writes never interleave.

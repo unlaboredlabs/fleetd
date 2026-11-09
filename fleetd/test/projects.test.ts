@@ -1,4 +1,4 @@
-// Task profiles, a project's icon and picture (crates/fleetd/src/hub/projects/profiles.rs, icon.rs, avatar.rs).
+// Task profiles, a project's icon and picture (icon.rs, avatar.rs).
 import { expect, test } from "bun:test";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";

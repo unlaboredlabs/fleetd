@@ -1,4 +1,4 @@
-// setup_list and setup_test (crates/fleetd/src/hub/setup/tools.rs): the hub's setup steps for an admin, read from
+// setup_list and setup_test: the hub's setup steps for an admin, read from
 // the doctor's checks.
 import type { DoctorCheck, HubSetupStep } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

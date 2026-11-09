@@ -1,4 +1,4 @@
-// Time spans from claude's stream (crates/fleetd/src/node/runner/claude/spans.rs), built beside the mapper as a pure
+// Time spans from claude's stream, built beside the mapper as a pure
 // state machine over the same lines and the same clock. Every span of a run is emitted when the run ends: only then is
 // each instant's owner known, so each span carries its exclusive time and the run's uncovered time becomes
 // `runner.other` filler. Per run, the exclusive times add up to the run's wall time exactly.
@@ -13,7 +13,7 @@ import { program } from "../../../hub/time/store.ts";
 import { headUtf16 } from "../../util.ts";
 import type { DecidedBy } from "./events.ts";
 
-/** A span as the node sends it (crates/fleetd-contracts/src/time.rs `SpanWire`). */
+/** A span as the node sends it. */
 export type SpanWire = {
   key: string;
   kind: SpanKind;

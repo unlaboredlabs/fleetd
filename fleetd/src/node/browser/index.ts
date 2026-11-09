@@ -1,4 +1,4 @@
-// The node's browser sessions (crates/fleetd/src/node/browser/mod.rs `Broker`): one per agent session at most, on a
+// The node's browser sessions: one per agent session at most, on a
 // warm Chrome from the pool (a fresh process with an empty profile, thrown away at the end), reached by the agent only
 // through the CDP proxy (proxy.ts). It answers agent-mcp's browser calls (through node/device's router), takes the
 // hub's `browser_watch`, `browser_input`, `browser_control` and `session_end` frames, reports each session to the hub

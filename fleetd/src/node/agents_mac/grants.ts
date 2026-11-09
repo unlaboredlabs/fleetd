@@ -1,4 +1,4 @@
-// The node takes up a new privacy grant by itself (crates/fleetd/src/node/agents_mac/grants.rs). macOS gives a running
+// The node takes up a new privacy grant by itself. macOS gives a running
 // process a Screen Recording grant only once it starts again. Each check, the node asks a fresh process of its own
 // binary (`fleetd node grants`, which macOS answers as it would a new node) and, when that one has a grant the node
 // lacks, has launchd restart it: at most once for each answer, so a grant macOS never shows the running node can't make

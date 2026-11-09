@@ -1,4 +1,4 @@
-// What each followed thread is doing now, for the app's live lanes (crates/fleetd/src/hub/executor/activity.rs): its
+// What each followed thread is doing now, for the app's live lanes: its
 // open tool calls, whether it's writing or thinking, a retry, its streamed text, its tokens and a one-minute sparkline
 // of its work. Fed every thread event of a followed session: `activity(hub).onThreadEvent(machineId, frame)` from the
 // executor; read by /app's live pump through `activity(hub).live(ref)`.

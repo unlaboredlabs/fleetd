@@ -1,4 +1,4 @@
-// The 1Password tools (crates/fleetd/src/hub/onepassword/mod.rs): onepassword_get, onepassword_set,
+// The 1Password tools: onepassword_get, onepassword_set,
 // onepassword_remove, onepassword_test and onepassword_cards (the Credit Card items a token reads, for a Navi's card
 // picker), a person's own, from their own devices.
 import type { ClaudeSealedOn, OnePasswordCard, OnePasswordTest, OnePasswordToken, ProjectRef } from "../../shared/contracts.ts";

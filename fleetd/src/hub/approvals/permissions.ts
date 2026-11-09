@@ -1,4 +1,4 @@
-// A session's permission prompt as an approval (crates/fleetd/src/hub/approvals/permissions.rs, W97). Every lead runs
+// A session's permission prompt as an approval (W97). Every lead runs
 // in `manual` mode (D310) and asks before any tool off its allow-list. The ask reaches the hub as `thread.waiting`
 // carrying `data.permission`, and the tool's input is read off the thread. The hub's rules decide first
 // (`hooks.promptVerdict`: the integrations policy, a Navi's confirm step and bridge, automation confirm), then the

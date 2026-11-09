@@ -1,4 +1,4 @@
-// What each of the hub's connections read so far (crates/fleetd/src/hub/http/counted.rs): the node link times its
+// What each of the hub's connections read so far: the node link times its
 // silence by bytes arriving, not whole frames, so one large frame coming in slowly (a 25 MiB put_file over 1 Mbit/s)
 // never looks like a dead link.
 //

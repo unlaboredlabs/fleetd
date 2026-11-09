@@ -1,4 +1,4 @@
-// An image's preview (attachment_get's maxSide; crates/fleetd/src/hub/intake/preview.rs): what a chat bubble shows on
+// An image's preview (attachment_get's maxSide): what a chat bubble shows on
 // the phone or the desktop, rather than the photo or screenshot itself, which the full-screen viewer reads. A png, jpeg
 // or webp larger than the side asked for is decoded, turned upright as its EXIF says, shrunk to fit and encoded as a
 // JPEG, or as a PNG where any pixel is clear. One already that small, one whose shrunk copy isn't smaller than the

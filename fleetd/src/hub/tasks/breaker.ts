@@ -1,4 +1,4 @@
-// The machine breaker (crates/fleetd/src/hub/tasks/breaker.rs): when agents on one machine keep dying (claude exited
+// The machine breaker: when agents on one machine keep dying (claude exited
 // or was killed, or stalled), fleetd stops resuming them there, so a machine that kills every agent can't turn the
 // automatic resume into a loop. Its dead agents wait, queued; its leads are told once. It closes on its own after a
 // quiet spell with no death there, or as soon as an agent there completes, and the waiting agents resume.

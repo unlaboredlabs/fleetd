@@ -1,4 +1,4 @@
-// The update's ports over the running hub (crates/fleetd/src/hub/update/ports.rs): the release feed, this machine's
+// The update's ports over the running hub: the release feed, this machine's
 // binary and service, and the nodes over the link.
 import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";

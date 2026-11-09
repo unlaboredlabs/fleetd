@@ -1,4 +1,4 @@
-// Wakes to a lead (crates/fleetd/src/hub/leads/wakes.rs): triggers for one lead are debounced and coalesced into a
+// Wakes to a lead: triggers for one lead are debounced and coalesced into a
 // single message, the code-rendered digest then one event line per trigger (`events`).
 import type { ProjectRef, Workstream } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

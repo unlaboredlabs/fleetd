@@ -1,4 +1,4 @@
-// Automations (crates/fleetd/src/hub/automations/mod.rs): a project's stored prompt with its triggers, a schedule in an
+// Automations: a project's stored prompt with its triggers, a schedule in an
 // IANA time zone (a cron, or one exact time for a reminder or follow-up, D288), an incoming webhook and Run now. Each
 // run opens an order for the project's lead (channel `automation`), which starts the work without a person's message.
 // One run at a time per automation: a schedule or Run now while its order is open is skipped and recorded; a webhook

@@ -1,4 +1,4 @@
-// project_repo_add, project_repo_list and project_repo_remove (crates/fleetd/src/hub/projects/repos.rs, W79): the
+// project_repo_add, project_repo_list and project_repo_remove (W79): the
 // repos a project holds besides its own directory. A repo's files are a node checkout, a node "project" like any
 // other, on the project's machine: adding one by path or by clone goes the way project_add does, then records the
 // checkout as a repo of the project. While a project holds it, the checkout doesn't show as a project of its own; one

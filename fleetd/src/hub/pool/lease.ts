@@ -1,4 +1,4 @@
-// The lease (crates/fleetd/src/hub/pool/lease.rs): boat's own auto-stop deadline on every machine, which the hub keeps
+// The lease: boat's own auto-stop deadline on every machine, which the hub keeps
 // pushing ahead while it wants the machine. If the hub stops renewing, boat stops the machine at the deadline by
 // itself. Every ttl the hub sends is a Ttl, and `clamp` is the only way to make one: at most 30 minutes, and no longer
 // than what is left under the budget at the pool's burn rate. A Ttl is a plain number of seconds above 60, so boat's

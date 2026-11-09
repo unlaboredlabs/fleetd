@@ -1,4 +1,4 @@
-// Steering (crates/fleetd/src/hub/steer/mod.rs): a person's (or a lead's) words to a running agent, sent straight to
+// Steering: a person's (or a lead's) words to a running agent, sent straight to
 // its thread as one short message, never through the wake debounce or with the digest. `queue` lands at the agent's
 // next tool boundary as its own turn; `now` stops its current step. Every steer has a receipt the node decides from
 // claude's own frames, stored here and emitted as `steer.*` events.

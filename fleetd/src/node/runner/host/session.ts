@@ -1,4 +1,4 @@
-// One live claude process (crates/fleetd/src/node/runner/claude/session.rs): it owns the child, pumps its stdout and
+// One live claude process: it owns the child, pumps its stdout and
 // stderr through the StreamMapper, writes its stdin, and ends it with the kill ladder.
 //
 // Kill ladder (Shutdown{grace}):

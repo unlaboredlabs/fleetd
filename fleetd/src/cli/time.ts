@@ -1,4 +1,4 @@
-// `fleetd time` (crates/fleetd/src/cli/time.rs): where agents' time went, over the hub's MCP endpoint
+// `fleetd time`: where agents' time went, over the hub's MCP endpoint
 // (time_breakdown, time_insights), laid out as plain tables; `--json` prints it as the hub sent it.
 import { ArgError, parse } from "./args.ts";
 import { eprintln, ioMessage, isMachineId, println, resolveHome } from "./common.ts";

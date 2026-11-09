@@ -1,4 +1,4 @@
-// Where later areas plug into the executor's tools (crates/fleetd/src/hub/executor/tools.rs `ToolHooks`): leads,
+// Where later areas plug into the executor's tools: leads,
 // workstreams, tasks and trains add fields to project_get, the slot board to fleetd_status.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

@@ -1,4 +1,4 @@
-// iOS simulators (crates/fleetd/src/node/device/ios/mod.rs `Simulators`): the agents' Mac lends agents a clone from its
+// iOS simulators: the agents' Mac lends agents a clone from its
 // warm pool (`mac sim`, node/mac_tool, through `lend`). iOS screens are gone (D298): the kind router refuses an ios
 // `session_start`, so the Rust node's legacy session side (session.rs, screen.rs) isn't ported. The pool lends a booted
 // clone of the node's settled golden simulator (pool.ts), and the clone is deleted when it is given back. The

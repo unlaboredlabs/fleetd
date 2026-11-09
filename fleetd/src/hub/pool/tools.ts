@@ -1,4 +1,4 @@
-// The cloud machines' tools (crates/fleetd/src/hub/pool/tools.rs): `cloud_get` for anyone signed in, and for keys
+// The cloud machines' tools: `cloud_get` for anyone signed in, and for keys
 // with admin on every machine the settings, the boat key (sealed in the app to the hub's own box key), Test, Create,
 // Reset, Resume and `cloud_stop`, the kill switch. No key or secret comes back; the hub's SSH key shows only its public
 // half.

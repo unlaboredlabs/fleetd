@@ -1,4 +1,4 @@
-// orders_board and order_get (crates/fleetd/src/hub/orders/tools.rs). The attachments and project_files come with
+// orders_board and order_get. The attachments and project_files come with
 // the intake port.
 import type { OrderCard, Steer } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

@@ -1,5 +1,5 @@
 // Agents' browser sessions (table `browser_sessions`, one row per session with it as JSON) and their recordings,
-// under `<home>/browser/<sessionId>/` as the node uploaded them, already scrubbed (crates/fleetd/src/hub/browser/mod.rs).
+// under `<home>/browser/<sessionId>/` as the node uploaded them, already scrubbed.
 // An hourly prune expires recordings past the retention (`browser_settings`): each one after its days, and a
 // project's oldest while its recordings together are over its size.
 import type { Database } from "bun:sqlite";

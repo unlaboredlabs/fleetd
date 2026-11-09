@@ -1,4 +1,4 @@
-// Pure rules of the orders board (crates/fleetd/src/hub/orders/phase.rs): an order's phase (first match wins, worst
+// Pure rules of the orders board: an order's phase (first match wins, worst
 // child rolls up), a lane's status and role, and the board's order.
 import type { AgentRole, ChangeState, LaneStatus, LeadState, OrderCard, OrderPhase, Task, TaskKind, WorkstreamState } from "../../shared/contracts.ts";
 

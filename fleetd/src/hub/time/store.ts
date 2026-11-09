@@ -1,4 +1,4 @@
-// The time tables (crates/fleetd/src/hub/time/store.rs): span writes (idempotent on `(src, src_key)`), labels, per-day
+// The time tables: span writes (idempotent on `(src, src_key)`), labels, per-day
 // roll-ups, retention and reads. Every write runs inside the caller's transaction, so a batch's spans, labels,
 // roll-ups and cursor commit together.
 import type { Database, SQLQueryBindings } from "bun:sqlite";

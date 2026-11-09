@@ -1,4 +1,4 @@
-// A project's kept browser sign-ins (crates/fleetd/src/node/browser/chrome.rs `kept_dir`, sessions/mod.rs
+// A project's kept browser sign-ins (sessions/mod.rs
 // `forget_signins`, D221, D310): the profile its lead's browser sessions keep, under `<node home>/browser/kept/<id>`
 // (or `browser/navis/<id>` for a former Navi's), deleted when the person forgets them or the project goes. With a
 // browser broker on this node, forgetting goes through it (browser/index.ts `forgetSignins`: the browser on the

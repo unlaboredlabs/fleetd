@@ -1,4 +1,4 @@
-// Text helpers approvals shares with the rest of its area (crates/fleetd/src/hub/usage/time.rs `clip`, approvals'
+// Text helpers approvals shares with the rest of its area (approvals'
 // `shown_argv`).
 
 /** At most `max` characters (code points), the last one "…" when cut. */

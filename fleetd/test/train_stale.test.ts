@@ -1,5 +1,5 @@
-// A check GitHub still shows pending after its workflow run finished (#1362), as the Rust hub has it
-// (crates/fleetd/src/hub/train/tests/stale.rs): the train re-runs that run once per head and waits for the fresh
+// A check GitHub still shows pending after its workflow run finished (#1362), as the Rust hub has it:
+// the train re-runs that run once per head and waits for the fresh
 // result, never counting the stale check as passed; a run still going is never re-run. The shapes are GitHub's own
 // answers, shared with the Rust tests (test/fixtures/train/stale_checks.json): `stale` the Desktop
 // QA run 42538020541 at attempt 1, completed green while job `qa (ubuntu-latest, 1/4)` read in_progress (conclusion

@@ -1,4 +1,4 @@
-// Leads' memory (crates/fleetd/src/hub/memory/tests.rs) and the secret redactor (hub/redact.rs).
+// Leads' memory and the secret redactor (hub/redact.rs).
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

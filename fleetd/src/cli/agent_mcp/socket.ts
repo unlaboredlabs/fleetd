@@ -1,4 +1,4 @@
-// The node's local socket (crates/fleetd/src/cli/agent_mcp.rs `send_to_node`): one frame out, one line back.
+// The node's local socket: one frame out, one line back.
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { connect } from "node:net";

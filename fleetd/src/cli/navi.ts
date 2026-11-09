@@ -1,4 +1,4 @@
-// `fleetd navi create|list|rename|archive|unarchive` (crates/fleetd/src/cli/navi.rs): the old name of `fleetd project
+// `fleetd navi create|list|rename|archive|unarchive`: the old name of `fleetd project
 // add --new … --only-me`, `project list`, `project set` and `project archive|unarchive`, kept for one release.
 import { ArgError, parse, type Parsed } from "./args.ts";
 import { isTty, println, resolveHome, s, tilde } from "./common.ts";

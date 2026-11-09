@@ -1,4 +1,4 @@
-// The lead digest's "Merge train" lines (crates/fleetd/src/hub/train/digest.rs, and leads/hooks.rs `train_lines` and
+// The lead digest's "Merge train" lines (and leads/hooks.rs `train_lines` and
 // `unlanded`, which read them for the leads area): each train's head and queue, what merged since the lead's last
 // wake, and what is parked with its author.
 import type { Change, ProjectRef, TrainState } from "../../shared/contracts.ts";

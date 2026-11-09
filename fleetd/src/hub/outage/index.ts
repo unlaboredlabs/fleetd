@@ -1,4 +1,4 @@
-// Machines down (crates/fleetd/src/hub/outage/mod.rs): a machine offline for DOWN_AFTER_MS that nothing explains is
+// Machines down: a machine offline for DOWN_AFTER_MS that nothing explains is
 // logged as `machine.down` with `attention`, so the hub's admins get one push (hub/push: an event about no project is
 // theirs) and the app one notification; once it links again, `machine.back` tells them, once. The event log is the
 // only state: a machine is paged while its newest machine.down is newer than its last link (machine.online or

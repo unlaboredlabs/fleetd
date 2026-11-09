@@ -1,4 +1,4 @@
-// The hub link tools (crates/fleetd/src/hub/hub_links/tools.rs). On the hub whose projects a link reaches, a person
+// The hub link tools. On the hub whose projects a link reaches, a person
 // mints and revokes links (their own; an admin anyone's). On the hub with the Navi, a person adds a link to a project,
 // its key sealed to this hub, and removes it.
 import type { ProjectRef } from "../../shared/contracts.ts";

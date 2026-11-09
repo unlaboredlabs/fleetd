@@ -1,4 +1,4 @@
-// The `pair_codes` table (crates/fleetd/src/hub/pair/mod.rs `PairCodes`, mac.rs): one-time `XXXX-XXXX` codes a
+// The `pair_codes` table (mac.rs): one-time `XXXX-XXXX` codes a
 // device trades at POST /pair for a human key, invites (a code bound to a person, valid 7 days), and the agents'
 // Mac's six-digit setup codes (a row with `machine_id` set).
 import type { Invite, InviteState, MacCodeState, Person, PersonId, Role } from "../../shared/contracts.ts";

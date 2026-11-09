@@ -1,4 +1,4 @@
-// The `requests` table (crates/fleetd/src/hub/approvals/store.rs): one row per secret or approval request (`Q<n>` is
+// The `requests` table: one row per secret or approval request (`Q<n>` is
 // the row's `n`), the record behind the chat item that shows it. Every write goes through `write`, which keeps the
 // kind rule.
 import type { Database } from "bun:sqlite";

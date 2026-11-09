@@ -1,5 +1,5 @@
-// Classifies a failed run from what claude said, structured fields first and text second
-// (crates/fleetd/src/node/runner/claude/failure.rs). The text rules are the hub's limit ones (gateway texts and reset
+// Classifies a failed run from what claude said, structured fields first and text second.
+// The text rules are the hub's limit ones (gateway texts and reset
 // parsing included), here so the node decides once.
 import { constants } from "node:os";
 import type { FailureClass, RunFailure } from "../../../shared/sessions.ts";

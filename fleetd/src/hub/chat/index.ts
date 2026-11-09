@@ -1,4 +1,4 @@
-// The lead chat (crates/fleetd/src/hub/chat/mod.rs, nudges.rs): one conversation per project, the main surface. This
+// The lead chat (nudges.rs): one conversation per project, the main surface. This
 // keeps the messages (in order, deduped, announced as `chat.message`), the needs-you state (`chat.waiting`), the
 // nudges and the streamed text of the lead's replies. `flow` delivers a human's message to the lead and mirrors the
 // lead's replies back; `history` reads what came before the chat into it once per project; `tools` serves the tools.

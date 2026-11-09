@@ -1,4 +1,4 @@
-// What an android session needs on its node (crates/fleetd/src/node/device/sdk.rs), each pinned and checked by
+// What an android session needs on its node, each pinned and checked by
 // digest: Google's platform-tools (adb), its emulator and an Android 15 Google APIs system image, scrcpy's server (the
 // live view and the video, scrcpy.ts) and an ffmpeg that decodes its H.264 stream; agent-device comes from npm
 // (agent_device.ts). All of it lives under `<node home>/device/`, with no Java: the node writes the virtual device's

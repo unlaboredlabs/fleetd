@@ -1,4 +1,4 @@
-// The landing scanner against real git (crates/fleetd/src/hub/work/landings_tests.rs and landings.rs' own tests): an
+// The landing scanner against real git (landings.rs' own tests): an
 // origin, a person's clone of it, and checkouts for projects under $TMPDIR, with every commit dated from the hub's clock.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";

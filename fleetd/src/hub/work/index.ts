@@ -1,4 +1,4 @@
-// The work ledger (crates/fleetd/src/hub/work/mod.rs): one view of the work in flight on a repo's base branch, across
+// The work ledger: one view of the work in flight on a repo's base branch, across
 // every project on that repo, so nothing is built twice. Tasks and Changes stay their own source of truth; this area
 // adds claims (intent fleetd can't otherwise see, such as a human's own session) and the repo and base each project's
 // work lands on. (`hub/ledger` is the decision log, a different thing.)

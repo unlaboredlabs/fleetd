@@ -1,4 +1,4 @@
-// What the agents' Mac's parts share (crates/fleetd/src/node/agents_mac/mod.rs): its checks' types, and the health
+// What the agents' Mac's parts share: its checks' types, and the health
 // file setup reads on the Mac itself.
 import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

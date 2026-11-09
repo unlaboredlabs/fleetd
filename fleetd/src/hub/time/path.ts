@@ -1,4 +1,4 @@
-// The critical path of an order (crates/fleetd/src/hub/time/path.rs): a backward last-finisher walk over the order's
+// The critical path of an order: a backward last-finisher walk over the order's
 // lanes, cut into exclusive tiles. Deterministic: no clock, no randomness; the same input gives the same path.
 import type { Category, CategoryMs, CriticalPath, PathSegment, SpanKind } from "../../shared/contracts.ts";
 import { type Claim, tile } from "../../shared/tiles.ts";

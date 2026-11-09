@@ -1,4 +1,4 @@
-// The optional repo policy file `.fleetd/policy.yaml` (crates/fleetd/src/hub/policy.rs), read from the working tree
+// The optional repo policy file `.fleetd/policy.yaml`, read from the working tree
 // of the project's checkout through the node (so an uncommitted file counts). Cached per project for 60 s;
 // `invalidate` drops an entry at once. No file is the default policy. A broken file is an error with a fix, never a
 // silent fallback, so a typo can't drop a deny rule. `hub.area("policy")`, whose contract is `get(ref)`: the train

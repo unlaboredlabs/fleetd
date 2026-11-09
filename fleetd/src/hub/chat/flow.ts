@@ -1,4 +1,4 @@
-// The chat's moving parts over the hub (crates/fleetd/src/hub/chat/flow.rs): a human's message reaches the project's
+// The chat's moving parts over the hub: a human's message reaches the project's
 // lead (a new turn when it is idle, joined to its turn when it is working, held while it starts), the lead's replies
 // stream back and land as messages, the project's past is read in once, and the needs-you state follows.
 import type {

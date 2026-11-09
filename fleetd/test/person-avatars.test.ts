@@ -1,4 +1,4 @@
-// A person's own picture over a real hub (crates/fleetd/src/hub/people/avatar_tests.rs): it is kept as a project's is
+// A person's own picture over a real hub: it is kept as a project's is
 // (a JPEG at most 512 px square), named on the person in hub_info and people_list, readable by anyone on the hub,
 // removed again, and forgotten when the person is removed; each change is a people.changed event; only a person's own
 // device sets theirs.

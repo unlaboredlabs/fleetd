@@ -1,4 +1,4 @@
-// Prompts a release retired (crates/fleetd/src/hub/prompts/retired.rs), converted from the Rust table. An override of one
+// Prompts a release retired, converted from the Rust table. An override of one
 // is never applied and never deleted by fleetd: prompt_get returns it under `orphans`.
 export type Retired = { id: string; title: string; why: string; target?: string };
 

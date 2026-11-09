@@ -1,4 +1,4 @@
-// The diff state of one live subscription (crates/fleetd/src/hub/app_ws/live.rs `Pump`): what the app was last sent,
+// The diff state of one live subscription: what the app was last sent,
 // and the next frame, cut to the frame's limits. Pure, so the coalescing is testable.
 import {
   LIVE_MAX_LANES,

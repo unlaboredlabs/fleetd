@@ -1,4 +1,4 @@
-// macOS's half of ./index.ts (crates/fleetd/src/node/power/inhibit.rs `macos`, clock.rs `asleep_ns`): the sleep
+// macOS's half of ./index.ts (clock.rs `asleep_ns`): the sleep
 // inhibitor is an IOPMAssertion (`PreventUserIdleSystemSleep`, shown by `pmset -g assertions`), which the kernel drops
 // with the process, and time asleep is mach_continuous_time (which counts sleep) less mach_absolute_time (which
 // doesn't). The frameworks are opened with bun:ffi only on macOS, the first time they're needed.

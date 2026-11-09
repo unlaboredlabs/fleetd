@@ -1,5 +1,5 @@
 // Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix, a
-// command for a person to run (crates/fleetd/src/hub/doctor/checks.rs), with the same ids and words.
+// command for a person to run, with the same ids and words.
 import type {
   ClaudeHubApi,
   ClaudeSealedOn,

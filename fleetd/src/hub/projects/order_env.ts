@@ -1,4 +1,4 @@
-// An order's variables (`order:` secret sinks; crates/fleetd/src/hub/projects/order_env.rs): what the hub keeps of
+// An order's variables (`order:` secret sinks): what the hub keeps of
 // each one its node saved (`order_env` rows: the name, fingerprint and size, never the value), and their end. Once
 // the order is closed (done or stopped) or gone, its node is told to forget them (`order_env_drop`) and the rows go;
 // a node offline then hears it once it is back, from the next event or sweep.

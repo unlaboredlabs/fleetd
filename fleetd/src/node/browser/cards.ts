@@ -1,4 +1,4 @@
-// A Navi's purchases in its browser (crates/fleetd/src/node/browser/cards.rs, D265; the hub's side is
+// A Navi's purchases in its browser (D265; the hub's side is
 // hub/browser/purchases.ts).
 // - `purchaseRequest`: on the checkout page, the node checks the page is on the shop's domain and opens the purchase
 //   on the hub, which asks the person (or, from D310 on, records it approved). The session waits for them without

@@ -1,4 +1,4 @@
-// `fleetd machine add|remove|set` (crates/fleetd/src/cli/setup/machine.rs). `add` reads the machine (a read-only
+// `fleetd machine add|remove|set`. `add` reads the machine (a read-only
 // probe over SSH, or here with --local), plans what it lacks (machine_plan.ts), records it in setup.json, runs each
 // step showing its command first, then waits until its node is online and checks its claude login.
 //

@@ -1,5 +1,5 @@
 // Pure: GitHub's answers about a repository into a `ProjectInspect`, the line on what the lead will need, the best
-// worker for a clone, and a failed clone's message into a problem with its fix (crates/fleetd/src/hub/projects/inspect.rs),
+// worker for a clone, and a failed clone's message into a problem with its fix,
 // with the contracts' `github_repo`, `short_remote` and `RepoKey::of` (fleetd-contracts projects.rs, work.rs).
 import type {
   CiInfo,

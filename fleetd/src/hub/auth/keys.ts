@@ -1,4 +1,4 @@
-// Creating, listing and revoking agent and human keys (crates/fleetd/src/hub/auth/mod.rs `create_key_for`, `list`,
+// Creating, listing and revoking agent and human keys (`list`,
 // `get`, `revoke`), with the same SQL: `hub.auth.keys`.
 import type { AgentKeyInfo, Grant, PersonId } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";

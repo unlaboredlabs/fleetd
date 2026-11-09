@@ -1,4 +1,4 @@
-// The hub's HTTP server (crates/fleetd/src/hub/http/mod.rs): the same routes on one port, loopback by default. Each
+// The hub's HTTP server: the same routes on one port, loopback by default. Each
 // route is its module's; a module not ported yet answers 501 with what it is.
 import type { Server } from "bun";
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";

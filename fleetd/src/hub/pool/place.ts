@@ -1,4 +1,4 @@
-// Placement on cloud machines (crates/fleetd/src/hub/pool/place.rs, D306), deterministic: a task goes to a cloud
+// Placement on cloud machines (D306), deterministic: a task goes to a cloud
 // machine only when its project's own machine is at its agent limit. In order: its own machine while it has room;
 // an awake cloud machine, caught up, its runner usable, with room (hydrated first, then the busiest); waking a sleeping one, one at a
 // time; else it queues, its line saying why. Each cloud machine holds a pool checkout of each opted-in project's repos,

@@ -1,4 +1,4 @@
-// Spans folded out of the event log (crates/fleetd/src/hub/time/project.rs): queue waits, usage parks, waits on a
+// Spans folded out of the event log: queue waits, usage parks, waits on a
 // person's answer to a request, wake debounces, offline writes, and each order's bounds and critical path. It walks
 // the log in seq order from `time_cursors('events')` and wakes on the log's appends; a replay is a no-op because every
 // span key is deterministic.

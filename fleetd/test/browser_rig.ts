@@ -1,4 +1,4 @@
-// A node with a real headless Chrome for the browser's fill tests (crates/fleetd/src/node/browser/tests.rs `Rig`): the
+// A node with a real headless Chrome for the browser's fill tests: the
 // node's broker on Playwright's headless shell from ~/.cache/ms-playwright (none: the tests skip), a fake 1Password
 // in place of the SDK helper, and a CDP driver that reaches the browser only through the node's proxy, as an agent's
 // agent-browser does. Never a real vault or a real card.

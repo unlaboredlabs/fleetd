@@ -1,5 +1,5 @@
-// Status: one row per project, a state word, its work in groups, agents running and the last merge
-// (crates/fleetd/src/hub/status/rows.rs). Observed only, never an estimate.
+// Status: one row per project, a state word, its work in groups, agents running and the last merge.
+// Observed only, never an estimate.
 import type { Database } from "bun:sqlite";
 import type { HubEventType, Machine, ProjectRef, ProjectRowState, ProjectStatusRow, StaleMark } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

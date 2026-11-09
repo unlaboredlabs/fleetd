@@ -1,4 +1,4 @@
-// Synchronous SQL over the ledger tables (crates/fleetd/src/hub/ledger/repo.rs). Callers compose these inside one
+// Synchronous SQL over the ledger tables. Callers compose these inside one
 // write transaction and emit events after the commit; nothing here opens a transaction itself.
 import type { Database } from "bun:sqlite";
 import type {

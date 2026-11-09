@@ -1,4 +1,4 @@
-// The way cloud machines reach the hub (crates/fleetd/src/hub/pool/tunnel.rs, D307): the hub dials out, so it never
+// The way cloud machines reach the hub (D307): the hub dials out, so it never
 // needs a public address. While a pool machine is up the hub holds an SSH connection to it with one reverse forward:
 // the machine's `127.0.0.1:47900` goes to the hub's own listen address.
 // - The key: the hub's own ed25519 key, made the first time it is needed and kept in the ledger sealed to the hub's

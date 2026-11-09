@@ -1,4 +1,4 @@
-// hub_info (crates/fleetd/src/hub/info.rs).
+// hub_info.
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import { machineFingerprint } from "../../shared/fingerprint.ts";
 import { VERSION } from "../../shared/version.ts";

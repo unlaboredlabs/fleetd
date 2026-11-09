@@ -1,4 +1,4 @@
-// The factory bridge (crates/fleetd/src/hub/navi/bridge_tests.rs): asks and their retries, the follow that wakes the
+// The factory bridge: asks and their retries, the follow that wakes the
 // asking lead, a link's feed, the asks sent through a kept link, and navi_asks.
 import { expect, test } from "bun:test";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";

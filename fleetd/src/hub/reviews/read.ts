@@ -1,4 +1,4 @@
-// `review_read` (crates/fleetd/src/hub/reviews/read.rs): an author reads every finding of its PRs' latest reviews,
+// `review_read`: an author reads every finding of its PRs' latest reviews,
 // whole, and of any other PR of its project it names (one it builds on), a reviewer those of the one PR it reviews, and
 // a lead its project's. Read-only; another project's PR is refused, and so is any PR but its own for a reviewer.
 import type { Task } from "../../shared/contracts.ts";

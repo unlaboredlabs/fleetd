@@ -1,4 +1,4 @@
-// The hub admin's setup (crates/fleetd/src/hub/setup/mod.rs): one list of steps that `fleetd init`, the app's first
+// The hub admin's setup: one list of steps that `fleetd init`, the app's first
 // run and Settings › Hub › Setup all render. Each step's guide (why, the values to paste computed for this hub, the
 // provider's pages) is here; its status is read from the doctor's checks, never from how far a wizard got.
 import { isIP } from "node:net";

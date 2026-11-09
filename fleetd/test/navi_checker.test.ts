@@ -1,4 +1,4 @@
-// A Navi's approval checker with a fake model (crates/fleetd/src/hub/navi/checker_tests.rs): what it is told (the
+// A Navi's approval checker with a fake model: what it is told (the
 // action, where each part came from, the person's messages and the Navi's last question, never what the Navi read),
 // how its turn runs, what a failure or a refusal means, and the auto-approved log. The code rules are navi_review's.
 import { expect, test } from "bun:test";

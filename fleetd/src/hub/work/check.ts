@@ -1,4 +1,4 @@
-// New work against the work in flight (crates/fleetd/src/hub/work/check.rs): the in-flight view's items become the
+// New work against the work in flight: the in-flight view's items become the
 // matcher's candidates, and its matches come back as `WorkMatch`es with the item they name. Callers decide what each
 // strength does: `work_claim` here, `spawn_agent` in the tasks.
 //

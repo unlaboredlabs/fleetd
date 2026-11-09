@@ -1,4 +1,4 @@
-// The agents' Mac's setup checks (crates/fleetd/src/node/agents_mac/checks.rs, docs: agents-mac.md), run by the node
+// The agents' Mac's setup checks (docs: agents-mac.md), run by the node
 // as its own user, so each tests what a process of that user can do. Each is a pure verdict on what a `Probe` read;
 // `Live` reads the Mac, tests fake it. A failing check says exactly what the person does, and where: in an admin's
 // Terminal, or at the Mac in the account the node runs in (yours, an admin's, or a user of its own for agents: D309).

@@ -1,4 +1,4 @@
-// The lead's `checklist`, scoped to the caller's project by its session (crates/fleetd/src/hub/checklist/calls.rs).
+// The lead's `checklist`, scoped to the caller's project by its session.
 // A task can't make it (tasks' policy).
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -12,7 +12,7 @@ export function registerLeadCalls(hub: Hub): void {
 
 const invalid = (why: string) => new ToolError("invalid", `Invalid checklist call: ${why}.`);
 
-/** The contracts' checks on a `checklist` call (crates/fleetd-contracts/src/checklist.rs). */
+/** The contracts' checks on a `checklist` call. */
 export function checkCall(call: LeadCall): ChecklistCall {
   const items = (call.items ?? []) as TodoEdit[];
   const replace = call.replace as boolean | undefined;

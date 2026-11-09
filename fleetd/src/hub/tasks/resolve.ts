@@ -1,4 +1,4 @@
-// The profile a task runs on (crates/fleetd/src/hub/tasks/resolve.rs).
+// The profile a task runs on.
 import type { TaskKind } from "../../shared/contracts.ts";
 
 /**

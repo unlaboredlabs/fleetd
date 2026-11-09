@@ -1,4 +1,4 @@
-// The stall watchdog (crates/fleetd/src/hub/watchdog/mod.rs). Every running thread gets a persistent thread stream; a
+// The stall watchdog. Every running thread gets a persistent thread stream; a
 // run with no frame for longer than its threshold is stalled. The hub emits thread.failed{reason:"stalled"} and
 // interrupts the run, once. Deterministic, no LLM.
 import type { Hub } from "../api/hub.ts";

@@ -1,4 +1,4 @@
-// `fleetd invite` and `fleetd people` (crates/fleetd/src/cli/people.rs): the hub's people, from the hub machine. Like
+// `fleetd invite` and `fleetd people`: the hub's people, from the hub machine. Like
 // `hub key`, they open the hub home's database directly, so the hub need not be running.
 import { ArgError, parse, type Parsed } from "./args.ts";
 import { resolveHome } from "./common.ts";

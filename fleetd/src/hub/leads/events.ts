@@ -1,4 +1,4 @@
-// The lines a lead's wake carries, one per event (crates/fleetd/src/hub/leads/events.rs): every area that wakes a lead
+// The lines a lead's wake carries, one per event: every area that wakes a lead
 // renders its line here, so the words stay in one place.
 import { oneLine } from "./text.ts";
 

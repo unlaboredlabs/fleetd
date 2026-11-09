@@ -1,4 +1,4 @@
-// The metrics over a fresh hub (crates/fleetd/src/hub/metrics/tests.rs, touch_tests.rs): the projector's routes and
+// The metrics over a fresh hub (touch_tests.rs): the projector's routes and
 // stamps from the train's events, replays, the person's touches, metrics_get's figures by calendar day in a zone, its
 // bounds and grants, the prune, and reviews and comments on the git host (host_acts.rs).
 import { afterEach, expect, test } from "bun:test";

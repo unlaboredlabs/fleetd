@@ -1,4 +1,4 @@
-// The host sweep (crates/fleetd/src/hub/metrics/sweep.rs): every project's repo read through its git host, not only
+// The host sweep: every project's repo read through its git host, not only
 // repos with a train. It finds each project's origin by asking its node, then per repo reads the PRs merged since its
 // cursor (90 days back the first time), the default branch's first-parent commits to find direct pushes, and the
 // reviews and comments for the person's touches. Each PR gets the projector's route from the same fields, so the

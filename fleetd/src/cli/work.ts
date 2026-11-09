@@ -1,4 +1,4 @@
-// `fleetd work` (crates/fleetd/src/cli/work.rs): the work ledger from a terminal or a hook. It reads the origin
+// `fleetd work`: the work ledger from a terminal or a hook. It reads the origin
 // remote, the branch, `user.email` and the changed paths from the checkout it runs in, and calls work_claim, work_list
 // and work_done over the hub's MCP endpoint.
 import { ArgError, parse } from "./args.ts";

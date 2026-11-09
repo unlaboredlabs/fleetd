@@ -1,4 +1,4 @@
-// `<node home>/sessions.sqlite` (crates/fleetd/src/node/store.rs): the node's projects, sessions, runs, messages, items
+// `<node home>/sessions.sqlite`: the node's projects, sessions, runs, messages, items
 // and machine event log, with the same schema the Rust node keeps, so either opens the other's. Contract types are
 // stored as JSON next to the few columns queries need.
 import { Database } from "bun:sqlite";

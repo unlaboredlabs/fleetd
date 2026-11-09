@@ -1,4 +1,4 @@
-// The hub with the Navi calling the other hub over a kept link (crates/fleetd/src/hub/hub_links/client.rs):
+// The hub with the Navi calling the other hub over a kept link:
 // `project_message` and `factory_status` with `hub`, and `follow`, which long-polls the link's feed there and wakes
 // the Navi's lead with each piece of news. When the other hub can't be reached it retries with backoff (1 s doubling
 // to 30 s, ±20% jitter) and the link reads "unreachable" until it answers again.

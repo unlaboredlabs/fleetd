@@ -1,4 +1,4 @@
-// The OAuth side of MCP's authorization spec, as a client (crates/fleetd/src/hub/mcp_oauth/oauth.rs): where a
+// The OAuth side of MCP's authorization spec, as a client: where a
 // server signs in (its 401's resource metadata, the protected resource's and the authorization server's well-known
 // metadata, with the 2025-03-26 defaults for a server that has neither), dynamic client registration, PKCE (S256),
 // and the token endpoint's two grants. Every call has TIMEOUT_MS, follows redirects only within its origin, and goes

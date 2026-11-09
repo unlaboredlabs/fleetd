@@ -1,4 +1,4 @@
-// A session's display, and the warm pool of them (crates/fleetd/src/node/desktop/display.rs). Each is an X server of
+// A session's display, and the warm pool of them. Each is an X server of
 // its own with a random MIT cookie, so only the node and the session's apps can reach it:
 //
 // - container: a fresh container of the pinned image (container.ts) runs Xvfb and a window manager; its X socket comes

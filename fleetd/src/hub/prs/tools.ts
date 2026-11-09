@@ -1,4 +1,4 @@
-// pr_list, pr_get, pr_files and pr_diff (crates/fleetd/src/hub/prs/tools.rs). All read-only.
+// pr_list, pr_get, pr_files and pr_diff. All read-only.
 import type { Change, PrReviewEntry, PrRow, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { redact } from "../../shared/redact.ts";

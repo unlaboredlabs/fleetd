@@ -1,4 +1,4 @@
-// `fleetd project add|list|stop|remove|set|profiles|repo` and `fleetd machine set` (crates/fleetd/src/cli/project.rs):
+// `fleetd project add|list|stop|remove|set|profiles|repo` and `fleetd machine set`:
 // the hub's add-a-project service (project_discover and project_add) from a terminal, a project's or the fleet's
 // settings, and a project's repos.
 import { readFileSync } from "node:fs";

@@ -1,4 +1,4 @@
-// Priority on scarce CI runners, and merge order across PRs (crates/fleetd/src/hub/train/next.rs). The train puts
+// Priority on scarce CI runners, and merge order across PRs. The train puts
 // `fleetd:next` on what it is merging now: its batch PR, or the PR it takes alone (before GitHub rebases it, so that
 // push's CI run already sees the label), and takes it off once they merge or leave the queue. A repo whose runners
 // are scarce runs its expensive jobs on labelled PRs only; the train knows such a repo by its workflows naming the

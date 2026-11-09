@@ -1,4 +1,4 @@
-// The ledger's lead calls, `decide` and `decisions_search` (crates/fleetd/src/hub/ledger/tools.rs `lead_call`), for a
+// The ledger's lead calls, `decide` and `decisions_search`, for a
 // caller the link attributed to its project by its cwd.
 import type { Hub } from "../api/hub.ts";
 import { leadCalls } from "../lead_calls/index.ts";

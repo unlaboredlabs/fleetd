@@ -1,4 +1,4 @@
-// A registry entry and its derived parts (crates/fleetd/src/hub/prompts/registry.rs `Entry`).
+// A registry entry and its derived parts.
 import type { Enforcement, Placeholder, PromptGroup, PromptKind, SafetyRule } from "../../shared/contracts.ts";
 import { ENTRIES } from "./registry.ts";
 

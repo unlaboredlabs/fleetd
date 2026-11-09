@@ -1,5 +1,5 @@
-// The chat's lead calls: the lead's `nudge` (crates/fleetd/src/hub/chat/nudges.rs), and a Navi reading back through its
-// own chat with `chat_search` and `chat_read` (crates/fleetd/src/hub/navi/recall.rs). Plain text matching over the
+// The chat's lead calls: the lead's `nudge`, and a Navi reading back through its
+// own chat with `chat_search` and `chat_read`. Plain text matching over the
 // stored chat, nothing more; the chat is always the caller's own project's, so another chat is never read.
 import type { ChatAuthor, ChatMessage, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

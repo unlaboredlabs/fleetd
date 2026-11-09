@@ -1,4 +1,4 @@
-// What the stream mapper checks of claude's `system/init` (crates/fleetd/src/node/runner/claude/conformance.rs): the
+// What the stream mapper checks of claude's `system/init`: the
 // capabilities fleetd's sends and interrupts rely on, and claude's own agent tools, which fleetd keeps from every session.
 
 /** A `system/init` without these makes interrupts and queued sends misbehave. */

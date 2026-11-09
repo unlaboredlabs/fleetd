@@ -1,4 +1,4 @@
-// `time_spans`, `time_breakdown` and `time_insights` (crates/fleetd/src/hub/time/tools.rs), read on the hub's read
+// `time_spans`, `time_breakdown` and `time_insights`, read on the hub's read
 // workers (reads.ts says why), and `thread_window`, which reads a session's transcript around one item through the
 // executor's thread view.
 import type { Hub } from "../api/hub.ts";

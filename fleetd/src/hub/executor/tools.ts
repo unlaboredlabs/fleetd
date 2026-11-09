@@ -1,5 +1,5 @@
 // The M1 MCP tools over the executor and the caches it fills: fleetd_status, project_get, thread_tail and
-// actions_list (crates/fleetd/src/hub/executor/tools.rs). Later areas add to fleetd_status and project_get through
+// actions_list. Later areas add to fleetd_status and project_get through
 // `executorHooks` (slots, lead, workstreams, tasks, trains).
 import type { HubEvent, Machine, MachineId, ProjectChatState, ProjectRef, ProjectSummary, SlotState, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

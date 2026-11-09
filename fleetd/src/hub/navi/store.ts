@@ -1,6 +1,6 @@
 // What the hub keeps of a project beyond its node's report, in its own `project_settings` columns (D310): Only me
-// (`only_me`, every former Navi's), the key that made it, its owner, when it was archived and the card it pays with
-// (crates/fleetd/src/hub/navi/store.rs). A Navi is an Only me project.
+// (`only_me`, every former Navi's), the key that made it, its owner, when it was archived and the card it pays with.
+// A Navi is an Only me project.
 import type { Database } from "bun:sqlite";
 import type { NaviSite, PersonId, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";

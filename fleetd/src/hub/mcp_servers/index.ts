@@ -1,4 +1,4 @@
-// The MCP servers fleetd gives its agents (crates/fleetd/src/hub/mcp_servers/mod.rs): one `mcp_servers` row per
+// The MCP servers fleetd gives its agents: one `mcp_servers` row per
 // server (a global one's machine and project are empty) and `mcp_settings.user_servers`. A secret value is sealed in
 // the desktop app to each machine's box key; the hub relays each box to its node and keeps only the fingerprint that
 // node computed, per machine. A session's launch carries its project's servers with each secret by name only.

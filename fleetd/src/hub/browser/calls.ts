@@ -1,4 +1,4 @@
-// `browser_session`, `browser_recording_part` and `browser_takeover` (crates/fleetd/src/hub/browser/calls.rs): the node
+// `browser_session`, `browser_recording_part` and `browser_takeover`: the node
 // reports a session of one of its agents and uploads its recording, as lead calls in that session's name, so the hub
 // files them under the session's project and task. The node never lets a process in the session send them itself.
 import { mkdirSync, openSync, closeSync, ftruncateSync, writeSync, fsyncSync } from "node:fs";

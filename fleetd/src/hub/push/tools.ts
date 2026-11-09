@@ -1,4 +1,4 @@
-// The push tools (crates/fleetd/src/hub/push/tools.rs): push_device_register, push_devices_list, push_device_remove
+// The push tools: push_device_register, push_devices_list, push_device_remove
 // and push_badge for a person's own phones (a human key with a person), and push_relay_set for a key with admin on
 // every machine.
 import type { PersonId } from "../../shared/contracts.ts";

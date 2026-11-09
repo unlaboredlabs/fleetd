@@ -1,4 +1,4 @@
-// `session_route` and `session_step` (crates/fleetd/src/hub/machine_roles/calls.rs): an agent's session tool call,
+// `session_route` and `session_step`: an agent's session tool call,
 // which its node hands to the hub. A `session_start` is placed; one placed on the agent's own machine goes back to its
 // node to answer (`here`), one placed elsewhere goes to the runner's node, as do the agent's later calls for that
 // session. The node never lets a process in the session send it itself.

@@ -1,4 +1,4 @@
-// Approvals' ports over the real hub (crates/fleetd/src/hub/usage/wire_approvals.rs): the node link's secret and
+// Approvals' ports over the real hub: the node link's secret and
 // gated-run commands, the hub's store, the lead's wake with a request's outcome, and the hooks other areas fill.
 import type { HumanRequest, McpServer, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

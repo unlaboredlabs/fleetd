@@ -1,5 +1,5 @@
-// A repo on a host fleetd can't read through an API (a bare ssh remote, a self-hosted Gitea with no token)
-// (crates/fleetd/src/hub/metrics/no_host.rs): its landed changes come from git alone, the default branch's first-parent
+// A repo on a host fleetd can't read through an API (a bare ssh remote, a self-hosted Gitea with no token):
+// its landed changes come from git alone, the default branch's first-parent
 // line as a node with it checked out reads it (`landed_log`). Each commit on that line is one landed change, routed by
 // what git keeps:
 //

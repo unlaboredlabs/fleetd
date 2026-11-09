@@ -1,4 +1,4 @@
-// The event log (crates/fleetd/src/hub/store/tests.rs, its event log tests).
+// The event log (its event log tests).
 import { expect, test } from "bun:test";
 import { EventLog, type NewEvent } from "../src/hub/store/events.ts";
 import { HubDb } from "../src/hub/store/db.ts";

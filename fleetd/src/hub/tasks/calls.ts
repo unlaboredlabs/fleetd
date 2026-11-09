@@ -1,4 +1,4 @@
-// The task lead calls (crates/fleetd/src/hub/tasks/wire.rs `Calls`, tools.rs `lead_call`): the lead's spawn_agent,
+// The task lead calls (tools.rs `lead_call`): the lead's spawn_agent,
 // agents, message_agent and stop_agent, and a task's own ask_lead, brief_read and wait_ci.
 import type { ProjectRef, Task, TaskState } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";

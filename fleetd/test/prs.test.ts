@@ -1,4 +1,4 @@
-// The PR views (crates/fleetd/src/hub/prs/tests.rs): GitHub's answers joined with the merge queue and the agents,
+// The PR views: GitHub's answers joined with the merge queue and the agents,
 // rolled up checks and reviews, a patch as numbered lines, GitHub read once per burst with a failed read remembered
 // rather than retried, and the four tools through the registry against a fake `gh`.
 import { afterAll, expect, test } from "bun:test";

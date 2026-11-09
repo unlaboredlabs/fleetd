@@ -1,5 +1,5 @@
 // navi_create, navi_list, navi_rename, the archive, sites, approvals and sign-ins tools, each under its project name
-// (D310) and its old navi_* name for one release (crates/fleetd/src/hub/navi/mod.rs and tools.rs). The asks come with
+// (D310) and its old navi_* name for one release (tools.rs). The asks come with
 // the bridge port.
 import type { ProjectRef, ProjectSummary } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

@@ -1,4 +1,4 @@
-// The script a new cloud machine runs once to become a fleetd machine (crates/fleetd/src/hub/cloud/setup.rs):
+// The script a new cloud machine runs once to become a fleetd machine:
 // `setup.sh` from the Rust tree, rendered here for one slot. hub/pool creates the VM with it as boat's `setupScript`,
 // and with the slot's pool enroll token as a 0600 file at TOKEN_FILE, under `/tmp`, which boat never snapshots.
 import template from "./setup.sh" with { type: "text" };

@@ -1,4 +1,4 @@
-// The app WebSocket at /app (crates/fleetd/src/hub/app_ws/mod.rs): `auth` with a key, then `snapshot` for the
+// The app WebSocket at /app: `auth` with a key, then `snapshot` for the
 // fleetd_status data, `events` to stream HubEvents after a cursor as they happen, `call` to run any MCP tool with the
 // connection's key through the same registry, grants and limits as /mcp, and `presence`, recorded and never
 // answered. The other client messages (`chat`, `live`, `browser_*`, `screen_thumbs`) are their areas', through `on`.

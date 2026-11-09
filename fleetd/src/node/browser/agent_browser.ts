@@ -1,4 +1,4 @@
-// What an agent's claude gets to drive its browser session (crates/fleetd/src/node/browser/agent_browser.rs): the
+// What an agent's claude gets to drive its browser session: the
 // node's agent-browser first on its PATH, pointed at the session's CDP proxy with a daemon and an action policy of its
 // own, and agent-browser's skill as a plugin. The broker hands these to the node core's launch of the agent's claude
 // (`node.area("launch")`, Rust's `SessionHooks::env` and `plugin_dirs`). The node installs the pinned release from npm

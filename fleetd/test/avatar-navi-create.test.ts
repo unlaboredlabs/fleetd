@@ -1,5 +1,4 @@
-// A project's picture (crates/fleetd/src/hub/projects/avatar.rs and its tests) and navi_create
-// (crates/fleetd/src/hub/navi/mod.rs `create`).
+// A project's picture (its tests) and navi_create.
 import { afterEach, expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

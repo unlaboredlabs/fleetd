@@ -1,4 +1,4 @@
-// Machines that sleep (crates/fleetd/src/node/power): while any session runs the node holds a sleep inhibitor, and
+// Machines that sleep: while any session runs the node holds a sleep inhibitor, and
 // drops it when none do. When the machine wakes anyway the node notices the jump in time asleep, re-links to the hub
 // at once, has the session service check its live sessions, and reports the sleep (`slept`).
 //

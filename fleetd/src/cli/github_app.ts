@@ -1,4 +1,4 @@
-// `fleetd github-app [create|test|remove]` (crates/fleetd/src/cli/github_app.rs): the hub's own GitHub App, from the
+// `fleetd github-app [create|test|remove]`: the hub's own GitHub App, from the
 // hub machine, on src/hub/github_app. It opens the hub home's database directly; the running hub reads the App's row
 // at its next GitHub call. `create` serves the manifest page on a loopback port, as the desktop app does, and trades
 // GitHub's code for the App's keys, which go straight into the hub's sealed row.

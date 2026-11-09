@@ -1,4 +1,4 @@
-// Holding a node's agents between steps ahead of its update's restart (crates/fleetd/src/node/hold.rs). The hold is a
+// Holding a node's agents between steps ahead of its update's restart. The hold is a
 // file, `<node home>/update/hold`, naming when it ends (epoch ms); `hold.update` and `hold.screens` beside it note
 // whose it is. Every session's PreToolUse hook waits while it lasts (`fleetd update-hold`), each waiting call marked
 // held (`update/held/<tool_use_id>`). A hold lasts HOLD_LEASE_SECS past the last ask, so one nobody renews lets go.

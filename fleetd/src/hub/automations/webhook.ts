@@ -1,5 +1,5 @@
-// `POST /hooks/<automationId>/<secret>`: a webhook run, with the request body as its context
-// (crates/fleetd/src/hub/automations/webhook.rs). An unknown automation (deleted, or its project removed) and a wrong
+// `POST /hooks/<automationId>/<secret>`: a webhook run, with the request body as its context.
+// An unknown automation (deleted, or its project removed) and a wrong
 // secret get the same 404, and neither is logged or recorded: the URL holds the secret, so nothing here writes the
 // path, the secret or the body anywhere but the run it starts.
 import { json, type Route } from "../http/route.ts";

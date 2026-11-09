@@ -1,4 +1,4 @@
-// An order's agents on GitHub (D187; crates/fleetd/src/hub/github_app/sessions.rs). On a repository the hub's App
+// An order's agents on GitHub (D187). On a repository the hub's App
 // reaches, an order's sessions get `GH_TOKEN`: its starter's own token (people.ts), so the PRs its agents open are that
 // person's, or, for work nobody started, the App's own installation token. It travels as one of the order's variables
 // (an `order:` sink) at each repo's checkout: sealed to the checkout machine's box key, masked in what the agents

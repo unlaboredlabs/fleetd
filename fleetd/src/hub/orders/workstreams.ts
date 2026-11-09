@@ -1,4 +1,4 @@
-// The orders' rows, read only (crates/fleetd/src/hub/leads/records.rs `workstream_get`, `workstreams_list` and what
+// The orders' rows, read only (`workstreams_list` and what
 // the ledger reads of them). The leads area writes `workstreams`.
 import type { Database } from "bun:sqlite";
 import type { ProjectRef, Workstream, WorkstreamId, WorkstreamState } from "../../shared/contracts.ts";

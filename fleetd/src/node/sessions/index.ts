@@ -1,4 +1,4 @@
-// The node's session service (crates/fleetd/src/node/sessions/mod.rs): it answers the hub's `session_call`s, starts
+// The node's session service: it answers the hub's `session_call`s, starts
 // each session's claude under a host of its own (`fleetd session-host`, ../runner/host.ts), applies the
 // host's events to `sessions.sqlite` (./store.ts), and streams what changed: the machine stream (projects and session
 // summaries, numbered by `seq` for replay) and the thread stream (messages, items, runs and live text) of the

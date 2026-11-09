@@ -1,4 +1,4 @@
-// A session's host (crates/fleetd/src/node/runner/host.rs `serve`, `main`): the small process that owns a session's
+// A session's host (`main`): the small process that owns a session's
 // claude, so the claude outlives the node. `fleetd session-host <dir> <session id> -- <program> <args…>` starts claude,
 // registers in its dir (`host.json`) and serves the session on its socket (`sock`) to whichever node connects; the
 // lines are ../host.ts's. A node restart re-adopts it and streams on from where the last one stopped.

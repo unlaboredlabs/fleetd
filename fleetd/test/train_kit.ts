@@ -1,5 +1,5 @@
-// The train over a fake `gh` that answers like GitHub would from a real bare git "origin" in a temp dir
-// (crates/fleetd/src/hub/train/tests.rs): it rebases a PR's branch, merges heads into a batch branch, serves diffs, and
+// The train over a fake `gh` that answers like GitHub would from a real bare git "origin" in a temp dir:
+// it rebases a PR's branch, merges heads into a batch branch, serves diffs, and
 // runs CI (red iff the head has a file FAIL). An author's clone pushes to it, and a fake host stands in for tasks,
 // workstreams, events and wakes. Never GitHub itself.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

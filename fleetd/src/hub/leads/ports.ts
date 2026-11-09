@@ -1,4 +1,4 @@
-// What the leads area reads from the rest of the hub (crates/fleetd/src/hub/leads/ports.rs, hooks.rs, wiring.rs): the
+// What the leads area reads from the rest of the hub (hooks.rs, wiring.rs): the
 // executor's launch and send, the node's one-lead mode, open requests and decisions, and the hooks of later areas
 // (tasks, usage, train, work). Launch and send stay Rust's `Unwired` until the leads start sets them on
 // `leadWiring(hub)` (wiring.ts); the reads are wired to the stores they read.

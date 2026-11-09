@@ -1,4 +1,4 @@
-// Each project's checklist (table `checklists`, crates/fleetd/src/hub/checklist/mod.rs): the lead's to-do list for the
+// Each project's checklist (table `checklists`): the lead's to-do list for the
 // human, one row per project with its items as JSON in order. The lead changes it with `checklist` (calls.ts), the app
 // reads it with `checklist_get`, a person takes items off with `checklist_remove` (tools.ts), and the lead's digest
 // shows what is still open.

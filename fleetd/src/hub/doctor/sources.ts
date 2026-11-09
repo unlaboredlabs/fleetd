@@ -1,4 +1,4 @@
-// What the doctor's checks read from the hub (crates/fleetd/src/hub/usage/wire.rs, "What the doctor's checks read
+// What the doctor's checks read from the hub ("What the doctor's checks read
 // from the hub"): each through its area's own exported reads. The few that live in memory in an area not ported yet
 // (the tasks sweep's recovery breakers and unowned sessions, the cloud pool's facts) answer "all clear" until that
 // area's owner sets its own: `doctor(hub).sources.recoveryPaused = …`.

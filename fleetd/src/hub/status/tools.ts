@@ -1,4 +1,4 @@
-// status_get: the projects' rows, or one project's row (crates/fleetd/src/hub/status/tools.rs).
+// status_get: the projects' rows, or one project's row.
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";

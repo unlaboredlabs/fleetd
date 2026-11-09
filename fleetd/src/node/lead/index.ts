@@ -1,4 +1,4 @@
-// Lead-side CLI calls (crates/fleetd/src/node/lead.rs): the `fleetd` CLI and an agent's MCP server write one
+// Lead-side CLI calls: the `fleetd` CLI and an agent's MCP server write one
 // `lead_call` line to `<node home>/node.sock` and read one `lead_result` line back. The node forwards each call over
 // whichever link is up under a node-chosen id, so two callers picking the same id cannot cross answers, and relays the
 // hub's answer under the caller's id. A call from a session leaves the machine with its secrets masked (../mask.ts).

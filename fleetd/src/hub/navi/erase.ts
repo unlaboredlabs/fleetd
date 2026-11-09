@@ -1,4 +1,4 @@
-// Deleting a Navi erases it (D287 navi.delete-erases; crates/fleetd/src/hub/navi/erase.rs): `project_remove` of a
+// Deleting a Navi erases it (D287 navi.delete-erases): `project_remove` of a
 // Navi forgets it on its node, which also deletes its sessions, their transcripts and the attachments in its folder,
 // then `erase` deletes everything of it the hub keeps: its chat and the events that carried it, its approvals and
 // purchases (`requests`), asks and decisions, its orders and what they hold, its memory and skills, its attachments

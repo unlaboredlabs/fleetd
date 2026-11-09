@@ -1,4 +1,4 @@
-// The lead-side calls this area answers (crates/fleetd/src/hub/leads/calls.rs): `brief create`, which opens a
+// The lead-side calls this area answers: `brief create`, which opens a
 // workstream when given none, and `close`. The caller is already attributed to a project; every call acts only there.
 import type { Brief } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

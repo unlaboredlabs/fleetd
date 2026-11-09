@@ -1,4 +1,4 @@
-// `wait_ci` (crates/fleetd/src/hub/tasks/ci_wait.rs): a task asks to be woken when a GitHub Actions run, or the checks
+// `wait_ci`: a task asks to be woken when a GitHub Actions run, or the checks
 // on a PR's head, finish. Each wait is a row in `ci_waits`; every POLL_EVERY_MS the hub reads GitHub for each, and one
 // that finished continues its task's thread with one line: the outcome and the failing jobs.
 //

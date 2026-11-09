@@ -1,4 +1,4 @@
-// The leads area's reads (crates/fleetd/src/hub/leads/lead.rs `get`, `lead_state`).
+// The leads area's reads (`lead_state`).
 import { expect, test } from "bun:test";
 import { leadProfile, leads } from "../src/hub/leads/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";

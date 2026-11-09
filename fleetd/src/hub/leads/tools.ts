@@ -1,4 +1,4 @@
-// lead_start, project_set and workstream_list (crates/fleetd/src/hub/leads/tools.rs).
+// lead_start, project_set and workstream_list.
 import { allows } from "../auth/index.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";

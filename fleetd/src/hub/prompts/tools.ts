@@ -1,4 +1,4 @@
-// prompt_get, prompt_set and session_prompt_get (crates/fleetd/src/hub/prompts/tools.rs), and the prompt events
+// prompt_get, prompt_set and session_prompt_get, and the prompt events
 // (prompts/mod.rs `start`, `changed`).
 import type { PromptScope, PromptSetInput, PromptSetOutput, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

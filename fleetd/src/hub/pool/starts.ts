@@ -1,4 +1,4 @@
-// Starts (crates/fleetd/src/hub/pool/starts.rs): every create and resume is a boat start, which boat limits per
+// Starts: every create and resume is a boat start, which boat limits per
 // rolling minute, hour and day. fleetd allows itself half of each included window, counts a start before its call,
 // pre-flights `/limits` before each one and never buys an extra start. What boat refuses sets a backoff, by its code,
 // with one plain line that says why.

@@ -1,5 +1,5 @@
 // Caches of what the hub has seen of each machine: machines, their projects and threads, and the machine stream's
-// cursors (crates/fleetd/src/hub/store/hub_store.rs). Reads return what was written; staleness is the reader's call.
+// cursors. Reads return what was written; staleness is the reader's call.
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
   Machine,

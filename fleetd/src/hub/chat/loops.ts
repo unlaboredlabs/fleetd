@@ -1,6 +1,6 @@
 // The chat's start: the flow's loop (chat::flow::run), its lead calls, each project's chat state in fleetd_status
 // (chat/tools.rs `extend_status`), the Navi bridge's `sendAsAgent`, the /app `chat` subscription and its `chat_delta`
-// frames (crates/fleetd/src/hub/app_ws/mod.rs `AppClientMessage::Chat`), and the `chat_state` area the push area reads.
+// frames, and the `chat_state` area the push area reads.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { allows } from "../auth/index.ts";
 import { forbidden } from "../api/grants.ts";

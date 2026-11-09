@@ -1,4 +1,4 @@
-// Batches (crates/fleetd/src/hub/train/batch.rs): two or more ready Changes into one base, each reviewed for its
+// Batches: two or more ready Changes into one base, each reviewed for its
 // current patch and green on its own head by its fast set and by the checks the batch's CI skips, up to `BATCH_MAX`
 // in queue order, merged together after one CI run. The train builds the batch on GitHub: its scratch branch at the
 // base, each member's head merged into it in order, and one PR for it. Green, the train posts `fleetd/train` on that

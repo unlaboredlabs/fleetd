@@ -1,4 +1,4 @@
-// A host's hold on its session's processes (crates/fleetd/src/node/runner/process.rs `sweep`, `reap`,
+// A host's hold on its session's processes (`reap`,
 // `adopt_orphans`, `record_left_in`): the sweeps that find everything a spawn started (its descendants, and on Linux
 // every process carrying the spawn's marker), the reaping of what they killed, and the subreaper that keeps a
 // session's orphans under the host, recorded beside its dir for the task's end (../host.ts `endLeft`).

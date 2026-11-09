@@ -1,4 +1,4 @@
-// The work matcher (crates/fleetd/src/hub/work/matcher.rs): compares a new intent with the work already in flight and
+// The work matcher: compares a new intent with the work already in flight and
 // says which of it the intent may repeat, how sure it is, and why ("3 shared words: dark, mode, toggle; same file
 // app/theme.ts"). Pure and deterministic. It knows nothing of tasks, claims or the store: callers turn their rows into
 // `Candidate`s, keep only the ones in the scope's repo and base, and decide what each strength does.

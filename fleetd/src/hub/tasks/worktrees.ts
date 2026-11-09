@@ -1,4 +1,4 @@
-// The nightly worktree sweep (crates/fleetd/src/hub/tasks/worktrees.rs): hub work, no model turn. A task's worktree
+// The nightly worktree sweep: hub work, no model turn. A task's worktree
 // goes when it ends (a review's) or when its PR merges (a writer's); a reader's, a cancelled writer's, one whose PR
 // closed unmerged, and a removal that failed stay behind.
 // Around 04:00 in `policy.tz` (else the hub's zone), and once soon after the hub starts, the sweep has the node remove

@@ -1,4 +1,4 @@
-// People's own screens (D239; crates/fleetd/src/hub/machine_roles/screens.rs): `screen_open` and `screen_end`, and the
+// People's own screens (D239): `screen_open` and `screen_end`, and the
 // line of people waiting for a full machine. A person's screen is a session the hub places itself, on the machine they
 // picked, hosted there as an agent's screen on another machine is: the hub seals the start to the runner's box key
 // (no secrets, a relay key nobody dials), the runner reports it in the project's name under a thread of its own, and

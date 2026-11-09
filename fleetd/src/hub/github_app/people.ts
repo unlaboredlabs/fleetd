@@ -1,4 +1,4 @@
-// Each person's own GitHub account through the hub's App (D187; crates/fleetd/src/hub/github_app/people.rs): the app
+// Each person's own GitHub account through the hub's App (D187): the app
 // opens GitHub's sign-in with PKCE and a loopback redirect, and `connect` trades the code, with the App's client
 // secret, for a user-to-server token (eight hours) and its refresh token (six months, renewed with each refresh). Both
 // are sealed to the hub's box key in `github_accounts`; `userToken` refreshes the pair before the access token ends.

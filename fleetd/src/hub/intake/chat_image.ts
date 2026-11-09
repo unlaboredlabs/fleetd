@@ -1,5 +1,5 @@
 // `chat_file`: a lead or task puts an image it made (a screenshot of a UI change), or any file the chat takes (a PDF, a
-// CSV, a document), in its project's chat, and is told which block shows it (crates/fleetd/src/hub/intake/chat_image.rs).
+// CSV, a document), in its project's chat, and is told which block shows it.
 // `chat_image`, its images-only forerunner, comes only from older nodes now. The hub asks the caller's own node for the
 // file, which reads it only from that session's working directory, as the node started it, and only a png, jpeg, webp
 // or gif by its bytes, or for `chat_file` a file whose bytes fit the type its name says. It is stored as an attachment

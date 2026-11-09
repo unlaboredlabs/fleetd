@@ -1,4 +1,4 @@
-// The one writer (crates/fleetd/src/hub/time/ingest.rs): node batches and hub spans, each committed in one transaction
+// The one writer: node batches and hub spans, each committed in one transaction
 // with labels, roll-ups and the node's cursor; a node batch is acked only after its commit. Node spans move onto the
 // hub clock and are joined to their task, order or lead here.
 import type { Database } from "bun:sqlite";
@@ -9,7 +9,7 @@ import { cursor, type Ids, linkParents, type NewSpan, setCursor, type Share, wri
 /** A wake explains a lead run that started at most this long after it (the send, then claude picking it up). */
 const WAKE_SLACK_MS = 120_000;
 
-/** A node span as the `spans` frame carries it (crates/fleetd-contracts/src/time.rs `SpanWire`). */
+/** A node span as the `spans` frame carries it. */
 export type SpanWire = {
   key: string;
   kind: SpanKind;

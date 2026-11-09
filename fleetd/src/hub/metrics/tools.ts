@@ -1,4 +1,4 @@
-// `metrics_get` (crates/fleetd/src/hub/metrics/tools.rs). A project's view covers its repos (the trains it owns, its
+// `metrics_get`. A project's view covers its repos (the trains it owns, its
 // Changes' repos and the merges it owns), with every landed change on them; the fleet's covers every repo a caller can
 // read on some machine, each counted once. The two big reads (landed changes and touches) run on the read worker,
 // each answering in one JSON text.

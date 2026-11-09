@@ -1,4 +1,4 @@
-// The tasks core (crates/fleetd/src/hub/tasks/mod.rs, recovery, breaker, ci_wait and their tests): spawn, start,
+// The tasks core (recovery, breaker, ci_wait and their tests): spawn, start,
 // queue, end, recovery, PR lookups, message, cancel, caps and CI waits, against fake ports.
 import { expect, test } from "bun:test";
 import { sendRunId } from "../src/hub/executor/sessions.ts";

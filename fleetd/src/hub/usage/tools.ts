@@ -1,4 +1,4 @@
-// usage_status and usage_resume (crates/fleetd/src/hub/usage/tools.rs).
+// usage_status and usage_resume.
 import type { UsageStatus } from "../../shared/contracts.ts";
 import { readable, requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";

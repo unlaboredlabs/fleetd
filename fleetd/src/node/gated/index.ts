@@ -1,4 +1,4 @@
-// Approved commands that outlive their link (crates/fleetd/src/node/gated.rs). A `gated_run` with a `requestId` runs
+// Approved commands that outlive their link. A `gated_run` with a `requestId` runs
 // to its end whatever happens to the link it came on, and its result is kept under its request in
 // `<node home>/gated/<Q>.json` for the hub's `gated_resume`. A record still without a result after the node restarted
 // says the command was cut off.

@@ -1,4 +1,4 @@
-// `fleetd agent-device <args>` (crates/fleetd/src/cli/agent_device.rs): what the forwarding `agent-device` runs while
+// `fleetd agent-device <args>`: what the forwarding `agent-device` runs while
 // an agent's iOS screen is on another machine. The command goes to the agent's node, which sends it on through the
 // hub; its output and exit code come back as agent-device's own would.
 import { sleep } from "./common.ts";

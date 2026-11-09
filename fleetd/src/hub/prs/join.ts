@@ -1,4 +1,4 @@
-// The pure part of the PR views (crates/fleetd/src/hub/prs/join.rs): GitHub's answers and the hub's records joined
+// The pure part of the PR views: GitHub's answers and the hub's records joined
 // into rows, checks and reviews rolled up, and a file's patch split into numbered lines.
 import type {
   AgentRole,

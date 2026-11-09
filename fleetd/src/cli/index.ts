@@ -1,4 +1,4 @@
-// The `fleetd` command line (crates/fleetd/src/cli/mod.rs): one binary, the same subcommands, arguments, output and
+// The `fleetd` command line: one binary, the same subcommands, arguments, output and
 // exit codes as the Rust one. Exit codes: 0 ok, 1 failed, 2 usage, 3 refused, 4 hub or node unreachable.
 // Every command is a dynamic import, so a short one (`fleetd version`) loads only what it uses: cold start matters.
 import { initFromArgv } from "../shared/home.ts";

@@ -1,5 +1,4 @@
-// systemd user units and launchd agents for the hub and the node, and the shell commands that drive them
-// (crates/fleetd/src/cli/setup/units.rs).
+// systemd user units and launchd agents for the hub and the node, and the shell commands that drive them.
 import { spawnSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -177,7 +176,7 @@ function systemctl(args: string[]): string | undefined {
   return r.status === 0 ? undefined : `systemctl --user ${args.join(" ")} exited with ${r.signal ? `signal: ${r.signal}` : `exit status: ${r.status}`}`;
 }
 
-/** At a hub's or node's start under its systemd user unit (crates/fleetd/src/update/service.rs `refresh_own_unit`):
+/** At a hub's or node's start under its systemd user unit:
  * the unit rewritten from today's template when an older fleetd wrote it (an update swaps only the binary, so the
  * settings added since never reached it), and enabled when it isn't, so the service starts at the next boot. Run by
  * the new binary after an update's restart, so the update applies it; a rewritten unit takes effect at the next

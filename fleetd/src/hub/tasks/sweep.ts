@@ -1,4 +1,4 @@
-// What the hub sweep does for tasks, and the machine breaker's lines (crates/fleetd/src/hub/tasks/sweep.rs). The
+// What the hub sweep does for tasks, and the machine breaker's lines. The
 // sweep itself and the breaker's wiring are `Tasks` methods (index.ts); these are their pure parts.
 //
 // Orphans (G2): a task the hub thinks runs, on a machine whose node is linked, whose thread has had no event for 2 min

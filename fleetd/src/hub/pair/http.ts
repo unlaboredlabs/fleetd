@@ -1,4 +1,4 @@
-// POST /pair and POST /pair/mac (crates/fleetd/src/hub/pair/mod.rs `handle`, mac.rs `handle`). No auth header: the
+// POST /pair and POST /pair/mac (mac.rs `handle`). No auth header: the
 // code is the credential, so failed attempts are rate limited per remote address.
 import { isIP } from "node:net";
 import { VERSION } from "../../shared/version.ts";

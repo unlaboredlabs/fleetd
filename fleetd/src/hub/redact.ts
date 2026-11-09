@@ -1,4 +1,4 @@
-// Secrets out of text the app shows from places the hub doesn't control (crates/fleetd/src/hub/redact.rs): credentials
+// Secrets out of text the app shows from places the hub doesn't control: credentials
 // caught by their shape, so a token an agent printed or a diff added is never shown.
 export const SECRET = "[secret]";
 

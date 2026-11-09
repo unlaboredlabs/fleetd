@@ -1,4 +1,4 @@
-// The boat.dev REST client (crates/fleetd/src/hub/pool/boat.rs): the few calls the pool makes, straight to
+// The boat.dev REST client: the few calls the pool makes, straight to
 // `https://boat.dev/api/v1`, with a typed error for each code boat documents. A create carries an Idempotency-Key and
 // is sent as the exact bytes the ledger sealed, so a retry is byte-identical. Every ttl goes out as a `Ttl`, which
 // only the lease's one clamping function makes: no call here can send `null`, boat's "never stop".

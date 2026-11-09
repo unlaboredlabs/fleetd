@@ -1,4 +1,4 @@
-// The node's own X11 connection to a session's display (crates/fleetd/src/node/desktop/x11.rs), over its socket with
+// The node's own X11 connection to a session's display, over its socket with
 // the display's cookie: the screen as JPEG (GetImage, with DAMAGE saying when it changed), and the agent's and a
 // person's input through XTEST, as xdotool sends it. Nothing else reaches the display but the session's own apps.
 //

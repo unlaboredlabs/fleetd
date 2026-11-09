@@ -1,4 +1,4 @@
-// The readiness gate and the text reviewers and authors get (crates/fleetd/src/hub/reviews/rules.rs). Pure; the gate
+// The readiness gate and the text reviewers and authors get. Pure; the gate
 // feeds them the Change and what its review tasks recorded.
 import type { Change } from "../../shared/contracts.ts";
 import type { PromptSetLike } from "../train/prompts.ts";

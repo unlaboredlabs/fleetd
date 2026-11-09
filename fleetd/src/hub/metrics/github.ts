@@ -1,4 +1,4 @@
-// GitHub through `gh api` on the hub's machine, under the hub's login (crates/fleetd/src/hub/metrics/source/github.rs):
+// GitHub through `gh api` on the hub's machine, under the hub's login:
 // one GraphQL query per page of 100 merged PRs (author and merger account types, lines, the batch line), of 100
 // default-branch commits (each with the merged PRs that brought it in, so a direct push needs no call of its own) and of
 // 50 recently updated PRs' reviews and conversation comments. An inline comment on the diff belongs to a review, so it

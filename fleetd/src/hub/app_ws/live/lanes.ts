@@ -1,4 +1,4 @@
-// What a live subscription's lanes are made of (crates/fleetd/src/hub/app_ws/live.rs `focus_lanes`, `board_lanes`,
+// What a live subscription's lanes are made of (`board_lanes`,
 // `agent_lanes`, `machines`, `slots`, with orders' `live_lane`, phase's lane statuses and agents' task reads). Tasks come
 // through hub/tasks' records, leads (their state and parked) through hub/leads.
 import type {

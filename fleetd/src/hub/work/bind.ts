@@ -1,4 +1,4 @@
-// Which repo and base a project's work lands on (crates/fleetd/src/hub/work/bind.rs), read from its root on its
+// Which repo and base a project's work lands on, read from its root on its
 // machine with plain git, so it works on any host: the repo key from `remote.origin.url` as configured, the base from
 // `origin/HEAD` (what the node branches worktrees from). Projects are bound at hub start and whenever their node
 // connects (`run`); the landing scanner refreshes it every scan; callers that find a project unbound read it here. A

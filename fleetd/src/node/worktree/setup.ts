@@ -1,4 +1,4 @@
-// A project's setup commands (crates/fleetd/src/node/worktree_setup.rs): run in order in a new worktree before its
+// A project's setup commands: run in order in a new worktree before its
 // agent starts, each with `sh -c`, the project's (and order's) variables and the project's time limit, until one
 // fails. A worktree set up before is not set up again while its commands and the contents of the files setup names as
 // its inputs are unchanged: the digest is kept in the worktree's own git directory, which goes when the worktree does.

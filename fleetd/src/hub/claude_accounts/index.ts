@@ -1,4 +1,4 @@
-// Which Claude account each agent runs on (crates/fleetd/src/hub/claude_accounts/mod.rs, teams step 8, D200). The
+// Which Claude account each agent runs on (teams step 8, D200). The
 // hub keeps the hub's API configuration, each person's subscription and choice, and the hub-wide switch, with each
 // node's fingerprint and never a key or token (`claude_accounts`, `claude_choices`, `claude_settings`).
 //

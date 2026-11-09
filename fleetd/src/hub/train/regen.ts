@@ -1,4 +1,4 @@
-// Regenerating instead of bouncing (crates/fleetd/src/hub/train/regen.rs). A repo that commits
+// Regenerating instead of bouncing. A repo that commits
 // `.fleetd/regenerate.json` names its generated files, the commands that make them and its migrations directory. A PR
 // that conflicts with its base, or adds a migration that sorts before the base's newest, is then rebased by the train
 // onto `origin/<base>` in a scratch worktree of the repo's checkout, on its node, with a timeout: conflicts in generated
@@ -108,8 +108,8 @@ generated() {
   printf '%s' "$paths" | {
     while IFS= read -r p; do
       case "$p" in
-        */) case "$1" in "$p"*) exit 0 ;; esac ;;
-        *) [ "$1" = "$p" ] && exit 0 ;;
+        */) case "$1" in "$p"*) exit 0 ;; esac ;;)
+        * [ "$1" = "$p" ] && exit 0 ;;
       esac
     done
     exit 1

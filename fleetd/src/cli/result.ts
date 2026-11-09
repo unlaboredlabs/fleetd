@@ -1,4 +1,4 @@
-// What a short-lived command prints and exits with (crates/fleetd/src/cli/mod.rs `CliResult`).
+// What a short-lived command prints and exits with.
 export type CliResult = { code: number; stdout: string; stderr: string };
 
 export const ok = (stdout: string): CliResult => ({ code: 0, stdout, stderr: "" });

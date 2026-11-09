@@ -1,4 +1,4 @@
-// The picture's render (crates/fleetd/src/hub/projects/avatar.rs `render`), on avatar-worker.ts's thread: decoding
+// The picture's render, on avatar-worker.ts's thread: decoding
 // and cropping a photo takes a second or more, which the hub's own thread can't spare (Rust runs it in spawn_blocking).
 import { deflateSync, inflateSync } from "node:zlib";
 import type { AvatarCrop } from "../../shared/contracts.ts";

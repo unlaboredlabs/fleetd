@@ -1,4 +1,4 @@
-// A cloud machine's catch-up (crates/fleetd/src/hub/cloud/catch_up.rs): at each of its hellos (machine.online,
+// A cloud machine's catch-up: at each of its hellos (machine.online,
 // machine.linked, or machine.degraded: a new one's claude isn't logged in until this brings the hub's Claude
 // configuration), before it counts as ready for work, the hub delivers it, in order: its build (a node behind the hub's updates and restarts; one on it
 // gets the Claude Code it was tested with), what it must forget (cloud_outbox), the hub's Claude configuration

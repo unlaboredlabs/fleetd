@@ -1,4 +1,4 @@
-// The little of an MCP Streamable HTTP client the CLI needs (crates/fleetd/src/cli/mcp_client.rs): initialize once,
+// The little of an MCP Streamable HTTP client the CLI needs: initialize once,
 // then call tools. Answers may come as JSON or as an SSE stream; both are read to the matching response.
 import { VERSION } from "../shared/version.ts";
 

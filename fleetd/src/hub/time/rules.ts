@@ -1,4 +1,4 @@
-// The insight rules (crates/fleetd/src/hub/time/rules.rs): deterministic aggregates over a period's spans, never a
+// The insight rules: deterministic aggregates over a period's spans, never a
 // model. Thresholds are the constants below, and every finding carries the numbers it was built from.
 import type { FiredIn, Insight, InsightNumber, InsightRule } from "../../shared/contracts.ts";
 import { dur, type Row, type RuleInput } from "./model.ts";

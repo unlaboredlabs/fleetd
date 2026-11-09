@@ -1,4 +1,4 @@
-// The lead's `skill_install`, for its own project (crates/fleetd/src/hub/skills/calls.rs), and its `skill_save`
+// The lead's `skill_install`, for its own project, and its `skill_save`
 // (saves.rs, W238): it writes one of its project's own skills, new or changed, with no approval, kept as a new version
 // with its one line on why. Each posts one quiet chat line. A task makes neither (tasks' policy).
 import type { ProjectRef } from "../../shared/contracts.ts";

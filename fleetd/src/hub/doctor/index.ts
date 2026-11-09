@@ -1,4 +1,4 @@
-// The doctor (M11): every setup check, live (crates/fleetd/src/hub/doctor/service.rs). Runs on demand (doctor_list
+// The doctor (M11): every setup check, live. Runs on demand (doctor_list
 // with rerun) and each minute from its loop: every check when the last full run is 15 min old, else those of the
 // machines whose status moved since. Emits one doctor.changed per machine (and one for the hub) whose checks changed
 // status since the last run. Every fix is a command for a person to run; doctor_fix answers with it.

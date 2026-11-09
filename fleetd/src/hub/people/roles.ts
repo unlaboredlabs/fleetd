@@ -1,4 +1,4 @@
-// A person's hub role and what it caps (crates/fleetd/src/hub/people/mod.rs `role_of`, `role_cap`, `capped`,
+// A person's hub role and what it caps (`role_cap`, `capped`,
 // `clean_name`).
 import type { Grant, HubRole, Role } from "../../shared/contracts.ts";
 

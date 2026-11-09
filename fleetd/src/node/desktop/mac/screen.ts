@@ -1,4 +1,4 @@
-// The Mac's own screen, read and driven by the node (crates/fleetd/src/node/desktop/mac/capture.rs, input.rs), under its
+// The Mac's own screen, read and driven by the node (input.rs), under its
 // own Screen Recording and Accessibility grants. Frames come from ScreenCaptureKit at the display's points
 // (capture.ts); input goes as CGEvents through bun:ffi. Every CoreGraphics call it makes takes and returns plain values:
 // a CGPoint argument is passed as its two doubles, which both the arm64 and the x86_64 calling conventions place where

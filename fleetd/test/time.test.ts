@@ -1,4 +1,4 @@
-// The time area (crates/fleetd/src/hub/time/tests.rs, ingest.rs, store.rs, project.rs and src/tiles.rs tests).
+// The time area (ingest.rs, store.rs, project.rs and src/tiles.rs tests).
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

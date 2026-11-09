@@ -1,5 +1,5 @@
 // The node's browser lead calls checked against the contract before any handler runs, as the Rust hub decodes them
-// (crates/fleetd-contracts/src/browser.rs `BrowserSessionCall`, `BrowserRecordingPartCall`, `BrowserTakeoverCall`):
+// (`BrowserRecordingPartCall`, `BrowserTakeoverCall`):
 // a session id is `^B[0-9a-f]{32}$` (it names a folder under `<home>/browser`), a file one of the recording's own,
 // and each enum one of its values. A call that doesn't decode is `invalid`, and nothing of it reaches the disk.
 import { ToolError } from "../../shared/errors.ts";

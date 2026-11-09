@@ -1,4 +1,4 @@
-// The lead chat on the wire (crates/fleetd-contracts/src/chat.rs): chat_history pages, the snapshot's per-project
+// The lead chat on the wire: chat_history pages, the snapshot's per-project
 // chat state, the inline secret and command items, the live strip under the lead's message, and status_get
 // rows. What the messages say lives in chatText.ts.
 import type { Fixture } from "./fixture.ts";

@@ -1,4 +1,4 @@
-// The time area's start (crates/fleetd/src/hub/time/mod.rs `Time::start`, and its wiring in hub/serve): the
+// The time area's start (and its wiring in hub/serve): the
 // event-log projector, the hourly prune, and the node link's `spans` and `hb` frames.
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";

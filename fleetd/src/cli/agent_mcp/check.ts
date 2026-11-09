@@ -33,7 +33,7 @@ function schemaVariants(schema: Schema): string[] | undefined {
 
 const SINGLE_LINE = "^[^\\r\\n]*$";
 
-/** Brands whose Rust check is more than their schema's pattern, by the pattern (crates/fleetd-contracts). */
+/** Brands whose Rust check is more than their schema's pattern, by the pattern. */
 const BRAND_CHECKS: Record<string, (value: string) => boolean> = {
   // ArtifactName, SkillName: at most 64 bytes.
   "^[a-z0-9]+(-[a-z0-9]+)*$": (s) => Buffer.byteLength(s) <= 64,
@@ -45,7 +45,7 @@ const BRAND_CHECKS: Record<string, (value: string) => boolean> = {
   "^/": (s) => s.length <= 1000,
 };
 
-/** Brands with a check and no pattern in their schema, by the words they refuse with (crates/fleetd-contracts). */
+/** Brands with a check and no pattern in their schema, by the words they refuse with. */
 const UNPATTERNED_CHECKS: [string, (value: string) => boolean][] = [
   // prim.rs is_http_url: PrUrl.
   ["expected an absolute http:// or https:// URL,", (s) => /^https?:$/.test(URL.parse(s)?.protocol ?? "")],

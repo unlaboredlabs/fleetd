@@ -1,4 +1,4 @@
-// The Rust hub's migration runner (crates/fleetd/src/hub/store/migrations.rs), step for step, over the same files: a
+// The Rust hub's migration runner, step for step, over the same files: a
 // hub records each migration it ran by name, with the SHA-256 of its file, in `migrations_applied`, and runs every
 // one not there. `user_version` still counts them, for an older fleetd opening the file.
 import type { Database } from "bun:sqlite";

@@ -1,4 +1,4 @@
-// The in-memory shapes the pure parts of the time area read (crates/fleetd/src/hub/time/model.rs): stored spans as
+// The in-memory shapes the pure parts of the time area read: stored spans as
 // rows, and what a critical path walk needs about an order.
 import type { Category, SpanExtra, SpanKind, SpanStatus } from "../../shared/contracts.ts";
 import { categoryOf } from "./kinds.ts";

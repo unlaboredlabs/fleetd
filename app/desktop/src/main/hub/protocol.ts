@@ -1,4 +1,4 @@
-// The /app WebSocket protocol as main speaks it (crates/fleetd-contracts/src/app.rs). Server frames are checked at
+// The /app WebSocket protocol as main speaks it. Server frames are checked at
 // the fields the client relies on; payloads go on to the renderer as they came.
 import { z } from "zod";
 import type { AppServerMessage, BrowserInput } from "../../shared/contracts";

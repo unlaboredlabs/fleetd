@@ -1,4 +1,4 @@
-// The executor's followed sessions (crates/fleetd/src/hub/executor/mod.rs `view`, `follow_thread`, `fill_outputs`,
+// The executor's followed sessions (`follow_thread`, `fill_outputs`,
 // `tail`, `work`, `messages`, `reads`, `actions`, `window`, `follow`, `release`, `progress`): a thread read follows its
 // session on its node (`follow`), keeps the node's snapshot plus the live events after it, and releases it once
 // nobody has read it for a minute (a pinned follow stays until released).

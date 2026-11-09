@@ -1,4 +1,4 @@
-// Session hosts against a real process (crates/fleetd/src/node/runner/host/tests.rs): a fake claude that says
+// Session hosts against a real process: a fake claude that says
 // `system/init` once per line it is asked for, so each event is told apart by its model (`m1`, `m2`, …). The host runs
 // in this process, as the node's restart is what's tested: a node is a connection, and its restart a detach, a crash or
 // a drop, then a connection again. The last test has a host the Rust build started adopted by this node's link.

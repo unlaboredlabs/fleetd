@@ -1,4 +1,4 @@
-// MCP tools `tasks_list`, `task_get` and `cap_set` (crates/fleetd/src/hub/tasks/tools.rs); cap_set's change is the slot
+// MCP tools `tasks_list`, `task_get` and `cap_set`; cap_set's change is the slot
 // board's (`setCaps` in src/hub/slots/cap.ts). The task lead calls are calls.ts.
 import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";

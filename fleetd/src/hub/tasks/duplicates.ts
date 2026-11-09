@@ -1,4 +1,4 @@
-// The duplicate check at a writer's spawn (crates/fleetd/src/hub/tasks/duplicates.rs): its title, prompt, item, PR and
+// The duplicate check at a writer's spawn: its title, prompt, item, PR and
 // paths against the work in flight on its project's repo and base (`work(hub).checkObserved`), whichever project,
 // agent or person's session holds it. The intent itself is the work area's (`work(hub).matcher.intent`).
 //

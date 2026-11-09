@@ -1,4 +1,4 @@
-// The usage layer's state as a pure fold over the event log (crates/fleetd/src/hub/usage/state.rs): parked threads,
+// The usage layer's state as a pure fold over the event log: parked threads,
 // recent limit hits per login and the breaker. The service (service.ts) feeds it events and acts on what it returns.
 import type { ClaudeAccount, HubEvent } from "../../shared/contracts.ts";
 import type { LoginLimit } from "../../shared/node_link.ts";

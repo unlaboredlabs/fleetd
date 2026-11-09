@@ -1,4 +1,4 @@
-// The agents' Mac on a node (crates/fleetd/src/node/mac_tool/mod.rs): on the agents' Mac itself (node.json
+// The agents' Mac on a node: on the agents' Mac itself (node.json
 // `agentsMac`), the hub's `mac_call`s go to the host and their answers back as `mac_result`; on every other node, an
 // agent's `fleetd mac` (the local call `mac`) goes to the client, from the agent's worktree.
 import { join } from "node:path";

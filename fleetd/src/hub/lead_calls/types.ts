@@ -1,5 +1,5 @@
-// The lead-call frames (crates/fleetd-contracts/src/lead_calls.rs), which the contracts don't render to TypeScript:
-// the node's `lead_call` and the hub's `lead_result`, and who a call comes from (crates/fleetd/src/hub/link/lead_calls.rs).
+// The lead-call frames, which the contracts don't render to TypeScript:
+// the node's `lead_call` and the hub's `lead_result`, and who a call comes from.
 import type { LeadCallOp } from "../../shared/wire_tags.ts";
 import type { ProjectRef, ThreadId } from "../../shared/contracts.ts";
 import type { ToolError } from "../../shared/errors.ts";

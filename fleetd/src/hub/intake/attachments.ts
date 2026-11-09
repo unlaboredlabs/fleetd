@@ -1,4 +1,4 @@
-// Files a person attaches to an order or a note (crates/fleetd/src/hub/intake/attachments.rs). `attachment_put` stores
+// Files a person attaches to an order or a note. `attachment_put` stores
 // the bytes under `<home>/attachments/<sha256>` with a row; placing the order (or sending the note) writes them into the
 // project's `.fleetd/attachments/<W>/` on its machine and lists them in the lead's wake, an Office file with its text
 // beside it (office.ts). Rows never used are deleted after 24 h. A file too large for one call comes in pieces first

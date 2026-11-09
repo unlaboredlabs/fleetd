@@ -1,4 +1,4 @@
-// Agent messages (crates/fleetd/src/hub/steer/dm.rs): one agent's words to one to five others of its project
+// Agent messages: one agent's words to one to five others of its project
 // (`agent_message`). Each recipient's delivery is a steer by the sender, with its receipts; the message and where it
 // stands for each recipient are kept here whole, for the person to read and audit (`agent_messages`), and every change
 // is an `agent.messaged` or `agent.message_updated` event on the project.

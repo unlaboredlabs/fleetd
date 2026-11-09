@@ -1,4 +1,4 @@
-// An agent's session tools, routed through the hub (crates/fleetd/src/node/session_route.rs, machine roles W46). A
+// An agent's session tools, routed through the hub (machine roles W46). A
 // call for a session this node's broker has live goes straight to it. Every other call, `session_start` first, goes to
 // the hub (`session_route`), which places the session: back here (the broker answers), or on another machine, whose
 // answer comes back. A session placed elsewhere is driven through the hub's relay: this node's proxy pipes the agent's

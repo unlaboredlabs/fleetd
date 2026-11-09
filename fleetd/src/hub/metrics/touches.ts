@@ -1,5 +1,5 @@
-// The person's touches on fleetd's own surfaces, folded out of the event log by the projector
-// (crates/fleetd/src/hub/metrics/touches.rs): their chat messages, inline answers, steers, decisions, orders submitted
+// The person's touches on fleetd's own surfaces, folded out of the event log by the projector:
+// their chat messages, inline answers, steers, decisions, orders submitted
 // directly, merges by hand (keyed on the merger's login) and the minutes the app was in use.
 import type { ChatMessage, HubEvent, Workstream } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";

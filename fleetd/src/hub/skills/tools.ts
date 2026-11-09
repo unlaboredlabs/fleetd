@@ -1,5 +1,5 @@
-// skills_list, skill_get, skill_set, skill_delete, skill_install, skill_update, skill_revert and skill_off
-// (crates/fleetd/src/hub/skills/tools.rs). Writes are a person's (human keys), each a new version of theirs; a lead
+// skills_list, skill_get, skill_set, skill_delete, skill_install, skill_update, skill_revert and skill_off.
+// Writes are a person's (human keys), each a new version of theirs; a lead
 // installs with its own `skill_install`, a lead saves with `skill_save` (`calls`). The repo's skills are read from
 // the project's node and never written here.
 import type { ProjectRef, Role, SkillOrigin, SkillScope, SkillSummary } from "../../shared/contracts.ts";

@@ -1,4 +1,4 @@
-// `node_action` frames from the hub (crates/fleetd/src/node/actions.rs): the doctor's probe of the commit identity,
+// `node_action` frames from the hub: the doctor's probe of the commit identity,
 // the hold ahead of an update, Claude Code's install and its login from the app. Each always answers, in plain words.
 // Screen settings are the screens' areas' (node/browser and the rest) and answer as not done until they take them.
 import { exec, headUtf16, type Env } from "../util.ts";

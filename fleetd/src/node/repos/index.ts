@@ -1,4 +1,4 @@
-// Adding a project, the machine's half (crates/fleetd/src/node/repos.rs, cli/setup/detect.rs): find checkouts, look
+// Adding a project, the machine's half (cli/setup/detect.rs): find checkouts, look
 // at one. Clones and `gh repo list` are ../actions/clone.ts's.
 import { type Dirent, existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";

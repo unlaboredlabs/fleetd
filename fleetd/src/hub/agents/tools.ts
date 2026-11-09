@@ -1,4 +1,4 @@
-// agents_list and agent_work (crates/fleetd/src/hub/agents/tools.rs). Both read-only.
+// agents_list and agent_work. Both read-only.
 import type { WorkStep } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { redact } from "../../shared/redact.ts";

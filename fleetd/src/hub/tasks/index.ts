@@ -1,4 +1,4 @@
-// The tasks area (crates/fleetd/src/hub/tasks/mod.rs, sweep.rs, cap.rs): a lead's agents, from spawn to their end.
+// The tasks area (sweep.rs, cap.rs): a lead's agents, from spawn to their end.
 // Every state change goes through one lock, so a release, a completion and a lead call never interleave. A start lets
 // it go while the node launches or continues its task (`go`), and its task is `starting` until that is recorded.
 //

@@ -1,4 +1,4 @@
-// Who is calling the node's socket (crates/fleetd/src/node/runner/process.rs `peer_session`): the kernel's word for
+// Who is calling the node's socket: the kernel's word for
 // the caller's pid (SO_PEERCRED on Linux, LOCAL_PEERPID on macOS, through bun:ffi on the socket's fd), then its
 // ancestry and environment. Never what the caller claims.
 import { dlopen, FFIType, ptr } from "bun:ffi";

@@ -1,4 +1,4 @@
-// The relay for sessions hosted on another machine than their agent's (crates/fleetd/src/hub/machine_roles/relay.rs):
+// The relay for sessions hosted on another machine than their agent's:
 // what a session streams (a browser's CDP) between the agent's node and the runner's, through the hub, one websocket
 // channel per connection the agent's driver makes.
 //

@@ -1,4 +1,4 @@
-// The pure side of adding a project (crates/fleetd/src/hub/projects/inspect.rs and mod.rs tests, fleetd-contracts
+// The pure side of adding a project (mod.rs tests, fleetd-contracts
 // projects.rs `github_repo`): GitHub's answers into an inspect, the lead's line, the best worker, events that fit.
 import { expect, test } from "bun:test";
 import { failInterrupted, progressDue } from "../src/hub/projects/add.ts";

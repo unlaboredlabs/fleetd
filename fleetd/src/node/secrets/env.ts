@@ -1,4 +1,4 @@
-// A project's variables (crates/fleetd/src/node/project_env.rs, `<node home>/project-env/<project>.json`) and an
+// A project's variables (`<node home>/project-env/<project>.json`) and an
 // order's (order_env.rs, `<node home>/order-env/<project>/<order>.json` and its `.sh`), added to every claude the node
 // starts for them. Written whole and renamed, 0600 in 0700 directories; errors name a variable, never a value.
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";

@@ -1,4 +1,4 @@
-// What the train and the review gate take from other hub areas (crates/fleetd/src/hub/train/host.rs): tasks,
+// What the train and the review gate take from other hub areas: tasks,
 // workstreams, the event log and wakes. One port, so the logic tests run on a fake and the hub provides it from its
 // services (`HubHost`, hub_host.ts).
 import type { ProjectRef } from "../../shared/contracts.ts";

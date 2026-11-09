@@ -1,4 +1,4 @@
-// The person's minutes from their touches, pure (crates/fleetd/src/hub/metrics/human.rs). Each touch is credited the
+// The person's minutes from their touches, pure. Each touch is credited the
 // least time its act could take, as the interval before it was recorded. Touches less than BRIDGE_MS apart join one
 // session, and the minutes are the union of the sessions; the low bound is the union of the credits alone.
 import type { HumanSource } from "../../shared/contracts.ts";

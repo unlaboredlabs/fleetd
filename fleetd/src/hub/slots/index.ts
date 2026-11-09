@@ -1,4 +1,4 @@
-// The slot board (crates/fleetd/src/hub/slots/mod.rs): one queue under each machine's cap (what it fits, sizing.ts),
+// The slot board: one queue under each machine's cap (what it fits, sizing.ts),
 // its disk room, each project's max agents, and the fleet cap if a person set one; reviews go first, then the oldest.
 // A slot is held while a task's thread is running, read from the executor's thread events, and from a grant until
 // that thread first runs. A lead is not an agent and holds none.

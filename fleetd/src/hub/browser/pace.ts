@@ -1,4 +1,4 @@
-// A live screen's pacing for one app connection that acks its frames (crates/fleetd/src/hub/app_ws/pace.rs): frames go
+// A live screen's pacing for one app connection that acks its frames: frames go
 // only as fast as the link delivers them, at most two round trips' worth in flight, so a slow phone sees the newest
 // frame late by one frame's time rather than by a queue. The acks measure what the link carries; while frames wait
 // for room, that is the watch's limit, raised half again every PROBE_EVERY once they stop waiting. Times are ms.

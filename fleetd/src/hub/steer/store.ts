@@ -1,4 +1,4 @@
-// The `steers` table (crates/fleetd/src/hub/steer/store.rs): one row per steer, `n` its S<n>, `data` the Steer with
+// The `steers` table: one row per steer, `n` its S<n>, `data` the Steer with
 // its receipt.
 import type { Database } from "bun:sqlite";
 import type { Steer } from "../../shared/contracts.ts";

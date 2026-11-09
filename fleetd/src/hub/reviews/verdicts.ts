@@ -1,4 +1,4 @@
-// Review verdicts (crates/fleetd/src/hub/reviews/verdicts.rs, checks/tools.rs): `fleetd review verdict` (the lead
+// Review verdicts (checks/tools.rs): `fleetd review verdict` (the lead
 // call `review_verdict`) records one per review task and head SHA, keyed by its PR too. The train's review gate reads
 // them by task and head, the PR view by PR.
 import type { ProjectRef, Task } from "../../shared/contracts.ts";

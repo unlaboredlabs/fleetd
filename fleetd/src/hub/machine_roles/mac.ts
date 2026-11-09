@@ -1,4 +1,4 @@
-// The agents' Mac (D298) as the hub sees it (crates/fleetd/src/hub/machine_roles/mac.rs): the machine whose node lists
+// The agents' Mac (D298) as the hub sees it: the machine whose node lists
 // `agents_mac` (a tool, never a runner), the admin's "Agents may use this Mac" switch, and where agents' `mac` calls
 // go: `macMachine`. Every project's agents may use it; Navis never.
 import type { MacTool } from "../../shared/contracts.ts";

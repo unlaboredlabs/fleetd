@@ -1,5 +1,5 @@
 // Every tool's input decoded against its contract before the handler sees it, as the Rust registry's
-// `I::deserialize(&input)` does (crates/fleetd/src/hub/api/registry.rs): the schema is the one crates/fleetd-contracts
+// `I::deserialize(&input)` does: the schema is the one crates/fleetd-contracts
 // renders (schema/McpTools.json, `<tool>.input`). A decode checks types, required fields, bounds, lengths, patterns
 // and enums, fills defaults, drops fields the contract doesn't name, and fails with the detail serde would give
 // ("missing field `projectRef`", "expected at most 200 characters"), which the transports word as `invalid`. What the
@@ -8,7 +8,7 @@
 // Read as text, as src/hub/mcp/endpoint.ts reads it: the bundler keeps one module per file, so a second loader for the
 // same file makes the binary's copy a string or an object depending on which import it resolves first.
 import schemaText from "../../../../app/desktop/src/shared/contracts/schema/McpTools.json" with { type: "text" };
-// The node's lead calls (crates/fleetd-contracts/src/lead_calls.rs `LeadCall`), rendered the same way; its defs join
+// The node's lead calls, rendered the same way; its defs join
 // McpTools' (test/lead_calls_decode.test.ts holds every name the two share to one schema).
 import leadCallText from "../../../../app/desktop/src/shared/contracts/schema/LeadCall.json" with { type: "text" };
 

@@ -1,4 +1,4 @@
-// The projects area's tools (crates/fleetd/src/hub/projects/tools.rs and the modules it registers): profiles, the
+// The projects area's tools (the modules it registers): profiles, the
 // icon and picture so far. project_discover, project_add, project_remove, settings and repos come with their ports.
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";

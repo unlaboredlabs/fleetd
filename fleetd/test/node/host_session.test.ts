@@ -1,4 +1,4 @@
-// The session host's kill ladder against real processes (crates/fleetd/src/node/runner/claude/session/tests.rs). The
+// The session host's kill ladder against real processes. The
 // fake claude does what made a group kill insufficient: it starts a "tool" child in its own session (so outside
 // claude's process group) that ignores SIGTERM, and it ignores SIGTERM itself. Only the descendant sweep, the SIGKILL
 // step and the subreaper's reaping can end that tree cleanly. Linux only: the sweeps read /proc.

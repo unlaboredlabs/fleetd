@@ -1,5 +1,5 @@
-// MCP tool name → handler, built once; /mcp and /app's `call` both call through it
-// (crates/fleetd/src/hub/api/registry.rs). Every tool in the contracts' table starts as a stub that throws
+// MCP tool name → handler, built once; /mcp and /app's `call` both call through it.
+// Every tool in the contracts' table starts as a stub that throws
 // NotImplemented naming its module; that module's `register` (src/hub/serve/areas.ts lists them) replaces it.
 import type { AgentKeyInfo, ToolMap } from "../../shared/contracts.ts";
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";

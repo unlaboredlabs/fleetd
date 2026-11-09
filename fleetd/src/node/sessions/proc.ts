@@ -1,4 +1,4 @@
-// What sessions of a node that went away left running (crates/fleetd/src/node/sessions/proc.rs): a recorded claude
+// What sessions of a node that went away left running: a recorded claude
 // with its tool children, and the browsers and servers of sessions' scratch dirs. A process is known by pid plus
 // start time, so a pid the kernel has since reused is never signalled.
 import { join, sep } from "node:path";

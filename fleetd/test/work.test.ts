@@ -1,5 +1,5 @@
 // hub/work: claims and their ends, the in-flight view, and work_claim / work_list / work_done through the registry
-// (crates/fleetd/src/hub/work/tests.rs and tools_tests.rs). The repo is on a host that isn't GitHub.
+// (tools_tests.rs). The repo is on a host that isn't GitHub.
 import { expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import type { Caller } from "../src/hub/api/registry.ts";

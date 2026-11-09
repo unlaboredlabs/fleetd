@@ -1,4 +1,4 @@
-// The node-made lead calls of a project's checkouts and secure inputs (crates/fleetd/src/hub/navi/purchases.rs):
+// The node-made lead calls of a project's checkouts and secure inputs:
 // `purchase_open`, `purchase_claim`, `purchase_filled`, `secure_input_open`, `secure_input_claim` and
 // `secure_input_filled`. Only a live project's lead pays at a checkout or asks for a secure input; the requests
 // themselves are the approvals area's (src/hub/approvals/purchases.ts). A purchase from a trading or money-moving site

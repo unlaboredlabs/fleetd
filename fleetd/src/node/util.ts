@@ -1,4 +1,4 @@
-// The node's small helpers (crates/fleetd/src/node/util.rs).
+// The node's small helpers.
 import { homedir } from "node:os";
 
 // The temp dir too: without it a command's temp files go to /tmp, which may be held in memory.

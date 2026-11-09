@@ -1,4 +1,4 @@
-// doctor_list and doctor_fix (crates/fleetd/src/hub/doctor/tools.rs).
+// doctor_list and doctor_fix.
 import type { DoctorCheck, MachineId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";

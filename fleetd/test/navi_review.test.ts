@@ -1,4 +1,4 @@
-// The checker's code rules (crates/fleetd/src/hub/navi/review_tests.rs: T1480's 86 risky actions through a fake
+// The checker's code rules (T1480's 86 risky actions through a fake
 // checker), the shell guard, confirm_step's floor, the purchase floor and the site gate's visits
 // (shell_guard.rs, confirm.rs, purchases.rs, sites.rs tests).
 import { expect, test } from "bun:test";

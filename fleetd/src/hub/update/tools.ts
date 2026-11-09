@@ -1,4 +1,4 @@
-// hub_update, hub_update_status and hub_update_settings (crates/fleetd/src/hub/update/tools.rs).
+// hub_update, hub_update_status and hub_update_settings.
 import type { HubUpdateOutput, UpdateRun } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { REPAIR_FIX } from "../api/grants.ts";

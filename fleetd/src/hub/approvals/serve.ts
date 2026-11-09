@@ -1,4 +1,4 @@
-// Approvals' background work (crates/fleetd/src/hub/approvals/mod.rs `serve`, tools.rs `register_lead_calls`), which
+// Approvals' background work (tools.rs `register_lead_calls`), which
 // the Rust hub starts from usage::wire::start: src/hub/usage/loops.ts calls startApprovals.
 import type { Hub } from "../api/hub.ts";
 import { approvals } from "./index.ts";

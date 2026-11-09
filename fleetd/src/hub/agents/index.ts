@@ -1,4 +1,4 @@
-// The agents view (crates/fleetd/src/hub/agents/mod.rs): every agent of the projects a key may read (`agents_list`).
+// The agents view: every agent of the projects a key may read (`agents_list`).
 // Reads the task, lead and train stores and the executor's sessions; owns no table.
 import type { AgentLane, AgentRow, Change, LaneStatus, ProjectRef, Task, TaskState } from "../../shared/contracts.ts";
 import { jsPrefix } from "../../shared/text.ts";

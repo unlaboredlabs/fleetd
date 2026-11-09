@@ -1,4 +1,4 @@
-// Live view (crates/fleetd/src/hub/browser/live.rs): who watches which browser session, and their frames. A node sends
+// Live view: who watches which browser session, and their frames. A node sends
 // a session's frames only while the hub watches it (`browser_watch` on, sent with each new watcher, off after the
 // last), and again after a reconnect. The hub keeps no frame: each goes to the app connections watching its session
 // as it comes, and a slow one skips frames rather than queueing them. A node answers each `on` with the session's

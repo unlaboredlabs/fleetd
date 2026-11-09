@@ -1,4 +1,4 @@
-// `mcp_oauth_start` (crates/fleetd/src/hub/mcp_oauth/tools.rs): a person opens the sign-in of a saved server. Only a
+// `mcp_oauth_start`: a person opens the sign-in of a saved server. Only a
 // person, with operate on the project's machine, as for saving the server.
 import { ToolError } from "../../shared/errors.ts";
 import { openSealed } from "../../shared/sealed_box.ts";

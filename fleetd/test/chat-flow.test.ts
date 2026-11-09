@@ -1,4 +1,4 @@
-// The chat flow (crates/fleetd/src/hub/chat/flow.rs, nudges.rs, navi/recall.rs): chat_send starting and reaching the
+// The chat flow (nudges.rs, navi/recall.rs): chat_send starting and reaching the
 // lead, chat_stop and project_stop, the stream mirror, nudge, chat_search and chat_read, chat_nudge_clear.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";

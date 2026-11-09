@@ -1,4 +1,4 @@
-// A PR that would undo work already on its base (crates/fleetd/src/hub/train/reverts.rs). A writer that moves its
+// A PR that would undo work already on its base. A writer that moves its
 // commit onto a freshly fetched main while its files are still an older tree's commits those older files. Two exact
 // steps find that, so ordinary edits, renames and new files never match:
 // - a file the PR changes is put back when its blob in the PR equals the file's blob after one of its last `DEPTH`

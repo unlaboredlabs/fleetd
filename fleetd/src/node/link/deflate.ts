@@ -1,4 +1,4 @@
-// The link's negotiated compression (crates/fleetd/src/link_deflate.rs): RFC 7692 permessage-deflate done above the
+// The link's negotiated compression: RFC 7692 permessage-deflate done above the
 // WebSocket. One raw-DEFLATE stream per direction per link with context takeover; each message is sync-flushed and its
 // trailing `00 00 ff ff` dropped (the receiver puts it back). Frames shorter than MIN_DEFLATE_BYTES go as Text.
 import zlib from "node:zlib";

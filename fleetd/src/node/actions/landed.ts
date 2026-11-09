@@ -1,4 +1,4 @@
-// What git alone records of fleetd's work (crates/fleetd/src/node/landed.rs `landed_log`): the default branch's own
+// What git alone records of fleetd's work: the default branch's own
 // line with each commit's `Fleetd-Task:` and `Fleetd-Change:` trailers, so the hub can tell the train's merges, merges
 // by hand and direct pushes apart for a repo whose host fleetd can't read.
 import type { GitCommit, LandedLog } from "../../shared/sessions.ts";

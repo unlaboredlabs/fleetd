@@ -1,4 +1,4 @@
-// project_remove (crates/fleetd/src/hub/projects/tools.rs `remove`): removes the checkouts of its repos with it, erases
+// project_remove: removes the checkouts of its repos with it, erases
 // the project (navi/erase.rs, one rule for every project since D310), and asks each hub it is linked to to revoke its
 // link. A project whose machine the hub no longer has is only forgotten in the hub.
 import type { ProjectRef, ProjectRemoveInput } from "../../shared/contracts.ts";

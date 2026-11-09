@@ -1,4 +1,4 @@
-// The merge train (crates/fleetd/src/hub/train/service.rs): only fleetd merges. One serial train per repo takes the
+// The merge train: only fleetd merges. One serial train per repo takes the
 // oldest ready Change, has GitHub rebase it onto the latest base (`gh pr update-branch --rebase`), waits for CI on
 // that exact head, posts `fleetd/train=success` and squash-merges pinned to the head. Conflicts and red CI go back to
 // the task that wrote the code, but a conflict only in generated files, which the train regenerates on a node

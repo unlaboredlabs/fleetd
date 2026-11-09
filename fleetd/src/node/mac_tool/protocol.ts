@@ -1,4 +1,4 @@
-// The agents' Mac's steps and answers (D298; crates/fleetd/src/node/mac_tool/mod.rs). An agent's `fleetd mac` asks its
+// The agents' Mac's steps and answers (D298). An agent's `fleetd mac` asks its
 // own node (client.ts), which seals each step to the Mac's node and sends it through the hub; the Mac's node
 // (host.ts) opens it, runs it in the agent's own folder there and seals the answer back. Each step is a sealed box to
 // the Mac's key holding the step, when it was made, a nonce the Mac takes only once and a fresh key for the answer,

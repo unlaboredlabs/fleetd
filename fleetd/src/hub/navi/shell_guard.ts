@@ -1,4 +1,4 @@
-// The one guard on a Navi's shell commands (W239; crates/fleetd/src/hub/navi/shell_guard.rs): they never ask (D208),
+// The one guard on a Navi's shell commands (W239): they never ask (D208),
 // whatever its approval mode, but a command that would wipe the machine or the person's home is refused, with why. It
 // is a short list of the obvious ones (removing `/` or the home directory recursively, making a filesystem, writing
 // raw onto a disk, a fork bomb), not a sandbox: the OS sandbox stays the guard of what a command may touch.

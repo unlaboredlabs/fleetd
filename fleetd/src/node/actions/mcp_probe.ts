@@ -1,4 +1,4 @@
-// Test connection (`mcp_test`, crates/fleetd/src/node/mcp_probe.rs): the node starts or reaches an MCP server as an
+// Test connection (`mcp_test`): the node starts or reaches an MCP server as an
 // agent's claude would, initializes it and lists its tools, within TIMEOUT_MS. A stdio server runs in the given
 // directory with the agent's environment plus its own env, in a process group of its own that is killed afterwards;
 // an HTTP server is called with its headers (MCP's streamable HTTP, cli/mcp_client.rs); an SSE server (MCP's older

@@ -1,4 +1,4 @@
-// What needs the human now, and when a client may interrupt them (crates/fleetd/src/hub/attention/mod.rs): the
+// What needs the human now, and when a client may interrupt them: the
 // quiet hours and the coalesce window `fleetd_status.notify` hands clients. Pure, apart from reading the hub's zone.
 import { readlinkSync } from "node:fs";
 import type { Hub } from "../api/hub.ts";

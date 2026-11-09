@@ -1,4 +1,4 @@
-// `fleetd build-slot <node home> <cargo's arguments>` (crates/fleetd/src/node/build_slots.rs): an agent's cargo build
+// `fleetd build-slot <node home> <cargo's arguments>`: an agent's cargo build
 // takes one of the machine's build slots (a file under `<node home>/build-slots` it holds a flock on) while the real
 // cargo runs; with every slot in use it queues, first come first served. Every other cargo command runs at once.
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";

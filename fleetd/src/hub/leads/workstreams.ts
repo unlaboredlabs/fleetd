@@ -1,4 +1,4 @@
-// Intake, briefs and closes (crates/fleetd/src/hub/leads/workstreams.rs). A workstream's brief is a plain record the
+// Intake, briefs and closes. A workstream's brief is a plain record the
 // lead sets and edits; every write is an event, so the history shows each version.
 import type { Brief, HubEventType, IntakeChannel, ProjectRef, Workstream, WorkstreamState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

@@ -1,4 +1,4 @@
-// Machine roles (W46) and where each session runs (crates/fleetd/src/hub/machine_roles/mod.rs): table `machine_roles`
+// Machine roles (W46) and where each session runs: table `machine_roles`
 // (agents, sessions or both, and a session cap; no row means both, auto) and `session_places`, one row per session
 // the hub placed. A session the agent's machine can't take goes to the online machine with the most free slots; a
 // cloud machine only when every other is full, while it is awake, never woken for one.

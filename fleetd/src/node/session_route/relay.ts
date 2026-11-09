@@ -1,4 +1,4 @@
-// The node's ends of a session relay (crates/fleetd/src/node/relay.rs), for sessions the hub placed on another
+// The node's ends of a session relay, for sessions the hub placed on another
 // machine than their agent's. On the agent's machine the proxy hands each connection of the agent's driver to the
 // hub's relay; on the runner each `relay_dial` from the hub is a channel `dial` connects between the hub and the
 // session's own CDP proxy.

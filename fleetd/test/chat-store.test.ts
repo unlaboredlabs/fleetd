@@ -1,4 +1,4 @@
-// The chat store and artifacts (crates/fleetd/src/hub/chat/mod.rs, nudges.rs, artifacts/mod.rs).
+// The chat store and artifacts (nudges.rs, artifacts/mod.rs).
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

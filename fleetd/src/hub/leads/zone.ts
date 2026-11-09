@@ -1,4 +1,4 @@
-// A person's time zone (crates/fleetd/src/hub/people/zone.rs, which the leads area and automations read): the one
+// A person's time zone (which the leads area and automations read): the one
 // their app or phone last sent with a chat message (`people.tz`); else the hub's `policy.tz` decision, else the hub
 // machine's zone, and which.
 import type { ProjectRef } from "../../shared/contracts.ts";

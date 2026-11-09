@@ -1,4 +1,4 @@
-// The nightly memory refresh (crates/fleetd/src/hub/memory/refresh.rs): once a night, at `policy.memory_refresh_at`
+// The nightly memory refresh: once a night, at `policy.memory_refresh_at`
 // (04:00 by default) in `policy.tz` (else the hub machine's zone), each project with the refresh on
 // (`project_settings.memory_refresh`) and chat or order activity since its last run gets a fresh lead session of its
 // own. It reads the chat since the last run, the decisions and the memory, and may use `memory_read`, `remember` and

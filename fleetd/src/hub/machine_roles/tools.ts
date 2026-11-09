@@ -1,4 +1,4 @@
-// `machine_roles`, `machine_roles_set` and `machine_screens_set` (crates/fleetd/src/hub/machine_roles/tools.rs):
+// `machine_roles`, `machine_roles_set` and `machine_screens_set`:
 // Settings › Hub › Machines and `fleetd machine set <id> --roles`, and its Screens: a kind of screen turned on or off
 // on a machine, or its idle timeout, which the machine's node writes into its node.json. `screen_open` and
 // `screen_end` are screens.ts's.

@@ -1,4 +1,4 @@
-// More of the grant checks, standard refusals and output limits handlers share (crates/fleetd/src/hub/api/grants.rs),
+// More of the grant checks, standard refusals and output limits handlers share,
 // with the same words: the ones src/hub/api/grants.ts doesn't have yet.
 import type { HubEvent, MachineId, ProjectRef, Role, ThreadRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

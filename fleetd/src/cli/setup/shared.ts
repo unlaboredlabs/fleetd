@@ -1,4 +1,4 @@
-// What setup's commands share (crates/fleetd/src/cli/setup/mod.rs): the usage, `say` (which the wizard can capture),
+// What setup's commands share: the usage, `say` (which the wizard can capture),
 // listen addresses, who holds the hub's database, and this machine's dirs.
 import { readdirSync, readlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";

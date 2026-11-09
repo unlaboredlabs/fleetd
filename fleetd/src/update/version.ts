@@ -1,4 +1,4 @@
-// How a version reads (crates/fleetd/src/lib.rs `version_label`, `edge_stamp`, `version_shown`). The app's twin is
+// How a version reads (`edge_stamp`, `version_shown`). The app's twin is
 // `versionLabel` (app/desktop/src/shared/updates.ts).
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 

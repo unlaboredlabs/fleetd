@@ -1,4 +1,4 @@
-// A person's own picture (crates/fleetd/src/hub/people/avatar.rs: `person_avatar_set`, `person_avatar_get`): what the
+// A person's own picture (`person_avatar_set`, `person_avatar_get`): what the
 // apps show in place of their initials. It is kept as a project's picture is (projects/avatar.ts, whose `render` and
 // its worker it uses): the crop, upright, at most AVATAR_PX a side, re-encoded as JPEG with none of the original's
 // metadata, and the upload forgotten at once. Only a person sets their own, from one of their devices; anyone on the

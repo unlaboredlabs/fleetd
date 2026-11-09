@@ -1,5 +1,5 @@
 // The lead's automation calls: create, list, update (pause and resume too), delete, run now, the runs and confirm,
-// scoped to the caller's project by its session (crates/fleetd/src/hub/automations/calls.rs). The lead never sees a
+// scoped to the caller's project by its session. The lead never sees a
 // webhook secret: a person adds a webhook in the app, which shows its URL once. A task can make none of these.
 //
 // No lead call marks an automation `confirmed` (the person's go-ahead on its runs): only the person does, in the app or

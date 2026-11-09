@@ -1,4 +1,4 @@
-// Each session's host in a transient systemd scope of its own (crates/fleetd/src/node/runner/scope.rs), on Linux when
+// Each session's host in a transient systemd scope of its own, on Linux when
 // the user's systemd manager answers. Without one a host shares the node's cgroup, and the node unit's stop
 // (KillMode=mixed) kills it, and its agent, with the node: an update or a restart cut every agent off mid-step. In a
 // scope of its own a host outlives the node, and the next node re-adopts it. One build the kernel kills for memory

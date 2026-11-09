@@ -1,4 +1,4 @@
-// Logins from 1Password (crates/fleetd/src/node/browser/tests/credentials.rs, onepassword.rs and credentials.rs's
+// Logins from 1Password (onepassword.rs and credentials.rs's
 // tests), with a fake 1Password: the node fills them on the item's own site, and the values never reach the agent (its
 // tool results, its raw CDP reads), the recording or what the node reports, in any form a page or an encoding shows
 // them. The site checks it got them.

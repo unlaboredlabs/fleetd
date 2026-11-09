@@ -1,4 +1,4 @@
-// Exclusive time (crates/fleetd/src/tiles.rs): which interval owns each instant of a lane. The node gives a run's
+// Exclusive time: which interval owns each instant of a lane. The node gives a run's
 // spans their exclusive time with it and fills the rest with `runner.other`; the hub cuts lanes into tiles for the
 // critical path with the same rule, so the numbers agree.
 

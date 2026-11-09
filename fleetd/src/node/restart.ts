@@ -1,4 +1,4 @@
-// The node's restart to apply its screen settings (crates/fleetd/src/node/screens.rs `schedule`, `when_idle`): the
+// The node's restart to apply its screen settings (`when_idle`): the
 // screens read node.json once, as the node starts, so after `node_action` `screens` changed it (src/node/screens'
 // `apply`) the node restarts itself once no screen is live here, holding its agents' tool calls first, as an update's
 // restart does, so it finds them between steps. The node then stops as for SIGTERM, and its service manager starts it.

@@ -41,7 +41,7 @@ export interface JoinPorts {
 }
 
 /**
- * The fleetd dir as the CLI resolves it (crates/fleetd/src/home.rs): FLEETD_HOME unless empty, with `~` expanded and
+ * The fleetd dir as the CLI resolves it: FLEETD_HOME unless empty, with `~` expanded and
  * a relative path taken against the working directory, else ~/.fleetd.
  */
 export const fleetdDir = (env: string | undefined = process.env["FLEETD_HOME"], home: string = os.homedir()): string => {
@@ -108,7 +108,7 @@ const exists = (file: string): Promise<boolean> =>
     () => false,
   );
 
-/** The fingerprint of an OS machine id, as the CLI makes it (crates/fleetd/src/fingerprint.rs `of`). */
+/** The fingerprint of an OS machine id, as the CLI makes it. */
 export const fingerprintOf = (osId: string): string => createHash("sha256").update(`fleetd machine ${osId.trim()}`).digest("hex");
 
 /** `"IOPlatformUUID" = "…"` in `ioreg -rd1 -c IOPlatformExpertDevice`. */

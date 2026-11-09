@@ -1,4 +1,4 @@
-// `fleetd chat` (crates/fleetd/src/cli/chat.rs): write to a project's lead from a terminal and read its chat, over
+// `fleetd chat`: write to a project's lead from a terminal and read its chat, over
 // the app socket exactly as the desktop app does: chat_send, chat_history, events and streamed `chat_delta` frames.
 import { readFileSync, readlinkSync } from "node:fs";
 import { ArgError, parse } from "./args.ts";

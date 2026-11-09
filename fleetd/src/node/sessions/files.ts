@@ -1,4 +1,4 @@
-// A project's files for its chat and its sessions (crates/fleetd/src/node/sessions/files.rs): @-mention search over
+// A project's files for its chat and its sessions: @-mention search over
 // git's file list, and the attachments the hub places under `.fleetd/attachments/`, kept out of git.
 import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeSync } from "node:fs";

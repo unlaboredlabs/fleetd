@@ -1,4 +1,4 @@
-// The event tools (crates/fleetd/src/hub/api/m1.rs): `events_wait` long-polls the hub's log, `events_list` pages
+// The event tools: `events_wait` long-polls the hub's log, `events_list` pages
 // back through one project's events. Both leave out what the key may not read (src/hub/app_ws/visible.ts).
 import type { EventsListInput, EventsListOutput, EventsWaitInput, EventsWaitOutput } from "../../shared/contracts.ts";
 import type { Registry } from "../api/registry.ts";

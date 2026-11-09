@@ -1,4 +1,4 @@
-// A read or review session's worktree starts ready to test (crates/fleetd/src/node/warm.rs): the dependencies of the
+// A read or review session's worktree starts ready to test: the dependencies of the
 // apps its commits touch installed, and a warm cargo build. The build is handed on, not shared: a reader's `target/`
 // goes to its checkout's pool when its worktree goes, and the next reader's new worktree takes the newest one by a
 // rename, so nothing is copied and no two worktrees build into one directory. The taker's tracked files are touched so

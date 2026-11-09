@@ -1,4 +1,4 @@
-// The hub's task profiles (Settings › Hub › Every project › Profiles; crates/fleetd/src/hub/projects/profiles.rs):
+// The hub's task profiles (Settings › Hub › Every project › Profiles):
 // `profiles_list`, `profile_create`, `profile_update`, `profile_delete`, and the `profiles` rows they keep, one per
 // profile, exactly one of them the default. Each project allows the default and the profiles in its `project_profiles`
 // rows. Leads start on the profile marked `is_lead`, the default when none is: the mark is never on the default.

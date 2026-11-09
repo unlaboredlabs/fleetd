@@ -1,4 +1,4 @@
-// A machine that lost its IPv4 network (crates/fleetd/src/hub/link/network.rs). Its node says with each heartbeat
+// A machine that lost its IPv4 network. Its node says with each heartbeat
 // whether its own network hardware holds a routable IPv4 address, and the landing scanner finds whether git there
 // reaches GitHub. Both at once, no IPv4 and GitHub not answering, degrade the machine with the fix only the person can
 // run; either one back clears it. Agents keep running there: claude may still reach its API over IPv6.

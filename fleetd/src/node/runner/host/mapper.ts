@@ -1,4 +1,4 @@
-// claude's stream-json, both ways, as a pure state machine (crates/fleetd/src/node/runner/claude/mapper.rs): stdout
+// claude's stream-json, both ways, as a pure state machine: stdout
 // lines in, RunnerEvents out, and the stdin lines fleetd writes (user messages, permission answers, interrupts). No I/O
 // and no clock: the session feeds it lines and the time, so every fixture replays through exactly the code that runs in
 // production.

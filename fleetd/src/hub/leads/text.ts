@@ -1,4 +1,4 @@
-// The digest's text helpers (crates/fleetd/src/hub/leads/digest.rs `one_line`, `clip`): the contracts' text limits
+// The digest's text helpers (`clip`): the contracts' text limits
 // count UTF-16 units, as JavaScript strings do.
 
 /** `text` cut to `max` UTF-16 units, the last one "…". */

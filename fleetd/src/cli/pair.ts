@@ -1,4 +1,4 @@
-// `fleetd pair` (crates/fleetd/src/cli/pair.rs): mints a one-time pairing code in the hub home's database (so the hub
+// `fleetd pair`: mints a one-time pairing code in the hub home's database (so the hub
 // need not be running) and writes `app-pair.json`, which the desktop app on this machine reads to pair by itself.
 // Also the worker codes: `--worker` prints the line that joins a machine, `--worker-codes` and `--worker-revoke`.
 import { existsSync, statSync } from "node:fs";

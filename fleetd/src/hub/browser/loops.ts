@@ -1,4 +1,4 @@
-// Starts live screens' wiring and loops (crates/fleetd/src/hub/browser): the node frames and heartbeat steps this
+// Starts live screens' wiring and loops: the node frames and heartbeat steps this
 // area reads, the rewatch when a node links, the app's live-view messages, the lead calls a node makes for a
 // session, and the loops `run_end_outlived`, `run_prune` and `thumbs::run`. Each loop stops on `hub.shutdown`.
 import type { BrowserFrame } from "../../shared/contracts.ts";

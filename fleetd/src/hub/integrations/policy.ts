@@ -1,4 +1,4 @@
-// The per-tool policy the hub enforces on a session's MCP tools (crates/fleetd/src/hub/integrations/policy.rs). Every
+// The per-tool policy the hub enforces on a session's MCP tools. Every
 // tool resolves to a rule: first the blocked list, by the words of the tool's name, for every server; then the
 // server's tools the person marked as reading; then a tool whose name says it only reads and whose input links
 // nowhere; anything else asks, with an action guessed from its name. A gateway's call is judged by the tool it calls.

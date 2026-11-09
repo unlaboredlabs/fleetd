@@ -338,7 +338,7 @@ export const MACHINE_ADD_USAGE = `  machine add <ssh-host> | --local [--machine-
 
 export const machineUsage = () => `${MACHINE_ADD_USAGE}${MACHINE_SET_USAGE}`;
 
-/** `mac --help` (crates/fleetd/src/cli/mac_tool.rs `HELP`). */
+/** `mac --help`. */
 export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's shared Mac for builds and iOS simulators).
 
   mac push                         your worktree as it is now (commits, changes, new files) becomes your folder on

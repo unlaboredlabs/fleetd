@@ -1,4 +1,4 @@
-// This process's own binary, held from its start (crates/fleetd/src/update/mod.rs `keep_running_binary`): what an
+// This process's own binary, held from its start: what an
 // update keeps for a rollback. Its own module, with nothing else imported, so the CLI holds it before anything loads.
 import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 

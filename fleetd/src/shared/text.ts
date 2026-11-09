@@ -1,4 +1,4 @@
-// Text helpers the hub's lines share (crates/fleetd/src/hub/leads/digest.rs `one_line`, `clip`).
+// Text helpers the hub's lines share (`clip`).
 
 /** `text` cut to `max` UTF-16 units, the last one "…": the contracts' text limits count in those. */
 export function ellipsize(text: string, max: number): string {

@@ -1,4 +1,4 @@
-// What the train asks of GitHub, through the `gh` CLI on the hub machine (crates/fleetd/src/hub/train/github.rs): PRs,
+// What the train asks of GitHub, through the `gh` CLI on the hub machine: PRs,
 // rebasing a PR's branch, batch branches built by merges, patch ids, check runs on a head, the `fleetd/train` commit
 // status, the pinned squash merge, and recently merged PRs, to report merges outside it. The train runs no git of its
 // own but `git patch-id`.

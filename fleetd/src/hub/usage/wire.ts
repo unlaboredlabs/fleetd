@@ -1,4 +1,4 @@
-// The usage layer over the real hub (crates/fleetd/src/hub/usage/wire.rs): who owns a thread, which Claude account
+// The usage layer over the real hub: who owns a thread, which Claude account
 // it runs on, the write queue's "continue", and the machine's login from its runner. `usage(hub)` is the seam.
 import type { LoginKind, TaskId } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

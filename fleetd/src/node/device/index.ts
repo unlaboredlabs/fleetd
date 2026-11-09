@@ -1,4 +1,4 @@
-// Android sessions (crates/fleetd/src/node/device/mod.rs `Devices`): an agent opens one with `session_start` kind
+// Android sessions: an agent opens one with `session_start` kind
 // android. The node lends it a booted `-read-only` copy of its Android emulator from a warm pool (emulator.ts), points
 // the agent's agent-device at the copy's serial (agent_device.ts) and records the screen through scrcpy's stream
 // (scrcpy.ts) as a browser session's video; `session_end` throws the copy away. The session shares the browser

@@ -1,4 +1,4 @@
-// The Claude account tools (crates/fleetd/src/hub/claude_accounts/tools.rs). The hub's: claude_hub_api_set,
+// The Claude account tools. The hub's: claude_hub_api_set,
 // claude_hub_api_remove and claude_settings_set, for an owner's or admin's device. A person's own:
 // claude_subscription_set, claude_subscription_remove and claude_choice_set. claude_accounts_get for everyone, and
 // claude_account_test for whoever may change the account it tries.

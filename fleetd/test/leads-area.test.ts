@@ -1,4 +1,4 @@
-// The leads area (crates/fleetd/src/hub/leads: wakes.rs's debouncer tests, lead.rs, workstreams.rs, cut_off.rs).
+// The leads area (wakes.rs's debouncer tests, lead.rs, workstreams.rs, cut_off.rs).
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

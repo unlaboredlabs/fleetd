@@ -1,4 +1,4 @@
-// A Navi's secure input in its browser (crates/fleetd/src/node/browser/secure_input.rs): something only the person
+// A Navi's secure input in its browser: something only the person
 // may give.
 // - `request`: on the page, the node checks it is on the site and the field is there (in the page or one of the
 //   site's own frames), then opens the request on the hub. Typed by the person, the session waits for it.

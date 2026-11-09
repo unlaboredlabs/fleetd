@@ -1,4 +1,4 @@
-// `fleetd node flush` (crates/fleetd/src/node/flush.rs, busy.rs's uploads): a clean stop for a cloud machine, run as
+// `fleetd node flush` (busy.rs's uploads): a clean stop for a cloud machine, run as
 // boat's pre-stop hook (`~/.boat/pre-stop`, which boat gives 60 s). It holds every agent tool call that hasn't started
 // (./hold.ts; the hold lapses by itself in HOLD_LEASE_SECS if the stop never comes), so the stop lands between steps;
 // waits, up to `waitMs`, for the recordings still on their way to the hub (uploads); then checkpoints the node's

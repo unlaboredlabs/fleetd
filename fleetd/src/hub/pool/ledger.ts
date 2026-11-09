@@ -1,4 +1,4 @@
-// The pool's tables (crates/fleetd/src/hub/pool/ledger.rs; migration `cloud_pool`): its settings, one row per slot,
+// The pool's tables (migration `cloud_pool`): its settings, one row per slot,
 // the starts it counted and its spend meter. Every row is written before the boat call it stands for; nothing about
 // the pool is held only in memory.
 import type { SQLQueryBindings } from "bun:sqlite";

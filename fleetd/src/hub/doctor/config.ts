@@ -1,5 +1,5 @@
 // What the doctor reads from `<hub home>/setup.json`, which `fleetd init` and `fleetd machine add` write: the hub's
-// address, the commit identity, and how each machine was set up (crates/fleetd/src/hub/doctor/config.rs). Only the
+// address, the commit identity, and how each machine was set up. Only the
 // fields the doctor needs; the file may be absent (a lab or hand-joined fleet).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

@@ -14,7 +14,7 @@ export const LINK_FILE_MAX = 16 * 1024;
 export const GIT_CONFIG_MAX = 64 * 1024;
 export const LINK_EXTENSIONS: ReadonlySet<string> = new Set([".webloc", ".url", ".desktop"]);
 
-/** GitHubRepo's pattern (crates/fleetd-contracts/src/train.rs). */
+/** GitHubRepo's pattern. */
 const REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u;
 
 /** "owner/name" from a GitHub URL or remote (https, ssh, git@), or undefined. */

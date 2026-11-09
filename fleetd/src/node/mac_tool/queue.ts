@@ -1,4 +1,4 @@
-// The line of agents waiting for one of the Mac's iOS simulators (crates/fleetd/src/node/mac_tool/queue.rs, `mac sim
+// The line of agents waiting for one of the Mac's iOS simulators (`mac sim
 // start`), first come first served. Only the agent at its head may take one, so the next simulator that is ready is
 // kept for it however often the others ask. A waiting agent's `mac` asks again every ASK_EVERY; one not heard from for
 // GONE (its task ended or was cancelled, or its command was cut off and not run again) leaves the line, and what would

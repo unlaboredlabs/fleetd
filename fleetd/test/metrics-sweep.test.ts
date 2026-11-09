@@ -1,4 +1,4 @@
-// The host sweep over recorded GitHub answers (crates/fleetd/src/hub/metrics/sweep_tests.rs, fixtures/github/), no
+// The host sweep over recorded GitHub answers (fixtures/github/), no
 // network: a first read's 90-day backfill and routes (bots, batches, other bases, merge-backs, direct pushes), the
 // person's reviews and comments, the train's richer events agreeing with it, a failing host, and when a repo is read.
 // Then a repo whose host fleetd can't read (no_host_tests.rs), over a real bare-repo origin and a checkout of it: each

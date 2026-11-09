@@ -1,4 +1,4 @@
-// Text the hub writes for tasks (crates/fleetd/src/hub/tasks/render.rs): how a task's texts are cut and what a cut
+// Text the hub writes for tasks: how a task's texts are cut and what a cut
 // must keep, the branch name, the task's first message, its line in the lead digest, and its event lines in the lead's
 // wake. Pure. Lengths count UTF-16 units.
 import type { Brief, Decision, MachineId, Task, TaskKind, TaskRecovery, TaskResult } from "../../shared/contracts.ts";

@@ -1,4 +1,4 @@
-// The train's pure rules (crates/fleetd/src/hub/train/rules.rs and the top of service.rs): the refusal shape, and how
+// The train's pure rules (the top of service.rs): the refusal shape, and how
 // a head's checks read: green, pending or red, gated by the fast set, the checks that must report, and stalls.
 import { type CheckRun, type CommitStatus, TRAIN_CONTEXT, workflowRun } from "./github.ts";
 import { afterMergeOnly, fastSet, type TrainSettings } from "./repo_checks.ts";

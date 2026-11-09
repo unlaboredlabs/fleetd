@@ -1,4 +1,4 @@
-// Hub-owned wakes (crates/fleetd/src/hub/wakes/mod.rs): stored in SQLite, scheduled on the hub clock, delivered
+// Hub-owned wakes: stored in SQLite, scheduled on the hub clock, delivered
 // through the write queue so a wake for an offline machine waits for it. One scheduler sleeps until the earliest active
 // wake is due. A firing is a turn, so one whose thread the usage layer holds stays due until the hold clears.
 import type { MachineId, ThreadId, Wake, WakeCatchUp, WakeSchedule, WakeState, WakeTarget } from "../../shared/contracts.ts";

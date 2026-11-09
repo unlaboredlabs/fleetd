@@ -1,4 +1,4 @@
-// `fleetd steer`, `fleetd steers` (crates/fleetd/src/cli/steer.rs): a person redirects one of an order's agents
+// `fleetd steer`, `fleetd steers`: a person redirects one of an order's agents
 // mid-run, over the hub's MCP endpoint (steer_send, steer_withdraw, and order_get for an order's steers). A steer speaks
 // for the human, so it needs a human key. `--wait` follows the receipt through events_wait.
 import { parse, ArgError } from "./args.ts";

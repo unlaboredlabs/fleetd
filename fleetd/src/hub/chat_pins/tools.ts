@@ -1,4 +1,4 @@
-// `chat_pins_get` and `chat_pins_set` (crates/fleetd/src/hub/chat_pins/mod.rs): the chats a person pinned, the same on
+// `chat_pins_get` and `chat_pins_set`: the chats a person pinned, the same on
 // each of their devices. A set announces `chat.pins`, which only that person's devices see.
 import type { ChatPinsSetInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

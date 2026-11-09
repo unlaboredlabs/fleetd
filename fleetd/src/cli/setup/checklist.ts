@@ -1,4 +1,4 @@
-// What `fleetd init` and `fleetd doctor` print (crates/fleetd/src/cli/setup/checklist.rs): on a terminal a step header
+// What `fleetd init` and `fleetd doctor` print: on a terminal a step header
 // per group, a spinner while a check runs that resolves to one ✓/✗/!/– line and a one-line fix under a failure;
 // without one the same items as plain lines. Colors follow NO_COLOR.
 export type State = "done" | "failed" | "skipped" | "warn";

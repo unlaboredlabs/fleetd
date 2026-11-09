@@ -1,4 +1,4 @@
-// `fleetd push-relay` (crates/fleetd/src/cli/push_relay.rs): `set <url|off>` points the hub's phone notifications at
+// `fleetd push-relay`: `set <url|off>` points the hub's phone notifications at
 // a relay (push_relay_set), the relay's key sealed here to the hub's box key; with no argument it runs a relay.
 import { readFileSync } from "node:fs";
 import { isIP } from "node:net";

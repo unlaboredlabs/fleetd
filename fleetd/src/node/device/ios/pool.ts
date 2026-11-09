@@ -1,4 +1,4 @@
-// The simulators agents get (crates/fleetd/src/node/device/ios/pool.rs). The node makes one golden simulator in its set
+// The simulators agents get. The node makes one golden simulator in its set
 // (the newest iOS runtime, a plain iPhone), boots it once and lets it settle, has agent-device build its XCTest runner
 // against it, and shuts it down: `simctl clone` copies only a simulator that is shut down. Each agent gets a clone of
 // it, booted ahead of time in a warm pool with agent-device's runner already started in it (from an agent-device home

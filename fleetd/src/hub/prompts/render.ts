@@ -1,4 +1,4 @@
-// `{{name}}` templates, pure (crates/fleetd/src/hub/prompts/render.rs): rendering, the refs that name a text, the
+// `{{name}}` templates, pure: rendering, the refs that name a text, the
 // warnings an edit gets, and the 3-way merge an override gets when a release changes its default.
 import type { PromptWarning } from "../../shared/contracts.ts";
 import { budget, placeholdersOf, type RegistryEntry, safetyRules } from "./entry.ts";

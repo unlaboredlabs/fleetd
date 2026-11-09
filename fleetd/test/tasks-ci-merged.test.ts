@@ -1,4 +1,4 @@
-// wait_ci with `merged` (crates/fleetd/src/hub/tasks/ci_wait_tests.rs, W520): a PR's wait wakes its task when the PR
+// wait_ci with `merged` (W520): a PR's wait wakes its task when the PR
 // merges, fails on the train or closes, read from the merge train; its checks finishing doesn't.
 import { expect, test } from "bun:test";
 import { type CiReads, type Merge, mergeOf, pollCiWaits, type Read, type Target, targetUrl } from "../src/hub/tasks/ci_wait.ts";

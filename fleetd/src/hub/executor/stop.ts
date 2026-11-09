@@ -1,4 +1,4 @@
-// Stopping a session (crates/fleetd/src/hub/executor/mod.rs `Executors::stop`): the node ends its claude, waiting up
+// Stopping a session: the node ends its claude, waiting up
 // to 25 s for it to exit, and removes its worktree too when asked.
 import type { ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

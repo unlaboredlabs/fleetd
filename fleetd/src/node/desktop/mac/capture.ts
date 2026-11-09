@@ -1,4 +1,4 @@
-// The Mac's screen through ScreenCaptureKit (crates/fleetd/src/node/desktop/mac/capture.rs): one SCScreenshotManager
+// The Mac's screen through ScreenCaptureKit: one SCScreenshotManager
 // capture of the main display per frame, at the display's size in points, so a frame's pixels are the coordinates
 // CGEvent takes, with the pointer drawn. The content filter and the configuration are kept between frames and made
 // again when the display's size changes or a capture fails.

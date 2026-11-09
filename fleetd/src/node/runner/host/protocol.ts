@@ -1,4 +1,4 @@
-// claude's stream-json lines, decoded to the fields fleetd reads (crates/fleetd/src/node/runner/claude/protocol.rs).
+// claude's stream-json lines, decoded to the fields fleetd reads.
 // Unknown fields are ignored and unknown line types decode to `other`, so a newer claude adds without breaking us; a
 // field fleetd reads with the wrong type fails the whole line, as serde does, and the line then counts as stderr.
 

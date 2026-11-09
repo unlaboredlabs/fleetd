@@ -1,4 +1,4 @@
-// `<node home>/node.json` (crates/fleetd/src/node/config.rs). Holds no secrets: the enroll token is used once in
+// `<node home>/node.json`. Holds no secrets: the enroll token is used once in
 // memory and never stored. Fields this port doesn't read (the screens' sections) are kept as they are.
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync, ftruncateSync } from "node:fs";
 import { join } from "node:path";

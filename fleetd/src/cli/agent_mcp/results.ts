@@ -1,4 +1,4 @@
-// A node answer as an MCP tool result (crates/fleetd/src/cli/agent_mcp.rs `browser_result`, `tool_result`).
+// A node answer as an MCP tool result (`tool_result`).
 import { HUB_UNREACHABLE } from "../../node/lead/index.ts";
 import { at, display, isObject, rustJson } from "./json.ts";
 

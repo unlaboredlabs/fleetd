@@ -1,4 +1,4 @@
-// agent-device for iOS simulators (crates/fleetd/src/node/device/ios/wrapper.rs): the same pinned package as android
+// agent-device for iOS simulators: the same pinned package as android
 // sessions (../agent_device.ts), run by a wrapper of its own at `<node home>/device/ios/bin/agent-device`, which names
 // the node's simulator set and the runner the golden built. Those are set in the wrapper only: an agent's own
 // `xcrun simctl` and Xcode stay as they were. Each agent keeps its own agent-device home and state, and its config

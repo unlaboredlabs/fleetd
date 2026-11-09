@@ -1,4 +1,4 @@
-// Linux desktop sessions (crates/fleetd/src/node/desktop/mod.rs, W46): an agent opens one with `session_start` kind
+// Linux desktop sessions (W46): an agent opens one with `session_start` kind
 // linux_desktop. The node lends it an X display of its own from a warm pool (display.ts): a fresh container of the
 // pinned image where the node has docker or podman (container.ts), else an Xvfb with a fresh home directory. The agent
 // drives it with its `desktop` tool (Anthropic's computer-use actions, plus `launch`), which the node does itself over

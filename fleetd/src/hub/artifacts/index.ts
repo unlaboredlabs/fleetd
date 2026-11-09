@@ -1,4 +1,4 @@
-// Artifacts (W367, D292; crates/fleetd/src/hub/artifacts/mod.rs): the reports a lead, task or Navi publishes for the
+// Artifacts (W367, D292): the reports a lead, task or Navi publishes for the
 // person with `artifact_publish`, a Markdown or HTML document under a name in its project. Each publish keeps a version
 // in `artifact_versions` (the newest ARTIFACT_VERSIONS_KEPT of a name), posts a system line with the artifact as a card
 // in the project's chat, and announces `artifacts.changed`. The content is stored and served as written. A lead, task or

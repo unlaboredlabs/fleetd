@@ -1,4 +1,4 @@
-// What the hub binds a project's work to (crates/fleetd/src/hub/work/store.rs): `work_projects`, the repo and base
+// What the hub binds a project's work to: `work_projects`, the repo and base
 // its work lands on.
 import type { Database } from "bun:sqlite";
 import type { Claim, ClaimId, LandingRoute, ProjectRef, RepoId, RepoKey, Task } from "../../shared/contracts.ts";

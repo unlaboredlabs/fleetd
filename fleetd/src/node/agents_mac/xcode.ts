@@ -1,4 +1,4 @@
-// Where Xcode is on the Mac (crates/fleetd/src/node/agents_mac/xcode.rs, docs: agents-mac.md#xcode), from what
+// Where Xcode is on the Mac (docs: agents-mac.md#xcode), from what
 // `xcode-select -p` says and the Xcodes in /Applications: setup's Xcode check (checks.ts) and the doctor's iOS one
 // both say it plainly, with the one command that fixes it, never xcode-select's own error.
 import { readdirSync, statSync } from "node:fs";

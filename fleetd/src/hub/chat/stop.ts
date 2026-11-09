@@ -1,4 +1,4 @@
-// One order stopped for the person (crates/fleetd/src/hub/orders/notes.rs `stop`), the stop the chat's Stop and
+// One order stopped for the person, the stop the chat's Stop and
 // project_stop make for each open order: its PRs off the train, its agents cancelled, what waits on a person
 // withdrawn, the order marked stopped and its lead told.
 import type { ProjectRef } from "../../shared/contracts.ts";

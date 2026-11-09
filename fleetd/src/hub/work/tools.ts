@@ -1,4 +1,4 @@
-// work_claim, work_list and work_done (crates/fleetd/src/hub/work/tools.rs): the work ledger for sessions fleetd
+// work_claim, work_list and work_done: the work ledger for sessions fleetd
 // doesn't run (a person's own Claude Code, or the `fleetd work` CLI). A claim is checked against the work in flight
 // before it is stored: an exact match (someone else's issue, PR, branch or item) refuses it, and only a person's session
 // may claim it `anyway`, so a lead or an agent never overrides a person's claim; a strong match refuses it once, until

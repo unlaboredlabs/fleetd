@@ -1,5 +1,5 @@
-// A check that fails on a PR's own head gets one more try before the train counts it red
-// (crates/fleetd/src/hub/train/flaky.rs): the train re-runs that job alone, and the PR goes back to its author only
+// A check that fails on a PR's own head gets one more try before the train counts it red:
+// the train re-runs that job alone, and the PR goes back to its author only
 // when it fails again. A re-run that passes goes on to the merge, and the author and the lead hear in one line that the
 // check was flaky, with the failing test when its log names one.
 import type { Change } from "../../shared/contracts.ts";

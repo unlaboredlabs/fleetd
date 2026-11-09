@@ -1,4 +1,4 @@
-// The read model of a project's past (crates/fleetd/src/hub/chat/history.rs): its orders, the steers people sent, the
+// The read model of a project's past: its orders, the steers people sent, the
 // questions the retired questions tool asked and their answers, and the lead's own messages, read once into the chat
 // in time order. Each message names its record (`source`), so reading again adds nothing. Texts carry no internal ids.
 import type { ChatAuthor, ChatHistorySource, Workstream } from "../../shared/contracts.ts";

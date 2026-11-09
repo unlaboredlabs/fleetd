@@ -1,4 +1,4 @@
-// Status (crates/fleetd/src/hub/status/mod.rs): one row per project (rows.ts), its work in groups (groups.ts). A row is
+// Status: one row per project (rows.ts), its work in groups (groups.ts). A row is
 // read when someone asks, from the event log and the hub's own records, and read again after any event, so it is never
 // older than the last event. One loop follows the freshness deadlines, flipping sources stale or fresh with an event.
 import type { ProjectRef, ProjectStatusRow } from "../../shared/contracts.ts";

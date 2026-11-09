@@ -1,4 +1,4 @@
-// `read_image` (crates/fleetd/src/node/sessions/files.rs `read_image`): a piece of an image or file an agent made in
+// `read_image`: a piece of an image or file an agent made in
 // its own working directory, for the chat. The path must resolve inside that directory, the file is opened without
 // following a last symlink and checked to be the one resolved, and its bytes must be what its name says
 // (fleetd-contracts mcp.rs `AttachmentMime`).

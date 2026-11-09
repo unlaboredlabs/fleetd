@@ -1,4 +1,4 @@
-// Steering (crates/fleetd/src/hub/steer/tests.rs): a person's words to a running agent, with receipts.
+// Steering: a person's words to a running agent, with receipts.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";

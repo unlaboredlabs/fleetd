@@ -1,5 +1,5 @@
-// Replays the recorded claude 2.1.302 transcripts (test/fixtures/runner) through the session host's stream mapper
-// (crates/fleetd/src/node/runner/claude/mapper/tests.rs). "in" lines drive fleetd's side (send, answer, interrupt) and
+// Replays the recorded claude 2.1.302 transcripts (test/fixtures/runner) through the session host's stream mapper.
+// "in" lines drive fleetd's side (send, answer, interrupt) and
 // must come out as recorded; "out" and "stderr" lines are fed; the "meta" exit ends the process. The classifier is a
 // recorder, so these tests pin the evidence the real classifier receives.
 import { expect, test } from "bun:test";

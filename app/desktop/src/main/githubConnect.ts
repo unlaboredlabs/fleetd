@@ -1,4 +1,4 @@
-// Connecting a person's own GitHub through the hub's App (D187, crates/fleetd-contracts/src/github_app.rs): main reads
+// Connecting a person's own GitHub through the hub's App (D187): main reads
 // the App's client ID and GitHub's sign-in page from github_app_get, opens the sign-in in the browser with a PKCE
 // challenge and a redirect to a loopback port it listens on (`/github/callback`, which the App's manifest names, any
 // port), and hands GitHub's code with its verifier to github_connect. The code and the verifier never reach the page,

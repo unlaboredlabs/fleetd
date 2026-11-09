@@ -1,4 +1,4 @@
-// Worktrees and checkouts (crates/fleetd/src/node/worktree.rs): a writer's worktree on a new branch, a reader's
+// Worktrees and checkouts: a writer's worktree on a new branch, a reader's
 // detached one, the base it starts from, what a session changed, and their removal. Git runs with no prompt for
 // credentials or an editor; git that talks to a remote never waits on ssh and is killed at its timeout. Every git runs
 // off the event loop: a worktree add that takes a minute under load never stalls the node's link or its sessions.

@@ -1,4 +1,4 @@
-// The node's side of a session's host (crates/fleetd/src/node/runner/host.rs). `fleetd session-host <dir> <session id>
+// The node's side of a session's host. `fleetd session-host <dir> <session id>
 // -- <claude> <args…>` (./host/serve.ts, this binary) owns the session's claude, runs the stream mapper, the kill ladder
 // and the transcript, and outlives the node. The node starts it detached (a session of its own and, where systemd
 // answers, a scope of its own that the node's unit doesn't stop: scope.ts), waits for its registration (`host.json`),

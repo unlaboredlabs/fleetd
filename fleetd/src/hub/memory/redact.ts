@@ -1,4 +1,4 @@
-// Secrets out of text the hub shows or keeps from places it doesn't control (crates/fleetd/src/hub/redact.rs):
+// Secrets out of text the hub shows or keeps from places it doesn't control:
 // credentials recognised by their shape, replaced by `[secret]`.
 export const SECRET = "[secret]";
 

@@ -1,4 +1,4 @@
-// The node's keys (crates/fleetd/src/node/identity.rs), as PKCS#8 PEM files: the ed25519 identity that signs the hub's
+// The node's keys, as PKCS#8 PEM files: the ed25519 identity that signs the hub's
 // challenge (`node-key.pem`) and the X25519 key secrets are sealed to (`node-box-key.pem`). Both are created mode 0600
 // on first use, so the Rust node and this one read each other's.
 import { createPrivateKey, createPublicKey, randomBytes, sign } from "node:crypto";

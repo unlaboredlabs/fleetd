@@ -1,4 +1,4 @@
-// The merge train's area (crates/fleetd/src/hub/train/mod.rs): one Train per hub over the hub's `gh` (as the GitHub
+// The merge train's area: one Train per hub over the hub's `gh` (as the GitHub
 // App where it reaches), with its review gate, and its reads for other areas (D352).
 import type { Change } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";

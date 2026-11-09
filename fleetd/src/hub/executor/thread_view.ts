@@ -1,4 +1,4 @@
-// Pure view of one thread for thread_tail, actions_list and agent_work (crates/fleetd/src/hub/executor/thread_view.rs),
+// Pure view of one thread for thread_tail, actions_list and agent_work,
 // built from the node's bounded thread snapshot (the newest window of the session) plus the live events after it.
 import type { ItemStatus, PendingPermission, RunInfo, ThreadEvent, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
 import { jsPrefix, keepTail } from "../../shared/text.ts";

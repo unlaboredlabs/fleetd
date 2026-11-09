@@ -1,4 +1,4 @@
-// The leads area's ports over the hub (crates/fleetd/src/hub/leads/wiring.rs `HubPorts`): a lead launches through the
+// The leads area's ports over the hub: a lead launches through the
 // executor on the account its project runs on, its wakes go through the offline write queue, and the node's hello says
 // whether it runs one lead per machine.
 import { ToolError } from "../../shared/errors.ts";

@@ -1,4 +1,4 @@
-// Which status sources are live (crates/fleetd/src/hub/status/fresh.rs): `hub.area("status_fresh")`. A source is
+// Which status sources are live: `hub.area("status_fresh")`. A source is
 // touched on every good answer (`touch`) and told of failures (`fail`, which keeps the reason but flips nothing).
 // Staleness is decided only here, by deadlines: a source is stale once `asOf + staleAfter` passes untouched. The
 // status loop sleeps until `nextDeadline` and calls `check`; nothing polls.

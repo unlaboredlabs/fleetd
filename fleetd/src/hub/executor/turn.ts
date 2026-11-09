@@ -1,4 +1,4 @@
-// One tool-less model turn the hub runs for itself and reads the answer of (crates/fleetd/src/hub/executor/turn.rs): a
+// One tool-less model turn the hub runs for itself and reads the answer of: a
 // memory import's distilling (W229), an approval checker's verdict (W239). The session is launched on a project's
 // machine, recorded as the hub's own (so the sweep never reports it as a session nobody owns), waited on to its end,
 // and stopped either way: a session left running holds what it read in a process.

@@ -1,4 +1,4 @@
-// The lead chat's tools (crates/fleetd/src/hub/chat/tools.rs, nudges.rs): chat_send, chat_history, chat_stop,
+// The lead chat's tools (nudges.rs): chat_send, chat_history, chat_stop,
 // project_stop and chat_nudge_clear.
 import type { ChatNudgeCleared, ChatStopInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

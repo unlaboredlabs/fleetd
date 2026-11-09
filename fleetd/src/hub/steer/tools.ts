@@ -1,4 +1,4 @@
-// steer_send, steer_withdraw and agent_messages (crates/fleetd/src/hub/steer/tools.rs), with the "References:" lines an order's
+// steer_send, steer_withdraw and agent_messages, with the "References:" lines an order's
 // note or steer carries (orders/notes.rs `render_refs`).
 import type { IntakeRef, SteerStage } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

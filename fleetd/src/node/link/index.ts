@@ -1,4 +1,4 @@
-// The hub link (crates/fleetd/src/node/link.rs): challenge, signed hello, welcome, then heartbeats and the hub's
+// The hub link: challenge, signed hello, welcome, then heartbeats and the hub's
 // requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20%
 // jitter, reset by each welcome), and only gives up when the hub refuses the node. A quiet link is pinged before it is
 // given up on (QUIET_PROBE, QUIET_DEAD). With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).

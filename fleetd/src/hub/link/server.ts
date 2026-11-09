@@ -1,4 +1,4 @@
-// One node link per machine (crates/fleetd/src/hub/link/server.rs): challenge, hello (signature, enroll token or
+// One node link per machine: challenge, hello (signature, enroll token or
 // enrolled key), welcome, then heartbeats, session frames, lead calls and command replies until the socket ends. 45 s
 // of silence takes the machine offline: no frame and, where the kernel's count can be read (../http/counted.ts), no
 // byte. A linked machine is online while its node's runner is usable (`runner_info`: a supported version, logged in)

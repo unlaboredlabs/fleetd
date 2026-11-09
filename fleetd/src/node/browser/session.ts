@@ -1,4 +1,4 @@
-// One browser session of an agent's (crates/fleetd/src/node/browser/session.rs): its Chrome's connection, who drives
+// One browser session of an agent's: its Chrome's connection, who drives
 // it, the page it follows (the newest one open) and that page's screencast, which goes to the hub's live view while
 // the hub watches, at most one frame per LIVE_GAP and as the watcher's link has room. A person's input lands on the
 // followed page while they have control; the agent's commands are refused meanwhile.

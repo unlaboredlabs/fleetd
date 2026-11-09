@@ -1,4 +1,4 @@
-// The lead's lines about PRs (crates/fleetd/src/hub/leads/events.rs, its `Pr*` events): what the train and the
+// The lead's lines about PRs (its `Pr*` events): what the train and the
 // review gate wake a lead with.
 import { clip } from "./seams.ts";
 

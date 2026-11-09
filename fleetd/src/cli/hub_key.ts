@@ -1,4 +1,4 @@
-// `fleetd hub key …` (crates/fleetd/src/cli/hub_key.rs): it opens the hub home's database directly; SQLite WAL makes
+// `fleetd hub key …`: it opens the hub home's database directly; SQLite WAL makes
 // that safe while the hub runs.
 import { closeSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";

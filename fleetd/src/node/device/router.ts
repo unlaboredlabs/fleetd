@@ -1,4 +1,4 @@
-// The node's session tools for every kind of screen (crates/fleetd/src/node/device/mod.rs `Router`): each call goes to
+// The node's session tools for every kind of screen: each call goes to
 // the browser broker, the Android emulators, or the desktops (a Linux desktop, or the agents' Mac's own screen), and an
 // agent session holds one screen of any kind at a time. iOS screens are gone (D298): agents start simulators on the
 // agents' Mac with `mac sim`, so a start of kind ios is refused.

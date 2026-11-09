@@ -1,4 +1,4 @@
-// What `node_action` `screens` writes into node.json (crates/fleetd/src/node/screens.rs `mac_refuses`, `edited`): a kind
+// What `node_action` `screens` writes into node.json (`edited`): a kind
 // of screen turned on or off, and the idle timeout of every kind.
 import type { ScreenSettings } from "../../shared/screens_wire.ts";
 

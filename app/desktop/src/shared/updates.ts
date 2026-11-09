@@ -128,7 +128,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56 UTC · 1b563d7", and so does
  * `0.0.0-nightly.202610261056+1b563d7`, from before the rename.
  * Any other version is itself, without a build part. Only for showing: the updaters compare the raw version, and the
- * raw version is what gets copied. The CLI's twin is `crate::version_label` (crates/fleetd/src/lib.rs).
+ * raw version is what gets copied. The CLI's twin is `crate::version_label`.
  */
 export const versionLabel = (version: string): string => {
   const bare = withoutBuild(version);

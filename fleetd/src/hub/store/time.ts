@@ -1,4 +1,4 @@
-// The store's time forms (crates/fleetd/src/hub/store/mod.rs `now_ms`, `iso_ms`, `parse_ms`).
+// The store's time forms (`iso_ms`, `parse_ms`).
 import type { Clock } from "../../shared/clock.ts";
 
 export const nowMs = (clock: Clock) => clock.now();

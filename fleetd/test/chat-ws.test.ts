@@ -1,4 +1,4 @@
-// The /app `chat` subscription and its `chat_delta` frames (crates/fleetd/src/hub/app_ws/mod.rs).
+// The /app `chat` subscription and its `chat_delta` frames.
 import { afterAll, expect, test } from "bun:test";
 import { start } from "../src/hub/chat/loops.ts";
 import { chat } from "../src/hub/chat/index.ts";

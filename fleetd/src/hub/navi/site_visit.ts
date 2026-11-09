@@ -1,4 +1,4 @@
-// What a Navi's prompt visits, for its site gate (crates/fleetd/src/hub/navi/sites.rs `visit`): its lead's first fetch
+// What a Navi's prompt visits, for its site gate: its lead's first fetch
 // (`WebFetch`) or browser visit (`agent-browser open|goto|navigate|read <url>`) to a site asks the person, and their
 // approval allows the site from then on. Any other shell command runs unasked (D208). The site itself is sites.ts's.
 import { siteOf } from "./sites.ts";

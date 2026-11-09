@@ -1,4 +1,4 @@
-// What a lead reads of the work that isn't its own (crates/fleetd/src/hub/work/elsewhere.rs): the digest's "Elsewhere"
+// What a lead reads of the work that isn't its own: the digest's "Elsewhere"
 // lines (claims, other projects' writers and Changes on the same repo and base, and recent landings outside the train).
 import type { ClaimOwner, LandingRoute, ProjectRef, WorkItem, WorkKey } from "../../shared/contracts.ts";
 import { oneLine } from "../leads/text.ts";

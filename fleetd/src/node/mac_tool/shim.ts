@@ -1,4 +1,4 @@
-// The agents' Mac on every agent's PATH (crates/fleetd/src/node/mac_tool/client.rs `install_shim`, `forwarder`;
+// The agents' Mac on every agent's PATH (`forwarder`;
 // node/session_route.rs `env`): `mac`, written at the node's start in `<home>/mac/bin`, runs this node's binary as
 // `fleetd mac`; while the session holds a simulator on the Mac, a forwarding `agent-device` in
 // `<home>/sessions/<thread>/device-remote` runs each command there (`fleetd mac agent-device`). Both folders go first

@@ -1,4 +1,4 @@
-// `cmd_check` frames from the hub (crates/fleetd/src/node/cmd.rs): run argv, never through a shell, in a directory
+// `cmd_check` frames from the hub: run argv, never through a shell, in a directory
 // under the node's command roots, kill the whole process group at the timeout, and reply with the exit code and the
 // tail of the output.
 import { spawn } from "node:child_process";

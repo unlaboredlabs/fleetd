@@ -1,4 +1,4 @@
-// New work as the matcher reads it at a writer's spawn (crates/fleetd/src/hub/tasks/duplicates.rs `intent`): held by
+// New work as the matcher reads it at a writer's spawn: held by
 // its project, with its PR declared. The tasks area reaches it as `work(hub).matcher.intent`.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import { matcherKeys, matcherScope, projectOwner } from "./check.ts";

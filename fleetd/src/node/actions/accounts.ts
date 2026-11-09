@@ -1,4 +1,4 @@
-// The Claude accounts sessions run on (crates/fleetd/src/node/claude_accounts.rs): the hub's API key and endpoint,
+// The Claude accounts sessions run on: the hub's API key and endpoint,
 // and each person's subscription token, one file each in `<node home>/claude-accounts/<hub | person id>.json`, as the
 // Rust node writes them. A secret is opened with the node's box key, files are written atomically at mode 0600 in
 // 0700 directories, and errors name an account, never show a value.

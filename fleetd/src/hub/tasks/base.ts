@@ -1,4 +1,4 @@
-// Where a writer's worktree started, in words (crates/fleetd/src/hub/tasks/base.rs): the spawn result, the task's
+// Where a writer's worktree started, in words: the spawn result, the task's
 // lines, the attention item when git can't fetch the project's remote, and the doctor checks that read it.
 import type { BaseErrorKind, WorktreeBase } from "../../shared/sessions.ts";
 

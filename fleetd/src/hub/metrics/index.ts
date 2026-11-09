@@ -1,4 +1,4 @@
-// Factory metrics' hub area (crates/fleetd/src/hub/metrics/mod.rs): landed changes folded out of the event log, kept
+// Factory metrics' hub area: landed changes folded out of the event log, kept
 // past its 30 days, and read as merged per day, order to merged, the person's minutes per merged PR and the share
 // through fleetd, by calendar day in the viewer's zone. `weeks` is each project's last 7 days for its Status row.
 import type { Database } from "bun:sqlite";

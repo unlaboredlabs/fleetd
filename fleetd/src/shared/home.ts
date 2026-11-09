@@ -1,16 +1,16 @@
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-/** `~` expanded, absolute against the cwd (crates/fleetd/src/hub/store/db.rs `expand_home`). */
+/** `~` expanded, absolute against the cwd. */
 export function expandHome(raw: string, userHome = homedir()): string {
   const expanded = raw === "~" ? userHome : raw.startsWith("~/") ? join(userHome, raw.slice(2)) : raw;
   return isAbsolute(expanded) ? expanded : resolve(expanded);
 }
 
-/** The parent of the `--home` this process was started with (crates/fleetd/src/home.rs `BESIDE_HOME`). */
+/** The parent of the `--home` this process was started with. */
 let besideHome: string | undefined;
 
-/** `$FLEETD_HOME`, else the directory beside `--home`, else `~/.fleetd` (crates/fleetd/src/home.rs). */
+/** `$FLEETD_HOME`, else the directory beside `--home`, else `~/.fleetd`. */
 export function fleetdDir(): string {
   const env = process.env.FLEETD_HOME;
   return env ? expandHome(env) : (besideHome ?? join(homedir(), ".fleetd"));

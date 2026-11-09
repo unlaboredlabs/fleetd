@@ -1,4 +1,4 @@
-// A QR code for a terminal (crates/fleetd/src/cli/pair.rs `terminal_qr`): byte mode, error correction L, the smallest
+// A QR code for a terminal: byte mode, error correction L, the smallest
 // version that fits, the mask with the lowest penalty, drawn in Unicode half-blocks two rows a line with a 4-module
 // quiet zone. Light modules are drawn, so it reads on a dark terminal as dark-on-light.
 

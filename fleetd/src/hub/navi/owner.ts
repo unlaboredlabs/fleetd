@@ -1,4 +1,4 @@
-// Each Navi is its owner's (D215; crates/fleetd/src/hub/navi/owner.rs): the person whose key made it, else the hub's
+// Each Navi is its owner's (D215): the person whose key made it, else the hub's
 // first owner. Only they see it in a list or reach it through a tool. Anyone else is refused, an admin too, except to
 // delete the Navi of a person since removed from the hub.
 //

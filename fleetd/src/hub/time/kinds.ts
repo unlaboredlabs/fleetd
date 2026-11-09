@@ -1,4 +1,4 @@
-// Span kinds and categories (crates/fleetd-contracts/src/time.rs `span_kinds!`, `Category`), converted from the Rust
+// Span kinds and categories (`Category`), converted from the Rust
 // table: each kind's stored code, which never changes, and its category.
 import type { Category, SpanKind, SpanStatus } from "../../shared/contracts.ts";
 

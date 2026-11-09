@@ -1,4 +1,4 @@
-// A project's work in groups (crates/fleetd/src/hub/status/groups.rs): its agents by what they do, then their PR, then
+// A project's work in groups: its agents by what they do, then their PR, then
 // how they ended; PRs no agent covers; requests and screens waiting on the person. Counted in full, listed at most
 // STATUS_ITEMS_PER_GROUP per group, newest first. Idle and done items stop being news after 7 days.
 import type {

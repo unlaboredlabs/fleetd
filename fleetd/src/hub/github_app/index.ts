@@ -1,4 +1,4 @@
-// The hub's own GitHub App (D190, contracts `github_app`; crates/fleetd/src/hub/github_app/mod.rs). The admin creates
+// The hub's own GitHub App (D190, contracts `github_app`). The admin creates
 // it through GitHub's manifest flow: a loopback page (the desktop app's, or `fleetd github-app create`'s) posts
 // `manifest` to GitHub, and GitHub sends the admin back there with a code, which `GithubApps.create` trades for the
 // App's id, private key and secrets. They go from GitHub to the hub only, sealed at once to the hub's own box key

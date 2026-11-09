@@ -1,4 +1,4 @@
-// The metrics tests' shared hub and fixtures (crates/fleetd/src/hub/metrics/tests.rs): a fresh hub at NOW, orders W1
+// The metrics tests' shared hub and fixtures: a fresh hub at NOW, orders W1
 // and W2 on devbox/web, Changes on acme/web, the event log, the projector run by hand and metrics_get as a caller.
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry, type Caller } from "../src/hub/api/registry.ts";

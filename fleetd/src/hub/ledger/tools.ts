@@ -1,5 +1,5 @@
 // The ledger's MCP tools (decisions_search, decisions_record, and the app's decisions_list and decisions_overturn)
-// and its lead calls (decide, decisions_search) (crates/fleetd/src/hub/ledger/tools.rs).
+// and its lead calls (decide, decisions_search).
 import type { Database } from "bun:sqlite";
 import type { Decision, DecisionOrder, DecisionScope, ProjectRef, WorkstreamId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

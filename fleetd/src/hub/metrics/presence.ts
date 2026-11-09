@@ -1,4 +1,4 @@
-// App presence (crates/fleetd/src/hub/metrics/presence.rs): once a minute, while presence is on, the desktop app says
+// App presence: once a minute, while presence is on, the desktop app says
 // whether a window is focused, which project is on screen and whether there was input in the last minute. A human
 // key's minute with all three becomes one `app.presence` event over the minute before it, on the hub's clock.
 import type { ProjectRef } from "../../shared/contracts.ts";

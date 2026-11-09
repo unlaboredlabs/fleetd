@@ -1,4 +1,4 @@
-// The hub's `gh`, as the App where it can (crates/fleetd/src/hub/github_app/gh.rs): each run about a repository the
+// The hub's `gh`, as the App where it can: each run about a repository the
 // App is installed on gets that installation's token in `GH_TOKEN`; any other run, or one while GitHub can't mint a
 // token, uses the hub machine's own `gh` login, as before the App. A run GitHub refuses to the App itself ("Resource
 // not accessible by integration") runs once more on the machine's login; any other failure is the run's own.

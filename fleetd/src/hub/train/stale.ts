@@ -1,4 +1,4 @@
-// A check GitHub still shows pending after its workflow run finished (crates/fleetd/src/hub/train/stale.rs). On #1362
+// A check GitHub still shows pending after its workflow run finished. On #1362
 // the Desktop QA run had completed green, but GitHub kept its job `qa (ubuntu-latest, 1/4)` in_progress (conclusion
 // success), and the PR waited 45 minutes as "still running" until the lead re-ran the run by hand. Nothing finishes
 // such a check by itself: once its run has been done `STALE_AFTER_MS`, the train re-runs that workflow run, once per

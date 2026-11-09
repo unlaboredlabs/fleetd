@@ -1,4 +1,4 @@
-// What a desktop session reads and drives (crates/fleetd/src/node/desktop/screen.rs): a Linux display over the node's
+// What a desktop session reads and drives: a Linux display over the node's
 // own X11 connection (x11.ts). The session's live view, takeover and the agent's `desktop` actions sit on this alone.
 //
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no

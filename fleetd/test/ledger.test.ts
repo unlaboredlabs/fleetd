@@ -1,4 +1,4 @@
-// The ledger (crates/fleetd/src/hub/ledger/tests.rs and overturn_tests.rs).
+// The ledger (overturn_tests.rs).
 import { expect, test } from "bun:test";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
 import { decisions } from "../src/hub/ledger/decisions.ts";

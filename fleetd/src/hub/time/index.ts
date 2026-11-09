@@ -1,4 +1,4 @@
-// The agent time inspector's hub area (crates/fleetd/src/hub/time/mod.rs): spans from the nodes (their outboxes, acked
+// The agent time inspector's hub area: spans from the nodes (their outboxes, acked
 // after commit) and from the hub's own choke points through one sink, plus spans the projector folds out of the event
 // log. One writer commits them in batches with their labels, roll-ups and cursors; reads give breakdowns, critical
 // paths and insights. The writer runs once the event loop is free, never inside the call that sent a span.

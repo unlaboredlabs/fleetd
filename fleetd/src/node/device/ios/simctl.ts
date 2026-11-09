@@ -1,4 +1,4 @@
-// Xcode's `simctl`, on the node's own device set (crates/fleetd/src/node/device/ios/simctl.rs): `xcrun simctl --set
+// Xcode's `simctl`, on the node's own device set: `xcrun simctl --set
 // <node home>/device/ios/set`. The simulators agents use live there, apart from a person's own in Xcode, so the node may
 // delete whatever it finds in it. The runtimes and device types are Xcode's, shared by every set.
 import { mkdirSync } from "node:fs";

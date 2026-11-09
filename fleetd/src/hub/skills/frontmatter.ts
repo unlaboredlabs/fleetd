@@ -1,4 +1,4 @@
-// A SKILL.md's rules (crates/fleetd-contracts/src/skills.rs): its frontmatter, its description, its checks.
+// A SKILL.md's rules: its frontmatter, its description, its checks.
 import { linesOf } from "../memory/index.ts";
 
 export const SKILL_FILE = "SKILL.md";

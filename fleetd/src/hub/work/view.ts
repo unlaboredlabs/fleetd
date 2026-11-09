@@ -1,4 +1,4 @@
-// The in-flight view, as a pure function of what the hub holds (crates/fleetd/src/hub/work/view.rs): write tasks,
+// The in-flight view, as a pure function of what the hub holds: write tasks,
 // Changes and claims become one list of `WorkItem`s. A writer appears once: its Change takes over when its PR is enqueued.
 import type { Change, ChangeState, Claim, Task, TaskId, TaskState, WorkItem, WorkKey } from "../../shared/contracts.ts";
 

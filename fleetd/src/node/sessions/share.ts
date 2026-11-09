@@ -1,4 +1,4 @@
-// Each session's share of the machine (crates/fleetd/src/node/sessions/share.rs): build tools and test runners held to
+// Each session's share of the machine: build tools and test runners held to
 // its part of the CPUs, and one compile cache for every session. With 20 agents building at once and no limit, every
 // `cargo`, `make` and `go build` sized itself to all the machine's cores, and every `pnpm test` started a vitest worker
 // per core (31 forks, 11 GB at peak).

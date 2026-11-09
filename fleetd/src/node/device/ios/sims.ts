@@ -1,4 +1,4 @@
-// The simulators agents hold on the agents' Mac (crates/fleetd/src/node/mac_tool/host.rs `sim_start`, `sim_end`,
+// The simulators agents hold on the agents' Mac (`sim_end`,
 // `end_idle_sims`, `sim_env`): `mac sim start` lends an agent a clone from the warm pool (or one of the device type it
 // named), within the Mac's budget of simulators at once and in the order agents asked (node/mac_tool/queue.ts); `mac
 // sim end`, or 30 minutes without a step, gives it back and deletes it. While an agent holds one, its jobs' agent-device and plain simctl are pointed at it.

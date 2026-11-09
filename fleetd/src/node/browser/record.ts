@@ -1,4 +1,4 @@
-// A browser session's recording (crates/fleetd/src/node/browser/record.rs, upload.rs): under
+// A browser session's recording (upload.rs): under
 // `<home>/browser/recordings/<sessionId>/` its `session.json`, its action log (`actions.jsonl`, each step scrubbed of
 // the session's secrets) and its video (`video.webm`: the screencast's JPEGs as an MJPEG Matroska stream into
 // ffmpeg's VP9, at FPS frames a second). When the session ends it goes to the hub a piece at a time

@@ -1,4 +1,4 @@
-// node/desktop/mac: the agents' Mac's screen without a Mac (crates/fleetd/src/node/desktop/mac/tests.rs): what macOS
+// node/desktop/mac: the agents' Mac's screen without a Mac: what macOS
 // says about the console, the gate made of it, keys, agent-desktop's commands, and the lease end to end on a fake
 // screen. Nothing here asks macOS anything or touches the agents' Mac.
 import { afterEach, expect, test } from "bun:test";

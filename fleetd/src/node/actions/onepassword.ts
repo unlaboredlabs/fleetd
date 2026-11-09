@@ -1,4 +1,4 @@
-// People's 1Password service account tokens (crates/fleetd/src/node/onepassword_tokens.rs, D235): one file each in
+// People's 1Password service account tokens (D235): one file each in
 // `<node home>/onepassword-tokens/<person id>.json`, kept as a Claude subscription is (./accounts.ts). And the SDK
 // helper that reads 1Password with one: `@1password/sdk`, pinned, run under Node.js by ./onepassword_helper.mjs, in
 // the node's install directory. The token is the helper's first line on stdin, never in an environment or argument;

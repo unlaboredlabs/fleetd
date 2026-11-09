@@ -1,4 +1,4 @@
-// `fleetd prompts …` and `fleetd instructions …` (crates/fleetd/src/cli/prompts.rs): every prompt fleetd sends a
+// `fleetd prompts …` and `fleetd instructions …`: every prompt fleetd sends a
 // model, read and edited on the hub machine, on src/hub/prompts' store. They open the hub home directly (as `hub key`
 // does): an edit is a file the running hub reads at the next session it starts.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

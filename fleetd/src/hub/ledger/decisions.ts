@@ -1,4 +1,4 @@
-// The keyed decision log, scoped workstream → project → global (crates/fleetd/src/hub/ledger/decisions.rs). A lead
+// The keyed decision log, scoped workstream → project → global. A lead
 // asks a person in chat and logs the answer here with `decide`, which is how it never asks twice. Every write runs
 // in one BEGIN IMMEDIATE transaction that a refusal rolls back; events are appended after the commit.
 import type { Decision, ProjectRef } from "../../shared/contracts.ts";

@@ -1,4 +1,4 @@
-// A lead whose turn was cut off carries on by itself (crates/fleetd/src/hub/leads/cut_off.rs). Its node stopping or
+// A lead whose turn was cut off carries on by itself. Its node stopping or
 // restarting under it wakes it every time; its own turn ending badly (the stall guard, its claude exiting unasked, its
 // machine sleeping) wakes it once per run of such turns, so a turn that keeps hanging doesn't loop. The wake goes
 // through the offline write queue like any other.

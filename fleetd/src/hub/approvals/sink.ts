@@ -1,4 +1,4 @@
-// Secret sinks and variable names (crates/fleetd-contracts/src/secrets.rs, project_settings.rs `env_name_reserved`, and
+// Secret sinks and variable names (project_settings.rs `env_name_reserved`, and
 // approvals' own `parse_secret_sink`).
 
 import { SEAL_OVERHEAD } from "../../shared/sealed_box.ts";

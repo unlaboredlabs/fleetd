@@ -1,4 +1,4 @@
-// Agents write to each other (crates/fleetd/src/hub/tasks/dm_tests.rs): a running agent takes a message at its next
+// Agents write to each other: a running agent takes a message at its next
 // tool boundary, one that has finished keeps it for the turn something else starts (a Monitor of its own, its wait_ci,
 // its lead), and only a question it waits on lets another agent continue it.
 import { expect, test } from "bun:test";

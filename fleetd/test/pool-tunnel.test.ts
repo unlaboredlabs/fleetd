@@ -1,4 +1,4 @@
-// The tunnel end to end on this machine (crates/fleetd/src/hub/pool/tunnel_tests.rs): a local ssh2 server stands in for
+// The tunnel end to end on this machine: a local ssh2 server stands in for
 // a cloud machine's sshd, a fake boat names it and its host key, and a local "hub" answers what comes through the
 // reverse forward. Nothing reaches boat.dev.
 import { afterAll, expect, test } from "bun:test";

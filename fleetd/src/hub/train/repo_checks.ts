@@ -1,4 +1,4 @@
-// A repo's own train checks (crates/fleetd/src/hub/train/repo_checks.rs). A repo that commits `.fleetd/train.json`
+// A repo's own train checks. A repo that commits `.fleetd/train.json`
 // on its base sets them there: `fastChecks`, more checks the train waits for on each PR and batch, and `afterMerge`,
 // checks that never stop a merge.
 import type { Train } from "./service.ts";

@@ -1,4 +1,4 @@
-// Cloning a repo for a project the person adds (crates/fleetd/src/node/repos.rs `clone`, sessions/mod.rs
+// Cloning a repo for a project the person adds (sessions/mod.rs
 // `repo_clone`), with git's progress sent to the hub as `clone_progress` frames, and `gh repo list` (`gh_repo_list`).
 // git writes into a sibling that is renamed into place only when complete, so the destination existing always means
 // a whole clone. A GitHub token (a cloud machine's clone, D306) reaches git through its environment only.

@@ -1,4 +1,4 @@
-// A Navi reads back through its own chat (crates/fleetd/src/hub/navi/recall.rs): `chat_search` finds the messages
+// A Navi reads back through its own chat: `chat_search` finds the messages
 // holding some words, in a date range or not, newest first and a page at a time, and `chat_read` reads the messages
 // around one of them. A fresh session sees only the latest part of the chat; these reach all of it.
 //

@@ -1,4 +1,4 @@
-// The figures, pure (crates/fleetd/src/hub/metrics/compute.rs): stored rows + range + zone → tiles, calendar days, the
+// The figures, pure: stored rows + range + zone → tiles, calendar days, the
 // merge list and per-repo rows. Days are calendar days in the viewer's zone and empty ones count. Medians and p90
 // don't add across days, so everything is computed from rows on each read.
 import type {

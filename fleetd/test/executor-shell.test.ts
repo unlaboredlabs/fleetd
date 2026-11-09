@@ -1,5 +1,5 @@
-// Session rows to events, over one machine's day in the node's machine-stream shape
-// (crates/fleetd/src/hub/executor/shell_mapper_tests.rs): three sessions on one project, a completed turn (a), an
+// Session rows to events, over one machine's day in the node's machine-stream shape:
+// three sessions on one project, a completed turn (a), an
 // approval then an interrupt (c) and a failure (d), first live, then resumed by replay and by snapshot.
 import { expect, test } from "bun:test";
 import {

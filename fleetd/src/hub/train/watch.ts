@@ -1,4 +1,4 @@
-// The watch after a merge (crates/fleetd/src/hub/train/watch.rs). The train waits only for its fast set, so the repo's
+// The watch after a merge. The train waits only for its fast set, so the repo's
 // other checks finish after it merged: it watches them on the commit it put on the base, and the checks a batch skips,
 // which never ran on the merged tree before. Its fast checks too: they passed on the batch, but the base's own run of
 // them can still fail (a check scoped to some paths runs there on a change it skipped on the batch). A check there that

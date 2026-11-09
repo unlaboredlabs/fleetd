@@ -1,4 +1,4 @@
-// memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo (crates/fleetd/src/hub/memory/tools.rs).
+// memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo.
 // Writes are a person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. Each
 // person's own memory is theirs alone, admins included, except to delete a removed person's. The caps, and
 // memory_shared_get and memory_shared_set (the shared user.md of before people), are an admin's.

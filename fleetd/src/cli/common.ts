@@ -1,4 +1,4 @@
-// What the CLI's commands share (crates/fleetd/src/cli/mod.rs, setup/mod.rs, setup/state.rs, hub_key.rs
+// What the CLI's commands share (setup/mod.rs, setup/state.rs, hub_key.rs
 // `resolve_home`): the hub home, setup.json, private files, and how a command reports a failure.
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
@@ -96,7 +96,7 @@ export function readText(path: string): string {
   }
 }
 
-// ---- setup.json (crates/fleetd/src/cli/setup/state.rs) ----
+// ---- setup.json ----
 
 export type GitIdentity = { name: string; email: string };
 
