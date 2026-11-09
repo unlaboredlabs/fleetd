@@ -405,18 +405,12 @@ span.changeUndo {
   overflow-wrap: anywhere;
   user-select: text;
 }
+/* A day, "New" or "From before this chat": just the words, centred and quiet, with no rule on either side. */
 .day {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
   padding-top: var(--space-6);
-}
-.day::before,
-.day::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
+  padding-bottom: var(--space-1);
 }
 .clock {
   display: flex;
