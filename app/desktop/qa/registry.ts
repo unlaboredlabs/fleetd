@@ -728,6 +728,17 @@ export const screens: readonly Screen[] = [
     variant: "other-hub",
   },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
+  // Restart hub, on the row of a hub the person administers: its confirm says what a restart does.
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["typical"],
+    variant: "restart",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Restart hub…" }).click();
+      await expect(page.getByRole("dialog", { name: "Restart the hub?" })).toBeVisible();
+    },
+  },
   { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
   // Hidden with ⌘B in a wide window (it has no toggle icon): the top row runs the full width, after the traffic lights.
   {

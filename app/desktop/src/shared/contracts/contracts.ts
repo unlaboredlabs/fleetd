@@ -3175,6 +3175,18 @@ export type HubLinksGetOutput = {
   truncated?: boolean;
 };
 
+export type HubRestartInput = { [key: string]: unknown };
+
+export type HubRestartOutput = {
+  /**
+   * The leads that start again on the current lead profile once the hub is back and each is idle: those whose
+   * profile changed since their session started.
+   */
+  leads: number;
+  next?: string;
+  truncated?: boolean;
+};
+
 /**
  * What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;
  * members work in projects. Each device is still capped by its own grants.
@@ -9746,6 +9758,7 @@ export interface ToolMap {
   hub_link_remove: { input: HubLinkRemoveInput; output: HubLinkRemoveOutput };
   hub_link_revoke: { input: HubLinkRevokeInput; output: HubLinkRevokeOutput };
   hub_links_get: { input: HubLinksGetInput; output: HubLinksGetOutput };
+  hub_restart: { input: HubRestartInput; output: HubRestartOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_settings: { input: HubUpdateSettingsInput; output: HubUpdateOutput };
   hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };

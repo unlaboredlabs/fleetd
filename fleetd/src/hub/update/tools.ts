@@ -1,4 +1,4 @@
-// hub_update, hub_update_status and hub_update_settings.
+// hub_update, hub_update_status, hub_update_settings and hub_restart.
 import type { HubUpdateOutput, UpdateRun } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { REPAIR_FIX } from "../api/grants.ts";
@@ -10,6 +10,7 @@ import { versionLabel } from "../../update/version.ts";
 import { join } from "node:path";
 import { defaultTiming, DRAIN_MINUTES_MAX, type Refused, Updates } from "./index.ts";
 import { hubPorts } from "./ports.ts";
+import { restartHub } from "./restart.ts";
 
 /** The hub's update, `hub.area("updates")`: its ports wired to the running hub. */
 export const updates = (hub: Hub) =>
@@ -47,11 +48,14 @@ function output(hub: Hub, run: UpdateRun | undefined): HubUpdateOutput {
 }
 
 /** Only a person with Admin on every machine changes how the hub updates: an update restarts every machine. */
-function refuseUnlessAdminEverywhere(caller: Caller): void {
+function refuseUnlessAdminEverywhere(
+  caller: Caller,
+  why = "Updating fleetd restarts the hub and every node: it needs a person's key with Admin on every machine.",
+): void {
   if (!allowsEverywhere(caller, "admin") || caller.kind !== "human") {
     throw new ToolError(
       "forbidden",
-      "Updating fleetd restarts the hub and every node: it needs a person's key with Admin on every machine.",
+      why,
       caller.kind === "human" ? REPAIR_FIX : "Use an Admin key for all machines (`--machines '*'`).",
     );
   }
@@ -106,5 +110,15 @@ export function register(tools: Registry): void {
       throw new ToolError("failed", `The hub couldn't write its update settings: ${(e as Error).message}`);
     }
     return output(hub, updates(hub).status());
+  });
+  tools.add("hub_restart", (hub, caller) => {
+    // It drops every app's and machine's connection for a moment, and a person decides it.
+    refuseUnlessAdminEverywhere(caller, "Restarting the hub drops every app's and machine's connection for a moment: it needs a person's key with Admin on every machine.");
+    const u = updates(hub);
+    const run = u.status();
+    if (run && run.finishedAt === undefined && !u.leftOver()) {
+      throw new ToolError("failed", "fleetd is updating, and the update restarts the hub itself.", "Try again once the update has finished.");
+    }
+    return restartHub(hub, caller);
   });
 }

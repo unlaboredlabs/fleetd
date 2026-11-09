@@ -765,7 +765,7 @@ profile.
 |---|---|
 | Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
 | A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
+| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -797,6 +797,13 @@ Leads start on the profile picked under **Lead runs on**, the default until some
 for the whole hub, not one per project, and applies at each lead's next start: a lead already running keeps the model
 and effort it started on (`lead_start {fresh: true}` starts it again now). Each lead's
 lane, and its time by profile, name the profile its session started on.
+
+To move every lead to it at once, an admin clicks **Restart hub…** on the hub's row in
+[Settings › Hubs](/docs/several-hubs#restart). Once the hub is back, each lead whose profile changed since it started
+(another profile picked, or its model, effort or fast mode edited) starts again on the current one, as
+`lead_start {fresh: true}` does: it keeps its chat, memory and open orders. A lead in the middle of a turn switches
+when the turn ends, and one whose machine is offline when it comes back. Leads already on the current profile carry on
+as they were. Only that button does this: the hub's restart for an update switches no lead.
 
 ```text
 $ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead --key-file ~/.fleetd/human.key

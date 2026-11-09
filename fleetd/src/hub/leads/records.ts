@@ -79,7 +79,9 @@ export class LeadRecords {
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (machine_id, project_id) DO UPDATE SET thread_id = excluded.thread_id, started_at = excluded.started_at,
            last_wake_at = excluded.last_wake_at, session_generation = excluded.session_generation,
-           profile = CASE WHEN leads.thread_id = excluded.thread_id THEN leads.profile END`,
+           profile = CASE WHEN leads.thread_id = excluded.thread_id THEN leads.profile END,
+           profile_launched = CASE WHEN leads.thread_id = excluded.thread_id THEN leads.profile_launched END,
+           switch_due = CASE WHEN leads.thread_id = excluded.thread_id THEN leads.switch_due ELSE 0 END`,
       )
       .run(
         lead.projectRef.machineId,
@@ -99,11 +101,40 @@ export class LeadRecords {
     );
   }
 
-  /** Keeps the profile the lead session `threadId` started on, once its row is in. */
-  leadProfilePut(r: ProjectRef, threadId: string, profile: string): void {
+  /** Keeps the profile the lead session `threadId` started on, and what it was `launched` with, once its row is in. */
+  leadProfilePut(r: ProjectRef, threadId: string, profile: string, launched?: string): void {
     this.db.conn
-      .query("UPDATE leads SET profile = ? WHERE machine_id = ? AND project_id = ? AND thread_id = ?")
-      .run(profile, r.machineId, r.projectId, threadId);
+      .query("UPDATE leads SET profile = ?, profile_launched = ? WHERE machine_id = ? AND project_id = ? AND thread_id = ?")
+      .run(profile, launched ?? null, r.machineId, r.projectId, threadId);
+  }
+
+  /** What the project's current lead session was launched with, as `leadProfilePut` kept it; undefined for one started before. */
+  leadLaunchedGet(r: ProjectRef): string | undefined {
+    return (
+      this.db.all<{ profile_launched: string | null }>("SELECT profile_launched FROM leads WHERE machine_id = ? AND project_id = ?", [
+        r.machineId,
+        r.projectId,
+      ])[0]?.profile_launched ?? undefined
+    );
+  }
+
+  /** Whether the project's lead starts again on its current profile once it is idle; a new session's row clears it. */
+  leadSwitchDue(r: ProjectRef): boolean {
+    return (
+      this.db.all<{ switch_due: number }>("SELECT switch_due FROM leads WHERE machine_id = ? AND project_id = ?", [r.machineId, r.projectId])[0]
+        ?.switch_due === 1
+    );
+  }
+
+  leadSwitchSet(r: ProjectRef, due: boolean): void {
+    this.db.conn.query("UPDATE leads SET switch_due = ? WHERE machine_id = ? AND project_id = ?").run(due ? 1 : 0, r.machineId, r.projectId);
+  }
+
+  /** The projects whose lead waits to start again on its current profile. */
+  leadsSwitchDue(): ProjectRef[] {
+    return this.db
+      .all<{ machine_id: string; project_id: string }>("SELECT machine_id, project_id FROM leads WHERE switch_due = 1 ORDER BY machine_id, project_id")
+      .map((row) => ({ machineId: row.machine_id, projectId: row.project_id }));
   }
 
   /** The MCP servers the project's lead thread started with; undefined for one started before fleetd kept them. */

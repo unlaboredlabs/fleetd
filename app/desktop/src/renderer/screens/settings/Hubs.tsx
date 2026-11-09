@@ -1,19 +1,22 @@
 // Settings › You › Hubs: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
-// A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Then Hub links: the keys
+// A hub's name shows in the sidebar, notifications, Status and Commands once there are two. An admin of a hub also
+// restarts it from its row (hubRestart.ts); a member's row has no such button. Then Hub links: the keys
 // made as you on each hub (hubLinks/LinksToThisHub.tsx); the hubs a project reaches are in its settings (LinkedHubs).
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
-import { Button, Dialog, Field, Input, Truncate, type TextTone } from "../../ui";
+import { Button, Dialog, Field, Input, Text, Truncate, type TextTone } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { HubText } from "../projects/HubText";
+import { useSettledAdministers } from "../admin/role";
 import { ColorPick } from "../shell/ColorPick";
+import { restartLine, useHubRestart } from "./hubRestart";
 import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
 
 /** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
@@ -118,13 +121,46 @@ export function ForgetHubDialog({ open, onOpenChange, only = true }: { open: boo
   );
 }
 
+/** Restart the hub in scope, once confirmed: what an admin's Restart hub asks first. */
+function RestartHubDialog({ open, onOpenChange, onRestart, only }: { open: boolean; onOpenChange: (open: boolean) => void; onRestart: () => void; only: boolean }) {
+  const hub = useHub();
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={only ? "Restart the hub?" : `Restart ${hub.label}?`}
+      description="It is back in about a second, and running agents carry on. A lead whose profile changed since it started comes back on the current one, with its chat, memory and open orders."
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              onOpenChange(false);
+              onRestart();
+            }}
+          >
+            Restart
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
 function HubSetting({ only }: { only: boolean }) {
   const self = useHub();
   const state = useData((st) => st.hub);
   const store = useKeyStore();
+  const administers = useSettledAdministers();
+  const { step, restart } = useHubRestart();
   const [confirm, setConfirm] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
   const hub = state.phase === "unpaired" ? null : state.hub;
-  const line = phaseLine(state);
+  // A restart this row asked for says how it goes; a failed one keeps the connection's line beside its own.
+  const line = (step.at === "failed" ? null : restartLine(step)) ?? phaseLine(state);
+  const failed = step.at === "failed" ? restartLine(step) : null;
+  const busy = step.at === "asking" || step.at === "restarting";
   const again = state.phase === "unpaired" || state.phase === "refused";
   return (
     <SettingsRow
@@ -145,10 +181,23 @@ function HubSetting({ only }: { only: boolean }) {
               {hub === null ? "Pair with a hub" : "Pair again"}
             </Button>
           ) : null}
+          {/* Admins of this hub only, and only while it is there to ask. */}
+          {administers && (state.phase === "live" || busy) ? (
+            <Button disabled={busy} onClick={() => setConfirmRestart(true)}>
+              Restart hub…
+            </Button>
+          ) : null}
           {hub ? <DangerButton onClick={() => setConfirm(true)}>{only ? "Disconnect and forget key" : "Remove…"}</DangerButton> : null}
         </>
       }
     >
+      {failed ? (
+        <div role="alert">
+          <Text size="sm" tone="danger">
+            <HubText>{failed.text}</HubText>
+          </Text>
+        </div>
+      ) : null}
       {hub ? (
         <Truncate mono size="sm" tone="quiet">
           {hub}
@@ -158,6 +207,7 @@ function HubSetting({ only }: { only: boolean }) {
       {store === null || store.kind === "os" ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
       {hub === null ? null : <NameAndColor key={`${self.label}:${self.color ?? ""}`} />}
       <ForgetHubDialog open={confirm} onOpenChange={setConfirm} only={only} />
+      <RestartHubDialog open={confirmRestart} onOpenChange={setConfirmRestart} onRestart={restart} only={only} />
     </SettingsRow>
   );
 }

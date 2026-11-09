@@ -115,7 +115,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
       title="Lead runs on"
       line={
         error === undefined
-          ? "Every project's lead. Takes effect at each lead's next start; running leads keep theirs. Reviews and tasks that name no profile stay on the default."
+          ? "Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs. Reviews and tasks that name no profile stay on the default."
           : `Not changed: ${error}`
       }
       lineTone={error === undefined ? undefined : "danger"}

@@ -34,6 +34,21 @@ Settings › Hubs lists each hub with its address, its connection and where its 
 
 With only one hub, Remove is called "Disconnect and forget key", as before.
 
+### Restart a hub {#restart}
+
+On the row of a hub you are an owner or admin of, with Admin on every machine, **Restart hub…** restarts that hub in
+place, the way an update restarts it. Members don't see the button, and the hub refuses them anyway. It asks first.
+The hub is back in about a second: the row says **Restarting the hub…** until this app is connected again, every
+other app and machine reconnects by itself, and running agents carry on. A message sent meanwhile goes once the hub is
+back.
+
+After such a restart, each lead whose [profile](/docs/projects#lead-profile) changed since it started comes back on
+the current one, with its chat, memory and open orders; the row says how many. Leads already on it just carry on.
+
+The hub restarts itself through the service `fleetd init` set up (the `fleetd-hub` systemd user unit, or its launchd
+agent on a Mac). One started by hand with `fleetd hub start` says so instead: stop it and start it again on its machine.
+The phone app has the same under Settings, **Restart Hub**, for admins.
+
 ## One sidebar {#sidebar}
 
 Each hub's projects sit under its name in the sidebar, in the order you added the hubs. Click a hub's name to

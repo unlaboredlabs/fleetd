@@ -80,7 +80,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("devices", ["devices", "phone", "signed in", "keys"]),
   { key: "devices.pair", label: "Pair a phone", tab: "devices", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
-  { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove"] },
+  { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove", "restart"] },
   { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
   { key: "hubs.links", label: "Hub links", tab: "hubs", keywords: ["hub link", "links to this hub", "link key", "other hub", "revoke"] },
   page("projects", ["project settings", "repo", "repository"]),

@@ -200,6 +200,7 @@ export const TOOLS = {
   hub_update: { scope: "admin", module: "src/hub/update" },
   hub_update_status: { scope: "read", module: "src/hub/update" },
   hub_update_settings: { scope: "admin", module: "src/hub/update" },
+  hub_restart: { scope: "admin", module: "src/hub/update" },
   people_list: { scope: "read", module: "src/hub/people" },
   invite_create: { scope: "admin", module: "src/hub/people" },
   invite_revoke: { scope: "admin", module: "src/hub/people" },
