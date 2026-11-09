@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Reordering the sidebar's pinned chats (W214, W530, W565): a pin dragged inside their grid, or moved with ⌥← / ⌥→ (a
 // cell) and ⌥↑ / ⌥↓ (a row), takes its new place, gliding on the sidebar's spring, says so to a screen reader, and the
-// hub keeps your pins in that order (chat_pins_set). A chat with new activity climbs to its place in the list on the
+// hub keeps your pins in that order (chat_pins_set). A chat dragged up past the others joins the pins where it is let
+// go, and a pin dragged down out of them leaves them (W574). A chat with new activity climbs to its place in the list on the
 // same spring. A press that doesn't move is still a click; Esc puts a lifted pin back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,7 +14,7 @@ import { UiProvider } from "../../ui";
 import { DWELL_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
-import { Sidebar, SPRING } from "./Sidebar";
+import { pinPlace, Sidebar, SPRING } from "./Sidebar";
 
 const SETTLE_MS = SPRING.ms;
 
@@ -186,8 +187,9 @@ describe("dragging a row", () => {
     // Lifted, riding the pointer, the two rows it passed slid up into its place.
     const lifted = section("Projects").querySelector<HTMLElement>("[data-lifted]");
     expect(lifted?.textContent).toContain("api");
-    // Held at the list's end: it goes no further than the last row.
-    expect(lifted?.style.transform).toBe(`translateY(${String(2 * ROW)}px)`);
+    // Held past the last row's middle: it takes the last place, under the pointer (past the list's end it would leave
+    // the pins).
+    expect(lifted?.style.transform).toBe(`translateY(${String(2 * ROW + 2)}px)`);
     expect(section("Projects").querySelector("[data-reorder]")).not.toBeNull();
     const shifted = [...section("Projects").querySelectorAll<HTMLElement>("[data-reorder-row]:not([data-lifted])")].map((r) => r.style.transform);
     expect(shifted).toEqual([`translateY(-${String(ROW)}px)`, `translateY(-${String(ROW)}px)`]);
@@ -205,7 +207,7 @@ describe("dragging a row", () => {
 
   it("moves an Only-me project among the others: one list", async () => {
     mount([row("ada", { onlyMe: true }), ...ROWS]);
-    await drag("ada", 10 * ROW);
+    await drag("ada", 3 * ROW);
     expect(titles("Projects")).toEqual(["api", "docs", "web", "ada"]);
     expect(saved()).toEqual([["api", "docs", "web", "ada"]]);
   });
@@ -562,8 +564,8 @@ describe("the pins' grid", () => {
     pointer(button("api"), "pointerdown", y, CELL_W / 2);
     pointer(window, "pointermove", y, CELL_W / 2 + 20);
     pointer(window, "pointermove", y - 4, CELL_W / 2 + 2 * CELL_W);
-    // Riding the pointer both ways, but never out of the grid.
-    expect(moved(cell("api"))).toEqual([CELL_W, 0]);
+    // Riding the pointer both ways, but never out of the grid's sides.
+    expect(moved(cell("api"))).toEqual([CELL_W, -4]);
     expect(moved(cell("docs"))).toEqual([-CELL_W, 0]);
     expect(moved(cell("web"))).toEqual([0, 0]);
     pointer(window, "pointerup", y - 4, CELL_W / 2 + 2 * CELL_W);
@@ -594,6 +596,107 @@ describe("the pins' grid", () => {
     const grid = rows("Projects").filter((r) => r.parentElement?.className.includes("pins") === true);
     expect(grid.map(nameOf)).toEqual(["api", "docs", "web", "ada"]);
     expect(host.querySelector("[data-pins-end]")).toBeNull();
+  });
+});
+
+describe("pinning and unpinning by drag", () => {
+  // The pins stacked from the top, ROW apart; the other chats' list GAP below them. The sidebar's rows come from the
+  // Shell, which takes the pins saved (pins.ts usePins, pins.dom.test.tsx): here, what is saved is the pins.
+  const GAP = 100;
+  const unpinned = (title: string) => ({ ...row(title), pinned: false });
+  beforeEach(() => {
+    layout.mockImplementation(function (this: HTMLElement) {
+      const list = this.parentElement;
+      const at = list === null ? 0 : [...list.children].indexOf(this);
+      const top = list?.className.includes("rows") === true ? GAP : 0;
+      return DOMRect.fromRect({ x: 0, y: top + at * ROW + translated(this), width: 200, height: ROW });
+    });
+  });
+  const grid = () => host.querySelector<HTMLElement>("[class*=pins]");
+  /** Presses `title` at its middle, moves it to `y` (on screen) in steps, and, unless `hold`, lets go there. */
+  const carry = async (title: string, y: number, opts: { hold?: boolean } = {}) => {
+    const el = button(title);
+    const box = el.closest("[data-reorder-row]")?.getBoundingClientRect();
+    const from = (box?.top ?? 0) + ROW / 2;
+    pointer(el, "pointerdown", from);
+    for (let step = 1; step <= 4; step++) pointer(window, "pointermove", from + ((y - from) * step) / 4);
+    if (opts.hold === true) return;
+    pointer(window, "pointerup", y);
+    await settle(SETTLE_MS + 20);
+  };
+
+  it("pins a chat dragged up past the others where it is let go among the pins, the grid shaded while it would", async () => {
+    mount([row("api"), row("docs"), unpinned("web"), unpinned("misc")]);
+    await carry("misc", ROW + 4, { hold: true });
+    expect(grid()?.hasAttribute("data-pinning")).toBe(true);
+    pointer(window, "pointerup", ROW + 4);
+    await settle(SETTLE_MS + 20);
+    expect(grid()?.hasAttribute("data-pinning")).toBe(false);
+    // Below api's middle, above docs': between them.
+    expect(saved()).toEqual([["api", "misc", "docs"]]);
+    expect(went).toEqual([]);
+  });
+
+  it("pins it first above the pins, and last between them and the list", async () => {
+    mount([row("api"), unpinned("web"), unpinned("misc")]);
+    await carry("web", -10);
+    expect(saved()).toEqual([["web", "api"]]);
+    calls.length = 0;
+    await carry("misc", GAP - 10);
+    expect(saved()).toEqual([["api", "misc"]]);
+  });
+
+  it("pins the first one with no pins yet", async () => {
+    mount([unpinned("web"), unpinned("misc")]);
+    await carry("misc", GAP - 10);
+    expect(saved()).toEqual([["misc"]]);
+  });
+
+  it("unpins a pin dragged down out of the pins, fading it on the way, a lone one too", async () => {
+    mount([row("api"), row("docs"), unpinned("web")]);
+    await carry("api", GAP + 10, { hold: true });
+    expect(grid()?.hasAttribute("data-unpinning")).toBe(true);
+    pointer(window, "pointerup", GAP + 10);
+    await settle(SETTLE_MS + 20);
+    expect(saved()).toEqual([["docs"]]);
+    expect(grid()?.hasAttribute("data-unpinning")).toBe(false);
+    mount([row("docs"), unpinned("api"), unpinned("web")]);
+    calls.length = 0;
+    await carry("docs", GAP + 10);
+    expect(saved()).toEqual([[]]);
+  });
+
+  it("puts back a chat let go inside the list, whose order is its activity's, and a pin let go above the pins", async () => {
+    mount([row("api"), unpinned("web"), unpinned("misc")]);
+    await carry("web", GAP + 2 * ROW);
+    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    await carry("api", -40);
+    expect(titles("Projects")).toEqual(["api", "web", "misc"]);
+    expect(saved()).toEqual([]);
+    // The release was the drop's, not a click on the row.
+    expect(went).toEqual([]);
+  });
+
+  it("pins no tenth chat: it goes back, and says why", async () => {
+    const nine = ["a", "b", "c", "d", "e", "f", "g", "h", "i"].map((t) => row(t));
+    mount([...nine, unpinned("web")]);
+    await carry("web", -10);
+    expect(saved()).toEqual([]);
+    expect(document.body.textContent).toContain("Up to 9 chats can be pinned");
+  });
+});
+
+describe("pinPlace", () => {
+  // Two to a row, 100 px square.
+  const cells = [0, 1, 2].map((i) => DOMRect.fromRect({ x: (i % 2) * 100, y: Math.floor(i / 2) * 100, width: 100, height: 100 }));
+  it("counts the pins before the pointer in reading order", () => {
+    expect(pinPlace(cells, { x: 10, y: -5 })).toBe(0);
+    expect(pinPlace(cells, { x: 10, y: 50 })).toBe(0);
+    expect(pinPlace(cells, { x: 60, y: 50 })).toBe(1);
+    expect(pinPlace(cells, { x: 190, y: 50 })).toBe(2);
+    expect(pinPlace(cells, { x: 190, y: 150 })).toBe(3);
+    expect(pinPlace(cells, { x: 0, y: 250 })).toBe(3);
+    expect(pinPlace([], { x: 0, y: 0 })).toBe(0);
   });
 });
 

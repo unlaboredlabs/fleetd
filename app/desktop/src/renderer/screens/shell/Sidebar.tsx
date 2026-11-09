@@ -1,6 +1,7 @@
 // The sidebar (W530): your chats, each a row with its picture, its name and its newest line, newest first, and you at
 // its foot (You.tsx). New sits at the top, beside the window's controls (NewButton). Your pinned chats stay on top in
-// your order (pins.ts): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; every other chat takes its place by
+// your order (pins.ts): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
+// there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
 // so a row never moves under a click. A row ends in a dot while its chat wants you (a reply, an approval, a secret, a
@@ -13,7 +14,7 @@
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
@@ -244,6 +245,13 @@ const pin = (layer: DataLayer, rows: ReadonlyArray<Placed>, keys: readonly strin
   );
 };
 
+/**
+ * Where a chat let go at `at` (on screen) joins the pins drawn in `cells`: after each one before it in reading order,
+ * a row above or level with it and further left. Above them all it goes first; below them, last.
+ */
+export const pinPlace = (cells: readonly DOMRect[], at: { readonly x: number; readonly y: number }): number =>
+  cells.filter((c) => c.bottom <= at.y || (c.top <= at.y && c.left + c.width / 2 < at.x)).length;
+
 /** Placeholder rows while the chats load: their shapes, still, so nothing repaints. */
 const Loading = ({ busy }: { busy: boolean }) => (
   <div className={s.loading} aria-busy={busy} aria-label="Loading projects">
@@ -283,12 +291,34 @@ function ProjectGroup(props: {
   const name = (key: string) => rowsByKey.get(key)?.project.title ?? "";
   // The pins lift and move inside their grid, and the hub keeps your order; the other rows' order is their activity's,
   // and they only glide to it.
-  const pins = useReorder({ keys: pinned, name, onMove: (order) => pin(layer, rows ?? [], order), settle: SPRING, grid: { columns: PIN_COLUMNS } });
+  // A pin dragged down past them is unpinned; a chat dragged up past the others is pinned where it is let go.
+  const grid = useRef<HTMLDivElement>(null);
+  const pins = useReorder({
+    keys: pinned,
+    name,
+    onMove: (order) => pin(layer, rows ?? [], order),
+    settle: SPRING,
+    grid: { columns: PIN_COLUMNS },
+    out: (key, way) => {
+      if (way === "down") pin(layer, rows ?? [], pinned.filter((k) => k !== key));
+    },
+  });
+  const pinOn = (key: string, at: number) => {
+    if (pinned.length >= PINS_MAX) {
+      toast({ title: `Up to ${String(PINS_MAX)} chats can be pinned`, description: "Unpin one to pin this one." });
+      return;
+    }
+    pin(layer, rows ?? [], [...pinned.slice(0, at), key, ...pinned.slice(at)]);
+  };
   const reorder = useReorder({
     keys: useMemo(() => (rows ?? []).filter((p) => !p.pinned).map((p) => p.key), [rows]),
     name,
     onMove: () => undefined,
     settle: SPRING,
+    fixed: true,
+    out: (key, way, at) => {
+      if (way === "up") pinOn(key, pinPlace([...(grid.current?.children ?? [])].map((c) => c.getBoundingClientRect()), at));
+    },
   });
   const at = named ? { at: hub.id } : {};
   const openRow = (p: SidebarProject) => go({ id: "project", project: routeOf(p), message: null, ...at });
@@ -300,11 +330,7 @@ function ProjectGroup(props: {
         <ContextMenuItem
           onSelect={() => {
             if (p.pinned) return pin(layer, rows ?? [], pinned.filter((k) => k !== p.key));
-            if (pinned.length >= PINS_MAX) {
-              toast({ title: `Up to ${String(PINS_MAX)} chats can be pinned`, description: "Unpin one to pin this one." });
-              return;
-            }
-            pin(layer, rows ?? [], [...pinned, p.key]);
+            pinOn(p.key, pinned.length);
           }}
         >
           {p.pinned ? "Unpin" : "Pin to top"}
@@ -358,7 +384,13 @@ function ProjectGroup(props: {
       ) : (
         <>
           {pins.shown.length === 0 ? null : (
-            <div className={s.pins} {...pins.list}>
+            <div
+              ref={grid}
+              className={s.pins}
+              {...pins.list}
+              data-pinning={reorder.leaving === "up" || undefined}
+              data-unpinning={pins.leaving === "down" || undefined}
+            >
               {pins.shown.map((key) => {
                 const p = rowsByKey.get(key);
                 if (p === undefined) return null;
@@ -376,10 +408,9 @@ function ProjectGroup(props: {
             {reorder.shown.map((key) => {
               const p = rowsByKey.get(key);
               if (p === undefined) return null;
-              const handle = reorder.row(key);
-              // These glide as their order changes, and never lift.
+              // These glide as their order changes, and lift only to be pinned.
               return (
-                <div key={key} ref={handle.ref} style={handle.style} data-reorder-row={handle["data-reorder-row"]}>
+                <div key={key} {...reorder.row(key)}>
                   <ContextMenu menu={menu(p)}>
                     <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
                   </ContextMenu>
