@@ -1,6 +1,6 @@
 // Making and managing projects from the phone: their screens in the root stack (New Project as a sheet; New Screen, a
 // screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs,
-// Skills, the chat's Artifacts and one artifact pushed over its chat, in a stack of their own, its icon as a
+// Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
 // bar. App.tsx adds these to its
 // navigators.
@@ -29,6 +29,8 @@ import { Symbol } from "./parts";
 import { Artifact } from "../artifacts/Artifact";
 import { Artifacts } from "../artifacts/Artifacts";
 import { ArtifactVersions } from "../artifacts/ArtifactVersions";
+import { Dm } from "../dms/Dm";
+import { Dms } from "../dms/Dms";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -126,6 +128,8 @@ function ChatInfo() {
       <InfoStack.Screen name="Artifacts" component={Artifacts} options={pushed(t, "Artifacts")} />
       <InfoStack.Screen name="Artifact" component={Artifact} options={{ ...pushed(t, ""), headerStyle: { backgroundColor: t.bg }, contentStyle: { backgroundColor: t.bg } }} />
       <InfoStack.Screen name="ArtifactVersions" component={ArtifactVersions} options={pushed(t, "Versions")} />
+      <InfoStack.Screen name="Dms" component={Dms} options={pushed(t, "DMs Between Agents")} />
+      <InfoStack.Screen name="Dm" component={Dm} options={pushed(t, "DM")} />
     </InfoStack.Navigator>
   );
 }

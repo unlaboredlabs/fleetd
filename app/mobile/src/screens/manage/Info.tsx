@@ -1,6 +1,6 @@
 // A project's own screen, opened from its chat's header, as a contact's in a chat app: its avatar and name (tapping the
 // avatar, or Edit under it, opens its icon's sheet: a built-in face and color, or a photo: IconPicker.tsx), then what
-// runs there now (Agents: agents_list), its open orders (orders_board), its To-do (its checklist) and its recent
+// runs there now (Agents: agents_list, then the DMs its agents sent each other: screens/dms), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and Only
 // me. Then the desktop's sections, each pushed: Approvals, Payments, Linked hubs, Skills and the chat's
 // Artifacts (screens/artifacts); Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them;
@@ -25,6 +25,7 @@ import { agentLines, checklist, deleteBlocked, deleteWords, machineName, manages
 import { confirmDestructive, errorWords, Problem } from "./parts";
 import { skillsShown } from "./skillsModel";
 import { artifactsShown } from "../artifacts/model";
+import { countValue, dmsShown } from "../dms/model";
 import { TypedDelete } from "./TypedDelete";
 
 /** Each project's screen as last read this launch: it opens on that at once, as chat apps' profiles do, while its reads go again. */
@@ -93,12 +94,13 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const can = manages(p, state.me);
   const archived = isArchived(p);
   const skills = skillsShown(state.hub);
+  const dms = dmsShown(state.hub);
   const live = state.hub.phase === "live";
   const key = `${p.machineId}/${p.projectId}`;
   // Read again when its machine comes back or goes: what its node holds is as of the read.
   const status = state.machines.find((m) => m.machineId === p.machineId)?.status;
   // Read again once the link is live: one read before it (a launch opening on the cached chats) answers offline.
-  const info = useInfo(key, (part) => readInfo(session, p, Date.now(), skills, part), [session, key, skills, live, status]);
+  const info = useInfo(key, (part) => readInfo(session, p, Date.now(), { skills, dms }, part), [session, key, skills, dms, live, status]);
   // Back from Agent Profiles or Rename: read again (the first focus is the mount's read).
   const { reload } = info;
   const shown = useRef(false);
@@ -219,6 +221,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         ) : (
           agents.map((a) => <ListRow key={a.id} title={a.title} detail={a.role === "" ? undefined : a.role} value={a.status} valueColor={toneColor(t, a.tone)} />)
         )}
+        {dms ? <ListRow key="dms" title="DMs Between Agents" value={countValue(v?.dms)} onPress={() => navigation.navigate("Dms", { key })} /> : null}
       </ListSection>
 
       {orders.length === 0 ? null : (
