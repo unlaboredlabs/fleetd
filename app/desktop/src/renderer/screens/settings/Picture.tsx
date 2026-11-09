@@ -9,14 +9,13 @@ import { useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } 
 import { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout, type Size } from "../../../shared/crop";
 import type { AttachmentMime, ProjectSummary } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
-import { Avatar, Button, Dialog, Text } from "../../ui";
+import { Avatar, Button, Dialog } from "../../ui";
 import { upload } from "../chat/drafts";
 import { useBotState } from "../projects/botState";
 import { usePicture } from "../projects/ProjectAvatar";
 import { errorText, useHubCall } from "./hub";
-import { Setting } from "./parts";
+import { SettingsRow } from "./parts";
 import p from "./Picture.module.css";
-import s from "./settings.module.css";
 
 type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar">;
 type Picked = { readonly file: File; readonly mime: AttachmentMime; readonly url: string; readonly size: Size };
@@ -26,7 +25,7 @@ const TAKES: readonly string[] = ["image/png", "image/jpeg", "image/webp"];
 const CIRCLE = 240;
 const STAGE = 300;
 /** The large icon. */
-const PREVIEW = 88;
+const PREVIEW = 44;
 
 /** The image a person picked or dropped, read for its size; why not, when it can't be. */
 export const readPicked = (file: File): Promise<Picked | string> => {
@@ -102,59 +101,55 @@ export function PictureSetting({ project }: { project: Pictured }) {
   };
 
   return (
-    <Setting reveal="projects.picture" label="Icon" help="Its chat shows it on every device: its bot, which shows what it's doing, or an image of your own.">
-      <div className={p.picker}>
-        <button
-          type="button"
-          className={p.target}
-          data-dragging={dragging || undefined}
-          data-bot={hasPicture ? undefined : true}
-          aria-label={`Upload an image for ${project.title}`}
-          disabled={busy}
-          onClick={() => input.current?.click()}
-          onDragOver={over}
-          onDragEnter={over}
-          onDragLeave={() => setDragging(false)}
-          onDrop={drop}
-        >
-          <Avatar name={project.title} size={PREVIEW} src={hasPicture ? picture : undefined} bot={bot} className={p.preview} />
-          <span className={p.hover} aria-hidden>
-            <Upload />
-          </span>
-        </button>
-        <div className={p.choices}>
-          <div className={s.inline}>
-            <Button disabled={busy} onClick={() => input.current?.click()}>
-              Upload image…
+    <SettingsRow
+      reveal="projects.picture"
+      title="Icon"
+      line={echo === null ? "Its chat shows it on every device: its bot, which shows what it's doing, or an image of your own." : <span role={echo.ok ? "status" : "alert"}>{echo.text}</span>}
+      lineTone={echo === null || echo.ok ? "quiet" : "danger"}
+      control={
+        <div className={p.picker}>
+          <button
+            type="button"
+            className={p.target}
+            data-dragging={dragging || undefined}
+            data-bot={hasPicture ? undefined : true}
+            aria-label={`Upload an image for ${project.title}`}
+            disabled={busy}
+            onClick={() => input.current?.click()}
+            onDragOver={over}
+            onDragEnter={over}
+            onDragLeave={() => setDragging(false)}
+            onDrop={drop}
+          >
+            <Avatar name={project.title} size={PREVIEW} src={hasPicture ? picture : undefined} bot={bot} className={p.preview} />
+            <span className={p.hover} aria-hidden>
+              <Upload />
+            </span>
+          </button>
+          <Button variant="secondary" disabled={busy} onClick={() => input.current?.click()}>
+            Upload image…
+          </Button>
+          {hasPicture ? (
+            <Button variant="quiet" disabled={busy} onClick={() => void remove()}>
+              Remove image
             </Button>
-            {hasPicture ? (
-              <Button variant="quiet" disabled={busy} onClick={() => void remove()}>
-                Remove image
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
+          <input
+            ref={input}
+            type="file"
+            accept={TAKES.join(",")}
+            hidden
+            data-testid="picture-file"
+            onChange={(e) => {
+              take(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
         </div>
-        <input
-          ref={input}
-          type="file"
-          accept={TAKES.join(",")}
-          hidden
-          data-testid="picture-file"
-          onChange={(e) => {
-            take(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-      </div>
-      {echo === null ? null : (
-        <div role={echo.ok ? "status" : "alert"}>
-          <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
-            {echo.text}
-          </Text>
-        </div>
-      )}
+      }
+    >
       {picked === null ? null : <MoveAndScale picked={picked} busy={busy} onCancel={() => setPicked(null)} onSave={(crop) => void save(crop)} />}
-    </Setting>
+    </SettingsRow>
   );
 }
 

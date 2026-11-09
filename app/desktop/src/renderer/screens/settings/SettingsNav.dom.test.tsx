@@ -154,9 +154,9 @@ it("has You and Projects for a member as one flat list, Projects listing the pro
   expect(window.location.hash).toBe("#/settings/projects");
   expect(screen()).toBe("settings.projects.list");
   const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Projects']");
-  expect([...(list?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["docsdevbox", "storefrontdevbox"]);
+  expect([...(list?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual(["docs", "storefront"]);
 
-  await click(button("docsdevbox", list ?? document));
+  await click(button("docs", list ?? document));
   expect(screen()).toBe("settings.projects");
   // Named in the route so a reload or a copied link lands on it.
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/docs");

@@ -40,8 +40,7 @@ import {
   type Scope,
 } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { OpenList, OpenRow } from "./Frames";
-import { ConfirmDiscard, PageHead, scopeName, useProjects } from "./parts";
+import { ConfirmDiscard, GroupNote, PageHead, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
 import { hashFor } from "../shell/navigation";
 import { replaceHash, replaceRoute, type SettingsRoute, type View } from "./route";
@@ -256,9 +255,11 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
   if (!live) {
     return (
       <div className={s.scroll} data-screen={screen}>
-        <div className={s.detail}>
+        <div className={s.column}>
           <PageHead title="Prompts" />
-          <Text tone="quiet">Not connected. Connect to a hub to see and edit the prompts it sends its agents.</Text>
+          <SettingsSection>
+            <GroupNote>Not connected. Connect to a hub to see and edit the prompts it sends its agents.</GroupNote>
+          </SettingsSection>
         </div>
       </div>
     );
@@ -281,7 +282,8 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
 
   return (
     <div className={s.scroll} data-screen={view === "edit" ? screen : `${screen}.${view}`}>
-      <div className={s.detail}>
+      {/* The list in the page's column; a prompt's editor, the wider column it reads in. */}
+      <div className={selected === null ? s.column : s.detail}>
         <PageHead title="Prompts">
           {where === "hub"
             ? "Hub-wide texts: every project gets them unless it has an edit of its own."
@@ -296,28 +298,35 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
           where === "project" && scope.kind === "hub" ? null : (
             <>
               {list.data === undefined ? (
-                list.isError ? (
-                  <div className={s.inline}>
-                    <Text tone="danger">{errorText(list.error)}</Text>
-                    <Button size="sm" onClick={() => void list.refetch()}>
-                      Try again
-                    </Button>
-                  </div>
-                ) : (
-                  <Text tone="quiet">Loading prompts…</Text>
-                )
+                <SettingsSection>
+                  {list.isError ? (
+                    <SettingsRow
+                      title={<Text tone="danger">{errorText(list.error)}</Text>}
+                      label="Couldn't read the prompts"
+                      control={
+                        <Button size="sm" onClick={() => void list.refetch()}>
+                          Try again
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <GroupNote>Loading prompts…</GroupNote>
+                  )}
+                </SettingsSection>
               ) : (
                 <PromptList prompts={list.data.prompts ?? []} scope={scope} onOpen={(id) => request({ scope, id })} />
               )}
-              <div className={s.inline}>
-                <Text size="xs" tone="quiet">
-                  What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so it isn&apos;t
-                  a prompt and isn&apos;t listed.
-                </Text>
-                <Button size="sm" variant="link" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
-                  How event lines read
-                </Button>
-              </div>
+              <SettingsSection bare>
+                <div className={s.inline}>
+                  <Text size="xs" tone="quiet">
+                    What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so it isn&apos;t
+                    a prompt and isn&apos;t listed.
+                  </Text>
+                  <Button size="sm" variant="link" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
+                    How event lines read
+                  </Button>
+                </div>
+              </SettingsSection>
             </>
           )
         ) : (
@@ -409,35 +418,30 @@ function badge(summary: PromptSummary, scope: Scope): { label: string; update?: 
 /** The prompts, grouped, each with when fleetd sends it and its edited or update mark for the scope on screen. */
 function PromptList({ prompts, scope, onOpen }: { prompts: ReadonlyArray<PromptSummary>; scope: Scope; onOpen: (id: string) => void }) {
   return (
-    <div className={s.promptGroups}>
+    <>
       {sections(prompts).map(({ group, rows }) => (
-        <section key={group.key} className={s.stack} aria-label={group.title}>
-          <Text as="h2" size="sm" tone="quiet" strong>
-            {group.title}
-          </Text>
-          <OpenList label={group.title}>
+        <SettingsSection key={group.key} title={group.title}>
+          <SettingsList label={group.title}>
             {rows.map((row) => {
               const b = badge(row.summary, scope);
               return (
-                <OpenRow
+                <SettingsListRow
                   key={row.summary.id}
-                  title={row.name}
-                  detail={row.description}
-                  trailing={
-                    b ? (
-                      <Text size="xs" tone={b.update ? "warning" : "quiet"}>
-                        {b.label}
-                      </Text>
-                    ) : undefined
-                  }
-                  onOpen={() => onOpen(row.summary.id)}
-                />
+                  name={row.name}
+                  label={row.name}
+                  {...(b ? { state: { word: b.label, tone: b.update ? ("warning" as const) : ("quiet" as const) } } : {})}
+                  open={{ onClick: () => onOpen(row.summary.id) }}
+                >
+                  <Text size="sm" tone="quiet">
+                    {row.description}
+                  </Text>
+                </SettingsListRow>
               );
             })}
-          </OpenList>
-        </section>
+          </SettingsList>
+        </SettingsSection>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -484,18 +488,13 @@ function Orphans(props: {
     );
   };
   return (
-    <section className={s.orphans} aria-label="Edits that no longer apply">
+    <SettingsSection title="Edits that no longer apply">
       {props.orphans.map((o) => {
         const k = key(o);
         const target = targetName(o);
         const open = shownText === k;
         return (
-          <div key={k} className={s.orphan}>
-            <div className={s.orphanHead}>
-              <Dot color="var(--warning)" />
-              <Text strong>{orphanHeadline(o, props.projects)}</Text>
-            </div>
-            <Text size="xs" tone="quiet">{`${whyLine(o)} ${orphanAdvice(o)}`}</Text>
+          <SettingsRow key={k} title={orphanHeadline(o, props.projects)} line={`${whyLine(o)} ${orphanAdvice(o)}`}>
             {open ? (
               <pre className={s.orphanText} data-text="code">
                 {o.text}
@@ -523,14 +522,12 @@ function Orphans(props: {
                 Delete this edit
               </Button>
             </div>
-          </div>
+          </SettingsRow>
         );
       })}
       {echo ? (
         <div role="status">
-          <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
-            {echo.text}
-          </Text>
+          <GroupNote tone={echo.ok ? "quiet" : "danger"}>{echo.text}</GroupNote>
         </div>
       ) : null}
       <Dialog
@@ -554,7 +551,7 @@ function Orphans(props: {
           </>
         }
       />
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -607,11 +604,8 @@ function Detail(props: {
       </div>
 
       {d.stale && props.view !== "update" ? (
-        <div className={s.notice}>
-          <span className={s.noticeText}>
-            <Dot color="var(--warning)" />
-            <Text>fleetd's default changed since you edited this. Your text stays in effect until you save it again.</Text>
-          </span>
+        <div className={s.inline}>
+          <Text tone="warning">fleetd's default changed since you edited this. Your text stays in effect until you save it again.</Text>
           <Button onClick={() => props.setView("update")}>Review the update</Button>
         </div>
       ) : null}

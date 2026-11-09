@@ -148,7 +148,7 @@ async function mount(prepare?: (hub: ReturnType<typeof fakeHub>) => void) {
 }
 
 const button = (label: string, within: ParentNode = document.body): HTMLButtonElement => {
-  const found = [...within.querySelectorAll("button")].find((b) => b.textContent.trim() === label);
+  const found = [...within.querySelectorAll("button")].find((b) => b.textContent.trim() === label || b.getAttribute("aria-label") === label);
   if (!found) throw new Error(`no button ${label} in: ${within.textContent ?? ""}`);
   return found;
 };

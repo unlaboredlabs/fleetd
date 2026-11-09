@@ -3,14 +3,13 @@
 // and only here: You › Hubs lists a person's own.
 import { useState } from "react";
 import { useToolQuery } from "../../src/data/react";
-import { Button, Text } from "../../ui";
+import { Button } from "../../ui";
 import { errorText, useLive } from "../settings/hub";
-import { useReveal } from "../settings/search";
+import { GroupNote, SettingsList, SettingsRow, SettingsSection } from "../settings/parts";
 import { navigate } from "../shell/navigation";
-import { IssuedRow, lacksLinks, LinksNeedUpdate } from "./parts";
+import { openUpdates } from "../updates/state";
+import { IssuedRow, lacksLinks } from "./parts";
 import { sortIssued } from "./model";
-import a from "../admin/admin.module.css";
-import s from "../settings/settings.module.css";
 
 const noInput = {};
 
@@ -19,39 +18,37 @@ export function AllLinks() {
   const read = useToolQuery("hub_links_get", noInput, { enabled: live });
   const [now] = useState(() => Date.now());
   const links = read.data === undefined ? [] : sortIssued(read.data.issued);
-  const ref = useReveal<HTMLElement>("hub.links");
   return (
-    <section ref={ref} className={a.section} aria-labelledby="admin-links">
-      <div className={s.settingLabel}>
-        <Text strong id="admin-links">
-          Hub links
-        </Text>
-        <Text size="xs" tone="quiet">
-          Other hubs that can see work here, each as the person who made the link.
-        </Text>
-      </div>
+    <SettingsSection title="Hub links" reveal="hub.links" intro="Other hubs that can see work here, each as the person who made the link.">
       {!live ? null : lacksLinks(read.error) ? (
-        <LinksNeedUpdate />
+        <SettingsRow
+          title="This hub needs updating to link hubs."
+          control={
+            <Button size="sm" onClick={() => openUpdates(true)}>
+              Update the hub
+            </Button>
+          }
+        />
       ) : read.error ? (
-        <Text tone="danger">{`Couldn’t read the hub links: ${errorText(read.error)}`}</Text>
+        <GroupNote tone="danger">{`Couldn’t read the hub links: ${errorText(read.error)}`}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : links.length === 0 ? (
-        <div className={s.inline}>
-          <Text size="sm" tone="quiet">
-            No links to this hub yet.
-          </Text>
-          <Button size="sm" onClick={() => navigate({ id: "settings", tab: "hubs" })}>
-            Make one in You › Hubs
-          </Button>
-        </div>
+        <SettingsRow
+          title="No links to this hub yet."
+          control={
+            <Button size="sm" onClick={() => navigate({ id: "settings", tab: "hubs" })}>
+              Make one in You › Hubs
+            </Button>
+          }
+        />
       ) : (
-        <div className={a.list} role="list" aria-label="Hub links">
+        <SettingsList label="Hub links">
           {links.map((l) => (
             <IssuedRow key={l.linkId} link={l} now={now} who />
           ))}
-        </div>
+        </SettingsList>
       )}
-    </section>
+    </SettingsSection>
   );
 }

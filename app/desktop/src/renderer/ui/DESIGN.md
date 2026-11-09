@@ -5,9 +5,22 @@ breaks a rule changes this page in the same PR and says why.
 
 ## Layout and separation
 
-- **Spacing, type and hairlines come first.** Rows are separated by space and a 1 px `--hairline`, groups by a heading
-  with room above it. The title is the row's one line in full voice, a touch heavier (500). Everything under it is
-  `xs` and `--quiet`. Rows that have ended (merged, closed, done) step back to `--quiet`.
+- **Spacing and type come first.** Rows are separated by space, never a line between them; groups by a quiet label
+  with room above it. The title is the row's one line in full voice. Everything under it is smaller and `--quiet`.
+  Rows that have ended (merged, closed, done) step back to `--quiet`. A line between every row reads as clutter.
+- **Settings are soft groups** (`screens/settings/parts.tsx`; every Settings page, and the Vault's, is built from these
+  and has no row, line or card style of its own):
+  - a section is a quiet 12 px label (an optional quiet line under it) over **one soft group**: a `--group` fill with
+    `--radius-group` corners and no lines inside it (`SettingsSection`);
+  - a row is a title in regular weight, an optional quiet line, and **one control at its right end** (`SettingsRow`);
+    a row that holds a list or a form puts it under its title, full width;
+  - a switch's own words are its row (`SwitchRow`), so nothing is said twice; three short choices are a segmented control;
+  - a list row is a glyph, the name with a quiet word beside it, quiet lines under it, and its controls; its state is
+    the word itself, coloured, never a dot (`SettingsListRow`); a row that opens a page trails a chevron;
+  - **add is a plus** (`AddButton`), at the end of its row or section label; **danger is one red pill**
+    (`DangerButton`, `--danger-fill`), and what it does is confirmed in a dialog;
+  - **Save shows once there is something to save**, and a control that can't be used says why in its row's line;
+  - buttons and fields on a group are `--raised`; the column is 760 px, left-aligned under the page title.
 - **Cards only where they earn it:** one thing that stands apart from the list around it (what merges now, a PR's
   summary, a floating surface). Never a card per row.
 - **No coloured left edge** on a card, row or callout. A quote or indent rule is a neutral `--hairline`.

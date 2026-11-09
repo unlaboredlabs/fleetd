@@ -12,7 +12,7 @@ import { navigate } from "../shell/navigation";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { FLOORS, logWhy, MODES } from "./approvalsModel";
 import { PROJECT_TOOLS } from "../projects/model";
-import { Setting } from "./parts";
+import { SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
@@ -23,11 +23,7 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
   const data = read.data;
   return (
     <>
-      <Setting
-        reveal="projects.approvals"
-        label="Approvals"
-        help="When the lead asks you before it sends, shares or confirms."
-      >
+      <SettingsRow reveal="projects.approvals" title="Approvals" line="When the lead asks you before it sends, shares or confirms.">
         {data === undefined && read.isError ? (
           // Plain words: the lookup's own error names the tool and the project, which mean nothing to the person.
           <div className={s.inline}>
@@ -45,7 +41,7 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
         ) : (
           <ModeEditor key={data.approvals.mode} projectRef={projectRef} saved={data.approvals} />
         )}
-      </Setting>
+      </SettingsRow>
       {data === undefined ? null : <ApprovedLog projectRef={projectRef} log={data.log} />}
     </>
   );
@@ -99,33 +95,33 @@ function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: NaviApprova
 
 function ApprovedLog({ projectRef, log }: { projectRef: Ref; log: ReadonlyArray<AutoApproved> }) {
   return (
-    <Setting reveal="projects.approved" label="Ran without asking" help="Each action the checker let through, or YOLO ran, newest first, with why. Show in chat opens its line.">
-      {log.length === 0 ? (
-        <Text size="sm" tone="quiet">
-          Nothing yet.
-        </Text>
-      ) : (
-        <ul className={s.approvedLog} aria-label="Ran without asking">
+    <SettingsRow
+      reveal="projects.approved"
+      title="Ran without asking"
+      line={`Each action the checker let through, or YOLO ran, newest first, with why. Show in chat opens its line.${log.length === 0 ? " Nothing yet." : ""}`}
+    >
+      {log.length === 0 ? null : (
+        <SettingsList label="Ran without asking">
           {log.map((e, i) => (
-            <li key={`${e.at}-${String(i)}`} className={s.approvedRow}>
-              <Text size="xs" tone="quiet" tabular className={s.approvedAt}>
-                {shortClock(e.at)}
+            <SettingsListRow
+              key={`${e.at}-${String(i)}`}
+              label={e.what}
+              name={prose(e.what)}
+              controls={
+                e.messageId === undefined ? undefined : (
+                  <Button variant="ghost" onClick={() => navigate({ id: "project", project: projectRef, message: e.messageId ?? null })}>
+                    Show in chat
+                  </Button>
+                )
+              }
+            >
+              <Text size="sm" tone="quiet" tabular>
+                {`${shortClock(e.at)} · ${logWhy(e)}`}
               </Text>
-              <div className={s.approvedText}>
-                <Text size="sm">{prose(e.what)}</Text>
-                <Text size="xs" tone="quiet">
-                  {logWhy(e)}
-                </Text>
-              </div>
-              {e.messageId === undefined ? null : (
-                <Button variant="ghost" size="sm" onClick={() => navigate({ id: "project", project: projectRef, message: e.messageId ?? null })}>
-                  Show in chat
-                </Button>
-              )}
-            </li>
+            </SettingsListRow>
           ))}
-        </ul>
+        </SettingsList>
       )}
-    </Setting>
+    </SettingsRow>
   );
 }

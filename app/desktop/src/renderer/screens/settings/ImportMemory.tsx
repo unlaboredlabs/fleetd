@@ -11,7 +11,7 @@ import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { openAddProject, setOnlyMe } from "../projects/store";
-import { PagePart } from "./parts";
+import { SettingsRow, SettingsSection } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
 
@@ -103,40 +103,30 @@ export function ImportMemory() {
   const full = done?.skipped.filter((x) => x.why === "full") ?? [];
 
   return (
-    <PagePart title="Import memory" reveal="import-memory" intro="Bring what another AI assistant knows about you, so you don't teach it all again.">
-      <ol className={m.steps}>
-        <li className={s.stack}>
-          <Text size="sm" tone="quiet">
-            1. Copy this prompt into a chat with your other AI assistant
+    <SettingsSection title="Import memory" reveal="import-memory" intro="Bring what another AI assistant knows about you, so you don't teach it all again.">
+      <SettingsRow
+        title="1. Copy this prompt into a chat with your other AI assistant"
+        control={
+          <Button size="sm" variant="secondary" disabled={!prompt} onClick={copy}>
+            {copied ? "Copied" : "Copy prompt"}
+          </Button>
+        }
+      >
+        {read.isLoadingError ? (
+          <Text size="sm" tone="danger">
+            {errorText(read.error)}
           </Text>
-          <div className={m.promptCard}>
-            {read.isLoadingError ? (
-              <Text size="sm" tone="danger">
-                {errorText(read.error)}
-              </Text>
-            ) : (
-              // The prompt exactly as it is copied, markdown included: a code view to the QA text rule.
-              <div data-text="code" className={m.promptBody}>
-                <Text size="sm" tone="quiet" className={m.promptText}>
-                  {prompt ?? "Loading…"}
-                </Text>
-              </div>
-            )}
-            <div className={m.promptFoot}>
-              <Button variant="link" size="sm" disabled={!prompt} onClick={copy}>
-                {copied ? "Copied" : "Copy prompt"}
-              </Button>
-            </div>
+        ) : (
+          // The prompt exactly as it is copied, markdown included: a code view to the QA text rule.
+          <div data-text="code">
+            <Text size="sm" tone="quiet" className={m.promptText}>
+              {prompt ?? "Loading…"}
+            </Text>
           </div>
-        </li>
-        <li className={s.stack}>
-          <Text size="sm" tone="quiet">
-            2. Paste the answer below to add it to your memory
-          </Text>
-          <Textarea aria-label="The other assistant's answer" placeholder="Paste your memory details here" value={text} minRows={6} maxRows={16} disabled={busy} onChange={(e) => setText(e.target.value)} />
-        </li>
-      </ol>
-      <div className={s.stack}>
+        )}
+      </SettingsRow>
+      <SettingsRow title="2. Paste the answer below to add it to your memory">
+        <Textarea aria-label="The other assistant's answer" placeholder="Paste your memory details here" value={text} minRows={6} maxRows={16} disabled={busy} onChange={(e) => setText(e.target.value)} />
         <div className={s.actions}>
           <Button variant="primary" disabled={text.trim() === "" || busy} onClick={add}>
             {busy ? "Adding to Memory…" : "Add to Memory"}
@@ -183,7 +173,7 @@ export function ImportMemory() {
             </div>
           ) : null}
         </div>
-      </div>
-    </PagePart>
+      </SettingsRow>
+    </SettingsSection>
   );
 }

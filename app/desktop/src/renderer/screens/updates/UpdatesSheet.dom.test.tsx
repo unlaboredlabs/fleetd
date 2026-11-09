@@ -8,6 +8,11 @@ import type { Flow } from "./flow";
 import { STALE_MS, updatesView } from "./model";
 import { UpdatesSheet } from "./UpdatesSheet";
 
+// Its rows come from Settings, which reads the platform as it loads.
+vi.hoisted(() => {
+  (globalThis as { fleetd?: unknown }).fleetd = { platform: "linux" };
+});
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let host: HTMLDivElement;

@@ -18,7 +18,7 @@ import { errorText, useHubCall, useLive } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { MachineCap } from "../settings/Agents";
 import { MachineRole } from "../settings/MachineRoles";
-import { PagePart, PageHead } from "../settings/parts";
+import { GroupNote, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { MachineScreens } from "../settings/Screens";
 import { RunOn, Values } from "../setup/Guide";
 import { toHash } from "../shell/routes";
@@ -83,47 +83,42 @@ export function MachinePage({ machineId }: { machineId: string }) {
             : `${status ?? ""} · fleetd ${machine.nodeVersion}${checkedAt === undefined ? "" : ` · checked ${when(checkedAt, nowMs)}`}`}
         </PageHead>
         {machine === undefined ? null : (
-          <section className={s.part} aria-label="Checklist">
-            <div className={s.partHead}>
-              <div className={s.partTitle}>
-                <Text as="h2" size="lg" strong>
-                  Checklist
-                </Text>
-                <Button variant="ghost" size="sm" disabled={rerunning} onClick={() => void rerun()}>
-                  {rerunning ? "Checking…" : "Check again"}
-                </Button>
-              </div>
-              <Text size="sm" tone="quiet">
-                What it needs to run agents, as the hub last checked.
-              </Text>
-            </div>
+          <SettingsSection
+            title="Checklist"
+            intro="What it needs to run agents, as the hub last checked."
+            aside={
+              <Button variant="ghost" size="sm" disabled={rerunning} onClick={() => void rerun()}>
+                {rerunning ? "Checking…" : "Check again"}
+              </Button>
+            }
+          >
             {checks.error ? (
-              <Text tone="danger">{`Couldn't read the checks: ${errorText(checks.error)}`}</Text>
+              <GroupNote tone="danger">{`Couldn't read the checks: ${errorText(checks.error)}`}</GroupNote>
             ) : items === undefined ? (
-              <Text tone="quiet">Loading…</Text>
+              <GroupNote>Loading…</GroupNote>
             ) : (
-              <ol className={a.checklist}>
+              <SettingsList label="Checklist">
                 {items.map((item) => (
                   <Item key={item.key} item={item} machineId={machineId} name={machine.name} onLoggedIn={() => void rerun()} />
                 ))}
-              </ol>
+              </SettingsList>
             )}
-          </section>
+          </SettingsSection>
         )}
         {roles === undefined ? null : (
-          <PagePart title="Role" reveal="hub.roles">
+          <SettingsSection title="Role" reveal="hub.roles">
             <MachineRole machine={roles} />
-          </PagePart>
+          </SettingsSection>
         )}
         {roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (
-          <PagePart title="Screens" reveal="hub.screens">
+          <SettingsSection title="Screens" reveal="hub.screens">
             <MachineScreens machine={roles} />
-          </PagePart>
+          </SettingsSection>
         ) : null}
         {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
-          <PagePart title="Max agents" reveal="hub.caps">
+          <SettingsSection title="Max agents" reveal="hub.caps">
             <MachineCap machineId={machineId} />
-          </PagePart>
+          </SettingsSection>
         )}
       </div>
     </div>
@@ -132,12 +127,13 @@ export function MachinePage({ machineId }: { machineId: string }) {
 
 function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; machineId: string; name: string; onLoggedIn: () => void }) {
   return (
-    <li className={a.item} data-item={item.key} data-state={item.state}>
-      <StateGlyph state={GLYPH[item.state]} size="sm" />
-      <div className={a.itemBody}>
-        <Text strong={item.state === "failed" || item.state === "warn"} tone={item.state === "failed" ? "danger" : item.state === "warn" ? "warning" : "default"}>
-          {item.title}
-        </Text>
+    <SettingsListRow
+      icon={<StateGlyph state={GLYPH[item.state]} size="sm" />}
+      name={<Text tone={item.state === "failed" ? "danger" : item.state === "warn" ? "warning" : "default"}>{item.title}</Text>}
+      label={item.title}
+      data={{ "data-item": item.key, "data-state": item.state }}
+    >
+      <div className={s.stack}>
         {item.lines.map((line) => (
           <Text key={line} size="sm" tone="quiet">
             <HubText>{line}</HubText>
@@ -152,7 +148,7 @@ function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; mach
           </span>
         ) : null}
       </div>
-    </li>
+    </SettingsListRow>
   );
 }
 

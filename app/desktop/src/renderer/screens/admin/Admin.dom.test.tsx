@@ -156,7 +156,8 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
 
 const buttons = () => [...document.querySelectorAll("button")];
 const button = (text: string, within: ParentNode = document) => {
-  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+  // By its words, or by its name for a button that is only an icon (Invite someone's plus).
+  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.getAttribute("aria-label") === text);
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };

@@ -10,11 +10,11 @@ import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
-import { Button, Field, Input, Switch, Text } from "../../ui";
+import { Button, Field, Input, Text } from "../../ui";
 import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine } from "../settings/claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "../settings/claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PagePart, Setting } from "../settings/parts";
+import { GroupNote, SettingsRow, SettingsSection, SwitchRow } from "../settings/parts";
 import { toHash } from "../shell/routes";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
@@ -26,23 +26,23 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   return (
-    <PagePart
+    <SettingsSection
       title="Claude"
       reveal="admin.claude"
       intro="The hub's Claude API key, and who may use it. Each person picks their own in You › Your accounts."
     >
       {!live ? (
-        <Text tone="quiet">Connect to a hub to see and change this.</Text>
+        <GroupNote>Connect to a hub to see and change this.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to give it an API key.</Text>
+        <GroupNote>This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to give it an API key.</GroupNote>
       ) : read.isLoadingError ? (
-        <Text tone="danger">{`Couldn't read the hub's Claude accounts: ${errorText(read.error)}`}</Text>
+        <GroupNote tone="danger">{`Couldn't read the hub's Claude accounts: ${errorText(read.error)}`}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : (
         <Accounts data={read.data} usage={usage.data?.machines ?? []} me={me} />
       )}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -105,14 +105,16 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
   };
   const open = editing || api === undefined;
   return (
-    <Setting
-      label="Hub API key"
-      help="From the Claude Console. fleetd never shows it again, and no agent sees it."
-    >
-      {api === undefined ? null : (
-        <>
-          <div className={s.inline}>
-            <Text size="sm">{`Saved. ${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`}</Text>
+    <SettingsRow
+      title="Hub API key"
+      line={
+        api === undefined
+          ? "From the Claude Console. fleetd never shows it again, and no agent sees it."
+          : `Saved. ${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`
+      }
+      control={
+        api === undefined ? undefined : (
+          <>
             <TestButton testing={testing} onTest={runTest} />
             {editing ? null : (
               <Button size="sm" variant="ghost" onClick={() => (setEndpoint(api.endpoint ?? ""), setEditing(true))}>
@@ -122,7 +124,12 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
             <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
               Remove
             </Button>
-          </div>
+          </>
+        )
+      }
+    >
+      {api === undefined ? null : (
+        <>
           <MissingOn sealedOn={api.sealedOn} machines={machines.ids} />
           <TestResult tried={tried ?? (api.lastTest === undefined ? undefined : { test: api.lastTest })} nowMs={nowMs} />
           {pause === null ? null : (
@@ -154,6 +161,11 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
                 Cancel
               </Button>
             ) : null}
+            {busy || (api === undefined ? key.trim() !== "" : changed) ? null : (
+              <Text size="sm" tone="quiet">
+                {api === undefined ? "Paste a key to save it." : "Type a new key or endpoint to save it."}
+              </Text>
+            )}
           </div>
         </>
       ) : null}
@@ -168,7 +180,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
           onClose={() => setRemoving(false)}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }
 
@@ -192,16 +204,23 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
     );
   };
   return (
-    <Setting reveal="admin.claude.members" label="Members" help="Owners and admins always may.">
-      <Switch
-        label="Members may use the hub's API key"
-        description={hubApi ? "Off: each member connects their own subscription before their next order." : "Takes effect once the hub has a key."}
+    <>
+      <SwitchRow
+        reveal="admin.claude.members"
+        title="Members may use the hub's API key"
+        line={`${hubApi ? "Off: each member connects their own subscription before their next order." : "Takes effect once the hub has a key."} Owners and admins always may.`}
         checked={on}
         disabled={busy}
         onCheckedChange={flip}
       />
-      <Problem text={problem} />
-    </Setting>
+      {problem === null ? null : (
+        <GroupNote tone="danger">
+          <span role="alert">
+            <HubText>{problem}</HubText>
+          </span>
+        </GroupNote>
+      )}
+    </>
   );
 }
 

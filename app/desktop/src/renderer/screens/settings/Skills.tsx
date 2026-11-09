@@ -6,12 +6,11 @@
 // and updates it (skill_update). Repo skills change in the repo.
 import { useState, type ReactNode } from "react";
 import type { ProjectRef, SkillScope, SkillSummary } from "../../../shared/contracts";
-import { Button, Dialog, Field, IdChip, Input, Text, Textarea, cx } from "../../ui";
+import { Button, Dialog, Field, IdChip, Input, Text, Textarea } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { HUB, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { scopeName, useProjects } from "./parts";
-import { useReveal } from "./search";
+import { AddButton, DangerButton, GroupNote, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useAdministers, useHubRole } from "../admin/role";
 import { metaLine } from "../skills/skillsModel";
 import { panelRoute, toHash } from "../shell/routes";
@@ -29,40 +28,43 @@ const target = (scope: Scope): { scope: SkillScope; projectRef?: ProjectRef } =>
 
 /**
  * Settings → Projects › Agents: what a project's agents get, its repo's skills and its own, with the hub-wide ones
- * named on a line (and for an owner or admin, the way to them in Every project).
+ * named on a line (and for an owner or admin, the way to them in Every project). Rows of its page's section.
  */
 export function ProjectSkills({ scope }: { scope: Scope }) {
   const projects = useProjects();
   const administers = useAdministers();
   const where = scopeName(scope, projects);
-  const ref = useReveal<HTMLElement>("agents.skills");
+  const [dialog, setDialog] = useState<Dialogs>(null);
   return (
-    <section ref={ref} className={s.stack} aria-labelledby="skills-head">
-      <Text strong id="skills-head">
-        Skills
-      </Text>
-      <Text size="xs" tone="quiet">
-        Workflows {where}&apos;s agents can follow, from its repo or kept for it here: its repo&apos;s, its own and the hub-wide ones. On a name clash
-        the first wins. Name one in the chat with $.
-      </Text>
+    <>
+      <SettingsRow
+        reveal="agents.skills"
+        title="Skills"
+        line={`Workflows ${where}'s agents can follow, from its repo or kept for it here: its repo's, its own and the hub-wide ones. On a name clash the first wins. Name one in the chat with $.`}
+        control={<SkillActions onOpen={setDialog} />}
+      />
       <SkillList
         key={scopeKey(scope)}
         scope={scope}
         where={where}
+        dialog={dialog}
+        onDialog={setDialog}
         hubWide={(names) => (
-          <div className={s.inline} aria-label="Hub-wide skills">
-            <Text size="xs" tone="quiet">
-              {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
-            </Text>
-            {administers ? (
-              <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
-                Hub-wide skills in Every project
-              </Button>
-            ) : null}
-          </div>
+          <SettingsRow
+            title="Hub-wide"
+            label="Hub-wide skills"
+            line={`${names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.`}
+            control={
+              administers ? (
+                <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
+                  Hub-wide skills in Every project
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       />
-    </section>
+    </>
   );
 }
 
@@ -72,18 +74,37 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
  */
 export function HubSkills() {
   const live = useLive();
-  return live ? <SkillList scope={HUB} where="every project" /> : <Text tone="quiet">Not connected. Connect to a hub to see its skills.</Text>;
+  const [dialog, setDialog] = useState<Dialogs>(null);
+  return (
+    <SettingsSection title="Skills" reveal="hub.skills" aside={live ? <SkillActions onOpen={setDialog} /> : undefined}>
+      {live ? <SkillList scope={HUB} where="every project" dialog={dialog} onDialog={setDialog} /> : <GroupNote>Not connected. Connect to a hub to see its skills.</GroupNote>}
+    </SettingsSection>
+  );
+}
+
+type Dialogs = "new" | "install" | null;
+
+/** Install, and New skill as a plus, at the end of the skills' row or section label. */
+function SkillActions({ onOpen }: { onOpen: (dialog: Dialogs) => void }) {
+  return (
+    <div className={s.inline}>
+      <Button size="sm" variant="ghost" onClick={() => onOpen("install")}>
+        Install from a source…
+      </Button>
+      <AddButton label="New skill" onClick={() => onOpen("new")} />
+    </div>
+  );
 }
 
 /**
- * One scope's skills with New, Install and an editor: a project's (its repo's and its own; the hub-wide ones only
- * named, through `hubWide`) or the hub-wide ones alone.
+ * One scope's skills, each opening its editor under them, and the New and Install dialogs: a project's (its repo's and
+ * its own; the hub-wide ones only named, through `hubWide`) or the hub-wide ones alone. Rows of its section's group.
  */
-function SkillList({ scope, where, hubWide }: { scope: Scope; where: string; hubWide?: (names: ReadonlyArray<string>) => ReactNode }) {
+function SkillList(props: { scope: Scope; where: string; dialog: Dialogs; onDialog: (dialog: Dialogs) => void; hubWide?: (names: ReadonlyArray<string>) => ReactNode }) {
+  const { scope, where, hubWide } = props;
   const ref = projectRefOf(scope);
   const list = useToolQuery("skills_list", ref ? { projectRef: ref } : {});
   const [selected, setSelected] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"new" | "install" | null>(null);
   const me = useHubRole().me?.name;
   // Day-grained stamps: read once a mount.
   const [now] = useState(() => Date.now());
@@ -93,65 +114,56 @@ function SkillList({ scope, where, hubWide }: { scope: Scope; where: string; hub
   const global = ref ? all.filter((x) => x.origin === "global").map((x) => x.name) : [];
   const current = skills.find((x) => rowKey(x) === selected);
   const writable = skills.filter((x) => x.origin === target(scope).scope).map((x) => x.name);
+  const rows = groups(skills).flatMap((g) => g.rows);
   return (
     <>
-      <div className={s.actions}>
-        <Button variant="primary" onClick={() => setDialog("new")}>
-          New skill
-        </Button>
-        <Button onClick={() => setDialog("install")}>Install from a source…</Button>
-      </div>
       {list.isLoadingError ? (
-        <div className={s.inline}>
-          <Text tone="danger">{errorText(list.error)}</Text>
-          <Button onClick={() => void list.refetch()}>Try again</Button>
-        </div>
+        <SettingsRow
+          title="Couldn't read the skills"
+          line={errorText(list.error)}
+          lineTone="danger"
+          control={
+            <Button size="sm" onClick={() => void list.refetch()}>
+              Try again
+            </Button>
+          }
+        />
       ) : null}
-      {list.data?.repoUnavailable ? (
-        <Text size="xs" tone="quiet">
-          {list.data.repoUnavailable}
-        </Text>
-      ) : null}
-      {list.data && skills.length === 0 ? <Text tone="quiet">No skills yet. Write one with New skill, or install one from skills.sh.</Text> : null}
-      {groups(skills).map((g) => (
-        <section key={g.origin} className={k.group} aria-label={ORIGIN_LABEL[g.origin]}>
-          <Text size="xs" tone="quiet" strong>
-            {ORIGIN_LABEL[g.origin]}
-          </Text>
-          <ul className={k.rows}>
-            {g.rows.map((row) => (
-              <li key={rowKey(row)}>
-                <button
-                  type="button"
-                  className={cx(k.row, rowKey(row) === selected && k.current, row.shadowedBy && k.shadowed)}
-                  aria-pressed={rowKey(row) === selected}
-                  onClick={() => setSelected(rowKey(row) === selected ? null : rowKey(row))}
-                >
-                  <Text strong>{row.name}</Text>
-                  <Text size="xs" tone="quiet" className={k.description}>
-                    {row.description || "No description."}
-                  </Text>
-                  {shadowLine(row) ?? installLine(row) ? (
-                    <Text size="xs" tone={row.shadowedBy ? "warning" : "faint"}>
-                      {shadowLine(row) ?? installLine(row)}
-                    </Text>
-                  ) : null}
-                  {/* A project's: off or not, who changed it last and when, and its last use (the panel shows one skill). */}
-                  {ref ? (
-                    <Text size="xs" tone="faint">
-                      {metaLine(row, now, me)}
-                    </Text>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {list.data?.repoUnavailable ? <GroupNote>{list.data.repoUnavailable}</GroupNote> : null}
+      {list.data === undefined && !list.isLoadingError ? <GroupNote>Loading…</GroupNote> : null}
+      {list.data && skills.length === 0 ? <GroupNote>No skills yet. Write one with New skill, or install one from skills.sh.</GroupNote> : null}
+      {rows.length === 0 ? null : (
+        <SettingsList label="Skills">
+          {rows.map((row) => (
+            <SettingsListRow
+              key={rowKey(row)}
+              name={row.name}
+              label={row.name}
+              meta={ref ? ORIGIN_LABEL[row.origin] : undefined}
+              open={{ onClick: () => setSelected(rowKey(row) === selected ? null : rowKey(row)) }}
+            >
+              <Text size="sm" tone="quiet" className={k.description}>
+                {row.description || "No description."}
+              </Text>
+              {shadowLine(row) ?? installLine(row) ? (
+                <Text size="sm" tone={row.shadowedBy ? "warning" : "faint"}>
+                  {shadowLine(row) ?? installLine(row)}
+                </Text>
+              ) : null}
+              {/* A project's: off or not, who changed it last and when, and its last use (the panel shows one skill). */}
+              {ref ? (
+                <Text size="sm" tone="faint">
+                  {metaLine(row, now, me)}
+                </Text>
+              ) : null}
+            </SettingsListRow>
+          ))}
+        </SettingsList>
+      )}
       {list.data && hubWide ? hubWide(global) : null}
       {current ? <SkillEditor key={rowKey(current)} skill={current} scope={scope} onGone={() => setSelected(null)} /> : null}
-      <NewSkill open={dialog === "new"} scope={scope} where={where} taken={writable} onClose={() => setDialog(null)} onMade={(name) => setSelected(`${target(scope).scope}/${name}`)} />
-      <InstallSkills open={dialog === "install"} scope={scope} where={where} onClose={() => setDialog(null)} />
+      <NewSkill open={props.dialog === "new"} scope={scope} where={where} taken={writable} onClose={() => props.onDialog(null)} onMade={(name) => setSelected(`${target(scope).scope}/${name}`)} />
+      <InstallSkills open={props.dialog === "install"} scope={scope} where={where} onClose={() => props.onDialog(null)} />
     </>
   );
 }
@@ -197,30 +209,27 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
   };
 
   return (
-    <section className={k.editor} aria-label={`Skill ${skill.name}`}>
-      <div className={k.editorHead}>
-        <Text strong>{skill.name}</Text>
-        <Text size="xs" tone="quiet">
-          {ORIGIN_LABEL[skill.origin]}
-          {files.length > 0 ? ` · ${files.length} more file${files.length === 1 ? "" : "s"}: ${files.join(", ")}` : ""}
-        </Text>
-        {skill.install ? (
-          <div className={k.pin}>
-            <Text size="xs" tone="quiet">
-              {installLine(skill)}
-            </Text>
-            <IdChip label="Commit" id={skill.install.commit} kind="commit" size="xs" tone="quiet" />
-          </div>
-        ) : null}
-        {/* The project's own: every version, who and why, Restore and turning it off, in the panel beside its chat. */}
-        {skill.origin === "project" && ref ? (
-          <div>
-            <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash(panelRoute(ref, { tab: "skills", skill: skill.name })))}>
-              History, restore or turn off
-            </Button>
-          </div>
-        ) : null}
-      </div>
+    <SettingsRow
+      title={skill.name}
+      label={`Skill ${skill.name}`}
+      line={`${ORIGIN_LABEL[skill.origin]}${files.length > 0 ? ` · ${files.length} more file${files.length === 1 ? "" : "s"}: ${files.join(", ")}` : ""}`}
+      control={
+        // The project's own: every version, who and why, Restore and turning it off, in the panel beside its chat.
+        skill.origin === "project" && ref ? (
+          <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash(panelRoute(ref, { tab: "skills", skill: skill.name })))}>
+            History, restore or turn off
+          </Button>
+        ) : undefined
+      }
+    >
+      {skill.install ? (
+        <div className={k.pin}>
+          <Text size="sm" tone="quiet">
+            {installLine(skill)}
+          </Text>
+          <IdChip label="Commit" id={skill.install.commit} kind="commit" size="xs" tone="quiet" />
+        </div>
+      ) : null}
       {/* SKILL.md exactly as kept, frontmatter included: a code view to the QA text rule. */}
       <div data-text="code">
         <Field label="SKILL.md" description={canEdit ? "Sessions get a saved change from their next start." : `Read from the repo (${skill.path ?? ""}): change it there.`}>
@@ -238,19 +247,24 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
       </div>
       {at ? (
         <div className={s.actions}>
-          <Button
-            variant="primary"
-            disabled={!dirty || busy}
-            onClick={() => run(() => hubCall("skill_set", { ...at, name: skill.name, text: draft.text }).then(() => "Saved. New sessions get it."))}
-          >
-            {busy ? "Saving…" : "Save"}
-          </Button>
-          <Button variant="ghost" disabled={!dirty} onClick={() => setDraft({ ...draft, text: draft.from })}>
-            Discard changes
-          </Button>
+          {dirty || busy ? (
+            <>
+              <Button
+                variant="primary"
+                disabled={!dirty || busy}
+                onClick={() => run(() => hubCall("skill_set", { ...at, name: skill.name, text: draft.text }).then(() => "Saved. New sessions get it."))}
+              >
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="ghost" disabled={!dirty} onClick={() => setDraft({ ...draft, text: draft.from })}>
+                Discard changes
+              </Button>
+            </>
+          ) : null}
           {skill.install ? (
             <Button
               disabled={busy || dirty}
+              title={dirty ? "Save or discard your changes first." : undefined}
               onClick={() =>
                 run(() =>
                   hubCall("skill_update", { ...at, name: skill.name }).then((o) =>
@@ -262,9 +276,9 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
               Update
             </Button>
           ) : null}
-          <Button variant="danger" disabled={busy} onClick={() => setConfirm(true)}>
+          <DangerButton disabled={busy} onClick={() => setConfirm(true)}>
             Delete
-          </Button>
+          </DangerButton>
         </div>
       ) : null}
       <div role="status">
@@ -301,7 +315,7 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
           </>
         }
       />
-    </section>
+    </SettingsRow>
   );
 }
 

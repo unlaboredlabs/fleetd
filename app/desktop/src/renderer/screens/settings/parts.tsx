@@ -1,5 +1,6 @@
-import { createContext, useContext, type ReactNode } from "react";
-import { Button, Dialog, FrameTitle, Text } from "../../ui";
+import { ChevronRight, Plus } from "lucide-react";
+import { createContext, useContext, useId, type ReactNode } from "react";
+import { Button, cx, Dialog, FrameTitle, Text, Toggle, type ButtonProps, type TextTone } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
@@ -7,6 +8,7 @@ import type { Scope } from "./editor";
 import { navigate } from "../shell/navigation";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
+import g from "./groups.module.css";
 
 /** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. Undefined until the
  * connection is fresh (not an empty list: an empty hub and one still loading must not look alike). */
@@ -63,36 +65,6 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
   );
 }
 
-/**
- * One part of a page that gathers several (Your accounts, Tools & skills, General's Notifications): its heading and a line,
- * then its options. A search or a link for `reveal` lands on it; a part that search finds by an option inside it names
- * itself with `part` instead, so one place is one search result. `untitled` when it is the page's one part, which the
- * page title already names.
- */
-export function PagePart(props: { title: string; reveal?: string; part?: string; intro?: ReactNode; aside?: ReactNode; untitled?: boolean; children?: ReactNode }) {
-  const ref = useReveal<HTMLElement>(props.reveal ?? "");
-  return (
-    <section ref={ref} className={s.part} aria-label={props.title} data-part={props.reveal ?? props.part} tabIndex={-1}>
-      <div className={s.partHead}>
-        <div className={s.partTitle}>
-          {props.untitled === true ? null : (
-            <Text as="h2" size="lg" strong>
-              {props.title}
-            </Text>
-          )}
-          {props.aside}
-        </div>
-        {props.intro ? (
-          <Text size="sm" tone="quiet">
-            {props.intro}
-          </Text>
-        ) : null}
-      </div>
-      {props.children}
-    </section>
-  );
-}
-
 /** In place of a project's page while the hub has no project. */
 export function NoProject() {
   const projects = useProjects();
@@ -107,23 +79,206 @@ export function NoProject() {
   );
 }
 
+// ---- Layout A, soft groups (DESIGN.md, Settings): every Settings page is built from these, and has no rows, lines or
+// cards of its own. A section is a quiet label over one soft group; a row is a title, an optional quiet line and one
+// control at its right end; nothing draws a line between rows.
+
 /**
- * One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it; one without
- * is found by the part it is in.
+ * One section of a page: its quiet label (and a line under it), then its rows in one soft group. A search or a link
+ * for `reveal` lands on it; a section that search finds by an option inside it names itself with `part` instead, so
+ * one place is one search result. No `title` when it is the page's first or only section, which the page title names.
+ * `aside` sits at the label's right end: a section's plus. `bare` holds what is not rows (a long editor, a form that
+ * opens in place) without the group's fill.
  */
-export function Setting(props: { reveal?: string; label: string; help?: string; children: ReactNode }) {
+export function SettingsSection(props: {
+  title?: string | undefined;
+  reveal?: string | undefined;
+  part?: string | undefined;
+  intro?: ReactNode | undefined;
+  aside?: ReactNode | undefined;
+  bare?: boolean | undefined;
+  children?: ReactNode | undefined;
+  /** Marks for tests and the QA screens (`data-…`). */
+  data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
+}) {
   const ref = useReveal<HTMLElement>(props.reveal ?? "");
+  const head = props.title !== undefined || props.intro !== undefined || props.aside !== undefined;
   return (
-    <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
-      <div className={s.settingLabel}>
-        <Text strong>{props.label}</Text>
-        {props.help === undefined ? null : (
-          <Text size="xs" tone="quiet">
-            {props.help}
-          </Text>
-        )}
-      </div>
-      <div className={s.stack}>{props.children}</div>
+    <section ref={ref} className={g.section} aria-label={props.title} data-part={props.reveal ?? props.part} tabIndex={-1} {...props.data}>
+      {head ? (
+        <div className={g.head}>
+          <div className={g.headText}>
+            {props.title === undefined ? null : (
+              <Text as="h2" size="sm" strong tone="quiet" className={g.label}>
+                {props.title}
+              </Text>
+            )}
+            {props.intro === undefined ? null : <Text size="sm" tone="quiet">
+                {props.intro}
+              </Text>}
+          </div>
+          {props.aside}
+        </div>
+      ) : null}
+      {props.children === undefined || props.children === null || props.children === false ? null : (
+        <div className={props.bare === true ? g.bare : g.group}>{props.children}</div>
+      )}
     </section>
   );
 }
+
+/**
+ * One option in a section's group: its title and quiet line on the left, its one `control` at the right end. What a
+ * row holds that is more than a control (a list, a form) is its children, full width under the title. A search for
+ * `reveal` lands on it. A control that can't be used says why in `line`.
+ */
+export function SettingsRow(props: {
+  reveal?: string | undefined;
+  title: ReactNode;
+  /** The row's name for assistive tech and tests, when `title` isn't plain words. */
+  label?: string | undefined;
+  line?: ReactNode | undefined;
+  lineTone?: TextTone | undefined;
+  control?: ReactNode | undefined;
+  children?: ReactNode | undefined;
+  /** The title's id, for a control that names itself by it (aria-labelledby). */
+  titleId?: string | undefined;
+  /** Marks for tests and the QA screens (`data-…`). */
+  data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
+}) {
+  const ref = useReveal<HTMLElement>(props.reveal ?? "");
+  const label = props.label ?? (typeof props.title === "string" ? props.title : undefined);
+  return (
+    <section ref={ref} className={g.row} aria-label={label} tabIndex={-1} {...props.data}>
+      <div className={g.rowText}>
+        <Text {...(props.titleId === undefined ? {} : { id: props.titleId })}>
+          {props.title}
+        </Text>
+        {props.line === undefined || props.line === null ? null : (
+          <Text size="sm" tone={props.lineTone ?? "quiet"}>
+            {props.line}
+          </Text>
+        )}
+      </div>
+      {props.control === undefined ? null : <div className={g.control}>{props.control}</div>}
+      {props.children === undefined || props.children === null || props.children === false ? null : <div className={g.below}>{props.children}</div>}
+    </section>
+  );
+}
+
+/** A row whose one control is a switch: the row's title is the switch's own words, so nothing is said twice. */
+export function SwitchRow(props: {
+  reveal?: string | undefined;
+  title: string;
+  line?: ReactNode | undefined;
+  lineTone?: TextTone | undefined;
+  checked: boolean;
+  disabled?: boolean | undefined;
+  onCheckedChange: (on: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <SettingsRow
+      reveal={props.reveal}
+      title={<label htmlFor={id}>{props.title}</label>}
+      label={props.title}
+      line={props.line}
+      lineTone={props.lineTone}
+      control={<Toggle id={id} checked={props.checked} disabled={props.disabled} onCheckedChange={props.onCheckedChange} />}
+    />
+  );
+}
+
+/**
+ * One row of a list in a group (People, Machines, Devices, a project's repos): a glyph, the name with what it is beside
+ * it, quiet lines under it, and its controls at the right end. A state is its word, coloured (`state`), never a dot.
+ * With `open`, the whole row opens what it names, and a chevron trails it.
+ */
+export function SettingsListRow(props: {
+  name: ReactNode;
+  /** The row's name for assistive tech and tests. */
+  label: string;
+  icon?: ReactNode | undefined;
+  /** A quiet word beside the name ("you", a role). */
+  meta?: ReactNode | undefined;
+  state?: { word: string; tone: TextTone } | undefined;
+  children?: ReactNode | undefined;
+  controls?: ReactNode | undefined;
+  open?: { href: string } | { onClick: () => void } | undefined;
+  /** Marks for tests and the QA screens (`data-…`). */
+  data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
+}) {
+  const name = <Text>{props.name}</Text>;
+  return (
+    <div className={cx(g.listRow, props.icon !== undefined && g.withIcon, props.open !== undefined && g.opens)} role="listitem" aria-label={props.label} {...props.data}>
+      {props.icon === undefined ? null : (
+        <span className={g.icon} aria-hidden>
+          {props.icon}
+        </span>
+      )}
+      <div className={g.rowText}>
+        <div className={g.name}>
+          {props.open === undefined ? (
+            name
+          ) : "href" in props.open ? (
+            <a className={g.opener} href={props.open.href}>
+              {name}
+            </a>
+          ) : (
+            <button type="button" className={g.opener} onClick={props.open.onClick}>
+              {name}
+            </button>
+          )}
+          {props.meta === undefined || props.meta === null ? null : <Text size="sm" tone="quiet">
+              {props.meta}
+            </Text>}
+          {props.state === undefined ? null : (
+            <Text size="sm" tone={props.state.tone}>
+              {props.state.word}
+            </Text>
+          )}
+        </div>
+        {props.children}
+      </div>
+      {props.controls === undefined && props.open === undefined ? null : (
+        <div className={g.control}>
+          {props.controls}
+          {props.open === undefined ? null : <ChevronRight className={g.chevron} aria-hidden />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A list's rows in their group: no lines between them. */
+export function SettingsList(props: { label: string; children: ReactNode }) {
+  return (
+    <div className={g.list} role="list" aria-label={props.label}>
+      {props.children}
+    </div>
+  );
+}
+
+/** Add is a plus, at the end of its row or its section's label; its words are its name and tooltip. */
+export function AddButton({ label, ...rest }: Omit<ButtonProps, "children" | "iconOnly" | "variant"> & { label: string }) {
+  return (
+    <Button variant="ghost" iconOnly aria-label={label} title={label} className={g.add} {...rest}>
+      <Plus size={16} aria-hidden />
+    </Button>
+  );
+}
+
+/** Danger is one red pill: Delete project, Remove machine. What it does is confirmed in a dialog. */
+export function DangerButton({ className, ...rest }: Omit<ButtonProps, "variant">) {
+  return <Button variant="danger" className={cx(g.danger, className)} {...rest} />;
+}
+
+/** Words a group holds that aren't a row: Loading…, an empty list, an error. */
+export function GroupNote(props: { tone?: TextTone | undefined; children: ReactNode }) {
+  return (
+    <Text className={g.note} tone={props.tone ?? "quiet"}>
+      {props.children}
+    </Text>
+  );
+}
+

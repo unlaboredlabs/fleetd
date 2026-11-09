@@ -1,10 +1,8 @@
 // The pages Settings gathers in sets, under tabs in the content pane, so the sidebar stays one flat list: a project's
 // five (Project, Agents, Instructions & memory, Automations, Prompts), opened from Settings › Projects with a way back
-// to it in the window's top row, and Hub › Every project's four. Also the rows of the pane's own lists (the projects, a
-// set's prompts): each opens what it names from anywhere on the row, which a trailing chevron marks.
-import { ChevronRight } from "lucide-react";
+// to it in the window's top row, and Hub › Every project's four.
 import type { ReactNode } from "react";
-import { Button, Tab, TabList, Tabs, Text } from "../../ui";
+import { Button, Tab, TabList, Tabs } from "../../ui";
 import { useHub } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
 import { PageFrame, scopeName, useProjects } from "./parts";
@@ -52,35 +50,5 @@ export function EveryProjectFrame({ tab, children }: { tab: SettingsTab; childre
       <PageTabs label="Every project" tabs={EVERY_PROJECT} current={tab} onOpen={(t) => navigate({ id: "settings", tab: t, at: id })} />
       {children}
     </PageFrame.Provider>
-  );
-}
-
-/** A list of rows that open what they name. */
-export function OpenList({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className={s.openList} role="list" aria-label={label}>
-      {children}
-    </div>
-  );
-}
-
-/** A row of an OpenList: its name, a quiet line under it, an optional mark before it and words after it. */
-export function OpenRow(props: { title: string; detail?: ReactNode; lead?: ReactNode; trailing?: ReactNode; current?: boolean; onOpen: () => void }) {
-  return (
-    <div role="listitem" className={s.openItem}>
-      <button type="button" className={s.openRow} aria-current={props.current === true ? "page" : undefined} onClick={props.onOpen}>
-        {props.lead}
-        <span className={s.openText}>
-          <Text strong>{props.title}</Text>
-          {props.detail === undefined ? null : (
-            <Text size="xs" tone="quiet">
-              {props.detail}
-            </Text>
-          )}
-        </span>
-        {props.trailing}
-        <ChevronRight className={s.openChevron} aria-hidden />
-      </button>
-    </div>
   );
 }

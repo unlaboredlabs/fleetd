@@ -5,11 +5,11 @@
 // The nightly memory refresh isn't one of them: it is on the project's Instructions & memory, beside the memory it tidies.
 import { useEffect, useState } from "react";
 import type { Automation, ProjectRef } from "../../../shared/contracts";
-import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyText } from "../../ui";
+import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyText, type TextTone } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead, scopeName, useProjects } from "../settings/parts";
+import { AddButton, DangerButton, GroupNote, PageHead, scopeName, SettingsRow, SettingsSection, useProjects } from "../settings/parts";
 import { replaceRoute, type SettingsRoute } from "../settings/route";
 import settings from "../settings/settings.module.css";
 import { describeCron } from "./cron";
@@ -55,7 +55,9 @@ export function Automations({ route }: { route: SettingsRoute }) {
       <div className={settings.scroll} data-screen="settings.automations">
         <div className={settings.column}>
           <PageHead title="Automations" />
-          <Text tone="quiet">Not connected. Connect to a hub to see its automations.</Text>
+          <SettingsSection>
+            <GroupNote>Not connected. Connect to a hub to see its automations.</GroupNote>
+          </SettingsSection>
         </div>
       </div>
     );
@@ -68,38 +70,35 @@ export function Automations({ route }: { route: SettingsRoute }) {
       <div className={settings.column}>
         <PageHead title="Automations">Something the lead does on a schedule or from a webhook. Reviews and approvals still apply.</PageHead>
         {url ? <WebhookUrl {...url} onDone={() => setUrl(null)} /> : null}
-        {list.isLoadingError ? (
-          <div className={settings.inline}>
-            <Text tone="danger">{errorText(list.error)}</Text>
-            <Button onClick={() => void list.refetch()}>Try again</Button>
-          </div>
-        ) : null}
-        {ref && editing === "new" ? (
-          <Editor projectRef={ref} onClose={() => setEditing(null)} onUrl={(u) => setUrl(u)} />
-        ) : (
-          <div className={settings.actions}>
-            <Button variant="primary" disabled={!ref} onClick={() => setEditing("new")}>
-              New automation
-            </Button>
-          </div>
-        )}
-        {list.data && automations.length === 0 && editing !== "new" ? (
-          <Text tone="quiet">{name ? `${name} has no automations yet.` : "Pick a project."}</Text>
-        ) : null}
-        {list.data === undefined && !list.isLoadingError && ref ? <Text tone="quiet">Loading automations…</Text> : null}
-        <ul className={s.list} aria-label="Automations">
-          {automations.map((a) =>
-            ref && editing === a.automationId ? (
-              <li key={a.automationId}>
-                <Editor projectRef={ref} automation={a} onClose={() => setEditing(null)} onUrl={(u) => setUrl(u)} />
-              </li>
-            ) : (
-              <li key={a.automationId}>
-                <Card automation={a} onEdit={() => setEditing(a.automationId)} onUrl={(u) => setUrl(u)} />
-              </li>
-            ),
+        <SettingsSection
+          aside={ref && editing === "new" ? undefined : <AddButton label="New automation" disabled={!ref} onClick={() => setEditing("new")} />}
+        >
+          {list.isLoadingError ? (
+            <SettingsRow
+              title={<Text tone="danger">{errorText(list.error)}</Text>}
+              label="Couldn't read the automations"
+              control={<Button onClick={() => void list.refetch()}>Try again</Button>}
+            />
+          ) : null}
+          {ref && editing === "new" ? <Editor projectRef={ref} onClose={() => setEditing(null)} onUrl={(u) => setUrl(u)} /> : null}
+          {list.data && automations.length === 0 && editing !== "new" ? <GroupNote>{name ? `${name} has no automations yet.` : "Pick a project."}</GroupNote> : null}
+          {list.data === undefined && !list.isLoadingError && ref ? <GroupNote>Loading automations…</GroupNote> : null}
+          {automations.length === 0 ? null : (
+            <ul className={s.list} aria-label="Automations">
+              {automations.map((a) =>
+                ref && editing === a.automationId ? (
+                  <li key={a.automationId}>
+                    <Editor projectRef={ref} automation={a} onClose={() => setEditing(null)} onUrl={(u) => setUrl(u)} />
+                  </li>
+                ) : (
+                  <li key={a.automationId}>
+                    <Card automation={a} onEdit={() => setEditing(a.automationId)} onUrl={(u) => setUrl(u)} />
+                  </li>
+                ),
+              )}
+            </ul>
           )}
-        </ul>
+        </SettingsSection>
       </div>
     </div>
   );
@@ -109,24 +108,25 @@ export function Automations({ route }: { route: SettingsRoute }) {
 function WebhookUrl(props: { name: string; url: string; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
-    <section className={s.url} aria-label="Webhook URL">
-      <Text strong>Webhook URL for {props.name}</Text>
-      <Text size="xs" tone="quiet">
-        POST to it to start a run with the request body as context. It holds a secret and is shown only now: copy it. Rotate makes a new one and the old one
-        stops working.
-      </Text>
-      <div data-text="code">
-        <Input mono readOnly value={props.url} aria-label="Webhook URL" onFocus={(e) => e.currentTarget.select()} />
-      </div>
-      <div className={settings.actions}>
-        <Button variant="primary" onClick={() => void copyText(props.url).then(() => setCopied(true))}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
-        <Button variant="ghost" onClick={props.onDone}>
-          Done
-        </Button>
-      </div>
-    </section>
+    <SettingsSection title="Webhook URL">
+      <SettingsRow
+        title={`Webhook URL for ${props.name}`}
+        lineTone="warning"
+        line="POST to it to start a run with the request body as context. It holds a secret and is shown only now: copy it. Rotate makes a new one and the old one stops working."
+      >
+        <div data-text="code">
+          <Input mono readOnly value={props.url} aria-label="Webhook URL" onFocus={(e) => e.currentTarget.select()} />
+        </div>
+        <div className={settings.actions}>
+          <Button variant="primary" onClick={() => void copyText(props.url).then(() => setCopied(true))}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+          <Button variant="ghost" onClick={props.onDone}>
+            Done
+          </Button>
+        </div>
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
@@ -158,27 +158,41 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
 
   const last = a.lastRun;
   const running = last?.state === "running";
+  // Its state is its word, coloured: never a chip or a dot.
+  const state: { word: string; tone: TextTone } | null = a.paused
+    ? { word: "Paused", tone: "quiet" }
+    : running
+      ? { word: "Running", tone: "accent" }
+      : a.doneAt
+        ? { word: "Done", tone: "success" }
+        : null;
   return (
-    <section className={s.card} aria-label={a.name} data-automation={a.automationId}>
-      <div className={s.cardHead}>
-        <Text strong>{a.name}</Text>
-        {a.paused ? (
-          <StatusChip tone="idle">Paused</StatusChip>
-        ) : running ? (
-          <StatusChip tone="working">Running</StatusChip>
-        ) : a.doneAt ? (
-          <StatusChip tone="done">Done</StatusChip>
-        ) : null}
-      </div>
-      <Text size="sm">{triggersLine(a)}</Text>
-      <Text size="xs" tone="quiet">
-        {[
-          a.nextRunAt && !a.paused ? `Next run ${when(a.nextRunAt)}` : null,
-          last ? `Last run ${when(last.at)}: ${runChip(last).label.toLowerCase()}` : "Not run yet",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </Text>
+    <SettingsRow
+      title={
+        <>
+          {a.name}
+          {state === null ? null : (
+            <Text size="sm" tone={state.tone} className={s.state}>
+              {state.word}
+            </Text>
+          )}
+        </>
+      }
+      label={a.name}
+      data={{ "data-automation": a.automationId }}
+      line={
+        <>
+          {triggersLine(a)}
+          <br />
+          {[
+            a.nextRunAt && !a.paused ? `Next run ${when(a.nextRunAt)}` : null,
+            last ? `Last run ${when(last.at)}: ${runChip(last).label.toLowerCase()}` : "Not run yet",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </>
+      }
+    >
       <div className={settings.actions}>
         <Button
           variant="primary"
@@ -223,9 +237,9 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
         <Button variant="ghost" aria-expanded={history} onClick={() => setHistory(!history)}>
           {history ? "Hide runs" : "Runs"}
         </Button>
-        <Button variant="danger" disabled={busy} onClick={() => setDeleting(true)}>
+        <DangerButton disabled={busy} onClick={() => setDeleting(true)}>
           Delete
-        </Button>
+        </DangerButton>
       </div>
       <div role="status">
         {echo ? (
@@ -258,7 +272,7 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
           </>
         }
       />
-    </section>
+    </SettingsRow>
   );
 }
 
@@ -339,8 +353,7 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
   };
 
   return (
-    <section className={s.editor} aria-label={a ? `Edit ${a.name}` : "New automation"}>
-      <Text strong>{a ? `Edit ${a.name}` : "New automation"}</Text>
+    <SettingsRow title={a ? `Edit ${a.name}` : "New automation"}>
       <Field label="Name" error={shown.name}>
         <Input value={draft.name} maxLength={NAME_MAX} placeholder="Weekly dependency check" onChange={(e) => set({ name: e.target.value })} />
       </Field>
@@ -391,6 +404,6 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
         </Button>
       </div>
       <div role="status">{error ? <Text tone="danger">{error}</Text> : null}</div>
-    </section>
+    </SettingsRow>
   );
 }
