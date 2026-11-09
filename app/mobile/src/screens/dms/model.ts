@@ -103,3 +103,15 @@ export const joinPages = (shown: readonly AgentMessage[], older: readonly AgentM
   const ids = new Set(shown.map((m) => m.id));
   return [...shown, ...older.filter((m) => !ids.has(m.id))];
 };
+
+/**
+ * The log as shown: the newest page as last read, over the older pages read as the person scrolled. A fresh newest
+ * page (a DM sent, a receipt) replaces the rows it holds, with their new outcomes, and leaves the older pages where they
+ * are, so the list never jumps back under the person's thumb.
+ */
+export interface DmLog {
+  readonly messages: readonly AgentMessage[];
+  readonly more: boolean;
+}
+export const logOf = (first: DmLog, older: DmLog | null): DmLog =>
+  older === null ? { messages: first.messages, more: first.more } : { messages: joinPages(first.messages, older.messages), more: older.more };

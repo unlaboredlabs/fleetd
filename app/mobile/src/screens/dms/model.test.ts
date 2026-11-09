@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, HubState } from "../../desktop";
-import { countValue, dmsShown, glyphOf, joinPages, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, type AgentMessage, type DmReceipt } from "./model";
+import { countValue, dmsShown, glyphOf, joinPages, logOf, opening, outcomeWord, route, rowLabel, rowOutcome, touchesDms, type AgentMessage, type DmReceipt } from "./model";
 
 const AT = "2026-11-08T23:04:00.000Z";
 const P = { machineId: "devbox", projectId: "fleetd" };
@@ -82,5 +82,20 @@ describe("a project's DMs between agents", () => {
     const b = dm("M2", []);
     const c = dm("M1", []);
     expect(joinPages([a, b], [b, c]).map((m) => m.id)).toEqual(["M3", "M2", "M1"]);
+  });
+
+  it("keeps the older pages read when a receipt reads the newest page again, its rows' outcomes fresh", () => {
+    // M5..M4 read first, then M3..M2 as the person scrolled; one more page is left.
+    const first = { messages: [dm("M5", [to("T1", "held")]), dm("M4", [])], more: true };
+    const older = { messages: [dm("M3", []), dm("M2", [])], more: true };
+    expect(logOf(first, older).messages.map((m) => m.id)).toEqual(["M5", "M4", "M3", "M2"]);
+    // A new DM and a receipt: the newest page now holds M6..M5, M5 delivered.
+    const fresh = { messages: [dm("M6", []), dm("M5", [to("T1", "delivered")])], more: true };
+    const shown = logOf(fresh, logOf(first, older));
+    expect(shown.messages.map((m) => m.id)).toEqual(["M6", "M5", "M4", "M3", "M2"]);
+    expect(shown.messages[1]?.to[0]?.outcome).toBe("delivered");
+    expect(shown.more).toBe(true);
+    // With nothing read past it, the newest page is the log.
+    expect(logOf(fresh, null)).toEqual({ messages: fresh.messages, more: true });
   });
 });
