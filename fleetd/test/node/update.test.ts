@@ -58,36 +58,19 @@ test("a fetched build is installed by the update that follows, the running one k
   }
 });
 
-// The hub rolled back to Rust: a Bun node told the hub's flavour switches to the release's Rust build at its path, even
-// one of its own version, and keeps the Bun build it ran for the rollback. Told its own flavour, or none, it's current.
-test("a Bun node told rust switches to the Rust build of the same release", async () => {
+// An update naming another flavour (a hub from before Rust's removal, asking for the Rust build) is refused at the
+// install stage, which the hub takes as final, and changes nothing. Told its own flavour, or none, the node is current.
+test("a node told another flavour refuses, and changes nothing", async () => {
   const home = tempHome();
   try {
-    const [rust, bun] = [assetOf("rust"), assetOf("bun")];
-    const files: Record<string, string> = {
-      "release.json": JSON.stringify({ cliVersion: "1.0.0" }),
-      SHA256SUMS: `${sha("rust build")}  ${rust}\n${sha("bun build")}  ${bun}\n`,
-      [rust]: "rust build",
-      [bun]: "bun build",
-    };
-    const feed: Feed = { get: async (name) => (name in files ? new TextEncoder().encode(files[name]) : Promise.reject(new Error(`no ${name}`))) };
-    const p = place(home.dir, { asset: bun });
-    writeFileSync(join(home.dir, "bin", "fleetd-session-host"), "rust build");
+    const p = place(home.dir);
+    const feed = feedOf("1.0.0", "new build");
     const previous = () => new TextEncoder().encode("old build");
     expect(await stage({ version: "1.0.0", channel: "stable" }, p, feed, previous)).toEqual({ kind: "current" });
     expect(await stage({ version: "1.0.0", channel: "stable", flavour: "bun" }, p, feed, previous)).toEqual({ kind: "current" });
-    const refused = await stage({ version: "1.0.0", channel: "stable", flavour: "zig" }, p, feed, previous).catch((e: Error) => e.message);
-    expect(refused).toContain("flavour");
-    const noRust: Feed = { get: async (name) => new TextEncoder().encode(name === "SHA256SUMS" ? `${sha("bun build")}  ${bun}\n` : files[name] ?? "") };
-    const missing = await stage({ version: "1.0.0", channel: "stable", flavour: "rust" }, p, noRust, previous).catch((e: { stage: string; message: string }) => e);
-    expect(missing).toMatchObject({ stage: "install", message: `the release has no rust build for this machine (${rust}), so it stays on bun` });
-
-    let planned: Plan | undefined;
-    const answer = await run({ version: "1.0.0", channel: "stable", flavour: "rust" }, p.home, { place: p, feed, previous, startWatcher: (plan) => (planned = plan) });
-    expect(answer.message).toBe("restarting on 1.0.0 (rust, from bun)");
-    expect(readFileSync(p.exe, "utf8")).toBe("rust build");
-    expect(readFileSync(join(p.home, "update", "fleetd.prev"), "utf8")).toBe("old build");
-    expect(planned).toMatchObject({ from: "1.0.0", to: "1.0.0" });
+    const refused = await stage({ version: "1.1.0", channel: "stable", flavour: "rust" }, p, feed, previous).catch((e: { stage: string; message: string }) => e);
+    expect(refused).toMatchObject({ stage: "install", message: "the hub asked for fleetd's rust build, which releases no longer have; this node stays on bun" });
+    expect(readFileSync(p.exe, "utf8")).toBe("old build");
   } finally {
     home.done();
   }
