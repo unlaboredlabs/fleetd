@@ -136,6 +136,8 @@ export type WorkflowRun = {
   name?: string | null;
   path?: string | null;
   head_sha: string;
+  /** `queued`, `in_progress`, `completed`...; the runs list reads only finished ones. */
+  status?: string | null;
   conclusion?: string | null;
   html_url: string;
   updated_at?: string | null;
@@ -554,6 +556,16 @@ export class TrainGitHub {
   /** Re-runs Actions job `job` and the jobs that need it, and nothing else of its workflow run. */
   async rerunJob(repo: string, job: number): Promise<void> {
     await this.json("POST", `repos/${repo}/actions/jobs/${job}/rerun`, [], (v) => v ?? null);
+  }
+
+  /** Workflow run `run`, at its latest attempt. */
+  workflowRun(repo: string, run: number): Promise<WorkflowRun> {
+    return this.json("GET", `repos/${repo}/actions/runs/${run}`, [], (v) => (typeof (v as any)?.id === "number" ? (v as WorkflowRun) : undefined));
+  }
+
+  /** Re-runs every job of finished workflow run `run`, as a new attempt. */
+  async rerunRun(repo: string, run: number): Promise<void> {
+    await this.json("POST", `repos/${repo}/actions/runs/${run}/rerun`, [], (v) => v ?? null);
   }
 
   /** The log of Actions job `job`, as text. */

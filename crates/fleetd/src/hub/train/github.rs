@@ -253,6 +253,9 @@ pub struct WorkflowRun {
     #[serde(default)]
     pub path: Option<String>,
     pub head_sha: String,
+    /// `queued`, `in_progress`, `completed`...; the runs list reads only finished ones.
+    #[serde(default)]
+    pub status: Option<String>,
     pub conclusion: Option<String>,
     pub html_url: String,
     #[serde(default)]
@@ -897,6 +900,23 @@ impl TrainGitHub {
         self.json::<Value>(
             "POST",
             &format!("repos/{repo}/actions/jobs/{job}/rerun"),
+            &[],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Workflow run `run`, at its latest attempt.
+    pub async fn workflow_run(&self, repo: &str, run: u64) -> Result<WorkflowRun, GhError> {
+        self.json("GET", &format!("repos/{repo}/actions/runs/{run}"), &[])
+            .await
+    }
+
+    /// Re-runs every job of finished workflow run `run`, as a new attempt.
+    pub async fn rerun_run(&self, repo: &str, run: u64) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/actions/runs/{run}/rerun"),
             &[],
         )
         .await

@@ -79,6 +79,10 @@ export class FakeGh implements GhRunner {
   runs?: (sha: string) => unknown[];
   /** The Actions jobs the train asked GitHub to re-run, in order. */
   readonly reruns: number[] = [];
+  /** Each workflow run, by id, as `actions/runs/<id>` answers it. */
+  readonly workflowRuns = new Map<number, unknown>();
+  /** The workflow runs the train asked GitHub to re-run whole, in order. */
+  readonly runReruns: number[] = [];
   /** The workflow runs a person or a schedule started, [run id, event]: on every commit. Every other run is a push. */
   readonly runEvents: [number, string][] = [];
 
@@ -382,6 +386,15 @@ export class FakeGh implements GhRunner {
     }
     if (a === "actions" && b === "runs" && q("head_sha") !== undefined) {
       return ok({ workflow_runs: this.runEvents.map(([id, event]) => ({ id, event })) });
+    }
+    if (a === "actions" && b === "runs" && parts.length === 3) {
+      const run = this.workflowRuns.get(Number(c));
+      return run === undefined ? httpError(404, "Not Found") : ok(run);
+    }
+    if (a === "actions" && b === "runs" && parts[3] === "rerun" && method === "POST") {
+      this.runReruns.push(Number(c));
+      this.log.push(`rerun run ${c}`);
+      return ok({});
     }
     if (a === "actions" && b === "runs") return ok({ workflow_runs: [] });
     if (a === "actions" && b === "jobs" && parts[3] === "rerun" && method === "POST") {
