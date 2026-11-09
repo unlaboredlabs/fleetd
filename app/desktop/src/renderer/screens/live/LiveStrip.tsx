@@ -1,11 +1,10 @@
-// The live strip, docked to the top of the lead chat's composer: one slim row, a dot per agent (at work in their
-// role's tint, waiting on you in the attention color, queued hollow; each pulses once as it appears or changes, then
-// holds still), "3 agents working · 1 needs you" in a quiet
-// voice, and a now-line saying what the busiest agent is doing. A click on the row (or Enter on it) opens the lanes
-// above it, one row per agent, and a second click, a press outside it or Escape closes them; an agent (its row, or
-// the now-line) opens in the panel's agents, where its live work and steer box are. At its end, quiet until pointed at,
-// "8 DMs between agents" opens Activity's log of them: the only trace of agents' DMs in the lead chat. Nothing is
-// drawn when no agent is shown.
+// The live strip, a glass capsule floating just over the lead chat's composer island: one slim row, a dot per agent
+// (at work in their role's tint, waiting on you in the attention color, queued hollow; each pulses once as it appears
+// or changes, then holds still), "3 agents working · 1 needs you" in a quiet voice, and a now-line saying what the
+// busiest agent is doing. A click on the row (or Enter on it) opens the lanes above it, one row per agent, and a
+// second click, a press outside it or Escape closes them; an agent (its row, or the now-line) opens in the panel's
+// agents, where its live work and steer box are. At its end, quiet until pointed at, "8 DMs between agents" opens
+// Activity's log of them: the only trace of agents' DMs in the lead chat. Nothing is drawn when no agent is shown.
 import { ChevronUp } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useData } from "../../src/data/react";

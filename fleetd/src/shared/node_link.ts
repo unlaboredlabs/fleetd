@@ -67,6 +67,10 @@ export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
 export const CAP_CLAUDE_RESEAL = "claude_reseal";
 export const CAP_ONEPASSWORD = "onepassword";
 export const CAP_ONEPASSWORD_CARDS = "onepassword_cards";
+/** `vault_adopt`, `vault_import_read`, `vault_import_search`, and fills from the vault (node_link.rs CAP_VAULT). */
+export const CAP_VAULT = "vault";
+/** Fills from `vault_fill` and a purchase claim's `sealedCard` (node_link.rs CAP_VAULT_FILL). */
+export const CAP_VAULT_FILL = "vault_fill";
 export const CAP_CLAUDE_MODELS = "claude_models";
 export const CAP_PROFILE_NAMES = "profile_names";
 export const CAP_SYSTEM_PROMPT = "system_prompt";

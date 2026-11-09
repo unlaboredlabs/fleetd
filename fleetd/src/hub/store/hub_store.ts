@@ -86,6 +86,9 @@ export const MACHINE_TABLES = [
   "artifact_versions",
   "browser_sessions",
   "screen_waits",
+  "vault_shares",
+  "vault_deliveries",
+  "vault_imports",
 ] as const;
 
 /**
@@ -107,6 +110,8 @@ export const MACHINE_KEEPS = [
   "changes",
   "navi_erases",
   "pair_codes",
+  // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
+  "vault_audit",
 ] as const;
 
 /** `machineRemove`'s deletes, in the caller's transaction. How many rows went. */
@@ -123,6 +128,9 @@ function forgetMachine(conn: Database, m: string): number {
     "DELETE FROM repos WHERE machine_id = ?1 OR checkout_machine_id = ?1",
     "DELETE FROM navi_asks WHERE from_machine_id = ?1",
     "DELETE FROM session_places WHERE origin_machine = ?1",
+    // Its projects' and orders' items; a person's and the hub's name no machine (a NULL machine_id, so not in
+    // MACHINE_TABLES, whose rows the orphan sweep reads as strings).
+    "DELETE FROM vault_items WHERE machine_id = ?1",
   ]) {
     n += conn.query(sql).run(m).changes;
   }
@@ -317,6 +325,7 @@ export class HubStore {
                    OR (checkout_machine_id = ?1 AND checkout_project_id = ?2)`,
         "DELETE FROM navi_asks WHERE from_machine_id = ?1 AND from_project_id = ?2",
         "DELETE FROM session_places WHERE origin_machine = ?1 AND project_id = ?2",
+        "DELETE FROM vault_items WHERE machine_id = ?1 AND project_id = ?2",
       ]) {
         n += conn.query(sql).run(m, p).changes;
       }

@@ -62,6 +62,9 @@ export const SESSION_CALLS = [
   "one_password_token",
   "one_password_test",
   "one_password_cards",
+  "vault_adopt",
+  "vault_import_read",
+  "vault_import_search",
   "claude_models",
   "project_worktrees",
   "launch",
@@ -153,6 +156,11 @@ export const LEAD_CALLS = [
   "chat_read",
   "skill_save",
   "confirm_step",
+  "vault_fill",
+  "vault_filled",
+  "vault_items",
+  "vault_import_search",
+  "vault_import_propose",
 ] as const;
 export type LeadCallOp = (typeof LEAD_CALLS)[number];
 

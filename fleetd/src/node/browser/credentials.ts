@@ -100,7 +100,26 @@ export function scrubbed(session: Session, error: ToolError): ToolError {
 }
 
 /** The fill_credential call's fields, as agent-mcp sends them. */
-export type FillCredentialCall = { ref?: unknown; target?: unknown; submit?: unknown };
+export type FillCredentialCall = { item?: unknown; field?: unknown; ref?: unknown; target?: unknown; submit?: unknown };
+
+/**
+ * The call's 1Password reference, by contracts browser.rs `FillCredentialCall::source`'s rule: `item` and `field`, or
+ * `ref`, never a mix. A vault login (`item`) is refused until this node fills from the vault.
+ */
+export function referenceOf(call: FillCredentialCall): string {
+  const item = call.item !== undefined;
+  const field = call.field !== undefined;
+  const ref = typeof call.ref === "string" && call.ref !== "";
+  if (item && field && !ref) {
+    throw new ToolError(
+      "failed",
+      "Filling a vault item needs a newer fleetd node on this machine.",
+      "fill with ref: op://… meanwhile, or ask the person to update fleetd",
+    );
+  }
+  if (ref && !item && !field) return call.ref as string;
+  throw new ToolError("invalid", item && !field ? "item goes with its field: username, password or otp" : "give item and field, or ref", "call fill_credential again");
+}
 
 /**
  * An agent's `fill_credential` in its live session, with the value the agent's machine read from its 1Password
@@ -109,7 +128,7 @@ export type FillCredentialCall = { ref?: unknown; target?: unknown; submit?: unk
  */
 export async function fillCredential(broker: Broker, thread: string, call: FillCredentialCall, given?: Credential): Promise<{ message: string }> {
   const started = performance.now();
-  const reference = String(call.ref ?? "");
+  const reference = referenceOf(call);
   const target = String(call.target ?? "");
   const submit = call.submit !== false;
   const session = broker.live(thread);

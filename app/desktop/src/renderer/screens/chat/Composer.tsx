@@ -1,11 +1,12 @@
-// The lead chat's composer (A3): one box. Typing while the lead works is a steer, otherwise a new message; the hub
-// decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line, and while the
-// lead works ⌘Enter stops its current step and delivers at once (chat_send's `now`); either way it is a chat message
-// like any other. ↑ in an empty box brings back your last message. Files
-// attach by the box's clip, drop or paste (images included); a long paste becomes a file. While the lead works,
-// Stop beside Send ends its turn now. The words, the files and an unsent message's error stay per project across
-// navigation, and the words across quitting (drafts.ts). Sent with no hub, a message is queued and goes when the
-// link is back. Replying to a bubble puts its quote over the box; what you send then answers it (Esc lets go).
+// The lead chat's composer (A3): one glass pill, floating over the conversation (ChatScreen). Typing while the lead
+// works is a steer, otherwise a new message; the hub decides (chat_send) and the box only says which to expect. Enter
+// sends, Shift+Enter is a new line, and while the lead works ⌘Enter stops its current step and delivers at once
+// (chat_send's `now`; Send's hint says so); either way it is a chat message like any other. ↑ in an empty box brings
+// back your last message. Files attach by the box's clip, drop or paste (images included); a long paste becomes a
+// file. While the lead works, Stop beside Send ends its turn now. The words, the files and an unsent message's error
+// stay per project across navigation, and the words across quitting (drafts.ts). Sent with no hub, a message is queued
+// and goes when the link is back. Replying to a bubble puts its quote over the words; what you send then answers it
+// (Esc lets go).
 
 interface ProjectRef {
   readonly machineId: string;
@@ -50,7 +51,7 @@ export interface ChatComposerProps {
   onCancelReply?: () => void;
   /** Who reads it, when not "the lead": a project's name, in one with no repo. */
   who?: string | undefined;
-  /** Docked to the box's top, inside its outline (and its focus ring): the live strip. */
+  /** Docked to the box's top, inside its outline (and its focus ring), over the words. */
   top?: ReactNode;
 }
 
@@ -217,7 +218,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   const attachTool = useMemo(
     () => (
       <Tooltip content="Attach a file">
-        <Button variant="quiet" iconOnly aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
+        <Button variant="quiet" size="md" iconOnly round aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
           <Paperclip />
         </Button>
       </Tooltip>
@@ -237,22 +238,40 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   );
   const sendTool = useMemo(
     () => (
-      <Tooltip content="Send">
+      // While the lead works, how to have it read this now: the pill has no room beside its words for a line of hints.
+      <Tooltip content={working === true ? `Send · ${nowKeys()} stops its step and sends now` : "Send"}>
         <Button variant="primary" size="md" iconOnly round aria-label="Send" disabled={!sendable} onClick={() => latest.current.send()}>
           <ArrowUp />
         </Button>
       </Tooltip>
     ),
-    [sendable],
+    [sendable, working],
   );
 
   const note = draft.error;
   const said = note ?? stopError;
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
+      {/* One glass pill: the clip, the words and Send on one row, growing upward as the words wrap; what goes with
+          the words (a note, the bubble answered, files) on rows over them. */}
       <div className={c.box}>
         {top}
         {skills.popup}
+        <div role="status" className={c.note}>
+          {said !== undefined ? (
+            <Text size="xs" tone="danger">
+              {said}
+            </Text>
+          ) : stopping ? (
+            <Text size="xs" tone="quiet">
+              Stopping the lead and its agents…
+            </Text>
+          ) : stopOffline ? (
+            <Text size="xs" tone="quiet">
+              Offline: stop the lead and its agents once the hub is back.
+            </Text>
+          ) : null}
+        </div>
         {replyTo !== undefined ? (
           <div className={c.replying}>
             <Reply className={c.replyIcon} aria-hidden />
@@ -266,6 +285,38 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
             </button>
           </div>
         ) : null}
+        {draft.attached.length > 0 ? (
+          <div className={c.chips}>
+            {draft.attached.map((a) => (
+              <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
+                <Truncate expand="none" size="xs" tone="inherit">
+                  {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
+                </Truncate>
+                <button
+                  type="button"
+                  className={c.remove}
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
+                >
+                  <X className={c.removeIcon} aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className={c.lead}>
+          {attachTool}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              attach([...(e.target.files ?? [])]);
+              e.target.value = "";
+            }}
+          />
+        </div>
         <textarea
           ref={box}
           className={c.input}
@@ -286,61 +337,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           onKeyDown={onKeyDown}
           onPaste={onPaste}
         />
-        {draft.attached.length > 0 ? (
-          <div className={c.chips}>
-            {draft.attached.map((a) => (
-              <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
-                <Truncate expand="none" size="xs" tone="inherit">
-                  {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
-                </Truncate>
-                <button
-                  type="button"
-                  className={c.remove}
-                  aria-label={`Remove ${a.name}`}
-                  onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
-                >
-                  <X className={c.removeIcon} aria-hidden />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
         <div className={c.tools}>
-          {attachTool}
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              attach([...(e.target.files ?? [])]);
-              e.target.value = "";
-            }}
-          />
-          {working === true ? (
-            <Text size="xs" tone="faint">
-              {`${nowKeys()} stops its step and sends now`}
-            </Text>
-          ) : null}
-          <span className={c.spacer} />
           {stopTool}
           {sendTool}
         </div>
-      </div>
-      <div role="status" className={c.note}>
-        {said !== undefined ? (
-          <Text size="xs" tone="danger">
-            {said}
-          </Text>
-        ) : stopping ? (
-          <Text size="xs" tone="quiet">
-            Stopping the lead and its agents…
-          </Text>
-        ) : stopOffline ? (
-          <Text size="xs" tone="quiet">
-            Offline: stop the lead and its agents once the hub is back.
-          </Text>
-        ) : null}
       </div>
     </div>
   );

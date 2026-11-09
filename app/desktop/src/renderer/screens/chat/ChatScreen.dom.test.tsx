@@ -169,3 +169,19 @@ it("keeps the beat going only while the lead's activity line is on screen", asyn
     vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
   }
 });
+
+it("floats the composer as an island over the conversation, which runs on behind it rather than ending above it", async () => {
+  // With its lead's lane, the shell has opened the chat: its conversation shows.
+  await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
+  const island = host.querySelector<HTMLElement>("[data-floats]");
+  const list = host.querySelector('[role="list"][aria-label="Conversation with the lead"]');
+  expect(island?.querySelector("[data-composer]")).not.toBeNull();
+  // The list and the island share the stage: the list fills it, the island is drawn over its end, not under it.
+  expect(list).not.toBeNull();
+  expect(island?.contains(list ?? null)).toBe(false);
+  expect(island?.parentElement?.contains(list ?? null)).toBe(true);
+  // The band the live strip floats in sits over the pill, outside it: nothing docks inside the box any more.
+  const band = island?.querySelector("[data-band]");
+  expect(band?.nextElementSibling?.hasAttribute("data-composer")).toBe(true);
+  expect(island?.querySelector("[data-composer] [data-band]")).toBeNull();
+});

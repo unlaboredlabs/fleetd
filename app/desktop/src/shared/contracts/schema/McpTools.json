@@ -2621,6 +2621,28 @@
       ],
       "type": "object"
     },
+    "CardBrand": {
+      "enum": [
+        "visa",
+        "mastercard",
+        "amex",
+        "discover",
+        "diners",
+        "jcb",
+        "unionpay",
+        "other"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "CardLast4": {
+      "pattern": "^[0-9]{4}$",
+      "type": "string"
+    },
+    "CardRef": {
+      "pattern": "^(vault:V[0-9a-f]{32}|op://[^/?\\r\\n]+/[^/?\\r\\n]+)$",
+      "type": "string"
+    },
     "Category": {
       "description": "Which color a span gets in every view, and which breakdown row it adds to.",
       "oneOf": [
@@ -3470,6 +3492,10 @@
         "updatedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "Set when the text was last appended to, or an item's state changed."
+        },
+        "vaultImport": {
+          "$ref": "#/$defs/VaultImportCard",
+          "description": "A system line with an import card: a lead proposed importing items from 1Password into the vault\n(`vault_import_propose`); the person answers with `vault_import`."
         },
         "worktreesKept": {
           "$ref": "#/$defs/WorktreesKept",
@@ -7941,6 +7967,16 @@
           "const": "hub.update",
           "description": "An update started, its hub or a machine moved a state (restarting, back on the new build), or it ended:\n`data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.",
           "type": "string"
+        },
+        {
+          "const": "vault.changed",
+          "description": "A vault item was made, changed, deleted, restored or shared; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
+          "type": "string"
+        },
+        {
+          "const": "vault.used",
+          "description": "A vault item was used (an audit row); `data` is `vault::VaultUsedData`. vault_audit reads it.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -9568,6 +9604,24 @@
     "LocalDate": {
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
       "type": "string"
+    },
+    "LoginField": {
+      "description": "A login's field.",
+      "oneOf": [
+        {
+          "enum": [
+            "username",
+            "password",
+            "notes"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "totp",
+          "description": "The one-time code's seed: the hub makes each code, so the seed never leaves it.",
+          "type": "string"
+        }
+      ]
     },
     "LoginKind": {
       "description": "Read from the runner's login kind, never from credentials.",
@@ -12292,6 +12346,84 @@
         "usage_status.output": {
           "$ref": "#/$defs/UsageStatusOutput"
         },
+        "vault_audit.input": {
+          "$ref": "#/$defs/VaultAuditInput"
+        },
+        "vault_audit.output": {
+          "$ref": "#/$defs/VaultAuditOutput"
+        },
+        "vault_delete.input": {
+          "$ref": "#/$defs/VaultDeleteInput"
+        },
+        "vault_delete.output": {
+          "$ref": "#/$defs/VaultDeleteOutput"
+        },
+        "vault_get.input": {
+          "$ref": "#/$defs/VaultGetInput"
+        },
+        "vault_get.output": {
+          "$ref": "#/$defs/VaultGetOutput"
+        },
+        "vault_import.input": {
+          "$ref": "#/$defs/VaultImportInput"
+        },
+        "vault_import.output": {
+          "$ref": "#/$defs/VaultImportOutput"
+        },
+        "vault_import_search.input": {
+          "$ref": "#/$defs/VaultImportSearchInput"
+        },
+        "vault_import_search.output": {
+          "$ref": "#/$defs/VaultImportSearchOutput"
+        },
+        "vault_list.input": {
+          "$ref": "#/$defs/VaultListInput"
+        },
+        "vault_list.output": {
+          "$ref": "#/$defs/VaultListOutput"
+        },
+        "vault_restore.input": {
+          "$ref": "#/$defs/VaultRestoreInput"
+        },
+        "vault_restore.output": {
+          "$ref": "#/$defs/VaultRestoreOutput"
+        },
+        "vault_reveal.input": {
+          "$ref": "#/$defs/VaultRevealInput"
+        },
+        "vault_reveal.output": {
+          "$ref": "#/$defs/VaultRevealOutput"
+        },
+        "vault_rotate.input": {
+          "$ref": "#/$defs/VaultRotateInput"
+        },
+        "vault_rotate.output": {
+          "$ref": "#/$defs/VaultRotateOutput"
+        },
+        "vault_save.input": {
+          "$ref": "#/$defs/VaultSaveInput"
+        },
+        "vault_save.output": {
+          "$ref": "#/$defs/VaultSaveOutput"
+        },
+        "vault_share_set.input": {
+          "$ref": "#/$defs/VaultShareSetInput"
+        },
+        "vault_share_set.output": {
+          "$ref": "#/$defs/VaultShareSetOutput"
+        },
+        "vault_status.input": {
+          "$ref": "#/$defs/VaultStatusInput"
+        },
+        "vault_status.output": {
+          "$ref": "#/$defs/VaultStatusOutput"
+        },
+        "vault_unlock.input": {
+          "$ref": "#/$defs/VaultUnlockInput"
+        },
+        "vault_unlock.output": {
+          "$ref": "#/$defs/VaultUnlockOutput"
+        },
         "wake_cancel.input": {
           "$ref": "#/$defs/WakeCancelInput"
         },
@@ -12732,6 +12864,32 @@
         "usage_resume.output",
         "usage_status.input",
         "usage_status.output",
+        "vault_audit.input",
+        "vault_audit.output",
+        "vault_delete.input",
+        "vault_delete.output",
+        "vault_get.input",
+        "vault_get.output",
+        "vault_import.input",
+        "vault_import.output",
+        "vault_import_search.input",
+        "vault_import_search.output",
+        "vault_list.input",
+        "vault_list.output",
+        "vault_restore.input",
+        "vault_restore.output",
+        "vault_reveal.input",
+        "vault_reveal.output",
+        "vault_rotate.input",
+        "vault_rotate.output",
+        "vault_save.input",
+        "vault_save.output",
+        "vault_share_set.input",
+        "vault_share_set.output",
+        "vault_status.input",
+        "vault_status.output",
+        "vault_unlock.input",
+        "vault_unlock.output",
         "wake_cancel.input",
         "wake_cancel.output",
         "wake_list.input",
@@ -14246,10 +14404,20 @@
       "type": "object"
     },
     "NaviCard": {
-      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "description": "The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
       "properties": {
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "label": {
+          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
+          "type": "string"
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
         "ref": {
-          "$ref": "#/$defs/OpItemReference"
+          "$ref": "#/$defs/CardRef"
         }
       },
       "required": [
@@ -14260,8 +14428,8 @@
     "NaviCardSetInput": {
       "properties": {
         "card": {
-          "$ref": "#/$defs/OpItemReference",
-          "description": "A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card."
+          "$ref": "#/$defs/CardRef",
+          "description": "A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported\ninto the vault, then set); absent: the Navi has no card."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
@@ -19667,6 +19835,10 @@
           "$ref": "#/$defs/DecisionKey",
           "description": "The secret's name, a dotted slug such as \"stripe.test_key\"."
         },
+        "sealTo": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The key the app seals the value to: the hub's own box key, for a sink the vault keeps (`env:`, `file:`,\n`order:`). Absent: the sink machine's, as before."
+        },
         "sink": {
           "$ref": "#/$defs/SecretSink"
         }
@@ -19753,6 +19925,27 @@
     },
     "SecretSink": {
       "type": "string"
+    },
+    "SecretSinkKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "env",
+            "file"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "order",
+          "description": "One variable for one order's agents (`order:<machine>:<order id>`): the node adds it to the environment of\nthat order's sessions on the machine, masks it in what they report, and drops it when the order closes.",
+          "type": "string"
+        },
+        {
+          "const": "fill",
+          "description": "A Navi's secure input (`fill:<machine>:<browser session>`, secure_input.rs): the node types the value straight\ninto the field the Navi asked about, on its site, in that browser session, and keeps it nowhere.",
+          "type": "string"
+        }
+      ]
     },
     "SecretSubmitInput": {
       "properties": {
@@ -24221,6 +24414,1329 @@
       },
       "required": [
         "machines"
+      ],
+      "type": "object"
+    },
+    "VaultAuditAction": {
+      "oneOf": [
+        {
+          "enum": [
+            "fill",
+            "fill_refused",
+            "reveal",
+            "create",
+            "update",
+            "delete",
+            "restore",
+            "share",
+            "import",
+            "rotate",
+            "unlock"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "inject",
+          "description": "A session launched with the item among its variables.",
+          "type": "string"
+        },
+        {
+          "const": "deliver",
+          "description": "The item's value was sent to a machine (env file or sink).",
+          "type": "string"
+        },
+        {
+          "const": "purchase",
+          "description": "A card filled for a recorded purchase.",
+          "type": "string"
+        },
+        {
+          "const": "adopt",
+          "description": "The migration took it in (`vault_adopt`), or found the node's value differs from the hub's record.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "VaultAuditData": {
+      "description": "An audit row's `data` column (`vault_audit.data`), the same JSON in both runtimes. Never a value.",
+      "properties": {
+        "by": {
+          "description": "Who did it in words: `human:<device>`, `system`, or the agent's session.",
+          "type": "string"
+        },
+        "count": {
+          "description": "How many, for an import or a rotation.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fields": {
+          "description": "`username`, `password`, `otp`, `address`, `card`, or the revealed fields.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "host": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine hosting the browser, for a fill: the per-machine rate limit counts it."
+        },
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "label": {
+          "description": "The item's label when it was used.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Why it was refused or failed, or what happened, in one line.",
+          "type": "string"
+        },
+        "names": {
+          "description": "The variable names a launch got, for `inject`.",
+          "items": {
+            "$ref": "#/$defs/EnvVarName"
+          },
+          "type": "array"
+        },
+        "purchaseId": {
+          "$ref": "#/$defs/ChatRequestId",
+          "description": "A card fill's purchase: `purchase_filled` closes its row by it."
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "site": {
+          "description": "The page's host and the frame's, for a fill.",
+          "type": "string"
+        },
+        "to": {
+          "description": "A share's projects, `<machine>/<project>`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "typed": {
+          "description": "Whether a fill reached the page.",
+          "type": "boolean"
+        },
+        "via": {
+          "description": "The path it came by, in a word: `fill_credential`, `purchase_fill`, `fill_address`, `env`, `sink`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VaultAuditEntry": {
+      "description": "One row of the audit log, as `vault_audit` and `vault_get` list it.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/VaultAuditAction"
+        },
+        "atMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/VaultAuditData"
+        },
+        "deviceId": {
+          "type": "string"
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId",
+          "description": "Absent for a row of no single item (`item_id` \"\" in the table): a refused fill that named no usable item, an\nunlock, a rotation, a launch's `inject` row listing `data.names`."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/VaultAuditOutcome"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "n",
+        "atMs",
+        "action",
+        "outcome",
+        "data"
+      ],
+      "type": "object"
+    },
+    "VaultAuditInput": {
+      "properties": {
+        "before": {
+          "description": "Rows before this one (its `n`), for the next page.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "limit": {
+          "description": "At most; default 100.",
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "type": "object"
+    },
+    "VaultAuditOutcome": {
+      "oneOf": [
+        {
+          "enum": [
+            "ok",
+            "refused",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "pending",
+          "description": "A fill handed to the node, until its `vault_filled`.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultAuditOutput": {
+      "properties": {
+        "entries": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/VaultAuditEntry"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "More rows before the last one.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entries",
+        "more"
+      ],
+      "type": "object"
+    },
+    "VaultDeleteInput": {
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "purge": {
+          "description": "Gone for good now instead of the trash: only an item already in the trash.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "VaultDeleteOutput": {
+      "properties": {
+        "deletedMs": {
+          "description": "In the trash until 30 days later; absent once purged.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "VaultEnvSink": {
+      "description": "What an env variable is delivered to besides the sessions' environment: a `request_secret` sink's file.",
+      "properties": {
+        "envName": {
+          "$ref": "#/$defs/EnvVarName",
+          "description": "An `env` sink's variable, when not the item's name."
+        },
+        "kind": {
+          "$ref": "#/$defs/SecretSinkKind",
+          "description": "`env` (a line in an env file) or `file` (the whole file)."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The sink's machine, then its absolute path there."
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "secretKey": {
+          "$ref": "#/$defs/DecisionKey",
+          "description": "The `request_secret` key it answered: `stripe.test_key`."
+        }
+      },
+      "required": [
+        "kind",
+        "machineId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "VaultGetInput": {
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "VaultGetOutput": {
+      "properties": {
+        "activity": {
+          "description": "Its last 20 audit rows, newest first.",
+          "items": {
+            "$ref": "#/$defs/VaultAuditEntry"
+          },
+          "type": "array"
+        },
+        "item": {
+          "$ref": "#/$defs/VaultItemSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item",
+        "activity"
+      ],
+      "type": "object"
+    },
+    "VaultImportCandidate": {
+      "description": "A 1Password item a person's token reads, for the import list: never a value.",
+      "properties": {
+        "imported": {
+          "$ref": "#/$defs/VaultItemId",
+          "description": "Already in the vault, imported from it: that item."
+        },
+        "kind": {
+          "$ref": "#/$defs/VaultKind",
+          "description": "What it becomes in the vault."
+        },
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        },
+        "sites": {
+          "description": "Its websites' hosts.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "vault": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "title",
+        "kind",
+        "vault"
+      ],
+      "type": "object"
+    },
+    "VaultImportCard": {
+      "description": "A chat message's import card (`ChatMessage.vaultImport`): a lead proposed importing these items; the person ticks\nand taps Import (the `vault_import` tool with `proposalId`) or Dismiss. The only confirm in the vault.",
+      "properties": {
+        "answeredMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "imported": {
+          "description": "How many were imported, once answered.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/VaultImportCardItem"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "proposalId": {
+          "$ref": "#/$defs/VaultImportId"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope",
+          "description": "Where the items go unless the person picks another: the person's own by default."
+        },
+        "state": {
+          "$ref": "#/$defs/VaultImportState"
+        },
+        "why": {
+          "description": "The lead's reason, one line.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposalId",
+        "why",
+        "scope",
+        "items",
+        "state"
+      ],
+      "type": "object"
+    },
+    "VaultImportCardItem": {
+      "description": "One item of an import card.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        },
+        "site": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "title",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "VaultImportError": {
+      "description": "One item it couldn't read, and why in words (the token masked).",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "ref": {
+          "$ref": "#/$defs/OpItemReference"
+        }
+      },
+      "required": [
+        "ref",
+        "message"
+      ],
+      "type": "object"
+    },
+    "VaultImportId": {
+      "pattern": "^VP[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "VaultImportInput": {
+      "properties": {
+        "dismiss": {
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "proposalId": {
+          "$ref": "#/$defs/VaultImportId"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/OpItemReference"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope",
+          "description": "Where they go; default: the proposal's, else the caller's own."
+        }
+      },
+      "type": "object"
+    },
+    "VaultImportOutput": {
+      "properties": {
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/VaultImportError"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/VaultItemSummary"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "errors"
+      ],
+      "type": "object"
+    },
+    "VaultImportSearchInput": {
+      "properties": {
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/VaultKind"
+          },
+          "type": "array"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to search; default: the first machine online that holds the caller's token."
+        },
+        "query": {
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "VaultImportSearchOutput": {
+      "properties": {
+        "error": {
+          "description": "Why nothing could be searched, the token masked; absent when it worked.",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/VaultImportCandidate"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "VaultImportState": {
+      "enum": [
+        "open",
+        "imported",
+        "dismissed"
+      ],
+      "type": "string"
+    },
+    "VaultItemId": {
+      "pattern": "^V[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "VaultItemSummary": {
+      "description": "One item as a person's app lists it: metadata only, never a value (a plain variable's `value` aside).",
+      "properties": {
+        "canEdit": {
+          "description": "What the caller may do, by the scope table: change (edit, delete, share) and reveal.",
+          "type": "boolean"
+        },
+        "canReveal": {
+          "type": "boolean"
+        },
+        "createdMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletedMs": {
+          "description": "In the trash since; purged [`TRASH_DAYS`] later.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvVarName",
+          "description": "kind env only."
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "meta": {
+          "$ref": "#/$defs/VaultMeta"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId",
+          "description": "A person item's owner; for other scopes its creator."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope"
+        },
+        "sharedWith": {
+          "description": "The projects a person item is shared with: their agents fill it, never reveal it.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "updatedBy": {
+          "description": "Who changed it last: `human:<device>`, or `system` for the migration.",
+          "type": "string"
+        },
+        "updatedMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "value": {
+          "description": "A plain (not secret) variable's value, which lists show without a reveal.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Bumped at each change of its value.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "itemId",
+        "kind",
+        "scope",
+        "label",
+        "meta",
+        "version",
+        "createdMs",
+        "updatedMs",
+        "updatedBy",
+        "canEdit",
+        "canReveal"
+      ],
+      "type": "object"
+    },
+    "VaultKeyId": {
+      "pattern": "^k[1-9][0-9]{0,8}$",
+      "type": "string"
+    },
+    "VaultKeyMode": {
+      "description": "Where the root key is kept (`~/.fleetd/vault/root.key`).",
+      "oneOf": [
+        {
+          "const": "file",
+          "description": "In the file, 0600 in a 0700 directory: opens at every start.",
+          "type": "string"
+        },
+        {
+          "const": "keyring",
+          "description": "In the OS keychain; the file points at it.",
+          "type": "string"
+        },
+        {
+          "const": "passphrase",
+          "description": "Wrapped by a passphrase (scrypt): locked after every start until an owner or admin unlocks it.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "login",
+            "card",
+            "address"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "env",
+          "description": "An environment variable for agents' sessions.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "VaultListInput": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "A project's items: with projectId."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "query": {
+          "description": "Only items whose label, site or variable name contains it.",
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope",
+          "description": "Only this scope's items; absent: every item the caller sees."
+        },
+        "trash": {
+          "description": "The trash instead: items deleted in the last 30 days.",
+          "type": "boolean"
+        },
+        "usable": {
+          "description": "With projectId: every item that project's work may use instead (its own, its owner's shared with it or of\nan Only me project, and the hub's), as Payments' card picker lists them.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "VaultListOutput": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/VaultItemSummary"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "VaultMeta": {
+      "description": "An item's readable metadata (`vault_items.meta`), worked out by the hub from the value. Each kind sets its own:\nlogin `sites` and `fields`; card `brand`, `last4` and `billingAddress`; address `country` (and `sites`); env\n`secret`, `fingerprint` (secret only), `bytes` and `sink`.",
+      "properties": {
+        "billingAddress": {
+          "$ref": "#/$defs/VaultItemId",
+          "description": "A card's billing address: an address item."
+        },
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "bytes": {
+          "description": "A variable's value's size in bytes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "country": {
+          "description": "An address's country, ISO 3166-1 alpha-2 when known: `DE`.",
+          "maxLength": 60,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "fields": {
+          "description": "A login's fields that hold a value.",
+          "items": {
+            "$ref": "#/$defs/LoginField"
+          },
+          "type": "array"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "A secret variable's fingerprint, the same as the node reports for it."
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
+        "secret": {
+          "description": "An env variable that is never shown in a list (it may be revealed).",
+          "type": "boolean"
+        },
+        "sink": {
+          "$ref": "#/$defs/VaultEnvSink"
+        },
+        "sites": {
+          "description": "The hosts it fills on (that host or a subdomain; shared-hosting suffixes as whole hosts only).",
+          "items": {
+            "$ref": "#/$defs/ShopDomain"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/VaultSource"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "VaultMigration": {
+      "properties": {
+        "done": {
+          "description": "Nothing is left to take in.",
+          "type": "boolean"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/VaultMigrationMachine"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "done",
+        "machines"
+      ],
+      "type": "object"
+    },
+    "VaultMigrationMachine": {
+      "description": "How the migration of one machine's variables and sinks into the vault stands.",
+      "properties": {
+        "adopted": {
+          "description": "Taken in: plain variables from the hub's rows, secrets and sinks from the node.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "mismatched": {
+          "description": "The node's value differed from the hub's record: the node's won, and the conflict is in the audit log.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skippedSystem": {
+          "description": "fleetd's own order variables (`GH_TOKEN` from the GitHub App), which stay on their own path.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "updatedMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "description": "Still on the node: it's offline, or runs a node that can't adopt (`waitingFor`).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waitingFor": {
+          "description": "Why some wait, in words: \"offline\", \"its node needs fleetd's Bun build\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "adopted",
+        "waiting",
+        "mismatched",
+        "skippedSystem",
+        "updatedMs"
+      ],
+      "type": "object"
+    },
+    "VaultRestoreInput": {
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "VaultRestoreOutput": {
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/VaultItemSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
+    "VaultRevealInput": {
+      "properties": {
+        "fields": {
+          "description": "The fields to reveal, as the kind names them: `password`, `number`, `value`.",
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "replyKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The app's one-time X25519 public key for this reveal."
+        }
+      },
+      "required": [
+        "itemId",
+        "fields",
+        "replyKey"
+      ],
+      "type": "object"
+    },
+    "VaultRevealOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "`crypto_box_seal(replyKey, utf8 JSON {field: value})`."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "VaultRotateInput": {
+      "type": "object"
+    },
+    "VaultRotateOutput": {
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/VaultKeyId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "rewrapped": {
+          "description": "The items whose data keys it wrapped again.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "keyId",
+        "rewrapped"
+      ],
+      "type": "object"
+    },
+    "VaultSaveInput": {
+      "properties": {
+        "billingAddress": {
+          "$ref": "#/$defs/VaultItemId",
+          "description": "kind card: an address item."
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvVarName",
+          "description": "kind env: its name."
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "kind": {
+          "$ref": "#/$defs/VaultKind"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "A project's or an order's item."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "scope": {
+          "$ref": "#/$defs/VaultScope"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "`crypto_box_seal(hubBoxKey, utf8 JSON of the kind's fields)`: LoginSecret, CardSecret, AddressSecret,\nEnvSecret."
+        },
+        "secret": {
+          "description": "kind env: never shown in lists. Absent on a new variable: secret.",
+          "type": "boolean"
+        },
+        "sites": {
+          "description": "A login's or address's sites: hosts, a pasted URL cut to its host by the app.",
+          "items": {
+            "$ref": "#/$defs/ShopDomain"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "VaultSaveOutput": {
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/VaultItemSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
+    "VaultScope": {
+      "description": "Whose an item is, and so who lists, changes and reveals it, and which work uses it.",
+      "oneOf": [
+        {
+          "const": "person",
+          "description": "One person's: used by work they started, their Only me projects, and projects it's shared with.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "One project's (`machineId`, `projectId`): its leads and agents use it.",
+          "type": "string"
+        },
+        {
+          "const": "order",
+          "description": "One order's variable (`workstreamId` too): that order's agents. Gone when the order closes.",
+          "type": "string"
+        },
+        {
+          "const": "hub",
+          "description": "Everyone's on the hub, every project's work; only admins change it. Never a variable.",
+          "type": "string"
+        }
+      ]
+    },
+    "VaultShareSetInput": {
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId"
+        },
+        "projects": {
+          "description": "A person item's projects, replacing those before; empty: only its owner's own work.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "maxItems": 200,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "itemId",
+        "projects"
+      ],
+      "type": "object"
+    },
+    "VaultShareSetOutput": {
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/VaultItemSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "type": "object"
+    },
+    "VaultSource": {
+      "description": "Where an item came from.",
+      "oneOf": [
+        {
+          "description": "Typed or pasted by a person.",
+          "properties": {
+            "kind": {
+              "const": "typed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Imported from 1Password; never read from it again.",
+          "properties": {
+            "importedMs": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "1password",
+              "type": "string"
+            },
+            "ref": {
+              "$ref": "#/$defs/OpItemReference"
+            }
+          },
+          "required": [
+            "kind",
+            "ref",
+            "importedMs"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Taken in by the migration from what a node held (`project-env`, `order-env`, a `request_secret` sink) or from\nthe hub's `project_env` rows: `from` names it, `project_env`, `order_env` or `sink:<key>`.",
+          "properties": {
+            "from": {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[^\\r\\n]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "adopted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "from"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "VaultStatusInput": {
+      "type": "object"
+    },
+    "VaultStatusOutput": {
+      "description": "The vault's state, for the app and the doctor.",
+      "properties": {
+        "hubBoxKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The hub's box key (`~/.fleetd/hub/node-box-key.pem`'s public half): what an app seals `vault_save`'s fields and\n`vault_unlock`'s passphrase to."
+        },
+        "keyId": {
+          "$ref": "#/$defs/VaultKeyId",
+          "description": "The root key in use; absent while locked or missing."
+        },
+        "keyMissing": {
+          "description": "The key the items were sealed with is gone: they can't be opened until it's restored.",
+          "type": "boolean"
+        },
+        "keyMode": {
+          "$ref": "#/$defs/VaultKeyMode"
+        },
+        "locked": {
+          "description": "Passphrase mode after a start: fills fail until an owner or admin unlocks it; delivered env keeps working.",
+          "type": "boolean"
+        },
+        "migration": {
+          "$ref": "#/$defs/VaultMigration"
+        },
+        "next": {
+          "type": "string"
+        },
+        "recoverySaved": {
+          "description": "An owner saved the recovery code (`fleetd vault recovery-code`).",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hubBoxKey",
+        "keyMode",
+        "locked",
+        "keyMissing",
+        "recoverySaved",
+        "migration"
+      ],
+      "type": "object"
+    },
+    "VaultUnlockInput": {
+      "properties": {
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "The passphrase, sealed to the hub's box key."
+        }
+      },
+      "required": [
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "VaultUnlockOutput": {
+      "description": "The vault's state, for the app and the doctor.",
+      "properties": {
+        "hubBoxKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The hub's box key (`~/.fleetd/hub/node-box-key.pem`'s public half): what an app seals `vault_save`'s fields and\n`vault_unlock`'s passphrase to."
+        },
+        "keyId": {
+          "$ref": "#/$defs/VaultKeyId",
+          "description": "The root key in use; absent while locked or missing."
+        },
+        "keyMissing": {
+          "description": "The key the items were sealed with is gone: they can't be opened until it's restored.",
+          "type": "boolean"
+        },
+        "keyMode": {
+          "$ref": "#/$defs/VaultKeyMode"
+        },
+        "locked": {
+          "description": "Passphrase mode after a start: fills fail until an owner or admin unlocks it; delivered env keeps working.",
+          "type": "boolean"
+        },
+        "migration": {
+          "$ref": "#/$defs/VaultMigration"
+        },
+        "next": {
+          "type": "string"
+        },
+        "recoverySaved": {
+          "description": "An owner saved the recovery code (`fleetd vault recovery-code`).",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hubBoxKey",
+        "keyMode",
+        "locked",
+        "keyMissing",
+        "recoverySaved",
+        "migration"
       ],
       "type": "object"
     },

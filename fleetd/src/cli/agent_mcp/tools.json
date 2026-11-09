@@ -1675,8 +1675,22 @@
    "description": "Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://<vault>/<item>/<field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.",
    "inputSchema": {
     "properties": {
+     "field": {
+      "description": "The login's field: `username`, `password` or `otp` (a one-time code). With item.",
+      "enum": [
+       "username",
+       "password",
+       "otp"
+      ],
+      "type": "string"
+     },
+     "item": {
+      "description": "A vault login, by its id (`V…`) or its label (`Amazon`), as vault_items lists it.",
+      "pattern": "^[^\\s!-/:-@\\[-`{-~][^\\r\\n]{0,119}$",
+      "type": "string"
+     },
      "ref": {
-      "description": "A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code.",
+      "description": "A 1Password secret reference instead of item: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time\ncode.",
       "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
       "type": "string"
      },
@@ -1692,7 +1706,6 @@
      }
     },
     "required": [
-     "ref",
      "target"
     ],
     "type": "object"
@@ -2609,6 +2622,18 @@
    }
   },
   "fill_credential": {
+   "/field": {
+    "variants": [
+     "username",
+     "password",
+     "otp"
+    ],
+    "expected": "string or map"
+   },
+   "/item": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[^\\s!-/:-@\\[-`{-~][^\\r\\n]{0,119}$, got {got}"
+   },
    "/ref": {
     "expected": "a string",
     "pattern": "expected a string matching ^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$, got {got}"

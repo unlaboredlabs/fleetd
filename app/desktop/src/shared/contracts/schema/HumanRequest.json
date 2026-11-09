@@ -8,8 +8,33 @@
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "BrowserSessionId": {
       "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "CardBrand": {
+      "enum": [
+        "visa",
+        "mastercard",
+        "amex",
+        "discover",
+        "diners",
+        "jcb",
+        "unionpay",
+        "other"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "CardLast4": {
+      "pattern": "^[0-9]{4}$",
+      "type": "string"
+    },
+    "CardRef": {
+      "pattern": "^(vault:V[0-9a-f]{32}|op://[^/?\\r\\n]+/[^/?\\r\\n]+)$",
       "type": "string"
     },
     "ChatRequestId": {
@@ -211,20 +236,26 @@
       "type": "string"
     },
     "NaviCard": {
-      "description": "The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept.",
+      "description": "The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is\nkept.",
       "properties": {
+        "brand": {
+          "$ref": "#/$defs/CardBrand"
+        },
+        "label": {
+          "description": "A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`.",
+          "type": "string"
+        },
+        "last4": {
+          "$ref": "#/$defs/CardLast4"
+        },
         "ref": {
-          "$ref": "#/$defs/OpItemReference"
+          "$ref": "#/$defs/CardRef"
         }
       },
       "required": [
         "ref"
       ],
       "type": "object"
-    },
-    "OpItemReference": {
-      "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+$",
-      "type": "string"
     },
     "OpReference": {
       "pattern": "^op://[^/?\\r\\n]+/[^/?\\r\\n]+(/[^/?\\r\\n]+){1,2}(\\?attribute=[a-z]+)?$",
@@ -429,6 +460,10 @@
         "key": {
           "$ref": "#/$defs/DecisionKey",
           "description": "The secret's name, a dotted slug such as \"stripe.test_key\"."
+        },
+        "sealTo": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "The key the app seals the value to: the hub's own box key, for a sink the vault keeps (`env:`, `file:`,\n`order:`). Absent: the sink machine's, as before."
         },
         "sink": {
           "$ref": "#/$defs/SecretSink"

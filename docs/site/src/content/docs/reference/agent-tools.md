@@ -1049,7 +1049,9 @@ Fill a login field of your browser session from 1Password without seeing the val
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `ref` | string | yes | A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
+| `field` | string | no | The login's field: `username`, `password` or `otp` (a one-time code). With item. One of `username`, `password`, `otp`. |
+| `item` | string | no | A vault login, by its id (`V…`) or its label (`Amazon`), as vault_items lists it. |
+| `ref` | string | no | A 1Password secret reference instead of item: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
 | `submit` | boolean | no | False to fill without submitting, for a field before the last of its form (a username before its password). Absent: true. |
 | `target` | string | yes | The field to fill: a CSS selector (`input[name=password]`, `#otp`). At most 500 characters. |
 
@@ -1512,7 +1514,9 @@ Fill a login field of your browser session from 1Password without seeing the val
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `ref` | string | yes | A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
+| `field` | string | no | The login's field: `username`, `password` or `otp` (a one-time code). With item. One of `username`, `password`, `otp`. |
+| `item` | string | no | A vault login, by its id (`V…`) or its label (`Amazon`), as vault_items lists it. |
+| `ref` | string | no | A 1Password secret reference instead of item: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
 | `submit` | boolean | no | False to fill without submitting, for a field before the last of its form (a username before its password). Absent: true. |
 | `target` | string | yes | The field to fill: a CSS selector (`input[name=password]`, `#otp`). At most 500 characters. |
 

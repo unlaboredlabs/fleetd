@@ -33,6 +33,7 @@ import type { SessionsArea } from "../api.ts";
 import { Masker } from "../mask.ts";
 import { type DeviceCall, type DeviceDone, isHostKey, openCall, sealDone } from "../device/work.ts";
 import { type Broker, broker as brokerOf, drivesBrowser } from "../browser/index.ts";
+import { type FillCredentialCall, referenceOf } from "../browser/credentials.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { hostOf, router as screens } from "../device/router.ts";
@@ -140,7 +141,10 @@ export class Router {
     if (this.broker.staysHere(thread)) return this.here(thread, frame);
     // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
     const remote = this.remotes.get(thread);
-    const fill = op === "fill_credential" && remote?.runner && remote.sealTo ? await this.sealedFill(thread, String(frame.call.ref ?? ""), remote.runner, remote.sealTo) : undefined;
+    const fill =
+      op === "fill_credential" && remote?.runner && remote.sealTo
+        ? await this.sealedFill(thread, referenceOf(frame.call as FillCredentialCall), remote.runner, remote.sealTo)
+        : undefined;
     let routed = await this.ask(thread, frame, fill);
     if (!routed.here && !routed.answer && routed.sealTo) {
       if (host === "android") throw androidElsewhere();

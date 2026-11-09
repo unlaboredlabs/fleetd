@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "AddressSecret": {
+      "description": "An address's sealed fields; each part a fill finds a field for.",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "line1": {
+          "type": "string"
+        },
+        "line2": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "postalCode": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CardSecret": {
+      "description": "A card's sealed fields, also the plain JSON of a purchase claim's `sealedCard`.",
+      "properties": {
+        "cvc": {
+          "type": "string"
+        },
+        "month": {
+          "description": "`01`-`12`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name on the card.",
+          "type": "string"
+        },
+        "number": {
+          "description": "Digits only.",
+          "type": "string"
+        },
+        "year": {
+          "description": "Four digits: `2029`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "EnvSecret": {
+      "description": "A variable's sealed field.",
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    },
+    "LoginSecret": {
+      "description": "A login's sealed fields. In `vault_save` for an existing item, an absent field is kept and an empty one cleared.",
+      "properties": {
+        "notes": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "totp": {
+          "description": "An `otpauth://` URI or a base32 seed.",
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VaultFillPlain": {
+      "description": "What a fill's `sealed` opens to: `value` for a login's field, the address fields for an address; and the sites the\nnode checks the page against again.",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "line1": {
+          "type": "string"
+        },
+        "line2": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "postalCode": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "sites": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sites"
+      ],
+      "type": "object"
+    },
+    "VaultImportedFields": {
+      "description": "What an imported item holds, sealed to the hub (`vault_import_read`'s `sealed`): its title, sites and the fields of\nits kind.",
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/AddressSecret"
+        },
+        "card": {
+          "$ref": "#/$defs/CardSecret"
+        },
+        "login": {
+          "$ref": "#/$defs/LoginSecret"
+        },
+        "sites": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "VaultSealedShapes": {
+      "description": "The plain JSON inside the vault's sealed boxes, each by what it's for, so apps and both runtimes seal and open the\nsame shapes. Never sent as it is.",
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/AddressSecret"
+        },
+        "card": {
+          "$ref": "#/$defs/CardSecret"
+        },
+        "env": {
+          "$ref": "#/$defs/EnvSecret"
+        },
+        "fill": {
+          "$ref": "#/$defs/VaultFillPlain",
+          "description": "`vault_fill`'s answer."
+        },
+        "imported": {
+          "$ref": "#/$defs/VaultImportedFields",
+          "description": "`vault_import_read`'s items."
+        },
+        "login": {
+          "$ref": "#/$defs/LoginSecret",
+          "description": "`vault_save` and `vault_reveal`, by kind; a purchase claim's `sealedCard` is a card."
+        }
+      },
+      "required": [
+        "login",
+        "card",
+        "address",
+        "env",
+        "fill",
+        "imported"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/VaultSealedShapes",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

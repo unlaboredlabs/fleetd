@@ -47,12 +47,12 @@ breaks a rule changes this page in the same PR and says why.
   - Entrances:
     - a list row: `--dur-row-in` 160 ms, rising `--row-rise` 3 px
     - a chat bubble glides in (`screens/chat/glide.ts`): the conversation moves as one sheet, the new bubble rising
-      from behind the composer's box with the rows above it on a critically damped spring (a reply: stiffness 500,
+      from behind the composer's island with the rows above it on a critically damped spring (a reply: stiffness 500,
       damping 44.7, mass 1; your send: 650, 51; the last message growing, as a streamed reply's text takes its dots'
       place: 700, 53). One additive transform on the rows, so a burst sums. The bubble fades in over its first
       `--dur-enter` 100 ms (`--ease-out`), a reply's bubbles 50 ms apart; it never moves or scales on its own. A
-      streamed reply enters once, as the lead starts writing. The list's edge is the box's top, so nothing shows
-      below it. Scrolled up, nothing glides.
+      streamed reply enters once, as the lead starts writing. The list runs on behind the glass island to the
+      window's edge. Scrolled up, nothing glides.
   - Never scale text.
 - **Loops step on one beat, never on CSS animations.** While something live is on screen, `ui/lib/beat` advances
   every 120 ms (24 beats) and hands each loop the beat to write onto its own elements, so every loop steps together
