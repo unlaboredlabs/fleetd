@@ -78,13 +78,18 @@ function Dock({ project, strip, lead }: { project: ProjectRef; strip: Strip; lea
   );
 }
 
-/** "8 DMs between agents", a link to Activity › DMs; nothing until there is one. */
+/**
+ * "8 DMs between agents", a link to Activity › DMs; nothing until there is one. In a narrow band it says only "8 DMs",
+ * leaving the room to what the agents do; its name stays whole.
+ */
 function DmCount({ project }: { project: ProjectRef }) {
   const words = countWords(useDmTotal(project));
   if (words === undefined) return null;
+  const cut = words.indexOf(" between");
   return (
-    <a className={s.dms} href={toHash(panelRoute(project, { tab: "activity", dms: true }))}>
-      {words}
+    <a className={s.dms} href={toHash(panelRoute(project, { tab: "activity", dms: true }))} aria-label={words}>
+      {words.slice(0, cut)}
+      <span className={s.between}>{words.slice(cut)}</span>
     </a>
   );
 }

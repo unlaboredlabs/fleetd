@@ -150,10 +150,11 @@
   --text-sm: var(--text-xs);
   position: relative;
   z-index: 1;
-  /* A width of its own in the capsule, which is as wide as what it holds: the line fits itself to its box (parts.tsx),
-     so its box can't come from its text. It gives way before the headline does. */
-  flex: 0 100 auto;
-  width: 320px;
+  /* A width of its own in the capsule: the line fits itself to its box (parts.tsx), so its box can't come from its
+     text. It takes the room the items before it leave, up to 320 px, so it gives way before the turn line and the
+     headline do: they are cut only once it is at its least. */
+  flex: 1 1 0;
+  max-width: 320px;
   /* Narrower, a role and a step don't fit: it goes instead (below). */
   min-width: 120px;
   overflow: hidden;
@@ -195,17 +196,25 @@
   }
 }
 
-/* The agents' DMs to each other: a count at the row's end, quiet until pointed at. */
+/* The agents' DMs to each other: a count at the row's end beside the chevron, quiet until pointed at. The room left
+   in a wide band goes before it, so what the agents do reads from the left and the count from the right. */
 .dms {
   position: relative;
   z-index: 1;
   flex: none;
+  margin-left: auto;
   color: var(--quiet);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   text-decoration: none;
   white-space: nowrap;
   border-radius: var(--radius-sm);
+}
+/* "between agents" goes where the now-line does (above): the count alone says it there. */
+@container (width < 520px) {
+  .between {
+    display: none;
+  }
 }
 .dms:hover {
   color: var(--text);
@@ -218,10 +227,14 @@
 
 .chevron {
   flex: none;
+  /* With no count, the room left goes before the chevron instead. */
   margin-left: auto;
   color: var(--faint);
   pointer-events: none;
   transition: transform var(--dur-base) var(--ease-out);
+}
+.dms + .chevron {
+  margin-left: 0;
 }
 .dock[data-open] .chevron {
   transform: rotate(180deg);

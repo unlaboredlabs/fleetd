@@ -1,6 +1,7 @@
-// The live strip's fixtures: the typical lab hub with one order in its first project, and 0, 3 or 20 agents at work
-// on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. The chat above the strip
-// names a PR the way the lead and the hub do: an event line, then "#10" (live-3) or its GitHub URL (live-20).
+// The live strip's fixtures: the typical lab hub with one order in its first project, and 0, 1, 3 or 20 agents at
+// work on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. The chat above the strip
+// names a PR the way the lead and the hub do: an event line, then "#10" (live-3) or its GitHub URL (live-20). The
+// agents have sent each other DMs (the count at the strip's end): 132 at 1, 1,284 at 20, none at 0 or 3.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -25,6 +26,11 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   const first = Array.isArray(projects) ? (projects[0] as JsonObject | undefined) : undefined;
   const text = (v: JsonValue | undefined, fallback: string) => (typeof v === "string" ? v : fallback);
   const projectRef = { machineId: text(first?.["machineId"], "devbox"), projectId: text(first?.["projectId"], "storefront") };
+  const dms = agents > 3 ? 1284 : agents === 1 ? 132 : 0;
+  if (dms > 0) {
+    if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "agent_messages"] };
+    f.answer("agent_messages", { projectRef, limit: 1 }, { messages: [], more: true, total: dms });
+  }
   const pr = (n: number, state: string, taskId: string): JsonObject => ({
     changeId: `X${n}`,
     repo: "acme/storefront",
@@ -150,6 +156,34 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
 };
 
 /**
+ * live-1-lead, live-20-lead: the strip with the lead's turn line as its first item, the lead mid-turn reading a file
+ * with a long name.
+ */
+const withLead = (f: Fixture): Fixture => {
+  const led = Fixture.from(f, `${f.name}-lead`, `${f.note} The lead's turn runs: its line is the strip's first item.`);
+  const now = Date.parse(led.now);
+  const at = (ms: number) => new Date(now + ms).toISOString();
+  const projects = led.snapshot?.["projects"];
+  const first = Array.isArray(projects) ? (projects[0] as JsonObject | undefined) : undefined;
+  const machineId = typeof first?.["machineId"] === "string" ? first["machineId"] : "devbox";
+  const projectId = typeof first?.["projectId"] === "string" ? first["projectId"] : "storefront";
+  const lanes = led.live[0]?.["lanes"];
+  const activity = { kind: "read", path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" };
+  led.live = [{ ...led.live[0], lanes: [...(Array.isArray(lanes) ? lanes : []), { laneId: `lead:${machineId}/${projectId}`, status: "working", activity: { activity, since: at(-3_000) } }] }];
+  const seq = Math.max(Number(led.snapshot?.["cursor"] ?? 0), ...led.events.map((e) => Number(e["seq"] ?? 0)));
+  led.events.push({
+    seq: seq + 1,
+    at: at(-42_000),
+    type: "chat.waiting",
+    summary: "The lead is working",
+    machineId,
+    projectId,
+    data: { projectRef: { machineId, projectId }, needsYou: false, leadWorking: true, lastSeq: 3, lastMessageAt: at(-540_000) },
+  });
+  return led;
+};
+
+/**
  * live-turn: three agents thinking in the strip while the lead's turn line before it comes, changes step, says "Worked for"
  * and goes, over and over (every CYCLE_MS from 1.5 s), so the band's motion can be recorded frame by frame.
  */
@@ -196,5 +230,13 @@ const withTurns = (f: Fixture): Fixture => {
 };
 
 export default defineGroup({
-  fixtures: (base) => [fromBase(base("typical"), 0), fromBase(base("typical"), 3), fromBase(base("typical"), 20), withTurns(fromBase(base("typical"), 3))],
+  fixtures: (base) => [
+    fromBase(base("typical"), 0),
+    fromBase(base("typical"), 1),
+    fromBase(base("typical"), 3),
+    fromBase(base("typical"), 20),
+    withLead(fromBase(base("typical"), 1)),
+    withLead(fromBase(base("typical"), 20)),
+    withTurns(fromBase(base("typical"), 3)),
+  ],
 });

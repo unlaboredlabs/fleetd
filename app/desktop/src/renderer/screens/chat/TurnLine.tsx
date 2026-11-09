@@ -90,7 +90,7 @@ export function TurnLine({ project, writing }: { project: ProjectRef; writing: b
     if (host === null || cl === null || rw === null) return;
     const el = sizer.current;
     const glyph = rw.firstElementChild instanceof HTMLElement ? rw.firstElementChild.offsetWidth : 0;
-    const want = cur === undefined || el === null ? 0 : glyph + parseFloat(getComputedStyle(rw).columnGap) + el.offsetWidth;
+    const want = cur === undefined || el === null ? 0 : glyph + parseFloat(getComputedStyle(rw).columnGap) + Math.ceil(el.getBoundingClientRect().width);
     if (want === wanted.current) return;
     const first = wanted.current === undefined;
     wanted.current = want;
