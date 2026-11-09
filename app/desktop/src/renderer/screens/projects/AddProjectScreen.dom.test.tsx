@@ -7,6 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AddProjectScreen } from "./AddProjectScreen";
+import { closeAddProject, openAddProject, pickMachine, useAddUi } from "./store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -50,11 +51,17 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  act(() => closeAddProject());
   act(() => root.unmount());
   host.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
+
+/** The modal while it is open, as ProjectsHost mounts it. */
+function Shown() {
+  return useAddUi().open ? <AddProjectScreen /> : null;
+}
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
@@ -83,11 +90,12 @@ const render = async () => {
     chat: () => Promise.resolve(),
   };
   const layer = createDataLayer(hub);
+  openAddProject();
   await act(async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={layer}>
-          <AddProjectScreen />
+          <Shown />
         </DataProvider>
       </UiProvider>,
     );
@@ -115,37 +123,61 @@ const type = async (el: HTMLInputElement, text: string) => {
   });
 };
 const button = (text: string): HTMLButtonElement | undefined => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-const machine = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Machine"] button')].find((b) => b.textContent.startsWith(name));
+/** A checkbox by its label. */
+const check = (label: string) => [...document.querySelectorAll("label")].find((l) => l.textContent.trim() === label)?.querySelector<HTMLButtonElement>('[role="checkbox"]') ?? null;
 const options = () => [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent);
+const summary = () => document.querySelector('[data-screen="projects.add.new"]')?.firstElementChild?.textContent ?? "";
+const NAME = "New project name, GitHub URL, folder path, or filter";
 
 describe("Add project's new project", () => {
-  it("is offered above what was found, and a typed name shows the folder the hub will make, editable", async () => {
+  it("is offered once a name is typed, and says in one line where its folder goes, editable", async () => {
     await render();
-    expect(options()[0]).toContain("New project");
-    expect(options()[0]).toContain("no repo needed");
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
-    expect(options()).toEqual([expect.stringContaining("New project Field notes")]);
+    expect(document.activeElement).toBe(field(NAME));
+    expect(options()).toEqual([expect.stringContaining("notes-cli")]);
+    await type(field(NAME), "Field notes");
+    expect(options()).toEqual([expect.stringContaining("New project “Field notes”")]);
     expect(field("Folder").value).toBe(`${ROOT}/field-notes`);
-    expect(button("Create project")?.disabled).toBe(false);
-    // Edited, it stays as typed; a path that isn't full can't be created.
+    expect(summary()).toContain("Creates an empty folder");
+    expect(summary()).toContain("Only you will see it.");
+    expect(button("Create")?.disabled).toBe(false);
+    // Edited, it stays as typed; a path that isn't full can't be created, and the line says why.
     await type(field("Folder"), "notes");
-    expect(button("Create project")?.disabled).toBe(true);
-    expect(document.body.textContent).toContain("Type the folder's full path, starting with /.");
+    expect(button("Create")?.disabled).toBe(true);
+    expect(summary()).toContain("Type the folder's full path, starting with /");
     await type(field("Folder"), "/home/w/notes");
-    expect(button("Create project")?.disabled).toBe(false);
+    expect(button("Create")?.disabled).toBe(false);
+  });
+
+  it("closes on Esc and on Cancel, and opens afresh", async () => {
+    await render();
+    await type(field(NAME), "Field notes");
+    await act(async () => {
+      field(NAME).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-screen="projects.add"]')).toBeNull();
+    act(() => openAddProject());
+    await settle();
+    expect(field(NAME).value).toBe("");
+    await act(async () => {
+      button("Cancel")?.click();
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-screen="projects.add"]')).toBeNull();
+    expect(calls.some((c) => c.tool === "project_add")).toBe(false);
   });
 
   it("starts Only me on for a new folder, and sends it off when the person turns it off", async () => {
     await render();
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
-    const only = document.querySelector<HTMLButtonElement>('[role="switch"]');
+    await type(field(NAME), "Field notes");
+    const only = check("Only me");
     expect(only?.getAttribute("aria-checked")).toBe("true");
     await act(async () => {
       only?.click();
       await Promise.resolve();
     });
     await act(async () => {
-      button("Create project")?.click();
+      button("Create")?.click();
       await Promise.resolve();
     });
     await settle();
@@ -154,13 +186,13 @@ describe("Add project's new project", () => {
 
   it("creates it where the folder says, git init only when ticked, and opens it once the hub lists it", async () => {
     const send = await render();
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
+    await type(field(NAME), "Field notes");
     await act(async () => {
-      document.querySelector<HTMLButtonElement>('[role="checkbox"]')?.click();
+      check("Start a git repo")?.click();
       await Promise.resolve();
     });
     await act(async () => {
-      button("Create project")?.click();
+      button("Create")?.click();
       await Promise.resolve();
     });
     await settle();
@@ -178,26 +210,20 @@ describe("Add project's new project", () => {
 
   it("resets an edited folder to the next machine's default, unless it is outside any home folder", async () => {
     await render();
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
+    await type(field(NAME), "Field notes");
     await type(field("Folder"), "/home/w/notes");
-    await act(async () => {
-      machine("buildbox")?.click();
-      await Promise.resolve();
-    });
+    act(() => pickMachine("buildbox"));
     expect(field("Folder").value).toBe("/home/b/fleetd/projects/field-notes");
     await type(field("Folder"), "/srv/notes");
-    await act(async () => {
-      machine("devbox")?.click();
-      await Promise.resolve();
-    });
+    act(() => pickMachine("devbox"));
     expect(field("Folder").value).toBe("/srv/notes");
   });
 
   it("offers to open the project an empty folder already is, never a second one", async () => {
     await render();
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Old notes");
+    await type(field(NAME), "Old notes");
     await act(async () => {
-      button("Create project")?.click();
+      button("Create")?.click();
       await Promise.resolve();
     });
     await settle();
@@ -212,9 +238,9 @@ describe("Add project's new project", () => {
   it("says to update a node too old to make the folder, and creates nothing", async () => {
     projectsRoot = undefined;
     await render();
-    await type(field("New project name, GitHub URL, folder path, or filter"), "Field notes");
-    expect(document.body.textContent).toContain("Update fleetd on devbox to create a project there.");
+    await type(field(NAME), "Field notes");
+    expect(summary()).toContain("Update fleetd on devbox to create a project there, or pick another machine");
     expect(document.querySelector('input[aria-label="Folder"]')).toBeNull();
-    expect(button("Create project")?.disabled).toBe(true);
+    expect(button("Create")?.disabled).toBe(true);
   });
 });

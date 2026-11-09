@@ -30,8 +30,19 @@ const subscribe = (onChange: () => void): (() => void) => {
   return () => window.removeEventListener("hashchange", onChange);
 };
 
+/** The last hash that names a screen: what New project (`#/projects/add`), a modal over it, leaves on screen. */
+let behind = "#/";
+
+/** The hash of the screen on show: New project's is the one it opened over, so that screen stays mounted as it was. */
+export const screenHash = (): string => {
+  const hash = window.location.hash;
+  if (parseHash(hash).id === "projects.add") return behind;
+  behind = hash;
+  return hash;
+};
+
 export const useRoute = (): Routed => {
-  const hash = useSyncExternalStore(subscribe, () => window.location.hash);
+  const hash = useSyncExternalStore(subscribe, screenHash);
   return useMemo(() => routed(parseHash(hash)), [hash]);
 };
 

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
-import { MODELS_FRESH_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
+import { MODELS_FRESH_MS, MODELS_RETRY_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { key, kit, project } from "./work-kit.ts";
@@ -59,6 +59,25 @@ test("profiles_list never waits on a Models API that doesn't answer, and asks it
   answer([{ id: "claude-rekeyed" }]);
   expect((await rekeyed).models.map((m: { id: string }) => m.id)).toEqual(["claude-rekeyed"]);
   expect(asked).toBe(3);
+});
+
+test("a model list the endpoint can't give is logged once, with its host and why", async () => {
+  const k = kit();
+  k.hub.db.conn.run(`INSERT INTO claude_accounts (account, data) VALUES ('hub', '{"endpoint":"http://devbox.example:8317/v1","sealedOn":[{"machineId":"devbox"}]}')`);
+  const why = "the Models API at http://devbox.example:8317/v1 didn't answer: Unable to connect";
+  Object.assign(executors(k.hub), { isConnected: (m: string) => m === "devbox", call: async () => ({ kind: "claude_models", models: [], error: why }) });
+  Object.assign(link(k.hub), { can: () => true });
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warned.push(args.join(" "));
+  try {
+    expect((await k.ok(key("read"), "profiles_list", {})).modelsFrom).toBe("builtin");
+    k.clock.ms += MODELS_RETRY_MS;
+    expect((await k.ok(key("read"), "profiles_list", {})).modelsFrom).toBe("builtin");
+  } finally {
+    console.warn = warn;
+  }
+  expect(warned).toEqual([`models: the hub's API key listed no models through devbox.example:8317 on devbox, using fleetd's own list: ${why}`]);
 });
 
 test("only an owner or admin changes profiles; create, rename, default, lead, delete", async () => {

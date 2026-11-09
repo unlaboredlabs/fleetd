@@ -10,8 +10,10 @@ import { ToolError } from "../../shared/errors.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import type { RunnerInfo } from "../../shared/sessions.ts";
 import { isSealedSecret } from "../approvals/sink.ts";
 import { endpointChanged, endpointOn } from "../cloud/claude.ts";
+import { claudeAccountOverride } from "../doctor/checks.ts";
 import { linked, nodeCan, offline, sessionCall } from "../cloud/node.ts";
 import { missed } from "../cloud/outbox.ts";
 import { store } from "../store/hub_store.ts";
@@ -156,9 +158,10 @@ export function register(tools: Registry): void {
       throw new ToolError("invalid", "account is hub_api or mine.");
     }
     const machineId = holding(hub, held, input.machineId, "No machine holding it is online to test it on.", "Start a node, then test again.");
-    const out = await sessionCall(hub, machineId, { op: "claude_account_test", account });
-    const ok = out.ok === true;
-    const said = typeof out.error === "string" ? out.error : undefined;
+    const [out, override] = await Promise.all([sessionCall(hub, machineId, { op: "claude_account_test", account }), overriding(hub, machineId)]);
+    // The machine's own claude settings replace the account there: a Test that worked tried them, not the account.
+    const ok = out.ok === true && override === undefined;
+    const said = [typeof out.error === "string" ? out.error : undefined, override].filter((x) => x !== undefined).join(" ") || undefined;
     const tried: ClaudeTest = { at: isoMs(hub.clock.now()), machineId, ok, ...(!ok && said !== undefined ? { error: said } : {}) };
     // Recorded on the account as it is now; one replaced or removed meanwhile keeps its own.
     if (account.kind === "hub") {
@@ -180,6 +183,22 @@ export function register(tools: Registry): void {
         : {}),
     };
   });
+}
+
+/** What claude_account_override warns of on the machine, with its fix; none when its settings override nothing or its
+ * runner can't be read. */
+async function overriding(hub: Hub, machineId: string): Promise<string | undefined> {
+  let info: RunnerInfo;
+  try {
+    const out = await sessionCall(hub, machineId, { op: "runner_info" });
+    if (out.kind !== "runner_info") return undefined;
+    info = out as unknown as RunnerInfo;
+  } catch {
+    return undefined;
+  }
+  const check = claudeAccountOverride(machineId, info, true);
+  if (check?.status !== "warn") return undefined;
+  return check.fix?.kind === "manual" ? `${check.message} ${check.fix.label}.` : check.message;
 }
 
 export const accounts = (hub: Hub) => hub.area("claude_accounts", (h) => new ClaudeAccountStore(h.db));

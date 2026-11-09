@@ -2,7 +2,7 @@
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
 // of calm slate with two light eyes and no mouth, standing free with no circle behind it (Pebble, from the
 // avatar-no-circle report, without its contact shadow). Its motion says what it is doing: idle, thinking, working,
-// needs you, done, or an error. (The phone still draws it in its circle, on PAINT, until it moves to PEBBLE too.)
+// needs you, done, or an error.
 //
 // It is all here, pure, so both apps draw and move it alike. One rig: every frame is drawn from a few channels (the
 // lids, the eyes' size and look, the body's squash, lift and lean, the eyes' glow and dim). Each channel is a damped
@@ -10,7 +10,7 @@
 // display frame. A bot's clock never restarts and each loop's amplitude is a spring too, so a state change moves only
 // the targets: the bot blends from its current pose and phase, and an arrival nudges the body's speed, never its place.
 // With reduced motion the loops, blinks and glances stop and each state settles, critically damped, into its still pose.
-// Below 44 px, as drawn (drawnAt: a free bot's box shows only its body, so a 36 px box draws it at 45), the rig sizes
+// Below 44 px, as drawn (drawnAt: its box shows only its body, so a 36 px box draws it at 45), the rig sizes
 // itself for small use: larger, slightly wider eyes, 0.8 of the body motion, a closed eye never thinner than 1 px, and
 // no glow.
 //
@@ -70,19 +70,19 @@ export const BODY = "M50 22C66.2 22 79.6 33.2 83.2 50.6C85.9 63.6 84.2 75.6 72.4
 const SEAT_X = 50;
 const SEAT_Y = 85;
 
-/** The part of the 100 box a free bot shows: the body at 80% of the drawing, centred on its optical centre (50, 54.6),
+/** The part of the 100 box a bot shows: the body at 80% of the drawing, centred on its optical centre (50, 54.6),
  * halfway from its bounds' centre to its area's centroid, which sits low, so its weight lands on a row's centre line.
  * Its hops and slumps reach past the box, so whatever holds it never clips it. */
 export const CROP = { x: 10, y: 14.6, w: 80 } as const;
 export const VIEW_BOX = `${CROP.x} ${CROP.y} ${CROP.w} ${CROP.w}`;
-/** The size a free bot in a `box` px box is drawn at, as if its whole 100 box showed: its size for newRig. */
+/** The size a bot in a `box` px box is drawn at, as if its whole 100 box showed: its size for newRig. */
 export const drawnAt = (box: number): number => {
   "worklet";
   return (box * 100) / CROP.w;
 };
 
-/** A free bot's paint (Pebble): one flat body and its eyes, the same for every bot. */
-export interface FreePaint {
+/** What a bot is painted with (Pebble): one flat body and its eyes, the same for every bot. */
+export interface Paint {
   readonly body: string;
   /** Its eyes, and their glow's strength at its fullest. */
   readonly eye: string;
@@ -91,36 +91,10 @@ export interface FreePaint {
 
 /** One calm dusk slate (hue 258, low chroma) in both themes: dark enough in light for white eyes to read at 20 px
  * (about 5.5:1), light enough in dark to stand off the screen and still keep Done's crescents (about 4:1). */
-export const PEBBLE: { readonly light: FreePaint; readonly dark: FreePaint } = {
+export const PEBBLE: { readonly light: Paint; readonly dark: Paint } = {
   light: { body: oklch(0.5, 0.062, 258), eye: oklch(0.99, 0.006, 258), glowA: 0.35 },
   dark: { body: oklch(0.6, 0.06, 258), eye: oklch(0.995, 0.004, 258), glowA: 0.4 },
 };
-
-/** A bot in its circle (the phone's, until it moves to PEBBLE): one palette for every bot, low chroma everywhere. */
-export interface Paint {
-  /** The round ground it sits on. */
-  readonly field: string;
-  /** Its body, lit from its top left: lightest, middle, darkest. */
-  readonly hi: string;
-  readonly body: string;
-  readonly lo: string;
-  /** A soft sheen on its crown, and its shadow on the ground, each with its strength. */
-  readonly sheen: string;
-  readonly sheenA: number;
-  readonly shadow: string;
-  readonly shadowA: number;
-  /** Its eyes, and their glow's strength at its fullest. */
-  readonly eye: string;
-  readonly glowA: number;
-}
-
-/** Soft ink on a pale mist in light; in dark a mid slate ground, so the bot still stands off a black screen. */
-export const PAINT: { readonly light: Paint; readonly dark: Paint } = {
-  light: { field: oklch(0.935, 0.012, 255), hi: oklch(0.38, 0.013, 262), body: oklch(0.255, 0.011, 262), lo: oklch(0.215, 0.01, 262), sheen: oklch(0.9, 0.015, 255), sheenA: 0.12, shadow: oklch(0.58, 0.025, 258), shadowA: 0.3, eye: oklch(0.985, 0.004, 250), glowA: 0.3 },
-  dark: { field: oklch(0.4, 0.018, 258), hi: oklch(0.31, 0.012, 262), body: oklch(0.19, 0.01, 262), lo: oklch(0.165, 0.008, 262), sheen: oklch(0.92, 0.015, 255), sheenA: 0.16, shadow: oklch(0.12, 0.01, 258), shadowA: 0.5, eye: oklch(0.975, 0.006, 250), glowA: 0.42 },
-};
-/** The body's light: a radial gradient's centre, radius and middle stop. */
-export const LIGHT = { cx: 38, cy: 30, r: 58, mid: 0.48 } as const;
 
 /** The eyes (Button): tall rounded-square ovals, half `hx` apart, their tops leaning in `tilt`°, never out (which
  * reads as a frown); `n` is the superellipse's roundness (2 an ellipse); `up` the upper lid a hair down at rest. */
@@ -544,12 +518,14 @@ const f2 = (v: number): string => {
  * An eye: a superellipse cut by an upper lid and a lower lid, closing to a soft tapered line, never a hole. The upper
  * lid's edge partly follows the eye's own arc (so a lowered lid is a soft lens, never a flat cut) and sits lower at the
  * outer corner by `slope`; the lower lid rises along the eye's curve, so a raised one makes a crescent that tapers to
- * its corners. As a closed Catmull-Rom through `points` + 1 points along each lid, in cubics.
+ * its corners. Its outline goes into `out` as the points of a closed Catmull-Rom, x and y by turns, along the top
+ * left to right and back along the bottom, its ends shared: `points` + 1 along each lid. Returns how many points.
  */
-const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slope: number, low: number, blink: number, side: number, minT: number, points: number): string => {
+const eyeOutline = (out: number[], cx: number, cy: number, rx: number, ry: number, up: number, slope: number, low: number, blink: number, side: number, minT: number, points: number): number => {
   "worklet";
-  const top: number[] = [];
-  const bot: number[] = [];
+  const a = (-side * EYE.tilt * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
   const k = 1 - 0.93 * blink;
   const pivot = ry * 0.3;
   const sl = slope * Math.min(1, up * 3);
@@ -568,22 +544,20 @@ const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slo
       yT = mid - mt / 2;
       yB = mid + mt / 2;
     }
-    top.push(x, yT);
-    bot.push(x, yB);
+    out[i * 2] = cx + x * c - yT * s;
+    out[i * 2 + 1] = cy + x * s + yT * c;
+    if (i > 0 && i < points) {
+      const j = 2 * points - i;
+      out[j * 2] = cx + x * c - yB * s;
+      out[j * 2 + 1] = cy + x * s + yB * c;
+    }
   }
-  // The outline: along the top left to right, then back along the bottom, its ends shared.
-  const pts: number[] = top.slice();
-  for (let i = points - 1; i >= 1; i--) pts.push(bot[i * 2] ?? 0, bot[i * 2 + 1] ?? 0);
-  const a = (-side * EYE.tilt * Math.PI) / 180;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  const L = pts.length / 2;
-  const P: number[] = [];
-  for (let i = 0; i < L; i++) {
-    const x = pts[i * 2] ?? 0;
-    const y = pts[i * 2 + 1] ?? 0;
-    P.push(cx + x * c - y * s, cy + x * s + y * c);
-  }
+  return 2 * points;
+};
+
+/** An eye's outline (eyeOutline: `L` points in `P`) as SVG path data, in cubics. */
+const eyePath = (P: readonly number[], L: number): string => {
+  "worklet";
   const X = (i: number) => P[((i + L) % L) * 2] ?? 0;
   const Y = (i: number) => P[((i + L) % L) * 2 + 1] ?? 0;
   let d = `M${f2(X(0))} ${f2(Y(0))}`;
@@ -593,13 +567,72 @@ const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slo
   return `${d}Z`;
 };
 
-/** What a frame draws: the body's matrix (squashed about its seat, keeping its volume, leaned and lifted), its shadow's
- * and its crown's sheen's, the shadow's opacity, each eye's path, and the eyes' glow (0 to 1) and dimming (0 to 1). */
+/** The rig's eye on `side` (-1 left, 1 right) into `out` (eyeOutline): the face slides toward the look, as on a ball
+ * turning, and the far eye narrows. */
+const eyeOf = (r: Rig, side: number, out: number[]): number => {
+  "worklet";
+  const x = r.x;
+  const gx = x[GX] ?? 0;
+  const t = Math.min(1, Math.abs(gx));
+  const es = x[EYES] ?? 1;
+  return eyeOutline(
+    out,
+    50 + side * EYE.hx * r.gapK * (1 - 0.07 * t) + gx * 4.4,
+    EYE.y + (x[GY] ?? 0) * 3.4,
+    EYE.rx * r.eyeK * es * (1 - 0.14 * Math.max(0, gx * side)),
+    EYE.ry * r.eyeK * es,
+    Math.max(0, Math.min(1, EYE.up + (x[UP] ?? 0))),
+    x[SLOPE] ?? 0,
+    Math.max(0, Math.min(1, x[LOW] ?? 0)),
+    Math.max(0, Math.min(1, r.bk)),
+    side,
+    r.minT,
+    r.points,
+  );
+};
+
+/** The body's matrix: squashed about its seat, keeping its volume, leaned and lifted. */
+export const bodyOf = (r: Rig): Matrix => {
+  "worklet";
+  const sq = r.x[SQUASH] ?? 0;
+  const lean = r.x[LEAN] ?? 0;
+  return mul(move(lean * 0.3, -(r.x[LIFT] ?? 0)), mul(move(SEAT_X, SEAT_Y), mul(turn(lean), mul(scale(1 + sq * 0.8, 1 - sq), move(-SEAT_X, -SEAT_Y)))));
+};
+
+/** The eyes' glow, 0 to 1.2 (none for a small bot), and their dimming, 0 to 1. */
+export const glowOf = (r: Rig): number => {
+  "worklet";
+  return r.glow ? Math.max(0, Math.min(1.2, r.x[GLOW] ?? 0)) : 0;
+};
+export const dimOf = (r: Rig): number => {
+  "worklet";
+  return Math.max(0, Math.min(1, r.x[DIM] ?? 0));
+};
+
+/** Something an outline is traced with, as a canvas's 2D context is. */
+export interface Pen {
+  moveTo(x: number, y: number): void;
+  bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void;
+  closePath(): void;
+}
+
+/** Traces both eyes with `pen`, in the body's space, as the same cubics as frameOf's paths, with no strings and, once
+ * `out` holds an eye, nothing allocated: what a canvas draws each display frame (ui/lib/botLife.ts). */
+export const traceEyes = (r: Rig, pen: Pen, out: number[]): void => {
+  for (const side of [-1, 1]) {
+    const L = eyeOf(r, side, out);
+    const X = (i: number) => out[((i + L) % L) * 2] ?? 0;
+    const Y = (i: number) => out[((i + L) % L) * 2 + 1] ?? 0;
+    pen.moveTo(X(0), Y(0));
+    for (let i = 0; i < L; i++) pen.bezierCurveTo(X(i) + (X(i + 1) - X(i - 1)) / 6, Y(i) + (Y(i + 1) - Y(i - 1)) / 6, X(i + 1) - (X(i + 2) - X(i)) / 6, Y(i + 1) - (Y(i + 2) - Y(i)) / 6, X(i + 1), Y(i + 1));
+    pen.closePath();
+  }
+};
+
+/** What a frame draws: the body's matrix (squashed about its seat, keeping its volume, leaned and lifted), each eye's
+ * path, and the eyes' glow (0 to 1) and dimming (0 to 1). */
 export interface Frame {
   readonly body: Matrix;
-  readonly shadow: Matrix;
-  readonly shadowOpacity: number;
-  readonly sheen: Matrix;
   readonly eyes: readonly [string, string];
   readonly glow: number;
   readonly dim: number;
@@ -607,43 +640,13 @@ export interface Frame {
 
 export const frameOf = (r: Rig): Frame => {
   "worklet";
-  const x = r.x;
-  const sq = x[SQUASH] ?? 0;
-  const lean = x[LEAN] ?? 0;
-  const lift = x[LIFT] ?? 0;
-  const gx = x[GX] ?? 0;
-  const gy = x[GY] ?? 0;
-  const body = mul(move(lean * 0.3, -lift), mul(move(SEAT_X, SEAT_Y), mul(turn(lean), mul(scale(1 + sq * 0.8, 1 - sq), move(-SEAT_X, -SEAT_Y)))));
-  const up = Math.max(0, lift);
-  const shs = (1 + sq * 0.8) * (1 - up * 0.014);
-  // The face slides toward the look, as on a ball turning, and the far eye narrows.
-  const t = Math.min(1, Math.abs(gx));
-  const es = x[EYES] ?? 1;
-  const lidUp = Math.max(0, Math.min(1, EYE.up + (x[UP] ?? 0)));
-  const lidLow = Math.max(0, Math.min(1, x[LOW] ?? 0));
-  const bk = Math.max(0, Math.min(1, r.bk));
-  const eye = (side: number) =>
-    eyePath(
-      50 + side * EYE.hx * r.gapK * (1 - 0.07 * t) + gx * 4.4,
-      EYE.y + gy * 3.4,
-      EYE.rx * r.eyeK * es * (1 - 0.14 * Math.max(0, gx * side)),
-      EYE.ry * r.eyeK * es,
-      lidUp,
-      x[SLOPE] ?? 0,
-      lidLow,
-      bk,
-      side,
-      r.minT,
-      r.points,
-    );
+  const P: number[] = [];
+  const eye = (side: number) => eyePath(P, eyeOf(r, side, P));
   return {
-    body,
-    shadow: mul(move(SEAT_X + lean * 0.35, 85.4), scale(28 * shs, 3.4 * shs)),
-    shadowOpacity: Math.max(0.4, Math.min(1, 1 - up * 0.05)),
-    sheen: mul(move(39 - gx * 1.4, 36 - gy * 0.6), mul(turn(-24), scale(19, 10))),
+    body: bodyOf(r),
     eyes: [eye(-1), eye(1)],
-    glow: r.glow ? Math.max(0, Math.min(1.2, x[GLOW] ?? 0)) : 0,
-    dim: Math.max(0, Math.min(1, x[DIM] ?? 0)),
+    glow: glowOf(r),
+    dim: dimOf(r),
   };
 };
 

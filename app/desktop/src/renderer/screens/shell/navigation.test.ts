@@ -2,7 +2,7 @@
 // Routes and several hubs: a route names its hub as `?at=<id>`, one that doesn't stays on the
 // hub of the screen before it, and a single-hub app's hashes never name one.
 import { afterEach, describe, expect, it } from "vitest";
-import { currentRoute, hashFor, navigate, setRouteHubs } from "./navigation";
+import { currentRoute, hashFor, navigate, screenHash, setRouteHubs } from "./navigation";
 import { parseHash, toHash } from "./routes";
 
 afterEach(() => {
@@ -46,5 +46,16 @@ describe("routes on several hubs", () => {
     setRouteHubs(["hub", "a1b2"]);
     window.location.hash = "#/factory?at=gone1";
     expect(currentRoute().at).toBe("hub");
+  });
+});
+
+describe("New project's address", () => {
+  it("leaves the screen it opened over on show, so that screen stays mounted as it was", () => {
+    window.location.hash = "#/project/devbox/storefront/prs";
+    expect(screenHash()).toBe("#/project/devbox/storefront/prs");
+    window.location.hash = "#/projects/add";
+    expect(screenHash()).toBe("#/project/devbox/storefront/prs");
+    window.location.hash = "#/settings/general";
+    expect(screenHash()).toBe("#/settings/general");
   });
 });

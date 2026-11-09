@@ -80,6 +80,8 @@ breaks a rule changes this page in the same PR and says why.
   still pose. It has no circle: the body alone, in one calm slate, is the picture, cropped to fill its box, and its hops
   and slumps reach past it, so nothing that holds it clips it (pictures and initials stay round). Below 44 px as drawn
   (a 36 px box draws it at 45) it uses larger eyes, 0.8 of the body motion and no glow.
+  It's drawn on a canvas, never as SVG rewritten each frame: every new transform or path left style garbage that
+  only a major GC frees, 60 MB of the renderer for three moving bots.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
   writing.
   - Waiting, queued, paused, done and failed are still.

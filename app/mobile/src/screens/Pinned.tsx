@@ -11,6 +11,7 @@ import type { ChatRow } from "../lists";
 import { gridSize, pinFace } from "../pinnedGrid";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
+import { useBot } from "../ui/botState";
 import { HoldMenu } from "../ui/HoldMenu";
 import { Icon } from "../ui/Icon";
 import type { MenuItem } from "../ui/Menu";
@@ -56,7 +57,7 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
             >
               <View style={styles.cell}>
                 <View style={{ width: avatar, height: avatar }}>
-                  <Avatar name={row.project.title} size={avatar} picture={row.project} />
+                  <PinnedAvatar row={row} size={avatar} />
                   {face.approvals > 0 ? <Approvals count={face.approvals} /> : null}
                   {bubble === null ? null : <View style={[styles.slot, slot]}>{bubble}</View>}
                 </View>
@@ -77,6 +78,12 @@ export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: reado
 }
 
 /** Messages' typing bubble, its three dots the app's working glyph: a pill with two small rounds trailing down to the avatar. */
+/** A pin's avatar, its bot done while a reply waits unread, as the list's rows. */
+function PinnedAvatar({ row, size }: { row: ChatRow; size: number }) {
+  const bot = useBot(row.key, row.unread > 0 || row.markedUnread);
+  return <Avatar name={row.project.title} size={size} picture={row.project} bot={bot} />;
+}
+
 function Typing({ phase }: { phase: number }) {
   const t = useTheme();
   const fill = { borderColor: t.bg, backgroundColor: t.bubble };

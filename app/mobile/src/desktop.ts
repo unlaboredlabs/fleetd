@@ -66,7 +66,7 @@ export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/sh
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
 export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";
-export { advanceRig, BODY, botStateOf, DIMMED, frameOf, LIGHT, listRest, moment, newRig, PAINT, random, setRigState, SMALL, type BotIn, type BotState, type Frame, type Rig } from "../../desktop/src/shared/bot";
+export { advanceRig, BODY, botStateOf, CROP, DIMMED, drawnAt, frameOf, LARGE, listRest, moment, newRig, PEBBLE, random, setRigState, type BotIn, type BotState, type Frame, type Rig } from "../../desktop/src/shared/bot";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
 export { deleteWords, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";
@@ -74,6 +74,7 @@ export { addSource, baseName, otherHost, tilde } from "../../desktop/src/rendere
 export {
   discovery,
   newPath,
+  projectHome,
   rows as foundRows,
   target,
   type Discovery,

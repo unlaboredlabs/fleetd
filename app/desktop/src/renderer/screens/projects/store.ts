@@ -1,5 +1,6 @@
-// The one add in flight and the sheet's own state, kept outside the sheet so a clone carries on (and still reports
-// its end) while the sheet is hidden. Every entry point opens it with openAddProject().
+// The one add in flight and the modal's own state, kept outside the modal so a clone carries on (and still reports
+// its end) while it is hidden. Every entry point opens it with openAddProject(); `#/projects/add` does too, over the
+// screen it was opened from (ProjectsHost), which stays as it was.
 
 import { useEffect, useSyncExternalStore } from "react";
 import type { DataLayer } from "../../src/data/queries";
@@ -11,8 +12,6 @@ import type { Ready, Request } from "./discovery";
 import { toHash } from "../shell/routes";
 import { hubMessages, initialAdd, offerOpen, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
 import { machineIdFromHost, omit, tilde } from "./source";
-
-export const ADD_ROUTE = "#/projects/add";
 
 export interface Note {
   readonly text: string;
@@ -32,7 +31,7 @@ export interface AddUi {
   readonly gitInit?: boolean;
   /** Only me, as the person set it; absent: on for a project with no repo (onlyMeFirst). */
   readonly onlyMe?: boolean;
-  /** The sheet is on screen. */
+  /** The modal is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
   readonly hostName?: string;
@@ -40,8 +39,6 @@ export interface AddUi {
 
 let ui: AddUi = { add: initialAdd, text: "", open: false };
 const listeners = new Set<() => void>();
-/** Where the sheet goes back to when closed. */
-let returnTo = "#/";
 
 const set = (next: AddUi) => {
   ui = next;
@@ -105,7 +102,7 @@ const run = (c: Call) => {
   void data.call("project_add", c.input, { timeoutMs: CALL_MS }).then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
-/** The sheet is hidden while an add ends: say so in a toast that brings it back. */
+/** The modal is hidden while an add ends: say so in a toast that brings it back. */
 const announce = () => {
   const p = ui.add.phase;
   if (p.kind === "ready") {
@@ -150,8 +147,11 @@ const subscribe = (listener: () => void) => {
 export const useAddUi = (): AddUi => {
   const data = useDataLayer();
   useEffect(() => connect(data), [data]);
-  return useSyncExternalStore(subscribe, () => ui);
+  return useSyncExternalStore(subscribe, addUi);
 };
+
+/** The modal's state as it is now. */
+export const addUi = (): AddUi => ui;
 
 /**
  * Opens New project from anywhere: the sidebar's + New, the palette, the File menu, a drop on the window. A
@@ -162,35 +162,29 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
   given ?? (/^[/~.]/u.test(text.trim()) ? local : undefined);
 
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
-  if (window.location.hash !== ADD_ROUTE) returnTo = window.location.hash || "#/";
   const working = ui.add.phase.kind === "working";
   if (prefill && !working) {
     const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
     const rest = omit(ui, "note", "machine");
     set({
       ...rest,
+      open: true,
       text: prefill.text,
       ...(prefill.note ? { note: prefill.note } : {}),
       ...(machine === undefined ? {} : { machine }),
       add: ui.add.phase.kind === "pick" ? ui.add : { ...ui.add, phase: { kind: "pick" } },
     });
-  }
-  window.location.hash = ADD_ROUTE;
+  } else if (!ui.open) set({ ...ui, open: true });
 };
 
-export const sheetShown = (): void => set({ ...ui, open: true });
-
-export const sheetHidden = (): void => {
+/** Esc, Cancel, Hide, Done, or a project opened from it: the screen behind is as it was. */
+export const closeAddProject = (): void => {
   if (!ui.open) return;
-  // A finished or untouched sheet starts fresh next time; one still adding keeps going out of sight.
+  // A finished or untouched modal starts fresh next time; one still adding keeps going out of sight.
   const fresh = ui.add.phase.kind !== "working";
   const rest = omit(ui, "note", "machine", "folder", "gitInit", "onlyMe");
   set(fresh ? { ...rest, open: false, text: "", add: step(ui.add, { t: "reset" }, machineName)[0] } : { ...ui, open: false });
   if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "New project… shows its progress." });
-};
-
-export const closeAddProject = (): void => {
-  window.location.hash = returnTo === ADD_ROUTE ? "#/" : returnTo;
 };
 
 export const setText = (text: string): void => {
@@ -235,7 +229,8 @@ export const localMachine = (): Machine | undefined => {
   return Object.values(hubState()?.machines ?? {}).find((m) => m.name.toLowerCase() === host.toLowerCase() || m.machineId === id);
 };
 
-/** A project opens as its lead chat. */
+/** A project opens as its lead chat, the modal closed. */
 export const openProject = (machineId: string, projectId: string): void => {
+  closeAddProject();
   window.location.hash = toHash({ id: "project", project: { machineId, projectId }, message: null });
 };

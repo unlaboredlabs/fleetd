@@ -9,7 +9,6 @@ import { FactoryTabs } from "../factory/FactoryTabs";
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
-const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const ScreensPage = lazy(() => import("../screensPage/ScreensPage").then((m) => ({ default: m.ScreensPage })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
@@ -71,7 +70,8 @@ function screenFor(screen: Screen): ReactNode {
     case "time":
       return <TimeScreen order={screen.orderId ?? undefined} tabs={<FactoryTabs tab="time" />} />;
     case "projects.add":
-      return <AddProjectScreen />;
+      // A modal over the screen it opened from (ProjectsHost), which the route keeps on show (navigation.ts).
+      return null;
     case "settings":
       return <SettingsScreen />;
     case "onboarding":

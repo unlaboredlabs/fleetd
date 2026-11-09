@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { join } from "node:path";
 import { openSealed, publicKeyOf } from "../../src/shared/sealed_box.ts";
 import { HELPER, installDir, SDK_VERSION } from "../../src/node/actions/onepassword.ts";
-import { tried } from "../../src/node/actions/accounts.ts";
+import { endpointSilent, tried } from "../../src/node/actions/accounts.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
 import { SessionService } from "../../src/node/sessions/index.ts";
 import { fingerprintOf } from "../../src/node/secrets/files.ts";
@@ -114,6 +114,29 @@ test("the hub's key keeps its endpoint, lists the gateway's models, and reseals 
   });
   expect(await ok("claude_account_secret", { account: { kind: "hub" } })).toEqual({ kind: "claude_account_saved" });
   expect(existsSync(join(nodeHome, "claude-accounts", "hub.json"))).toBe(false);
+});
+
+test("the hub key's Test says plainly when its endpoint doesn't answer, by host, before claude runs", async () => {
+  const gone = Bun.serve({ port: 0, fetch: () => new Response("") });
+  const port = gone.port;
+  gone.stop(true);
+  await ok("claude_account_secret", { account: { kind: "hub" }, set: { sealed: sealed("sk-hub"), endpoint: `http://127.0.0.1:${port}/v1` } });
+  try {
+    const out = await ok("claude_account_test", { account: { kind: "hub" } });
+    expect(out.ok).toBe(false);
+    expect(out.error).toStartWith(`the endpoint 127.0.0.1:${port} doesn't answer (`);
+    expect(out.error).not.toContain("machine login leaked");
+    expect(out.error).not.toContain("sk-hub");
+    // One that answers anything, even 404, is there: the Test goes on to claude.
+    const there = Bun.serve({ port: 0, fetch: () => new Response("no", { status: 404 }) });
+    try {
+      expect(await endpointSilent(`http://127.0.0.1:${there.port}/v1`)).toBeUndefined();
+    } finally {
+      there.stop(true);
+    }
+  } finally {
+    await ok("claude_account_secret", { account: { kind: "hub" } });
+  }
 });
 
 const FAKE_TOKEN = "ops_devbox-fake-service-account";

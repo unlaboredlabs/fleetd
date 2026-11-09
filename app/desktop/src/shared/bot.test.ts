@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceRig, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PAINT, PEBBLE, setRigState, STEP, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PEBBLE, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
 
 const run = (r: Rig, seconds: number, calm = false, each?: (r: Rig) => void) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
@@ -21,7 +21,7 @@ const largestStep = (r: Rig, seconds: number): number => {
 
 describe("the bot", () => {
   it("paints one palette, light and dark, as hex", () => {
-    for (const p of [PAINT.light, PAINT.dark, PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
+    for (const p of [PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("draws every state as a body and two closed eyes", () => {
@@ -32,6 +32,18 @@ describe("the bot", () => {
         for (const d of f.eyes) expect(d).toMatch(/^M[-\d.]+ [-\d.]+(C[-\d. ]+)+Z$/);
       }
     }
+  });
+
+  it("traces on a canvas the same eyes and body as its SVG frame", () => {
+    const r = newRig("needs", 45, 5);
+    run(r, 1.3);
+    const f = frameOf(r);
+    // A pen that writes what it's given as path data, to frameOf's 2 decimals.
+    let d = "";
+    const n = (v: number) => String(Math.round(v * 100) / 100);
+    traceEyes(r, { moveTo: (x, y) => (d += `M${n(x)} ${n(y)}`), bezierCurveTo: (...v) => (d += `C${v.map(n).join(" ")}`), closePath: () => (d += "Z|") }, []);
+    expect(d).toBe(`${f.eyes[0]}|${f.eyes[1]}|`);
+    expect(bodyOf(r)).toEqual(f.body);
   });
 
   it("arrives settled in its state's pose", () => {

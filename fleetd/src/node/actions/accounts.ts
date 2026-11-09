@@ -196,6 +196,25 @@ export async function hubModels(home: string): Promise<ApiModel[]> {
   return models;
 }
 
+const ENDPOINT_PROBE_MS = 5_000;
+
+/** Why the hub's endpoint `base` doesn't answer at all, by its host; none when it answers anything, even an error
+ * status. Sends no key: a Test says first whether the endpoint is there, before claude's own words about it. */
+export async function endpointSilent(base: string): Promise<string | undefined> {
+  let host = base;
+  try {
+    host = new URL(base).host || base;
+  } catch {}
+  try {
+    const response = await fetch(base, { signal: AbortSignal.timeout(ENDPOINT_PROBE_MS), redirect: "manual" });
+    await response.body?.cancel();
+    return undefined;
+  } catch (error) {
+    const why = (error as Error).name === "TimeoutError" ? `no answer within ${ENDPOINT_PROBE_MS / 1000}s` : (error as Error).message;
+    return `the endpoint ${host} doesn't answer (${why})`;
+  }
+}
+
 /** `claude -p` for an account's Test (runner/claude/conformance.rs): one short answer on the smallest model in one
  * turn, no MCP servers, the user settings sessions read. */
 const TRY_ARGS = [

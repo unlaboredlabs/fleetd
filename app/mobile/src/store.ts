@@ -28,6 +28,7 @@ import {
   type HubState,
   type HubUpdateData,
   type HumanRequest,
+  type OrderCard,
   type ProjectChatState,
   type ProjectRef,
   type ProjectSummary,
@@ -114,6 +115,8 @@ export interface State {
   readonly turnSince: Readonly<Record<Key, number>>;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
+  /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
+  readonly running: Readonly<Record<Key, number>>;
 }
 
 export const initial = (hub: HubState): State => ({
@@ -142,6 +145,7 @@ export const initial = (hub: HubState): State => ({
   leadActivity: {},
   turnSince: {},
   screens: {},
+  running: {},
 });
 
 export type Action =
@@ -161,6 +165,7 @@ export type Action =
   /** A failed send deleted: it never goes. */
   | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
+  | { readonly t: "board"; readonly orders: readonly OrderCard[] }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
   /** One screen as the hub answered a change of control with it. */
   | { readonly t: "screen"; readonly session: BrowserSession }
@@ -168,6 +173,23 @@ export type Action =
   | { readonly t: "answered"; readonly requestId: string; readonly result: { ok: true; request: HumanRequest } | { ok: false; error: HubError } };
 
 const chatOf = (s: State, key: Key): Chat => s.chats[key] ?? emptyChat;
+
+/** Each project's agents at work in its open orders, its lead not counted, an agent two orders list once (the desktop's
+ * selectProjectList running). */
+export const runningOf = (orders: readonly OrderCard[]): Record<Key, number> => {
+  const out: Record<Key, number> = {};
+  const seen = new Set<string>();
+  for (const card of orders) {
+    for (const lane of card.lanes) {
+      if (seen.has(lane.laneId)) continue;
+      seen.add(lane.laneId);
+      if (lane.role === "lead" || (lane.status !== "working" && lane.status !== "starting")) continue;
+      const key = keyOf(card.projectRef);
+      out[key] = (out[key] ?? 0) + 1;
+    }
+  }
+  return out;
+};
 
 /**
  * A chat as it opens before its latest page is read: the newest few messages the list holds, shown as they are (a
@@ -243,6 +265,8 @@ export const reduce = (s: State, a: Action): State => {
       const sends = rows.filter((r) => r.clientRequestId !== a.clientRequestId);
       return sends.length === rows.length ? s : { ...s, sends: { ...s.sends, [a.key]: sends } };
     }
+    case "board":
+      return { ...s, running: runningOf(a.orders) };
     case "requests": {
       const answering = Object.keys(s.cut).length === 0 ? s.answering : Object.fromEntries(Object.entries(s.answering).filter(([id]) => s.cut[id] === undefined));
       return { ...s, requests: a.requests.filter((r) => r.state === "open"), requestsRead: true, answering, cut: {} };
@@ -395,14 +419,16 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
 };
 
 /**
- * What an event asks the session to read again: the open requests, a whole snapshot when the projects changed (a
+ * What an event asks the session to read again: the open requests, the orders board when its agents moved, a whole snapshot when the projects changed (a
  * machine removed too), the pinned chats when this person changed them on another device, who the person is when the
  * hub's people changed (a new picture), or a chat's screens when one of them started, changed hands or ended.
  */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly info: boolean; readonly screens?: Key } => {
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly board: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly info: boolean; readonly screens?: Key } => {
   const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
   return {
     requests: event.type.startsWith("request."),
+    // An agent started, ended or changed its order: who works where (the bots).
+    board: event.type.startsWith("task.") || event.type.startsWith("workstream."),
     // A removed machine's projects went with it.
     snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings" || event.type === "machine.removed",
     pins: event.type === "chat.pins",

@@ -8,7 +8,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { addSource, addStep, baseName, initialAdd, NAME_MAX, nameProblem, newPath, otherHost, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
+import { addSource, addStep, baseName, initialAdd, NAME_MAX, nameProblem, newPath, otherHost, projectHome, target, tilde, type AddMsg, type AddState, type Found, type Ready, type Request } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
@@ -26,7 +26,9 @@ export function NewProject({ navigation, route }: Props) {
   const t = useTheme();
   const { state, session } = useHub();
   const names = useCallback((id: string) => machineName(state.machines, id), [state.machines]);
-  const found = useRead(() => discover(session, names), [session]);
+  // Cloud machines and the agents' Mac are no project's home: neither offered nor searched.
+  const home = useCallback((id: string) => projectHome(state.machines.find((m) => m.machineId === id)), [state.machines]);
+  const found = useRead(() => discover(session, names, home), [session]);
   const d = found.value?.ok === true ? found.value.value : null;
   const [text, setText] = useState("");
   // A checkout picked from the list is on its own machine.
@@ -60,7 +62,7 @@ export function NewProject({ navigation, route }: Props) {
     if (state.projects !== undefined && flow.current.lost) send({ t: "snapshot", projects: Object.values(state.projects) });
   }, [state.projects, send]);
 
-  const workers = (d?.workers ?? state.machines.map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }))).filter((w) => w.online);
+  const workers = (d?.workers ?? state.machines.filter(projectHome).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }))).filter((w) => w.online);
   const to = target(d, picked) ?? workers[0] ?? null;
   const machineId = fixed ?? picked ?? to?.machineId;
   const source = addSource(text);
