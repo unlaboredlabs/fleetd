@@ -83,7 +83,7 @@ function Harness({ text }: { text: string }) {
   const panel = useProjectPanel(useRoute());
   return (
     <TooltipProvider>
-      <LiveStrip project={project} />
+      <LiveStrip project={project} lead={<span data-lead="" />} />
       <div data-testid="message">
         <Message text={text} project={project} />
       </div>
@@ -141,8 +141,11 @@ it("opens an agent, the panel's agents and its PRs from the strip's lanes, even 
   act(() => host.querySelector<HTMLButtonElement>("button[data-opens='panel'][aria-pressed='true']")?.click());
   expect(panel()).toBeNull();
 
-  // A click on the strip opens its lanes: a row per agent, and the PRs they are on.
+  // The lead's turn line is the strip's first item, inside its capsule.
   const strip = host.querySelector("section[aria-label='1 agent working']");
+  expect(strip?.querySelector("[data-strip]")?.firstElementChild?.hasAttribute("data-lead")).toBe(true);
+
+  // A click on the strip opens its lanes: a row per agent, and the PRs they are on.
   const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
   expect(toggle?.textContent).toBe("1 agent working");
   expect(strip?.querySelector("ul")).toBeNull();

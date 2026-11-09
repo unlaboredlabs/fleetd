@@ -1,5 +1,5 @@
-// The lead's turn as one line in the composer island's band (ChatScreen), before the agents' capsule: never a row of
-// the conversation, so nothing in it moves as the line comes, changes or goes (D392). While the turn runs: a live glyph
+// The lead's turn as one line in the composer island's band (ChatScreen), the agents' capsule's first item while they
+// run: never a row of the conversation, so nothing in it moves as the line comes, changes or goes (D392). While the turn runs: a live glyph
 // (thinking walks its ring, anything else is grain), what the lead does now at full strength under the dither scan
 // (base.css), after a middle dot what the turn did so far in the quiet tone, and how long it has run, faint, counting.
 // Writing the reply is a step like any other, so the line holds through it. A new wording crossfades in place, rising
@@ -9,6 +9,8 @@
 // the count.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import { cx, StateGlyph, useBeatRef } from "../../ui";
+import { springCurve } from "../../ui/lib/spring";
+import { GLIDE } from "./glide";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { useNow } from "../live";
@@ -30,6 +32,8 @@ const HOLD_MS = 3_000;
 const FADE_MS = 220;
 /** The words a screen reader is told change at most this often. */
 const SAY_EVERY_MS = 1_000;
+/** The line's edge and what follows it in the row moving to a new width: the chat's growing spring (glide.ts GLIDE). */
+const SLIDE = GLIDE.grow;
 
 interface Words {
   readonly key: string;
@@ -74,35 +78,93 @@ export function TurnLine({ project, writing }: { project: ProjectRef; writing: b
   const clock = useNow(counting) + skew;
   const count = counting ? workedFor(clock - since) : undefined;
   const told = useThrottled(cur === undefined ? "" : [cur.now, cur.did].filter(Boolean).join(" · "), SAY_EVERY_MS);
-  // As wide as what the wording on show says, from nothing as it comes to nothing as it goes (the width glides, so the
-  // capsule after it moves aside rather than jumping); narrower than that, its tally ellipsizes.
+  // As wide as what the wording on show says, from nothing as it comes to nothing as it goes; narrower than that, its
+  // tally ellipsizes. Its box takes the new width at once (slide), never animating a layout property.
   const line = useRef<HTMLDivElement>(null);
+  const clip = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement>(null);
   const sizer = useRef<HTMLDivElement>(null);
+  const wanted = useRef<number>(undefined);
   useLayoutEffect(() => {
-    const host = line.current;
-    if (host === null) return;
+    const [host, cl, rw] = [line.current, clip.current, row.current];
+    if (host === null || cl === null || rw === null) return;
     const el = sizer.current;
-    if (cur === undefined || el === null) return void (host.style.width = "");
-    const glyph = host.firstElementChild instanceof HTMLElement ? host.firstElementChild.offsetWidth : 0;
-    host.style.width = `${String(glyph + parseFloat(getComputedStyle(host).columnGap) + el.offsetWidth)}px`;
+    const glyph = rw.firstElementChild instanceof HTMLElement ? rw.firstElementChild.offsetWidth : 0;
+    const want = cur === undefined || el === null ? 0 : glyph + parseFloat(getComputedStyle(rw).columnGap) + el.offsetWidth;
+    if (want === wanted.current) return;
+    const first = wanted.current === undefined;
+    wanted.current = want;
+    // Without Web Animations (jsdom), it only takes its width.
+    const still = first || typeof host.animate !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches;
+    slide(host, cl, rw, want, still);
   });
   return (
     <div ref={line} className={s.turnLine} data-turn-line="" data-turn={cur === undefined ? undefined : cur.glyph === "done" ? "done" : "running"}>
-      <span className={s.turnGlyph}>
-        <StateGlyph state={cur?.glyph ?? out?.glyph ?? "done"} size="sm" />
-      </span>
-      <span className={s.turnWords} aria-hidden>
-        {out === undefined ? null : <Layer key={n - 1} words={out} leaving />}
-        {cur === undefined ? null : <Layer key={n} words={cur} count={count} />}
-        {/* The wording at its own width, unseen: what the line's width is set from. */}
-        {cur === undefined ? null : <Layer ref={sizer} words={cur} count={count} sizer />}
-      </span>
+      <div ref={clip} className={s.turnClip}>
+        <div ref={row} className={s.turnRow}>
+          <span className={s.turnGlyph}>
+            <StateGlyph state={cur?.glyph ?? out?.glyph ?? "done"} size="sm" />
+          </span>
+          <span className={s.turnWords} aria-hidden>
+            {out === undefined ? null : <Layer key={n - 1} words={out} count={count} leaving />}
+            {cur === undefined ? null : <Layer key={n} words={cur} count={count} />}
+            {/* The wording at its own width, unseen: what the line's width is set from. */}
+            {cur === undefined ? null : <Layer ref={sizer} words={cur} count={count} sizer />}
+          </span>
+        </div>
+      </div>
       <span className={s.srOnly} role="status">
         {told === "" ? null : <InlineText size="xs" text={told} />}
       </span>
     </div>
   );
 }
+
+/**
+ * The line takes `width` at once, and what follows it in its row (the strip's headline, its now-line) is drawn where it
+ * was and slides to its new place, on the compositor. The line's words are cut where the next item now starts: its
+ * clip is drawn at the old edge and slides with them on the same spring, its row sliding back the other way so the
+ * words stay still. A change mid-slide starts from where everything is drawn then.
+ */
+function slide(host: HTMLElement, clip: HTMLElement, row: HTMLElement, width: number, still: boolean): void {
+  const after: HTMLElement[] = [];
+  for (let e = host.nextElementSibling; e !== null; e = e.nextElementSibling) if (e instanceof HTMLElement) after.push(e);
+  const was = after.map((e) => e.getBoundingClientRect().left);
+  const edge = clip.getBoundingClientRect().right - host.getBoundingClientRect().left;
+  if (!still) for (const e of [clip, row, ...after]) for (const a of e.getAnimations()) if (a.id === SLIDE_ID) a.cancel();
+  host.style.width = `${String(width)}px`;
+  // Gone, it gives back the gap after it.
+  host.style.marginRight = width === 0 ? "calc(-1 * var(--turn-gap))" : "";
+  // At rest the clip and the row follow the line's box (CSS); they are sized here only while they slide.
+  const rest = () => {
+    clip.style.right = "";
+    clip.style.width = "";
+    row.style.width = "";
+  };
+  rest();
+  const now = host.offsetWidth;
+  if (still || Math.abs(edge - now) < 0.5) return;
+  const { ms, ease } = springCurve(SLIDE);
+  const timing: KeyframeAnimationOptions = { duration: ms, easing: ease, id: SLIDE_ID };
+  for (const [i, e] of after.entries()) {
+    const by = (was[i] ?? 0) - e.getBoundingClientRect().left;
+    if (Math.abs(by) >= 0.5) e.animate([{ transform: `translateX(${String(by)}px)` }, { transform: "none" }], timing);
+  }
+  // Drawn as wide as the wider of the two edges for the slide, then as wide as the line.
+  const wide = Math.max(edge, now);
+  clip.style.right = "auto";
+  clip.style.width = `${String(wide)}px`;
+  row.style.width = `${String(now)}px`;
+  const held = { ...timing, fill: "forwards" } as const;
+  const sliding = clip.animate([{ transform: `translateX(${String(edge - wide)}px)` }, { transform: `translateX(${String(now - wide)}px)` }], held);
+  const back = row.animate([{ transform: `translateX(${String(wide - edge)}px)` }, { transform: `translateX(${String(wide - now)}px)` }], held);
+  sliding.onfinish = () => {
+    rest();
+    sliding.cancel();
+    back.cancel();
+  };
+}
+const SLIDE_ID = "turn-slide";
 
 function Layer({ words, count, leaving = false, sizer = false, ref }: { words: Words; count?: string | undefined; leaving?: boolean; sizer?: boolean; ref?: Ref<HTMLDivElement> }) {
   const done = words.glyph === "done";
