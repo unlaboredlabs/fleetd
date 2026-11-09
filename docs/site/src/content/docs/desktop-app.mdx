@@ -84,7 +84,7 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Messages | The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed. A chat opens where you stopped reading, under a "New" line. Scrolled up, a button takes you back to the newest message and counts what arrived meanwhile. |
 | The box at the bottom | Your message ("Message the lead"), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit. |
 | An empty chat | Asks what the lead should do, with a few starters that fill the box for you to edit. |
-| The agents strip | Above the message box while agents work: a dot per agent, "3 agents working · 1 needs you", and what the busiest one is doing now. Click it for a row per agent and the PRs they are on: an agent opens its work in [Agents](#agents), a PR number [the PR](/docs/chat#prs), **Open in the panel** the whole list. |
+| The agents strip | Above the message box while agents work: a dot per agent, "3 agents working · 1 needs you", and what the busiest one is doing now. Click it for a row per agent and the PRs they are on: an agent opens its work in [Agents](#agents), a PR number [the PR](/docs/chat#prs), **Open in the panel** the whole list. At its end, once agents have messaged each other, a quiet "8 DMs between agents" opens their [DMs](#dms). |
 | One-line events | Pull requests opened, merged or sent back. A PR's number or GitHub link here or in a message opens [the PR](/docs/chat#prs) in the panel. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The top row | The project's name, then what needs you, and nothing when nothing does. While the lead waits on you, what for ("Waiting on you: 2 questions, asked at 09:02") and Show, which scrolls to it. Otherwise why the project is blocked, with Resume when its machine's usage pause is why. Otherwise what there is to look at ("2 to look at: the Machines page redesign"): Show scrolls to that message and rings it, Dismiss drops it; see [Things to look at](/docs/chat#look-at). Otherwise a check red on main, which blocks nothing. |
@@ -109,7 +109,8 @@ The panel's **Agents** section (⌥⌘B shows the panel) lists the project's age
 those waiting on you first: each one's role, its task, what it's doing and for how long. Click one to watch its work as it happens: what it was told,
 the commands it ran, the files it edited and what it's writing. Watching doesn't interrupt it. To change what it does,
 tell the lead in the chat. Its PR number opens [the PR](/docs/chat#prs), and **What it was told** shows the exact
-first message and prompts it started with; **All agents** or Esc goes back to the list.
+first message and prompts it started with; **All agents** or Esc goes back to the list. The [DMs](#dms) it sent other
+agents and got from them stand among its steps as cards.
 
 **All projects**, above the list, lists every project's agents instead, each project under its name, those with an
 agent waiting on you first. Click an agent of another project to open its work beside that project's chat.
@@ -149,7 +150,26 @@ work the lead asked your other projects for: see [Asked](/docs/projects#asked).
 **What happened**, under History, shows what happened in the project while you were away, newest first: agents starting and
 finishing, reviews, merges, what was asked of you and what you answered. A line marks what came in since you last
 looked, and a run of the same thing (a pull request reviewed again and again) folds into one row. A line that names
-an agent or a pull request opens it. Its count is what came in since you last looked.
+an agent or a pull request opens it. Its count is what came in since you last looked. Under **All**, two agents'
+[DMs](#dms) to each other fold into one row per hour; a wake the guard refused has a line of its own. **DMs** shows
+their log.
+
+## DMs between agents {#dms}
+
+A project's agents message each other directly ("DMs"): a writer tells the others what it found, asks the agent that
+owns a file, or answers a question. A DM reaches a working agent at its next step, and its lead gets a quiet copy.
+It never starts an agent that has finished, except to answer a question that agent is waiting on; otherwise it is
+held for that agent's next run. Nothing about DMs shows in the chat itself.
+
+| Where | What you see |
+|---|---|
+| An agent's work | Each DM it sent or got, as a card among its steps: "From T2573" or "To T2577" with that agent's title, the words cut at three lines (click for the rest), and what became of it: "Read at its next step, 23:02", "Held: it has finished…", "Woke it, 23:09: it answers what T2577 asked at 23:05", or "Didn't wake it: T2567 has finished and isn't waiting on T2584. Held for its next run." The other agent's id opens its work. |
+| History › What happened › **DMs** | Every DM between the project's agents, newest first: who wrote to whom, the opening words, what became of it (delivered, held, woke, didn't wake) and when. Click a row for the full words and a line per recipient, ending with the lead's copy. **Any agent** narrows it to one agent's DMs. |
+| The agents strip | "8 DMs between agents" at its end, which opens the DMs log. |
+
+Everyone in the project sees the same DMs, members and admins alike, and a device paired read-only sees them too. Nobody
+can write, edit or delete one: agents write them, and they stay as the log. To change what an agent does after
+reading its DMs, steer it or tell the lead.
 
 ## Decisions {#decisions}
 

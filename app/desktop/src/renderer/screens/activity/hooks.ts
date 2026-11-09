@@ -5,7 +5,8 @@ import type { HubEvent, ToolOutput } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolPages } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import type { ProjectKey } from "../shell/routes";
-import { hubWideFor, inFeed, linesOf, typesFor, type KindFilter, type Line } from "./model";
+import { useDmsServed } from "../dms/hooks";
+import { DM_EVENT, hubWideFor, inFeed, linesOf, typesFor, type KindFilter, type Line } from "./model";
 import { useActivitySeen } from "./seen";
 
 /** Events per page: about two screens of rows. */
@@ -54,17 +55,19 @@ export interface ActivityFeed {
 }
 
 /** `project`'s activity under `filter`: the pages read so far, with what streamed in since above them. */
-export function useActivityFeed(project: ProjectKey, filter: KindFilter): ActivityFeed {
+export function useActivityFeed(project: ProjectKey, filter: KindFilter, enabled = true): ActivityFeed {
+  // A hub from before DMs isn't asked for their events.
+  const dms = useDmsServed();
   const input = useMemo(
     () => ({
       projectRef: { machineId: project.machineId, projectId: project.projectId },
-      types: typesFor(filter),
+      types: typesFor(filter).filter((t) => dms || t !== DM_EVENT),
       hubWide: hubWideFor(filter),
       limit: PAGE,
     }),
-    [project.machineId, project.projectId, filter],
+    [project.machineId, project.projectId, filter, dms],
   );
-  const pages = useToolPages("events_list", input, olderThan);
+  const pages = useToolPages("events_list", input, olderThan, { enabled });
   const streamed = useStreamed(project);
   const read = pages.data?.pages;
   const lines = useMemo(() => {

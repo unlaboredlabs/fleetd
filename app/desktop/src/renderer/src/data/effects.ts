@@ -96,6 +96,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
   if (type === "memory.changed") out.push({ tool: "memory_get" });
+  // An agent's DM to others, and its receipts as each recipient reads it or is woken: the DM log, its count, the cards.
+  if (type === "agent.messaged" || type === "agent.message_updated" || type.startsWith("steer.")) out.push({ tool: "agent_messages" });
   if (type.startsWith("automation.")) out.push({ tool: "automation_list" }, { tool: "automation_runs" });
   // The nightly memory refresh's row: a refresh starting, ending or skipped, its project's switch, the hub's hour, and
   // what a running refresh changed.

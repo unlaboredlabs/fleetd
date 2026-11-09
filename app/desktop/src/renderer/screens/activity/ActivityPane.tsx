@@ -24,6 +24,7 @@ import {
   Smartphone,
   TriangleAlert,
   Undo2,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
@@ -33,9 +34,11 @@ import { Button, Dot, EmptyState, Text, Truncate, VirtualList, cx } from "../../
 import { shortClock } from "../chat/format";
 import { useNow } from "../live/clock";
 import { CallError } from "../../src/data/queries";
-import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { panelRoute, toHash, type PanelView, type ProjectKey } from "../shell/routes";
+import { DmLog } from "../dms/DmLog";
+import { useDmsServed } from "../dms/hooks";
 import { useActivityFeed } from "./hooks";
-import { KINDS, KIND_WORD, layout, type ActivityKind, type Icon, type KindFilter, type Line, type Row, type Tone } from "./model";
+import { DMS, KINDS, KIND_WORD, layout, toggled, type ActivityKind, type Icon, type KindFilter, type Line, type Row, type Tone } from "./model";
 import { activitySeenOf, markActivitySeen } from "./seen";
 import s from "./activity.module.css";
 
@@ -59,6 +62,8 @@ const ICON: Readonly<Record<Icon, LucideIcon>> = {
   warning: TriangleAlert,
   device: Smartphone,
   cap: Gauge,
+  dm: MessageSquare,
+  noWake: Ban,
 };
 
 const TONE: Readonly<Record<Tone, string>> = {
@@ -72,19 +77,28 @@ const ALL: KindFilter = new Set();
 
 type Item = Row | { readonly t: "end"; readonly key: string };
 
-export function ActivityPane({ project }: { project: ProjectKey }) {
-  // A fresh feed per project: its filter, its open runs and the mark it read on opening.
-  return <Feed key={projectKey(project)} project={project} />;
+const ONLY_DMS: KindFilter = new Set([DMS]);
+
+export function ActivityPane({ project, view }: { project: ProjectKey; view?: PanelView }) {
+  // A fresh feed per project (and per way in: the lead chat's DM count opens it on DMs): its filter, its open runs
+  // and the mark it read on opening.
+  const dms = view?.tab === "activity" && view.dms === true;
+  return <Feed key={`${projectKey(project)}${dms ? "#dms" : ""}`} project={project} dms={dms} />;
 }
 
-function Feed({ project }: { project: ProjectKey }) {
+function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
   const key = projectKey(project);
   const fresh = useData((st) => st.fresh);
-  const [filter, setFilter] = useState<KindFilter>(ALL);
+  // A hub from before DMs has none to show, and no chip for them.
+  const dmsServed = useDmsServed();
+  const [chosen, setFilter] = useState<KindFilter>(dms ? ONLY_DMS : ALL);
+  const filter = dmsServed || !chosen.has(DMS) ? chosen : ALL;
+  const onDms = filter.has(DMS);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   // What the person had seen before this opened: the divider stays there while they read.
   const [seenAtOpen] = useState(() => activitySeenOf(key));
-  const feed = useActivityFeed(project, filter);
+  // DMs reads its own log: the feed rests meanwhile.
+  const feed = useActivityFeed(project, filter, !onDms);
   const nowMs = useNow(true, 60_000);
   const newest = feed.lines?.[0]?.seq;
   useEffect(() => {
@@ -97,14 +111,7 @@ function Feed({ project }: { project: ProjectKey }) {
     return feed.lines.length === 0 ? rows : [...rows, { t: "end", key: "end" }];
   }, [feed.lines, nowMs, seenAtOpen, open]);
 
-  const toggleKind = (kind: ActivityKind | null) =>
-    setFilter((f) => {
-      if (kind === null) return ALL;
-      const next = new Set(f);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next.size === KINDS.length ? ALL : next;
-    });
+  const toggleKind = (kind: ActivityKind | null) => setFilter((f) => toggled(f, kind));
   const toggleRun = (runKey: string) =>
     setOpen((o) => {
       const next = new Set(o);
@@ -114,12 +121,12 @@ function Feed({ project }: { project: ProjectKey }) {
     });
 
   return (
-    <div className={s.pane} data-screen={items === undefined && feed.error === null ? "activity.loading" : "activity"}>
+    <div className={s.pane} data-screen={onDms ? "activity" : items === undefined && feed.error === null ? "activity.loading" : "activity"}>
       <div className={s.chips} role="group" aria-label="Show">
         <Button variant={filter.size === 0 ? "secondary" : "quiet"} size="sm" aria-pressed={filter.size === 0} onClick={() => toggleKind(null)}>
           All
         </Button>
-        {KINDS.map((k) => (
+        {KINDS.filter((k) => k !== DMS || dmsServed).map((k) => (
           <Button key={k} variant={filter.has(k) ? "secondary" : "quiet"} size="sm" aria-pressed={filter.has(k)} onClick={() => toggleKind(k)}>
             {KIND_WORD[k]}
           </Button>
@@ -131,7 +138,9 @@ function Feed({ project }: { project: ProjectKey }) {
           <Text size="xs">Not live: reconnecting</Text>
         </span>
       ) : null}
-      {feed.error !== null && items === undefined ? (
+      {onDms ? (
+        <DmLog project={project} />
+      ) : feed.error !== null && items === undefined ? (
         <Failed error={feed.error} retry={feed.retry} />
       ) : items === undefined && !fresh ? (
         <div className={s.note}>
@@ -224,7 +233,7 @@ const LineRow = memo(function LineRow({ line, project, child }: { line: Line; pr
     <>
       <Mark icon={line.icon} tone={line.tone} />
       <span className={s.text}>
-        <Truncate size="sm" expand="none" strong={line.tone === "needs-you"}>
+        <Truncate size="sm" expand="none" strong={line.tone === "needs-you" || line.strong === true}>
           {line.text}
         </Truncate>
       </span>
@@ -268,7 +277,7 @@ function RunRow({ item, onToggle }: { item: Extract<Row, { t: "run" }>; onToggle
       </span>
       <span className={s.detail}>
         <Truncate size="xs" tone="quiet" expand="none">
-          {`Latest: ${top.kind === "agents" ? (top.detail ?? top.text) : top.text}`}
+          {`Latest: ${top.kind === "agents" || top.kind === "dms" ? (top.detail ?? top.text) : top.text}`}
         </Truncate>
       </span>
       <Text size="xs" tone="faint" tabular>

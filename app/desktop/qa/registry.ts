@@ -202,6 +202,8 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
+  // W533: agents' DMs to each other, on an agent's work, in Activity and on the lead chat's strip (fixtures/dms).
+  "dms-relays",
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
@@ -358,6 +360,14 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["live-0", "live-3", "live-20"],
     variant: "strip",
+  },
+  // W533: the only trace of agents' DMs in the lead chat: their count at the strip's end.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["dms-relays"],
+    variant: "dm-count",
+    open: (page) => expect(page.getByRole("link", { name: "5 DMs between agents" })).toBeVisible(),
   },
   // A click on the strip opens its lanes above it, a row per agent.
   {
@@ -847,6 +857,28 @@ export const screens: readonly Screen[] = [
         window.location.hash = r;
       }, `${CHAT}/activity`);
     }, (page) => page.getByLabel("Loading the activity")),
+  },
+  // W533: Activity's DMs log, as the strip's count opens it, with a DM to three and the guard's refused wake opened;
+  // and All, where a pair's DMs of an hour fold into one row and the refused wake has its own line.
+  {
+    id: "activity",
+    route: `${CHAT}/activity/dms`,
+    fixtures: ["dms-relays"],
+    variant: "dms",
+    open: async (page) => {
+      for (const id of ["M5", "M1"]) await page.locator(`[data-dm="${id}"] > button`).click();
+      await expect(page.getByRole("definition").filter({ hasText: "wasn’t woken" })).toBeVisible();
+    },
+  },
+  {
+    id: "activity",
+    route: `${CHAT}/activity`,
+    fixtures: ["dms-relays"],
+    variant: "dms-all",
+    open: async (page) => {
+      await page.getByRole("button", { name: /3 DMs/u }).click();
+      await expect(page.getByRole("button", { name: /3 DMs/u })).toHaveAttribute("aria-expanded", "true");
+    },
   },
   // The panel's Decisions: what the lead and you settled; none yet; failing; and on its way.
   { id: "decisions", route: `${CHAT}/decisions`, fixtures: ["typical", "long-text", "decisions-none"] },
@@ -2123,6 +2155,8 @@ export const screens: readonly Screen[] = [
   },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
+  // W533: the DMs T1 sent and got, as cards among its steps: read at a step, a wake allowed, one held for a finished agent.
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["dms-relays"], variant: "dms" },
   // ...and offline with nothing held: it says it shows once you're connected, never a blank loading pane.
   {
     id: "agents.work",

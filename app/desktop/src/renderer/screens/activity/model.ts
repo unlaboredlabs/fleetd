@@ -6,15 +6,19 @@ import { dayLabel } from "../chat/model";
 import { keyWords } from "../decisions/model";
 import type { PanelView, PrKey } from "../shell/routes";
 
-export type ActivityKind = "agents" | "reviews" | "merges" | "asks" | "other";
+/** One agent's DM to others, with its recipients' outcomes as they stood when it went (W533). */
+export const DM_EVENT = "agent.messaged" satisfies HubEventType;
 
-export const KINDS: readonly ActivityKind[] = ["agents", "reviews", "merges", "asks", "other"];
+export type ActivityKind = "agents" | "reviews" | "merges" | "asks" | "dms" | "other";
+
+export const KINDS: readonly ActivityKind[] = ["agents", "reviews", "merges", "asks", "dms", "other"];
 
 export const KIND_WORD: Readonly<Record<ActivityKind, string>> = {
   agents: "Agents",
   reviews: "Reviews",
   merges: "Merges",
   asks: "Asks you",
+  dms: "DMs",
   other: "Other",
 };
 
@@ -24,8 +28,26 @@ const TYPES: Readonly<Record<ActivityKind, readonly HubEventType[]>> = {
   reviews: ["review.verdict"],
   merges: ["change.queued", "change.needs_rebase", "change.ci_failed", "change.refused", "pr.merged", "pr.merged_outside"],
   asks: ["request.opened", "request.updated"],
+  dms: [DM_EVENT],
   other: ["workstream.created", "workstream.done", "project.fetch_failed", "decision.recorded", "agents.cap", "key.paired"],
 };
+
+/**
+ * DMs is a log of its own (screens/dms): chosen, it shows alone, from agent_messages. Under All, its events fold one
+ * row per pair and hour.
+ */
+export const DMS: ActivityKind = "dms";
+
+/** The chips after `kind` is pressed in `filter`: DMs shows alone, and any other kind leaves it. */
+export function toggled(filter: KindFilter, kind: ActivityKind | null): KindFilter {
+  if (kind === null) return new Set();
+  if (kind === DMS) return filter.has(DMS) ? new Set() : new Set([DMS]);
+  const next = new Set(filter);
+  next.delete(DMS);
+  if (next.has(kind)) next.delete(kind);
+  else next.add(kind);
+  return next.size === KINDS.length - 1 ? new Set() : next;
+}
 
 const KIND_OF: ReadonlyMap<string, ActivityKind> = new Map(KINDS.flatMap((k) => TYPES[k].map((t) => [t, k] as const)));
 
@@ -70,7 +92,9 @@ export type Icon =
   | "decision"
   | "warning"
   | "device"
-  | "cap";
+  | "cap"
+  | "dm"
+  | "noWake";
 
 /** The icon's colour, in the status chips' vocabulary: amber is "needs you", red only for failure. */
 export type Tone = "needs-you" | "failed" | "done" | "quiet";
@@ -84,6 +108,8 @@ export interface Line {
   readonly tone: Tone;
   /** What happened, short and in plain words: "Agent finished", "Merged #31". Never an internal id. */
   readonly text: string;
+  /** Said a step stronger than a quiet line, without asking anything of the person (a refused wake). */
+  readonly strong?: boolean | undefined;
   /** Quieter, after it: the task's title, the reason, the command. */
   readonly detail?: string | undefined;
   /** The internal ids it is about ("T12", "X4"), for the row's tooltip only. */
@@ -201,9 +227,41 @@ export function describe(e: HubEvent): Line | undefined {
       return { ...base, icon: "cap", tone: "quiet", text: "Max agents changed", detail: e.summary };
     case "key.paired":
       return { ...base, icon: "device", tone: "quiet", text: "A device paired", detail: str(data["deviceName"]) };
+    case DM_EVENT:
+      return dm(e, data, base);
     default:
       return undefined;
   }
+}
+
+/**
+ * One agent's DM to others: "T2573 → T2577" and its opening words, folded with the pair's other DMs of the same hour
+ * ("3 DMs · T2573 ↔ T2577"). A wake the guard refused stands on its own line, in words: "T2584 didn’t wake T2567".
+ */
+function dm(e: HubEvent, data: Readonly<Record<string, unknown>>, base: Pick<Line, "seq" | "at" | "kind">): Line | undefined {
+  const from = str(data["from"]);
+  const to = (Array.isArray(data["to"]) ? data["to"] : []).map(record).filter((t) => str(t["taskId"]) !== undefined);
+  if (from === undefined || to.length === 0) return undefined;
+  const ids = to.map((t) => str(t["taskId"]) as string);
+  const words = str(data["text"]);
+  const ref = { ...base, ids: [from, ...ids, str(data["messageId"])].filter((x) => x !== undefined).join(" · ") };
+  const dms: PanelView = { tab: "activity", dms: true };
+  const no = to.find((t) => t["outcome"] === "not_woken");
+  if (no !== undefined) {
+    return { ...ref, icon: "noWake", tone: "quiet", strong: true, text: `${from} didn’t wake ${str(no["taskId"]) ?? ""}`, detail: str(no["detail"]) ?? words, link: dms };
+  }
+  const woke = to.find((t) => t["outcome"] === "woke");
+  const pair = [from, ...ids].sort().join(" ↔ ");
+  const hour = e.at.slice(0, 13);
+  return {
+    ...ref,
+    icon: "dm",
+    tone: "quiet",
+    text: `${from} → ${ids.join(", ")}`,
+    detail: woke === undefined ? words : `woke ${str(woke["taskId"]) ?? ""}${words === undefined ? "" : ` · ${words}`}`,
+    link: dms,
+    run: { key: `dm:${pair}@${hour}`, label: (n: number) => `${plural(n, "DM")} · ${pair}` },
+  };
 }
 
 /** "D4 merge.style = squash" as the Decisions tab words it: "Merge style = squash", without its id. */

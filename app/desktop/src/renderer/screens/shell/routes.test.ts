@@ -19,6 +19,8 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "sessions", session: "bs-checkout" }),
       { id: "session", project: storefront, session: "bs-checkout" },
       panelRoute(storefront, { tab: "checklist" }),
+      panelRoute(storefront, { tab: "activity" }),
+      panelRoute(storefront, { tab: "activity", dms: true }),
       panelRoute(storefront, { tab: "artifacts", artifact: null }),
       panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep" }),
       panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep", version: 2 }),
@@ -135,5 +137,8 @@ describe("routes", () => {
     expect(parseHash(toHash(taxes))).toEqual(taxes);
     expect(parseHash("#/project/devbox/storefront/skills")).toEqual({ id: "settings", tab: "agents", for: "devbox/storefront" });
     expect(toHash(panelRoute(storefront, { tab: "artifacts", artifact: "dependency-sweep", version: 2 }))).toBe("#/project/devbox/storefront/artifacts/dependency-sweep/2");
+    // The lead chat's DM count opens Activity on its DMs log.
+    expect(toHash(panelRoute(storefront, { tab: "activity", dms: true }))).toBe("#/project/devbox/storefront/activity/dms");
+    expect(hasItem({ tab: "activity", dms: true })).toBe(false);
   });
 });
