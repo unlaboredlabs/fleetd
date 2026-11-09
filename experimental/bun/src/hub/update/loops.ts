@@ -3,7 +3,7 @@ import { updates } from "./tools.ts";
 
 /**
  * Starts this module's loops (Rust: updates.resume, updates.prefetch_loop): the unfinished update a previous hub
- * process left, then the look at the channel every 10 minutes, each until the hub stops.
+ * process left, then the look at the channel every 2 minutes, each until the hub stops.
  */
 export function start(hub: Hub): void {
   const u = updates(hub);
