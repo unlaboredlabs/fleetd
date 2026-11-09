@@ -1,6 +1,6 @@
 // The hub admin's setup (screens/setup): a hub `fleetd init` just made on devbox, plain HTTP on its tailnet, at each
 // point of its first run. Every answer is the hub's own: steps.json is hub/setup's catalog read from the checks the
-// doctor reports at that point, written by `bun scripts/setup-fixtures.ts` (experimental/bun/scripts/setup-fixtures.ts),
+// doctor reports at that point, written by `bun scripts/setup-fixtures.ts` (fleetd/scripts/setup-fixtures.ts),
 // so the app shows exactly what a hub says. Each fixture answers setup_list and setup_test of any step (as the next
 // point finds it); hub_info makes this app's person an admin, who alone sees setup.
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
