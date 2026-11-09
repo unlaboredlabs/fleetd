@@ -84,6 +84,8 @@ export const fixtures = [
   "live-20",
   "live-1-lead",
   "live-20-lead",
+  // ...and with 1 beside the band's other capsule: the lead's question, waiting on you.
+  "live-1-question",
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
@@ -309,6 +311,9 @@ export interface Screen {
   // Brings up a screen that has no route of its own; runs after the route has loaded. `app` reaches the main process,
   // for what only it decides (whether the system shows notifications).
   open?: (page: Page, app: ElectronApplication) => Promise<void>;
+  // Runs at every size and theme, once the view has settled and before its shot: what must hold in each (the band's
+  // capsules as tall as each other).
+  check?: (page: Page) => Promise<void>;
   // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
   // the test title and the file names.
   variant?: string;
@@ -363,6 +368,68 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
   });
 };
 
+/**
+ * The band over the chat's composer reads as one row: its capsules (the live strip, what needs you) are as tall as the
+ * tokens say (--island-capsule-h) with the same rounding, their tops and bottoms on one line in a band of its own
+ * height (--island-band-h), their words one size on one baseline, and their icons (the chevron, the ×) on one centre.
+ */
+const bandIsOneRow =
+  (...capsules: ReadonlyArray<"strip" | "say">) =>
+  async (page: Page) => {
+    const band = await page.locator("[data-band]").evaluate((el) => {
+      const token = (name: string) => parseFloat(getComputedStyle(el).getPropertyValue(name));
+      const draw = document.createElement("canvas").getContext("2d");
+      const capsules = [...el.querySelectorAll("[data-strip], [data-say]")].filter((c) => c.getClientRects().length > 0);
+      const words: Array<{ text: string; size: string; baseline: number }> = [];
+      const icons: Array<{ icon: string; middle: number }> = [];
+      for (const capsule of capsules) {
+        const walker = document.createTreeWalker(capsule, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const at = n.parentElement;
+          const text = n.textContent?.trim() ?? "";
+          if (at === null || draw === null || text === "") continue;
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          const run = range.getClientRects()[0];
+          // Words for a screen reader only have no place in the row.
+          if (run === undefined || run.width <= 1 || at.getBoundingClientRect().width <= 1) continue;
+          // A run's rect starts its font's ascent above its baseline.
+          const style = getComputedStyle(at);
+          draw.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+          words.push({ text, size: style.fontSize, baseline: run.top + draw.measureText(text).fontBoundingBoxAscent });
+        }
+        for (const svg of capsule.querySelectorAll("svg.lucide")) {
+          const r = svg.getBoundingClientRect();
+          icons.push({ icon: svg.getAttribute("class") ?? "", middle: (r.top + r.bottom) / 2 });
+        }
+      }
+      return {
+        height: el.getBoundingClientRect().height,
+        bandH: token("--island-band-h"),
+        capsuleH: token("--island-capsule-h"),
+        capsules: capsules.map((c) => {
+          const r = c.getBoundingClientRect();
+          // The strip's row takes its rounding from the capsule it is the whole of while closed.
+          const round = getComputedStyle(c.matches("[data-strip]") ? (c.parentElement ?? c) : c).borderTopLeftRadius;
+          return { name: c.matches("[data-strip]") ? "strip" : "say", top: r.top, bottom: r.bottom, height: r.height, round };
+        }),
+        words,
+        icons,
+      };
+    });
+    const seen = JSON.stringify(band, null, 1);
+    expect(band.capsules.map((c) => c.name), `the band's capsules: ${seen}`).toEqual(capsules);
+    expect(band.height, `the band keeps its own height: ${seen}`).toBe(band.bandH);
+    const [first] = band.capsules;
+    for (const c of band.capsules) {
+      expect(c, `capsules of one height on one line: ${seen}`).toEqual({ ...c, height: band.capsuleH, top: first?.top, bottom: first?.bottom, round: first?.round });
+    }
+    expect([...new Set(band.words.map((w) => w.size))], `the words are one size: ${seen}`).toHaveLength(1);
+    const spread = (ys: readonly number[]) => Math.max(...ys) - Math.min(...ys);
+    expect(spread(band.words.map((w) => w.baseline)), `the words sit on one baseline: ${seen}`).toBeLessThanOrEqual(0.5);
+    expect(spread(band.icons.map((i) => i.middle)), `the icons sit on one centre: ${seen}`).toBeLessThanOrEqual(0.5);
+  };
+
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
@@ -384,6 +451,32 @@ export const screens: readonly Screen[] = [
     fixtures: ["dms-relays"],
     variant: "dm-count",
     open: (page) => expect(page.getByRole("link", { name: "5 DMs between agents" })).toBeVisible(),
+  },
+  // W581: the band's two capsules, the strip and the lead's question waiting on you (Show, ×), read as one row.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-1-question"],
+    sizes: [...defaultSizes, "narrow"],
+    variant: "band",
+    open: (page) => expect(page.locator("[data-say]").getByRole("button", { name: "Show" })).toBeVisible(),
+    check: bandIsOneRow("strip", "say"),
+  },
+  // ...and the × hides the question's capsule: the strip takes its room, and neither the band nor the composer moves.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-1-question"],
+    variant: "band-hidden",
+    open: async (page) => {
+      const band = page.locator("[data-band]");
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      const before = [await band.boundingBox(), await box.boundingBox()];
+      await page.locator("[data-say]").getByRole("button", { name: /^Hide until/u }).click();
+      await expect(page.locator("[data-say]")).toBeHidden();
+      expect([await band.boundingBox(), await box.boundingBox()]).toEqual(before);
+    },
+    check: bandIsOneRow("strip"),
   },
   // A click on the strip opens its lanes above it, a row per agent.
   {
@@ -560,6 +653,7 @@ export const screens: readonly Screen[] = [
       await page.locator("[data-attention]").getByRole("button", { name: "Show" }).click();
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
+    check: bandIsOneRow("strip", "say"),
   },
   // A red main is a warning over the composer, in the hub's words, not a block (checkout's `ios sessions`).
   {
@@ -583,6 +677,7 @@ export const screens: readonly Screen[] = [
       await expect(line).toContainText("Blocked: paused until Sun 23:40 UTC");
       await expect(line.getByRole("button", { name: /^Resume/u })).toBeVisible();
     },
+    check: bandIsOneRow("say"),
   },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.
   {
@@ -601,7 +696,7 @@ export const screens: readonly Screen[] = [
   // UX [7]: offline, the chat and the project list from the disk cache, marked offline as of the cache's time, with
   // the banner's Retry now; then a message typed offline joins the one already queued, each with Edit and Dismiss.
   { id: "chat", route: CHAT, fixtures: ["offline-held"], variant: "offline" },
-  { id: "chat", route: CHAT, fixtures: ["look-two"], variant: "look" },
+  { id: "chat", route: CHAT, fixtures: ["look-two"], variant: "look", check: bandIsOneRow("strip", "say") },
   {
     id: "chat.composer",
     route: CHAT,

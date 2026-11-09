@@ -128,7 +128,7 @@ export function AttentionLine({
       ) : null}
       {waiting.question !== undefined && onHide !== undefined ? (
         <Tooltip content="Hide until there’s a new question">
-          <Button variant="quiet" iconOnly aria-label="Hide until there’s a new question" onClick={onHide}>
+          <Button variant="quiet" iconOnly round className={s.attentionHide} aria-label="Hide until there’s a new question" onClick={onHide}>
             <X />
           </Button>
         </Tooltip>

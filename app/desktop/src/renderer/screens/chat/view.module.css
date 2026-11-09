@@ -62,7 +62,7 @@
 }
 .latest > button,
 .latestSlot > button {
-  height: var(--row);
+  height: var(--island-capsule-h);
   border-color: transparent;
   border-radius: 999px;
   background: var(--glass);
@@ -820,6 +820,13 @@ span.changeUndo {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* The ×, at the capsule's round end: a circle as far in from the end as from the capsule's top and bottom. */
+.attention > .attentionHide {
+  --inset: 4px;
+  width: calc(var(--island-capsule-h) - 2 * var(--inset));
+  height: calc(var(--island-capsule-h) - 2 * var(--inset));
+  margin-inline-end: calc(var(--inset) - var(--space-3));
+}
 
 /* An empty chat: what to ask, just above the island. */
 .empty {
@@ -875,7 +882,8 @@ span.changeUndo {
   min-width: 0;
   max-width: 100%;
   height: 20px;
-  margin: 0 0 4px 0;
+  /* On its own in the band, on the capsules' centre line. */
+  margin: 0 0 calc((var(--island-capsule-h) - 20px) / 2) 0;
   pointer-events: none;
 }
 .turnLine:not(:last-child) {
@@ -1007,7 +1015,8 @@ span.changeUndo {
 /* What the lead waits on, why the project is blocked, what to look at: off the top bar, a glass capsule in the band
    over the composer, where you act on it. Nothing to say, nothing shown. Its lift is on the capsule and its glass on
    a layer under its words, so the shadow is no part of the blurred surface: a key press in the composer under it never
-   re-blurs it. */
+   re-blurs it. One row with the live strip beside it: as tall (tokens.css), as round, and its words and links the
+   strip's size, on its baseline. */
 .say {
   position: relative;
   z-index: 0;
@@ -1015,9 +1024,11 @@ span.changeUndo {
   align-items: center;
   min-width: 0;
   max-width: 100%;
-  height: 32px;
+  height: var(--island-capsule-h);
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border-radius: calc(var(--island-capsule-h) / 2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   box-shadow: var(--glass-lift);
 }
 .say::before {

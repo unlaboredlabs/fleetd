@@ -2,6 +2,7 @@
 // work on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. The chat above the strip
 // names a PR the way the lead and the hub do: an event line, then "#10" (live-3) or its GitHub URL (live-20). The
 // agents have sent each other DMs (the count at the strip's end): 132 at 1, 1,284 at 20, none at 0 or 3.
+import { firstProject, writeChat } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -184,6 +185,24 @@ const withLead = (f: Fixture): Fixture => {
 };
 
 /**
+ * live-1-question: the strip beside the band's other capsule, the lead waiting on you with a question (Show, and × to
+ * hide it), as one row.
+ */
+const withQuestion = (f: Fixture): Fixture => {
+  const asked = Fixture.from(f, `${f.name}-question`, `${f.note} The lead asked a question and waits on you: its capsule sits beside the strip.`);
+  writeChat(
+    asked,
+    firstProject(asked),
+    [
+      { author: "human", text: "Round the cart totals once, in one place." },
+      { author: "lead", text: "On it: one writer, and a review once its PR opens. One call before it ships:\n\n1. Round a half cent up, or to even?\n   Rec: to even, as the invoices do." },
+    ],
+    { needsYou: true },
+  );
+  return asked;
+};
+
+/**
  * live-turn: three agents thinking in the strip while the lead's turn line before it comes, changes step, says "Worked for"
  * and goes, over and over (every CYCLE_MS from 1.5 s), so the band's motion can be recorded frame by frame.
  */
@@ -237,6 +256,7 @@ export default defineGroup({
     fromBase(base("typical"), 20),
     withLead(fromBase(base("typical"), 1)),
     withLead(fromBase(base("typical"), 20)),
+    withQuestion(fromBase(base("typical"), 1)),
     withTurns(fromBase(base("typical"), 3)),
   ],
 });

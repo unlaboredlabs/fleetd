@@ -40,6 +40,7 @@ for (const screen of screens) {
           for (const theme of themes) {
             await setView(app, page, size, theme);
             await settle(page);
+            await screen.check?.(page);
             // Scrolling doesn't depend on the theme, so the steps run once per size.
             const meta = { screen: label(screen), fixture, size, theme };
             shots.push(await shoot(page, reserved, meta, { scroll: theme === themes[0] }));
