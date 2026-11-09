@@ -11,6 +11,7 @@ import { DRAFT, errorText } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Between, Train } from "./service.ts";
+import { rerunStale } from "./stale.ts";
 import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
@@ -31,14 +32,7 @@ const named = (names: string[]) => names.map((n) => `\`${n}\``).join(", ");
 /** Why a ready PR's own head keeps it out of a batch, by its fast set and the checks the batch skips; undefined: it may join. */
 export function ownChecks(runs: CheckRun[], statuses: CommitStatus[], fast: Fast | undefined, batch: string[]): string | undefined {
   if (runs.length === 0 && statuses.length === 0) return "its own head has no checks yet";
-  const cancelled = (r: CheckRun) => r.conclusion === "cancelled";
-  const skippedByBatch = (r: CheckRun) => batch.some((n) => next.gatedName(n, r.name));
-  const judged =
-    fast && fast.set.length > 0
-      ? runs.filter((r) => skippedByBatch(r) || (fast.holds(r.name) && !cancelled(r)))
-      : fast
-        ? runs.filter((r) => skippedByBatch(r) || !cancelled(r))
-        : runs;
+  const judged = ownJudged(runs, fast, batch);
   const red = judged.filter(isRed).map((r) => r.name);
   const set = fast?.set ?? [];
   const wanted: string[] = [];
@@ -55,6 +49,14 @@ export function ownChecks(runs: CheckRun[], statuses: CommitStatus[], fast: Fast
   if (running.length > 0) return `its own head's ${named(running)} still running`;
   if (missing.length > 0) return `its own head hasn't reported ${named(missing)} yet`;
   return undefined;
+}
+
+/** The runs of `runs` that `ownChecks` judges a PR's own head by. */
+function ownJudged(runs: CheckRun[], fast: Fast | undefined, batch: string[]): CheckRun[] {
+  const cancelled = (r: CheckRun) => r.conclusion === "cancelled";
+  const skippedByBatch = (r: CheckRun) => batch.some((n) => next.gatedName(n, r.name));
+  if (fast && fast.set.length > 0) return runs.filter((r) => skippedByBatch(r) || (fast.holds(r.name) && !cancelled(r)));
+  return fast ? runs.filter((r) => skippedByBatch(r) || !cancelled(r)) : runs;
 }
 
 /** A clean review is bound to the Change's current patch: nothing else lets the train take it. */
@@ -323,7 +325,14 @@ export async function ownCi(t: Train, repo: string, change: Change, base: string
       return `its statuses could not be read: GitHub: ${(error as Error).message}`;
     }
   }
-  return ownChecks(runs, statuses, fast, batch);
+  const why = ownChecks(runs, statuses, fast, batch);
+  // Still running, none failed: a check GitHub left pending under a finished run goes again (`rerunStale`).
+  const judged = ownJudged(runs, fast, batch);
+  if (why !== undefined && !judged.some(isRed)) {
+    const stale = await rerunStale(t, repo, sha, judged);
+    if (stale) return stale.why;
+  }
+  return why;
 }
 
 /** Records why this pass left a ready Change out of the batch (`LEFT_OUT`); undefined clears an earlier reason. */

@@ -532,6 +532,8 @@ pub struct Train {
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Per timed-out Change, the cancelled runs the train re-ran after the timeout (`late_cancelled`).
     late_reruns: Mutex<HashMap<ChangeId, Reruns>>,
+    /// Per head, what the train read and re-ran of checks GitHub left pending under a finished run (`rerun_stale`).
+    pub(super) stale_heads: Mutex<super::stale::StaleHeads>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
     /// The PRs that carry `fleetd:next`.
@@ -606,6 +608,7 @@ impl Train {
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
             late_reruns: Mutex::default(),
+            stale_heads: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
             sync: GithubSync::default(),
@@ -1494,13 +1497,13 @@ impl Train {
             let runs = runs.unwrap_or_default();
             // Only the fast set (and on a PR's own head the checks a batch skips) is waited for; a head whose runs are
             // all outside it waits on its required checks below.
-            let judged = judge(&runs);
-            if !judged.is_empty() {
-                last = judged.clone();
+            let waited = judge(&runs);
+            if !waited.is_empty() {
+                last = waited.clone();
             } else if !runs.is_empty() {
                 last = runs.clone();
             }
-            let judged = match checks(&judged) {
+            let judged = match checks(&waited) {
                 Checks::None if !runs.is_empty() => Checks::Green,
                 judged => judged,
             };
@@ -1651,7 +1654,16 @@ impl Train {
                         Checks::None | Checks::Pending => {}
                     }
                 }
-                Checks::None | Checks::Pending => {}
+                // A check GitHub left pending under a finished run never finishes by itself: its run goes again.
+                Checks::Pending => {
+                    if let Some(stale) = self.rerun_stale(repo, sha, &waited).await
+                        && stale.now
+                    {
+                        // The re-run's time is its own.
+                        start = self.now_ms();
+                    }
+                }
+                Checks::None => {}
             }
             if until.is_some_and(|until| self.now_ms() >= until) {
                 return None;

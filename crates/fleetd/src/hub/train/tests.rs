@@ -190,6 +190,10 @@ struct FakeGh {
     reruns: Arc<Mutex<Vec<u64>>>,
     /// GitHub refuses every re-run of one job.
     refuse_job_reruns: Mutex<bool>,
+    /// Each workflow run, by id, as `actions/runs/<id>` answers it.
+    workflow_runs: Mutex<HashMap<u64, Value>>,
+    /// The workflow runs the train asked to re-run whole, in order.
+    run_reruns: Arc<Mutex<Vec<u64>>>,
     /// Each Actions job's log, by job id.
     job_logs: Mutex<HashMap<u64, String>>,
     /// The `check_runs` of one head, before `runs` and `ci`.
@@ -960,6 +964,22 @@ impl FakeGh {
                 self.log.lock().unwrap().push(format!("rerun {job}"));
                 ok(json!({}))
             }
+            (["actions", "runs", run], "GET") => {
+                match self
+                    .workflow_runs
+                    .lock()
+                    .unwrap()
+                    .get(&run.parse().unwrap())
+                {
+                    Some(run) => ok(run.clone()),
+                    None => http_error(404, "Not Found"),
+                }
+            }
+            (["actions", "runs", run, "rerun"], "POST") => {
+                self.run_reruns.lock().unwrap().push(run.parse().unwrap());
+                self.log.lock().unwrap().push(format!("rerun run {run}"));
+                ok(json!({}))
+            }
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
                 self.statuses
@@ -1627,6 +1647,8 @@ impl Kit {
             runs: Mutex::default(),
             reruns: Arc::default(),
             refuse_job_reruns: Mutex::default(),
+            workflow_runs: Mutex::default(),
+            run_reruns: Arc::default(),
             job_logs: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
@@ -8804,3 +8826,4 @@ mod regen;
 mod repos;
 mod rereviews;
 mod restarts;
+mod stale;

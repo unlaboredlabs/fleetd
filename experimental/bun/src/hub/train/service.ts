@@ -36,6 +36,7 @@ import {
   type Stall,
 } from "./rules.ts";
 import { scheduledPass } from "./scheduled.ts";
+import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
 import { rerunning, watchMerge, watchPass } from "./watch.ts";
@@ -222,6 +223,8 @@ export class Train {
   readonly pushed = new Map<string, [string, number]>();
   /** Per timed-out Change, the cancelled runs the train re-ran after the timeout. */
   private readonly lateReruns = new Map<string, next.Reruns>();
+  /** Per head, what the train read and re-ran of checks GitHub left pending under a finished run (`rerunStale`). */
+  readonly staleHeads = new Map<string, StaleHead>();
   /** Each repo and base branch's CI config and when it was read. */
   readonly ciConfigs = new Map<string, [number, CiInfo]>();
   readonly nextLabels = new next.NextLabels();
@@ -810,6 +813,10 @@ export class Train {
           // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
           if ((await this.rerunCancelled(repo, cancelled, all, reruns)) === true) start = this.nowMs();
         }
+      } else if (judged.kind === "pending") {
+        // A check GitHub left pending under a finished run never finishes by itself: its run goes again. The re-run's
+        // time is its own.
+        if ((await rerunStale(this, repo, sha, judgedRuns))?.now) start = this.nowMs();
       }
       if (until !== undefined && this.nowMs() >= until) return undefined;
       const neverRan = unreported.filter((n) => !baseRequires.includes(n));

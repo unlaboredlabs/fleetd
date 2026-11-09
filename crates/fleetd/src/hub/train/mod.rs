@@ -19,6 +19,7 @@ pub mod reverts;
 pub mod rules;
 pub mod scheduled;
 pub mod service;
+pub mod stale;
 pub mod tools;
 pub mod watch;
 

@@ -61,19 +61,7 @@ pub(super) fn own_checks(
     if runs.is_empty() && statuses.is_empty() {
         return Some("its own head has no checks yet".into());
     }
-    let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
-    let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
-    let judged: Vec<&CheckRun> = match fast.filter(|f| !f.set.is_empty()) {
-        Some(fast) => runs
-            .iter()
-            .filter(|r| skipped_by_batch(r) || (fast.holds(&r.name) && !cancelled(r)))
-            .collect(),
-        None if fast.is_some() => runs
-            .iter()
-            .filter(|r| skipped_by_batch(r) || !cancelled(r))
-            .collect(),
-        None => runs.iter().collect(),
-    };
+    let judged = own_judged(runs, fast, batch);
     let names = |f: &dyn Fn(&CheckRun) -> bool| -> Vec<String> {
         judged
             .iter()
@@ -113,6 +101,27 @@ pub(super) fn own_checks(
         ))
     } else {
         None
+    }
+}
+
+/// The runs of `runs` that `own_checks` judges a PR's own head by.
+fn own_judged<'a>(
+    runs: &'a [CheckRun],
+    fast: Option<&Fast>,
+    batch: &[String],
+) -> Vec<&'a CheckRun> {
+    let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
+    match fast.filter(|f| !f.set.is_empty()) {
+        Some(fast) => runs
+            .iter()
+            .filter(|r| skipped_by_batch(r) || (fast.holds(&r.name) && !cancelled(r)))
+            .collect(),
+        None if fast.is_some() => runs
+            .iter()
+            .filter(|r| skipped_by_batch(r) || !cancelled(r))
+            .collect(),
+        None => runs.iter().collect(),
     }
 }
 
@@ -606,7 +615,16 @@ impl Train {
         } else {
             Vec::new()
         };
-        own_checks(&runs, &statuses, fast.as_ref(), &batch)
+        let why = own_checks(&runs, &statuses, fast.as_ref(), &batch);
+        // Still running, none failed: a check GitHub left pending under a finished run goes again (`rerun_stale`).
+        let judged = own_judged(&runs, fast.as_ref(), &batch);
+        if why.is_some() && !judged.iter().any(|r| is_red(r)) {
+            let waited: Vec<CheckRun> = judged.into_iter().cloned().collect();
+            if let Some(stale) = self.rerun_stale(repo, sha, &waited).await {
+                return Some(stale.why);
+            }
+        }
+        why
     }
 
     /// Records why this pass left a ready Change out of the batch, on the Change (`LEFT_OUT`) and in the log; None
