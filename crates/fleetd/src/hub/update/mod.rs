@@ -75,6 +75,8 @@ pub struct NodeFacts {
     pub can_install_claude: bool,
     /// Its node lists `agents_mac`: the agents' Mac, which runs no Claude Code (D298).
     pub agents_mac: bool,
+    /// One of the hub's cloud machines, which update themselves as they wake (hub/cloud/catch_up).
+    pub cloud: bool,
     /// What runs on it that can't carry on through its node's restart (live sessions), in words; None when
     /// nothing does. Agents' runs aren't in it: they carry on by themselves.
     pub busy: Option<String>,
@@ -788,7 +790,7 @@ impl Updates {
                         // (`update_node`).
                         if n.live_since.is_none() {
                             p.state = UpdateState::Skipped;
-                            p.message = Some(text(OFFLINE));
+                            p.message = Some(text(if n.cloud { ASLEEP } else { OFFLINE }));
                         }
                         p
                     })
@@ -1434,7 +1436,8 @@ impl Updates {
         let deadline = now_ms(self.clock.as_ref()) + ms(self.timing.node_back);
         while node.live_since.is_none() {
             if now_ms(self.clock.as_ref()) >= deadline {
-                return self.set_part(Some(machine_id), UpdateState::Skipped, None, OFFLINE);
+                let why = if node.cloud { ASLEEP } else { OFFLINE };
+                return self.set_part(Some(machine_id), UpdateState::Skipped, None, why);
             }
             self.node_wait(changed).await;
             changed = ports.node_changed(machine_id);
@@ -1762,6 +1765,17 @@ impl Updates {
 }
 
 const OFFLINE: &str = "offline: press Update again once it's online, or run `fleetd update` on it";
+/// A cloud machine's [`OFFLINE`]: it sleeps, and its catch-up brings it to the hub's build when it wakes, so nobody need
+/// act.
+const ASLEEP: &str = "asleep: it takes the hub's build when it wakes";
+
+/// A part skipped for being offline when it was its turn: asking again once it's online may still work.
+fn away(p: &UpdatePart) -> bool {
+    p.state == UpdateState::Skipped
+        && p.message
+            .as_ref()
+            .is_some_and(|m| m.as_str() == OFFLINE || m.as_str() == ASLEEP)
+}
 
 /// A machine's node part that refused its build in a way asking again won't change: its build didn't come up healthy,
 /// it can't install or restart itself (a local build, not run as the service), or it was skipped other than offline.
@@ -1770,7 +1784,7 @@ fn refused_for_good(p: &UpdatePart) -> bool {
     match p.state {
         UpdateState::RolledBack => true,
         UpdateState::Failed => matches!(p.stage, Some(UpdateStage::Install | UpdateStage::Restart)),
-        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
+        UpdateState::Skipped => !away(p),
         _ => false,
     }
 }
@@ -1782,6 +1796,8 @@ fn last_auto(run: &UpdateRun) -> LastAutoUpdate {
         p.part == UpdatePartKind::Hub && matches!(p.state, UpdateState::Done | UpdateState::Current)
     });
     let missed = |p: &&UpdatePart| match p.part {
+        // A sleeping cloud machine missed nothing: it takes the hub's build as it wakes.
+        _ if p.message.as_ref().is_some_and(|m| m.as_str() == ASLEEP) => false,
         UpdatePartKind::Hub => false,
         UpdatePartKind::Node => !matches!(p.state, UpdateState::Done | UpdateState::Current),
         _ => matches!(p.state, UpdateState::Failed | UpdateState::RolledBack),
@@ -1829,11 +1845,9 @@ pub fn signal(run: &UpdateRun) -> HubUpdateData {
         .filter(|p| p.part == UpdatePartKind::Node)
         .collect();
     // A machine that didn't get the hub's build: not one that already ran it, nor one offline when the update started.
-    let missed = nodes.iter().find(|p| match p.state {
-        UpdateState::Done | UpdateState::Current => false,
-        UpdateState::Skipped => p.message.as_ref().is_none_or(|m| m.as_str() != OFFLINE),
-        _ => true,
-    });
+    let missed = nodes
+        .iter()
+        .find(|p| !matches!(p.state, UpdateState::Done | UpdateState::Current) && !away(p));
     let state = if run.finished_at.is_none() {
         HubUpdatePhase::Updating
     } else {

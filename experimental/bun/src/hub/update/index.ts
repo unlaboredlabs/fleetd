@@ -51,6 +51,10 @@ export const UPDATE_PARTS_MAX = 401;
 /** Machines `hub.update` names one by one (mcp.rs `HUB_UPDATE_MACHINES_MAX`); past these, `moreMachines` counts the rest. */
 export const HUB_UPDATE_MACHINES_MAX = 10;
 const OFFLINE = "offline: press Update again once it's online, or run `fleetd update` on it";
+/** A cloud machine's OFFLINE: it sleeps, and its catch-up brings it to the hub's build when it wakes, so nobody need act. */
+const ASLEEP = "asleep: it takes the hub's build when it wakes";
+/** A part skipped for being offline when it was its turn: asking again once it's online may still work. */
+const away = (p: UpdatePart) => p.state === "skipped" && (p.message === OFFLINE || p.message === ASLEEP);
 /** How the node's answer to a Claude Code install begins when it's left as it is, or already there (install.rs). */
 const CLAUDE_LEFT = "Claude Code is";
 const CLAUDE_ALREADY = "already runs Claude Code";
@@ -69,6 +73,8 @@ export type NodeFacts = {
   claude?: string;
   canInstallClaude: boolean;
   agentsMac: boolean;
+  /** One of the hub's cloud machines, which update themselves as they wake (hub/cloud/catch_up). */
+  cloud?: boolean;
   /** What runs on it that can't carry on through its node's restart, in words. */
   busy?: string;
 };
@@ -231,7 +237,7 @@ const claudeNumber = (output: string) => output.trim().split(/\s+/)[0] ?? "";
 function refusedForGood(p: UpdatePart): boolean {
   if (p.state === "rolled_back") return true;
   if (p.state === "failed") return p.stage === "install" || p.stage === "restart";
-  if (p.state === "skipped") return p.message === undefined || p.message !== OFFLINE;
+  if (p.state === "skipped") return !away(p);
   return false;
 }
 
@@ -245,9 +251,7 @@ export function signal(run: UpdateRun): HubUpdateData {
   const hubState: UpdateState = hub?.state ?? "waiting";
   const nodes = run.parts.filter((p) => p.part === "node");
   // A machine that didn't get the hub's build: not one that already ran it, nor one offline when the update started.
-  const missed = nodes.find((p) =>
-    p.state === "done" || p.state === "current" ? false : p.state === "skipped" ? p.message === undefined || p.message !== OFFLINE : true,
-  );
+  const missed = nodes.find((p) => !(p.state === "done" || p.state === "current" || away(p)));
   let state: HubUpdatePhase;
   if (run.finishedAt === undefined) state = "updating";
   else if (hubState === "rolled_back") state = "put_back";
@@ -283,7 +287,12 @@ export function signal(run: UpdateRun): HubUpdateData {
 export function lastAutoOf(run: UpdateRun): LastAutoUpdate {
   const hubOk = run.parts.some((p) => p.part === "hub" && (p.state === "done" || p.state === "current"));
   const missed = (p: UpdatePart) =>
-    p.part === "hub" ? false : p.part === "node" ? !(p.state === "done" || p.state === "current") : p.state === "failed" || p.state === "rolled_back";
+    // A sleeping cloud machine missed nothing: it takes the hub's build as it wakes.
+    p.part === "hub" || p.message === ASLEEP
+      ? false
+      : p.part === "node"
+        ? !(p.state === "done" || p.state === "current")
+        : p.state === "failed" || p.state === "rolled_back";
   let result: AutoUpdateResult;
   let message: string | undefined;
   if (hubOk) {
@@ -673,7 +682,7 @@ export class Updates {
         // Offline now: not waited for. One online now is, through the hub's restart.
         if (n.liveSince === undefined) {
           p.state = "skipped";
-          p.message = OFFLINE;
+          p.message = n.cloud ? ASLEEP : OFFLINE;
         }
         parts.push(p);
       }
@@ -1104,7 +1113,7 @@ class Drive {
     // It was online when the run started, and the hub's own restart dropped every link: it gets a while to reconnect.
     const deadline = this.u.clockNow() + this.u.timing.nodeBack;
     while (node.liveSince === undefined) {
-      if (this.u.clockNow() >= deadline) return this.setPart(machineId, "skipped", undefined, OFFLINE);
+      if (this.u.clockNow() >= deadline) return this.setPart(machineId, "skipped", undefined, node.cloud ? ASLEEP : OFFLINE);
       if (this.stopped()) return;
       await this.nodeWait(changed);
       changed = ports.nodeChanged(machineId);

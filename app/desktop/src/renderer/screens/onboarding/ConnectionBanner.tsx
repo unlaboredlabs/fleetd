@@ -1,7 +1,8 @@
 import { useMemo } from "react";
-import { olderNodes } from "../../../shared/pairing";
+import { olderNodes, stuckCloud } from "../../../shared/pairing";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Text } from "../../ui";
+import { useNow } from "../live/clock";
 import { useCommands } from "../palette";
 import { restartOf } from "../shell/model";
 import { useOfflineAsOf } from "../shell/offline";
@@ -11,15 +12,23 @@ import { Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
 
+/** "a", "a and b", "a, b and c". */
+const listed = (names: ReadonlyArray<string>) => (names.length === 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.slice(-1).join("")}`);
+
 /**
  * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update. A
- * planned restart isn't out of reach until it has run 2 minutes.
+ * planned restart isn't out of reach until it has run 2 minutes. A cloud machine takes the hub's build itself as it
+ * wakes, so it is named only when it is awake and still behind once its catch-up should have ended, and never told to
+ * run `fleetd update`.
  * Offline, the project list and the chats stay on screen marked with the time they were last current (this banner
  * names it too); every other screen shows its skeleton, so nothing held is presented as live.
  */
 export function ConnectionBanner() {
   const byId = useData((d) => d.machines);
-  const machines = useMemo(() => Object.values(byId), [byId]);
+  const live = useData((d) => d.live.machines);
+  const machines = useMemo(() => Object.values(byId).map((m) => ({ ...m, linkedSince: live[m.machineId]?.linkedSince })), [byId, live]);
+  // An awake cloud machine is named once it has been linked a while: read against the clock each minute.
+  const nowMs = useNow(machines.some((m) => m.cloud === true && m.status !== "offline"), 60_000);
   const state = useHubState();
   const reach = useReaching(state);
   const layer = useDataLayer();
@@ -32,20 +41,28 @@ export function ConnectionBanner() {
   const probe = useHubProbe(state.phase === "live" && ready === undefined ? state.hub : null);
   const version = ready ?? (probe?.answers === true ? probe.version : undefined);
   const behind = version === undefined ? [] : olderNodes(machines, version);
+  const stuck = version === undefined ? [] : stuckCloud(machines, version, nowMs);
   // A hub that closed to restart is said by the hub row, then the restart line (shell/RestartLine), until it has
   // been away 2 minutes: an outage from then on. Read against the clock at each redial's state.
   // eslint-disable-next-line react-hooks/purity
   const restart = useMemo(() => restartOf(state, Date.now()), [state]);
   if (restart !== null && restart.phase !== "outage") return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
-  if (behind.length === 0) return null;
+  if (behind.length === 0 && stuck.length === 0) return null;
   const one = behind.length === 1;
-  const names = one ? behind.join("") : `${behind.slice(0, -1).join(", ")} and ${behind.slice(-1).join("")}`;
+  const cloudOne = stuck.length === 1;
   return (
     <div className={s.banner} data-tone="quiet" role="status" data-banner="nodes-behind">
-      <Prose
-        text={`${names} ${one ? "runs" : "run"} an older fleetd than the hub. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
-      />
+      {behind.length === 0 ? null : (
+        <Prose
+          text={`${listed(behind)} ${one ? "runs" : "run"} an older fleetd than the hub. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
+        />
+      )}
+      {stuck.length === 0 ? null : (
+        <Prose
+          text={`${listed(stuck)} woke on an older fleetd than the hub and didn't take the hub's build, so no work goes to ${cloudOne ? "it" : "them"} yet. ${cloudOne ? "It tries" : "They try"} again at each wake.`}
+        />
+      )}
     </div>
   );
 }

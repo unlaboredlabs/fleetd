@@ -173,9 +173,35 @@ export const compareVersions = (a: string, b: string): number | null => {
   return 0;
 };
 
-/** Machines whose node runs an older fleetd than the hub, by name. A node reporting 0.0.0 hasn't said its version. */
+const older = (nodeVersion: string, hubVersion: string) =>
+  compareVersions(nodeVersion, "0.0.0") !== 0 && compareVersions(nodeVersion, hubVersion) === -1;
+
+/**
+ * Machines whose node runs an older fleetd than the hub, by name, for `fleetd update` on each. A node reporting 0.0.0
+ * hasn't said its version. Cloud machines aren't among them: each takes the hub's build itself as it wakes
+ * (`stuckCloud`).
+ */
 export const olderNodes = (
-  machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string }>,
+  machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string; readonly cloud?: boolean }>,
   hubVersion: string,
+): ReadonlyArray<string> => machines.filter((m) => m.cloud !== true && older(m.nodeVersion, hubVersion)).map((m) => m.name);
+
+/**
+ * How long after its link comes up a cloud machine may still run an older build: its catch-up downloads the hub's,
+ * restarts its node, and tries again a minute later when that fails (hub/cloud/catch_up).
+ */
+export const CLOUD_CATCH_UP_MS = 10 * 60_000;
+
+/**
+ * Cloud machines awake on an older fleetd than the hub `CLOUD_CATCH_UP_MS` after their link came up, by name: their
+ * wake didn't bring them to the hub's build. One asleep, or still catching up, is fine.
+ */
+export const stuckCloud = (
+  machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string; readonly cloud?: boolean; readonly status: string; readonly linkedSince?: string | undefined }>,
+  hubVersion: string,
+  nowMs: number,
 ): ReadonlyArray<string> =>
-  machines.filter((m) => compareVersions(m.nodeVersion, "0.0.0") !== 0 && compareVersions(m.nodeVersion, hubVersion) === -1).map((m) => m.name);
+  machines
+    .filter((m) => m.cloud === true && m.status !== "offline" && m.linkedSince !== undefined && nowMs - Date.parse(m.linkedSince) >= CLOUD_CATCH_UP_MS)
+    .filter((m) => older(m.nodeVersion, hubVersion))
+    .map((m) => m.name);
