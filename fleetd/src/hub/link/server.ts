@@ -190,6 +190,8 @@ export class Link {
   private readonly links = new Map<string, { id: number; ws: Socket; state: LinkSocket }>();
   /** What this hub process last announced per machine, until it announces the machine offline. */
   private readonly announced = new Map<string, Announced>();
+  /** The fleetd each machine's latest link said it runs, for the events announcing it: clients' machines carry it. */
+  private readonly versions = new Map<string, string>();
   /** Per-machine silence timers. They outlive the socket, so a quick reconnect never flaps. */
   private readonly watchdogs = new Map<string, Timer>();
   /** Reads the live links' byte counts while there are links (`progress`). */
@@ -599,6 +601,7 @@ export class Link {
     } catch (error) {
       console.error("node link: machine write failed:", error);
     }
+    this.versions.set(machineId, hello.nodeVersion);
     if (this.announced.has(machineId)) {
       this.append("machine.linked", machineId, `${machineId}'s node linked again, on fleetd ${hello.nodeVersion}`, {
         nodeVersion: hello.nodeVersion,
@@ -909,10 +912,13 @@ export class Link {
   private announce(machineId: string, status: Announced, reason?: string): void {
     if (this.announced.get(machineId) === status) return;
     this.announced.set(machineId, status);
-    if (status === "online") this.append("machine.online", machineId, `${machineId} is online`);
+    // A node back after its update links on a new build: a client that read the machine before then learns it here.
+    const version = this.versions.get(machineId);
+    const nodeVersion = version === undefined ? {} : { nodeVersion: version };
+    if (status === "online") this.append("machine.online", machineId, `${machineId} is online`, nodeVersion);
     else {
       const why = reason ?? "";
-      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why });
+      this.append("machine.degraded", machineId, `${machineId} is degraded: ${why}`, { degradedReason: why, ...nodeVersion });
     }
   }
 

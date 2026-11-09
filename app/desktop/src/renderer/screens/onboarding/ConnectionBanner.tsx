@@ -17,9 +17,9 @@ const listed = (names: ReadonlyArray<string>) => (names.length === 1 ? names.joi
 
 /**
  * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update. A
- * planned restart isn't out of reach until it has run 2 minutes. A cloud machine takes the hub's build itself as it
- * wakes, so it is named only when it is awake and still behind once its catch-up should have ended, and never told to
- * run `fleetd update`.
+ * planned restart isn't out of reach until it has run 2 minutes. A machine is named only when it is linked and still
+ * behind once the hub's update of it should have ended, never while that update is on its way. A cloud machine takes
+ * the hub's build itself as it wakes, so it is never told to run `fleetd update`.
  * Offline, the project list and the chats stay on screen marked with the time they were last current (this banner
  * names it too); every other screen shows its skeleton, so nothing held is presented as live.
  */
@@ -27,8 +27,9 @@ export function ConnectionBanner() {
   const byId = useData((d) => d.machines);
   const live = useData((d) => d.live.machines);
   const machines = useMemo(() => Object.values(byId).map((m) => ({ ...m, linkedSince: live[m.machineId]?.linkedSince })), [byId, live]);
-  // An awake cloud machine is named once it has been linked a while: read against the clock each minute.
-  const nowMs = useNow(machines.some((m) => m.cloud === true && m.status !== "offline"), 60_000);
+  // A machine behind is named once it has been linked a while, its update no longer on its way: read against the clock
+  // each minute.
+  const nowMs = useNow(machines.some((m) => m.status !== "offline"), 60_000);
   const state = useHubState();
   const reach = useReaching(state);
   const layer = useDataLayer();
@@ -40,7 +41,7 @@ export function ConnectionBanner() {
   const ready = state.phase === "live" ? state.version : undefined;
   const probe = useHubProbe(state.phase === "live" && ready === undefined ? state.hub : null);
   const version = ready ?? (probe?.answers === true ? probe.version : undefined);
-  const behind = version === undefined ? [] : olderNodes(machines, version);
+  const behind = version === undefined ? [] : olderNodes(machines, version, nowMs);
   const stuck = version === undefined ? [] : stuckCloud(machines, version, nowMs);
   // A hub that closed to restart is said by the hub row, then the restart line (shell/RestartLine), until it has
   // been away 2 minutes: an outage from then on. Read against the clock at each redial's state.

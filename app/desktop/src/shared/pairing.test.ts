@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLOUD_CATCH_UP_MS, compareVersions, hubOrigin, isEdge, normalizeCode, olderNodes, protocolFit, readAppPair, stuckCloud } from "./pairing";
+import { CLOUD_CATCH_UP_MS, compareVersions, hubOrigin, isEdge, NODE_CATCH_UP_MS, normalizeCode, olderNodes, protocolFit, readAppPair, stuckCloud } from "./pairing";
 
 describe("normalizeCode", () => {
   it("takes any case, spacing and hyphens, and Crockford look-alikes, as the hub does", () => {
@@ -83,34 +83,48 @@ describe("versions", () => {
     expect(isEdge("0.5.0")).toBe(false);
     // A node on the last nightly is behind a hub on a newer Edge build, and only then.
     const machines = [
-      { name: "devbox", nodeVersion: "0.0.0-nightly.202610271537+fdc6cc1" },
-      { name: "buildbox", nodeVersion: "0.0.0-edge.202610271703+bd87c55" },
+      { name: "devbox", nodeVersion: "0.0.0-nightly.202610271537+fdc6cc1", status: "online", linkedSince: "2026-10-27T00:00:00.000Z" },
+      { name: "buildbox", nodeVersion: "0.0.0-edge.202610271703+bd87c55", status: "online", linkedSince: "2026-10-27T00:00:00.000Z" },
     ];
-    expect(olderNodes(machines, "0.0.0-edge.202610271703+bd87c55")).toEqual(["devbox"]);
+    expect(olderNodes(machines, "0.0.0-edge.202610271703+bd87c55", Date.parse("2026-10-28T00:00:00.000Z"))).toEqual(["devbox"]);
   });
 
   it("names the machines whose node is older than the hub", () => {
+    const linked = { status: "online", linkedSince: "2026-11-09T09:00:00.000Z" };
     const machines = [
-      { name: "devbox", nodeVersion: "0.5.0" },
-      { name: "buildbox", nodeVersion: "0.4.9" },
-      { name: "laptop", nodeVersion: "unknown" },
-      { name: "spare", nodeVersion: "0.0.0" },
+      { name: "devbox", nodeVersion: "0.5.0", ...linked },
+      { name: "buildbox", nodeVersion: "0.4.9", ...linked },
+      { name: "laptop", nodeVersion: "unknown", ...linked },
+      { name: "spare", nodeVersion: "0.0.0", ...linked },
     ];
-    expect(olderNodes(machines, "0.5.0")).toEqual(["buildbox"]);
+    expect(olderNodes(machines, "0.5.0", Date.parse("2026-11-09T10:00:00.000Z"))).toEqual(["buildbox"]);
+  });
+
+  it("leaves a machine to the hub's update of it until that should have ended, and one offline to its next link", () => {
+    const now = Date.parse("2026-11-09T19:05:00.000Z");
+    const ago = (ms: number) => new Date(now - ms).toISOString();
+    const machines = [
+      { name: "devbox", nodeVersion: "0.4.9", status: "online", linkedSince: ago(60_000) },
+      { name: "buildbox", nodeVersion: "0.4.9", status: "degraded", linkedSince: ago(NODE_CATCH_UP_MS - 1) },
+      { name: "laptop", nodeVersion: "0.4.9", status: "online", linkedSince: ago(NODE_CATCH_UP_MS) },
+      { name: "spare", nodeVersion: "0.4.9", status: "offline" },
+      { name: "new", nodeVersion: "0.4.9", status: "online" },
+    ];
+    expect(olderNodes(machines, "0.5.0", now)).toEqual(["laptop"]);
   });
 
   it("leaves cloud machines to their wake, naming one only when it is awake and still behind after its catch-up", () => {
     const now = Date.parse("2026-11-09T10:00:00.000Z");
     const ago = (ms: number) => new Date(now - ms).toISOString();
     const machines = [
-      { name: "buildbox", nodeVersion: "0.4.9", status: "offline" },
+      { name: "buildbox", nodeVersion: "0.4.9", status: "online", linkedSince: ago(NODE_CATCH_UP_MS) },
       { name: "boat-1", nodeVersion: "0.4.9", status: "offline", cloud: true },
       { name: "boat-2", nodeVersion: "0.4.9", status: "online", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS - 1) },
       { name: "boat-3", nodeVersion: "0.4.9", status: "degraded", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS) },
       { name: "boat-4", nodeVersion: "0.5.0", status: "online", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS) },
       { name: "boat-5", nodeVersion: "0.4.9", status: "online", cloud: true },
     ];
-    expect(olderNodes(machines, "0.5.0")).toEqual(["buildbox"]);
+    expect(olderNodes(machines, "0.5.0", now)).toEqual(["buildbox"]);
     expect(stuckCloud(machines, "0.5.0", now)).toEqual(["boat-3"]);
   });
 });
