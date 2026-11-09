@@ -44,6 +44,19 @@ export function parsePrUrl(url: string): { repo: string; number: number } | unde
 /** A commit the train merged onto `base`, whose checks outside the fast set it watches there. */
 export type Watch = { repo: string; sha: string; base: string; projectRef: ProjectRef; prUrl: string; sinceMs: number };
 
+/** The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration. */
+export const WAIT_UNSTARTED = "unstarted";
+export const WAIT_BLOCKED = "blocked";
+export const WAIT_REGEN = "regen";
+/** A wait's state before it came to anything. */
+export const WAITING = "waiting";
+
+/** One of the train's waits on a Change, kept across restarts (`train_waits`): its head, since when there, its state. */
+export type Wait = { head: string; sinceMs: number; state: string };
+
+/** What the watch did about a check's run on a merged commit (`putWatchCheck`): its name, run id, what, and when. */
+export type WatchCheck = { name: string; runId: number; did: string; atMs: number };
+
 export type TrainRow = {
   repo: string;
   projectRef: ProjectRef;
@@ -174,6 +187,14 @@ export class ChangeRecords {
       .map((row) => decode(row.data));
   }
 
+  /** Every Change not merged, refused or abandoned, oldest first. */
+  unlandedAll(): Change[] {
+    return this.db.conn
+      .query<{ data: string }, []>("SELECT data FROM changes WHERE state NOT IN ('merged', 'refused', 'abandoned') ORDER BY n")
+      .all()
+      .map((row) => decode(row.data));
+  }
+
   /** The repos of the Changes not merged, refused or abandoned that wait on `prUrl` (their `after`). */
   afterRepos(prUrl: string): string[] {
     return this.db.conn
@@ -284,6 +305,35 @@ export class ChangeRecords {
 
   endWatch(repo: string, sha: string): void {
     this.db.conn.query("DELETE FROM train_watches WHERE repo = ?1 AND sha = ?2").run(repo.toLowerCase(), sha);
+    this.db.conn.query("DELETE FROM train_watch_checks WHERE repo = ?1 AND sha = ?2").run(repo.toLowerCase(), sha);
+  }
+
+  /** What the watch did about the checks of merged commit `sha` (`putWatchCheck`), oldest first. */
+  watchChecks(repo: string, sha: string): WatchCheck[] {
+    return this.db.conn
+      .query<{ check_name: string; run_id: number; did: string; at_ms: number }, [string, string]>(
+        "SELECT check_name, run_id, did, at_ms FROM train_watch_checks WHERE repo = ?1 AND sha = ?2 ORDER BY at_ms, rowid",
+      )
+      .all(repo.toLowerCase(), sha)
+      .map((r) => ({ name: r.check_name, runId: r.run_id, did: r.did, atMs: r.at_ms }));
+  }
+
+  /** Records that the watch did `did` about run `runId` of `check` on merged commit `sha`. */
+  putWatchCheck(repo: string, sha: string, check: string, runId: number, did: string, atMs: number): void {
+    this.db.conn
+      .query("INSERT OR IGNORE INTO train_watch_checks (repo, sha, check_name, run_id, did, at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+      .run(repo.toLowerCase(), sha, check, runId, did, atMs);
+  }
+
+  /** The fix order `check` failing at `sha` itself is for, when it has one. */
+  fixOrderAt(repo: string, check: string, sha: string): WorkstreamId | undefined {
+    return (
+      this.db.conn
+        .query<{ workstream_id: string }, [string, string, string]>(
+          "SELECT workstream_id FROM train_fix_orders WHERE repo = ?1 AND check_name = ?2 AND sha = ?3",
+        )
+        .get(repo.toLowerCase(), check, sha)?.workstream_id ?? undefined
+    );
   }
 
   /** The newest fix order opened for `check` failing on the repo's base, and the commit it failed on. */
@@ -302,6 +352,56 @@ export class ChangeRecords {
     this.db.conn
       .query("INSERT OR IGNORE INTO train_fix_orders (repo, check_name, sha, workstream_id, at_ms) VALUES (?1, ?2, ?3, ?4, ?5)")
       .run(repo.toLowerCase(), check, sha, order, atMs);
+  }
+
+  /** The train's `kind` of wait on the Change (`train_waits`). */
+  wait(changeId: ChangeId, kind: string): Wait | undefined {
+    const row = this.db.conn
+      .query<{ head: string; since_ms: number; state: string }, [string, string]>(
+        "SELECT head, since_ms, state FROM train_waits WHERE change_id = ?1 AND kind = ?2",
+      )
+      .get(changeId, kind);
+    return row ? { head: row.head, sinceMs: row.since_ms, state: row.state } : undefined;
+  }
+
+  /**
+   * Starts the `kind` of wait on the Change at `head` from `nowMs` in `state`, unless one is at that head already: true
+   * when it started. A wait at another head starts over.
+   */
+  startWait(change: Change, kind: string, head: string, nowMs: number, state: string): boolean {
+    return (
+      this.db.conn
+        .query(
+          `INSERT INTO train_waits (change_id, kind, repo, head, since_ms, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (change_id, kind) DO UPDATE SET head = excluded.head, since_ms = excluded.since_ms,
+             state = excluded.state WHERE head != excluded.head`,
+        )
+        .run(change.changeId, kind, change.repo.toLowerCase(), head, nowMs, state).changes === 1
+    );
+  }
+
+  /** Moves the `kind` of wait on the Change at `head` to `state`; a wait at another head stays as it is. */
+  setWait(changeId: ChangeId, kind: string, head: string, state: string): void {
+    this.db.conn.query("UPDATE train_waits SET state = ?4 WHERE change_id = ?1 AND kind = ?2 AND head = ?3").run(changeId, kind, head, state);
+  }
+
+  endWait(changeId: ChangeId, kind: string): void {
+    this.db.conn.query("DELETE FROM train_waits WHERE change_id = ?1 AND kind = ?2").run(changeId, kind);
+  }
+
+  /** Ends `repo`'s waits of these kinds on Changes not in `live`; other repos' stay. */
+  keepWaits(repo: string, kinds: string[], live: ChangeId[]): void {
+    this.db.conn
+      .query(
+        `DELETE FROM train_waits WHERE repo = ?1 AND kind IN (SELECT value FROM json_each(?2))
+           AND change_id NOT IN (SELECT value FROM json_each(?3))`,
+      )
+      .run(repo.toLowerCase(), JSON.stringify(kinds), JSON.stringify(live));
+  }
+
+  /** Ends every `kind` of wait in `state`, of any repo. */
+  endWaitsIn(kind: string, state: string): void {
+    this.db.conn.query("DELETE FROM train_waits WHERE kind = ?1 AND state = ?2").run(kind, state);
   }
 
   /** The Changes waiting in a repo's queue, in train order, drafts at the back. */

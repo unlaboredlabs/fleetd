@@ -91,6 +91,10 @@ test("start wires the lead calls and the project's trains into project_get", asy
 
 test("the hub's host fails gracefully while Tasks and the intake aren't in the hub", async () => {
   const { hub } = lab();
+  // The project is on the hub: a removed one has no branch prefix to read (#1300).
+  hub.db.conn
+    .query("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, '', '', '{}')")
+    .run(PROJECT.machineId, PROJECT.projectId);
   const host = new HubHost(hub);
   await expect(host.messageTask(PROJECT, "hub:train", "T1", "hi")).rejects.toThrow("Tasks is not ported to Bun yet");
   await expect(host.openOrder(PROJECT, "fix", "r1")).rejects.toThrow("the order intake is not ported to Bun yet");
