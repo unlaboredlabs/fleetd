@@ -29,11 +29,7 @@
 .face {
   width: 44px;
   height: 44px;
-}
-.face > img {
-  display: block;
-  width: 100%;
-  height: 100%;
+  overflow: hidden;
 }
 .face:hover,
 .swatch:hover {
@@ -54,8 +50,10 @@
   gap: var(--space-2);
   padding: 2px;
 }
+/* Each swatch is its avatar's ground, in the theme's shade (Picture.tsx). */
 .swatch {
   --edge: #0000001f;
+  --field: var(--field-l);
   width: 22px;
   height: 22px;
   background: var(--field);
@@ -64,12 +62,13 @@
 /* On dark grounds a dark color (Graphite) keeps a light edge. */
 :global([data-theme="dark"]) .swatch {
   --edge: #ffffff2e;
+  --field: var(--field-d);
 }
 .swatch[data-state="checked"] {
   box-shadow:
     inset 0 0 0 1px var(--edge),
     0 0 0 2px var(--bg),
-    0 0 0 4px var(--field);
+    0 0 0 4px var(--accent);
 }
 .face:focus-visible,
 .swatch:focus-visible {

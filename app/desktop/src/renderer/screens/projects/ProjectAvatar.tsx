@@ -1,11 +1,10 @@
 // A project's avatar where its chat shows (the sidebar, the chat's title, its settings): its picture once a
 // person gave it one, read once per picture (project_avatar_get, refetched on its project.settings event), else its
-// built-in icon (icons.ts), else its letters.
+// built-in icon (ui's BotFace), else its letters.
 import { useEffect } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Avatar } from "../../ui";
-import { iconImage } from "./icons";
 
 type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "icon">;
 
@@ -25,6 +24,5 @@ export const usePicture = (project: Pick<ProjectSummary, "machineId" | "projectI
 export function ProjectAvatar({ project, size, className }: { project: Pictured; size?: number | undefined; className?: string | undefined }) {
   const picture = usePicture(project);
   // While a new picture loads, the icon stays rather than flashing the letters.
-  const icon = iconImage(project.icon, size ?? 20);
-  return <Avatar name={project.title} size={size} src={picture} icon={icon} className={className} />;
+  return <Avatar name={project.title} size={size} src={picture} icon={project.icon} className={className} />;
 }
