@@ -21,12 +21,15 @@ export const FORGET_MS = 60_000;
 /** The hub gives the node 70 s to stop a project's processes, end its previews and browser, then remove it. */
 export const REMOVE_MS = 80_000;
 
-/** Checkouts on the machines and the person's GitHub repos (`gh repo list` can take a while), machine ids as names. */
+/**
+ * Checkouts on the machines and the person's GitHub repos (`gh repo list` can take a while), machine ids as names;
+ * `home` leaves out the machines no project lives on (cloud machines, the agents' Mac: projectHome).
+ */
 const DISCOVER_MS = 45_000;
 
-export const discover = async (hub: Hub, name: (machineId: string) => string): Promise<Result<Discovery>> => {
+export const discover = async (hub: Hub, name: (machineId: string) => string, home?: (machineId: string) => boolean): Promise<Result<Discovery>> => {
   const r = await hub.call("project_discover", {}, DISCOVER_MS);
-  return r.ok ? { ok: true, value: discovery(r.output, name) } : r;
+  return r.ok ? { ok: true, value: discovery(r.output, name, home) } : r;
 };
 
 /**

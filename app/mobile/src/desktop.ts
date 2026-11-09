@@ -74,6 +74,7 @@ export { addSource, baseName, otherHost, tilde } from "../../desktop/src/rendere
 export {
   discovery,
   newPath,
+  projectHome,
   rows as foundRows,
   target,
   type Discovery,

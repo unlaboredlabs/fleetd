@@ -52,12 +52,23 @@ const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? tex
 /** The hub's words end without a stop, and the screen says the fix right after the problem: each as a sentence. */
 const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: sentence(p.message), fix: sentence(p.fix) } : { message: sentence(p.message) });
 
-/** Each machine's checkouts, then GitHub. Machine ids read as names. */
-export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) => string): Discovery => {
+/**
+ * Whether a project can live on the machine: not a cloud machine, which the hub wakes for a project's overflow work and
+ * puts to sleep (its checkouts are the pool's copies of projects already added), nor the agents' Mac, which the hub
+ * refuses as a project's home.
+ */
+export const projectHome = (m: { readonly cloud?: boolean; readonly agentsMac?: boolean } | undefined): boolean => m?.cloud !== true && m?.agentsMac !== true;
+
+/**
+ * Each machine's checkouts, then GitHub. Machine ids read as names. `home` leaves out the machines a project can't live
+ * on (projectHome): neither offered as a place for it nor listed as a source of checkouts.
+ */
+export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) => string, home: (machineId: string) => boolean = () => true): Discovery => {
   const workers: Array<Worker> = [];
   const found: Array<Found> = [];
   const problems: Array<Problem> = [];
   for (const m of out.machines) {
+    if (!home(m.machineId)) continue;
     if (m.problem) problems.push(problem(m.problem));
     for (const r of m.repos) {
       found.push({
@@ -79,14 +90,16 @@ export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) 
   const gh = out.github;
   if (gh.problem) problems.push(problem(gh.problem));
   for (const c of gh.repos) {
-    const withProject = c.checkouts.find((k) => k.projectId !== undefined);
+    const checkouts = c.checkouts.filter((k) => home(k.machineId));
+    const withProject = checkouts.find((k) => k.projectId !== undefined);
     const project = withProject?.projectId ? { machineId: withProject.machineId, projectId: withProject.projectId } : undefined;
-    const first = c.checkouts[0];
+    const first = checkouts[0];
     const detail = first && !project ? `checked out on ${name(first.machineId)}` : (c.description ?? "");
     found.push({ name: c.repo, source: { kind: "github" }, detail, private: c.private, ...(project ? { project } : {}) });
   }
   const ghOn = gh.ghOn === undefined ? undefined : gh.ghOn === "hub" ? "the hub" : name(gh.ghOn);
-  return { workers, found, problems, ...(out.best ? { best: out.best } : {}), ...(ghOn ? { ghOn } : {}) };
+  const best = out.best !== undefined && home(out.best) ? out.best : undefined;
+  return { workers, found, problems, ...(best ? { best } : {}), ...(ghOn ? { ghOn } : {}) };
 };
 
 /** The machine a clone or a typed path goes to: the one picked, else the hub's suggestion, else the first online. */
@@ -108,7 +121,7 @@ export type Row =
   | { readonly kind: "clone"; readonly repo: string }
   | { readonly kind: "folder"; readonly path: string }
   | { readonly kind: "found"; readonly index: number }
-  /** A new, empty project named `name` ("" until one is typed). */
+  /** A new, empty project named `name`. */
   | { readonly kind: "new"; readonly name: string };
 
 /** How well `query` matches `text`: a substring early in it beats one late, beats the letters in order. */
@@ -123,11 +136,16 @@ export const score = (query: string, text: string): number | null => {
   return i === q.length ? 100 - (t.length - q.length) / 10 : null;
 };
 
-/** The rows for what is typed, and the one to start on. */
+/**
+ * The rows for what is typed, and the one to start on. Nothing typed: what can be added, repos already a project left
+ * out. A name: a new project of that name first unless a repo's name holds it, then what it matches, then any project
+ * it matches (picking one opens it), last.
+ */
 export const rows = (text: string, found: ReadonlyArray<Found>): { rows: ReadonlyArray<Row>; selected: number } => {
   const t = text.trim();
   const src = addSource(t);
   const out: Array<Row> = [];
+  const added = (index: number) => found[index]?.project !== undefined;
   if (src?.kind === "github") {
     const same = (f: Found) => f.name.toLowerCase() === src.repo.toLowerCase() || f.detail.toLowerCase() === src.repo.toLowerCase();
     out.push({ kind: "clone", repo: src.repo });
@@ -137,9 +155,9 @@ export const rows = (text: string, found: ReadonlyArray<Found>): { rows: Readonl
   } else if (src?.kind === "path") {
     out.push({ kind: "folder", path: src.path });
   } else if (t === "") {
-    // With nothing found, the empty state says to type a name instead.
-    if (found.length > 0) out.push({ kind: "new", name: "" });
-    found.forEach((_, index) => out.push({ kind: "found", index }));
+    found.forEach((_, index) => {
+      if (!added(index)) out.push({ kind: "found", index });
+    });
   } else {
     const scored: Array<[number, number]> = [];
     found.forEach((f, index) => {
@@ -148,18 +166,20 @@ export const rows = (text: string, found: ReadonlyArray<Found>): { rows: Readonl
       const best = Math.max(byName ?? -Infinity, byDetail === null ? -Infinity : byDetail / 2);
       if (best > -Infinity) scored.push([best, index]);
     });
+    // A substring of a name (not just its letters in order) is most likely that repo.
+    const named = found.some((f, index) => !added(index) && (score(t, f.name) ?? 0) >= 900);
     scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
-    for (const [, index] of scored) out.push({ kind: "found", index });
-    // A name to start a new project with, after what it matches (a URL fleetd can't clone is never one).
-    if (otherHost(t) === null) out.push({ kind: "new", name: t });
+    const fresh = scored.filter(([, index]) => !added(index)).map(([, index]): Row => ({ kind: "found", index }));
+    const projects = scored.filter(([, index]) => added(index)).map(([, index]): Row => ({ kind: "found", index }));
+    // A name to start a new project with (a URL fleetd can't clone is never one).
+    const create: Array<Row> = otherHost(t) === null ? [{ kind: "new", name: t }] : [];
+    out.push(...(named ? [...fresh, ...create] : [...create, ...fresh]), ...projects);
   }
-  const isProject = (r: Row) => r.kind === "found" && found[r.index]?.project !== undefined;
+  const isProject = (r: Row) => r.kind === "found" && added(r.index);
   // A pasted repo that is already a project starts on that project (Enter opens it, not a second clone); otherwise
   // start on something that adds.
-  const pasted =
-    out[0]?.kind === "clone" ? out.findIndex((r) => r.kind === "found" && found[r.index]?.project !== undefined && found[r.index]?.source.kind === "github") : -1;
-  // An unnamed new project starts nothing, so the list starts on what it found.
-  const adds = out.findIndex((r) => !isProject(r) && !(r.kind === "new" && r.name === ""));
+  const pasted = out[0]?.kind === "clone" ? out.findIndex((r) => isProject(r) && r.kind === "found" && found[r.index]?.source.kind === "github") : -1;
+  const adds = out.findIndex((r) => !isProject(r));
   return { rows: out, selected: pasted >= 0 ? pasted : Math.max(adds, 0) };
 };
 

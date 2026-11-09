@@ -59,9 +59,10 @@ When something is in the way, such as an offline worker or a folder that exists,
 
 ### Start a new project {#start-a-new-project}
 
-A project can start as a plain folder, with no repo. In the app, click **+** beside the projects in the sidebar
-(**New project**) and type its name: the same box takes a GitHub URL to clone or a folder's path. Pick the machine, check the folder it shows and the **Only me**
-switch, and click **Create project**. From a terminal:
+A project can start as a plain folder, with no repo. In the app, click **+** at the top of the sidebar
+(**New project**) and type its name: the same box takes a GitHub URL to clone or a folder's path. The line above the
+button names the folder and the machine (pick another there when you have several); check it and **Only me**, and
+click **Create**. From a terminal:
 
 ```sh
 fleetd project add --new "Field notes" --machine devbox
