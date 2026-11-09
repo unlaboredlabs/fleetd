@@ -1,6 +1,5 @@
-// Resume: lifts a machine's usage pause now (usage_resume), where the pause shows: a Status row and the chat's
-// blocked line. Every agent parked there is sent "continue"; one whose login is still limited parks again with the
-// real reset. The hub decides who may (operate on the machine); a refusal shows in its own words.
+// Resume: lifts a machine's usage pause now (usage_resume), on the chat's blocked line where the pause shows. Every
+// agent parked there is sent "continue"; one whose login is still limited parks again with the real reset. The hub decides who may (operate on the machine); a refusal shows in its own words.
 
 import { useState } from "react";
 import { Button, toast } from "../../ui";

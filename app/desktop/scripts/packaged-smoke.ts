@@ -20,13 +20,12 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const PORT = 9335;
 const START_MS = 30_000;
 /**
- * On the typical fixture: the project lead chat the app opens on, then Status, Time and Settings, each a chunk of its
+ * On the typical fixture: the project lead chat the app opens on, then Time and Settings, each a chunk of its
  * own loaded from the asar when first opened. Ids are the QA registry's (qa/registry.ts). `ready` is the screen's
- * loaded state, so a screen stuck on a sub-state (chat.loading, Status's skeleton) fails; it defaults to the exact id.
+ * loaded state, so a screen stuck on a sub-state (chat.loading) fails; it defaults to the exact id.
  */
 const SCREENS: ReadonlyArray<{ id: string; route: string; ready?: string }> = [
   { id: "chat", route: "#/" },
-  { id: "status.fleet", route: "#/status", ready: '[data-screen="status.fleet"][data-phase="live"]' },
   { id: "time.breakdown", route: "#/factory/time" },
   { id: "settings.general", route: "#/settings/general" },
 ];

@@ -28,6 +28,9 @@ const notifyTargets = [
   /** A project's lead chat, at one message when the notification is about it. */
   z.strictObject({ kind: z.literal("chat"), machineId, projectId: hubId, messageId: hubId.optional(), at }),
   z.strictObject({ kind: z.literal("machines"), at }),
+  /** Nowhere in particular (a hub-wide item): the home project. */
+  z.strictObject({ kind: z.literal("home"), at }),
+  /** The removed Status page, from a notification posted before: opens home, like `home`. */
   z.strictObject({ kind: z.literal("status"), at }),
   /** Settings → General → Notifications: where the test notification leads. */
   z.strictObject({ kind: z.literal("notifications") }),

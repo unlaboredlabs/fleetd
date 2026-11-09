@@ -4,7 +4,7 @@
 import type { ArtifactFormat, ArtifactVersion, ChatFile } from "../../../shared/contracts";
 import { kindOf } from "../../../shared/files";
 import { fmtBytes } from "../chat/attachments";
-import { when } from "../status/view";
+import { when } from "../live/when";
 
 /** "Markdown", "HTML"; a format a newer hub adds, as it names it. */
 export const formatWord = (f: ArtifactFormat): string => (f === "md" ? "Markdown" : f === "html" ? "HTML" : String(f).toUpperCase());

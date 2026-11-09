@@ -5,7 +5,7 @@
 // large unless the CLI set another), the budgets, the projects that may use it, the environment, what it can cost,
 // shown before it is turned on, and the switch, with the Test of the whole way to the hub under it (the hub dials each
 // machine and holds an SSH tunnel to it, so there is nothing to set up for it). The hub's pool
-// (cloud_get) is the only source; a hub without it shows nothing here. Status's line is CloudStatus.tsx.
+// (cloud_get) is the only source; a hub without it shows nothing here. The members' line is CloudStatus.tsx.
 import { useEffect, useState } from "react";
 import type { CloudView, ToolOutput } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";

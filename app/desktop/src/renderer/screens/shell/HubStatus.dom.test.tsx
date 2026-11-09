@@ -24,7 +24,7 @@ let root: Root;
 
 beforeEach(() => {
   fleetd.fixture = null;
-  window.location.hash = "#/status";
+  window.location.hash = "#/";
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -143,7 +143,7 @@ it("opens Machines from the popover always, and from \"N down\" while machines a
   act(() => line?.click());
   expect(parseHash(window.location.hash)).toEqual({ id: "settings", tab: "hub.machines" });
   expect(document.querySelector("[aria-label='Hub'][role='dialog']")).toBeNull();
-  window.location.hash = "#/status";
+  window.location.hash = "#/";
 
   await feed([machine("devbox", "online"), machine("buildbox", "offline"), machine("laptop", "offline")]);
   expect(down()?.textContent).toBe("2 down");

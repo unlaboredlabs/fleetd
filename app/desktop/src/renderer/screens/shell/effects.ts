@@ -25,15 +25,16 @@ export const onItsHub = (target: NotifyTarget, hub: HubId): NotifyTarget => (tar
 
 const screenFor = (target: OpenTarget): Screen => {
   // A hub's notification names its hub; one without (posted before there were several) is the first's.
-  const at = target.kind === "chat" || target.kind === "machines" || target.kind === "status" ? (target.at ?? FIRST_HUB) : undefined;
+  const at = target.kind === "notifications" || target.kind === "pair" ? undefined : (target.at ?? FIRST_HUB);
   const on = at === undefined ? {} : { at };
   switch (target.kind) {
     case "chat":
       return { id: "project", project: { machineId: target.machineId, projectId: target.projectId }, message: target.messageId ?? null, ...on };
     case "machines":
       return { id: "settings", tab: "hub.machines", ...on };
+    case "home":
     case "status":
-      return { id: "status", ...on };
+      return { id: "home", ...on };
     case "notifications":
       return { id: "settings", tab: "general" };
     case "pair":

@@ -1,7 +1,7 @@
 // One of a project's skills, kept pure: the line under its name, what the person may change, and a SKILL.md's body
 // without its frontmatter.
 import type { SkillSummary, SkillVersion } from "../../../shared/contracts";
-import { when } from "../status/view";
+import { when } from "../live/when";
 
 /** Whose a version is, in a line's words: its project's name for its lead, "you" for the person reading. */
 export const byWord = (v: Pick<SkillVersion, "author" | "by">, me: string | undefined): string => (v.author === "person" && v.by === me ? "you" : v.by);

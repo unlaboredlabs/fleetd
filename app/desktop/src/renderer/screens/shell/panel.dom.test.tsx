@@ -263,7 +263,7 @@ it("slides out when its toggle closes it, and goes at once when you leave the pr
   document.head.appendChild(slide);
   try {
     await mount();
-    await go("#/status");
+    await go("#/factory");
     expect(panel()).toBeNull();
     await go(CHAT);
     expect(panel()?.parentElement?.dataset["motion"]).toBeUndefined();

@@ -3,7 +3,7 @@
 // claude_accounts_get and say it the same way. Pure, so the wording is tested without a hub.
 import type { ClaudeAccount, ClaudeChoice, ClaudeRunsOn, ClaudeSealedOn, ClaudeTest, PersonClaude, PersonRef, UsageStatus } from "../../../shared/contracts";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
-import { when } from "../status/view";
+import { when } from "../live/when";
 
 /** The plain line for someone with nothing to run on, as the brief and spawn_agent say it. */
 export const CONNECT = "Connect your Claude to start orders";

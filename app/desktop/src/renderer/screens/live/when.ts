@@ -1,7 +1,5 @@
-// The few words Status's rows and hovers say, as pure functions. Times are measured (an age, when something
-// merged), never estimated.
-
-import type { StaleMark } from "../../../shared/contracts";
+// When something happened, in words: an age and a day-stamped time, measured, never estimated. Chat, the panel's
+// lists and the settings pages say times through these.
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -45,16 +43,3 @@ export const fullWhen = (iso: string): string => {
   if (Number.isNaN(t.getTime())) return "";
   return `${DAYS[t.getDay()] ?? ""} ${MONTHS[t.getMonth()] ?? ""} ${t.getDate()}, ${two(t.getHours())}:${two(t.getMinutes())}`;
 };
-
-/** "Out of date for 11m: no heartbeat from buildbox". */
-export const staleWords = (mark: StaleMark, nowMs: number): string => {
-  const at = Date.parse(mark.since);
-  return `${Number.isNaN(at) ? "Out of date" : `Out of date for ${age(nowMs - at)}`}: ${mark.reason}`;
-};
-
-/**
- * The row's 7-day fact: "12 merged in 7 days · 64% through fleetd". Undefined while the hub's metrics know none of the
- * project's repos: no count is shown as if it were a zero.
- */
-export const weekLine = (merged: number | undefined, throughPct: number | undefined): string | undefined =>
-  merged === undefined ? undefined : `${merged} merged in 7 days${throughPct === undefined ? "" : ` · ${Math.round(throughPct)}% through fleetd`}`;

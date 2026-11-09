@@ -216,6 +216,8 @@ export class Notifier {
     const body = rest.length === 0 ? first.line : `${first.line} (+${rest.length} more)`;
     const one = first.project !== null && send.every((p) => sameKey(p.project, first.project)) ? first.project : null;
     const machine = first.kind === "machine";
+    // Several projects: the first that needs you; the sidebar marks the rest.
+    const lead = send.find((p) => p.project !== null && p.kind !== "machine")?.project ?? null;
     const target: NotifyTarget =
       one !== null && !machine
         ? {
@@ -227,8 +229,9 @@ export class Notifier {
           }
         : send.every((p) => p.kind === "machine")
           ? { kind: "machines" }
-          : // Several projects: Status lists which need you.
-            { kind: "status" };
+          : lead !== null
+            ? { kind: "chat", machineId: lead.machineId, projectId: lead.projectId }
+            : { kind: "home" };
     const name = one !== null && !machine ? ctx.nameOf?.(one) : undefined;
     return { title: name ?? "fleetd needs you", body, target };
   }
