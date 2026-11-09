@@ -107,6 +107,12 @@ export const gridShiftOf = (i: number, from: number, over: number, slots: readon
 /** A transform moving an element by `x`, `y`: a list's rows only ever move up and down, so theirs says just that. */
 const translate = (x: number, y: number): string => (x === 0 ? `translateY(${String(y)}px)` : `translate(${String(x)}px, ${String(y)}px)`);
 
+/** How far `el`'s transform moves it down. */
+const offsetY = (el: HTMLElement): number => {
+  const m = /translate(?:Y\((-?[\d.]+)px\)|\(-?[\d.]+px, (-?[\d.]+)px\))/u.exec(el.style.transform);
+  return Number(m?.[1] ?? m?.[2] ?? 0);
+};
+
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 const reduced = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -179,8 +185,13 @@ export interface ReorderOptions<K extends string> {
    * goes back.
    */
   readonly out?: ((key: K, way: Way, at: Point) => void) | undefined;
-  /** The list keeps its own order: a row lifts only to leave it (`out`), and inside it goes back to its place. */
+  /**
+   * The list keeps its own order: a row lifts only to leave it (`out`), once the pointer has left the row (so a press
+   * that wobbles is still a click), and inside the list it goes back to its place.
+   */
   readonly fixed?: boolean | undefined;
+  /** How far out a row may go (top and bottom, on screen): past them it is away, and let go there it goes back. */
+  readonly within?: (() => readonly [number, number]) | undefined;
 }
 
 interface Press<K> {
@@ -193,7 +204,8 @@ interface Press<K> {
   finish: (cancel: boolean) => void;
   /** Ends it at once: no drop, nothing called back (the list unmounting). */
   stop: () => void;
-  readonly startY: number;
+  /** Where the press was; moved with the list when something drawn with the lift moves it. */
+  startY: number;
   readonly startX: number;
   readonly pointerId: number;
   lifted: boolean;
@@ -208,6 +220,12 @@ interface Press<K> {
   edges: readonly [number, number];
   /** Past one of them: let go now, it leaves the list that way. */
   out: Way | null;
+  /** Past `within`: let go now, it goes back. */
+  away: boolean;
+  /** The row's top and bottom on screen at the press. */
+  home: readonly [number, number];
+  /** Puts the lifted row under the pointer. */
+  place: () => void;
   /** The pointer's last place. */
   y: number;
   x: number;
@@ -256,6 +274,8 @@ export interface Reorder<K extends string> {
   readonly status: string;
   /** A lifted row is past the list's top or bottom, and would leave it that way if let go. */
   readonly leaving: Way | null;
+  /** A row is lifted. */
+  readonly lifted: boolean;
 }
 
 export function useReorder<K extends string>(options: ReorderOptions<K>): Reorder<K> {
@@ -342,6 +362,22 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     [],
   );
 
+  // Something drawn with the lift (the sidebar's drop zone) moved the lifted row's list: its measures move with it, so
+  // it stays under the pointer.
+  useLayoutEffect(() => {
+    const p = press.current;
+    const el = p === null ? undefined : els.current.get(p.key);
+    if (p === null || !p.lifted || el === undefined) return;
+    const shift = el.getBoundingClientRect().top - offsetY(el) - (p.tops[p.from] ?? 0);
+    if (Math.abs(shift) < 0.5) return;
+    p.startY += shift;
+    p.tops = p.tops.map((t) => t + shift);
+    p.centres = p.centres.map((c) => c + shift);
+    p.cells = p.cells.map((c) => ({ ...c, at: { x: c.at.x, y: c.at.y + shift }, centre: { x: c.centre.x, y: c.centre.y + shift } }));
+    p.edges = [p.edges[0] + shift, p.edges[1] + shift];
+    p.place();
+  }, [moving?.key]);
+
   // A row moved by keyboard comes back focused: React may have taken its element out and put it back.
   useLayoutEffect(() => {
     const key = refocus.current;
@@ -375,7 +411,8 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     setLanding(p.key);
     // A list changed under it was put back (cancel): the lift's index would name another row now.
     if (cancel || latest.current.showing !== p.sig) return;
-    // Let go outside, it goes where `out` takes it, or back.
+    // Let go outside, it goes where `out` takes it, or back; let go away, back.
+    if (p.away) return;
     if (p.out !== null) latest.current.out?.(p.key, p.out, { x: p.x, y: p.y });
     else commit(p.key, p.over);
   };
@@ -400,6 +437,9 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       over: at,
       edges: [0, 0],
       out: null,
+      away: false,
+      home: [0, 0],
+      place: () => undefined,
       y: e.clientY,
       x: e.clientX,
       scroller: null,
@@ -420,14 +460,17 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       const own = p.cells[p.from];
       // Past the list's top or bottom (as it is scrolled now), a row that may leave rides the pointer out, and the
       // others close up behind it.
+      const within = latest.current.within?.();
+      const away = within !== undefined && (p.y < within[0] || p.y > within[1]);
       const leaving: Way | null =
-        latest.current.out === undefined ? null : p.y < p.edges[0] - scrolled ? "up" : p.y > p.edges[1] - scrolled ? "down" : null;
+        latest.current.out === undefined || away ? null : p.y < p.edges[0] - scrolled ? "up" : p.y > p.edges[1] - scrolled ? "down" : null;
       const fixed = latest.current.fixed === true;
       const aim = (over: number) => {
-        const to = leaving !== null ? hi : fixed ? p.from : over;
-        if (to === p.over && leaving === p.out) return;
+        const to = away ? p.from : leaving !== null ? hi : fixed ? p.from : over;
+        if (to === p.over && leaving === p.out && away === p.away) return;
         p.over = to;
         p.out = leaving;
+        p.away = away;
         setMoving((m) => (m === null ? m : { ...m, over: to, out: leaving }));
       };
       if (own !== undefined) {
@@ -453,6 +496,9 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       el.style.transform = `translateY(${String(latest.current.out === undefined ? travel : p.y - p.startY + scrolled)}px)`;
       aim(clamp(dropIndex(p.centres, p.from, (p.centres[p.from] ?? 0) + travel), lo, hi));
     };
+    p.place = place;
+    const box = els.current.get(key)?.getBoundingClientRect();
+    p.home = [box?.top ?? e.clientY, box?.bottom ?? e.clientY];
     const restless = () => {
       if (p.dwell !== 0) window.clearTimeout(p.dwell);
       p.dwell = 0;
@@ -494,6 +540,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       p.x = ev.clientX;
       if (!p.lifted) {
         if (Math.hypot(p.x - p.startX, p.y - p.startY) < LIFT_PX) return;
+        if (latest.current.fixed === true && p.y >= p.home[0] && p.y <= p.home[1]) return;
         const { shown: order, showing: now } = latest.current;
         const from = order.indexOf(key);
         if (from < 0) return p.stop();
@@ -612,5 +659,5 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     };
   };
 
-  return { shown, row, list: moving === null ? {} : { "data-reorder": "" }, status, leaving: moving?.out ?? null };
+  return { shown, row, list: moving === null ? {} : { "data-reorder": "" }, status, leaving: moving?.out ?? null, lifted: moving !== null };
 }

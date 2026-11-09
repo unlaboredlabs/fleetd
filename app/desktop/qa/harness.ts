@@ -341,7 +341,7 @@ export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" 
 // for the faces the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
 // A page that never holds still (a running animation) is shot after 3 s rather than hanging the run.
 export async function settle(page: Page) {
-  await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
+  await loaded(page);
   await page.evaluate(async () => {
     // Notes any viewport change from here on; cleared below once the layout has held still.
     const qa = window as QaWindow;
@@ -367,6 +367,31 @@ export async function settle(page: Page) {
     }
     qa.__qaResized = false;
   });
+}
+
+// Waits until nothing on the page is aria-busy, and fails on what still is after 10 s of the page running. The page
+// counts that time itself, and a stall doesn't count: a renderer that a busy runner held still for seconds (an app
+// starting beside it on the 3-vCPU macOS VM) hasn't spent them loading. A deadline kept in the test process failed a
+// screen whose parser had loaded and rendered the moment the renderer ran again.
+async function loaded(page: Page) {
+  const busy = await page.evaluate(
+    () =>
+      new Promise<string[]>((done) => {
+        let ran = 0;
+        let last = performance.now();
+        const look = () => {
+          const left = [...document.querySelectorAll("[aria-busy='true']")];
+          if (left.length === 0) return done([]);
+          const now = performance.now();
+          ran += Math.min(now - last, 100);
+          last = now;
+          if (ran >= 10_000) return done(left.map((el) => el.getAttribute("aria-label") ?? (el.className || el.tagName.toLowerCase())));
+          setTimeout(look, 50);
+        };
+        look();
+      }),
+  );
+  if (busy.length > 0) throw new Error(`still loading after 10 s: ${busy.join(", ")}`);
 }
 
 // On macOS the sidebar is the window's own vibrancy under a clear page (main/index.ts), which a page screenshot

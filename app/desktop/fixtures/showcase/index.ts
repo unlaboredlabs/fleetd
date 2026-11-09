@@ -612,7 +612,7 @@ const pinned = (base: Fixture): Fixture => {
 
 /**
  * The showcase with only billing pinned: a lone pin sits in the sidebar's middle. Ada dragged up beside it pins it
- * after billing, and billing dragged back down unpins it.
+ * after billing, billing dragged back down unpins it, and Ada too; then Ada dragged into the first pin's place pins it.
  */
 const pinnedOne = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "showcase-pin", "The showcase with only billing pinned.");
@@ -621,7 +621,7 @@ const pinnedOne = (base: Fixture): Fixture => {
     const p = projects.find((x) => x["title"] === title);
     return { machineId: p?.["machineId"] ?? "", projectId: p?.["projectId"] ?? "" };
   };
-  for (const pins of [[ref("billing"), ref("Ada")], [ref("Ada")]]) f.answer("chat_pins_set", { pins }, { pins });
+  for (const pins of [[ref("billing"), ref("Ada")], [ref("Ada")], []]) f.answer("chat_pins_set", { pins }, { pins });
   return f.answer("chat_pins_get", {}, { pins: [ref("billing")], set: true });
 };
 

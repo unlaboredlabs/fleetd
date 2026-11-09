@@ -16,6 +16,9 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* The list's own moves (the first pin's place showing under a drag) never scroll it: a lifted chat's measures stay
+     true. */
+  overflow-anchor: none;
   /* The first chat a clear step below the top row, not tucked under it. */
   padding: var(--space-2) var(--space-2) var(--space-3);
 }
@@ -519,6 +522,33 @@
 }
 .rows > [data-lifted] {
   border-radius: var(--radius-lg);
+}
+/* With nothing pinned, the first pin's place while a chat is dragged: a slim, quiet strip over the list, shaded as
+   the pins are once a drop would pin. */
+.pinZone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  height: 40px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--hover);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
+}
+.pinZone > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.pinZone[data-pinning] {
+  background: var(--selected);
+  color: var(--text);
 }
 /* A pin: its shade, open or hovered, hugs the picture and name, 8 px around them on a row's corners, the same at
    every sidebar width; a long name stops at its half of the grid. */

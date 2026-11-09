@@ -203,6 +203,7 @@ function Bar() {
   );
 }
 
+
 describe("a row dropped in the sidebar", () => {
   const ROW = 28;
   // Each row ROW px tall in its list, drawn as far off its place as its transform says.
