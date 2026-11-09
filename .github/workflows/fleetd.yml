@@ -77,6 +77,11 @@ jobs:
       - name: Binary size
         if: steps.scope.outputs.run == 'true'
         run: ls -l dist/fleetd
+      # The compiled binary, run as a user runs it: a closed pipe, a second fleet's FLEETD_HOME, the installer and a
+      # node restart that re-adopts a hosted session (test/blackbox).
+      - name: Black-box tests on the binary
+        if: steps.scope.outputs.run == 'true'
+        run: bun run blackbox
       - run: npm ci --prefix tests/lab --no-audit --no-fund
         if: steps.scope.outputs.run == 'true'
         working-directory: ${{ github.workspace }}

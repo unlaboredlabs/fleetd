@@ -10,6 +10,7 @@
     "compile": "bun build --compile --minify --bytecode --sourcemap --root . src/main.ts src/hub/store/read-worker.ts src/hub/projects/avatar-worker.ts --outfile dist/fleetd",
     "smoke": "bun scripts/smoke.ts",
     "helper": "bun scripts/helper.ts",
+    "blackbox": "FLEETD_BIN=dist/fleetd bun test test/blackbox",
     "check": "bun run gen:check && bun run typecheck && bun test && bun run compile && bun run smoke"
   },
   "devDependencies": {
