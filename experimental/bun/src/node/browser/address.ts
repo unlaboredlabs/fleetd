@@ -11,6 +11,7 @@ import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
 import type { Broker } from "./index.ts";
 import { hostOf } from "./onepassword.ts";
 import { PAUSED, type Session } from "./session.ts";
+import { MIN_LEN } from "../mask.ts";
 import { ADDRESS_SECRET_PARTS, maskName, vaultFill, vaultFilled } from "./vault.ts";
 
 /** The fill_address call's fields, as agent-mcp sends them. */
@@ -176,7 +177,11 @@ export async function fillAddress(broker: Broker, thread: string, call: FillAddr
   // The hub checked the page; the parts fill only in its own documents, on the page's host.
   const host = hostOf(page);
   const allowed = (url: string) => host !== undefined && hostOf(url) === host;
-  const parts = ADDRESS_SECRET_PARTS.map((p) => [p, (address[p] ?? "").trim()] as const).filter(([, v]) => v !== "");
+  // Each part as the form may take it: a first and last name typed into fields of their own are secrets of their own.
+  const parts: [string, string][] = [
+    ...ADDRESS_SECRET_PARTS.map((p) => [p, (address[p] ?? "").trim()] as [string, string]),
+    ...(["given", "family"] as const).map((r) => [r === "given" ? "givenName" : "familyName", addressValue(r, address)] as [string, string]),
+  ].filter(([p, v], i, all) => (v.length >= MIN_LEN || ADDRESS_SECRET_PARTS.includes(p as never)) && v !== "" && all.findIndex(([, w]) => w === v) === i);
   for (const [p, value] of parts.slice(1)) {
     const name = maskName(got.label, p);
     session.addSecret(name, value);

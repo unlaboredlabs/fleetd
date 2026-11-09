@@ -23,7 +23,7 @@ afterEach(async () => {
 const USER = "grace@shop.devbox.test";
 const PASSWORD = 'Vault-Pw+/ &q<7"';
 const CARD = { number: "4000056655665556", month: "07", year: "2031", cvc: "cvc-8Rw2Lp6", name: "Grace Devbox" };
-const ADDRESS = { name: "Grace Devbox", line1: "12 Canary Lane", line2: "Flat 3b", city: "Springfield", region: "OR", postalCode: "SW1Z 9QX", country: "US", phone: "+1 541 555 0199", email: "grace@mail.devbox.test" };
+const ADDRESS = { name: "Gracelyn Quorvane", line1: "12 Canary Lane", line2: "Flat 3b", city: "Springfield", region: "OR", postalCode: "SW1Z 9QX", country: "US", phone: "+1 541 555 0199", email: "grace@mail.devbox.test" };
 const PLANTED = [USER, PASSWORD, CARD.number, "4000 0566 5566 5556", CARD.cvc, ADDRESS.line1, ADDRESS.line2, ADDRESS.postalCode, ADDRESS.phone, ADDRESS.email];
 
 /** Fails, naming where, if any planted value is in `text` in any form. */
@@ -63,8 +63,8 @@ test("an item's site is its host or a subdomain, never a look-alike or a shared 
   expect(maskName("Shop", "password")).toBe("vault:Shop/password");
   expect(notInVault(new ToolError("not_found", "op://Team/Shop isn't in fleetd's vault yet.", undefined, "vault_not_imported"))).toBe(true);
   expect(notInVault(new ToolError("forbidden", "Shop is for shop.example.test, not 127.0.0.1."))).toBe(false);
-  expect(addressValue("given", ADDRESS)).toBe("Grace");
-  expect(addressValue("family", ADDRESS)).toBe("Devbox");
+  expect(addressValue("given", ADDRESS)).toBe("Gracelyn");
+  expect(addressValue("family", ADDRESS)).toBe("Quorvane");
   expect(addressValue("street", ADDRESS)).toBe("12 Canary Lane\nFlat 3b");
 });
 
@@ -117,6 +117,9 @@ function shop() {
         const body = await req.text();
         bodies.push(body);
         if (path === "/login") return html(`<html><head><title>Welcome</title></head><body><h1>Welcome ${formValue(body, "user")}</h1></body></html>`);
+        if (path === "/named") {
+          return html(`<html><head><title>Named</title></head><body><p>Thanks ${formValue(body, "first")}</p><p>Family ${formValue(body, "last")}</p></body></html>`);
+        }
         if (path === "/ship") return html(`<html><head><title>Shipped</title></head><body><p>Shipping to ${formValue(body, "a1")}, ${formValue(body, "zip")}</p></body></html>`);
         return html("<html><head><title>Done</title></head></html>");
       }
@@ -134,6 +137,11 @@ addEventListener('message', async (e) => { if (!e.data || e.data.pay === undefin
 pay.onclick = () => card.contentWindow.postMessage({ pay: true }, '*');
 addEventListener('message', (e) => { if (e.data && e.data.ready) document.title = 'Checkout ready'; if (e.data && e.data.charged) document.title = 'Paid'; });
 </script></body></html>`);
+      }
+      if (path === "/names") {
+        return html(`<html><head><title>Names</title></head><body><form method=post action=/named>
+<input name=first autocomplete=given-name><input name=last autocomplete=family-name>
+<input name=a1 autocomplete=address-line1><input name=zip autocomplete=postal-code><button id=send>Send</button></form></body></html>`);
       }
       if (path === "/address") {
         return html(`<html><head><title>Address</title></head><body>
@@ -383,4 +391,46 @@ test.skipIf(!chrome)("an address fills the shipping form by its autocomplete tok
   const refused = await r2.call("fill_address", { item: "Home" });
   expect(refused.error).toMatchObject({ code: "forbidden", message: "Home is for , not 127.0.0.1." });
   expect(r2.broker.live(THREAD)!.sealed()).toBe(false);
+});
+
+test.skipIf(!chrome)("a first and a last name typed into fields of their own are masked as the full name is", async () => {
+  const logs = captureLogs();
+  const r = await rig([]);
+  cleanups.push(r.done);
+  const { site, bodies } = shop();
+  fakeHub(r, [{ ...HOME, sites: ["127.0.0.1"] }]);
+  const started = await r.call("session_start", { purpose: "Sign up" });
+  const d = await driver(String(started.result!.cdp));
+  cleanups.push(d.close);
+  const page = await d.page();
+  await d.ok("Page.navigate", { url: `${site}/names` }, page);
+  await d.until(page, "document.title", "Names");
+  const filled = await r.call("fill_address", { item: "Home" });
+  expect(String(filled.result!.message)).toStartWith("Filled the address's name, street, postal code from the vault's Home.");
+  await dr(d, page, "#send");
+  await d.until(page, "document.title", "Named");
+  expect([formValue(bodies[0]!, "first"), formValue(bodies[0]!, "last")]).toEqual(["Gracelyn", "Quorvane"]);
+  r.broker.item(THREAD, {
+    id: "i2",
+    status: "completed",
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    kind: { type: "command", command: "agent-browser snapshot -i", output: "paragraph Thanks", exitCode: 0 },
+  } as never);
+  // The page thanks them by first name and names the family: each scrubbed for the driver.
+  const tree = JSON.stringify(await d.send("Accessibility.getFullAXTree", {}, page));
+  expect(tree).toContain("Thanks ***vault:Home/givenName***");
+  expect(tree).toContain("Family ***vault:Home/familyName***");
+  const ended = await r.call("session_end");
+  const { actions, dom } = await recording(r, String(ended.result!.sessionId));
+  expect(dom).toContain("***vault:Home/givenName***");
+  for (const [what, text] of [
+    ["what the agent heard", JSON.stringify([filled, ended, d.got, tree])],
+    ["the DOM trace", dom],
+    ["the action log", actions],
+    ["what the node sent the hub", JSON.stringify(r.link.calls.filter((c) => c.op !== "browser_recording_part"))],
+    ["the node's log", logs.text()],
+  ] as const) {
+    for (const value of ["Gracelyn", "Quorvane"]) for (const form of forms(value)) expect(text.includes(form), `${what} holds ${form}`).toBe(false);
+  }
 });
