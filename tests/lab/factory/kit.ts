@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, descendants, fleetdCommand, type Lead, leadIn, log, ok, openWorkstream, type ProcInfo, sleep, stillRuns, until, waitEventWith } from "../harness.ts";
+import { type Body, callToolWith, check, descendants, fleetdCommand, type Lead, leadIn, log, ok, openWorkstream, type ProcInfo, sharedCaches, sleep, stillRuns, until, waitEventWith } from "../harness.ts";
 import { createProject, type Project, stateDiff, treeBytes } from "./project.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -117,7 +117,14 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   const [fleetdBin, fleetdPrefix] = fleetdCommand([]);
   fs.writeFileSync(path.join(bin, "fleetd"), `#!/bin/sh\nexec ${[fleetdBin, ...fleetdPrefix].map((a) => `'${a}'`).join(" ")} "$@"\n`, { mode: 0o755 });
   const PATH = `${bin}:${process.env.PATH ?? ""}`;
-  const env = (home: string): Record<string, string> => ({ HOME: home, PATH, LANG: "C.UTF-8", USER: process.env.USER ?? "lab" });
+  // TMPDIR: this session's scratch dir, on disk, never a /tmp that may be held in memory.
+  const env = (home: string): Record<string, string> => ({
+    HOME: home,
+    PATH,
+    LANG: "C.UTF-8",
+    USER: process.env.USER ?? "lab",
+    ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
+  });
 
   const project = createProject(dir);
   // The machine user's HOME holds their checkout (the node's default command root) and their git identity.
@@ -125,7 +132,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   const nodeHome = path.join(machineHome, ".fleetd/node");
   fs.mkdirSync(path.join(machineHome, ".claude"), { recursive: true });
   fs.writeFileSync(path.join(machineHome, ".gitconfig"), "[user]\n\tname = lab agent\n\temail = agent@lab.invalid\n[init]\n\tdefaultBranch = main\n");
-  const nodeEnv = { ...env(machineHome), ANTHROPIC_API_KEY: "lab-offline" };
+  const nodeEnv = { ...env(machineHome), ...sharedCaches(), ANTHROPIC_API_KEY: "lab-offline" };
 
   const hubHome = path.join(dir, "hub");
   // The hub's fleetd dir, beside its home: `hub key` and `pair` find the hub there.

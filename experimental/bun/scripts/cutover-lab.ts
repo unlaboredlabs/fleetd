@@ -12,7 +12,7 @@
 // processes itself, each by the PID it started), and `claude` is the factory lab's offline stand-in. Linux only.
 import { spawn, spawnSync, type Subprocess } from "bun";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const argv = process.argv.slice(2);
@@ -124,8 +124,14 @@ const machine = (name: string, hub: boolean): Machine => {
     FLEETD_BASE_URL: `http://127.0.0.1:${feed.port}`,
     XDG_CONFIG_HOME: join(home, ".config"),
     XDG_RUNTIME_DIR: join(home, "run"),
+    // On disk, never a /tmp that may be held in memory; the Rust node has no temp dir of its own without it.
+    TMPDIR: join(home, "tmp"),
+    // The user's own caches, so each new machine doesn't download Chrome and agent-browser again.
+    PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), ".cache/ms-playwright"),
+    npm_config_cache: process.env.npm_config_cache || join(homedir(), ".npm"),
   };
   mkdirSync(env.XDG_RUNTIME_DIR, { recursive: true, mode: 0o700 });
+  mkdirSync(env.TMPDIR, { recursive: true });
   return { name, home, exe, fleetdHome, nodeHome, env, args };
 };
 const hub = machine("hubm", true);
