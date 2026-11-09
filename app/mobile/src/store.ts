@@ -113,6 +113,8 @@ export interface State {
   readonly leadActivity: Readonly<Record<string, Activity>>;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
+  /** Each lead's latest turn seen to its end (hub epoch ms at each end): its reply's "Worked for" stamp (chatView.ts). */
+  readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number }>>;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
   /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
@@ -144,6 +146,7 @@ export const initial = (hub: HubState): State => ({
   decided: {},
   leadActivity: {},
   turnSince: {},
+  turnWorked: {},
   screens: {},
   running: {},
 });
@@ -390,7 +393,11 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     // A turn begins when its lead starts working; the hub says "working" again mid-turn, which is no new turn.
     const began = state.leadWorking && s.chatStates[key]?.leadWorking !== true;
     const turnSince = began ? { ...s.turnSince, [key]: Date.parse(event.at) } : state.leadWorking ? s.turnSince : without(s.turnSince, key);
-    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince };
+    // It ends at its first "idle": how long it took, from a start seen here.
+    const since = s.turnSince[key];
+    const ended = !state.leadWorking && since !== undefined;
+    const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at) } } : s.turnWorked;
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

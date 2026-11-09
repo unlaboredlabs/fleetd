@@ -28,7 +28,7 @@ export interface Place {
   readonly top: number;
   readonly view: number;
   readonly width: number;
-  /** Oldest first. A few, since the last may go as a message comes (the lead's activity line, under its reply). */
+  /** Oldest first. A few, since the last may go as a message comes. */
   readonly tail: readonly { readonly key: string; readonly start: number }[];
 }
 

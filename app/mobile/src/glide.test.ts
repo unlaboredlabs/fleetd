@@ -15,7 +15,7 @@ describe("the spring the thread glides on", () => {
   it("is the newest message's: a reply's, your send's, or a streaming reply's growing one", () => {
     expect(glideOf([row("b", "them"), row("a", "me")])).toBe(GLIDE.theirs);
     expect(glideOf([row("b", "me"), row("a", "them")])).toBe(GLIDE.mine);
-    expect(glideOf([{ t: "turn", id: "turn" }, row("b", "them", "streaming"), row("a", "me")])).toBe(GLIDE.grow);
+    expect(glideOf([row("b", "them", "streaming"), row("a", "me")])).toBe(GLIDE.grow);
   });
 
   it("is a reply's with no message yet", () => {

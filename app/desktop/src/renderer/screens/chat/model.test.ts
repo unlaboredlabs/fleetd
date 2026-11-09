@@ -108,7 +108,7 @@ describe("the chat's rows", () => {
   });
 
   it("offer the way back to the newest message only while scrolled up, counting what arrived below", () => {
-    const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))], { activity: true });
+    const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))]);
     const from = newestKey(before);
     expect(from).toBe("b");
     expect(latestLabel(before, undefined)).toBeUndefined();
@@ -135,29 +135,26 @@ describe("the chat's rows", () => {
     expect(latestLabel(rows(items), "a")).toBe("Latest");
   });
 
-  it("put the lead's activity after the newest item, never under a reply still streaming", () => {
+  it("find a row by its key, and have none for what the lead is doing: that line is beside the composer", () => {
     const r = rows([item("a", "lead", at(19, 9)), item("d", "system", at(19, 9, 3), { kind: "event", text: "#12 merged" })]);
     expect(rowIndexOf(r, "d")).toBe(3);
-    // Under its reply, and once asked again, under the person's message.
-    const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))];
-    expect(rows(lead, { activity: true }).slice(-2).map((x) => x.kind)).toEqual(["message", "activity"]);
-    const asked = [...lead, item("c", "human", at(19, 9, 2))];
-    expect(rows(asked, { activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "message", "activity"]);
-    expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
-    const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
-    expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
+    const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
+    expect(rows(streaming).map((x) => x.kind)).toEqual(["top", "day", "message", "message"]);
   });
 
-  it("put how long the lead worked under the reply its turn ended with", () => {
-    const turn = Date.parse(at(19, 9));
+  it("stamp how long the lead worked on the reply its turn ended with, and keep it there", () => {
+    const worked = { since: Date.parse(at(19, 9)), until: Date.parse(at(19, 9, 3)) };
+    const stamps = (r: ReturnType<typeof rows>) => r.flatMap((x) => (x.kind === "message" && x.worked !== undefined ? [`${x.item.id}: ${x.worked}`] : []));
     const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 3)), item("c", "system", at(19, 9, 4), { kind: "event" })];
-    const kinds = (r: ReturnType<typeof rows>) => r.map((x) => (x.kind === "message" ? `message:${x.item.id}` : x.kind));
-    expect(kinds(rows(lead, { workedSince: turn })).slice(-3)).toEqual(["message:b", "activity", "event"]);
-    // A person's message after it, waiting for the next turn: the line stays with the reply.
-    expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
-    // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
-    expect(rows(lead, { workedSince: turn + 600_000 }).some((x) => x.kind === "activity")).toBe(false);
+    expect(stamps(rows(lead, { worked }))).toEqual(["b: Worked for 3m 0s"]);
+    // Asked again, and the next turn's reply on its way: the stamp stays with the reply it is about.
+    const next = [...lead, item("d", "human", at(19, 9, 5)), item("e", "lead", at(19, 9, 6), { state: "streaming" })];
+    expect(stamps(rows(next, { worked }))).toEqual(["b: Worked for 3m 0s"]);
+    expect(stamps(rows([...next.slice(0, -1), item("e", "lead", at(19, 9, 6))], { worked }))).toEqual(["b: Worked for 3m 0s"]);
+    // The lead's newest reply is older than the turn: it didn't write in it, so nothing is stamped.
+    expect(stamps(rows(lead, { worked: { since: worked.since + 600_000, until: worked.until + 600_000 } }))).toEqual([]);
+    expect(stamps(rows(lead))).toEqual([]);
   });
 
   it("place a row whose time doesn't parse under today, rather than throwing", () => {

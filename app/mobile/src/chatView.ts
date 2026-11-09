@@ -2,7 +2,7 @@
 // are cards (a pull request, a checklist, a table, an ask with its buttons, a file; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
-import type { ChatItem } from "./desktop";
+import { workedFor, type ChatItem } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
 export type Bubble =
@@ -221,9 +221,8 @@ const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
 export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
-  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean }
-  /** The lead is mid-turn: the turn line (screens/TurnLine.tsx), what it does now. */
-  | { readonly t: "turn"; readonly id: string }
+  /** `worked`: the reply a turn ended with, how long the turn took ("Worked for 4s"), a quiet stamp beside it. */
+  | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
@@ -234,7 +233,7 @@ export type ThreadRow =
 export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
   if (a === b) return true;
   if (a.t !== b.t || a.id !== b.id) return false;
-  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && sameItem(a.item, b.item);
+  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.worked === b.worked && sameItem(a.item, b.item);
   if (a.t === "day" && b.t === "day") return a.at === b.at;
   return true;
 };
@@ -259,13 +258,28 @@ const voice = (item: ChatItem): string => `${item.author}:${item.author === "age
 const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
   a !== undefined && b !== undefined && sideOf(a) !== "center" && sideOf(a) === sideOf(b) && voice(a) === voice(b) && msOf(b.at) - msOf(a.at) < GROUP_MS;
 
+/** A turn's reply is written just before it ends; the hub may stamp the two a moment apart either way. */
+const REPLY_SLACK_MS = 2_000;
+
 /**
- * The rows to draw, oldest first. `working`: the lead is mid-turn, so the turn line ends the thread, as on the desktop,
- * under its reply as it streams too. `readSeq`: what was read when the chat opened; the unread bar goes before the first message from
- * the other side after it. A day line goes where a new day starts, in the clock's zone, as chat apps' date chips.
+ * The rows to draw, oldest first. What the lead is doing is no row: it is a line over the composer (screens/TurnLine.tsx),
+ * so the thread never moves for it. `worked`: the lead's latest turn seen to its end, whose reply (its newest message
+ * written in it) wears how long it took. `readSeq`: what was read when the chat opened; the unread bar goes before the
+ * first message from the other side after it. A day line goes where a new day starts, in the clock's zone, as chat
+ * apps' date chips.
  */
-export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
+export const threadRows = (
+  items: readonly ChatItem[],
+  worked?: { readonly since: number; readonly until: number },
+  readSeq?: number,
+  clock: Pick<Clock, "timeZone"> = {},
+): ThreadRow[] => {
   const rows: ThreadRow[] = [];
+  const reply =
+    worked === undefined
+      ? -1
+      : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
+  const stamp = worked === undefined ? undefined : `Worked for ${workedFor(worked.until - worked.since)}`;
   let prev: ChatItem | undefined;
   let prevDay = 0;
   const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
@@ -275,10 +289,9 @@ export const threadRows = (items: readonly ChatItem[], working = false, readSeq?
     if (prev === undefined || day !== prevDay) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
     prevDay = day;
     const side = sideOf(item);
-    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item) });
+    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), ...(i === reply && stamp !== undefined ? { worked: stamp } : {}) });
     prev = item;
   }
-  if (working) rows.push({ t: "turn", id: "turn" });
   return rows;
 };
 
@@ -410,13 +423,10 @@ export const seenSeq = (rows: readonly ThreadRow[]): number | undefined => {
 };
 
 /**
- * Where the reply streaming in sits among the rows, newest first, while it's one of the newest few (under it only the
- * turn line): the thread follows it until its first line reaches the bar, then holds it there.
+ * Where the reply streaming in sits among the rows, newest first, while it's the newest: the thread follows it until
+ * its first line reaches the bar, then holds it there.
  */
 export const streamingAt = (newestFirst: readonly ThreadRow[]): number | undefined => {
-  for (const [i, r] of newestFirst.entries()) {
-    if (r.t === "turn") continue;
-    return r.t === "item" && r.item.message?.state === "streaming" ? i : undefined;
-  }
-  return undefined;
+  const r = newestFirst[0];
+  return r?.t === "item" && r.item.message?.state === "streaming" ? 0 : undefined;
 };

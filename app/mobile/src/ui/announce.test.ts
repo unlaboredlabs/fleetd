@@ -75,6 +75,6 @@ describe("what announces only on a change", () => {
   });
 
   it("the turn line: thinking and working, not as the chat opens", () => {
-    expect(read("screens/TurnLine.tsx")).toMatch(/useAnnounceChange\(line\.glyph/u);
+    expect(read("screens/TurnLine.tsx")).toMatch(/useAnnounceChange\(cur === undefined/u);
   });
 });

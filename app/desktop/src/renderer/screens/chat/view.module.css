@@ -363,6 +363,40 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/*
+ * "Worked for 4s" beside the reply a turn ended with: on its last line, quiet, over the room the bubble's actions keep
+ * (they show in its place under the pointer). Its slot has no width and gives back the line's gap, so it takes no room
+ * and nothing moves as it comes.
+ */
+.workedSlot {
+  position: relative;
+  flex: none;
+  align-self: flex-end;
+  width: 0;
+  height: 0;
+  margin-right: calc(-1 * var(--space-1));
+}
+.worked {
+  position: absolute;
+  bottom: 9px;
+  left: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--faint);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: workedIn 200ms var(--ease-out) both;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+@keyframes workedIn {
+  from {
+    opacity: 0;
+  }
+}
+.line:hover > .workedSlot > .worked,
+.line:focus-within > .workedSlot > .worked {
+  opacity: 0;
+}
 /* A block is its own card in the stack, a step wider than a bubble's words. */
 .blockBubble {
   position: relative;
@@ -822,33 +856,123 @@ span.changeUndo {
   text-underline-offset: 2px;
 }
 
-/* The turn line: the glyph, what the lead does now (the line's one strong voice) and the time, faint; under them what
-   the turn did, quiet. Laid out as a grid so the second line starts under the words, not the glyph. */
-.turn {
-  display: grid;
-  grid-template-columns: 14px auto auto 1fr;
+/*
+ * The lead's turn line (TurnLine.tsx), first in the island's band, its left edge on the pill's: one line, 20 px tall,
+ * centred on the agents' capsule after it. It is as wide as what it says (TurnLine measures it), so the capsule glides
+ * aside as it changes; beside the capsule it takes at most a little over half the band, and the capsule gives way to
+ * it. Gone, it has no width and gives back the band's gap. Over the conversation scrolled up, a soft patch of the
+ * ground keeps it legible.
+ */
+.turnLine {
+  display: flex;
+  flex: none;
   align-items: center;
-  column-gap: var(--space-2);
-  row-gap: 2px;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 0;
+  max-width: 100%;
+  height: 20px;
+  margin: 0 calc(-1 * var(--space-1-5)) 4px 0;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition:
+    width 200ms var(--ease-out),
+    margin 200ms var(--ease-out),
+    background-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
 }
-.turn > :first-child {
-  justify-self: center;
+.turnLine:not(:last-child) {
+  max-width: 55%;
+}
+.turnLine[data-turn] {
+  margin-right: 0;
+  background: var(--bg);
+  box-shadow: 0 0 6px 4px var(--bg);
+}
+.turnGlyph {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  width: 14px;
+  opacity: 0;
+  transition: opacity 200ms var(--ease-out);
+}
+.turnLine[data-turn] > .turnGlyph {
+  opacity: 1;
+}
+.turnWords {
+  position: relative;
+  flex: 1 1 0;
+  align-self: stretch;
+  min-width: 0;
+}
+/* A wording: it rises in as the one before it rises out, in place, over the same 200 ms. */
+.turnLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  height: 20px;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  line-height: 20px;
+  animation: turnIn 200ms var(--ease-out) both;
+}
+.turnLayer[data-leaving] {
+  animation: turnOut 200ms var(--ease-out) both;
+}
+.turnSizer {
+  max-width: none;
+  visibility: hidden;
+  animation: none;
+}
+.turnSizer .turnNow {
+  max-width: none;
+}
+@keyframes turnIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--row-rise));
+  }
+}
+@keyframes turnOut {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--row-rise)));
+  }
+}
+/* What it does now, then what the turn did, quiet: the tally ellipsizes, never the count after it. */
+.turnSaid {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--quiet);
 }
 .turnNow {
   --sweep-bg: var(--bg);
-  min-width: 0;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
   color: var(--text);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
   font-weight: 500;
 }
-.turnTime {
+.turnNow.turnDone {
+  font-weight: 400;
+}
+.turnCount {
+  flex: none;
   color: var(--faint);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
 }
-.turnDid {
-  grid-column: 2 / -1;
-  min-width: 0;
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
