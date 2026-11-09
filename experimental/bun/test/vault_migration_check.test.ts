@@ -55,12 +55,10 @@ function fixture(dir: string) {
 test("the check migrates a copy, matches every variable and sink, skips GH_TOKEN, and cleans up", async () => {
   const home = tempHome();
   const scratch = tempHome();
-  const tmp = process.env.TMPDIR;
-  process.env.TMPDIR = scratch.dir;
   try {
     const { hub, node } = fixture(home.dir);
     const liveBefore = readFileSync(join(hub, "hub.sqlite"));
-    const { counts, problems } = await run({ hubHome: hub, nodeHome: node, machineId: "devbox" });
+    const { counts, problems } = await run({ hubHome: hub, nodeHome: node, machineId: "devbox", scratchRoot: scratch.dir });
     expect(problems).toEqual([]);
     expect(Object.fromEntries(counts)).toMatchObject({
       "plain project variables (taken from the hub's rows)": 1,
@@ -82,7 +80,6 @@ test("the check migrates a copy, matches every variable and sink, skips GH_TOKEN
     expect(existsSync(join(hub, "hub.sqlite-wal"))).toBe(false);
     expect(readdirSync(scratch.dir)).toEqual([]);
   } finally {
-    process.env.TMPDIR = tmp;
     home.done();
     scratch.done();
   }
@@ -90,14 +87,17 @@ test("the check migrates a copy, matches every variable and sink, skips GH_TOKEN
 
 test("a node value that differs from the hub's record is counted, and a missing one is a problem", async () => {
   const home = tempHome();
+  const scratch = tempHome();
   try {
     const { hub, node } = fixture(home.dir);
     writeFileSync(join(node, "project-env", "p1.json"), JSON.stringify({ vars: { API_KEY: { value: "changed-not-real", secret: true } } }));
     writeFileSync(join(node, "order-env", "p1", "W7.json"), JSON.stringify({ vars: {} }));
-    const { counts, problems } = await run({ hubHome: hub, nodeHome: node, machineId: "devbox" });
+    const { counts, problems } = await run({ hubHome: hub, nodeHome: node, machineId: "devbox", scratchRoot: scratch.dir });
     expect(counts.get("secret project variables whose node value is newer (the node's wins)")).toBe(1);
     expect(problems).toEqual(["an order variable is missing from its node's file"]);
+    expect(readdirSync(scratch.dir)).toEqual([]);
   } finally {
     home.done();
+    scratch.done();
   }
 });

@@ -18,7 +18,7 @@
 // Prints counts only, never a value or a name, and deletes every copy in a `finally`. Exits 1 on a problem.
 import { Database } from "bun:sqlite";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { HubDb } from "../src/hub/store/db.ts";
 import { fingerprintOf } from "../src/node/secrets/files.ts";
@@ -79,11 +79,17 @@ function copyNode(from: string, to: string): number {
   return Object.keys(copied).length;
 }
 
-export async function run(opts: { hubHome: string; nodeHome: string; machineId: string }): Promise<{ counts: Map<string, number>; problems: string[] }> {
+/** The check; its copies go in a fresh directory under `scratchRoot` (default $TMPDIR), removed when it ends. */
+export async function run(opts: {
+  hubHome: string;
+  nodeHome: string;
+  machineId: string;
+  scratchRoot?: string;
+}): Promise<{ counts: Map<string, number>; problems: string[] }> {
   const counts = new Map<string, number>();
   const count = (what: string, n = 1) => counts.set(what, (counts.get(what) ?? 0) + n);
   const problems: string[] = [];
-  const scratch = mkdtempSync(join(process.env.TMPDIR ?? join(homedir(), "tmp"), "fleetd-vault-check-"));
+  const scratch = mkdtempSync(join(opts.scratchRoot ?? tmpdir(), "fleetd-vault-check-"));
   try {
     const hubCopy = join(scratch, "hub");
     mkdirSync(hubCopy, { mode: 0o700 });
