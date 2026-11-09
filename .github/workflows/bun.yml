@@ -101,6 +101,21 @@ jobs:
       - name: Black-box tests on the binary
         if: steps.scope.outputs.run == 'true'
         run: bun run blackbox
+      # The pinned agent-browser (agent_browser.ts's VERSION) on the runner's Chrome: every script its commands send is
+      # one of the pinned shapes (agent_browser_shapes.json), and a sealed session runs it.
+      - name: agent-browser's scripts are pinned shapes
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          version="$(sed -n 's/^export const VERSION = "\(.*\)";$/\1/p' src/node/browser/agent_browser.ts)"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
+          # The package carries each platform's binary itself; its install script only links one, so skipping it
+          # leaves them all in bin/. Fail here, plainly, if this one isn't there or doesn't run.
+          bin="$RUNNER_TEMP/agent-browser/node_modules/agent-browser/bin/agent-browser-linux-x64"
+          test -f "$bin" || { ls -l "$(dirname "$bin")"; echo "no $bin in agent-browser@$version" >&2; exit 1; }
+          chmod +x "$bin"
+          "$bin" --version | grep -F "$version"
+          FLEETD_TEST_AGENT_BROWSER="$bin" FLEETD_TEST_CHROME="$(command -v google-chrome)" FLEETD_REQUIRE_AGENT_BROWSER=1 \
+            bun test test/agent-browser-shapes.test.ts
       - uses: actions/setup-node@v7
         if: steps.scope.outputs.run == 'true'
         with:
