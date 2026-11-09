@@ -518,12 +518,14 @@ const f2 = (v: number): string => {
  * An eye: a superellipse cut by an upper lid and a lower lid, closing to a soft tapered line, never a hole. The upper
  * lid's edge partly follows the eye's own arc (so a lowered lid is a soft lens, never a flat cut) and sits lower at the
  * outer corner by `slope`; the lower lid rises along the eye's curve, so a raised one makes a crescent that tapers to
- * its corners. As a closed Catmull-Rom through `points` + 1 points along each lid, in cubics.
+ * its corners. Its outline goes into `out` as the points of a closed Catmull-Rom, x and y by turns, along the top
+ * left to right and back along the bottom, its ends shared: `points` + 1 along each lid. Returns how many points.
  */
-const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slope: number, low: number, blink: number, side: number, minT: number, points: number): string => {
+const eyeOutline = (out: number[], cx: number, cy: number, rx: number, ry: number, up: number, slope: number, low: number, blink: number, side: number, minT: number, points: number): number => {
   "worklet";
-  const top: number[] = [];
-  const bot: number[] = [];
+  const a = (-side * EYE.tilt * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
   const k = 1 - 0.93 * blink;
   const pivot = ry * 0.3;
   const sl = slope * Math.min(1, up * 3);
@@ -542,22 +544,20 @@ const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slo
       yT = mid - mt / 2;
       yB = mid + mt / 2;
     }
-    top.push(x, yT);
-    bot.push(x, yB);
+    out[i * 2] = cx + x * c - yT * s;
+    out[i * 2 + 1] = cy + x * s + yT * c;
+    if (i > 0 && i < points) {
+      const j = 2 * points - i;
+      out[j * 2] = cx + x * c - yB * s;
+      out[j * 2 + 1] = cy + x * s + yB * c;
+    }
   }
-  // The outline: along the top left to right, then back along the bottom, its ends shared.
-  const pts: number[] = top.slice();
-  for (let i = points - 1; i >= 1; i--) pts.push(bot[i * 2] ?? 0, bot[i * 2 + 1] ?? 0);
-  const a = (-side * EYE.tilt * Math.PI) / 180;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  const L = pts.length / 2;
-  const P: number[] = [];
-  for (let i = 0; i < L; i++) {
-    const x = pts[i * 2] ?? 0;
-    const y = pts[i * 2 + 1] ?? 0;
-    P.push(cx + x * c - y * s, cy + x * s + y * c);
-  }
+  return 2 * points;
+};
+
+/** An eye's outline (eyeOutline: `L` points in `P`) as SVG path data, in cubics. */
+const eyePath = (P: readonly number[], L: number): string => {
+  "worklet";
   const X = (i: number) => P[((i + L) % L) * 2] ?? 0;
   const Y = (i: number) => P[((i + L) % L) * 2 + 1] ?? 0;
   let d = `M${f2(X(0))} ${f2(Y(0))}`;
@@ -565,6 +565,68 @@ const eyePath = (cx: number, cy: number, rx: number, ry: number, up: number, slo
     d += `C${f2(X(i) + (X(i + 1) - X(i - 1)) / 6)} ${f2(Y(i) + (Y(i + 1) - Y(i - 1)) / 6)} ${f2(X(i + 1) - (X(i + 2) - X(i)) / 6)} ${f2(Y(i + 1) - (Y(i + 2) - Y(i)) / 6)} ${f2(X(i + 1))} ${f2(Y(i + 1))}`;
   }
   return `${d}Z`;
+};
+
+/** The rig's eye on `side` (-1 left, 1 right) into `out` (eyeOutline): the face slides toward the look, as on a ball
+ * turning, and the far eye narrows. */
+const eyeOf = (r: Rig, side: number, out: number[]): number => {
+  "worklet";
+  const x = r.x;
+  const gx = x[GX] ?? 0;
+  const t = Math.min(1, Math.abs(gx));
+  const es = x[EYES] ?? 1;
+  return eyeOutline(
+    out,
+    50 + side * EYE.hx * r.gapK * (1 - 0.07 * t) + gx * 4.4,
+    EYE.y + (x[GY] ?? 0) * 3.4,
+    EYE.rx * r.eyeK * es * (1 - 0.14 * Math.max(0, gx * side)),
+    EYE.ry * r.eyeK * es,
+    Math.max(0, Math.min(1, EYE.up + (x[UP] ?? 0))),
+    x[SLOPE] ?? 0,
+    Math.max(0, Math.min(1, x[LOW] ?? 0)),
+    Math.max(0, Math.min(1, r.bk)),
+    side,
+    r.minT,
+    r.points,
+  );
+};
+
+/** The body's matrix: squashed about its seat, keeping its volume, leaned and lifted. */
+export const bodyOf = (r: Rig): Matrix => {
+  "worklet";
+  const sq = r.x[SQUASH] ?? 0;
+  const lean = r.x[LEAN] ?? 0;
+  return mul(move(lean * 0.3, -(r.x[LIFT] ?? 0)), mul(move(SEAT_X, SEAT_Y), mul(turn(lean), mul(scale(1 + sq * 0.8, 1 - sq), move(-SEAT_X, -SEAT_Y)))));
+};
+
+/** The eyes' glow, 0 to 1.2 (none for a small bot), and their dimming, 0 to 1. */
+export const glowOf = (r: Rig): number => {
+  "worklet";
+  return r.glow ? Math.max(0, Math.min(1.2, r.x[GLOW] ?? 0)) : 0;
+};
+export const dimOf = (r: Rig): number => {
+  "worklet";
+  return Math.max(0, Math.min(1, r.x[DIM] ?? 0));
+};
+
+/** Something an outline is traced with, as a canvas's 2D context is. */
+export interface Pen {
+  moveTo(x: number, y: number): void;
+  bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void;
+  closePath(): void;
+}
+
+/** Traces both eyes with `pen`, in the body's space, as the same cubics as frameOf's paths, with no strings and, once
+ * `out` holds an eye, nothing allocated: what a canvas draws each display frame (ui/lib/botLife.ts). */
+export const traceEyes = (r: Rig, pen: Pen, out: number[]): void => {
+  for (const side of [-1, 1]) {
+    const L = eyeOf(r, side, out);
+    const X = (i: number) => out[((i + L) % L) * 2] ?? 0;
+    const Y = (i: number) => out[((i + L) % L) * 2 + 1] ?? 0;
+    pen.moveTo(X(0), Y(0));
+    for (let i = 0; i < L; i++) pen.bezierCurveTo(X(i) + (X(i + 1) - X(i - 1)) / 6, Y(i) + (Y(i + 1) - Y(i - 1)) / 6, X(i + 1) - (X(i + 2) - X(i)) / 6, Y(i + 1) - (Y(i + 2) - Y(i)) / 6, X(i + 1), Y(i + 1));
+    pen.closePath();
+  }
 };
 
 /** What a frame draws: the body's matrix (squashed about its seat, keeping its volume, leaned and lifted), each eye's
@@ -578,38 +640,13 @@ export interface Frame {
 
 export const frameOf = (r: Rig): Frame => {
   "worklet";
-  const x = r.x;
-  const sq = x[SQUASH] ?? 0;
-  const lean = x[LEAN] ?? 0;
-  const lift = x[LIFT] ?? 0;
-  const gx = x[GX] ?? 0;
-  const gy = x[GY] ?? 0;
-  const body = mul(move(lean * 0.3, -lift), mul(move(SEAT_X, SEAT_Y), mul(turn(lean), mul(scale(1 + sq * 0.8, 1 - sq), move(-SEAT_X, -SEAT_Y)))));
-  // The face slides toward the look, as on a ball turning, and the far eye narrows.
-  const t = Math.min(1, Math.abs(gx));
-  const es = x[EYES] ?? 1;
-  const lidUp = Math.max(0, Math.min(1, EYE.up + (x[UP] ?? 0)));
-  const lidLow = Math.max(0, Math.min(1, x[LOW] ?? 0));
-  const bk = Math.max(0, Math.min(1, r.bk));
-  const eye = (side: number) =>
-    eyePath(
-      50 + side * EYE.hx * r.gapK * (1 - 0.07 * t) + gx * 4.4,
-      EYE.y + gy * 3.4,
-      EYE.rx * r.eyeK * es * (1 - 0.14 * Math.max(0, gx * side)),
-      EYE.ry * r.eyeK * es,
-      lidUp,
-      x[SLOPE] ?? 0,
-      lidLow,
-      bk,
-      side,
-      r.minT,
-      r.points,
-    );
+  const P: number[] = [];
+  const eye = (side: number) => eyePath(P, eyeOf(r, side, P));
   return {
-    body,
+    body: bodyOf(r),
     eyes: [eye(-1), eye(1)],
-    glow: r.glow ? Math.max(0, Math.min(1.2, x[GLOW] ?? 0)) : 0,
-    dim: Math.max(0, Math.min(1, x[DIM] ?? 0)),
+    glow: glowOf(r),
+    dim: dimOf(r),
   };
 };
 

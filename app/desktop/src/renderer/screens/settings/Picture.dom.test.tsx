@@ -172,7 +172,7 @@ const pick = async (file: File) => {
 const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "logo.png", { type: "image/png" });
 
 /** The large icon's bot, in its state: `idle`. */
-const previewBot = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="bot"] svg')?.getAttribute("data-bot");
+const previewBot = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="bot"] [data-bot]')?.getAttribute("data-bot");
 
 
 describe("Settings → Projects → Icon", () => {
