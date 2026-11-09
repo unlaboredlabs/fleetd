@@ -1,28 +1,23 @@
 name: Desktop QA
 
-# The desktop app's QA gate: every registered screen (app/desktop/qa/registry.ts) x fixture, at three window sizes in
-# light and dark, with the DOM checks failing the job on any finding (overflow without wrap/ellipsis, overlapping
-# text or rows, content within 8 px of the window edge, raw ids/hashes/keys/markdown outside code). Linux runs it at
-# scale 1; macOS runs it at scale 2 with the platform bits (traffic lights, menu, fonts, a shot of the real window).
+# The desktop app's QA: every registered screen (app/desktop/qa/registry.ts) x fixture, at three window sizes in light
+# and dark, with the DOM checks failing the job on any finding (overflow without wrap/ellipsis, overlapping text or
+# rows, content within 8 px of the window edge, raw ids/hashes/keys/markdown outside code). Linux runs it at scale 1;
+# macOS runs it at scale 2 with the platform bits (traffic lights, menu, fonts, a shot of the real window).
 # The contact sheet (index.html), the PNGs with their annotated overlays and findings.json are the run's artifacts.
 #
-# The screens are sharded across jobs (Playwright's --shard; every test is its own unit), 4 on Linux and 3 on macOS:
-# one job ran them in 8 (Linux) and 19 (macOS) minutes. Each shard has its own contact sheet, artifact
-# desktop-qa-<os>-<shard>.
+# The screens are sharded across jobs (Playwright's --shard; every test is its own unit), 4 on Linux and 3 on macOS.
+# Each shard has its own contact sheet, artifact desktop-qa-<os>-<shard>.
 #
-# Linux QA decides merges (D158, .fleetd/train.json). No pull request or push runs the macOS leg
-# (ci.no-macos-on-prs): mac.yml calls this workflow with `macos` nightly, on demand and before each release, and its
-# report opens an issue when a shard fails.
-#
-# Only main's newest push runs: a push to main cancels main's older push run, queued or running. Nothing goes
-# untested: on main, Scope compares with the last push run whose shards all finished (.github/main-base.sh), or runs in
-# full without one. Manual runs and mac.yml's are never cancelled.
+# No pull request or push runs it. It ran on every PR that touched app/desktop until Nov 2026 and took 4.3 minutes
+# (median; 5.3 max) as 4 shards: ~500 tests, one Electron launch each, ~2,500 test-seconds, ~30 s of setup per job. A
+# PR keeps it only under a minute, which would take ~35 shards per run, and running only the screens a change shows
+# doesn't help, since most desktop PRs touch ui/ or shared CSS, which every screen shows. Before a push,
+# scripts/check.sh runs the screens a renderer change shows (app/desktop/qa/touched.ts), and `scripts/check.sh qa` runs
+# them all. On a branch, `gh workflow run desktop-qa.yml --ref <branch>` runs the Linux shards here; mac.yml calls it
+# with `macos` nightly, on demand and before each release, and its report opens an issue when a shard fails.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -30,20 +25,6 @@ on:
         description: The macOS shards (scale 2, with the platform bits) instead of Linux's
         type: boolean
         default: false
-
-# As in ci.yml: a newer push to a PR cancels its run; runs on the train's batch PR are never cancelled. On main, a
-# push run shares one group with the other push runs, so a newer one cancels it; manual runs and mac.yml's each have
-# their own.
-concurrency:
-  group: >-
-    ${{ inputs.macos && format('{0}-{1}-macos', github.workflow, github.run_id)
-    || github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}-main', github.workflow)
-    || (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
-    && format('{0}-{1}', github.workflow, github.run_id)
-    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: >-
-    ${{ !inputs.macos && (github.event_name == 'push' && github.ref == 'refs/heads/main'
-    || github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch')) }}
 
 permissions:
   contents: read
@@ -63,9 +44,6 @@ jobs:
     name: qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: read
     defaults:
       run:
         working-directory: app/desktop
@@ -73,75 +51,39 @@ jobs:
       QA_SCALE: ${{ matrix.scale }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-      - name: Scope
-        # Runs when app/desktop or this workflow changed, and always on a manual run or for mac.yml; otherwise
-        # reports success at once, so it can be required. A push to main compares with the last push run that wasn't
-        # cancelled, and runs in full when it finds none.
-        id: scope
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          run=true
-          base=HEAD^1
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
-            last=$(.github/main-base.sh desktop-qa.yml "qa (")
-            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
-            echo "Comparing with ${base:-nothing: no earlier finished run found, so it runs in full}."
-          fi
-          if [ "${{ github.event_name }}" != workflow_dispatch ] && [ "${{ github.event_name }}" != schedule ] \
-            && [ "${{ inputs.macos }}" != true ] \
-            && [ -n "$base" ] && git rev-parse -q --verify "$base" >/dev/null \
-            && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
-            run=false
-            echo "app/desktop didn't change."
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.run == 'true'
-        uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: app/desktop/package.json
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
-      - if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/electron-cache
-      - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile
-      - if: steps.scope.outputs.run == 'true'
-        # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
-        run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
+      - uses: ./.github/actions/electron-cache
+      - run: pnpm install --frozen-lockfile
+      # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
+      - run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
       # The fixtures are cached under a hash of every file their build reads (scripts/fixtures-key.ts follows the part
-      # of the app they import), so a shard whose fixtures a run has built before (main's, or this PR's last) skips
-      # that minute. The QA build takes seconds and isn't cached.
-      - if: steps.scope.outputs.run == 'true'
-        id: fixtures-key
+      # of the app they import), so a shard whose fixtures a run has built before skips that minute. The QA build takes
+      # seconds and isn't cached.
+      - id: fixtures-key
         run: echo "key=$(node scripts/fixtures-key.ts)" >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.run == 'true'
-        id: fixtures
+      - id: fixtures
         uses: actions/cache@v5
         with:
           path: app/desktop/fixtures/*.json
           key: fixtures-${{ runner.os }}-${{ steps.fixtures-key.outputs.key }}
-      - if: steps.scope.outputs.run == 'true' && steps.fixtures.outputs.cache-hit != 'true'
+      - if: steps.fixtures.outputs.cache-hit != 'true'
         # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
         run: pnpm fixtures
-      - if: steps.scope.outputs.run == 'true'
-        # The app with the QA error probe bundled, which release builds leave out.
-        run: pnpm qa:build
-      - if: steps.scope.outputs.run == 'true' && matrix.shard == 1
+      # The app with the QA error probe bundled, which release builds leave out.
+      - run: pnpm qa:build
+      - if: matrix.shard == 1
         name: Self-test of the DOM checks
         run: pnpm qa:selftest
-      - if: steps.scope.outputs.run == 'true'
-        name: Screens
+      - name: Screens
         run: pnpm qa --shard=${{ matrix.shard }}/${{ matrix.of }}
-      - if: always() && steps.scope.outputs.run == 'true'
+      - if: always()
         uses: actions/upload-artifact@v7
         with:
           name: desktop-qa-${{ runner.os }}-${{ matrix.shard }}

@@ -1,5 +1,6 @@
 // THE screen registry: every screen × fixture the QA gate shoots and checks. A screen PR adds its screens here; the
-// suite then covers them at every size and theme on Linux and macOS, and any finding fails the PR.
+// suite then covers them at every size and theme on Linux and macOS, and any finding fails the run (scripts/check.sh
+// runs the screens a change shows before a push; desktop-qa.yml runs them all on demand and nightly on macOS).
 //
 // To register a screen (routes and ids: F1's route table, src/renderer/screens/shell/routes.ts):
 //   1. The screen's root carries data-screen="<id>", or "<id>.<state>" for a sub-state such as "chat.loading"; the

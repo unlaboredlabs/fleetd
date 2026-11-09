@@ -6,10 +6,6 @@
     "desktop",
     "rust (darwin)",
     "desktop (mac layout)",
-    "qa (ubuntu-latest, 1/4)",
-    "qa (ubuntu-latest, 2/4)",
-    "qa (ubuntu-latest, 3/4)",
-    "qa (ubuntu-latest, 4/4)",
     "bun (experimental)"
   ],
   "afterMerge": [

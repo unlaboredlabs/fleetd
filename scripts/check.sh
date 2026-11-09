@@ -20,10 +20,11 @@
 # - desktop: app/desktop's case clashes, typecheck, lint and unit tests.
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
-# - qa: desktop-qa.yml's screens, all shards in one run. It takes long, so it runs only when named. With no check named,
-#   a change to app/desktop's renderer or fixtures runs the screens it shows (app/desktop/qa/touched.ts picks them; past
-#   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
-#   fails there when one of its fixtures has no answer for it.
+# - qa: desktop-qa.yml's screens, all shards in one run; no PR runs that workflow (it took minutes), so this is where
+#   they run. It takes long, so it runs only when named. With no check named, a change to app/desktop's renderer or
+#   fixtures runs the screens it shows (app/desktop/qa/touched.ts picks them; past 150 tests, only its own: its
+#   fixtures' and its page's or directory's): a screen that asks the hub something new fails there when one of its
+#   fixtures has no answer for it.
 #
 # The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, and so do the tests picked: a run of them
 # all waits for a build slot 3 times: clippy, that build, the tests. The tests' build takes two slots when it builds
@@ -405,7 +406,7 @@ elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixt
   fi
 elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.yml &&
   ! changed app/desktop/src/renderer app/desktop/fixtures; then
-  echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs the screens CI runs"
+  echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs every screen"
 fi
 
 # For fleetd's pre-push gate, newest last: "<key> <check>" for each check that passed (its key on the tree), and "<tree>"

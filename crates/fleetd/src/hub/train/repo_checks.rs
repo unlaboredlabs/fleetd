@@ -92,10 +92,10 @@ mod tests {
 
     /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI (ci.yml, or bun.yml's Bun experiment) that
     /// run on each PR's push on Linux; its after-merge checks, besides mac.yml's, are Linux jobs of ci.yml too; none is
-    /// a name no job has, which no run would ever report. Linux QA blocks merges (D158): every Linux shard of
-    /// desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here rather than drop out of the gate. No PR
-    /// runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the iOS build of a manual Mobile run, is
-    /// after merge only, so a red one on a branch someone ran it on never holds a merge.
+    /// a name no job has, which no run would ever report. No PR runs desktop-qa.yml (it took minutes), so none of its
+    /// Linux shards is a fast check. No PR runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the
+    /// iOS build of a manual Mobile run, is after merge only, so a red one on a branch someone ran it on never holds a
+    /// merge.
     #[test]
     fn fleetds_own_file_names_linux_jobs_of_its_ci() {
         use serde_yaml_ng::Value;
@@ -110,7 +110,7 @@ mod tests {
         // bun.yml runs on every PR's push like ci.yml (a scope step, never a paths filter, so it always reports).
         let bun = workflow("bun.yml");
         assert!(bun["on"]["pull_request"]["paths"].is_null());
-        // The Linux shards' check names: `qa`'s name with each Linux entry of its matrix (a `fromJSON` of literal
+        // The shards' check names on an OS: `qa`'s name with each entry of its matrix for it (a `fromJSON` of literal
         // entries) put in.
         let qa = &workflow("desktop-qa.yml")["jobs"]["qa"];
         let template = qa["name"].as_str().unwrap();
@@ -135,30 +135,19 @@ mod tests {
                 })
                 .collect()
         };
-        let shards = shards_on("ubuntu-latest");
-        assert_eq!(shards.len(), 4, "{shards:?}");
         assert_eq!(qa["runs-on"].as_str(), Some("${{ matrix.os }}"));
-        for shard in &shards {
-            assert!(
-                file.fast_checks.iter().any(|c| c.as_str() == shard),
-                "{PATH} leaves out {shard}"
-            );
-        }
+        let qa_on = &workflow("desktop-qa.yml")["on"];
+        assert!(qa_on["pull_request"].is_null() && qa_on["push"].is_null());
         assert!(!file.fast_checks.is_empty());
         for check in file.fast_checks.iter() {
             let check = check.as_str();
-            if shards.iter().any(|s| s == check) {
-                continue;
-            }
             let job = jobs
                 .iter()
                 .chain(bun["jobs"].as_mapping().unwrap())
                 .find(|(id, job)| job["name"].as_str().or(id.as_str()) == Some(check))
                 .map(|(_, job)| job);
             let Some(job) = job else {
-                panic!(
-                    "{PATH} names {check}, which no job of ci.yml or bun.yml, or Linux shard of desktop-qa.yml, is"
-                );
+                panic!("{PATH} names {check}, which no job of ci.yml or bun.yml is");
             };
             assert_eq!(job["runs-on"].as_str(), Some("ubuntu-latest"), "{check}");
         }
