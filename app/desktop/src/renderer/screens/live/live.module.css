@@ -1,22 +1,39 @@
 /*
- * The live strip, docked to the composer: the first row inside the message box, under the box's own outline (and its
- * focus ring), a hairline between it and the words, so the two read as one piece. Opened (by a click, never by
- * hovering, so the conversation never moves under a passing pointer), its lanes grow it upward. Motion only on a
- * change, never a loop (the app draws no frames while nothing changes): a dot pulses once as it appears or its agent's
- * state changes, then holds still, and a new now-line rolls in; with reduced motion, neither.
+ * The live strip, a glass capsule floating in the band over the chat's composer island: one slim row, as wide as what
+ * it says. Opened (by a click, never by hovering, so the conversation never moves under a passing pointer), it takes
+ * the band's width and its lanes grow it upward into a glass card over the conversation, which doesn't move. Motion
+ * only on a change, never a loop (the app draws no frames while nothing changes): a dot pulses once as it appears or
+ * its agent's state changes, then holds still, and a new now-line rolls in; with reduced motion, neither.
  */
 
 .dock {
-  /* The box's corner radius (chat/composer.module.css), inside its 1 px border. */
-  --corner: 17px;
+  /* Half the row's height: round ends, as the top row's capsules have. */
+  --corner: 14px;
   position: relative;
-  container-type: inline-size;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
   display: flex;
   flex-direction: column-reverse;
-  border-bottom: 1px solid var(--hairline);
-  border-radius: var(--corner) var(--corner) 0 0;
-  background: var(--sidebar);
+  border-radius: var(--corner);
+  /* The top row's glass (ui/layout .capsule): the page blurred through a tint, a hairline and rim inside its edge, a
+     soft lift. */
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+}
+.dock[data-open] {
+  width: 100%;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dock {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
 }
 
 .strip {
@@ -44,7 +61,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--corner) var(--corner) 0 0;
+  border-radius: var(--corner);
 }
 .toggle:hover,
 .dock[data-open] .toggle {
@@ -120,8 +137,11 @@
   --text-sm: var(--text-xs);
   position: relative;
   z-index: 1;
-  flex: 1 1 0;
-  min-width: 30%;
+  /* A width of its own in the capsule, which is as wide as what it holds: the line fits itself to its box (parts.tsx),
+     so its box can't come from its text. It gives way before the headline does. */
+  flex: 0 100 auto;
+  width: 320px;
+  min-width: 0;
   overflow: hidden;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -143,7 +163,7 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-/* Too narrow a strip (the chat beside a wide panel) has no room for a useful now-line: the headline takes it all. */
+/* Too narrow a band (the chat beside a wide panel) has no room for a useful now-line: the headline takes it all. */
 @container (width < 420px) {
   .now {
     display: none;

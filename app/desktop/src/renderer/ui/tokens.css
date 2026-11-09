@@ -183,6 +183,11 @@
   --side-radius: 12px;
   /* The glass's blur, the same in both themes. */
   --glass-blur: blur(24px) saturate(180%);
+  /* The chat's composer floats as a glass island over the conversation: this far in from the window's bottom edge,
+     with a band above it as tall as a capsule and its gap, where the live strip floats (the conversation keeps clear
+     of both, screens/chat ChatList). */
+  --island-gap: 12px;
+  --island-band-h: 36px;
   --sidebar-w: 264px;
   --measure: 680px;
   /* The QA gate's minimum gap between content and the window edge. */

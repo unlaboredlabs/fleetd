@@ -243,10 +243,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
     }
   }
 
-  // Content scrolls under an opaque sticky or fixed bar (a list's header) or the window's floating top row's glass
-  // (data-floats: the chat's capsules) by design, and a popover or menu (an opaque surface in a fixed positioner, as
-  // Radix draws them) opens over it. Where such a surface is the topmost thing over a run, that part of the run is
-  // hidden, not overlapping, and is cut from its visible rect.
+  // Content scrolls under an opaque sticky or fixed bar (a list's header) or floating glass (data-floats: the window's
+  // top row's capsules, the chat's composer island) by design, and a popover or menu (an opaque surface in a fixed
+  // positioner, as Radix draws them) opens over it. Where such a surface is the topmost thing over a run, that part of
+  // the run is hidden, not overlapping, and is cut from its visible rect.
   const fixedParent = (el: Element) => el.parentElement !== null && style(el.parentElement).position === "fixed";
   const occluders = [...document.body.querySelectorAll("*")].filter((el) => {
     const s = style(el);

@@ -288,6 +288,8 @@ export function ChatList(props: {
   entering?: ReadonlyMap<string, Arrival> | undefined;
   /** It scrolls under the window's top row: its first row starts below it, and a row shown is brought in below it. */
   under?: boolean;
+  /** The composer's island floats over the list's end: its room there, px, which the last row scrolls clear of. */
+  inset?: number | undefined;
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
@@ -390,6 +392,20 @@ export function ChatList(props: {
     virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
   };
 
+  // The composer's island growing or shrinking with its words changes the room at the end. At the end, the end stays in
+  // view: the last row rides up with the island (glide.ts sees the list grow and glides on its growing spring; with
+  // reduced motion it is there at once). Scrolled up, nothing moves.
+  const { inset } = props;
+  const insetWas = useRef(inset);
+  useLayoutEffect(() => {
+    const was = insetWas.current;
+    insetWas.current = inset;
+    const v = virtualizer.current;
+    const el = v?.scrollElement;
+    if (!v || !el || was === undefined || inset === undefined || was === inset) return;
+    if (el.scrollHeight - (inset - was) - el.scrollTop - el.clientHeight <= 24) v.scrollToOffset(el.scrollHeight - el.clientHeight);
+  }, [inset]);
+
   useEffect(() => {
     const v = virtualizer.current;
     if (sent === undefined || sent === 0 || !v) return;
@@ -404,8 +420,10 @@ export function ChatList(props: {
         items={rows}
         getKey={(r) => r.key}
         estimateSize={56}
-        // The composer's room above its box is the list's, so a new bubble comes out from behind the box.
-        paddingEnd={8}
+        // The list runs on behind the composer's island; its end keeps the island's room, so the last row scrolls
+        // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
+        // until then, a one-line island's.
+        paddingEnd={inset ?? 100}
         followOutput
         startAtEnd
         paddingStart={props.under === true ? TOP_BAR : 0}
