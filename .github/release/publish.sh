@@ -10,11 +10,13 @@
 # assets that are not there yet.
 #
 # Edge replaces its assets in place, and GitHub's downloads can hand one reader files of two builds (a cache's older
-# SHA256SUMS beside the next build's binary). So each CLI build also goes up pinned, as <asset>-<first 16 hex digits of
-# its SHA-256>, a name that never changes once uploaded, and release.json's sha256 ({asset: SHA-256}) names them: hubs,
-# nodes and `fleetd update` read the build and its checksums from that one file and download the pinned copies
-# (src/update). Pins no release.json names go once they are 2 hours old, so a reader holding an older release.json
-# still finds its build meanwhile.
+# SHA256SUMS beside the next build's binary). So each CLI build and desktop app package also goes up pinned, under a
+# name with the first 16 hex digits of its SHA-256 (pinned.sh) that never changes once uploaded, and release.json's
+# sha256 ({asset: SHA-256}) names them: hubs, nodes, `fleetd update` and site/install.sh read a build and its checksums
+# from that one file and download the pinned copies. The app's feeds (update-yml.sh) name its pinned package, so an
+# app updating reads the package and its sha512 from one file too. Pins no release.json names go once they are 2 hours
+# old, so a reader holding an older release.json or feed still finds its build meanwhile. The nightly copy holds no
+# pins: its release.json and feeds name the plain files.
 #
 # Edge was called nightly until D203, and builds from before then (CLI, hub, nodes, app) read the `nightly` release.
 # So every edge publish uploads the same files there too, and they update to the edge build, which reads edge from
@@ -93,25 +95,41 @@ sums() {
 }
 sums "$prev/SHA256SUMS" > SHA256SUMS
 
-# This run's CLI builds, pinned (see the top): the copies to upload, and their lines for release.json's sha256.
-cli='^fleetd-(bun-)?(linux|darwin)-[a-z0-9]+'
+# This run's CLI builds and desktop app packages, pinned (see the top): the copies to upload (with the zip's blockmap,
+# which electron-updater reads beside it), and their lines for release.json's sha256.
+# shellcheck source=.github/release/pinned.sh
+. "$here/pinned.sh"
+pinnable='^(fleetd-(bun-)?(linux|darwin)-[a-z0-9]+|fleetd-desktop-.+\.(zip|AppImage))$'
 pins=()
 mkdir -p "$prev/pins"
 : > "$prev/pinned"
 while read -r sum name; do
-  if [[ "$name" =~ $cli$ ]]; then
-    cp "$name" "$prev/pins/$name-${sum:0:16}"
-    pins+=("$prev/pins/$name-${sum:0:16}")
+  if [[ "$name" =~ $pinnable ]]; then
+    pin="$(pinned "$name" "$sum")"
+    cp "$name" "$prev/pins/$pin"
+    pins+=("$prev/pins/$pin")
+    if [ -f "$name.blockmap" ]; then
+      cp "$name.blockmap" "$prev/pins/$pin.blockmap"
+      pins+=("$prev/pins/$pin.blockmap")
+    fi
     echo "$sum $name" >> "$prev/pinned"
   fi
 done < "$prev/built"
+# The app's feeds (update-yml.sh) name the pinned packages: each must be one this run uploads.
+for feed in latest-*.yml; do
+  while read -r url; do
+    [ -f "$prev/pins/$url" ] || { echo "::error::$feed names $url, which this run doesn't pin"; exit 1; }
+  done < <(awk '$1 == "-" && $2 == "url:" { print $3 }' "$feed")
+done
 
-# The previous release's pins carry on for the builds this run didn't make, as in SHA256SUMS. A release with none pinned
-# leaves sha256 out, and its readers take SHA256SUMS.
+# The previous release's pins carry on for what this run didn't build (the CLI or the app), as in SHA256SUMS; what it
+# built replaces its kind's, so a build that stops being made drops out. A release with none pinned leaves sha256 out,
+# and its readers take SHA256SUMS.
 jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$GITHUB_SHA" --arg date "$(date -u +%FT%TZ)" \
   --arg cli "$cli_built" --arg app "$APP_BUILT" --slurpfile prev "$prev/release.json" --rawfile pinned "$prev/pinned" '
   $prev[0] as $p
-  | (($p.sha256 // {}) + ($pinned | split("\n") | map(select(. != "") | split(" ") | {(.[1]): .[0]}) | add // {})) as $sha
+  | (($p.sha256 // {} | with_entries(select(if (.key | startswith("fleetd-desktop-")) then $app != "true" else $cli != "true" end)))
+    + ($pinned | split("\n") | map(select(. != "") | split(" ") | {(.[1]): .[0]}) | add // {})) as $sha
   | {
     channel: $channel, version: $version, commit: $commit, date: $date,
     cliVersion: (if $cli == "true" then $version else $p.cliVersion end),
@@ -156,10 +174,13 @@ fi
 if [ ${#pins[@]} -gt 0 ]; then gh release upload "$tag" "${pins[@]}" --clobber; fi
 upload "$tag" . "${feeds[@]}"
 if [ "$CHANNEL" = edge ]; then
-  keep="$(jq -r '.sha256 // {} | to_entries[] | "\(.key)-\(.value[:16])"' release.json)"
+  keep="$(jq -r '.sha256 // {} | to_entries[] | "\(.key) \(.value)"' release.json | while read -r name sum; do
+    pin="$(pinned "$name" "$sum")"
+    printf '%s\n%s\n' "$pin" "$pin.blockmap"
+  done)"
   cutoff="$(date -u -d '2 hours ago' +%FT%TZ)"
   gh release view edge --json assets -q '.assets[] | "\(.createdAt) \(.name)"' | while read -r at name; do
-    if [[ "$name" =~ $cli-[0-9a-f]{16}$ && "$at" < "$cutoff" ]] && ! grep -qxF "$name" <<< "$keep"; then
+    if [[ "$name" =~ ^fleetd-.+-[0-9a-f]{16}(\.zip|\.zip\.blockmap|\.AppImage)?$ && "$at" < "$cutoff" ]] && ! grep -qxF "$name" <<< "$keep"; then
       gh release delete-asset edge "$name" -y || true
     fi
   done
@@ -170,7 +191,7 @@ if [ "$CHANNEL" = edge ]; then
   mkdir -p "$prev/nightly" "$prev/nightly-was"
   nightly_feeds=()
   for feed in "${feeds[@]}"; do
-    sed 's/^\(version: .*\)-edge\./\1-nightly./' "$feed" > "$prev/nightly/$feed"
+    unpinned "$feed" | sed 's/^\(version: .*\)-edge\./\1-nightly./' > "$prev/nightly/$feed"
     nightly_feeds+=("$prev/nightly/$feed")
   done
   # Without pins, which nightly doesn't hold.

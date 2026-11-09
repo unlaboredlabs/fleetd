@@ -206,6 +206,38 @@ test("a release going up mid-install is read again, and a wrong sum still refuse
   }
 });
 
+// Edge republishes its names in place, and a reader can get one build's checksums (a cache's SHA256SUMS) beside the next
+// build's bytes. A release.json that pins its builds names each one's own copy, which never changes, so the install
+// gets the builds it names, whatever the plain names and SHA256SUMS hold by then.
+test("a release republished mid-install installs the builds its release.json pinned", async () => {
+  const r = release();
+  const next = "#!/bin/sh\necho the next build\n";
+  const app = "#!/bin/sh\nexit 0\n";
+  const pins: Record<string, string> = {};
+  let stale = "";
+  for (const name of readdirSync(r.assets).filter((n) => n.startsWith("fleetd-bun-"))) {
+    pins[name] = sha256(STUB);
+    writeFileSync(join(r.assets, `${name}-${sha256(STUB).slice(0, 16)}`), STUB);
+    writeFileSync(join(r.assets, name), next);
+    stale += `${sha256(STUB)}  ${name}\n`;
+  }
+  const appImage = "fleetd-desktop-linux-x86_64.AppImage";
+  pins[appImage] = sha256(app);
+  writeFileSync(join(r.assets, `fleetd-desktop-linux-x86_64-${sha256(app).slice(0, 16)}.AppImage`), app);
+  writeFileSync(join(r.assets, appImage), next);
+  writeFileSync(join(r.assets, "SHA256SUMS"), `${stale}${sha256(app)}  ${appImage}\n`);
+  writeFileSync(join(r.assets, "release.json"), `${JSON.stringify({ channel: "edge", cliVersion: "1.0.0", sha256: pins }, null, 2)}\n`);
+  const bin = join(r.dir, "bin");
+  mkdirSync(bin);
+  script(join(bin, "sleep"), "");
+  const linux = process.platform === "linux";
+  const out = await r.sh(`PATH=${bin}:$PATH sh "$INSTALLER" ${linux ? "--app" : "--no-app"} --no-init`);
+  expect(out.code, out.stderr).toBe(0);
+  expect(out.stderr).not.toContain("checksum mismatch");
+  expect(readFileSync(join(r.home, ".fleetd/bin/fleetd"), "utf8")).toBe(STUB);
+  if (linux) expect(readFileSync(join(r.home, ".local/share/fleetd/app/fleetd-desktop.AppImage"), "utf8")).toBe(app);
+});
+
 // Ubuntu 24.04 ships no FUSE 2: the installed AppImage exited at once ("AppImages require FUSE to run") while the
 // installer had said the app was installed. Without libfuse.so.2 the menu entry unpacks the AppImage at each start, and
 // the installer says how to install it.

@@ -4,7 +4,8 @@
 # when the update is signed like the running app; on Linux the AppImage updater must download it and match the
 # sha512 in the feed, differentially (its blockmap, the feed's blockMapSize and range requests, which the feed
 # answers as GitHub does). So it proves the hardened runtime's entitlements (without allow-jit the app dies at its first
-# script), the feed update-yml.sh writes, and the signature chain an update needs. Nothing is installed: the app and
+# script), the feed update-yml.sh writes (which names the package's pinned copy, never the plain name edge republishes),
+# and the signature chain an update needs. Nothing is installed: the app and
 # its helpers are killed, not quit (a normal quit installs the update and relaunches it). Run it on a copy anyway.
 #
 #   desktop-update-check.sh <asset> <command> [args...]
@@ -32,6 +33,13 @@ esac
 done_marker="${DONE_MARKER:-$done_marker}"
 cp "$asset" "$feed/"
 "$here/update-yml.sh" "$feed/$(basename "$asset")" 99.0.0 > "$feed/$yml"
+# The feed names the package's pinned copy, as a release holds it (publish.sh). The plain name then holds another
+# build's bytes, as when edge republishes mid-update: an app that downloaded it would fail the feed's sha512.
+pin="$(awk '$1 == "path:" { print $2 }' "$feed/$yml")"
+plain="$feed/$(basename "$asset")"
+mv "$plain" "$feed/$pin"
+[ ! -f "$plain.blockmap" ] || mv "$plain.blockmap" "$feed/$pin.blockmap"
+printf 'the next build\n' > "$plain"
 
 python3 -I "$here/feed-server.py" "$feed" "$port" > "$feed/http.log" 2>&1 &
 server=$!

@@ -1255,11 +1255,11 @@ class Drive {
   }
 }
 
-/** The hub's and the nodes' parts by machine (the hub's under ""), for a quick look. */
 /** The channel's build `to` is one to update to from `running`: not the same, and not an older one of the same channel,
  * as a release.json a cache kept from before the hub's own build names. */
 const newer = (to: string, running: string) => to !== running && versionCmp(to, running) !== -1;
 
+/** The hub's and the nodes' parts by machine (the hub's under ""), for a quick look. */
 export function byMachine(run: UpdateRun): Map<string, UpdatePart> {
   return new Map(run.parts.filter((p) => p.part !== "claude").map((p) => [p.machineId ?? "", p]));
 }
