@@ -23,6 +23,16 @@ const clause = (detail: string | undefined): string | undefined => {
   return d === undefined || d === "" ? undefined : d;
 };
 
+/**
+ * Why the guard didn't wake `t`, as one plain clause about it: the hub's first clause ("T2567 has finished and isn't
+ * waiting on T2584"), with the recipient as "it". What follows the hub's colon (how it gets the DM later) is what
+ * "Held for its next run" says.
+ */
+const guardWhy = (t: AgentMessageTo): string | undefined => {
+  const first = clause(t.detail?.split(": ")[0]);
+  return first?.startsWith(`${t.taskId} `) === true ? `it ${first.slice(t.taskId.length + 1)}` : first;
+};
+
 /** The recipient the guard didn't wake: it had finished and wasn't waiting on the sender. */
 export const notWoken = (m: AgentMessage): AgentMessageTo | undefined => m.to.find((t) => t.outcome === "not_woken");
 
@@ -41,8 +51,10 @@ export function cardReceipt(t: AgentMessageTo, received: boolean, fmt: (iso: str
       return `Held: ${why ?? "it isn’t running, and reads this when it runs again"}.`;
     case "woke":
       return `Woke it${at === "" ? "" : `, ${at}`}${why === undefined ? "" : `: ${why}`}.`;
-    case "not_woken":
-      return `Didn’t wake it${why === undefined ? "" : `: ${why}`}. Held for its next run.`;
+    case "not_woken": {
+      const no = guardWhy(t);
+      return `Didn’t wake ${t.taskId}${no === undefined ? "" : `: ${no}`}. Held for its next run.`;
+    }
     case "refused":
       return `Not sent${why === undefined ? "" : `: ${why}`}.`;
   }
@@ -58,8 +70,10 @@ export function logReceipt(t: AgentMessageTo): string {
       return why === undefined ? "isn’t running: held for its next run" : `held: ${why}`;
     case "woke":
       return why === undefined ? "was woken" : `was woken: ${why}`;
-    case "not_woken":
-      return `wasn’t woken${why === undefined ? "" : `: ${why}`}. Held for its next run`;
+    case "not_woken": {
+      const no = guardWhy(t);
+      return `wasn’t woken${no === undefined ? "" : `: ${no}`}. Held for its next run`;
+    }
     case "refused":
       return `not sent${why === undefined ? "" : `: ${why}`}`;
   }
