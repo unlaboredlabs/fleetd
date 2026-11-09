@@ -21,13 +21,21 @@ export const profileModel = (profile: string): { model: string; effort: Effort }
 /** The profile of a model and effort stored before profiles. */
 export const profileOf = (model: string, effort: Effort) => (model === MODEL && effort === "medium" ? "medium" : "high");
 
-/** Tools no fleetd session gets, then the Bash rules against a nested claude. */
+/**
+ * Tools no fleetd session gets, then the Bash rules against a nested claude. Each rule starts with literal text,
+ * never `*`: claude matches a rule against a part's whole text, quoted arguments and heredocs included, and at times
+ * against the whole chain, so `*sh -*c *claude*` refused `git push -q …; gh pr create --body "…claude.com…"`.
+ */
 export const ALWAYS_DISALLOWED = [
   "Task", "Agent", "Workflow", "ListAgents", "SendMessage", "TaskStop", "TaskOutput", "TeamCreate", "TeamDelete",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
-  "EnterWorktree", "ExitWorktree", "Bash(claude *)", "Bash(*bin/claude)", "Bash(*bin/claude *)", "Bash(*/claude -*)",
-  "Bash(*claude/versions/*)", "Bash(npx *claude*)", "Bash(bunx *claude*)", "Bash(*@anthropic-ai/claude-code*)",
-  "Bash(*sh -*c *claude*)", "Bash(env *claude*)", "Bash(exec *claude*)", "Bash(xargs *claude*)",
+  "EnterWorktree", "ExitWorktree", "Bash(claude *)", "Bash(/*/claude *)", "Bash(~/*/claude *)",
+  "Bash($HOME/*/claude *)", "Bash(./*/claude *)", "Bash(/*/claude/versions/*)", "Bash(~/*/claude/versions/*)",
+  "Bash($HOME/*/claude/versions/*)", "Bash(npx claude *)", "Bash(bunx claude *)",
+  "Bash(npx *@anthropic-ai/claude-code*)", "Bash(bunx *@anthropic-ai/claude-code*)",
+  "Bash(npm exec *@anthropic-ai/claude-code*)", "Bash(pnpm dlx *@anthropic-ai/claude-code*)", "Bash(sh -*c *claude -*)",
+  "Bash(bash -*c *claude -*)", "Bash(zsh -*c *claude -*)", "Bash(/*sh -*c *claude -*)", "Bash(env *claude -*)",
+  "Bash(exec *claude -*)", "Bash(xargs *claude -*)",
 ];
 const AGENT_DISALLOWED = ["ReportFindings", "DesignSync", "NotebookEdit"];
 const TASK_DISALLOWED = ["Bash(git push *--no-verify*)", "Bash(git *core.hooksPath*)", "Bash(git *core.hookspath*)"];
