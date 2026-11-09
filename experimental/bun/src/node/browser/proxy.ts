@@ -12,7 +12,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import type { Message } from "./cdp.ts";
-import { filledFieldRefusal, writesNode } from "./credentials.ts";
+import { filledFieldRefusal, unplacedWrite, writesNode } from "./credentials.ts";
 import { refused } from "./guard.ts";
 import type { Session } from "./session.ts";
 import { clientEnd, type End, type Frame, pipeSealed, relaySaysGone } from "../session_route/relay.ts";
@@ -28,6 +28,8 @@ export interface Sessions {
   remote?(thread: string): { url: string; key: Uint8Array } | undefined;
   /** The relay says the session there ended: forget it here. */
   gone?(thread: string): void;
+  /** Why a sealed session refuses the driver's DOM write (credentials.ts `filledFieldRefusal`, the default). */
+  writeRefusal?(session: Session, command: Message): Promise<string | undefined>;
 }
 
 type Kept = { port: number; key: string };
@@ -166,8 +168,9 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
         if (d.queue || (session.sealed() && writesNode(command.method))) {
           const ahead = d.queue ?? Promise.resolve();
           const mine: Promise<void> = ahead
-            .then(() => filledFieldRefusal(session, command))
-            .then(commandIn, () => commandIn(undefined))
+            .then(() => (sessions.writeRefusal ?? filledFieldRefusal)(session, command))
+            // A check that fails says nothing about the field: the write is refused, never let through.
+            .then(commandIn, () => commandIn(unplacedWrite(command.method)))
             .finally(() => {
               if (d.queue === mine) d.queue = undefined;
             });

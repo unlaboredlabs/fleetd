@@ -454,3 +454,21 @@ test("an agent's request_takeover reaches the hub after its session, and the ses
   // Not a browser's: the desktop tool.
   await expect(broker.call("t9", { id: "3", cwd: "/", call: { op: "desktop", action: "screenshot" } as never })).rejects.toThrow("The desktop tool drives desktop sessions, not browsers.");
 });
+
+test("a sealed session's DOM write whose check fails is refused, never let through, and the commands after it go on", async () => {
+  const browser = fakeBrowser();
+  const { broker, local } = nodeWith(async () => ({ cdp: new Cdp(browser) }));
+  const started = (await local.call("session_start", { purpose: "sign in" }, "t8")) as { cdp: string };
+  broker.live("t8")!.credentialsFilled = 1;
+  broker.writeRefusal = async () => {
+    throw new Error("the check broke");
+  };
+  const d = await driver(started.cdp);
+  expect(await d.call(51, "DOM.setFileInputFiles", { nodeId: 4, files: [] }, "driver-s")).toMatchObject({
+    id: 51,
+    error: { message: expect.stringContaining("couldn't tell which element this write is for, so it didn't make it") },
+  });
+  expect(browser.got.some((m) => m.method === "DOM.setFileInputFiles")).toBe(false);
+  expect(await d.call(52, "Page.reload", {}, "driver-s")).toEqual({ id: 52, result: { echo: "Page.reload" } });
+  d.ws.close();
+});

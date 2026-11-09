@@ -324,8 +324,10 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
         const deliver = frame as unknown as SecretDeliver;
         // A Navi's secure input: opened here and typed into its browser session's field by the broker.
         if (deliver.sink.startsWith("fill:")) {
+          // A delivery that fails is answered as one, never left as an unhandled rejection.
           void broker(node)
             .deliver(deliver, boxKey, config.machineId)
+            .catch((error: unknown) => ({ id: deliver.id, error: [...`not filled: ${(error as Error).message}`].slice(0, 500).join("") }))
             .then((r) => link.send({ t: "secret_result", ...r }));
           return;
         }

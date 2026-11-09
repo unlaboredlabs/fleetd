@@ -35,7 +35,7 @@ import {
   writePolicy,
 } from "./agent_browser.ts";
 import { purchaseFill, purchaseRequest, WAIT_ON_PERSON_MS } from "./cards.ts";
-import { Credentials, type FillCredentialCall, fillCredential, outgoing, remoteVault, type SessionVault, unread } from "./credentials.ts";
+import { Credentials, type FillCredentialCall, fillCredential, filledFieldRefusal, outgoing, remoteVault, type SessionVault, unread } from "./credentials.ts";
 import type { Credential } from "./onepassword.ts";
 import { Proxy } from "./proxy.ts";
 import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
@@ -144,11 +144,14 @@ export class Broker {
       live: (thread) => this.live(thread),
       remote: (thread) => this.remote?.(thread),
       gone: (thread) => this.gone?.(thread),
+      writeRefusal: (session, command) => this.writeRefusal(session, command),
     });
     this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
   }
   readonly home: string;
   private readonly warmSize: number;
+  /** Why a sealed session refuses the driver's DOM write (a test's stand-in, or credentials.ts's). */
+  writeRefusal: (session: Session, command: Record<string, unknown>) => Promise<string | undefined> = filledFieldRefusal;
 
   /** The Chrome node.json names (`browser.chrome`, `FLEETD_CHROME`), else the node's pinned install's. */
   private chrome(): string | undefined {

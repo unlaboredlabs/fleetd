@@ -309,6 +309,10 @@ const NODE_WRITES = ["DOM.setAttributeValue", "DOM.removeAttribute", "DOM.setNod
 /** Whether the driver's `method` writes to one node, which `filledFieldRefusal` checks once the session is sealed. */
 export const writesNode = (method: unknown) => typeof method === "string" && NODE_WRITES.includes(method);
 
+/** Why a sealed session refused a write it couldn't place: the node couldn't tell which element it is for. */
+export const unplacedWrite = (method: unknown) =>
+  `${String(method)} was refused: this browser session filled a login from 1Password, and the node couldn't tell which element this write is for, so it didn't make it. Try again; if it keeps failing, look the element up again (agent-browser snapshot -i).`;
+
 /**
  * Why a session that filled a credential refuses the driver's `command`, if it writes to a field it filled: whatever
  * the attribute, a write there could change how the field validates or shows. The node asks the browser, in the
@@ -317,7 +321,7 @@ export const writesNode = (method: unknown) => typeof method === "string" && NOD
 export async function filledFieldRefusal(session: Session, command: { method?: unknown; params?: Record<string, unknown>; sessionId?: unknown }): Promise<string | undefined> {
   const method = typeof command.method === "string" ? command.method : "";
   if (!session.sealed() || !writesNode(method)) return undefined;
-  const unknown = `${method} was refused: this browser session filled a login from 1Password, and the node couldn't tell which element this write is for, so it didn't make it. Try again; if it keeps failing, look the element up again (agent-browser snapshot -i).`;
+  const unknown = unplacedWrite(method);
   const params = command.params ?? {};
   const key = ["nodeId", "backendNodeId", "objectId"].find((k) => params[k] !== undefined && params[k] !== null);
   if (!key) return unknown;
