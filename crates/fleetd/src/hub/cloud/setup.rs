@@ -101,6 +101,7 @@ pub fn render(s: &SetupScript) -> String {
         ("@HUB@", s.hub_url.clone()),
         ("@MACHINE@", s.machine_id.to_string()),
         ("@CHANNEL@", channel.as_str().to_owned()),
+        ("@FLAVOUR@", crate::update::FLAVOUR.as_str().to_owned()),
         ("@BASE_URL@", base_url),
         ("@CLAUDE@", s.claude.clone()),
         ("@IDENTITY@", s.git_identity.clone().unwrap_or_default()),

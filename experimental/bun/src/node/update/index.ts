@@ -132,7 +132,7 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
       }
     } else {
       if (!isBuild(fetched(p), s, p.asset)) await checkedTo(feed, s, p.asset, fetched(p));
-      await updateHelper(feed, s, p.exe);
+      await updateHelper(feed, s, p.exe, prev);
       swap(p.exe, fetched(p), running, prev);
     }
     rmSync(fetched(p), { force: true });

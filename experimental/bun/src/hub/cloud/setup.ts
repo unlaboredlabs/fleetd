@@ -3,7 +3,7 @@
 // and with the slot's pool enroll token as a 0600 file at TOKEN_FILE, under `/tmp`, which boat never snapshots.
 import template from "../../../../../crates/fleetd/src/hub/cloud/setup.sh" with { type: "text" };
 import { readSetup } from "../../cli/common.ts";
-import { channelOf } from "../../update/index.ts";
+import { channelOf, FLAVOUR } from "../../update/index.ts";
 import { machineHubUrl } from "../pool/tunnel.ts";
 
 /** How `setup.sh` starts the one line it prints when a step fails. */
@@ -31,6 +31,8 @@ export function render(s: SetupScript): string {
     ["@HUB@", s.hubUrl],
     ["@MACHINE@", s.machineId],
     ["@CHANNEL@", channel],
+    // The hub's own flavour: a cloud machine a Bun hub creates runs the Bun build too.
+    ["@FLAVOUR@", FLAVOUR],
     ["@BASE_URL@", baseUrl],
     ["@CLAUDE@", s.claude],
     ["@IDENTITY@", s.gitIdentity ?? ""],

@@ -8,6 +8,8 @@ set -euo pipefail
 HUB=@HUB@
 MACHINE=@MACHINE@
 CHANNEL=@CHANNEL@
+# The hub's flavour (rust or bun, docs/cutover/bun.md): the machine installs the same one.
+FLAVOUR=@FLAVOUR@
 BASE_URL=@BASE_URL@
 CLAUDE=@CLAUDE@
 IDENTITY=@IDENTITY@
@@ -165,7 +167,7 @@ step "fleetd"
 join=(--no-app --join "$HUB" --code "$CODE" --machine-id "$MACHINE")
 [ -z "$IDENTITY" ] || join+=(--git-identity "$IDENTITY")
 args=$(printf '%q ' "${join[@]}")
-env_line="FLEETD_CHANNEL=$CHANNEL"
+env_line="FLEETD_CHANNEL=$CHANNEL FLEETD_FLAVOUR=$FLAVOUR"
 [ -z "$BASE_URL" ] || env_line="$env_line FLEETD_BASE_URL=$BASE_URL"
 as_agent "curl -fsSL https://fleetd.sh | $env_line sh -s -- $args"
 sudo rm -f "$TOKEN_FILE"

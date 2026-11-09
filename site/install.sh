@@ -21,7 +21,9 @@
 # the hub's Update then brings the hub level with it. FLEETD_CHANNEL is then not read.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
-# D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
+# D203, is edge too). FLEETD_BASE_URL points at another directory of release assets. FLEETD_FLAVOUR=rust|bun picks the
+# implementation (default rust): bun installs the Bun build, with the release's Rust build beside it as
+# fleetd-session-host, the session host it runs agents under (docs/cutover/bun.md).
 #
 # Everything runs from main at the end, so a partly downloaded script does nothing.
 set -eu
@@ -50,7 +52,8 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
                 hub's own build
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
-Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
+Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>,
+             FLEETD_FLAVOUR=rust|bun (default rust)
 EOF
 }
 
@@ -99,6 +102,14 @@ swap() {
 install_cli() {
   asset="fleetd-$os-$arch"
   mkdir -p "$bin_dir"
+  if [ "$flavour" = bun ]; then
+    # Its session host first: a Bun build without it runs no agent.
+    fetch "$asset" "$bin_dir/.fleetd-session-host.new" ||
+      die "no Rust build for $os-$arch on the $channel channel to host the Bun build's sessions"
+    chmod 755 "$bin_dir/.fleetd-session-host.new"
+    swap "$bin_dir/.fleetd-session-host.new" "$bin_dir/fleetd-session-host"
+    asset="fleetd-bun-$os-$arch"
+  fi
   if ! fetch "$asset" "$bin_dir/.fleetd.new"; then
     rm -f "$bin_dir/.fleetd.new"
     warn "no CLI for $os-$arch on the $channel channel yet; skipping it"
@@ -322,6 +333,11 @@ main() {
     arch=arm64
   fi
 
+  flavour="${FLEETD_FLAVOUR:-rust}"
+  case "$flavour" in
+    rust | bun) ;;
+    *) die "FLEETD_FLAVOUR must be rust or bun, not $flavour" ;;
+  esac
   channel="${FLEETD_CHANNEL:-edge}"
   # The hub's own channel, from its version.
   case "$hub_version" in

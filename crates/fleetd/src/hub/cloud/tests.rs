@@ -367,6 +367,8 @@ fn the_setup_script_joins_the_hub_through_its_tunnel_on_its_channel_with_every_v
         "HUB=http://127.0.0.1:47900",
         "MACHINE=boat-2",
         "CHANNEL=stable",
+        // A Rust hub's machines install the Rust build.
+        "FLAVOUR=rust",
         "BASE_URL=https://github.com/unlaboredlabs/fleetd/releases/download/v0.4.0",
         "IDENTITY='Dev Box <dev@example.net>'",
         "TOKEN_FILE=/tmp/fleetd-enroll-token",

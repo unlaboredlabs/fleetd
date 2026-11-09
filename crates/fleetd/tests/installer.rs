@@ -50,6 +50,7 @@ impl Release {
             .env_remove("DISPLAY")
             .env_remove("WAYLAND_DISPLAY")
             .env_remove("FLEETD_CHANNEL")
+            .env_remove("FLEETD_FLAVOUR")
             .stdin(Stdio::null())
             .output()
             .unwrap()
@@ -117,6 +118,38 @@ fn the_printed_join_command_installs_and_joins_with_the_given_arguments() {
             "--rejoin"
         ]
     );
+}
+
+/// FLEETD_FLAVOUR=bun (a Bun hub's cloud machines, hub/cloud/setup.sh): the Bun build at the CLI's path, and the
+/// release's Rust build beside it as the session host it runs agents under. Any other flavour stops before a download.
+#[test]
+fn the_bun_flavour_installs_the_bun_build_with_the_rust_one_beside_it() {
+    let release = Release::new();
+    let bun = "#!/bin/sh\necho bun\n";
+    let assets = release.dir.path().join("assets");
+    let mut sums = std::fs::read_to_string(assets.join("SHA256SUMS")).unwrap();
+    for os in ["linux", "darwin"] {
+        for arch in ["x64", "arm64"] {
+            let name = format!("fleetd-bun-{os}-{arch}");
+            std::fs::write(assets.join(&name), bun).unwrap();
+            sums += &format!("{}  {name}\n", sha256(bun.as_bytes()));
+        }
+    }
+    std::fs::write(assets.join("SHA256SUMS"), sums).unwrap();
+    let output = release.run("FLEETD_FLAVOUR=bun sh \"$INSTALLER\" --no-app --no-init");
+    assert!(output.status.success(), "{}", stderr(&output));
+    let bin = release.home().join(".fleetd/bin");
+    assert_eq!(std::fs::read_to_string(bin.join("fleetd")).unwrap(), bun);
+    assert_eq!(
+        std::fs::read_to_string(bin.join("fleetd-session-host")).unwrap(),
+        STUB
+    );
+
+    let other = Release::new();
+    let output = other.run("FLEETD_FLAVOUR=ts sh \"$INSTALLER\" --no-app --no-init");
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("FLEETD_FLAVOUR must be rust or bun, not ts"));
+    assert!(!other.home().join(".fleetd/bin/fleetd").exists());
 }
 
 #[test]
