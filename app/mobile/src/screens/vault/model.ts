@@ -244,8 +244,12 @@ export const SCOPE_WORDS: Readonly<Record<VaultScope, string>> = {
   hub: "Every project",
 };
 
-/** The title a row shows: a variable by its name, everything else by its label. */
-export const titleOf = (item: Pick<VaultItemSummary, "kind" | "label" | "envName">): string => (item.kind === "env" ? (item.envName ?? item.label) : item.label);
+/**
+ * The title a row shows: a variable by its name, everything else by its label. A `request_secret` sink's item has an
+ * internal name of the hub's (`sink:<kind>:<key>:<path>`), never shown: its label (its variable or secret key) is.
+ */
+export const titleOf = (item: Pick<VaultItemSummary, "kind" | "label" | "envName" | "meta">): string =>
+  item.kind !== "env" || item.envName === undefined || item.meta.sink !== undefined || item.envName.startsWith("sink:") ? item.label : item.envName;
 
 /** Whether an item matches what was typed in the search bar: its title, its line, its sites. */
 export const matches = (item: VaultItemSummary, query: string): boolean => {

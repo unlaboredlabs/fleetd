@@ -13,7 +13,7 @@ import { haptics } from "../../ui/haptics";
 import { ListSection } from "../../ui/List";
 import { CheckRow, errorWords, Problem, sheetOptions } from "../manage/parts";
 import { saveItem, vaultHub } from "./api";
-import { brandOf, check, emptyDraft, envNameProblem, groupNumber, isSecretEnv, KIND_WORDS, SCOPE_WORDS, sitesMeta, typeExpiry, type Draft } from "./model";
+import { brandOf, check, emptyDraft, envNameProblem, groupNumber, isSecretEnv, KIND_WORDS, SCOPE_WORDS, sitesMeta, titleOf, typeExpiry, type Draft } from "./model";
 import { useVaultNav, useVaultRoute, whoseOf } from "./parts";
 import type { VaultScope } from "./types";
 
@@ -28,7 +28,7 @@ export function VaultEdit() {
   const [draft, setDraft] = useState<Draft>(() =>
     item === undefined
       ? emptyDraft(kind)
-      : { ...emptyDraft(kind), label: item.label, sites: sitesMeta(item).join("\n"), envName: item.envName ?? "", secret: isSecretEnv(item) },
+      : { ...emptyDraft(kind), label: item.label, sites: sitesMeta(item).join("\n"), envName: titleOf(item), secret: isSecretEnv(item) },
   );
   const [scope, setScope] = useState<VaultScope>(item?.scope ?? (project === undefined ? "person" : "project"));
   const [busy, setBusy] = useState(false);
@@ -53,7 +53,8 @@ export function VaultEdit() {
       ...(scope === "project" && project !== undefined ? { project } : {}),
       label: c.value.label,
       ...(kind === "login" || kind === "address" ? { sites: c.value.sites } : {}),
-      ...(c.value.envName === undefined || c.value.envName === "" ? {} : { envName: c.value.envName }),
+      // A variable keeps its name: only a new one sends it.
+      ...(editing || c.value.envName === undefined || c.value.envName === "" ? {} : { envName: c.value.envName }),
       ...(c.value.secretEnv === undefined ? {} : { secret: c.value.secretEnv }),
       fields: c.value.secret,
     });

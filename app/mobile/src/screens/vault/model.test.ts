@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, shownFields, sitesOf, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
+import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, titleOf, shownFields, sitesOf, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
 import type { VaultAuditEntry, VaultItemSummary } from "./types";
 
 /** An item's metadata as the hub sends it: what it holds, and where it came from. */
@@ -149,6 +149,23 @@ describe("a row's line", () => {
     expect(scopeTag(item({ scope: "project", machineId: "devbox", projectId: "p1" }), name)).toBe("Nova");
     expect(scopeTag(item({ scope: "person", sharedWith: [{ machineId: "devbox", projectId: "p1" }] }), name)).toBe("Nova");
     expect(scopeTag(item({ scope: "person", sharedWith: [{ machineId: "devbox", projectId: "p1" }, { machineId: "devbox", projectId: "p2" }] }), name)).toBe("2 projects");
+  });
+});
+
+describe("a row's title", () => {
+  it("names a variable by its name, and a sink's by its label, never the hub's internal name", () => {
+    expect(titleOf(item({ kind: "env", label: "STRIPE_KEY", envName: "STRIPE_KEY" }))).toBe("STRIPE_KEY");
+    expect(titleOf(item({ kind: "env", label: "stripe.test_key", envName: "sink:env:stripe.test_key:/srv/app/.env" }))).toBe("stripe.test_key");
+    expect(
+      titleOf(item({ kind: "env", label: "DEPLOY_KEY", envName: "DEPLOY_KEY_1", meta: m({ sink: { kind: "file", machineId: "devbox", path: "/srv/key" } }) })),
+    ).toBe("DEPLOY_KEY");
+    expect(titleOf(item({ kind: "login", label: "Amazon" }))).toBe("Amazon");
+  });
+
+  it("is what search looks at, so the internal name never matches", () => {
+    const sink = item({ itemId: "s", kind: "env", label: "stripe.test_key", envName: "sink:env:stripe.test_key:/srv/app/.env", meta: m({ secret: true }) });
+    expect(sections([sink], "srv").length).toBe(0);
+    expect(sections([sink], "stripe").map((s) => s.items.map((i) => i.itemId))).toEqual([["s"]]);
   });
 });
 
