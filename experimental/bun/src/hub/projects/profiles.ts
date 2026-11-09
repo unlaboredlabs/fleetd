@@ -269,12 +269,22 @@ export class ProfileStore {
 export const profiles = (hub: Hub) => new ProfileStore(hub.db.conn);
 
 /** The hub's API key as kept (which machines hold it), and the one of them online that can list its models. */
-function apiMachine(hub: Hub): { key: string; machine?: string } | undefined {
+function apiMachine(hub: Hub): { key: string; endpoint?: string; machine?: string } | undefined {
   const row = hub.db.conn.query<{ data: string }, []>("SELECT data FROM claude_accounts WHERE account = 'hub'").get();
   if (!row) return undefined;
-  const api = JSON.parse(row.data) as { sealedOn?: { machineId: string }[] };
+  const api = JSON.parse(row.data) as { endpoint?: string; sealedOn?: { machineId: string }[] };
   const machine = api.sealedOn?.map((s) => s.machineId).find((m) => executors(hub).isConnected(m) && link(hub).can(m, CAP_CLAUDE_MODELS));
-  return { key: row.data, ...(machine !== undefined ? { machine } : {}) };
+  return { key: row.data, ...(api.endpoint !== undefined ? { endpoint: api.endpoint } : {}), ...(machine !== undefined ? { machine } : {}) };
+}
+
+/** The host of an endpoint, as logs and errors name it: never its path or anything after. */
+export function endpointHost(endpoint: string | undefined): string {
+  if (endpoint === undefined) return "api.anthropic.com";
+  try {
+    return new URL(endpoint).host || endpoint;
+  } catch {
+    return endpoint;
+  }
 }
 
 /** How long a list the Models API gave is reused. */
@@ -285,8 +295,8 @@ export const MODELS_RETRY_MS = 60_000;
 export const MODELS_WAIT_MS = 1_000;
 
 type Listed = [ProfileModel[], "api" | "builtin"];
-/** The last list asked for the key kept as `key`, and the ask still running. */
-type ModelCache = { key: string; at?: number; listed?: Listed; asking?: Promise<Listed> };
+/** The last list asked for the key kept as `key`, the ask still running, and the last failure logged. */
+type ModelCache = { key: string; at?: number; listed?: Listed; asking?: Promise<Listed>; logged?: string };
 const modelCaches = new WeakMap<Hub, ModelCache>();
 
 const builtinModels = (): Listed => [BUILTIN_MODELS.map(([id, name]) => ({ id, displayName: name, fast: hasFast(id) }) as ProfileModel), "builtin"];
@@ -306,7 +316,7 @@ export async function models(hub: Hub): Promise<Listed> {
   const cache = c;
   const age = hub.clock.now() - (cache.at ?? Number.NaN);
   if (cache.listed && age >= 0 && age < (cache.listed[1] === "api" ? MODELS_FRESH_MS : MODELS_RETRY_MS)) return cache.listed;
-  cache.asking ??= askModels(hub, machine).then((listed) => {
+  cache.asking ??= askModels(hub, machine, endpointHost(api.endpoint), cache).then((listed) => {
     cache.at = hub.clock.now();
     cache.listed = listed;
     cache.asking = undefined;
@@ -319,12 +329,22 @@ export async function models(hub: Hub): Promise<Listed> {
   return answered ?? cache.listed ?? builtinModels();
 }
 
-async function askModels(hub: Hub, machine: string): Promise<Listed> {
+async function askModels(hub: Hub, machine: string, host: string, cache: ModelCache): Promise<Listed> {
   let fromApi: ApiModel[] = [];
+  let failed: string | undefined;
   try {
     const out = await executors(hub).call(machine, "read", { op: "claude_models" }, READ_TIMEOUT_MS);
-    if (out.kind === "claude_models" && out.error === undefined) fromApi = out.models;
-  } catch {}
+    if (out.kind !== "claude_models") failed = `${machine} answered ${out.kind}`;
+    else if (out.error !== undefined) failed = out.error;
+    else fromApi = out.models;
+  } catch (error) {
+    failed = (error as Error).message;
+  }
+  // Once per failure, not at every retry: profiles fall back to fleetd's own list, and this says why.
+  if (failed !== undefined && failed !== cache.logged) {
+    console.warn(`models: the hub's API key listed no models through ${host} on ${machine}, using fleetd's own list: ${failed}`);
+  }
+  cache.logged = failed;
   const listed = fromApi
     .filter((m) => m.id !== "")
     .map((m): ProfileModel => ({ id: m.id, ...(m.displayName !== undefined ? { displayName: m.displayName } : {}), fast: hasFast(m.id) }) as ProfileModel);

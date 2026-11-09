@@ -9,7 +9,7 @@ import { inspect } from "../repos/index.ts";
 import { projectSecrets, projectVars } from "../secrets/env.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, envFor, hubModels, putOn, resealAccount, tryAccount } from "./accounts.ts";
+import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { readImage } from "./image.ts";
 import { landedLog } from "./landed.ts";
@@ -131,6 +131,9 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         return { kind: "claude_account_tested", ok: false, error: (error as Error).message };
       }
       putOn(env, account.vars);
+      const endpoint = account.vars.find(([k]) => k === BASE_URL_ENV)?.[1];
+      const silent = endpoint === undefined ? undefined : await endpointSilent(endpoint);
+      if (silent !== undefined) return { kind: "claude_account_tested", ok: false, error: new Masker(account.secrets).text(silent) };
       try {
         await tryAccount(ctx.claudeBin, env);
         return { kind: "claude_account_tested", ok: true };
