@@ -84,7 +84,8 @@ export function migratePlain(hub: Hub): number {
     const have = projectVar(hub, r, row.name);
     try {
       if (!have) {
-        saveItem(hub, v, { kind: "env", scope: "project", ...r, envName: row.name, secret: false, fields: { value: row.value }, source: { kind: "adopted", from: "project_env" } }, "adopt");
+        // Its node's file holds it already: nothing to deliver.
+        saveItem(hub, v, { kind: "env", scope: "project", ...r, envName: row.name, secret: false, fields: { value: row.value }, source: { kind: "adopted", from: "project_env" }, held: true }, "adopt");
         n++;
       } else if ((parseMs(row.updated_at) ?? 0) > have.updatedMs && have.meta.fingerprint !== fingerprintOf(row.value)) {
         saveItem(hub, v, { itemId: have.itemId, fields: { value: row.value }, secret: false }, "adopt");
@@ -129,13 +130,13 @@ function held(hub: Hub, row: ItemRow, m: string, target: string, fingerprint: st
 /**
  * Takes in what machine `m`'s node holds. A Rust or older node counts as waiting. Returns its progress.
  */
-export async function adopt(hub: Hub, m: string): Promise<MachineProgress> {
+export async function adopt(hub: Hub, m: string, ask?: () => Promise<Record<string, unknown>>): Promise<MachineProgress> {
   const vt = vault(hub);
   const p = progress(hub);
   const now = hub.clock.now();
   const was = p.machines[m];
-  if (!linked(hub, m)) return was ?? { adopted: 0, waiting: 0, mismatched: 0, skippedSystem: 0, updatedMs: now };
-  if (!nodeCan(hub, m, CAP_VAULT)) {
+  if (!ask && !linked(hub, m)) return was ?? { adopted: 0, waiting: 0, mismatched: 0, skippedSystem: 0, updatedMs: now };
+  if (!ask && !nodeCan(hub, m, CAP_VAULT)) {
     const waiting = hub.db.conn
       .query<{ n: number }, [string]>("SELECT count(*) AS n FROM project_env WHERE machine_id = ? AND kind = 'secret'")
       .get(m)?.n ?? 0;
@@ -145,7 +146,7 @@ export async function adopt(hub: Hub, m: string): Promise<MachineProgress> {
     return out;
   }
   vt.requireOpen();
-  const answer = await sessionCall(hub, m, { op: "vault_adopt", to: b64(publicKeyOf(boxKey(hub))) });
+  const answer = ask ? await ask() : await sessionCall(hub, m, { op: "vault_adopt", to: b64(publicKeyOf(boxKey(hub))) });
   const vars = Array.isArray(answer.vars) ? (answer.vars as AdoptVar[]) : [];
   const sinks = Array.isArray(answer.sinks) ? (answer.sinks as AdoptSink[]) : [];
   const v = hubViewer(hub);

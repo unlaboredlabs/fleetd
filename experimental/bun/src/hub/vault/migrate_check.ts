@@ -9,10 +9,8 @@ import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import { fingerprintOf } from "../../node/secrets/files.ts";
 import { readSecret } from "../../node/secrets/index.ts";
 import { Hub } from "../api/hub.ts";
-import type { NodePort } from "../cloud/node.ts";
 import { boxKey } from "../hub_links/store.ts";
 import type { HubDb } from "../store/db.ts";
-import type { DeliveryPort } from "./deliver.ts";
 import { type ItemRow, vault } from "./index.ts";
 import { adopt, migratePlain, SYSTEM_ORDER_VARS } from "./migrate.ts";
 
@@ -68,30 +66,20 @@ export async function check(ctx: Ctx): Promise<string[]> {
   const v = vault(hub, { dir: join(scratch, "vault-key") });
   const to = publicKeyOf(boxKey(hub));
   const answer = adoptAnswer(ctx.db, ctx.nodeHome, ctx.machineId, to);
-  const port: NodePort = {
-    linked: (m) => m === ctx.machineId,
-    onLink: (m) => m === ctx.machineId,
-    can: (m, cap) => m === ctx.machineId && cap === "vault",
-    request: async () => ({}),
-    call: async (_m, _op, call) => (call.op === "vault_adopt" ? { kind: "vault_adopted", ...answer } : {}),
-    pending: () => undefined,
-  };
-  hub.area("node_port", () => port);
-  // No delivery: the copy's node is a fake, and every adopted value is the node's own already.
-  const none: DeliveryPort = { ready: () => false, boxKey: () => undefined, projectEnv: async () => {}, deliverSecret: async () => ({}), orderEnvDrop: async () => {} };
-  hub.area("vault.port", () => none);
+  // A fake node answering `vault_adopt` from the copied files; no delivery is made (adopted values are the node's).
+  const ask = async () => ({ kind: "vault_adopted", ...answer });
   try {
     await v.load();
     if (v.problem) return [`the throwaway vault key didn't load: ${v.problem.message}`];
     const plain = migratePlain(hub);
     ctx.count("plain variables moved in", plain);
     ctx.count("plain variables moved in on a second run (want 0)", migratePlain(hub));
-    const first = await adopt(hub, ctx.machineId);
+    const first = await adopt(hub, ctx.machineId, ask);
     ctx.count("values adopted from the node", first.adopted);
     ctx.count("adopted values that differed from the hub's record", first.mismatched);
     ctx.count("system order variables skipped", first.skippedSystem);
     const before = v.store.select("1 = 1", []).length;
-    await adopt(hub, ctx.machineId);
+    await adopt(hub, ctx.machineId, ask);
     if (v.store.select("1 = 1", []).length !== before) problems.push("a second adopt added items");
 
     const items = v.store.select("1 = 1", []);
