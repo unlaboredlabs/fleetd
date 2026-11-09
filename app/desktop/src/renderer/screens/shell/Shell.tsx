@@ -28,8 +28,9 @@ import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
-import { Sidebar } from "./Sidebar";
-import { shownRows, useCollapsedHubs, useSidebar } from "./sidebarState";
+import { NewButton, Sidebar } from "./Sidebar";
+import { shownRows, useCollapsedHubs, useHeldRows, useSidebar } from "./sidebarState";
+import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
 
@@ -105,10 +106,15 @@ function HubWatch({ open }: { open: ProjectKey | null }) {
  */
 const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> | undefined => {
   const rows = useHubRows();
+  // While the pointer is over the sidebar's list, its rows keep their places (sidebarState.ts holdRows).
+  const held = useHeldRows();
   return useMemo(() => {
     if (rows.get(on)?.projects === undefined) return undefined;
-    return hubs.flatMap((h) => (rows.get(h.id)?.projects ?? []).map((p): Placed => ({ ...p, key: hubKey(h.id, p.key), hub: h.id })));
-  }, [rows, hubs, on]);
+    return hubs.flatMap((h) => {
+      const placed = (rows.get(h.id)?.projects ?? []).map((p): Placed => ({ ...p, key: hubKey(h.id, p.key), hub: h.id }));
+      return held === null ? placed : arranged(placed, placed.filter((p) => p.pinned).map((p) => p.key), held);
+    });
+  }, [rows, hubs, on, held]);
 };
 
 function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView[]; sidebar: ReturnType<typeof useSidebar> }) {
@@ -308,7 +314,14 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         topBar={top}
         // At the window's top right, open or closed, so the click that opened the panel closes it in the same place.
         corner={chrome && panel.project !== null ? <PanelToggle panel={panel} /> : undefined}
-        sidebarTop={settings ? undefined : toggle}
+        sidebarTop={
+          settings ? undefined : (
+            <>
+              {toggle}
+              <NewButton go={go} />
+            </>
+          )
+        }
         sidebarOpen={!sidebar.hidden}
         sidebar={
           !chrome ? undefined : settings ? (
@@ -324,7 +337,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} factory={factory} admin={administers} go={go} />
+              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} factory={factory} go={go} />
             </Boundary>
           ) : undefined
         }
@@ -401,7 +414,12 @@ function useSettingsBack(inSettings: boolean): () => void {
     if (!returning.current) return;
     returning.current = false;
     const frame = requestAnimationFrame(() => {
-      const opener = fromSidebar.current === null ? null : document.querySelector<HTMLElement>(`[data-opens="${fromSidebar.current}"]`);
+      // Settings opened from the card under your name, which has closed since: your name.
+      const opener =
+        fromSidebar.current === null
+          ? null
+          : (document.querySelector<HTMLElement>(`[data-opens="${fromSidebar.current}"]`) ??
+            (fromSidebar.current === "settings" ? document.querySelector<HTMLElement>('[data-opens="you"]') : null));
       if (opener) return opener.focus();
       if (document.activeElement !== null && document.activeElement !== document.body) return;
       const title = document.querySelector<HTMLElement>("main h1, main h2");

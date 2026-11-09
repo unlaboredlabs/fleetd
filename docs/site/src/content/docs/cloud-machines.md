@@ -193,7 +193,8 @@ machine, once: nothing asks again by itself, and the next **Create cloud machine
 the key is scoped to, then Create again. A wake boat.dev refuses that way pauses cloud machines until you press
 **Resume**. Changing the key or the environment clears the old refusals.
 
-An asleep cloud machine shows offline elsewhere, but never counts as a machine down: no [notification](/docs/machines#down) says it is offline, unless the pool marks it broken.
+An asleep cloud machine shows offline elsewhere, but never counts as a machine down: no [notification](/docs/machines#down) says it is offline, unless the pool marks it broken. Members see the day's line in the card
+under their name at the bottom of the sidebar, with who to ask.
 
 ## The kill switch {#kill}
 

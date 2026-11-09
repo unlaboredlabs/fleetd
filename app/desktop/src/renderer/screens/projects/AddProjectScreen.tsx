@@ -2,13 +2,14 @@
 // onto a worker, or adds a folder already on one. One field (name a new project, paste a URL, type a path, or filter),
 // the repos the hub found, the machine it goes to, and Only me (on for a project with no repo); then the clone's progress, the ready state with what the
 // lead will need (a new project opens at once), or the error and its fix. Up/Down pick, Enter adds, Esc closes (a
-// clone carries on).
+// clone carries on). With several hubs a line above the field says which hub it adds to, and picks another.
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Checkbox, Dot, Input, Sheet, Switch, Text, Truncate, copyText, cx } from "../../ui";
+import { Button, Checkbox, Dot, Input, Select, Sheet, Switch, Text, Truncate, copyText, cx } from "../../ui";
 import { clonePath, discovery as discoveryOf, newPath, onlyMeFirst, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
-import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { navigate } from "../shell/navigation";
 import type { Job, Phase } from "./flow";
 import { HubText } from "./HubText";
 import { otherHost, tilde } from "./source";
@@ -178,6 +179,7 @@ function Pick({ pick }: { pick: PickData }) {
 
   return (
     <>
+      <HubPick />
       <Input
         autoFocus
         aria-label="New project name, GitHub URL, folder path, or filter"
@@ -197,6 +199,24 @@ function Pick({ pick }: { pick: PickData }) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * With several hubs, which one the project goes to: the hub on screen, or another picked here (the sheet opens again
+ * on that hub). With one hub, nothing.
+ */
+function HubPick() {
+  const hubs = useHubs();
+  const hub = useHub();
+  if (hubs.length < 2) return null;
+  return (
+    <div className={s.hubPick}>
+      <Text size="sm" tone="quiet">
+        Adds to
+      </Text>
+      <Select aria-label="Hub" value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={(at) => navigate({ id: "projects.add", at })} />
+    </div>
   );
 }
 

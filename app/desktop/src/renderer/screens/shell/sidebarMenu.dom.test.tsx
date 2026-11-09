@@ -39,6 +39,9 @@ const PROJECT: SidebarProject = {
   running: 0,
   want: undefined,
   unread: false,
+  line: "",
+  at: "2026-10-26T09:00:00.000Z",
+  pinned: false,
 };
 
 let host: HTMLDivElement;
@@ -71,7 +74,6 @@ beforeEach(() => {
             collapsed={new Set()}
             onToggleHub={() => undefined}
             factory={false}
-            admin={false}
             go={(s) => went.push(s)}
           />
         </TooltipProvider>
@@ -104,7 +106,7 @@ const rightClick = () => {
 
 it("opens the project or its settings, and copies its path", async () => {
   rightClick();
-  expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+  expect(items()).toEqual(["Open", "Pin to top", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
   await choose("Open");
   rightClick();
   await choose("Open settings");

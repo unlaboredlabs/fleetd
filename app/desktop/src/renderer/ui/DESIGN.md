@@ -26,8 +26,8 @@ breaks a rule changes this page in the same PR and says why.
   - paused: two bars
   - done: settled to the floor (the bottom row lit)
   - failed: a cross
-- One dot is fine where it is the whole message (an unread chat, the hub's connection). Never a dot beside a word
-  that already says it.
+- One dot is fine where it is the whole message (an unread chat, or one that waits on you in the warning's colour, why
+  in its tooltip: the sidebar's rows). Never a dot beside a word that already says it.
 - A sent message's receipt is a mark beside the bubble, its words in the tooltip: the open ring while the lead hasn't
   taken it, a plain check once it has. Never a sentence under the bubble unless there is something to do.
 - **No halo, pulse or glow** on any mark.
@@ -88,6 +88,11 @@ breaks a rule changes this page in the same PR and says why.
   pointer. As on iOS and macOS it waits for the pointer to head 6 px for that edge, or rest near it 500 ms. Esc glides
   it back. ⌥↑ / ⌥↓ move a focused row, gliding the same way. With reduced motion nothing glides: the rows step aside
   and the drop lands at once.
+- **The sidebar's one kinetic moment:** a chat with new activity glides to its place on `--ease-spring` over
+  `--dur-spring` (360 ms), a critically damped spring sampled into `linear()`: from rest, settling without overshoot.
+  A row climbing passes over the rows it overtakes on the sidebar's own tone (`data-gliding="up"`), so no two lines of
+  words cross. Nothing moves while the pointer is over the list; what changed takes its place once it leaves. A
+  pinned row dragged or moved with ⌥↑ / ⌥↓ lands on the same spring.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`

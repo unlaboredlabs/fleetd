@@ -6,7 +6,7 @@ import { connLine, homeProject, hubName, nextWanting, stepProject, toSidebar, ty
 const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "working" | "running" | "lastSeq">> = {}): ProjectRow =>
   ({
     key: `devbox/${projectId}`,
-    project: { machineId: "devbox", projectId, title: projectId },
+    project: { machineId: "devbox", projectId, title: projectId, lastActivityAt: "2026-11-08T09:00:00.000Z" },
     needsYou: false,
     working: false,
     running: 0,
@@ -19,7 +19,39 @@ describe("sidebar projects", () => {
   it("keeps each project's marks, and says nothing until the projects loaded", () => {
     expect(toSidebar(undefined)).toBeUndefined();
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
-      { ...row("api", { needsYou: true, working: true, running: 3 }), want: { word: undefined, count: 1, label: "The lead is waiting on you" }, unread: false },
+      {
+        ...row("api", { needsYou: true, working: true, running: 3 }),
+        want: { word: undefined, count: 1, label: "The lead is waiting on you" },
+        unread: false,
+        warning: undefined,
+        line: "",
+        at: "2026-11-08T09:00:00.000Z",
+        pinned: false,
+      },
+    ]);
+  });
+
+  it("gives each row its newest line, who wrote it, when, and whether you pinned it", () => {
+    const marks: MarksIn = {
+      latest: {
+        "devbox/api": { text: "Merged.", at: "2026-11-08T11:00:00.000Z" },
+        "devbox/docs": { text: "ship it", at: "2026-11-08T10:00:00.000Z", person: { id: "p_me", name: "Sam Doe" } },
+        "devbox/web": { text: "looks good", at: "2026-11-08T10:30:00.000Z", person: { id: "p_ada", name: "Ada Lovelace" } },
+        "devbox/old": { text: "from before people", at: "2026-11-08T08:00:00.000Z", person: { id: "", name: "" } },
+      },
+      // A chat with no line yet orders by its newest message of any kind, else by its project's activity.
+      lastAt: { "devbox/cart": "2026-11-08T12:00:00.000Z" },
+      me: "p_me",
+      pins: ["devbox/web"],
+    };
+    const rows = toSidebar(["api", "docs", "web", "old", "cart", "none"].map((id) => row(id)), marks) ?? [];
+    expect(rows.map((p) => [p.project.title, p.line, p.at, p.pinned])).toEqual([
+      ["api", "Merged.", "2026-11-08T11:00:00.000Z", false],
+      ["docs", "You: ship it", "2026-11-08T10:00:00.000Z", false],
+      ["web", "Ada: looks good", "2026-11-08T10:30:00.000Z", true],
+      ["old", "You: from before people", "2026-11-08T08:00:00.000Z", false],
+      ["cart", "", "2026-11-08T12:00:00.000Z", false],
+      ["none", "", "2026-11-08T09:00:00.000Z", false],
     ]);
   });
 

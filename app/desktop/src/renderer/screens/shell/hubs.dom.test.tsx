@@ -132,7 +132,17 @@ const mount = async (entries: HubEntry[]) => {
 
 const settle = () => act(() => new Promise((r) => setTimeout(r, 0)));
 const groups = () => [...host.querySelectorAll<HTMLElement>("[data-hub-group]")].map((g) => g.textContent);
-const hubRows = () => [...host.querySelectorAll<HTMLElement>("[data-hub-status]")].map((b) => b.getAttribute("aria-label"));
+/** The foot's name, as a screen reader hears it: your name, and what is off. */
+const you = () => host.querySelector<HTMLElement>("[data-opens='you']")?.getAttribute("aria-label");
+/** The card under your name: each hub's section, by its name. */
+const hubCards = () => {
+  act(() => host.querySelector<HTMLElement>("[data-opens='you']")?.click());
+  const cards = [...document.querySelectorAll<HTMLElement>("[aria-label='You'] [data-hub-card]")].map((c) => [c.getAttribute("aria-label"), c.dataset["hubCard"]]);
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  return cards;
+};
 const rowNamed = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("nav button, aside button, button")].find((b) => b.textContent.startsWith(name));
 
 beforeEach(() => {
@@ -163,7 +173,12 @@ it("shows both hubs in one sidebar under their names, each with its own connecti
   // The offline hub's group waits without claiming to load; the live one's rows are there regardless.
   const acme = host.querySelector('section[aria-label="Acme"]');
   expect(acme?.querySelector('[aria-label="Loading projects"]')?.getAttribute("aria-busy")).toBe("false");
-  expect(hubRows()).toEqual(["Hub: Personal, connected", "Hub: Acme, offline"]);
+  // One offline marks your name, saying which; the card has both.
+  expect(you()).toBe("You, Offline (Acme)");
+  expect(hubCards()).toEqual([
+    ["Personal", "live"],
+    ["Acme", "retrying"],
+  ]);
 
   // Acme comes back: its project shows under its name, and the badge counts both hubs' projects that need you.
   act(() => {
@@ -172,7 +187,7 @@ it("shows both hubs in one sidebar under their names, each with its own connecti
   });
   await settle();
   expect(acme?.textContent).toContain("billing");
-  expect(hubRows()).toEqual(["Hub: Personal, connected", "Hub: Acme, connected"]);
+  expect(you()).toBe("You");
   expect(fake.badge.at(-1)).toBe(2);
 });
 
@@ -368,8 +383,42 @@ it("with one hub, shows no name and no group: the sidebar is as it always was", 
   });
   await settle();
   expect(groups()).toEqual([]);
-  expect(host.textContent).toContain("Projects");
-  expect(hubRows()).toEqual(["Hub: devbox, connected"]);
+  expect(host.textContent).not.toContain("Projects");
+  expect(you()).toBe("You");
+  expect(hubCards()).toEqual([["Hub", "live"]]);
   act(() => rowNamed("storefront")?.click());
   expect(window.location.hash).toBe("#/project/devbox/storefront");
+});
+
+it("says which hub a new project goes to with several hubs, the hub on screen first, and nothing with one", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("a1b2").send(live());
+  });
+  await settle();
+  act(() => {
+    window.location.hash = "#/projects/add?at=a1b2";
+  });
+  // The sheet loads in a chunk of its own.
+  await act(() => import("../projects/AddProjectScreen"));
+  await settle();
+  await settle();
+  const picker = () => document.querySelector<HTMLElement>("[role='combobox'][aria-label='Hub']");
+  expect(picker()?.textContent).toContain("Acme");
+  act(() => root.unmount());
+  root = createRoot(host);
+
+  await mount([{ id: "hub", label: "devbox" }]);
+  act(() => hub("hub").send(live()));
+  act(() => {
+    window.location.hash = "#/projects/add";
+  });
+  await settle();
+  await settle();
+  expect(document.querySelector("[data-screen='projects.add']")).not.toBeNull();
+  expect(picker()).toBeNull();
 });

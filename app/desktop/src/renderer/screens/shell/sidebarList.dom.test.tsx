@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// The sidebar's one Projects list: every project in the order it is given, numbered in it, with New; a project's
-// right-click menu renames it (after a small dialog) or archives it at once, with Undo.
+// The sidebar's one list of chats (W530): every project in the order it is given (activity's, pins on top), no label,
+// each row its picture, name, time and newest line, numbered while ⌘ is held; nothing yet says so with New; a
+// project's right-click menu pins it, renames it (after a small dialog) or archives it at once, with Undo.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +43,9 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   running: 0,
   want: undefined,
   unread: false,
+  line: "",
+  at: "2026-10-26T09:00:00.000Z",
+  pinned: false,
 });
 
 const ADA = row("Ada", { onlyMe: true });
@@ -72,7 +76,6 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
             collapsed={new Set()}
             onToggleHub={() => undefined}
             factory={false}
-            admin={false}
             go={(s) => went.push(s)}
           />
         </DataProvider>
@@ -101,7 +104,6 @@ const button = (starts: string): HTMLElement => {
   if (found === undefined) throw new Error(`no ${starts} in: ${host.textContent}`);
   return found;
 };
-const sections = () => [...host.querySelectorAll("section")].map((s) => s.querySelector("[class*=sidebarSectionHead]")?.textContent ?? "");
 const items = () => [...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent);
 const choose = async (label: string) => {
   const found = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === label);
@@ -115,26 +117,67 @@ const rightClick = (el: HTMLElement) =>
   });
 
 describe("one list", () => {
-  it("has every project in one Projects section, in its order, numbered in it, and no other section above", () => {
-    mount([ADA, HOME, STOREFRONT], true);
-    expect(sections()[0]).toBe("ProjectsNew");
-    expect(host.textContent).not.toMatch(/Navi/u);
-    const labels = [...host.querySelectorAll("button")].map((b) => b.textContent);
-    const at = (t: string) => labels.findIndex((l) => l.startsWith(t));
-    expect(at("Ada")).toBeLessThan(at("Home"));
-    expect(at("Home")).toBeLessThan(at("storefront"));
-    expect(button("Ada").textContent).toBe("Ada1");
-    expect(button("storefront").textContent).toBe("storefront3");
+  it("has every project in one unlabelled list, in its order, each row its name, time and line, numbered while ⌘ is held", () => {
+    mount([{ ...ADA, line: "You: ship it" }, HOME, STOREFRONT]);
+    expect(host.querySelector("[class*=sidebarSectionHead]")).toBeNull();
+    expect(host.textContent).not.toMatch(/Projects|Navi/u);
+    const names = [...host.querySelectorAll("[data-reorder-row] [class*=name]")].map((n) => n.textContent);
+    expect(names).toEqual(["Ada", "Home", "storefront"]);
+    expect(button("Ada").querySelector("[class*=line]")?.textContent).toBe("You: ship it");
+    // A chat with nothing in it yet says so.
+    expect(button("Home").querySelector("[class*=line]")?.textContent).toBe("No messages yet");
+    expect(button("Ada").querySelector("[class*=when]")?.textContent).not.toBe("");
     act(() => button("Ada").click());
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "ada" }, message: null }]);
-    act(() => host.querySelector<HTMLElement>("[aria-label='New project']")?.click());
-    expect(went.at(-1)).toEqual({ id: "projects.add" });
+
+    mount([ADA, HOME, STOREFRONT], true);
+    expect([...host.querySelectorAll("[class*=jump]")].map((j) => j.textContent)).toEqual(["1", "2", "3"]);
+  });
+
+  it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
+    const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
+    mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);
+    expect(button("Ada").querySelector("[class*=dot]")?.getAttribute("data-want")).toBe("approve");
+    expect(button("Ada").querySelector("[class*=mark]")?.textContent).toBe("");
+    expect(button("Ada").getAttribute("aria-description")).toBe("2 commands to approve");
+    expect(button("Home").querySelector("[class*=dot]")?.hasAttribute("data-want")).toBe(false);
+    expect(button("Home").getAttribute("aria-description")).toBe("New message from the lead");
+    expect(button("storefront").querySelector("[class*=dot]")).toBeNull();
+  });
+
+  it("says there are no chats yet, with New project, and nothing while they load", () => {
+    mount([]);
+    expect(host.textContent).toContain("No chats yet");
+    act(() => button("New project").click());
+    expect(went).toEqual([{ id: "projects.add" }]);
+    const quiet: HubApi = { call: () => Promise.resolve({ ok: true, output: {} }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() };
+    act(() =>
+      root.render(
+        <UiProvider>
+          <DataProvider layer={createDataLayer(quiet)}>
+            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={() => undefined} />
+          </DataProvider>
+        </UiProvider>,
+      ),
+    );
+    expect(host.querySelector("[aria-label='Loading projects']")).not.toBeNull();
+    expect(host.textContent).not.toContain("No chats yet");
+  });
+
+  it("pins a chat from its menu, and unpins a pinned one", async () => {
+    mount([ADA, { ...HOME, pinned: true }, STOREFRONT]);
+    rightClick(button("storefront"));
+    await choose("Pin to top");
+    expect(calls).toContainEqual({ tool: "chat_pins_set", input: { pins: [{ machineId: "devbox", projectId: "home" }, { machineId: "devbox", projectId: "storefront" }] } });
+    rightClick(button("Home"));
+    await choose("Unpin");
+    expect(calls.filter((c) => c.tool === "chat_pins_set").at(-1)).toEqual({ tool: "chat_pins_set", input: { pins: [] } });
   });
 
   it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {
     mount([ADA, HOME, STOREFRONT]);
     rightClick(button("storefront"));
-    expect(items()).toEqual(["Open", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+    expect(items()).toEqual(["Open", "Pin to top", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
@@ -190,7 +233,6 @@ describe("each row's avatar", () => {
               collapsed={new Set()}
               onToggleHub={() => undefined}
               factory={false}
-              admin={false}
               go={(s) => went.push(s)}
             />
           </DataProvider>
@@ -202,14 +244,14 @@ describe("each row's avatar", () => {
       listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [ADA.project, pictured.project, STOREFRONT.project] } });
     });
     await settle();
-    const avatars = [...host.querySelectorAll<HTMLElement>("[data-avatar]")];
+    const avatars = [...host.querySelectorAll<HTMLElement>("[data-reorder-row] [data-avatar]")];
     expect(avatars.map((a) => [a.dataset.avatar, a.dataset.letters])).toEqual([
       ["letters", "A"],
       ["picture", "H"],
       ["letters", "S"],
     ]);
-    // The letters are the avatar's CSS: the row's text is its name.
-    expect(button("Ada").textContent).toBe("Ada");
+    // The letters are the avatar's CSS: the row's text starts with its name.
+    expect(button("Ada").querySelector("[class*=name]")?.textContent).toBe("Ada");
     expect(avatars[1]?.querySelector("img")?.getAttribute("src")).toBe("data:image/jpeg;base64,/9j/AA==");
     expect(calls.filter((c) => c.tool === "project_avatar_get").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "home" }]);
   });

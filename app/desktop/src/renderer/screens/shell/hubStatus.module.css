@@ -1,79 +1,4 @@
-/* The sidebar's hub chip (HubStatus.tsx) and its popover. One row as tall as the sidebar's rows, its dot in their icon
-   column, no divider and no background at rest: it takes a fill only under the pointer, or while its popover is open.
-   Any update says a word at the row's end (updates/UpdateWord). */
-.row {
-  flex: 1;
-  display: flex;
-  min-width: 0;
-}
-
-.chip {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  min-height: var(--row);
-  padding: 0 var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--quiet);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-  text-align: left;
-  transition:
-    background var(--dur-quick) var(--ease-snap),
-    color var(--dur-quick) var(--ease-snap);
-}
-.chip:hover,
-.chip[data-state="open"] {
-  background: var(--hover);
-  color: var(--text);
-}
-/* Not connected: the words read at full strength, so the state is clear without being loud. */
-.chip[data-tone="warning"],
-.chip[data-tone="danger"] {
-  color: var(--text);
-  border-color: var(--hairline);
-}
-
-.label {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* With several hubs: the row's state beside its hub's name, quiet. */
-.aside {
-  flex: none;
-  margin-left: auto;
-  color: var(--quiet);
-  font-size: var(--text-xs);
-}
-
-/* Machines down: the warning's word, at the row's end, opening Machines. */
-.down {
-  flex: none;
-  min-height: var(--row);
-  padding: 0 var(--space-2);
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--warning);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  transition: background var(--dur-quick) var(--ease-snap);
-}
-button.down:hover {
-  background: var(--hover);
-}
-/* A member's: the same word, nothing to open. */
-span.down {
-  display: inline-flex;
-  align-items: center;
-}
+/* A hub's card in the popover under your name (HubStatus.tsx, You.tsx). */
 
 /* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
@@ -88,8 +13,7 @@ span.down {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 288px;
-  max-width: 100%;
+  min-width: 0;
 }
 
 .head {

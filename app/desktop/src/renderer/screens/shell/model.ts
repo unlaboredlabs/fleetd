@@ -25,6 +25,12 @@ export interface SidebarProject extends ProjectRow {
   readonly unread: boolean;
   /** Status's warning, which stops nothing: a check red on main, and whether a fix is under way. */
   readonly warning?: string | undefined;
+  /** Its newest line (latest.ts): "You: ship it", "Asks for your approval"; empty while unknown or there is none. */
+  readonly line: string;
+  /** When that line was written, else when the chat or project last moved (ISO): the sidebar's order. */
+  readonly at: string;
+  /** You pinned it (pins.ts): on top, in your order, whatever moves. */
+  readonly pinned: boolean;
 }
 
 /** The parts of an open request (requests_list) the marks count. */
@@ -46,6 +52,14 @@ export interface MarksIn {
   readonly seen?: Readonly<Record<string, number>> | undefined;
   /** The project on screen: never unread. */
   readonly open?: ProjectKey | null | undefined;
+  /** Each chat's newest line, by "machineId/projectId" (latest.ts). */
+  readonly latest?: Readonly<Record<string, { readonly text: string; readonly at: string; readonly person?: { readonly id: string; readonly name: string } | undefined }>> | undefined;
+  /** Who you are on this hub (hub_info's me): your own lines say "You:", a teammate's their first name. */
+  readonly me?: string | undefined;
+  /** When each chat's newest message, of any kind, was written, by "machineId/projectId": the order before a line is known. */
+  readonly lastAt?: Readonly<Record<string, string | undefined>> | undefined;
+  /** Your pinned chats, by "machineId/projectId". */
+  readonly pins?: readonly string[] | undefined;
 }
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
@@ -75,7 +89,11 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
   return rows?.map((r): SidebarProject => {
     const seen = marks.seen?.[r.key];
     const unread = r.key !== open && r.lastSeq !== undefined && seen !== undefined && r.lastSeq > seen;
-    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key) };
+    const latest = marks.latest?.[r.key];
+    const at = latest !== undefined && latest.at !== "" ? latest.at : (marks.lastAt?.[r.key] ?? r.project.lastActivityAt);
+    const by = latest?.person;
+    const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || by.name === "" ? "You: " : `${by.name.split(/\s+/u)[0] ?? by.name}: `;
+    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key), line: `${who}${latest?.text ?? ""}`, at, pinned: marks.pins?.includes(r.key) === true };
   });
 };
 
