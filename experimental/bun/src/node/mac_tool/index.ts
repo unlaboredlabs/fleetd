@@ -1,6 +1,7 @@
 // The agents' Mac on a node (crates/fleetd/src/node/mac_tool/mod.rs): on the agents' Mac itself (node.json
 // `agentsMac`), the hub's `mac_call`s go to the host and their answers back as `mac_result`; on every other node, an
 // agent's `fleetd mac` (the local call `mac`) goes to the client, from the agent's worktree.
+import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
 import { CAP_AGENTS_MAC, CAP_MAC_TOOL } from "../../shared/screens_wire.ts";
@@ -9,6 +10,7 @@ import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
 import { pinSelf } from "../self_exe.ts";
+import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient } from "./client.ts";
 import { FOLDER_DAYS, Host, sweep } from "./host.ts";
@@ -24,8 +26,9 @@ function worktreeOf(cwd: string): string {
   return out.stdout.toString().trim();
 }
 
+// Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
 export const host = (node: Node, given?: Host) =>
-  node.area("mac_tool.host", (n) => given ?? new Host(`${n.home}/mac`, loadOrCreateBoxKey(n.home)));
+  node.area("mac_tool.host", (n) => given ?? new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home)));
 export const client = (node: Node) => node.area("mac_tool.client", (n) => new MacClient(n, () => self(n)));
 /** The command agents' `mac` and agent-device forwarder run: this node's own binary, pinned once per node. */
 export const self = (node: Node) => node.area("mac_tool.self", (n) => pinSelf(n.home));
