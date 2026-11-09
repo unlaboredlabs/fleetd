@@ -29,6 +29,18 @@ export const parseCli = (body: unknown): string | null => {
   return parsed.success ? (parsed.data.cliVersion ?? null) : null;
 };
 
+const Pins = z.object({ sha256: z.record(z.string().max(200), z.string().regex(/^[0-9a-f]{64}$/u)) });
+
+/** The SHA-256 release.json pins `asset`'s build to (its sha256 map, publish.sh), or null for a release without one. */
+export const parsePin = (body: unknown, asset: string): string | null => {
+  const parsed = Pins.safeParse(body);
+  return parsed.success ? (parsed.data.sha256[asset] ?? null) : null;
+};
+
+/** The name a release keeps `asset`'s build under for good (.github/release/pinned.sh): its SHA-256's first 16 hex
+ * digits at the end, as the CLI builds have no extension. */
+export const pinnedName = (asset: string, sha256: string): string => `${asset}-${sha256.slice(0, 16)}`;
+
 export const parseApp = (body: unknown): string | null => {
   const parsed = ReleaseJson.safeParse(body);
   return parsed.success ? (parsed.data.appVersion ?? null) : null;

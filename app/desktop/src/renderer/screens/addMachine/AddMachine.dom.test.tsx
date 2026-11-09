@@ -418,7 +418,7 @@ it("adds the hub's own machine through the hub, and any other computer through m
         steps: [
           { title: "get a one-time code from the hub", state: "done" },
           { title: "download fleetd-linux-x64", state: "done" },
-          { title: "check it against the release's SHA256SUMS", state: "failed" },
+          { title: "check it against the release's checksum", state: "failed" },
           { title: "put it in place", state: "planned" },
           { title: "enroll the node and start its service", state: "planned" },
         ],
