@@ -12,6 +12,7 @@ import { Registry } from "../api/registry.ts";
 import { serve, stop } from "../http/index.ts";
 import { link } from "../link/index.ts";
 import { HubDb } from "../store/db.ts";
+import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
 
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
@@ -119,6 +120,7 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
+  protect("hub");
   refreshOwnUnit();
   const { hub, tools } = build(home, options.listen);
   const server = serve(hub, tools);

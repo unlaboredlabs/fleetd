@@ -3,6 +3,7 @@ import { onError, serve, stop } from "../src/hub/http/index.ts";
 import { build, parseHubArgs, parseListen } from "../src/hub/serve/index.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 import { internalError } from "../src/shared/errors.ts";
+import { lowest, score } from "../src/node/oom.ts";
 import { hubHome, insertKey } from "./helpers.ts";
 
 const home = hubHome();
@@ -82,6 +83,40 @@ test("hub start's flags, with the Rust hub's messages", () => {
   expect(parseHubArgs(["--listen"])).toBe("Option '--listen <value>' argument missing");
   expect(parseHubArgs(["--listen", "nope"])).toBe("--listen must be host:port, got 'nope'");
 });
+
+test.if(score() !== undefined)("hub start lowers its own OOM score as far as the kernel lets it", async () => {
+  const dir = hubHome();
+  // What this test's process may go down to is what the hub, its child, may: the first of the ladder a shell takes.
+  const before = score() ?? 0;
+  const floor = lowest(before, (adj) => Bun.spawnSync(["/bin/sh", "-c", `echo ${adj} > /proc/self/oom_score_adj`]).exitCode === 0);
+  // `--listen` takes no port 0: one free a moment ago.
+  const free = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = free.port;
+  free.stop(true);
+  const child = Bun.spawn([process.execPath, `${import.meta.dir}/../src/main.ts`, "hub", "start", "--home", `${dir.dir}/hub`, "--listen", `127.0.0.1:${port}`], {
+    env: { ...process.env, HOME: dir.dir, FLEETD_HOME: dir.dir },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  try {
+    const err = child.stderr.getReader();
+    let said = "";
+    while (!said.includes("listening on")) {
+      const { done, value } = await err.read();
+      if (done) break;
+      said += new TextDecoder().decode(value);
+    }
+    expect(said).toContain("listening on");
+    expect(score(child.pid)).toBe(floor);
+    expect(floor).toBeLessThanOrEqual(before);
+  } finally {
+    child.kill("SIGTERM");
+    await child.exited;
+    const out = await new Response(child.stdout).text();
+    expect(out).toContain(`the hub's OOM score {"before":${before},"after":${floor}}`);
+    dir.done();
+  }
+}, 20_000);
 
 test("hub.url() is the URL setup saved, unless it is a wildcard address", async () => {
   const { configuredUrl } = await import("../src/hub/serve/index.ts");

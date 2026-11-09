@@ -62,6 +62,33 @@ test.if(linux)("a session's host starts at the agent score; a killed node's scra
   }
 }, 20_000);
 
+test.if(linux)("the node lowers its own OOM score at its start, as far as the kernel lets it", async () => {
+  const home = tempHome();
+  // What this test's process may go down to is what the node, its child, may: the first of the ladder a shell takes.
+  const before = score() ?? 0;
+  const floor = lowest(before, (adj) => spawnSync("/bin/sh", ["-c", `echo ${adj} > /proc/self/oom_score_adj`]).status === 0);
+  // A hub that isn't there: the node keeps redialing it, and talks to nothing else.
+  const node = Bun.spawn(
+    [process.execPath, join(import.meta.dir, "../../src/main.ts"), "node", "join", "--hub", "http://127.0.0.1:9", "--token", "t", "--machine", "devbox", "--home", join(home.dir, "node")],
+    { env: { PATH: "/usr/bin:/bin", HOME: home.dir, FLEETD_HOME: home.dir }, stdout: "pipe", stderr: "ignore" },
+  );
+  try {
+    const out = node.stdout.getReader();
+    let said = "";
+    while (!said.includes("OOM score")) {
+      const { done, value } = await out.read();
+      if (done) break;
+      said += new TextDecoder().decode(value);
+    }
+    expect(said).toContain(`the node's OOM score {"before":${before},"after":${floor}}`);
+    expect(floor).toBeLessThanOrEqual(before);
+  } finally {
+    node.kill("SIGKILL");
+    await node.exited;
+    home.done();
+  }
+}, 20_000);
+
 test("a node service with no config waits for one, doubling to five minutes; run by hand it says so at once", async () => {
   expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map(enrolledRetry)).toEqual([5, 10, 20, 40, 80, 160, 300, 300, 300].map((s) => s * 1000));
   const home = tempHome();
