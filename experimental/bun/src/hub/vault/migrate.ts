@@ -13,7 +13,6 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 import { CAP_VAULT } from "../../shared/node_link.ts";
 import { publicKeyOf } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
-import { secretEnvName } from "../approvals/sink.ts";
 import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../cloud/node.ts";
 import { boxKey } from "../hub_links/store.ts";
@@ -21,7 +20,7 @@ import { forLead, token } from "../onepassword/index.ts";
 import { parseMs } from "../store/time.ts";
 import { fingerprintOf } from "./fields.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
-import { openRawToHub, openToHub, saveItem } from "./items.ts";
+import { openRawToHub, openToHub, saveItem, sinkItem } from "./items.ts";
 
 /** Order variables the hub delivers itself, under their request id: never adopted. */
 export const SYSTEM_ORDER_VARS: Record<string, string> = { GH_TOKEN: "github" };
@@ -66,7 +65,10 @@ function hubViewer(hub: Hub, person?: string): Viewer {
 }
 
 const projectVar = (hub: Hub, r: ProjectRef, name: string): ItemRow | undefined =>
-  vault(hub).store.select("kind = 'env' AND scope = 'project' AND machine_id = ? AND project_id = ? AND env_name = ?", [r.machineId, r.projectId, name])[0];
+  vault(hub).store.select(
+    "kind = 'env' AND scope = 'project' AND machine_id = ? AND project_id = ? AND env_name = ? AND json_extract(meta, '$.sink') IS NULL",
+    [r.machineId, r.projectId, name],
+  )[0];
 
 /** Plain `project_env` rows into vault items. A row changed after its item (under a Rust hub) updates it. */
 export function migratePlain(hub: Hub): number {
@@ -217,10 +219,7 @@ export async function adopt(hub: Hub, m: string): Promise<MachineProgress> {
         conflict(undefined, `a ${s.kind}: sink on ${m} answers no request the hub knows`);
         continue;
       }
-      const name = s.envName ?? secretEnvName(s.secretKey) ?? "SECRET";
-      const already = vt.store
-        .select("kind = 'env' AND json_extract(meta, '$.sink.machineId') = ? AND json_extract(meta, '$.sink.path') = ?", [m, s.path])
-        .find((row) => row.meta.sink?.kind === s.kind);
+      const already = sinkItem(hub, { kind: s.kind, machineId: m, path: s.path, secretKey: s.secretKey });
       if (already) {
         if (already.meta.fingerprint === s.fingerprint) held(hub, already, m, `sink:${already.itemId}`, s.fingerprint);
         continue;
@@ -232,7 +231,6 @@ export async function adopt(hub: Hub, m: string): Promise<MachineProgress> {
           kind: "env",
           scope: "project",
           ...r,
-          envName: name,
           secret: true,
           fields: { value: valueOf(hub, s.sealed, s.fingerprint) },
           source: { kind: "adopted", from: `sink:${s.secretKey}` },

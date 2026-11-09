@@ -60,6 +60,27 @@ test("request_secret names the hub's key; a value sealed to it is kept in the va
   expect(a.get(env.requestId)?.state).toBe("stored");
 });
 
+test("two requests to the same .env stay two items, each with its own value; a sink's name never blocks a variable", async () => {
+  const a = approvals(k.hub);
+  const sink = `env:${M}:/srv/p1/.env`;
+  const stripe = await a.requestSecret(PROJECT, { key: "stripe.key", sink, text: "Stripe" });
+  await k.call(k.ownerDevice, "secret_submit", { requestId: stripe.requestId, sealed: b64(seal(k.hubPub(), Buffer.from("stripe-value"))) });
+  const openai = await a.requestSecret(PROJECT, { key: "openai.key", sink, text: "OpenAI" });
+  await k.call(k.ownerDevice, "secret_submit", { requestId: openai.requestId, sealed: b64(seal(k.hubPub(), Buffer.from("openai-value"))) });
+  const sinks = items().filter((r) => r.meta.sink);
+  expect(sinks.map((r) => [r.meta.sink?.secretKey, r.label]).sort()).toEqual([
+    ["openai.key", "openai.key"],
+    ["stripe.key", "stripe.key"],
+  ]);
+  for (const r of sinks) expect(k.v.store.open(r).value).toBe(r.meta.sink?.secretKey === "stripe.key" ? "stripe-value" : "openai-value");
+  // A file: sink named API_KEY leaves the project's own API_KEY free to set, and doesn't count as a variable.
+  const file = await a.requestSecret(PROJECT, { key: "api.key", sink: `file:${M}:/srv/p1/api_key`, text: "API key" });
+  await k.call(k.ownerDevice, "secret_submit", { requestId: file.requestId, sealed: b64(seal(k.hubPub(), Buffer.from("file-value"))) });
+  const out = await k.call<{ next: string; env: { name: string }[] }>(k.ownerDevice, "project_env_set", { ...PROJECT, set: [{ kind: "plain", name: "API_KEY", value: "eu" }] });
+  expect(out.next).not.toContain("didn't take");
+  expect(out.env.map((v) => v.name)).toEqual(["API_KEY"]);
+});
+
 test("an order: sink's value becomes an order variable", async () => {
   k.hub.db.conn
     .query("INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (5, ?, ?, 'open', ?)")

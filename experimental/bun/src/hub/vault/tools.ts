@@ -297,6 +297,8 @@ export async function rotate(hub: Hub): Promise<{ keyId: string; rewrapped: numb
   vt.store.recordKeys(hub.clock.now());
   const rewrapped = vt.store.rewrapAll(fresh, hub.clock.now());
   await vt.keys.dropAllBut(fresh.id);
+  // The saved recovery code was the old key's: the new one needs saving again.
+  vt.store.setSetting("recovery_saved_ms", undefined);
   return { keyId: fresh.id, rewrapped };
 }
 

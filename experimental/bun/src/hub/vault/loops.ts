@@ -10,7 +10,7 @@ import { events } from "../store/events.ts";
 import { hubSealTo, takeSecret } from "./aliases.ts";
 import { sweep } from "../sweep/index.ts";
 import { registerLeadCalls as registerFills } from "./calls.ts";
-import { deliveries, envRows } from "./deliver.ts";
+import { deliveries, orderSet, projectSet } from "./deliver.ts";
 import { registerLeadCalls as registerImports } from "./import.ts";
 import { vault } from "./index.ts";
 import { adopt, migrateCards, migratePlain } from "./migrate.ts";
@@ -30,10 +30,34 @@ async function linked(hub: Hub, m: string): Promise<void> {
   await migrateCards(hub).catch((e) => console.warn(`vault: cards not moved in yet: ${(e as Error).message}`));
 }
 
+/** How long a launch waits for its machine's variables to be delivered before it goes ahead anyway. */
+const LAUNCH_DELIVERY_WAIT_MS = 10_000;
+
+/** Brings the machine's variables up to date before a launch, waiting at most LAUNCH_DELIVERY_WAIT_MS. */
+export async function beforeLaunch(hub: Hub, m: string): Promise<void> {
+  if (vault(hub).keys.locked) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, LAUNCH_DELIVERY_WAIT_MS);
+  });
+  try {
+    await Promise.race([deliveries(hub).reconcile(m), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** One `inject` row per session launch: the vault variables it starts with, by name. Never a value. */
 export function injected(hub: Hub, r: ProjectRef, order: string | undefined, threadId: string): void {
   const v = vault(hub);
-  const names = envRows(hub, r, order).map((row) => row.envName!);
+  // What the node holds at this version, not what the vault would give: a delivery still waiting isn't in the session.
+  const held = (row: { itemId: string; version: number }, target: string) =>
+    hub.db.conn
+      .query("SELECT 1 FROM vault_deliveries WHERE item_id = ? AND machine_id = ? AND target = ? AND version = ? AND error IS NULL")
+      .get(row.itemId, r.machineId, target, row.version) !== null;
+  const project = [...projectSet(hub, r).values()].filter((row) => held(row, `project:${r.projectId}`));
+  const fromOrder = order === undefined ? [] : [...orderSet(hub, r, order).values()].filter((row) => held(row, `order:${r.projectId}/${order}`));
+  const names = [...new Set([...project, ...fromOrder].map((row) => row.envName!))].sort();
   if (names.length === 0) return;
   v.audit.write({
     atMs: hub.clock.now(),
@@ -71,6 +95,7 @@ export function start(hub: Hub): void {
   hooks.vaultSealTo = () => (vault(hub).keys.locked ? undefined : hubSealTo(hub));
   hooks.vaultSecret = (r, sealed, by) => takeSecret(hub, r, sealed, by);
   found.injected = (r, order, threadId) => injected(hub, r, order, threadId);
+  found.beforeLaunch = (r) => beforeLaunch(hub, r.machineId);
   const v = vault(hub);
   void v.load().then(async () => {
     if (v.keys.locked) return;

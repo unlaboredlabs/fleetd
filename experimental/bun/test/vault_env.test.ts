@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { setOnlyMe } from "../src/hub/navi/store.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
-import { dropClosed, injected } from "../src/hub/vault/loops.ts";
+import { beforeLaunch, dropClosed, injected } from "../src/hub/vault/loops.ts";
 import { M, OTHER, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
 
 let k: VaultHub;
@@ -94,6 +94,19 @@ test("an order gets its own variables and its starter's person variables; they g
   dropClosed(k.hub);
   expect(k.v.store.select("scope = 'order'", [])).toEqual([]);
   expect(k.hub.db.all("SELECT * FROM vault_deliveries WHERE target LIKE 'order:%'")).toEqual([]);
+});
+
+test("a launch in a new order delivers its person's variables first; the inject row lists only what the node holds", async () => {
+  await save({ kind: "env", scope: "person", envName: "BO_TOKEN", sealed: k.sealToHub({ value: "bo-tok" }) }, k.memberDevice);
+  await sync();
+  order(9, PROJECT, k.member.personId);
+  // Nothing reconciled since the order opened: the inject row says so.
+  injected(k.hub, PROJECT, "W9", "t0");
+  expect(k.hub.db.all("SELECT data FROM vault_audit WHERE action = 'inject'")).toEqual([]);
+  await beforeLaunch(k.hub, M);
+  expect(Object.fromEntries(k.node.orderFiles.get("p1/W9") ?? [])).toEqual({ BO_TOKEN: "bo-tok" });
+  injected(k.hub, PROJECT, "W9", "t1");
+  expect(JSON.parse(k.hub.db.all<{ data: string }>("SELECT data FROM vault_audit WHERE action = 'inject'")[0]!.data)).toEqual({ names: ["BO_TOKEN"] });
 });
 
 test("a person's variables are never delivered to work that isn't theirs", async () => {

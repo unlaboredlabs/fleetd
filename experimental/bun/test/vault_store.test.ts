@@ -119,6 +119,10 @@ test("variables: names checked, one per name and scope, the project's 100 and 51
   for (let i = 0; i < 8; i++) await save(k.ownerDevice, { kind: "env", scope: "project", ...PROJECT, envName: `BIG_${i}`, sealed: k.sealToHub({ value: big }) });
   expect((await refusal(save(k.ownerDevice, { kind: "env", scope: "project", ...PROJECT, envName: "BIG_9", sealed: k.sealToHub({ value: big }) }))).message).toContain("512 KiB");
   // A plain variable's value is listed; a secret one's never is.
+  // Renaming onto a taken name is refused as such, not a hub failure.
+  const other = await save(k.ownerDevice, { kind: "env", scope: "project", ...PROJECT, envName: "OTHER", sealed: k.sealToHub({ value: "o" }) });
+  const taken = await refusal(save(k.ownerDevice, { itemId: other.itemId, envName: "TOKEN" }));
+  expect([taken.code, taken.message]).toEqual(["invalid", "There is a variable TOKEN here already."]);
   const plain = await save(k.ownerDevice, { kind: "env", scope: "project", ...PROJECT, envName: "REGION", secret: false, sealed: k.sealToHub({ value: "eu-west" }) });
   expect(plain.value).toBe("eu-west");
   expect((await list(k.ownerDevice, { ...PROJECT })).find((i) => i.label === "TOKEN")!.value).toBeUndefined();
@@ -141,11 +145,13 @@ test("reveals are rate limited per person", async () => {
 
 test("rotation rewraps every item under a new key, which then opens them alone", async () => {
   const item = await save(k.ownerDevice, { kind: "login", scope: "person", label: "Shop", sites: ["shop.example"], sealed: k.sealToHub(LOGIN) });
+  k.v.store.setSetting("recovery_saved_ms", "1");
   const out = await k.call<{ keyId: string; rewrapped: number }>(k.ownerDevice, "vault_rotate", {});
   expect(out).toEqual({ keyId: "k2", rewrapped: 1 });
   expect(k.v.keys.all().map((x) => x.id)).toEqual(["k2"]);
   expect((await reveal(k.ownerDevice, item.itemId, ["password"])).password).toBe(LOGIN.password);
   expect((await refusal(k.call(k.memberDevice, "vault_rotate", {}))).code).toBe("forbidden");
   const status = await k.call<{ keyId: string; keyMode: string; recoverySaved: boolean; hubBoxKey: string }>(k.ownerDevice, "vault_status", {});
+  // The code saved before was the retired key's: it needs saving again.
   expect(status).toMatchObject({ keyId: "k2", keyMode: "file", recoverySaved: false, hubBoxKey: Buffer.from(k.hubPub()).toString("base64") });
 });

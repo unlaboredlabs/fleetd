@@ -70,6 +70,8 @@ export type SessionRules = { allow: string[]; deny: string[] };
  */
 export const found: {
   toolRules?: (hub: Hub, r: ProjectRef) => Promise<SessionRules>;
+  /** The vault's variables brought up to date on the machine before a launch (src/hub/vault/loops.ts sets it). */
+  beforeLaunch?: (r: ProjectRef, order: string | undefined) => Promise<void>;
   /** The vault's `inject` audit row for a launch (src/hub/vault/loops.ts sets it). */
   injected?: (r: ProjectRef, order: string | undefined, threadId: string) => void;
 } = {};
@@ -231,6 +233,12 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
     } catch (error) {
       throw ExecutorError.failed(m, "launch", `the thread's Claude account was not recorded: ${(error as Error).message}`);
     }
+  }
+  // A new order's first sessions start with its person's variables: delivered now, not at the next sweep.
+  try {
+    await found.beforeLaunch?.(r, options.orderId);
+  } catch (error) {
+    console.warn(`vault: variables not brought up to date before a launch: ${(error as Error).message}`);
   }
   const out = await ex.callPatient(m, "launch", { op: "launch", ...call }, LAUNCH_TIMEOUT_MS);
   const key = `${m}/${sessionId}`;

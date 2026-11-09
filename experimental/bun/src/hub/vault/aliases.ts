@@ -17,7 +17,7 @@ import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries } from "./deliver.ts";
 import { BRAND_NAMES } from "./fields.ts";
 import { type ItemRow, vault, type Viewer } from "./index.ts";
-import { deleteItem, saveItem } from "./items.ts";
+import { deleteItem, saveItem, sinkItem } from "./items.ts";
 import { adopt } from "./migrate.ts";
 
 const b64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
@@ -152,9 +152,7 @@ export async function takeSecret(
       ? saveItem(hub, v, { itemId: have.itemId, fields: { value }, secret: true })
       : saveItem(hub, v, { kind: "env", scope: "order", ...project, workstreamId: sink.path, envName: name, secret: true, fields: { value } });
   } else {
-    const have = vt.store
-      .select("kind = 'env' AND json_extract(meta, '$.sink.machineId') = ? AND json_extract(meta, '$.sink.path') = ?", [sink.machineId, sink.path])
-      .find((x) => x.meta.sink?.kind === sink.kind);
+    const have = sinkItem(hub, { kind: sink.kind, machineId: sink.machineId, path: sink.path, secretKey: secret.key });
     row = have
       ? saveItem(hub, v, { itemId: have.itemId, fields: { value }, secret: true })
       : saveItem(hub, v, {

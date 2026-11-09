@@ -59,6 +59,19 @@ export function openToHub(hub: Hub, sealed: string): unknown {
 
 const by = (v: Viewer) => v.person ?? `key:${v.caller.keyId}`;
 
+/**
+ * A sink item's name in the vault: its own namespace, apart from the project's variables, and one per sink (secret
+ * key, kind and path), since many requests write the same .env file.
+ */
+export const sinkEnvName = (sink: SinkMeta) => `sink:${sink.kind}:${sink.secretKey ?? ""}:${sink.path}`;
+
+/** The vault item a `request_secret` env:/file: sink keeps its value in: the same file and the same secret key. */
+export function sinkItem(hub: Hub, sink: { kind: "env" | "file"; machineId: string; path: string; secretKey: string }): ItemRow | undefined {
+  return vault(hub)
+    .store.select("kind = 'env' AND json_extract(meta, '$.sink.machineId') = ? AND json_extract(meta, '$.sink.path') = ?", [sink.machineId, sink.path])
+    .find((x) => x.meta.sink?.kind === sink.kind && x.meta.sink.secretKey === sink.secretKey);
+}
+
 function checkLabel(label: string | undefined): string {
   const l = (label ?? "").trim();
   if (l === "" || l.length > LABEL_MAX || /[\r\n]/.test(l)) throw new ToolError("invalid", `A label is 1 to ${LABEL_MAX} characters on one line.`);
@@ -102,8 +115,8 @@ function scopeOf(hub: Hub, v: Viewer, s: SaveSpec, kind: VaultKind): Pick<ItemDr
 }
 
 /** A project's variables, after `row` is saved, stay within today's limits (100, and 512 KiB together). */
-function checkEnvLimits(hub: Hub, row: Pick<ItemDraft, "scope" | "machineId" | "projectId" | "workstreamId" | "envName">, bytes: number, replacing?: string): void {
-  if (row.scope !== "project" && row.scope !== "order") return;
+function checkEnvLimits(hub: Hub, row: Pick<ItemDraft, "scope" | "machineId" | "projectId" | "workstreamId" | "envName" | "meta">, bytes: number, replacing?: string): void {
+  if ((row.scope !== "project" && row.scope !== "order") || row.meta.sink) return;
   const others = vault(hub)
     .store.select("kind = 'env' AND scope = ? AND machine_id = ? AND project_id = ? AND ifnull(workstream_id, '') = ?", [
       row.scope,
@@ -111,7 +124,7 @@ function checkEnvLimits(hub: Hub, row: Pick<ItemDraft, "scope" | "machineId" | "
       row.projectId!,
       row.workstreamId ?? "",
     ])
-    .filter((x) => x.itemId !== replacing);
+    .filter((x) => x.itemId !== replacing && !x.meta.sink);
   if (others.length + 1 > PROJECT_ENV_MAX) {
     throw new ToolError("invalid", `A ${row.scope} takes at most ${PROJECT_ENV_MAX} variables.`, "Remove some first.");
   }
@@ -138,7 +151,7 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
     if (!vt.canEdit(v, row)) throw new ToolError("forbidden", `You can't change ${row.label}.`, "Ask its owner or an admin.");
     const secret: Secret = s.fields === undefined ? vt.store.open(row) : merge(row.kind, vt.store.open(row), s.fields);
     let envName = row.envName;
-    if (row.kind === "env" && s.envName !== undefined && s.envName !== row.envName) {
+    if (row.kind === "env" && !row.meta.sink && s.envName !== undefined && s.envName !== row.envName) {
       checkEnvName(s.envName);
       envName = s.envName;
     }
@@ -158,7 +171,7 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
       ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
       ...(row.workstreamId !== undefined ? { workstreamId: row.workstreamId } : {}),
       ...(envName !== undefined ? { envName } : {}),
-      label: row.kind === "env" ? envName! : checkLabel(s.label ?? row.label),
+      label: row.kind === "env" && !row.meta.sink ? envName! : checkLabel(s.label ?? row.label),
       meta,
     };
     if (row.kind === "env") checkEnvLimits(hub, draft, meta.bytes ?? 0, row.itemId);
@@ -172,8 +185,11 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
   const scope = scopeOf(hub, v, s, kind);
   const secret = cleanSecret(kind, s.fields);
   if (kind === "env") {
-    if (s.envName === undefined) throw new ToolError("invalid", "A variable names its envName.");
-    checkEnvName(s.envName);
+    if (s.sink) s.envName = sinkEnvName(s.sink);
+    else {
+      if (s.envName === undefined) throw new ToolError("invalid", "A variable names its envName.");
+      checkEnvName(s.envName);
+    }
     if (secret.value === undefined) secret.value = "";
   }
   checkBilling(hub, v, s.billingAddress);
@@ -184,7 +200,8 @@ export function saveItem(hub: Hub, v: Viewer, s: SaveSpec, action: "create" | "u
     ...(s.source !== undefined ? { source: s.source } : {}),
     ...(s.sink !== undefined ? { sink: s.sink } : {}),
   });
-  const draft: ItemDraft = { kind, ...scope, ...(kind === "env" ? { envName: s.envName! } : {}), label: kind === "env" ? s.envName! : checkLabel(s.label), meta };
+  const label = s.sink ? checkLabel(s.sink.envName ?? s.sink.secretKey ?? s.sink.path) : kind === "env" ? s.envName! : checkLabel(s.label);
+  const draft: ItemDraft = { kind, ...scope, ...(kind === "env" ? { envName: s.envName! } : {}), label, meta };
   if (kind === "env") checkEnvLimits(hub, draft, meta.bytes ?? 0);
   const cap = scope.scope === "person" ? vt.store.count({ personId: scope.personId! }) : scope.machineId ? vt.store.count({ machineId: scope.machineId, projectId: scope.projectId! }) : 0;
   if (cap >= ITEMS_MAX) throw new ToolError("invalid", `At most ${ITEMS_MAX} items fit here.`, "Delete some first.");

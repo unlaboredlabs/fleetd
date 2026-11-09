@@ -63,7 +63,7 @@ test("a Bun node hands over its secrets, order variables and sinks; GH_TOKEN sta
     [
       ["order", "DEPLOY", fp("planted-mig-2")],
       ["project", "API_KEY", fp("planted-mig-1")],
-      ["project", "STRIPE_KEY", fp("planted-mig-3")],
+      ["project", "sink:env:stripe.key:/srv/p1/.env", fp("planted-mig-3")],
     ].sort(),
   );
   expect(items().some((r) => r.envName === "GH_TOKEN")).toBe(false);

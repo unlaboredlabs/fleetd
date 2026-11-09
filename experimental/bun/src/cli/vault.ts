@@ -70,8 +70,17 @@ export async function vaultCommand(argv: string[]): Promise<CliResult> {
         const db = openHub(home);
         let hit: { key_id: string; created_ms: number } | undefined;
         try {
-          const rows = db.conn.query<{ key_id: string; created_ms: number; check_blob: Uint8Array }, []>("SELECT key_id, created_ms, check_blob FROM vault_keys").all();
-          hit = rows.find((r) => checkOpens(key, r.key_id, new Uint8Array(r.check_blob)));
+          const rows = db.conn
+            .query<{ key_id: string; created_ms: number; retired_ms: number | null; check_blob: Uint8Array }, []>(
+              "SELECT key_id, created_ms, retired_ms, check_blob FROM vault_keys",
+            )
+            .all();
+          const match = rows.find((r) => checkOpens(key, r.key_id, new Uint8Array(r.check_blob)));
+          // A rotated-away key opens nothing the vault holds now: its code is stale.
+          if (match?.retired_ms !== null && match?.retired_ms !== undefined) {
+            return fail(1, `that code is for the vault key ${match.key_id}, retired by a rotation: use the code saved after the rotation`);
+          }
+          hit = match;
         } finally {
           db.conn.close();
         }

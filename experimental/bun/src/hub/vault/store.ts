@@ -260,29 +260,37 @@ export class VaultStore {
   update(row: ItemRow, d: ItemDraft, secret: Secret, by: string, at: number): ItemRow {
     const version = row.version + 1;
     const { sealed, keyId } = this.seal(bindingOf({ ...d, itemId: row.itemId, version }), secret);
-    const changed = this.db
-      .query(
-        `UPDATE vault_items SET scope = ?, person_id = ?, machine_id = ?, project_id = ?, workstream_id = ?, env_name = ?,
-           label = ?, meta = ?, sealed = ?, key_id = ?, version = ?, updated_ms = ?, updated_by = ?
-         WHERE item_id = ? AND version = ?`,
-      )
-      .run(
-        d.scope,
-        d.personId ?? null,
-        d.machineId ?? null,
-        d.projectId ?? null,
-        d.workstreamId ?? null,
-        d.envName ?? null,
-        d.label,
-        JSON.stringify(d.meta),
-        sealed,
-        keyId,
-        version,
-        at,
-        by,
-        row.itemId,
-        row.version,
-      );
+    let changed;
+    try {
+      changed = this.db
+        .query(
+          `UPDATE vault_items SET scope = ?, person_id = ?, machine_id = ?, project_id = ?, workstream_id = ?, env_name = ?,
+             label = ?, meta = ?, sealed = ?, key_id = ?, version = ?, updated_ms = ?, updated_by = ?
+           WHERE item_id = ? AND version = ?`,
+        )
+        .run(
+          d.scope,
+          d.personId ?? null,
+          d.machineId ?? null,
+          d.projectId ?? null,
+          d.workstreamId ?? null,
+          d.envName ?? null,
+          d.label,
+          JSON.stringify(d.meta),
+          sealed,
+          keyId,
+          version,
+          at,
+          by,
+          row.itemId,
+          row.version,
+        );
+    } catch (e) {
+      if (String(e).includes("UNIQUE")) {
+        throw new ToolError("invalid", `There is a variable ${d.envName} here already.`, "Edit that one, or pick another name.");
+      }
+      throw e;
+    }
     if (changed.changes !== 1) throw new ToolError("failed", "The item changed meanwhile.", "Open it again and retry.");
     return this.get(row.itemId)!;
   }
