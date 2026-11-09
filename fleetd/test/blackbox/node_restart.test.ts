@@ -42,7 +42,7 @@ async function hostedSession(m: ReturnType<typeof machine>): Promise<Registratio
   const hosts = join(m.home, "hosts");
   const work = join(m.root, "work");
   const link = await launch({
-    exe: BIN!,
+    fleetd: [BIN!],
     dir: join(hosts, SESSION),
     sessionId: SESSION,
     program: join(m.root, "bin/claude"),

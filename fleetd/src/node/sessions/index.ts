@@ -1,5 +1,5 @@
 // The node's session service (crates/fleetd/src/node/sessions/mod.rs): it answers the hub's `session_call`s, starts
-// each session's claude under a host of its own (the Rust `fleetd session-host`, ../runner/host.ts), applies the
+// each session's claude under a host of its own (`fleetd session-host`, ../runner/host.ts), applies the
 // host's events to `sessions.sqlite` (./store.ts), and streams what changed: the machine stream (projects and session
 // summaries, numbered by `seq` for replay) and the thread stream (messages, items, runs and live text) of the
 // sessions the hub follows.
@@ -46,7 +46,6 @@ import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
 import { Stages } from "../../shared/stages.ts";
 import { tilde } from "../runner/claude/setup.ts";
-import { HELPER, NO_HELPER } from "../runner/helper.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
 import type { LaunchArea, ScreenHooks } from "../api.ts";
@@ -171,8 +170,8 @@ export type SessionConfig = {
   baseEnv: Env;
   /** claude. */
   claudeBin: string;
-  /** The Rust fleetd binary: it runs each session's host, and fleetd's MCP server and hold hook inside sessions. */
-  nativeBin: string | undefined;
+  /** The command that runs fleetd: each session's host, and fleetd's MCP server and hold hook inside sessions. */
+  fleetd: string[];
   boxKey?: NodeBoxKey;
   /** The node's own retries of a run that failed Overloaded or Network, after claude's: 1, 4 and 15 min, ±10%. */
   retryScheduleMs?: number[];
@@ -196,7 +195,7 @@ const retryable = (cls: FailureClass) => cls === "overloaded" || cls === "networ
 const expandHome = (dir: string) => (dir === "~" ? homeDir() : dir.startsWith("~/") ? join(homeDir(), dir.slice(2)) : dir);
 
 /** The node's session config, as the Rust node's `SessionConfig::for_node`. */
-export function configFor(home: string, fleetdDirPath: string, nativeBin: string | undefined, boxKey?: NodeBoxKey): SessionConfig {
+export function configFor(home: string, fleetdDirPath: string, fleetd: string[], boxKey?: NodeBoxKey): SessionConfig {
   let configured: string | undefined;
   try {
     configured = readConfig(home)?.claudeConfigDir;
@@ -209,7 +208,7 @@ export function configFor(home: string, fleetdDirPath: string, nativeBin: string
     claudeEnv: join(fleetdDirPath, "claude.env"),
     baseEnv: sessionEnv(),
     claudeBin: claude.claudeBinary(),
-    nativeBin,
+    fleetd,
     retryScheduleMs: [1, 2, 3].map((a) => retryDelayMs(a)!),
     idleReapMs: 600_000,
     ...(boxKey ? { boxKey } : {}),
@@ -294,16 +293,16 @@ export function naviHomeEnv(nodeHome: string, projectId: string, userHome: strin
   return env;
 }
 /** The PreToolUse hook: free while there is no hold, `fleetd update-hold` while there is one (node/hold.rs). */
-export const holdHook = (exe: string, home: string) => {
+export const holdHook = (fleetd: string[], home: string) => {
   const hold = quote(join(home, "update", "hold"));
-  return `test -e ${hold} || exit 0; exec ${quote(exe)} update-hold ${hold}`;
+  return `test -e ${hold} || exit 0; exec ${fleetd.map(quote).join(" ")} update-hold ${hold}`;
 };
 
 /** The session's `--mcp-config` entry for fleetd's own MCP server; none for a plain thread. */
-function fleetdServer(exe: string, role: SessionRole, sock: string, sessionId: string): Record<string, unknown> | undefined {
+function fleetdServer(fleetd: string[], role: SessionRole, sock: string, sessionId: string): Record<string, unknown> | undefined {
   const arg = role === "lead" || role === "assistant" ? "lead" : role === "worker" ? "worker" : undefined;
   if (!arg) return undefined;
-  return { type: "stdio", command: exe, args: ["agent-mcp", "--role", arg], alwaysLoad: true, env: { FLEETD_NODE_SOCK: sock, FLEETD_THREAD_ID: sessionId } };
+  return { type: "stdio", command: fleetd[0], args: [...fleetd.slice(1), "agent-mcp", "--role", arg], alwaysLoad: true, env: { FLEETD_NODE_SOCK: sock, FLEETD_THREAD_ID: sessionId } };
 }
 
 const scratchName = (sessionId: string) => createHash("sha256").update(sessionId).digest("hex").slice(0, 16);
@@ -1234,7 +1233,6 @@ export class SessionService {
       stages.done("exit wait");
     }
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
-    if (!this.config.nativeBin) throw new Refusal("runner_unavailable", NO_HELPER);
     const row = this.#session(id);
     const env = runnerEnv(this.config);
     let resume: boolean;
@@ -1266,7 +1264,7 @@ export class SessionService {
     let link: HostLink;
     try {
       link = await launchHost({
-        exe: this.config.nativeBin!,
+        fleetd: this.config.fleetd,
         dir: spec.hostDir!,
         sessionId: id,
         program: this.config.claudeBin,
@@ -1304,7 +1302,7 @@ export class SessionService {
     const role = row.local.role ?? "plain";
     // The configured servers of the session's role, their secrets resolved here, then fleetd's own. The file holds
     // secrets, so it is written as the node's secret files are (0600).
-    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.nativeBin ?? HELPER, role, sock, id), id);
+    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.fleetd, role, sock, id), id);
     const mcpConfig = join(dir, "mcp.json");
     writeAtomic(mcpConfig, sessionMcp.json);
     const env: Env = { ...base };
@@ -1337,7 +1335,7 @@ export class SessionService {
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.nativeBin ?? HELPER, this.home)));
+    writeAtomic(settings, settingsOverlay(roleVars, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.fleetd, this.home)));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
@@ -2191,13 +2189,6 @@ export class SessionService {
         const onAccount = await claude.probe(this.config.claudeBin, env);
         if (onAccount.login === "logged_in") info = onAccount;
       } catch {}
-    }
-    // No session host: claude may be fine, but no session starts here. Both hubs read a logged-in runner as able to
-    // take sessions whatever its problem says (runner_problem), so its login goes out as unknown: the hub shows the
-    // machine degraded with this problem, and places no task here.
-    if (!this.config.nativeBin) {
-      info.problem = info.problem ? `${NO_HELPER}. ${info.problem}` : NO_HELPER;
-      info.login = "unknown";
     }
     this.#healthChanged((h) => h.probed(info, started));
     return this.#health.info() ?? info;

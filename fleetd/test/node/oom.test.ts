@@ -43,7 +43,7 @@ test.if(linux)("a session's host starts at the agent score; a killed node's scra
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
   });
   try {
     expect(existsSync(stale)).toBe(false);

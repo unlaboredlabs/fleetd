@@ -1,24 +1,24 @@
-// The session host pinned where `fleetd update` can't replace it (crates/fleetd/src/node/self_exe.rs): the binary the
-// node's sessions are hosted by and start `fleetd agent-mcp` and the hold hook with (./runner/helper.ts). An update
-// writes a new binary beside the installed one and renames it over, so the installed path then names the new file;
-// on macOS that's the file a later start opens, which may not speak the running node's socket. At start the node
-// hard-links the helper to `<node home>/bin/fleetd-agent-<pid>` (copying it on macOS, or when the home is on another
+// The node's binary pinned where `fleetd update` can't replace it (crates/fleetd/src/node/self_exe.rs): the binary
+// its sessions' hosts run from, and their `fleetd agent-mcp`, hold hook, `mac` and forwarding agent-device. An update
+// writes a new binary beside the installed one and renames it over, so the installed path then names the new file; on
+// macOS that's the file a later start opens, which may not speak the running node's socket. At start the node
+// hard-links itself to `<node home>/bin/fleetd-bun-<pid>` (copying it on macOS, or when the home is on another
 // filesystem), and its sessions use that for as long as the node runs. The next start removes the pins of nodes that
-// are gone, but not one a running process was started from (a re-adopted session's host, a Rust node's pin among
-// them): those sessions keep starting their fleetd tools from it.
+// are gone, but not one a running process was started from (a re-adopted session's host among them): those sessions
+// keep starting their fleetd tools from it. Run from source, the node has nothing of its own to pin, and they run Bun
+// with its entry.
 //
-// The Bun build pins itself the same way, as `fleetd-bun-<pid>`: agents' `mac` and the forwarding agent-device run it
-// (mac_tool/shim.ts), so an update between its rename and the node's restart can't put a new binary on the old node's
-// socket. Run from source, the node has nothing of its own to pin, and they run Bun with its entry.
+// Nodes before the TypeScript session host pinned the Rust build that hosted their sessions as `fleetd-agent-<pid>`;
+// those pins go the same way once nothing runs from them.
 import { constants, copyFileSync, existsSync, linkSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { mkdirPrivate } from "./config.ts";
 
 const DIR = "bin";
-/** The session host's pins. */
-const PREFIX = "fleetd-agent-";
-/** The Bun build's own. */
-const SELF_PREFIX = "fleetd-bun-";
+/** The Rust session host's pins, from nodes before the TypeScript one. */
+const RUST_PREFIX = "fleetd-agent-";
+/** The node's own. */
+const PREFIX = "fleetd-bun-";
 
 /** Links (on macOS, or across filesystems, copies) `exe` to `<home>/bin/<prefix><pid>`, and removes the pins of
  * processes that are gone. */
@@ -47,30 +47,19 @@ export function pinFrom(exe: string, home: string, pid: number, platform: NodeJS
   return target;
 }
 
-/** The pinned `exe` for this node's sessions, or `exe` itself (logged) when it can't be pinned; undefined stays so. */
-export function pin(home: string, exe: string | undefined): string | undefined {
-  if (!exe) return exe;
-  try {
-    return pinFrom(exe, home, process.pid);
-  } catch (e) {
-    console.warn(
-      `${new Date().toISOString()} WARN the session host was not pinned for agents' fleetd tools; a self-update may leave new sessions without them {"error":${JSON.stringify(String(e))}}`,
-    );
-    return exe;
-  }
-}
-
-/** This node's own command line for agents' commands: its pinned binary when it is a compiled build, else Bun with
- * its entry (run from source); the running binary itself when it can't be pinned. */
+/** This node's own command line for its sessions' hosts and agents' commands: its pinned binary when it is a compiled
+ * build, else Bun with its entry (run from source); the running binary itself when it can't be pinned. */
 export function pinSelf(home: string, main: string = Bun.main, exe: string = process.execPath): string[] {
   if (!main.startsWith("/$bunfs/")) return [exe, main];
   // Linux names a binary replaced under a running process `<path> (deleted)`; /proc still opens it.
   const running = exe.replace(/ \(deleted\)$/, "");
   const source = existsSync(running) || process.platform !== "linux" ? running : "/proc/self/exe";
   try {
-    return [pinFrom(source, home, process.pid, process.platform, SELF_PREFIX)];
+    const pinned = pinFrom(source, home, process.pid, process.platform);
+    sweep(join(home, DIR), process.pid, RUST_PREFIX);
+    return [pinned];
   } catch (e) {
-    console.warn(`${new Date().toISOString()} WARN the node's binary was not pinned for agents' mac command {"error":${JSON.stringify(String(e))}}`);
+    console.warn(`${new Date().toISOString()} WARN the node's binary was not pinned for its sessions; a self-update may leave new sessions without fleetd {"error":${JSON.stringify(String(e))}}`);
     return [running];
   }
 }

@@ -43,7 +43,7 @@ echo "{\\"is_error\\":true,\\"result\\":\\"Invalid token $CLAUDE_CODE_OAUTH_TOKE
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", ANTHROPIC_API_KEY: "machine-key" },
     claudeBin: claude,
-    nativeBin: "/bin/false",
+    fleetd: ["/bin/false"],
     boxKey,
   });
 });

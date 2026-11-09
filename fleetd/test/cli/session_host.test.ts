@@ -1,18 +1,17 @@
-// `fleetd session-host …` from the Bun CLI: it becomes the Rust binary's (execve, the same process), found as the node
-// finds it (findHelper); without one, the node's own "no session host" error rather than a loop back into itself.
+// `fleetd session-host …` from the CLI: this binary's own host (src/node/runner/host/serve.ts). Its usage, a claude that
+// isn't there (a refused registration, which the node reports as a missing binary), and `stop-all`.
 import { afterAll, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { NO_HELPER } from "../../src/node/runner/helper.ts";
 
 const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-session-host-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const main = join(import.meta.dir, "../../src/main.ts");
 
-/** Runs the Bun CLI's `session-host` with `env`; a fresh home, so nothing reaches a real one. */
-async function run(args: string[], env: Record<string, string>) {
+/** Runs the CLI's `session-host`; a fresh home, so nothing reaches a real one. */
+async function run(args: string[]) {
   const proc = Bun.spawn([process.execPath, main, "session-host", ...args], {
-    env: { PATH: "/usr/bin:/bin", HOME: dir, FLEETD_HOME: join(dir, ".fleetd"), FLEETD_HUB_URL: "http://127.0.0.1:1", ...env },
+    env: { PATH: "/usr/bin:/bin", HOME: dir, FLEETD_HOME: join(dir, ".fleetd"), FLEETD_HUB_URL: "http://127.0.0.1:1" },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -20,35 +19,23 @@ async function run(args: string[], env: Record<string, string>) {
   return { pid: proc.pid, stdout, stderr, code };
 }
 
-function script(path: string, body: string) {
-  writeFileSync(path, `#!/bin/sh\n${body}`);
-  chmodSync(path, 0o755);
-}
-
-test("it hands the whole command to the session host, in the same process, with its exit code and environment", async () => {
-  // Answers as the Rust binary's session-host does with no arguments, so the lookup takes it.
-  const native = join(dir, "fleetd-native");
-  script(
-    native,
-    'if [ "$#" -le 1 ]; then echo "usage: fleetd session-host <dir> <session id> -- <program> <args…>" >&2; exit 2; fi\necho "$$ $* ${FLEETD_SESSION_HOST_LOOKUP:-unset} $KEPT"\nexit 7\n',
-  );
-  const r = await run(["stop-all", "/some/dir"], { FLEETD_NATIVE_BIN: native, KEPT: "kept" });
-  expect(r.stderr).toBe("");
-  expect(r.code).toBe(7);
-  expect(r.stdout).toBe(`${r.pid} session-host stop-all /some/dir unset kept\n`);
+test("without a command it says how it's used and exits 2, as the Rust host did", async () => {
+  const r = await run([]);
+  expect([r.code, r.stderr]).toEqual([2, "usage: fleetd session-host <dir> <session id> -- <program> <args…>\n"]);
+  expect((await run(["/x", "--", "claude"])).code).toBe(2);
 });
 
-test("without a session host it says what's missing and exits 1", async () => {
-  const r = await run(["stop-all", "/some/dir"], { FLEETD_NATIVE_BIN: join(dir, "missing") });
-  expect([r.code, r.stderr]).toEqual([1, `fleetd: ${NO_HELPER}\n`]);
+test("a claude that isn't there is refused in the registration, as missing", async () => {
+  const host = join(dir, "hosts", "s1");
+  mkdirSync(host, { recursive: true });
+  const r = await run([host, "s1", "--", join(dir, "no-claude")]);
+  expect(r.code).toBe(1);
+  const registration = JSON.parse(readFileSync(join(host, "host.json"), "utf8"));
+  expect(registration).toMatchObject({ protocol: 1, hostPid: r.pid, pid: 0, start: null, refused: { message: "No such file or directory (os error 2)", missing: true } });
+  expect(registration.marker).toStartWith("s1.");
 });
 
-test("another Bun build on PATH, itself without a host, is tried and refuses at once instead of trying this one", async () => {
-  const bin = join(dir, "other");
-  mkdirSync(bin);
-  script(join(bin, "fleetd"), `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(main)} "$@"\n`);
-  const started = Date.now();
-  const r = await run(["stop-all", "/some/dir"], { PATH: `${bin}:/usr/bin:/bin` });
-  expect([r.code, r.stderr]).toEqual([1, `fleetd: ${NO_HELPER}\n`]);
-  expect(Date.now() - started).toBeLessThan(10_000);
-}, 30_000);
+test("stop-all stops every host in a dir, and says how many ran", async () => {
+  const r = await run(["stop-all", join(dir, "none")]);
+  expect([r.code, r.stdout]).toEqual([0, "stopped 0 agent session(s)\n"]);
+});

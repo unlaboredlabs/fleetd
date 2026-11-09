@@ -48,7 +48,7 @@ async function askHub(): Promise<string | undefined> {
 }
 
 export async function run(args: { check: boolean; channel?: string; now: boolean }): Promise<void> {
-  const { HttpFeed, baseUrl, channelOf, checkedTo, cliAsset, installedExe, parseChannel, release, sums, updateHelper } = await import(
+  const { HttpFeed, baseUrl, channelOf, checkedTo, cliAsset, installedExe, parseChannel, release, sums, retireHelper } = await import(
     "../update/index.ts"
   );
   const { isHubService, services: servicesOf } = await import("../update/service.ts");
@@ -78,8 +78,9 @@ export async function run(args: { check: boolean; channel?: string; now: boolean
     if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
     try {
       const s = await sums(feed);
-      await updateHelper(feed, s, exe);
       await checkedTo(feed, s, cliAsset(), exe);
+      // This build hosts sessions itself, so a Rust session host an older build kept beside it goes.
+      retireHelper(exe);
     } catch (error) {
       throw new Error(`replacing ${exe}: ${(error as Error).message}`);
     }

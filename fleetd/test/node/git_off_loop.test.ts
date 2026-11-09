@@ -75,7 +75,7 @@ test("a writer's launch whose git worktree add is slow leaves the node's timers 
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath },
     claudeBin: "/bin/true",
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
   });
   let n = 0;
   const call = (op: string, args: Record<string, unknown>) => service.handle({ id: `c${++n}`, call: { op, ...args } as never });

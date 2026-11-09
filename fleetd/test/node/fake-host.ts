@@ -1,4 +1,4 @@
-// A stand-in for the Rust binary's `fleetd session-host`, for tests without it: `bun fake-host.ts session-host <dir>
+// A stand-in for `fleetd session-host` (src/node/runner/host/serve.ts) that plays its claude too: `bun fake-host.ts session-host <dir>
 // <session id> -- <program> <args…>`. It registers in <dir> (host.json), serves <dir>/sock with the host's lines
 // ({"seq","event"} out, {"ack"} / {"command"} / "stop" in), and plays a claude that answers each Send with one run:
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
@@ -15,7 +15,7 @@ const flag = (name: string) => {
 };
 const model = flag("--model") ?? "";
 if (!dir || !session) {
-  // As the Rust binary answers it: what a node checks to know a session host (src/node/runner/helper.ts).
+  // As `fleetd session-host` answers it.
   console.error("usage: fleetd session-host <dir> <session id> -- <program> <args…>");
   process.exit(2);
 }

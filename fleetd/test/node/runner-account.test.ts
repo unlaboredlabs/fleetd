@@ -41,7 +41,7 @@ for await (const line of console) {
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin" },
     claudeBin: claude,
-    nativeBin: join(import.meta.dir, "fake-host.sh"),
+    fleetd: [join(import.meta.dir, "fake-host.sh")],
     boxKey,
   });
   const secret = (set?: { sealed: string }) =>

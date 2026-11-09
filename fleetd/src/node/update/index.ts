@@ -29,7 +29,7 @@ import {
   runningBinary,
   sums,
   swap,
-  updateHelper,
+  retireHelper,
   type Feed,
   type Flavour,
 } from "../../update/index.ts";
@@ -171,7 +171,8 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
       }
     } else {
       if (!isBuild(fetched(p), s, asset)) await checkedTo(feed, s, asset, fetched(p));
-      await updateHelper(feed, s, p.exe, prev);
+      // A Rust session host an older build kept beside it is kept for a rollback only.
+      retireHelper(p.exe, prev);
       swap(p.exe, fetched(p), running, prev);
     }
     rmSync(fetched(p), { force: true });

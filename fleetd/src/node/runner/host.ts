@@ -1,10 +1,11 @@
-// A session's host (crates/fleetd/src/node/runner/host.rs), the native piece the Bun node keeps: the Rust binary's
-// `fleetd session-host <dir> <session id> -- <claude> <args…>` owns the session's claude, runs the stream mapper, the
-// kill ladder and the transcript, and outlives the node. The node starts it detached (a session of its own and, where
-// systemd answers, a scope of its own that the node's unit doesn't stop: scope.ts), waits for its registration
-// (`host.json`), and talks to its socket (`sock`), one JSON object per line:
+// The node's side of a session's host (crates/fleetd/src/node/runner/host.rs). `fleetd session-host <dir> <session id>
+// -- <claude> <args…>` (./host/serve.ts, this binary) owns the session's claude, runs the stream mapper, the kill ladder
+// and the transcript, and outlives the node. The node starts it detached (a session of its own and, where systemd
+// answers, a scope of its own that the node's unit doesn't stop: scope.ts), waits for its registration (`host.json`),
+// and talks to its socket (`sock`), one JSON object per line:
 // - host → node: `{"seq":n,"event":<RunnerEvent>}`; the host keeps each until acknowledged and resends what it kept;
 // - node → host: `{"ack":n}` once the service applied events up to n, `{"command":<SessionCommand>}`, and `"stop"`.
+// Hosts the Rust build started speak the same lines and write the same registration, so a node adopts them as its own.
 import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, chmodSync } from "node:fs";
 import { join } from "node:path";
@@ -240,8 +241,8 @@ async function dialSocket(dir: string, handlers: Bun.SocketHandler<undefined>): 
 
 /** What launch needs: claude's command and everything it runs with. */
 export type Launch = {
-  /** The Rust fleetd binary, which runs the host. */
-  exe: string;
+  /** The command that runs fleetd (the node's pinned binary, or Bun with its entry from source): it runs the host. */
+  fleetd: string[];
   dir: string;
   sessionId: string;
   program: string;
@@ -305,8 +306,8 @@ export async function launch(l: Launch): Promise<HostLink> {
 export async function startHost(l: Launch, log: number): Promise<ChildProcess> {
   const started = await spawnScoped(
     l.scope && hostScope(l.scope),
-    l.exe,
-    [COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args],
+    l.fleetd[0]!,
+    [...l.fleetd.slice(1), COMMAND, l.dir, l.sessionId, "--", l.program, ...l.args],
     l.sessionId,
     (program, argv, scope) =>
       // A session's whole tree goes before the node and the hub when memory runs out.

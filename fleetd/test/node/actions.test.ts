@@ -60,7 +60,7 @@ beforeAll(async () => {
     claudeEnv: join(home.dir, "claude.env"),
     baseEnv: { HOME: home.dir, PATH: process.env.PATH ?? "/usr/bin:/bin", BUN_BIN: process.execPath, ANTHROPIC_API_KEY: "machine-key" },
     claudeBin: "/bin/true",
-    nativeBin: host,
+    fleetd: [host],
     boxKey,
   });
   service.attach((f) => frames.push(f));
