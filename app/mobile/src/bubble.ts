@@ -19,13 +19,6 @@ export const bubble = {
   /** A bubble's widest, as a share of the screen's width. */
   maxShare: 0.7,
   /**
-   * The tail on a burst's last bubble, as iOS 26 draws it: a hook under the bottom corner, hanging 7 pt into the gap.
-   * A bar `width` x `height` turned `angle` degrees, its tip's corner rounded by `tipRadius`, `inset` from the bubble's
-   * side and `drop` below its bottom (before turning); then a circle of the ground, `notch` across, `notchInset` past
-   * the side and `notchDrop` below, cuts the pinch between the corner and the tail.
-   */
-  tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
-  /**
    * A picture: as wide as this share of the screen whatever its shape (252.67 pt on a 402 pt screen, landscape or
    * portrait), as tall as its shape makes it, up to `tallest` times its width (a 3:4 portrait, the tallest measured),
    * and at least `lowest` tall, so a panorama doesn't become a sliver (cropped at its sides).
