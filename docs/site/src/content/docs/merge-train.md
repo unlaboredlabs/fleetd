@@ -231,7 +231,9 @@ A member counts as merged only while its head is still the one the batch was bui
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
 On every pass, a ready PR the batch left out says why, in its queue entry and in the train's line in the lead's digest:
-for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)".
+for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)". When a
+check failed on its own head, the agent that wrote it also hears of it once per head, with the check and its log, so a
+writer that finished and isn't watching CI still fixes it.
 
 ### Batches in CI at once {#pipeline}
 

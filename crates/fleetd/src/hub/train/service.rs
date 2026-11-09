@@ -524,6 +524,8 @@ pub struct Train {
     /// The upstream failures the lead was told of, each Change's with its hold: once each, in memory, so a restart
     /// may tell one again.
     pub(super) after_told: Mutex<HashSet<(ChangeId, String)>>,
+    /// Per ready Change, the red head its author was told of (`tell_own_red`), until its own CI goes green.
+    pub(super) own_red_told: Mutex<HashMap<ChangeId, String>>,
     /// Held by an enqueue with `after` from its loop check until its Change records them.
     after_lock: tokio::sync::Mutex<()>,
     /// GitHub's answer for an upstream PR with no open Change, by URL, and when it was read (`next::UPSTREAM_TTL_MS`).
@@ -604,6 +606,7 @@ impl Train {
             verdicts: Notify::new(),
             overdue: Mutex::default(),
             after_told: Mutex::default(),
+            own_red_told: Mutex::default(),
             after_lock: tokio::sync::Mutex::new(()),
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),

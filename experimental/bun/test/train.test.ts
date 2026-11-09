@@ -5,7 +5,7 @@ import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
 import { awaitsChecks, checks } from "../src/hub/train/rules.ts";
 import { batchSkipped, gatedName, jobChecks, labelGated, unprovenBatchSkips } from "../src/hub/train/next.ts";
-import { ownChecks, withTrailers } from "../src/hub/train/batch.ts";
+import { ownChecks, ownCi, withTrailers } from "../src/hub/train/batch.ts";
 import { failedTest } from "../src/hub/train/flaky.ts";
 import { batchHeads, squashText } from "../src/hub/train/github.ts";
 import { earlyMigrations, parseRegenerate } from "../src/hub/train/regen.ts";
@@ -120,6 +120,40 @@ test("a red batch sends each PR alone: the green one merges, the red one goes ba
   await k.settle(20);
   expect(k.change(13).state).toBe("merged");
   expect(k.change(14).state).toBe("ci_failed");
+});
+
+test("a PR left out for its own red head tells its writer once per head, with the check and its log", async () => {
+  const k = kit();
+  k.pr(20, "fleetd/T20-red", { FAIL: "x\n" });
+  await k.enqueue(20);
+  const pair = async (a: number, b: number) => {
+    for (const n of [a, b]) {
+      k.pr(n, `fleetd/T${n}-green`, { [`g${n}.md`]: `${n}\n` });
+      await k.enqueue(n);
+    }
+  };
+  const told = () => k.host.sends.filter(([to]) => to === "T20").map(([, m]) => m);
+
+  await pair(21, 22);
+  expect(await k.train.step(REPO)).toBe(true);
+  expect([k.change(21).state, k.change(22).state]).toEqual(["merged", "merged"]);
+  expect(k.change(20).lastError).toBe("not in this batch: its own head's `ci` failed");
+  const head = k.change(20).headSha;
+  expect(told()).toHaveLength(1);
+  expect(told()[0]).toContain(`its own head's \`ci\` failed on ${head.slice(0, 12)} (log: https://github.com/${REPO}/actions/runs/1)`);
+
+  // Left out again on the next pass: no second message for the same head.
+  await pair(23, 24);
+  expect(await k.train.step(REPO)).toBe(true);
+  expect(told()).toHaveLength(1);
+
+  // Green on its own head, then red again: told again.
+  k.gh.runs = () => [{ id: 1, name: "ci", status: "completed", conclusion: "success" }];
+  expect(await ownCi(k.train, REPO, k.change(20), "main")).toBeUndefined();
+  k.gh.runs = undefined;
+  await pair(25, 26);
+  expect(await k.train.step(REPO)).toBe(true);
+  expect(told()).toHaveLength(2);
 });
 
 test("enqueue refuses a PR with no workstream brief, a closed PR, and a fork's branch, with their fixes", async () => {
