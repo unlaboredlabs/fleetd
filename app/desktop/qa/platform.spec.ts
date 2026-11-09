@@ -163,10 +163,10 @@ test("a window whose page dies reloads at its route and logs why; crash dumps go
   }
 });
 
-// The agents capsule floats in the top row, which is the macOS drag region, as is the panel's tab row beside it. A
-// click there must reach the capsule, or the panel never closes on a Mac: here the window takes clicks as Electron's
-// region says (the DOM checks' drag rule), then the capsule closes the panel and opens it again.
-test("the agents capsule closes the panel and opens it again", async () => {
+// The chat's pill floats in the top row, which is the macOS drag region, as is the panel's tab row beside it. A click
+// there must reach the pill, or the panel never closes on a Mac: here the window takes clicks as Electron's region
+// says (the DOM checks' drag rule), then the pill closes the panel and opens it again.
+test("the chat's pill closes the panel and opens it again", async () => {
   const { app, page, settled, close } = await launch("chat-waiting");
   try {
     await settled();
@@ -176,12 +176,12 @@ test("the agents capsule closes the panel and opens it again", async () => {
     await panel.waitFor();
     const dragged = (await check(page, [])).filter((f) => f.check === "drag");
     expect(dragged, "controls a click on drags the macOS window instead").toEqual([]);
-    const capsule = page.locator('[data-opens="panel"]');
-    await expect(capsule).toHaveAttribute("aria-pressed", "true");
-    await capsule.click();
+    const pill = page.locator('[data-opens="panel"]');
+    await expect(pill).toHaveAttribute("aria-pressed", "true");
+    await pill.click();
     await panel.waitFor({ state: "detached" });
-    await expect(capsule).toHaveAttribute("aria-pressed", "false");
-    await capsule.click();
+    await expect(pill).toHaveAttribute("aria-pressed", "false");
+    await pill.click();
     await panel.waitFor();
   } finally {
     await close();

@@ -266,6 +266,8 @@ export const fixtures = [
   "only-me-files",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
+  // The showcase with storefront, billing and Ada pinned: the sidebar's pinned grid (W565).
+  "showcase-pins",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -711,7 +713,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
     },
   },
-  // The panel beside the chat, open on a first launch on its Agents tab, and closed with the agents capsule.
+  // The panel beside the chat, open on a first launch on its Agents tab, and closed with the chat's pill.
   {
     id: "shell",
     route: "#/",
@@ -1046,7 +1048,38 @@ export const screens: readonly Screen[] = [
       await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
     },
   },
-  // ...and in the smallest window, where it had hidden itself, shown with the agents capsule beside the chat.
+  // W565: the flush sidebar with its pinned chats, two to a row as on the phone (big round pictures, the name under,
+  // a dot when new, a typing bubble while the lead works, no line before the list), and the top bar's one pill, at rest
+  // with its chevron towards the panel; then the pill opening the panel, pressed, its chevron turned back.
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pins"],
+    variant: "pins",
+    open: async (page) => {
+      const pill = page.locator('[data-opens="panel"]');
+      if ((await pill.getAttribute("aria-pressed")) === "true") {
+        await pill.click();
+        await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
+      }
+      const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"] > [data-reorder-row]');
+      await expect(grid).toHaveCount(3);
+      await expect(pill).toHaveAttribute("aria-pressed", "false");
+    },
+  },
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pins"],
+    variant: "pill-open",
+    open: async (page) => {
+      const pill = page.locator('[data-opens="panel"]');
+      if ((await pill.getAttribute("aria-pressed")) !== "true") await pill.click();
+      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
+      await expect(pill).toHaveAttribute("aria-pressed", "true");
+    },
+  },
+  // ...and in the smallest window, where it had hidden itself, shown with the chat's pill.
   {
     id: "shell",
     route: "#/",
@@ -1342,8 +1375,8 @@ export const screens: readonly Screen[] = [
   },
   // W89 and W550: one header row. The panel runs from the window's top, its tabs beside the chat's floating title: the
   // two rows share a top and a height (the chat's row has no bar or line; the panel's tabs keep theirs), and the row
-  // carries no state word and no Max agents. The agents capsule stays at the row's end, so the click that closed the
-  // panel opens it again in the same place.
+  // carries no state word and no Max agents. The chat's pill stays at the row's start as the panel comes and goes, so
+  // the click that closed the panel opens it again in the same place.
   {
     id: "chat",
     route: `${CHAT}/agents`,

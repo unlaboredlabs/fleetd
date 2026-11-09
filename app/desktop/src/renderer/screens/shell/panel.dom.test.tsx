@@ -6,13 +6,13 @@ import type { AgentRow, Change, ChecklistGetOutput, Decision, PrGetOutput, PrRow
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, snapshot } from "../../src/data/fixtures.test-util";
-import { AppFrame } from "../../ui";
+import { AppFrame, FrameTitle, TopBar } from "../../ui";
 import frameStyles from "../../ui/layout/layout.module.css";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { forgetViews, SECTIONS, sectionOf } from "../panel/Sections";
 import { PANEL_TABS } from "../panel/tabs";
 import { useRoute } from "./navigation";
-import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
+import { PanelSlot, useProjectPanel, type ProjectPanelState } from "./panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -151,12 +151,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The chat's pill, as ChatScreen draws it: the panel's toggle. */
+function Pill({ panel }: { panel: ProjectPanelState }) {
+  return (
+    <FrameTitle
+      glass
+      title="storefront"
+      press={{ onPress: panel.toggle, pressed: panel.shown, label: "storefront", tip: "Agents, PRs and checklist", opens: "panel", controls: "project-panel" }}
+    />
+  );
+}
+
 /** The panel in the frame, as the shell holds it. */
 function Harness() {
   const panel = useProjectPanel(useRoute());
   return (
     <TooltipProvider>
-      <AppFrame topBar={<header />} corner={<PanelToggle panel={panel} />} aside={panel.shown ? <PanelSlot panel={panel} sidebarPx={240} /> : undefined} asideOpen={panel.open}>
+      <AppFrame topBar={<TopBar />} aside={panel.shown ? <PanelSlot panel={panel} sidebarPx={240} /> : undefined} asideOpen={panel.open}>
+        <Pill panel={panel} />
         <p>chat</p>
       </AppFrame>
     </TooltipProvider>
@@ -220,11 +232,11 @@ const click = async (name: string) => {
   act(() => b.click());
   await settle();
 };
-/** The agents capsule: the panel's toggle. */
+/** The chat's pill: the panel's toggle. */
 const toggle = () => host.querySelector<HTMLButtonElement>("button[data-opens='panel']");
 const flip = async () => {
   const b = toggle();
-  if (b === null) throw new Error("no agents capsule");
+  if (b === null) throw new Error("no pill");
   act(() => b.click());
   await settle();
 };

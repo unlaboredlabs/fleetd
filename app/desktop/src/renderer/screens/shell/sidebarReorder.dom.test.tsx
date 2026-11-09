@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-// Reordering the sidebar's pinned chats (W214, W530): a pinned one dragged, or moved with ⌥↑ / ⌥↓, takes its new place
-// in the one list, gliding on the sidebar's spring, says so to a screen reader, and the hub keeps your pins in that order
-// (chat_pins_set). A chat with new activity climbs to its place on the same spring. A press that doesn't move is still a click; Esc puts a lifted row back.
+// Reordering the sidebar's pinned chats (W214, W530, W565): a pin dragged inside their grid, or moved with ⌥← / ⌥→ (a
+// cell) and ⌥↑ / ⌥↓ (a row), takes its new place, gliding on the sidebar's spring, says so to a screen reader, and the
+// hub keeps your pins in that order (chat_pins_set). A chat with new activity climbs to its place in the list on the
+// same spring. A press that doesn't move is still a click; Esc puts a lifted pin back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -81,10 +82,13 @@ const mount = (rows: SidebarProject[] = ROWS) => {
   );
 };
 
-// happy-dom lays nothing out: each row is ROW px tall, stacked in its list, and drawn as far off its place as its
-// transform says.
+// happy-dom lays nothing out: each row, and each pin, is ROW px tall, stacked in its list, and drawn as far off its
+// place as its transform says. Stacked so, the pins' grid is one column, and moves only up and down; "the pins' grid"
+// below lays them out two to a row, as the sidebar does.
 const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
 const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
+/** A row's name, or a pin's. */
+const NAME = "[class*=name], [class*=pinTitle]";
 /**
  * Where each row was drawn at the last read of the layout (as a browser recalculates styles then): a transition set
  * after it starts there. A row's whole path in a glide is from that place to its own: no frame anywhere else.
@@ -129,7 +133,7 @@ const section = (label: string): HTMLElement => {
   if (found === undefined) throw new Error(`no ${label} section`);
   return found;
 };
-const titles = (label: string) => [...section(label).querySelectorAll("[data-reorder-row]")].map((r) => r.querySelector("[class*=name]")?.textContent);
+const titles = (label: string) => [...section(label).querySelectorAll("[data-reorder-row]")].map((r) => r.querySelector(NAME)?.textContent);
 const button = (title: string): HTMLElement => {
   const found = [...host.querySelectorAll<HTMLElement>("[data-reorder-row] button")].find((b) => b.textContent.startsWith(title));
   if (found === undefined) throw new Error(`no ${title}`);
@@ -137,7 +141,7 @@ const button = (title: string): HTMLElement => {
 };
 const saved = () => calls.filter((c) => c.tool === "chat_pins_set").map((c) => (c.input as { pins: { projectId: string }[] }).pins.map((r) => r.projectId));
 const rows = (label: string) => [...section(label).querySelectorAll<HTMLElement>("[data-reorder-row]")];
-const nameOf = (r: HTMLElement) => r.querySelector("[class*=name]")?.textContent ?? "";
+const nameOf = (r: HTMLElement) => r.querySelector(NAME)?.textContent ?? "";
 /** Where each row of a section is on screen now, by name. */
 const onScreen = (label: string) => new Map(rows(label).map((r) => [nameOf(r), slot(r) + translated(r)]));
 /** Each row's path from here: where its first frame draws it and where it ends, the same for a row that stays. */
@@ -155,9 +159,9 @@ const glidesFrom = (label: string, was: ReadonlyMap<string, number>, order: stri
 };
 const announced = (label: string) => section(label).querySelector("[role='status']")?.textContent;
 
-const pointer = (target: EventTarget, type: string, y: number) =>
+const pointer = (target: EventTarget, type: string, y: number, x = 0) =>
   act(() => {
-    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientY: y }));
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y }));
   });
 
 /** Presses `title` at its middle, moves it `dy` px in steps, and lets go. */
@@ -325,8 +329,8 @@ describe("a list that changes under a drag", () => {
     mount();
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
-    pointer(window, "pointermove", 2 * ROW + 2);
-    pointer(window, "pointerup", 2 * ROW + 2);
+    pointer(window, "pointermove", ROW / 2 + ROW + 6);
+    pointer(window, "pointerup", ROW / 2 + ROW + 6);
     expect(saved()).toEqual([["docs", "api", "web"]]);
     // Another desktop's order arrives mid-glide, with a new project: they turn toward their places in it.
     const was = onScreen("Projects");
@@ -366,8 +370,8 @@ describe("a section that goes mid-drag", () => {
     mount();
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
-    pointer(window, "pointermove", 2 * ROW + 2);
-    pointer(window, "pointerup", 2 * ROW + 2);
+    pointer(window, "pointermove", ROW / 2 + ROW + 6);
+    pointer(window, "pointerup", ROW / 2 + ROW + 6);
     act(() => root.render(<div />));
     expect(timers).toHaveBeenCalled();
     timers.mockRestore();
@@ -434,8 +438,8 @@ describe("near the edge of a long sidebar", () => {
     frames(3);
     expect(scrolled()).toBe(held);
 
-    // Letting go drops the row where it is, and the list stays put.
-    const at = Math.floor((100 - ROW / 2 + scrolled()) / ROW);
+    // Letting go drops the row on the place nearest it, and the list stays put.
+    const at = Math.round((100 - ROW / 2 + scrolled()) / ROW);
     pointer(window, "pointerup", 100);
     frames(3);
     expect(scrolled()).toBe(held);
@@ -485,14 +489,15 @@ describe("near the edge of a long sidebar", () => {
 });
 
 describe("the keyboard", () => {
-  it("moves the focused row with Alt+↑ and Alt+↓, keeps its focus, and says where it went", async () => {
+  const key = (k: string, alt = true) =>
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: k, altKey: alt, bubbles: true, cancelable: true })));
+
+  it("moves the focused pin a cell with Alt+← and Alt+→, keeps its focus, and says where it went", async () => {
     mount();
     const docs = button("docs");
     act(() => docs.focus());
-    const key = (k: string, alt = true) =>
-      act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: k, altKey: alt, bubbles: true, cancelable: true })));
     const was = onScreen("Projects");
-    key("ArrowUp");
+    key("ArrowLeft");
     // It glides there, as a drop does.
     glidesFrom("Projects", was, ["docs", "api", "web"]);
     await settle();
@@ -500,23 +505,95 @@ describe("the keyboard", () => {
     expect(announced("Projects")).toBe("docs moved to 1 of 3");
     expect(saved().at(-1)).toEqual(["docs", "api", "web"]);
 
-    // At the top it stays, and says so.
-    key("ArrowUp");
+    // At the start it stays, and says so.
+    key("ArrowLeft");
     await settle();
     expect(announced("Projects")).toBe("docs is already first");
     expect(saved()).toHaveLength(1);
 
     // Without Alt an arrow is just an arrow.
-    key("ArrowDown", false);
+    key("ArrowRight", false);
     await settle();
     expect(titles("Projects")).toEqual(["docs", "api", "web"]);
 
-    key("ArrowDown");
-    key("ArrowDown");
+    key("ArrowRight");
+    key("ArrowRight");
     await settle();
     expect(titles("Projects")).toEqual(["api", "web", "docs"]);
     expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 3 of 3");
+  });
+
+  it("moves it a row with Alt+↑ and Alt+↓", async () => {
+    mount([...ROWS, row("ada"), row("box")]);
+    act(() => button("api").focus());
+    key("ArrowDown");
+    await settle();
+    expect(titles("Projects")).toEqual(["docs", "web", "api", "ada", "box"]);
+    expect(announced("Projects")).toBe("api moved to 3 of 5");
+    key("ArrowUp");
+    await settle();
+    expect(titles("Projects")).toEqual(["api", "docs", "web", "ada", "box"]);
+  });
+});
+
+describe("the pins' grid", () => {
+  // Two to a row, each cell CELL_W wide and CELL_H tall: api and docs on the first row, web and ada on the second.
+  const CELL_W = 120;
+  const CELL_H = 92;
+  const PINS = [...ROWS, row("ada")];
+  const moved = (el: HTMLElement) => {
+    const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(el.style.transform);
+    return m === null ? [0, translated(el)] : [Number(m[1]), Number(m[2])];
+  };
+  const cell = (title: string) => rows("Projects").find((r) => nameOf(r) === title) ?? host;
+  beforeEach(() => {
+    layout.mockImplementation(function (this: HTMLElement) {
+      const list = this.parentElement;
+      const at = list === null ? 0 : [...list.children].indexOf(this);
+      const [dx, dy] = moved(this);
+      return DOMRect.fromRect({ x: (at % 2) * CELL_W + (dx ?? 0), y: Math.floor(at / 2) * CELL_H + (dy ?? 0), width: CELL_W, height: CELL_H });
+    });
+  });
+
+  it("carries a pin across its row, the one it passes sliding back a cell, and drops it there", async () => {
+    mount(PINS);
+    const y = CELL_H / 2;
+    pointer(button("api"), "pointerdown", y, CELL_W / 2);
+    pointer(window, "pointermove", y, CELL_W / 2 + 20);
+    pointer(window, "pointermove", y - 4, CELL_W / 2 + 2 * CELL_W);
+    // Riding the pointer both ways, but never out of the grid.
+    expect(moved(cell("api"))).toEqual([CELL_W, 0]);
+    expect(moved(cell("docs"))).toEqual([-CELL_W, 0]);
+    expect(moved(cell("web"))).toEqual([0, 0]);
+    pointer(window, "pointerup", y - 4, CELL_W / 2 + 2 * CELL_W);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["docs", "api", "web", "ada"]);
+    expect(saved()).toEqual([["docs", "api", "web", "ada"]]);
+    expect(announced("Projects")).toBe("api moved to 2 of 4");
+  });
+
+  it("carries one up a row, the cells it passes sliding on in reading order, a row's last down to the next", async () => {
+    mount(PINS);
+    const y = CELL_H + CELL_H / 2;
+    const x = CELL_W + CELL_W / 2;
+    pointer(button("ada"), "pointerdown", y, x);
+    pointer(window, "pointermove", y - 20, x);
+    pointer(window, "pointermove", CELL_H / 2, CELL_W / 2);
+    expect(moved(cell("api"))).toEqual([CELL_W, 0]);
+    expect(moved(cell("docs"))).toEqual([-CELL_W, CELL_H]);
+    expect(moved(cell("web"))).toEqual([CELL_W, 0]);
+    pointer(window, "pointerup", CELL_H / 2, CELL_W / 2);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["ada", "api", "docs", "web"]);
+    expect(saved()).toEqual([["ada", "api", "docs", "web"]]);
+  });
+
+  it("keeps the pins apart from the list: no line between them, and a chat that isn't pinned never joins the grid", () => {
+    mount([...PINS, { ...row("misc"), pinned: false }]);
+    const grid = rows("Projects").filter((r) => r.parentElement?.className.includes("pins") === true);
+    expect(grid.map(nameOf)).toEqual(["api", "docs", "web", "ada"]);
+    expect(host.querySelector("[data-pins-end]")).toBeNull();
   });
 });
 
