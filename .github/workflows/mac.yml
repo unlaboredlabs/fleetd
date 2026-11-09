@@ -38,6 +38,42 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun test test/sealed_box.test.ts test/node/identity.test.ts test/node/power.test.ts test/node-agents-mac.test.ts test/node-desktop-mac.test.ts
 
+  ios-simulators:
+    # The agents' Mac's iOS simulators on a real one (fleetd/src/node/device/ios): the node makes its golden (a settling
+    # boot and an xcodebuild of agent-device's runner, minutes), the warm pool boots a clone and starts that runner on
+    # it, `mac sim start` lends it with the agent's jobs pointed at it, and `mac sim end` deletes it. The test waits on
+    # that setup itself; the job's timeout bounds it (the Rust `ios sessions` job it replaces took 21-56 minutes on
+    # GitHub's 3-vCPU VM, Nov 2026).
+    name: ios simulators
+    runs-on: macos-latest
+    timeout-minutes: 80
+    defaults:
+      run:
+        working-directory: fleetd
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - name: iOS simulators on a real one
+        run: bun test test/node-ios-sim.test.ts --timeout 4800000
+        env:
+          FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
+      # What agent-device's daemons did (the golden's runner build, the pool's runner start) and why a golden failed.
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulators-agent-device
+          path: |
+            ~/.agent-device/logs/
+            ${{ runner.temp }}/fleetd-test-ios/device/ios/state.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   desktop-macos:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build:
     # the packed mac app launches and its screens and recorder load from the asar.
@@ -97,7 +133,7 @@ jobs:
   report:
     # A failed (or timed out) job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
     # with every job green closes it. Runs off main, a release's among them, report nothing.
-    needs: [fleetd-macos, desktop-macos, qa, mobile]
+    needs: [fleetd-macos, ios-simulators, desktop-macos, qa, mobile]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
