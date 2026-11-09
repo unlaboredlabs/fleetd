@@ -4,15 +4,9 @@
 // focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as its toggle opens it and
 // out as it closes it (AppFrame), only by transform, so the chat beside it never lays out again mid-way; leaving the
 // project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
-// reads from the hub. Its way in is the agents capsule at the window's top right (no panel icon), ⌥⌘B and the View menu.
-import { Bot } from "lucide-react";
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { display } from "../../../shared/shortcuts";
+// reads from the hub. Its way in is the chat's pill at the top row's start (no panel icon), ⌥⌘B and the View menu.
+import { createContext, lazy, memo, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Boundary } from "../../src/Boundary";
-import { Button, Capsule } from "../../ui";
-import { useData } from "../../src/data/react";
-import { selectProjectList } from "../../src/data/selectors";
-import { projectKey } from "../../src/data/store";
 import { navigate } from "./navigation";
 import { ResizeEdge } from "./ResizeEdge";
 import { shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
@@ -34,6 +28,11 @@ export interface ProjectPanelState {
   readonly view: PanelView;
   readonly toggle: () => void;
 }
+
+/** The shell's panel, for the chat's pill, which opens and closes it. */
+const PanelHandle = createContext<{ readonly shown: boolean; readonly toggle: () => void } | null>(null);
+export const PanelHandleProvider = PanelHandle.Provider;
+export const usePanelHandle = () => useContext(PanelHandle);
 
 export function useProjectPanel(screen: Screen): ProjectPanelState {
   const panel = usePanel();
@@ -61,37 +60,9 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
 }
 
 /**
- * The agents capsule, at the window's top right beside a project's chat only: the panel's toggle, with the agents at work
- * counted beside the panel's own Agents mark. Pressed while the panel shows.
- */
-export function PanelToggle({ panel }: { panel: ProjectPanelState }) {
-  const project = panel.project;
-  const running = useData((d) => (project === null ? 0 : (selectProjectList(d)?.find((r) => r.key === projectKey(project))?.running ?? 0)));
-  if (project === null) return null;
-  const verb = panel.shown ? "Hide" : "Show";
-  const working = running === 0 ? "" : `, ${String(running)} working`;
-  return (
-    <Capsule>
-      <Button
-        variant="quiet"
-        icon={<Bot aria-hidden />}
-        aria-label={`Agents${working}`}
-        title={`${verb} the panel: agents, PRs and the checklist (${display("panel.toggle", window.fleetd.platform)})`}
-        aria-pressed={panel.shown}
-        aria-controls={panel.shown ? "project-panel" : undefined}
-        data-opens="panel"
-        onClick={panel.toggle}
-      >
-        {running === 0 ? null : <span className={s.count}>{running}</span>}
-      </Button>
-    </Capsule>
-  );
-}
-
-/**
  * The panel itself, while it shows, its max leaving room for the sidebar as wide as it is (`sidebarPx`, 0 without one).
  * Esc inside it goes back from an agent or a PR to the list, then closes it and
- * returns focus to the toggle; menus and dialogs in it take their own Esc first.
+ * returns focus to the chat's pill; menus and dialogs in it take their own Esc first.
  */
 export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; sidebarPx: number }) {
   const { project, view, shown } = panel;

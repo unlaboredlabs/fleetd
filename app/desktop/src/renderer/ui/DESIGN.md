@@ -104,10 +104,11 @@ breaks a rule changes this page in the same PR and says why.
 - **Only `transform` and `opacity` change**, so nothing reflows. Closing a menu, popover or dialog is instant. A row
   leaving a list fades in place for 140 ms (`lib/leaving`), then the gap closes.
 - **The sidebar and the panel slide** from the window's edge as their toggle opens or closes them, already at their
-  own width: in over `--dur-base` (180 ms), out over `--dur-fast` (120 ms), both `--ease-out`, as a transition, so a
-  toggle mid-way turns back from where it is. The frame lays out once, at the toggle: the chat takes its new width in
-  that frame, and a side going out is drawn over its edge until it has gone (`AppFrame`). Another screen bringing or
-  taking one swaps it at once.
+  own width, as a transition, so a toggle mid-way turns back from where it is. The sidebar comes in over `--dur-base`
+  (180 ms) and goes over `--dur-fast` (120 ms), `--ease-out`. The panel takes its own spring, `--ease-panel` (no
+  overshoot), 280 ms in and 220 ms out, and the chat beside glides on the same curve from where it was. The frame lays
+  out once, at the toggle: the chat's text rewraps once, in that frame, and nothing lays out mid-way; a side going out
+  is drawn over its edge until it has gone (`AppFrame`). Another screen bringing or taking one swaps it at once.
 - **A row you drag** (`lib/reorder`) lifts after 4 px: raised a step with a small soft shadow, never scaled, it rides
   the pointer. The rows it passes slide aside over `--dur-base` to open its gap; let go, the list takes the order in
   that frame and the row glides from where it was let go into its slot over the same, `--ease-out`, its shadow fading as
@@ -115,13 +116,15 @@ breaks a rule changes this page in the same PR and says why.
   else; another desktop's move mid-glide turns them toward their newer places). Near a scrolling list's top or bottom
   (48 px) the list scrolls, easing in (squared) to 14 px a frame at the edge, and the lifted row stays under the
   pointer. As on iOS and macOS it waits for the pointer to head 6 px for that edge, or rest near it 500 ms. Esc glides
-  it back. ⌥↑ / ⌥↓ move a focused row, gliding the same way. With reduced motion nothing glides: the rows step aside
-  and the drop lands at once.
+  it back. ⌥↑ / ⌥↓ move a focused row, gliding the same way. A grid (the sidebar's pins) works the same both ways: the
+  cell drops on the one nearest its centre, the cells it passes step one place back in reading order, and ⌥← / ⌥→
+  move a focused cell, ⌥↑ / ⌥↓ a row. With reduced motion nothing glides: the rows step aside and the drop lands at
+  once.
 - **The sidebar's one kinetic moment:** a chat with new activity glides to its place on `--ease-spring` over
   `--dur-spring` (360 ms), a critically damped spring sampled into `linear()`: from rest, settling without overshoot.
   A row climbing passes over the rows it overtakes on the sidebar's own tone (`data-gliding="up"`), so no two lines of
   words cross. Nothing moves while the pointer is over the list; what changed takes its place once it leaves. A
-  pinned row dragged or moved with ⌥↑ / ⌥↓ lands on the same spring.
+  pin dragged or moved with the keyboard lands on the same spring.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade (a chat bubble 200 ms on `--ease-snap`,
   your send 140 ms, the list taking its new place at once). Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).

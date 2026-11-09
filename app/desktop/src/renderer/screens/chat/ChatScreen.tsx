@@ -2,16 +2,15 @@
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass
 // island over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, a
-// line saying what the lead is doing (TurnLine), then the live strip as a capsule. The conversation scrolls on under
-// the window's top row too, where its title floats as a glass capsule that says what needs you after the name (what
-// the lead waits on you for, a block, what there is to look at, a red main), and is just the name when nothing does;
-// an empty chat asks what to do. It opens where you stopped reading, under a "New" divider. Its settings (where its
-// connections, sign-ins and approvals are) are a click away in a capsule beside the title; your own (Only me) project
-// with no repo has its name in the box and everyday starters, not a codebase's.
-import { Settings } from "lucide-react";
+// line saying what the lead is doing (TurnLine), the live strip as a capsule, and a capsule saying what needs you (what
+// the lead waits on you for, a block, what there is to look at, a red main), shown only when something does. The
+// conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its picture
+// and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings); an empty
+// chat asks what to do. It opens where you stopped reading, under a "New" divider. Your own (Only me) project with no
+// repo has its name in the box and everyday starters, not a codebase's.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
-import { Button, Capsule, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
+import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
 import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -30,10 +29,13 @@ import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arr
 import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
-import { navigate } from "../shell/navigation";
 import { hasRepos, isOnlyMe } from "../projects/model";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useJustDone } from "../projects/botState";
+import { navigate } from "../shell/navigation";
+import { usePanelHandle } from "../shell/panel";
+import { useCommands } from "../palette";
+import { display } from "../../../shared/shortcuts";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
 
@@ -258,6 +260,23 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen],
   );
 
+  const panel = usePanelHandle();
+  // Its settings left the top bar for the panel's tab row; ⌘K reaches them from anywhere in the chat too.
+  const settingsShown = summary !== undefined && !data.missing;
+  useCommands(
+    [
+      {
+        id: "chat.projectSettings",
+        title: "Settings for this project",
+        detail: "Its connections, sign-ins, approvals and memory",
+        group: "actions",
+        keywords: ["preferences", "configure"],
+        enabled: () => settingsShown,
+        run: () => navigate({ id: "settings", tab: "projects", for: key }),
+      },
+    ],
+    [],
+  );
   const notice = view?.held === true && !view.offline && data.loadError !== undefined;
   const under = !data.missing && rows !== undefined && !empty && !notice;
 
@@ -274,45 +293,19 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         glass
         title={title || undefined}
         lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={24} own={bot} />}
-        detail={
-          data.missing ? undefined : (
-            <AttentionLine
-              waiting={barWaiting}
-              // As the held chip says: a held chat doesn't say what the project is now.
-              blocked={view?.held === true ? undefined : data.blocked}
-              warning={view?.held === true ? undefined : data.warning}
-              which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
-              resume={view?.held === true ? undefined : data.usagePausedOn}
-              onShow={showNext}
-              looks={looks}
-              onLook={showLook}
-              onDismiss={dismissLook}
-              onHide={question === undefined ? undefined : () => hideWait(key, question)}
-            />
-          )
+        press={
+          summary === undefined || data.missing || panel === null
+            ? undefined
+            : {
+                onPress: panel.toggle,
+                pressed: panel.shown,
+                label: `${title}: ${panel.shown ? "hide" : "show"} its agents, PRs and checklist`,
+                tip: `${panel.shown ? "Hide" : "Show"} agents, PRs and checklist · ${display("panel.toggle", window.fleetd.platform)}`,
+                opens: "panel",
+                controls: "project-panel",
+              }
         }
-      >
-        {view?.held === true ? (
-          // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
-          // lead is doing now isn't known from it.
-          <Capsule>
-            <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
-          </Capsule>
-        ) : null}
-        {summary !== undefined && !data.missing ? (
-          <Capsule>
-            <Button
-              variant="quiet"
-              iconOnly
-              aria-label={title === "" ? "Project settings" : `${title}’s settings`}
-              title={`${title === "" ? "Project" : title}’s settings: its connections, sign-ins, approvals and memory`}
-              onClick={() => navigate({ id: "settings", tab: "projects", for: key })}
-            >
-              <Settings />
-            </Button>
-          </Capsule>
-        ) : null}
-      </FrameTitle>
+      />
       {notice ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
         <div className={s.notice} role="alert">
@@ -365,6 +358,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                   <LiveStrip project={project} />
                 </Boundary>
               ) : null}
+              <span className={s.say} data-say="">
+                {view?.held === true ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
+                <AttentionLine
+                  waiting={barWaiting}
+                  // As the held chip says: a held chat doesn't say what the project is now.
+                  blocked={view?.held === true ? undefined : data.blocked}
+                  warning={view?.held === true ? undefined : data.warning}
+                  which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
+                  resume={view?.held === true ? undefined : data.usagePausedOn}
+                  onShow={showNext}
+                  looks={looks}
+                  onLook={showLook}
+                  onDismiss={dismissLook}
+                  onHide={question === undefined ? undefined : () => hideWait(key, question)}
+                />
+              </span>
               {/* Latest ↓, while scrolled up: at the band's end, the strip giving way to it. */}
               <span ref={setLatestSlot} className={s.latestSlot} />
             </div>

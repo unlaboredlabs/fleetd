@@ -82,10 +82,11 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
 
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
 
-it("says why the project is blocked in the top bar after its title, in the hub's words", async () => {
+it("says why the project is blocked in the band over the composer, in the hub's words, and leaves the top bar to the pill", async () => {
   await mount({ state: "blocked", blockedReason: "devbox is offline" });
   expect(line()).toBe("Blocked: devbox is offline");
-  expect(host.querySelector("header h1 ~ [data-attention]")).not.toBeNull();
+  expect(host.querySelector("[data-say] [data-attention]")).not.toBeNull();
+  expect(host.querySelector("header [data-attention]")).toBeNull();
 });
 
 it("leaves the top bar to the title when nothing needs you: no state word, no agents counter", async () => {
