@@ -112,6 +112,24 @@ export function build(home: string, listen: Listen): { hub: Hub; tools: Registry
  */
 export const LEAD_CALLS_GRACE_MS = 2000;
 
+const STAMPED = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z /;
+
+/** Each line the hub logs starts with its time and level, as the Rust hub's tracing lines and the node's do, so its
+ * log reads by time. A line that is stamped already (the node's shared helpers write their own) is left as it is. */
+export function stampLogs(): void {
+  const levels = [["debug", "DEBUG"], ["log", "INFO"], ["info", "INFO"], ["warn", "WARN"], ["error", "ERROR"]] as const;
+  for (const [method, level] of levels) {
+    const write = console[method].bind(console);
+    console[method] = (...args: unknown[]) => {
+      const stamp = `${new Date().toISOString()} ${level}`;
+      if (typeof args[0] !== "string") return write(stamp, ...args);
+      if (STAMPED.test(args[0])) return write(...args);
+      // Into the first string, so a format in it (`%s`) still reads its arguments.
+      write(`${stamp} ${args[0]}`, ...args.slice(1));
+    };
+  }
+}
+
 /** `fleetd hub start <argv>`: 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure. */
 export async function hubStart(argv: string[]): Promise<number> {
   const options = parseHubArgs(argv);
@@ -120,11 +138,13 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
+  stampLogs();
   protect("hub");
   refreshOwnUnit();
   const { hub, tools } = build(home, options.listen);
   const server = serve(hub, tools);
-  console.error(`fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
+  // On stderr as the Rust hub's, which what starts a hub reads it from, and an INFO line all the same.
+  console.error(`${new Date().toISOString()} INFO fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
   startAll(hub);
   // From here on one task's failure never takes the hub down, as a tokio task's panic doesn't: it is logged and the
   // hub carries on. A failure to start (above) still ends it.
