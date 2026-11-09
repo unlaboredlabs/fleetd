@@ -47,17 +47,17 @@ const hatch = (color: string, line: number, gap: number, dpr: number): CanvasPat
 };
 
 /**
- * The category colours (spec §8), read from the design tokens: model accent fill; tools quiet fill; machine a
- * warning outline; queue warning hatched; you in the text colour, solid (the loud tone); pipeline quiet stripes.
+ * The category colours (spec §8), read from the design tokens: model the first chart series; tools quiet fill; machine
+ * a warning outline; queue warning hatched; you in the text colour, solid (the loud tone); pipeline quiet stripes.
  */
 export const readPalette = (el: Element, dpr: number): Palette => {
-  const accent = cssVar(el, "--accent", "#2360c4");
+  const accent = cssVar(el, "--accent", "#1d1d1f");
   const quiet = cssVar(el, "--quiet", "#63635d");
   const warning = cssVar(el, "--warning", "#8c5a00");
   const text = cssVar(el, "--text", "#1c1c1a");
   const fill: (string | CanvasPattern | undefined)[] = new Array<string | CanvasPattern | undefined>(CATEGORIES.length).fill(undefined);
   const edge: (string | undefined)[] = new Array<string | undefined>(CATEGORIES.length).fill(undefined);
-  fill[CAT_CODE.model] = accent;
+  fill[CAT_CODE.model] = cssVar(el, "--series-1", "#2a78d6");
   fill[CAT_CODE.tools] = quiet;
   edge[CAT_CODE.machine] = warning;
   fill[CAT_CODE.queue] = hatch(warning, 1.5, 3, dpr);
