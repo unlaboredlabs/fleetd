@@ -3,7 +3,7 @@
 // `fleetd session-host` (FLEETD_NATIVE_BIN, else `fleetd` on PATH), which outlives the node.
 import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
@@ -90,22 +90,101 @@ const execve: Exec = (file, args, env) => (process as unknown as { execve: Exec 
  * A node started without TMPDIR (a systemd unit, a lab's scrubbed environment) would leave its temp files and those
  * of everything it starts in /tmp, which may be held in memory: on Nov 8 throwaway lab nodes, each killed while it
  * downloaded Chrome, left 107 zips (4.2 GB) there. Such a node runs itself again at once (execve: the same pid, its
- * stdin unread) with TMPDIR on disk under its home, emptied of what the last node left. Setting process.env would not
- * do: Bun's spawns without an `env` take the environment the process started with. Returns when TMPDIR is set, or
- * when the exec failed (the node then runs on as it is).
+ * stdin unread) with TMPDIR on disk under its home, after pruning what earlier nodes left there (pruneOwnTmp). Setting
+ * process.env would not do: Bun's spawns without an `env` take the environment the process started with. Returns when
+ * TMPDIR is set, or when the exec failed (the node then runs on as it is).
  */
 export function ownTmpOrExec(home: string = defaultNodeHome(), env: NodeJS.ProcessEnv = process.env, exec: Exec = execve): void {
   if (env.TMPDIR) return;
   const dir = ownTmp(home);
   try {
-    rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    chmodSync(dir, 0o700);
+    pruneOwnTmp(dir);
     const self = selfArgv();
     const vars = Object.fromEntries(Object.entries(env).flatMap(([k, v]) => (v === undefined ? [] : [[k, v]])));
     exec(self[0]!, [...self, ...process.argv.slice(2)], { ...vars, TMPDIR: dir, TMP: dir, TEMP: dir });
   } catch (error) {
     console.warn(`${new Date().toISOString()} WARN no temp dir of the node's own, so /tmp: ${(error as Error).message}`);
   }
+}
+
+/** How long an entry of the node's own temp dir stays after its last change, unless a live process holds it. */
+export const OWN_TMP_KEEP_MS = 6 * 3_600_000;
+
+/**
+ * Removes what earlier nodes and their children left in the node's own temp dir: each entry nothing has changed for
+ * OWN_TMP_KEEP_MS and no live process holds (an open file or its cwd under it; Linux only, elsewhere age alone). Never
+ * the whole dir: what the node started (session hosts, builds, Monitors) runs on through its restarts, and automatic
+ * updates restart it often. How many it removed.
+ */
+export function pruneOwnTmp(dir: string, now = Date.now()): number {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  const old = names.filter((name) => now - newestChange(join(dir, name)) > OWN_TMP_KEEP_MS);
+  if (!old.length) return 0;
+  const held = heldUnder(dir);
+  let removed = 0;
+  for (const name of old) {
+    if (held.has(name)) continue;
+    try {
+      rmSync(join(dir, name), { recursive: true, force: true });
+      removed++;
+    } catch {}
+  }
+  return removed;
+}
+
+/** The latest write to `path` or anything below it (mtime), in ms. */
+function newestChange(path: string): number {
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return 0;
+  }
+  let newest = stat.mtimeMs;
+  if (stat.isDirectory()) {
+    let children: string[] = [];
+    try {
+      children = readdirSync(path);
+    } catch {}
+    for (const child of children) newest = Math.max(newest, newestChange(join(path, child)));
+  }
+  return newest;
+}
+
+/** The entries of `dir` a live process has an open file or its cwd under (Linux's /proc; elsewhere none). */
+function heldUnder(dir: string): Set<string> {
+  const held = new Set<string>();
+  if (process.platform !== "linux") return held;
+  const prefix = `${dir}/`;
+  const note = (target: string) => {
+    if (target.startsWith(prefix)) held.add(target.slice(prefix.length).split("/")[0]!);
+  };
+  let pids: string[] = [];
+  try {
+    pids = readdirSync("/proc").filter((name) => /^[0-9]+$/.test(name));
+  } catch {}
+  for (const pid of pids) {
+    try {
+      note(readlinkSync(`/proc/${pid}/cwd`));
+    } catch {}
+    let fds: string[] = [];
+    try {
+      fds = readdirSync(`/proc/${pid}/fd`);
+    } catch {}
+    for (const fd of fds) {
+      try {
+        note(readlinkSync(`/proc/${pid}/fd/${fd}`));
+      } catch {}
+    }
+  }
+  return held;
 }
 
 export function machineFingerprint(): string | undefined {

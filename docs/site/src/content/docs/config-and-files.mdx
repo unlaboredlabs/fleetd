@@ -38,7 +38,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per task session, readers' and reviewers' too
     tmp/<id>/            each task's scratch folder, its TMPDIR (never /tmp, which may be held in memory): kept through restarts, removed with its worktree
-    own-tmp/             the node's own TMPDIR, for it and what it starts, when its environment sets none: emptied each time it starts
+    own-tmp/             the node's own TMPDIR, for it and what it starts, when its environment sets none: as it starts, it removes what nothing changed for 6 hours and no running process holds
     cache/targets/       warm cargo builds handed from one reader or reviewer to the next (warmBuilds)
     build-slots/         the cargo wrapper first on agents' PATH, and the build turns
     navi/<name>/         the folders of projects made with fleetd navi create
