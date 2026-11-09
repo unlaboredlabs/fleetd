@@ -94,6 +94,8 @@ export const TOOLS = {
   sidebar_order_set: { scope: "read", module: "src/hub/sidebar_order" },
   chat_pins_get: { scope: "read", module: "src/hub/chat_pins" },
   chat_pins_set: { scope: "read", module: "src/hub/chat_pins" },
+  chat_sections_get: { scope: "read", module: "src/hub/chat_sections" },
+  chat_sections_set: { scope: "read", module: "src/hub/chat_sections" },
   wake_set: { scope: "operate", module: "src/hub/wakes" },
   wake_list: { scope: "read", module: "src/hub/wakes" },
   wake_cancel: { scope: "operate", module: "src/hub/wakes" },

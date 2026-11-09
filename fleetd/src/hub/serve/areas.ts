@@ -46,6 +46,7 @@ import { register as r42 } from "../usage/tools.ts";
 import { register as r43 } from "../vault/tools.ts";
 import { register as r44 } from "../wakes/tools.ts";
 import { register as r45 } from "../work/tools.ts";
+import { register as r46 } from "../chat_sections/tools.ts";
 
 /** Every module that serves MCP tools, each replacing the registry's stubs for its own. */
 export function registerAll(tools: Registry): void {
@@ -95,4 +96,5 @@ export function registerAll(tools: Registry): void {
   r43(tools); // hub/vault
   r44(tools); // hub/wakes
   r45(tools); // hub/work
+  r46(tools); // hub/chat_sections
 }

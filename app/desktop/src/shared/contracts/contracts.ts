@@ -1553,6 +1553,42 @@ export type ChatPinsSetOutput = {
   truncated?: boolean;
 };
 
+/** One of a person's own sections of chats. */
+export type ChatSection = {
+  /** Its chats by ref. A chat is in one section at most. */
+  chats: ProjectRef[];
+  /** Made by the app that made the section, and kept as sent: it stays the same when the section is renamed or moved. */
+  id: string;
+  /** 1 to 40 characters, and no two of a person's sections share one. */
+  name: string;
+};
+
+/** `chat.sections`: whose sections of chats changed. */
+export type ChatSectionsData = {
+  personId: PersonId;
+};
+
+export type ChatSectionsGetInput = { [key: string]: unknown };
+
+export type ChatSectionsGetOutput = {
+  next?: string;
+  /** The caller's sections in their order; empty until they make one, and for a key with no person. */
+  sections: ChatSection[];
+  truncated?: boolean;
+};
+
+export type ChatSectionsSetInput = {
+  /** The caller's whole list in its new order; it replaces the one before. */
+  sections: ChatSection[];
+};
+
+export type ChatSectionsSetOutput = {
+  next?: string;
+  /** The list as stored: names trimmed, without the chats and sections the hub left out. */
+  sections: ChatSection[];
+  truncated?: boolean;
+};
+
 /**
  * The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a
  * message of one bubble). The lead reads that bubble whole over the reply, and when it was written.
@@ -3032,6 +3068,7 @@ export type KnownHubEventType =
   | "people.changed"
   | "sidebar.order"
   | "chat.pins"
+  | "chat.sections"
   | "machine_add.step"
   | "mcp.oauth"
   | "hub.update"
@@ -9715,6 +9752,8 @@ export interface ToolMap {
   chat_nudge_clear: { input: ChatNudgeClearInput; output: ChatNudgeClearOutput };
   chat_pins_get: { input: ChatPinsGetInput; output: ChatPinsGetOutput };
   chat_pins_set: { input: ChatPinsSetInput; output: ChatPinsSetOutput };
+  chat_sections_get: { input: ChatSectionsGetInput; output: ChatSectionsGetOutput };
+  chat_sections_set: { input: ChatSectionsSetInput; output: ChatSectionsSetOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
@@ -9921,6 +9960,7 @@ export interface HubEventDataMap {
   "change.state": ChangeStateData;
   "chat.message": ChatMessageEventData;
   "chat.pins": ChatPinsData;
+  "chat.sections": ChatSectionsData;
   "chat.waiting": ProjectChatState;
   "checklist.changed": ChecklistChangedData;
   "ci.main": CiMainData;

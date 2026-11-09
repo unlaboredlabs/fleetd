@@ -107,6 +107,9 @@ export const refused = (r: ProjectRef) =>
  * hub goes through for a key with admin on its machine: their Navi has no one else to delete it.
  */
 export function guard(db: HubDb, caller: Caller, tool: string, input: unknown): void {
+  // A person's sections are sent whole, so they may still name a chat that has since become someone's Only me: the
+  // tool leaves that one out itself rather than failing every save.
+  if (tool === "chat_sections_set") return;
   const navis = others(db, caller);
   if (navis.size === 0) return;
   const named: ProjectRef[] = [];

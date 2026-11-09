@@ -3796,6 +3796,94 @@
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
     },
+    "ChatSection": {
+      "description": "One of a person's own sections of chats.",
+      "properties": {
+        "chats": {
+          "description": "Its chats by ref. A chat is in one section at most.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Made by the app that made the section, and kept as sent: it stays the same when the section is renamed or moved.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "description": "1 to 40 characters, and no two of a person's sections share one.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "chats"
+      ],
+      "type": "object"
+    },
+    "ChatSectionsGetInput": {
+      "type": "object"
+    },
+    "ChatSectionsGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sections": {
+          "description": "The caller's sections in their order; empty until they make one, and for a key with no person.",
+          "items": {
+            "$ref": "#/$defs/ChatSection"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sections"
+      ],
+      "type": "object"
+    },
+    "ChatSectionsSetInput": {
+      "properties": {
+        "sections": {
+          "description": "The caller's whole list in its new order; it replaces the one before.",
+          "items": {
+            "$ref": "#/$defs/ChatSection"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sections"
+      ],
+      "type": "object"
+    },
+    "ChatSectionsSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sections": {
+          "description": "The list as stored: names trimmed, without the chats and sections the hub left out.",
+          "items": {
+            "$ref": "#/$defs/ChatSection"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sections"
+      ],
+      "type": "object"
+    },
     "ChatSendInput": {
       "properties": {
         "attachments": {
@@ -7969,6 +8057,11 @@
           "type": "string"
         },
         {
+          "const": "chat.sections",
+          "description": "A person made, renamed, moved or removed a section of chats, or moved a chat between them; `data` is\n`people::ChatSectionsData`. Only that person's own devices see it; chat_sections_get reads the sections.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
@@ -11364,6 +11457,18 @@
         "chat_pins_set.output": {
           "$ref": "#/$defs/ChatPinsSetOutput"
         },
+        "chat_sections_get.input": {
+          "$ref": "#/$defs/ChatSectionsGetInput"
+        },
+        "chat_sections_get.output": {
+          "$ref": "#/$defs/ChatSectionsGetOutput"
+        },
+        "chat_sections_set.input": {
+          "$ref": "#/$defs/ChatSectionsSetInput"
+        },
+        "chat_sections_set.output": {
+          "$ref": "#/$defs/ChatSectionsSetOutput"
+        },
         "chat_send.input": {
           "$ref": "#/$defs/ChatSendInput"
         },
@@ -12568,6 +12673,10 @@
         "chat_pins_get.output",
         "chat_pins_set.input",
         "chat_pins_set.output",
+        "chat_sections_get.input",
+        "chat_sections_get.output",
+        "chat_sections_set.input",
+        "chat_sections_set.output",
         "chat_send.input",
         "chat_send.output",
         "chat_stop.input",
