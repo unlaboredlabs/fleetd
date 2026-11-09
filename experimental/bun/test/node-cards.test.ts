@@ -14,7 +14,9 @@ afterEach(async () => {
   for (const fn of cleanups.splice(0).reverse()) await fn();
 });
 
-const CARD: Card = { number: "4242424242424242", month: "03", year: "2030", cvc: "737", name: "Ada Devbox" };
+/** The security code is a marker no page, id or encoding makes by chance (a 3-digit code turns up in Chrome's random
+ * hex ids), so a check that the Navi never heard it can't flake; the fake checkout takes any text. */
+const CARD: Card = { number: "4242424242424242", month: "03", year: "2030", cvc: "cvc-4k7Zq91", name: "Ada Devbox" };
 const CARD_REF = "op://Shared/Visa";
 const PASSPORT = "P9X81774Q";
 
@@ -27,7 +29,7 @@ test("each field gets the card's detail in the shape it takes, and a card fills 
   expect(value("year", -1, "yyyy")).toBe("2030");
   expect(selectValues("month", CARD)).toEqual(["03", "3"]);
   const all = secretForms(CARD).map(([, v]) => v);
-  for (const form of ["4242424242424242", "4242 4242 4242 4242", "03/30", "03 / 30", "737"]) expect(all).toContain(form);
+  for (const form of ["4242424242424242", "4242 4242 4242 4242", "03/30", "03 / 30", CARD.cvc]) expect(all).toContain(form);
   expect(paymentFrame("js.stripe.com")).toBe(true);
   expect(paymentFrame("checkoutshopper-live.adyen.com")).toBe(true);
   expect(paymentFrame("pay.devbox.test", ["pay.devbox.test"])).toBe(true);

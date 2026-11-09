@@ -757,8 +757,16 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Solve the captcha on the signup page, then hand the browser back",
         }),
         (_, "fill_credential") => json!({
-            "ref": "op://Staging/Shop admin/password",
+            "item": "Shop admin",
+            "field": "password",
             "target": "input[name=password]",
+        }),
+        (_, "fill_address") => json!({ "item": "Home", "part": "shipping" }),
+        (_, "vault_items") => json!({ "site": "shop.example.com" }),
+        (_, "vault_import_search") => json!({ "query": "shop.example.com", "kinds": ["login"] }),
+        (_, "vault_import_propose") => json!({
+            "refs": ["op://Staging/Shop admin"],
+            "why": "The staging shop's admin login, to check the new checkout",
         }),
         (_, "purchase_request") => json!({
             "shop": { "domain": "hotel.example.com", "name": "Hotel Example" },

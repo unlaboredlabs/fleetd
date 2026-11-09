@@ -1,3 +1,4 @@
+browser:browser call `fill_address`
 browser:browser call `fill_credential`
 browser:browser call `purchase_fill`
 browser:browser call `purchase_request`

@@ -307,10 +307,10 @@ test("the node's hello lists what its screens answer: browsers on a node, and on
     });
     return t.node.area("caps").list();
   };
-  expect(listed(false)).toEqual(["browser", "session_host", "session_seal", "session_end"]);
+  expect(listed(false)).toEqual(["browser", "session_host", "session_seal", "session_end", "vault_fill"]);
   // As Rust's (node/link.rs `hello`, its Mac screen a session it hosts): without session_host and session_seal the hub
   // read the Mac as an older fleetd that hosts only its own agents' screens, and refused every agent's Mac screen.
-  expect(listed(true)).toEqual(["browser", "session_host", "session_seal", "session_end", "agents_mac", ...(process.platform === "darwin" ? ["mac_tool"] : [])]);
+  expect(listed(true)).toEqual(["browser", "session_host", "session_seal", "session_end", "vault_fill", "agents_mac", ...(process.platform === "darwin" ? ["mac_tool"] : [])]);
 });
 
 test("one recording has one upload at a time, however often housekeeping runs while it goes", async () => {

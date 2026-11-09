@@ -16,8 +16,8 @@ use fleetd_contracts::automations::{
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
-    BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
-    SessionStartCall,
+    BrowserCall, DesktopCall, FillAddressCall, FillCredentialCall, RequestTakeoverCall,
+    SessionEndCall, SessionStartCall,
 };
 use fleetd_contracts::chat::{ChatFileCall, NudgeCall};
 use fleetd_contracts::checklist::ChecklistCall;
@@ -35,6 +35,7 @@ use fleetd_contracts::purchase::{PurchaseFillCall, PurchaseRequestCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::secure_input::{SecureInputCall, SecureInputFillCall};
 use fleetd_contracts::skills::{SkillInstallCall, SkillSaveCall};
+use fleetd_contracts::vault::{VaultImportProposeCall, VaultImportSearchCall, VaultItemsCall};
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
 
@@ -564,14 +565,53 @@ static TOOLS: &[Tool] = &[
     ),
     browser(
         "fill_credential",
-        "Fill a login field of your browser session from 1Password without seeing the value: ref is its secret \
-         reference (op://<vault>/<item>/<field>, ?attribute=otp for a one-time code), target the field's CSS \
-         selector. The node fills it only on the item's own website, then submits the field's form in the same step; \
-         submit: false fills a field before the last of its form (a username before its password). From the first \
-         fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your \
-         lead for the reference; never ask anyone for a password.",
+        "Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login \
+         (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the \
+         field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the \
+         same step; submit: false fills a field before the last of its form (a username before its password). From \
+         the first fill on, the session refuses reading values back (agent-browser eval and get value among them). \
+         ref (a 1Password reference, op://<vault>/<item>/<field>) instead of item and field works for one release. \
+         Never ask anyone for a password: a login that isn't in the vault, the person adds in Settings › Vault.",
         inline_schema::<FillCredentialCall>,
     ),
+    browser(
+        "fill_address",
+        "Fill a vault address into the address form of your browser session's page without seeing it: item is the \
+         address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or \
+         billing when the form has both, target a CSS selector inside the form when the page has several. It fills \
+         only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site \
+         where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the \
+         session refuses reading values back.",
+        inline_schema::<FillAddressCall>,
+    ),
+    Tool {
+        worker: true,
+        ..lead(
+            "vault_items",
+            "vault_items",
+            "The vault items your session may use: logins (label, sites, fields present), addresses, cards (label \
+             only) and the variables already in your environment (their names). site narrows to a host's logins, \
+             kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.",
+            inline_schema::<VaultItemsCall>,
+        )
+    },
+    lead(
+        "vault_import_search",
+        "vault_import_search",
+        "Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, \
+         vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones \
+         needed with vault_import_propose.",
+        inline_schema::<VaultImportSearchCall>,
+    ),
+    lead(
+        "vault_import_propose",
+        "vault_import_propose",
+        "Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope \
+         where they go (the person's own by default). The chat shows an import card; the person ticks and taps \
+         Import, and fleetd reads the items sealed, so you never see them. Once imported, fill them from the vault.",
+        inline_schema::<VaultImportProposeCall>,
+    )
+    .needs("The person taps Import on the card in chat."),
     Tool {
         worker: false,
         ..browser(
@@ -1282,7 +1322,9 @@ mod tests {
                 "desktop",
                 "session_end",
                 "request_takeover",
-                "fill_credential"
+                "fill_credential",
+                "fill_address",
+                "vault_items"
             ]
         );
         let lead = names(Role::Lead);

@@ -15,7 +15,10 @@ export async function hubCall(
   opts: { threadId?: string; cwd?: string; waitMs?: number } = {},
 ): Promise<Record<string, unknown>> {
   const answer = await node.area("link").leadCall(op, args, opts);
-  if (answer.error) throw new ToolError(answer.error.code as ErrorCode, answer.error.message, answer.error.fix);
+  if (answer.error) {
+    const { code, message, fix, reason } = answer.error as { code: string; message: string; fix?: string; reason?: string };
+    throw new ToolError(code as ErrorCode, message, fix, reason);
+  }
   return (answer.result ?? {}) as Record<string, unknown>;
 }
 
