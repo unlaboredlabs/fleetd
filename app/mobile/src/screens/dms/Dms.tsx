@@ -1,7 +1,8 @@
 // A project's DMs between agents, pushed from its Info's Agents section: every DM its agents sent each other, newest
 // first, each a row with who to whom and when, its opening words, and what became of it (delivered, held, woke it,
 // didn't wake it, not sent). Tapping one opens its full text and who got it when (Dm.tsx). The older ones come as the list
-// nears its end; the log reads again on a DM or a receipt in the project and on coming back to it. Read-only.
+// nears its end; the newest page reads again on a DM or a receipt in the project and on coming back to it, over the
+// older pages read, which stay. Read-only.
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
@@ -15,7 +16,7 @@ import { EmptyState } from "../../ui/States";
 import { errorWords, Problem, Symbol, useRead } from "../manage/parts";
 import { useNow } from "../time";
 import { readDms } from "./api";
-import { glyphOf, joinPages, opening, route as routeLine, rowLabel, rowOutcome, touchesDms, type AgentMessage, type DmGlyph } from "./model";
+import { glyphOf, joinPages, logOf, opening, route as routeLine, rowLabel, rowOutcome, touchesDms, type AgentMessage, type DmGlyph, type DmLog, type DmPage } from "./model";
 
 /** How near the end the older ones are read: about two screens' worth of rows ahead. */
 const AHEAD = 600;
@@ -27,19 +28,22 @@ export function Dms({ navigation, route }: ChatInfoProps<"Dms">) {
   const key = route.params.key;
   const p = state.projects?.[key];
   const first = useRead(() => (p === undefined ? Promise.resolve(undefined) : readDms(session, p)), [session, p?.machineId, p?.projectId]);
-  const [older, setOlder] = useState<{ messages: readonly AgentMessage[]; more: boolean } | null>(null);
+  const [older, setOlder] = useState<DmLog | null>(null);
   const [reading, setReading] = useState(false);
   const [olderError, setOlderError] = useState<string | undefined>(undefined);
-  // A fresh first page starts the list over: what was read past it reads again as it is scrolled to.
+  // Another project's log starts over; a fresh first page of this one goes over the older pages read (logOf).
   useEffect(() => {
     setOlder(null);
     setOlderError(undefined);
-  }, [first.value]);
+  }, [p?.machineId, p?.projectId]);
   useDmsChanged(p === undefined ? undefined : { machineId: p.machineId, projectId: p.projectId }, first.reload);
 
-  const page = first.value?.ok === true ? first.value.value : undefined;
-  const messages = page === undefined ? [] : older === null ? page.messages : joinPages(page.messages, older.messages);
-  const more = older === null ? page?.more === true : older.more;
+  // The last first page that read: a read that fails then is said under the log, which stays as it was.
+  const good = useRef<DmPage | undefined>(undefined);
+  if (first.value?.ok === true) good.current = first.value.value;
+  const page = good.current;
+  const failed = first.value?.ok === false ? first.value.error : undefined;
+  const { messages, more } = page === undefined ? { messages: [], more: false } : logOf(page, older);
 
   const busy = useRef(false);
   const readOlder = useCallback(() => {
@@ -70,10 +74,10 @@ export function Dms({ navigation, route }: ChatInfoProps<"Dms">) {
       scrollEventThrottle={100}
       refreshControl={<RefreshControl refreshing={false} onRefresh={first.reload} tintColor={t.secondary} />}
     >
-      {first.value === undefined ? (
+      {page === undefined && failed === undefined ? (
         <ActivityIndicator style={styles.loading} color={t.secondary} />
-      ) : !first.value.ok ? (
-        <Problem text={`Couldn't read the DMs: ${errorWords(first.value.error)}`} />
+      ) : page === undefined && failed !== undefined ? (
+        <Problem text={`Couldn't read the DMs: ${errorWords(failed)}`} />
       ) : messages.length === 0 ? (
         <EmptyState icon="bubble" title="No DMs Yet" body="When one of its agents writes to another, the DM shows here, with who got it and when. Nobody can edit or delete one." />
       ) : (
@@ -92,7 +96,7 @@ export function Dms({ navigation, route }: ChatInfoProps<"Dms">) {
             ))}
           </ListSection>
           {reading ? <ActivityIndicator style={styles.more} color={t.secondary} /> : null}
-          <Problem text={olderError} />
+          <Problem text={olderError ?? (failed === undefined ? undefined : `Couldn't read the newest DMs: ${errorWords(failed)}`)} />
         </>
       )}
     </ScrollView>
