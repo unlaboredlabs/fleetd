@@ -29,6 +29,7 @@ import { useAsOfWords } from "../shell/offline";
 import { navigate } from "../shell/navigation";
 import { hasRepos, isOnlyMe } from "../projects/model";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
+import { useJustDone } from "../projects/botState";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
 
@@ -121,6 +122,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);
+  // Its bot: what the bar says, and done for a moment after the lead's turn ends.
+  const turnUntil = useData((d) => leadTurnUntil(d, key));
+  const skew = useData((d) => d.live.skewMs ?? 0);
+  const justDone = useJustDone(turnUntil, skew);
+  const held = view?.held === true;
+  const bot = { needs: barWaiting !== undefined, blocked: !held && data.blocked !== undefined, done: justDone };
   // Your own project with no repo: everyday words. Any other, or one still loading, a codebase's.
   const plain = summary !== undefined && isOnlyMe(summary) && !hasRepos(summary);
   const who = plain && title !== "" ? title : undefined;
@@ -222,7 +229,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     >
       <FrameTitle
         title={title || undefined}
-        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={22} />}
+        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={22} own={bot} />}
         detail={
           data.missing ? undefined : (
             <AttentionLine

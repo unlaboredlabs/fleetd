@@ -208,7 +208,7 @@ describe("one list", () => {
 });
 
 describe("each row's avatar", () => {
-  it("is a circle of its letters, its picture once it has one, read once for that row alone", async () => {
+  it("is a circle of its bot, its picture once it has one, read once for that row alone", async () => {
     const pictured = row("Home", { onlyMe: true, avatar: "a1b2c3d4e5f60718" });
     let listener: (frame: HubFrame) => void = () => undefined;
     const hub: HubApi = {
@@ -246,11 +246,11 @@ describe("each row's avatar", () => {
     await settle();
     const avatars = [...host.querySelectorAll<HTMLElement>("[data-reorder-row] [data-avatar]")];
     expect(avatars.map((a) => [a.dataset.avatar, a.dataset.letters])).toEqual([
-      ["letters", "A"],
+      ["bot", ""],
       ["picture", "H"],
-      ["letters", "S"],
+      ["bot", ""],
     ]);
-    // The letters are the avatar's CSS: the row's text starts with its name.
+    // The avatar adds no text: the row's text starts with its name.
     expect(button("Ada").querySelector("[class*=name]")?.textContent).toBe("Ada");
     expect(avatars[1]?.querySelector("img")?.getAttribute("src")).toBe("data:image/jpeg;base64,/9j/AA==");
     expect(calls.filter((c) => c.tool === "project_avatar_get").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "home" }]);

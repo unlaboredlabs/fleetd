@@ -66,6 +66,13 @@ breaks a rule changes this page in the same PR and says why.
     before or after, takes the step onto its own frame: while you type, the beat draws no frame of its own for a key to wait out.
   - A new loop is CSS keyed on `data-step` plus `useBeatRef(live)` on its element, or `useBeat(live, step)` writing
     only what changes; never `animation: … infinite`.
+- **The bot is the one exception to the beat** (D377, `primitives/Bot`, `lib/botLife`): one character for every
+  project without a picture, whose motion says its state (idle, thinking, working, needs you, done, an error). Its
+  channels are springs at the display's rate, so a state change blends from wherever it is. It draws frames only while
+  it's on screen, the window is visible and it moves: idle bots in a list take turns for a blink or a glance, one every
+  1.6 to 3.6 s, and only a bot in a live state keeps moving. While you type every bot holds still (its clock stops) until
+  1.2 s after the last key, so a key press never waits on its frame. With reduced motion each state settles into its
+  still pose. Below 44 px it uses larger eyes, 0.8 of the body motion and no glow.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
   writing.
   - Waiting, queued, paused, done and failed are still.

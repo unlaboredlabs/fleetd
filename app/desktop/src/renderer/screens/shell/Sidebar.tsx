@@ -19,6 +19,7 @@ import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
 import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
+import type { BotIn } from "../../../shared/bot";
 import { revealNext } from "../settings/reveal";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
@@ -103,6 +104,9 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
   return null;
 };
 
+/** What the row knows of its bot beyond the project's row: why it wants you, and a reply you haven't seen. */
+const botOwn = (p: SidebarProject): Partial<BotIn> => ({ needs: p.want !== undefined && p.want.word !== "blocked", blocked: p.want?.word === "blocked", done: p.unread });
+
 /** The row's line: its newest, else while its lead works that it does, else why it wants you, else that it is new. */
 const lineOf = (p: SidebarProject): string => p.line || (p.working ? "Working…" : (p.want?.label ?? "No messages yet"));
 
@@ -128,7 +132,7 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
       aria-description={tip}
       {...rest}
     >
-      <ProjectAvatar project={p.project} size={AVATAR} className={s.avatar} />
+      <ProjectAvatar project={p.project} size={AVATAR} own={botOwn(p)} className={s.avatar} />
       <span className={s.text}>
         <span className={s.top}>
           <span className={s.name}>{p.project.title}</span>
