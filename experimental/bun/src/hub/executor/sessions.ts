@@ -68,7 +68,11 @@ export type SessionRules = { allow: string[]; deny: string[] };
  * The project policy file's tool rules (hub/policy `Policies::get(r).tools`), set by the policy area when it starts;
  * until then a launch carries no project rules (D355: no import names a module not written yet).
  */
-export const found: { toolRules?: (hub: Hub, r: ProjectRef) => Promise<SessionRules> } = {};
+export const found: {
+  toolRules?: (hub: Hub, r: ProjectRef) => Promise<SessionRules>;
+  /** The vault's `inject` audit row for a launch (src/hub/vault/loops.ts sets it). */
+  injected?: (r: ProjectRef, order: string | undefined, threadId: string) => void;
+} = {};
 
 /** Per thread (`machine/thread`): its project and a digest of what it last got, so a send carries only changes. */
 type Sent = { mcp: Map<string, [string, string]>; mcpFixed: Set<string>; skills: Map<string, [string, string]> };
@@ -234,6 +238,11 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
   if (mcp !== undefined) s.mcp.set(key, [input.projectId, digest(mcp)]);
   if (options.mcp !== undefined) s.mcpFixed.add(key);
   s.skills.set(key, [input.projectId, digest(skills)]);
+  try {
+    found.injected?.(r, options.orderId, sessionId);
+  } catch (error) {
+    console.warn(`vault: a launch's inject row not written: ${(error as Error).message}`);
+  }
   return { threadId: sessionId, ...(out.kind === "launched" && out.base ? { base: out.base } : {}) };
 }
 

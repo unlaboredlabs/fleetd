@@ -323,19 +323,19 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] `onepassword_remove` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_remove` -->
 - [x] `onepassword_test` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_test` -->
 - [x] `onepassword_cards` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_cards` -->
-- [ ] `vault_list` → `src/hub/vault` (read) <!-- tool:`vault_list` -->
-- [ ] `vault_get` → `src/hub/vault` (read) <!-- tool:`vault_get` -->
-- [ ] `vault_save` → `src/hub/vault` (operate) <!-- tool:`vault_save` -->
-- [ ] `vault_delete` → `src/hub/vault` (operate) <!-- tool:`vault_delete` -->
-- [ ] `vault_restore` → `src/hub/vault` (operate) <!-- tool:`vault_restore` -->
-- [ ] `vault_reveal` → `src/hub/vault` (operate) <!-- tool:`vault_reveal` -->
-- [ ] `vault_share_set` → `src/hub/vault` (operate) <!-- tool:`vault_share_set` -->
-- [ ] `vault_audit` → `src/hub/vault` (read) <!-- tool:`vault_audit` -->
-- [ ] `vault_status` → `src/hub/vault` (read) <!-- tool:`vault_status` -->
-- [ ] `vault_unlock` → `src/hub/vault` (admin) <!-- tool:`vault_unlock` -->
-- [ ] `vault_rotate` → `src/hub/vault` (admin) <!-- tool:`vault_rotate` -->
-- [ ] `vault_import_search` → `src/hub/vault` (operate) <!-- tool:`vault_import_search` -->
-- [ ] `vault_import` → `src/hub/vault` (operate) <!-- tool:`vault_import` -->
+- [x] `vault_list` → `src/hub/vault` (read) <!-- tool:`vault_list` -->
+- [x] `vault_get` → `src/hub/vault` (read) <!-- tool:`vault_get` -->
+- [x] `vault_save` → `src/hub/vault` (operate) <!-- tool:`vault_save` -->
+- [x] `vault_delete` → `src/hub/vault` (operate) <!-- tool:`vault_delete` -->
+- [x] `vault_restore` → `src/hub/vault` (operate) <!-- tool:`vault_restore` -->
+- [x] `vault_reveal` → `src/hub/vault` (operate) <!-- tool:`vault_reveal` -->
+- [x] `vault_share_set` → `src/hub/vault` (operate) <!-- tool:`vault_share_set` -->
+- [x] `vault_audit` → `src/hub/vault` (read) <!-- tool:`vault_audit` -->
+- [x] `vault_status` → `src/hub/vault` (read) <!-- tool:`vault_status` -->
+- [x] `vault_unlock` → `src/hub/vault` (admin) <!-- tool:`vault_unlock` -->
+- [x] `vault_rotate` → `src/hub/vault` (admin) <!-- tool:`vault_rotate` -->
+- [x] `vault_import_search` → `src/hub/vault` (operate) <!-- tool:`vault_import_search` -->
+- [x] `vault_import` → `src/hub/vault` (operate) <!-- tool:`vault_import` -->
 - [x] `requests_list` → `src/hub/approvals` (read) <!-- tool:`requests_list` -->
 - [x] `secret_submit` → `src/hub/approvals` (operate) <!-- tool:`secret_submit` -->
 - [x] `approval_answer` → `src/hub/approvals` (operate) <!-- tool:`approval_answer` -->
@@ -742,11 +742,11 @@ every `fleetd` command.
 - [x] lead call `chat_read` → `src/hub/lead_calls` <!-- lead:lead call `chat_read` -->
 - [x] lead call `skill_save` → `src/hub/lead_calls` <!-- lead:lead call `skill_save` -->
 - [x] lead call `confirm_step` → `src/hub/lead_calls` <!-- lead:lead call `confirm_step` -->
-- [ ] lead call `vault_fill` → `src/hub/lead_calls` <!-- lead:lead call `vault_fill` -->
-- [ ] lead call `vault_filled` → `src/hub/lead_calls` <!-- lead:lead call `vault_filled` -->
-- [ ] lead call `vault_items` → `src/hub/lead_calls` <!-- lead:lead call `vault_items` -->
-- [ ] lead call `vault_import_search` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_search` -->
-- [ ] lead call `vault_import_propose` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_propose` -->
+- [x] lead call `vault_fill` → `src/hub/lead_calls` <!-- lead:lead call `vault_fill` -->
+- [x] lead call `vault_filled` → `src/hub/lead_calls` <!-- lead:lead call `vault_filled` -->
+- [x] lead call `vault_items` → `src/hub/lead_calls` <!-- lead:lead call `vault_items` -->
+- [x] lead call `vault_import_search` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_search` -->
+- [x] lead call `vault_import_propose` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_propose` -->
 
 ### agent-mcp tools
 

@@ -1,0 +1,13 @@
+tool:`vault_audit`
+tool:`vault_delete`
+tool:`vault_get`
+tool:`vault_import_search`
+tool:`vault_import`
+tool:`vault_list`
+tool:`vault_restore`
+tool:`vault_reveal`
+tool:`vault_rotate`
+tool:`vault_save`
+tool:`vault_share_set`
+tool:`vault_status`
+tool:`vault_unlock`

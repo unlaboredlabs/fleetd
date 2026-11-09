@@ -11,6 +11,7 @@ import { executors, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { githubApps } from "../github_app/index.ts";
 import { link } from "../link/index.ts";
 import { token } from "../onepassword/index.ts";
+import { vaultFacts } from "../vault/index.ts";
 import { active, people } from "../people/store.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
@@ -138,6 +139,7 @@ export function hubSources(hub: Hub): DoctorSources {
           return saved ? [[p.name, saved.lastTest ?? undefined] as [string, typeof saved.lastTest]] : [];
         }),
       ) as SetupFacts["onepassword"],
+      ...optional("vault", logged("the vault key", undefined, () => vaultFacts(hub))),
     }),
     bases: (machineId) =>
       logged("worktree bases", [], () =>
