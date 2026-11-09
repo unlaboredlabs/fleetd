@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// Settings › Projects › Icon over a fake hub: the project's icon shows, and its picture once it has one; a face or color
-// picked shows at once and is sent a moment later, only the last of a quick run; the pointer over one shows it large;
-// a picked or dropped image opens Move and Scale, whose Save uploads it and names the square under the circle; Remove
-// image sends no picture; a file that isn't an image is refused before anything is sent.
+// Settings › Projects › Icon over a fake hub: the project's bot shows, whatever icon the hub names, and its picture once
+// it has one; there is nothing to pick; a picked or dropped image opens Move and Scale, whose Save uploads it and names
+// the square under the circle; Remove image sends no picture; a file that isn't an image is refused before anything
+// is sent.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +11,6 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { SEND_AFTER_MS } from "./Picture";
 import { sectionRead } from "./projectReads.test-util";
 import { ProjectSettings } from "./Projects";
 
@@ -101,7 +100,7 @@ const render = async (avatar: string | undefined, icon: { face: string; color: s
       calls.push({ tool, input });
       if (tool === "project_avatar_get") return Promise.resolve({ ok: true, output: { avatar: AVATAR, mime: "image/jpeg", dataB64: "/9j/AA==" } });
       if (tool === "attachment_put") return Promise.resolve({ ok: true, output: { attachmentId: "F7", bytes: 4, sha256: "x".repeat(64) } });
-      if (tool === "project_avatar_set" || tool === "project_icon_set") return Promise.resolve({ ok: true, output: { project: {} } });
+      if (tool === "project_avatar_set") return Promise.resolve({ ok: true, output: { project: {} } });
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
       const section = sectionRead(tool);
       if (section !== undefined) return Promise.resolve(section);
@@ -172,27 +171,15 @@ const pick = async (file: File) => {
 
 const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "logo.png", { type: "image/png" });
 
-/** The large icon's face and color: `wink-fleet`. */
-const previewFile = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="icon"] svg')?.getAttribute("data-icon");
+/** The large icon's bot, in its state: `idle`. */
+const previewBot = () => section().querySelector('button[aria-label^="Upload an image"] [data-avatar="bot"] svg')?.getAttribute("data-bot");
 
-const radio = (group: string, name: string) => {
-  const el = section().querySelector<HTMLElement>(`[aria-label="${group}"] [role="radio"][aria-label="${name}"]`);
-  if (el === null) throw new Error(`no ${group} ${name}`);
-  return el;
-};
-
-const sent = () => calls.filter((c) => c.tool === "project_icon_set").map((c) => c.input);
-
-const wait = (ms: number) => act(async () => new Promise((r) => setTimeout(r, ms)));
 
 describe("Settings → Projects → Icon", () => {
-  it("shows its icon, its letters from a hub that sends none, and its picture once it has one", async () => {
+  it("shows its bot, whatever icon the hub names or none, and its picture once it has one", async () => {
     await render(undefined);
-    expect(previewFile()).toBe("wink-fleet");
-    expect(radio("Face", "Wink").getAttribute("aria-checked")).toBe("true");
-    expect(radio("Color", "Fleet").getAttribute("aria-checked")).toBe("true");
-    expect(section().querySelectorAll('[aria-label="Face"] [role="radio"]')).toHaveLength(9);
-    expect(section().querySelectorAll('[aria-label="Color"] [role="radio"]')).toHaveLength(12);
+    expect(previewBot()).toBe("idle");
+    expect(section().querySelectorAll('[role="radio"]')).toHaveLength(0);
     expect(calls.filter((c) => c.tool === "project_avatar_get")).toEqual([]);
     expect(button("Upload image…", section())).toBeDefined();
     expect([...section().querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("Remove image");
@@ -200,7 +187,7 @@ describe("Settings → Projects → Icon", () => {
     act(() => root.unmount());
     root = createRoot(host);
     await render(undefined, null);
-    expect(section().querySelector<HTMLElement>('[data-avatar="letters"]')?.dataset.letters).toBe("S");
+    expect(previewBot()).toBe("idle");
 
     act(() => root.unmount());
     root = createRoot(host);
@@ -208,61 +195,6 @@ describe("Settings → Projects → Icon", () => {
     await render(AVATAR);
     expect(calls.filter((c) => c.tool === "project_avatar_get").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "p1" }]);
     expect(section().querySelector<HTMLImageElement>('[data-avatar="picture"] img')?.src).toBe("data:image/jpeg;base64,/9j/AA==");
-    // Over a picture no face is picked: any is a pick.
-    expect(section().querySelectorAll('[role="radio"][aria-checked="true"]')).toHaveLength(0);
-  });
-
-  it("shows a face or color picked at once and sends the last of a quick run a moment later", async () => {
-    await render(undefined);
-    await click(radio("Face", "Joy"));
-    expect(previewFile()).toBe("joy-fleet");
-    await click(radio("Color", "Butter"));
-    expect(previewFile()).toBe("joy-sun");
-    // The grid's faces wear the color picked.
-    expect(radio("Face", "Mo").querySelector("svg")?.getAttribute("data-icon")).toBe("mo-sun");
-    expect(sent()).toEqual([]);
-    await wait(SEND_AFTER_MS + 50);
-    expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "joy", color: "sun" } }]);
-  });
-
-  it("shows what the pointer is over, large, until it leaves", async () => {
-    await render(undefined);
-    await act(async () => {
-      radio("Face", "Huh").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(previewFile()).toBe("huh-fleet");
-    await act(async () => {
-      radio("Color", "Rose").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
-      await Promise.resolve();
-    });
-    expect(previewFile()).toBe("wink-rose");
-    const picker = section().querySelector('[aria-label="Face"]')?.parentElement?.parentElement;
-    await act(async () => {
-      picker?.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
-      await Promise.resolve();
-    });
-    expect(previewFile()).toBe("wink-fleet");
-    expect(sent()).toEqual([]);
-  });
-
-  it("lets a later change from another device show after a quick run that ends where it began", async () => {
-    const push = await render(undefined);
-    await click(radio("Face", "Joy"));
-    await click(radio("Face", "Wink"));
-    await wait(SEND_AFTER_MS + 50);
-    expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "wink", color: "fleet" } }]);
-    await push(snapshot(undefined, { face: "mo", color: "mint" }));
-    expect(previewFile()).toBe("mo-mint");
-    expect(radio("Face", "Mo").getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("picks a face over a picture, which takes its place", async () => {
-    await render(AVATAR);
-    await click(radio("Face", "Wink"));
-    expect(previewFile()).toBe("wink-fleet");
-    await wait(SEND_AFTER_MS + 50);
-    expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "wink", color: "fleet" } }]);
   });
 
   it("moves and scales a picked image, then sends it with the square under the circle", async () => {

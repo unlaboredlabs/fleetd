@@ -1,37 +1,32 @@
-// Settings › Projects › Project's Icon: what its chat shows on every device. A grid of the built-in faces in the color
-// picked, a row of the colors, and the icon large beside them, which shows whatever the pointer is over before it is
-// picked. A pick shows at once and is sent a moment later (project_icon_set), so arrowing through the faces sends only
-// the one it stops on. Upload image… (or an image dropped on the icon) opens Move and Scale, which shows it in the
-// circle to drag and zoom (the wheel or the slider, about the pointer: shared/crop.ts) before Save sends it as it is
-// with the square to keep (attachment_put, then project_avatar_set's crop). The hub keeps that square alone, small and
-// without the file's metadata. A picture shows over the icon until Remove image, or a face or color is picked.
-import { RadioGroup as RadioPrimitive } from "radix-ui";
+// Settings › Projects › Project's Icon: what its chat shows on every device, large: its bot (every project wears the
+// same one, its state in its motion: projects/botState.ts), or a picture of its own. Upload image… (or an image
+// dropped on the icon) opens Move and Scale, which shows it in the circle to drag and zoom (the wheel or the slider,
+// about the pointer: shared/crop.ts) before Save sends it as it is with the square to keep (attachment_put, then
+// project_avatar_set's crop). The hub keeps that square alone, small and without the file's metadata. A picture shows
+// over the bot until Remove image.
 import { Upload } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type WheelEvent } from "react";
-import { colorsOf, ICON_COLORS, ICON_FACES } from "../../../shared/botAvatar";
+import { useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } from "react";
 import { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout, type Size } from "../../../shared/crop";
-import type { AttachmentMime, IconColor, IconFace, ProjectIcon, ProjectSummary } from "../../../shared/contracts";
+import type { AttachmentMime, ProjectSummary } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
-import { Avatar, BotFace, Button, Dialog, Text } from "../../ui";
+import { Avatar, Button, Dialog, Text } from "../../ui";
 import { upload } from "../chat/drafts";
+import { useBotState } from "../projects/botState";
 import { usePicture } from "../projects/ProjectAvatar";
 import { errorText, useHubCall } from "./hub";
 import { Setting } from "./parts";
 import p from "./Picture.module.css";
 import s from "./settings.module.css";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "icon">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar">;
 type Picked = { readonly file: File; readonly mime: AttachmentMime; readonly url: string; readonly size: Size };
 
 const TAKES: readonly string[] = ["image/png", "image/jpeg", "image/webp"];
 /** The circle's side in Move and Scale, and the stage's around it. */
 const CIRCLE = 240;
 const STAGE = 300;
-/** The large icon, and each face in the grid. */
+/** The large icon. */
 const PREVIEW = 88;
-const FACE = 44;
-/** How long a pick waits before it is sent, for the next one to take its place. */
-export const SEND_AFTER_MS = 350;
 
 /** The image a person picked or dropped, read for its size; why not, when it can't be. */
 export const readPicked = (file: File): Promise<Picked | string> => {
@@ -50,9 +45,6 @@ export const readPicked = (file: File): Promise<Picked | string> => {
   });
 };
 
-/** A face or a color the pointer is over, to show in the large icon. */
-type Peek = { readonly face?: IconFace; readonly color?: IconColor };
-
 export function PictureSetting({ project }: { project: Pictured }) {
   const layer = useDataLayer();
   const hubCall = useHubCall();
@@ -61,48 +53,10 @@ export function PictureSetting({ project }: { project: Pictured }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
-  // A pick not yet in the project's summary: shown at once, sent after SEND_AFTER_MS.
-  const [pending, setPending] = useState<ProjectIcon | null>(null);
-  const [peek, setPeek] = useState<Peek | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const picture = usePicture(project);
+  const bot = useBotState(`${project.machineId}/${project.projectId}`);
   const ref = { machineId: project.machineId, projectId: project.projectId };
-  const chosen = pending ?? project.icon;
-  const hasPicture = project.avatar !== undefined && pending === null;
-
-  // The summary changed (the pick arriving, or another device's): it shows now, unless a pick still waits to be sent.
-  const { face, color } = project.icon ?? {};
-  const summary = useRef({ face, color, avatar: project.avatar });
-  useEffect(() => {
-    summary.current = { face, color, avatar: project.avatar };
-    if (timer.current === null) setPending(null);
-  }, [face, color, project.avatar]);
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    [],
-  );
-
-  const choose = (next: ProjectIcon) => {
-    setEcho(null);
-    setPending(next);
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      hubCall("project_icon_set", { ...ref, icon: next }).then(
-        // Sent: a pick the summary already wore (a quick run back to where it began) changes nothing to wait for.
-        () => {
-          const now = summary.current;
-          if (timer.current === null && now.face === next.face && now.color === next.color && now.avatar === undefined) setPending(null);
-        },
-        (e: unknown) => {
-          setPending(null);
-          setEcho({ ok: false, text: errorText(e) });
-        },
-      );
-    }, SEND_AFTER_MS);
-  };
+  const hasPicture = project.avatar !== undefined;
 
   const take = (file: File | undefined) => {
     if (file === undefined) return;
@@ -128,7 +82,6 @@ export function PictureSetting({ project }: { project: Pictured }) {
       if (!sent.ok) throw new Error(sent.message);
       await hubCall("project_avatar_set", { ...ref, attachmentId: sent.ref.attachmentId, crop }, { timeoutMs: 120_000 });
       setPicked(null);
-      setPending(null);
       setEcho({ ok: true, text: "Its chat shows this image now, here and on your phone." });
     } catch (e) {
       setEcho({ ok: false, text: errorText(e) });
@@ -148,15 +101,9 @@ export function PictureSetting({ project }: { project: Pictured }) {
     }
   };
 
-  // The large icon: what the pointer is over, else the pick, else the picture over the icon.
-  const shownIcon = chosen === undefined ? undefined : { ...chosen, ...peek };
-  const peeking = peek !== null;
-  const tint = chosen?.color ?? "fleet";
-  // A swatch is the ground its avatar stands on, light or dark with the theme (Picture.module.css).
-  const field = (id: IconColor) => ({ "--field-l": colorsOf(id, false).field, "--field-d": colorsOf(id, true).field }) as CSSProperties;
   return (
-    <Setting reveal="projects.picture" label="Icon" help="Its chat shows it on every device. Pick a face and a color, or upload an image of your own.">
-      <div className={p.picker} onPointerLeave={() => setPeek(null)}>
+    <Setting reveal="projects.picture" label="Icon" help="Its chat shows it on every device: its bot, which shows what it's doing, or an image of your own.">
+      <div className={p.picker}>
         <button
           type="button"
           className={p.target}
@@ -169,59 +116,12 @@ export function PictureSetting({ project }: { project: Pictured }) {
           onDragLeave={() => setDragging(false)}
           onDrop={drop}
         >
-          <Avatar
-            name={project.title}
-            size={PREVIEW}
-            src={hasPicture && !peeking ? picture : undefined}
-            icon={shownIcon}
-            className={p.preview}
-          />
+          <Avatar name={project.title} size={PREVIEW} src={hasPicture ? picture : undefined} bot={bot} className={p.preview} />
           <span className={p.hover} aria-hidden>
             <Upload />
           </span>
         </button>
         <div className={p.choices}>
-          <RadioPrimitive.Root
-            className={p.faces}
-            aria-label="Face"
-            value={hasPicture ? "" : (chosen?.face ?? "")}
-            onValueChange={(v) => choose({ face: v, color: tint })}
-            orientation="horizontal"
-            loop
-          >
-            {ICON_FACES.map((f) => (
-              <RadioPrimitive.Item
-                key={f.id}
-                value={f.id}
-                className={p.face}
-                aria-label={f.name}
-                title={f.name}
-                onPointerEnter={() => setPeek({ face: f.id })}
-              >
-                <FaceImage face={f.id} color={peek?.color ?? tint} />
-              </RadioPrimitive.Item>
-            ))}
-          </RadioPrimitive.Root>
-          <RadioPrimitive.Root
-            className={p.swatches}
-            aria-label="Color"
-            value={hasPicture ? "" : (chosen?.color ?? "")}
-            onValueChange={(v) => choose({ face: chosen?.face ?? "mo", color: v })}
-            orientation="horizontal"
-            loop
-          >
-            {ICON_COLORS.map((c) => (
-              <RadioPrimitive.Item
-                key={c.id}
-                value={c.id}
-                className={p.swatch}
-                aria-label={c.name}
-                title={c.name}
-                style={field(c.id)}
-                onPointerEnter={() => setPeek({ color: c.id })}
-              />
-            ))}
-          </RadioPrimitive.Root>
           <div className={s.inline}>
             <Button disabled={busy} onClick={() => input.current?.click()}>
               Upload image…
@@ -255,11 +155,6 @@ export function PictureSetting({ project }: { project: Pictured }) {
       {picked === null ? null : <MoveAndScale picked={picked} busy={busy} onCancel={() => setPicked(null)} onSave={(crop) => void save(crop)} />}
     </Setting>
   );
-}
-
-/** One face of the grid, in the color picked. */
-function FaceImage({ face, color }: { face: IconFace; color: IconColor }) {
-  return <BotFace face={face} color={color} size={FACE} />;
 }
 
 /** The picked image in a circle, to drag and zoom; Save hands back the square under the circle. */
