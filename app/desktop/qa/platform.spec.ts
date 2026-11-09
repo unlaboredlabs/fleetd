@@ -125,7 +125,7 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
 test("a window whose page dies reloads at its route and logs why; crash dumps go beside the log", async () => {
   const { app, page, close } = await launch("typical");
   try {
-    await show(page, "status.fleet", "#/status");
+    await show(page, "settings.general", "#/settings/general");
     const { logs, dumps } = await app.evaluate(({ app: a }) => ({ logs: a.getPath("logs"), dumps: a.getPath("crashDumps") }));
     const log = () => (existsSync(path.join(logs, "app.log")) ? readFileSync(path.join(logs, "app.log"), "utf8") : "(no app.log)");
     // Playwright's page stays on the dead renderer, so the reloaded one is read through main. A MutationObserver,
@@ -144,17 +144,17 @@ test("a window whose page dies reloads at its route and logs why; crash dumps go
         await within("render-process-gone", gone);
         await within("reload", reloaded);
         return within(
-          "status screen",
+          "settings screen",
           page.executeJavaScript(
-            `new Promise((done) => { const found = () => document.querySelector('[data-screen="status.fleet"]'); if (found()) return done("status.fleet"); new MutationObserver((_, o) => { if (found()) { o.disconnect(); done("status.fleet"); } }).observe(document, { subtree: true, childList: true, attributes: true }); })`,
+            `new Promise((done) => { const found = () => document.querySelector('[data-screen="settings.general"]'); if (found()) return done("settings.general"); new MutationObserver((_, o) => { if (found()) { o.disconnect(); done("settings.general"); } }).observe(document, { subtree: true, childList: true, attributes: true }); })`,
           ) as Promise<string>,
         );
       })
       .catch((error: unknown) => {
         throw new Error(`${error instanceof Error ? error.message : String(error)}\napp.log:\n${log()}`);
       });
-    expect(screen).toBe("status.fleet");
-    expect(log()).toMatch(/main v\S+ #\/status: The window's page died \((?:crashed|killed), exit code -?\d+\); reloading it/u);
+    expect(screen).toBe("settings.general");
+    expect(log()).toMatch(/main v\S+ #\/settings\/general: The window's page died \((?:crashed|killed), exit code -?\d+\); reloading it/u);
     // crashReporter is on, with its database beside the log (a killed renderer leaves no dump).
     expect(dumps).toBe(path.join(logs, "crashes"));
     expect(existsSync(path.join(dumps, "settings.dat"))).toBe(true);

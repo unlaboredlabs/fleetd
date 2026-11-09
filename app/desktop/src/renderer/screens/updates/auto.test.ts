@@ -22,8 +22,8 @@ const texts = (auto: AutoState, ready: string | null = null) =>
 
 describe("automatic updates' words", () => {
   it("say how often and how long machines wait", () => {
-    expect(autoWords(10)).toBe("New builds install by themselves as soon as they are ready, at most one update in 10 minutes, each machine once agents finish their step (10 minutes at most).");
-    expect(autoWords(0)).toBe("New builds install by themselves as soon as they are ready, at most one update in 10 minutes, each machine without waiting for agents.");
+    expect(autoWords(10)).toBe("New builds install by themselves as soon as they are ready, at most one update in 10 minutes, each machine once nothing its restart would cut off runs (10 minutes at most).");
+    expect(autoWords(0)).toBe("New builds install by themselves as soon as they are ready, at most one update in 10 minutes, each machine without waiting.");
   });
 
   it("say when, by the day", () => {

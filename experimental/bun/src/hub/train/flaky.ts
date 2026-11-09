@@ -94,7 +94,7 @@ export async function flakyNote(t: Train, change: Change, sha: string, flaky: Fl
     try {
       await t.host.messageTask(change.projectRef, TRAIN_BY, change.taskId, `Your PR ${change.prUrl} (${change.changeId}): ${text}.`);
     } catch (error) {
-      console.warn(`train: author ${change.taskId} of ${change.changeId} not messaged: ${(error as Error).message}`);
+      t.warnHourly([`train: author ${change.taskId} of ${change.changeId} not messaged`], (error as Error).message, `train: author ${change.taskId} of ${change.changeId} not messaged: ${(error as Error).message}`);
     }
   }
   await t.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, text));

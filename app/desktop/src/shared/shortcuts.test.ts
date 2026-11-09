@@ -30,7 +30,7 @@ describe("shortcut map", () => {
   });
 
   it("matches punctuation and digits by the physical key, whatever Shift types", () => {
-    expect(shortcutFor(key(".", "Period", { metaKey: true }), "darwin")).toBe("status.toggle");
+    expect(shortcutFor(key(".", "Period", { metaKey: true }), "darwin")).toBe("project.nextNeedsYou");
     expect(shortcutFor(key(">", "Period", { metaKey: true, shiftKey: true }), "darwin")).toBeUndefined();
     expect(shortcutFor(key("[", "BracketLeft", { metaKey: true }), "darwin")).toBe("project.previous");
     expect(shortcutFor(key("1", "Digit1", { ctrlKey: true }), "linux")).toBe("project.open.1");
@@ -47,11 +47,11 @@ describe("shortcut map", () => {
     expect(accelerator("session.handBack")).toBe("CmdOrCtrl+Shift+Enter");
   });
 
-  it("matches ⌥⌘A though Option types another letter on macOS", () => {
-    expect(shortcutFor(key("å", "KeyA", { metaKey: true, altKey: true }), "darwin")).toBe("project.nextNeedsYou");
-    expect(shortcutFor(key("a", "KeyA", { ctrlKey: true, altKey: true }), "linux")).toBe("project.nextNeedsYou");
-    expect(shortcutFor(key("å", "KeyA", { metaKey: true }), "darwin")).toBeUndefined();
-    expect(display("project.nextNeedsYou", "darwin")).toBe("⌥⌘A");
+  it("matches ⌥⌘B though Option types another letter on macOS", () => {
+    expect(shortcutFor(key("∫", "KeyB", { metaKey: true, altKey: true }), "darwin")).toBe("panel.toggle");
+    expect(shortcutFor(key("b", "KeyB", { ctrlKey: true, altKey: true }), "linux")).toBe("panel.toggle");
+    expect(shortcutFor(key("∫", "KeyB", { metaKey: true }), "darwin")).toBe("sidebar.toggle");
+    expect(display("panel.toggle", "darwin")).toBe("⌥⌘B");
   });
 
   it("writes keys as each platform reads them, and as Electron's accelerators", () => {

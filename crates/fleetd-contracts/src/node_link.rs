@@ -737,6 +737,10 @@ pub struct NodeAction {
     pub code: Option<Text<1, 500>>,
     /// `screens` only.
     pub screens: Option<crate::machine_roles::ScreenSettings>,
+    /// `hold` only: when the node's sessions carry on through its restart (its answer's `hosted`), hold nothing, and
+    /// count only the sessions mid-step that aren't hosted (a Navi's); else hold every one, as without it. An older
+    /// node ignores it and holds every one, answering no `hosted`.
+    pub unhosted: Option<bool>,
 }
 
 /// How long a `hold` lasts unless the hub asks again: a hub that stops asking (it went away, the update ended without
@@ -794,8 +798,14 @@ pub struct NodeActionResult {
     pub stage: Option<crate::mcp::UpdateStage>,
     /// `claude_login` that started: where the person signs in.
     pub login_url: Option<Text<1, 4000>>,
-    /// `hold`: the sessions still mid-step, a tool call of theirs running.
+    /// `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not
+    /// hosted.
     pub steps: Option<u32>,
+    /// `hold` with `unhosted`: the host protocol of the node's session hosts (runner/host.rs), when each runs in a
+    /// systemd scope of its own that outlives the node, so its agent carries on through the restart. Absent without
+    /// scopes (their hosts die with the node), and from an older node. A hub whose build speaks another host protocol
+    /// holds every agent, as the restarted node won't take the hosts back.
+    pub hosted: Option<u32>,
     /// `screens`: what the machine can host with the new settings.
     pub hosts: Option<crate::machine_roles::HostChecks>,
 }

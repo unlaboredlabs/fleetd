@@ -90,7 +90,6 @@ export const installMenu = (
     {
       label: "View",
       submenu: [
-        item(opener, "status.toggle", "Status"),
         item(opener, "factory.open", "Factory"),
         item(opener, "go:time", "Agent Time"),
         separator,
@@ -107,7 +106,11 @@ export const installMenu = (
     },
     {
       label: "Project",
-      submenu: [item(opener, "project.previous", "Previous Project"), item(opener, "project.next", "Next Project")],
+      submenu: [
+        item(opener, "project.previous", "Previous Project"),
+        item(opener, "project.next", "Next Project"),
+        item(opener, "project.nextNeedsYou", "Next Project That Needs You"),
+      ],
     },
     { role: "windowMenu" },
     {

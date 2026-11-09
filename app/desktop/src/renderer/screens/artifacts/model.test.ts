@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArtifactVersion } from "../../../shared/contracts";
-import { when } from "../status/view";
+import { when } from "../live/when";
 import { artifactLinks, formatWord, metaLine, versionLabel } from "./model";
 
 const NOW = Date.parse("2026-11-03T12:00:00.000Z");

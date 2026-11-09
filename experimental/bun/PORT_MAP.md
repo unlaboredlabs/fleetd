@@ -100,7 +100,7 @@ server, auth, keys, people, devices, links, settings, store.
 
 - [x] hub loop `hub_links::client::run` → `src/hub/hub_links` <!-- loop:hub loop `hub_links::client::run` -->
 - [x] hub loop `link.start` → `src/hub/link` <!-- loop:hub loop `link.start` -->
-- [ ] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
+- [x] hub loop `metrics::start` → `src/hub/metrics` <!-- loop:hub loop `metrics::start` -->
 - [x] hub loop `outage::run` → `src/hub/outage` <!-- loop:hub loop `outage::run` -->
 - [x] hub loop `pair::prune_on_sweep` → `src/hub/pair` <!-- loop:hub loop `pair::prune_on_sweep` -->
 - [x] hub loop `push::run` → `src/hub/push` <!-- loop:hub loop `push::run` -->
@@ -513,7 +513,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] heartbeat `load.hosts` → `src/node/hosts` <!-- hb:heartbeat `load.hosts` -->
 - [x] heartbeat `load.android` → `src/node/device` <!-- hb:heartbeat `load.android` -->
 - [ ] heartbeat `load.ios` → `src/node/device` <!-- hb:heartbeat `load.ios` -->
-- [ ] heartbeat `load.desktop` → `src/node/desktop` <!-- hb:heartbeat `load.desktop` -->
+- [x] heartbeat `load.desktop` → `src/node/desktop` <!-- hb:heartbeat `load.desktop` -->
 - [x] heartbeat `load.mac` → `src/node/agents_mac` <!-- hb:heartbeat `load.mac` -->
 
 ## cli

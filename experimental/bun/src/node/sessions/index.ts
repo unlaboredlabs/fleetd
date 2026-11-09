@@ -257,6 +257,8 @@ function fleetdServer(exe: string, role: SessionRole, sock: string, sessionId: s
 }
 
 const scratchName = (sessionId: string) => createHash("sha256").update(sessionId).digest("hex").slice(0, 16);
+/** The session whose scratch dir `row` uses: the one it took over (`scratchOf`), else its own. */
+const scratchOwner = (row: SessionRow) => row.local.scratchOf ?? row.summary.sessionId;
 
 /** One live session's process, through its host. */
 type Live = {
@@ -370,7 +372,7 @@ export class SessionService {
     }
     await sweep(hosts, adopted);
     // A killed node's scratch dirs: each session's own TMPDIR stays while its worktree or its process does.
-    const keep = new Set([...service.store.sessions().filter((r) => r.local.baseRef && r.summary.worktreePath).map((r) => r.summary.sessionId), ...adopted].map(scratchName));
+    const keep = new Set([...service.store.sessions().filter((r) => r.local.baseRef && r.summary.worktreePath).map(scratchOwner), ...adopted].map(scratchName));
     let swept = 0;
     for (const name of existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : []) {
       if (keep.has(name)) continue;
@@ -875,8 +877,12 @@ export class SessionService {
     if (!pathSafe(id)) throw invalid(`session id ${id} has characters a path can't hold`);
     const root = this.#projectRoot(launch.projectId);
     const ws = launch.workspace;
+    // A session taking over an earlier one of the same branch (a task restarted fresh) works in that one's worktree as
+    // it was left, uncommitted changes included, with its scratch dir; a worktree that is gone comes back first.
+    const earlier = ws.type === "worktree" && ws.fromSession ? this.store.session(ws.fromSession) : undefined;
+    const taken = earlier?.local.baseRef && ws.type === "worktree" && earlier.local.branch === ws.branch ? earlier : undefined;
     let base: worktree.Base | undefined;
-    if (ws.type !== "root") base = await worktree.freshBase(root, ws.baseRef);
+    if (ws.type !== "root" && !taken) base = await worktree.freshBase(root, ws.baseRef);
     // A retry that arrived while this one fetched.
     const raced = this.store.session(id);
     if (raced) return { kind: "launched", summary: raced.summary };
@@ -887,7 +893,19 @@ export class SessionService {
     let addDirs: string[] = [];
     let baseRef: string | undefined;
     let branch: string | undefined;
-    if (ws.type === "worktree" && base) {
+    let recreatedFrom: worktree.Source["kind"] | undefined;
+    if (taken) {
+      const lost = await this.#lostWorktree(taken);
+      if (lost && taken.local.branch) {
+        worktree.restore(taken.local.workspaceRoot, taken.local.cwd, taken.local.branch, lost);
+        console.log(`${nowIso()} INFO recreated a lost worktree to take over {"sessionId":"${id}","from":"${lost.kind}"}`);
+        recreatedFrom = lost.kind;
+        // Rebuilt, it has none of what setup made there before.
+        setup.record(taken.local.cwd, undefined);
+        prompt = `${worktree.sourceNote(lost, taken.local.branch)}\n\n${prompt}`;
+      }
+      [cwd, addDirs, baseRef, branch] = [taken.local.cwd, taken.local.addDirs, taken.local.baseRef, taken.local.branch];
+    } else if (ws.type === "worktree" && base) {
       worktree.ensure(root, path, ws.branch, base.sha);
       [cwd, addDirs, baseRef, branch] = [path, [root], base.baseRef, ws.branch];
     } else if (ws.type === "detached" && base) {
@@ -918,6 +936,7 @@ export class SessionService {
         runtimeMode: launch.runtimeMode,
         ...(branch ? { branch } : {}),
         ...(baseRef ? { worktreePath: cwd } : {}),
+        ...(recreatedFrom ? { recreatedFrom, recreatedAt: at } : {}),
         createdAt: at,
         updatedAt: at,
       },
@@ -940,6 +959,7 @@ export class SessionService {
         ...(launch.systemPrompt ? { systemPrompt: launch.systemPrompt } : {}),
         ...(launch.claudeAccount ? { claudeAccount: launch.claudeAccount } : {}),
         ...(launch.onepassword ? { onepassword: launch.onepassword } : {}),
+        ...(taken ? { scratchOf: scratchOwner(taken) } : {}),
       },
     };
     // Setup applies to a session in a worktree of its own.
@@ -1184,7 +1204,7 @@ export class SessionService {
         console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
     }
-    const scratch = join(this.home, "tmp", scratchName(id));
+    const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
     // The screens' areas: an agent's session gets their tools' variables and skills (Rust's browser SessionHooks).
@@ -1653,7 +1673,7 @@ export class SessionService {
     const order = row.local.orderId ? orderVarsForSpawn(this.home, row.summary.projectId, row.local.orderId).vars : [];
     const vars = [...projectVars(this.home, row.summary.projectId).filter(([n]) => !order.some(([o]) => o === n)), ...order];
     for (const [k, v] of vars) if (!(k in env) && k !== "OP_SERVICE_ACCOUNT_TOKEN") env[k] = v;
-    const scratch = join(this.home, "tmp", scratchName(id));
+    const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
     const commands = plan.commands ?? [];
@@ -1867,7 +1887,8 @@ export class SessionService {
         await Promise.race([live.exited, Bun.sleep(5_000)]);
       }
     }
-    if (removeWorktree || !row.local.baseRef) rmSync(join(this.home, "tmp", scratchName(id)), { recursive: true, force: true });
+    // A session's scratch goes with its worktree, or with its process when it has none.
+    if (removeWorktree || !row.local.baseRef) rmSync(join(this.home, "tmp", scratchName(scratchOwner(row))), { recursive: true, force: true });
     if (removeWorktree && row.local.baseRef) {
       const deleted = row.local.branch
         ? worktree.remove(row.local.workspaceRoot, row.local.cwd, row.local.branch, row.local.baseRef)

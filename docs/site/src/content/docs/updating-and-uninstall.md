@@ -22,11 +22,14 @@ it in and restarts, in order:
 1. **The hub** checks the kept build against `SHA256SUMS` again, keeps the binary it runs, and restarts on the new one.
    If the new build doesn't come up healthy within 90 seconds, the previous one is put back and restarted. If the
    hub had nothing ready yet, it downloads the build first.
-2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build, each once its
-   agents finish the step they're on. The node holds every tool call that hasn't started yet and waits for the ones
-   running (a build, a test run) to end, so its agents pick up between steps after the restart instead of redoing one.
-   It waits the same way for what else can't carry on through a restart (a live browser, device or desktop session). Either way it updates within 10 minutes, whatever still runs: what the restart cuts off carries on
-   by itself. Its line says how many agents it waits for and when it updates at the latest, and the sheet's top says
+2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Its agents
+   run under small hosts of their own that outlive the node, so they carry on through its restart, mid-step included
+   (a build, a test run): the node doesn't wait for them. It waits only for what its restart would cut off: a live
+   browser, device or desktop session, an approved command running, a check the merge train runs there, or a Navi
+   mid-step. On a machine without systemd user scopes (macOS, a container), or when the new build's hosts speak
+   another protocol, the agents can't carry on, so the node holds every tool call that hasn't started yet and waits
+   for the ones running to end, as before. Either way it updates within 2 minutes, whatever still runs: what the
+   restart cuts off carries on by itself. Its line says what it waits for and when it updates at the latest, and the sheet's top says
    **Updating when agents finish their step (*n*), by *time***, with **Update now** beside it, which ends the wait. A
    screen whose task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A
    machine already on the new build, or a newer one (updated with `fleetd update` on it, say), is never moved back:
@@ -46,7 +49,7 @@ The hub itself never waits: agents don't need it mid-step. A fleetd tool call an
 seconds of restart fails, and the agent tries it again. Each part shows as updated as soon as its machine is back on
 the new build.
 
-The 10 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 20}`; `0` doesn't wait),
+The 2 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 10}`; `0` doesn't wait),
 read at each update.
 
 **Update automatically**, in Settings › Hub › Updates and in the update sheet (`"auto": true` in the same file), is off by default.
@@ -62,7 +65,7 @@ build of fleetd, or a channel it couldn't read.
 A machine installs the build it downloaded and checked when the update started, even if the channel has a newer one
 by the time its agents let it restart: edge often does. The next update brings everything to that newer build.
 
-`fleetd update` on a machine waits the same way for its own node's agents, 10 minutes at most;
+`fleetd update` on a machine holds its own node's agents and waits for their step, 2 minutes at most;
 `fleetd update --now` doesn't wait.
 
 The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.
@@ -95,10 +98,12 @@ doesn't restart by itself, so the result stays on screen: its line has **Update*
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
 the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
 in. Machines that were online when you pressed Update get a while to reconnect after the hub restarts; one that was
-offline, or doesn't come back, is skipped and named in the result.
+offline, or doesn't come back, is skipped and named in the result. A cloud machine that was asleep when the update
+started is brought to the hub's build as soon as it wakes, or, when it wakes during the update, as soon as the update
+ends; it takes no work before then.
 
-An update never waits for work to finish, only for the step each agent is on (10 minutes at most, by default). What a restart
-cuts off carries on by itself:
+An update never waits for work to finish, only for what a restart would cut off (2 minutes at most, by default). What
+a restart cuts off carries on by itself:
 
 - Leads and agents keep running through their node's restart, mid-step included: each runs under a small host process
   of its own that the restarted node picks up again. Agents whose process ended while their node was down resume in
@@ -119,7 +124,7 @@ fleetd update
 ```
 
 It replaces the CLI, checked against the release's `SHA256SUMS`, then restarts the hub and node services that run this
-binary: the hub at once, the node once its agents finish the step they're on (10 minutes at most; `--now` doesn't
+binary: the hub at once, the node once its agents finish the step they're on (2 minutes at most; `--now` doesn't
 wait). On a machine that runs agents, it then moves Claude Code to the version the new fleetd was tested
 with, as the app's update does. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>` on the hub
 also copies the hub's binary to a worker.

@@ -515,6 +515,17 @@ export class TrainGitHub {
     );
   }
 
+  /**
+   * The workflow runs on commit `sha`, whatever their branch, each its id and the event that started it (`push`,
+   * `workflow_dispatch`, `schedule`...): one page of 100.
+   */
+  async shaRunEvents(repo: string, sha: string): Promise<[number, string][]> {
+    const runs = await this.json<{ id: number; event: string }[]>("GET", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`, [], (v) =>
+      Array.isArray((v as any)?.workflow_runs) ? ((v as any).workflow_runs as { id: number; event: string }[]) : undefined,
+    );
+    return runs.map((r) => [r.id, r.event]);
+  }
+
   /** The jobs of a workflow run, each at its latest attempt. */
   runJobs(repo: string, run: number): Promise<RunJob[]> {
     return this.json("GET", `repos/${repo}/actions/runs/${run}/jobs?filter=latest&per_page=100`, [], (v) =>

@@ -1,5 +1,5 @@
 // Cloud machines on boat.dev (D306), apart from React: the boat.dev group in Settings › Hub › Machines, each machine's
-// line, the cost a pool can reach before it is turned on, and the Status line. The hub's pool (cloud_get) is the only
+// line, the cost a pool can reach before it is turned on, and the cloud line. The hub's pool (cloud_get) is the only
 // source; nothing here is estimated but the typical day, which says so.
 import type { CloudMachine, CloudMachineState, CloudView, Machine } from "../../../shared/contracts";
 
@@ -96,7 +96,7 @@ export const machineLine = (m: CloudMachine, nowMs: number): string => {
   }
 };
 
-/** The Status line: "Cloud today: $0.41 of $3.00 · 2 awake". Null while the hub has no cloud machines set up. */
+/** The cloud line: "Cloud today: $0.41 of $3.00 · 2 awake". Null while the hub has no cloud machines set up. */
 export const cloudStatusLine = (cloud: CloudView | undefined): string | null => {
   if (cloud === undefined || !cloud.hasKey || (cloud.machines.length === 0 && !cloud.enabled)) return null;
   const head = `Cloud today: ${money(cloud.today)} of ${money(cloud.dayBudget)}`;
@@ -104,7 +104,7 @@ export const cloudStatusLine = (cloud: CloudView | undefined): string | null => 
   return `${head} · ${String(awakeCount(cloud))} awake`;
 };
 
-/** Why bursting waits, for the Status line's second half and the panel: the hub's own line, with its first letter up. */
+/** Why bursting waits, for the cloud line's second half and the panel: the hub's own line, with its first letter up. */
 export const heldLine = (cloud: CloudView): string | null => {
   const why = cloud.paused ?? (cloud.enabled ? cloud.held : undefined);
   if (why === undefined || why === "") return null;

@@ -1011,7 +1011,7 @@ impl SessionService {
         let mut keep: Vec<String> = rows
             .iter()
             .filter(|r| r.local.base_ref.is_some() && r.summary.worktree_path.is_some())
-            .map(|r| r.summary.session_id.to_string())
+            .map(|r| share::scratch_owner(r).to_owned())
             .collect();
         let mut adopted = HashSet::new();
         // The re-adopted sessions' processes, which no sweep of orphans touches.
@@ -2302,6 +2302,10 @@ impl SessionService {
             .join(launch.project_id.as_str())
             .join(&id);
         let mut recreated_from = None;
+        // It goes on with the scratch dir of the session it takes over, and the files the task kept there.
+        let scratch_of = taken
+            .as_ref()
+            .map(|from| share::scratch_owner(from).to_owned());
         let mut prompt = launch.prompt.to_string();
         // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
         let mut reader_setup = None;
@@ -2478,6 +2482,7 @@ impl SessionService {
                 system_prompt,
                 queued_prompts: Vec::new(),
                 monitors: Vec::new(),
+                scratch_of,
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -3132,7 +3137,7 @@ impl SessionService {
         env.extend(share::jobs_env(&env, super::load::build_jobs_here()));
         // Its cargo builds take turns for the machine's build slots.
         super::build_slots::add_to_path(&config.home, &self_command(), &mut env);
-        let scratch = share::scratch_dir(&config.home, id);
+        let scratch = share::scratch_dir(&config.home, share::scratch_owner(row));
         super::config::mkdir_private(&scratch)?;
         let scratch = share::scratch_env(&scratch);
         env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
@@ -3577,12 +3582,23 @@ impl SessionService {
 
     /// How many sessions are mid-step: a tool call of theirs runs that the hold (node/hold.rs) didn't stop from starting.
     pub fn mid_step(&self) -> u32 {
+        self.mid_step_of(true)
+    }
+
+    /// How many sessions that aren't hosted (a Navi's, one whose host didn't come up) are mid-step, holding none: the
+    /// node's restart cuts their step off, while hosted ones carry on through it (`hold` with `unhosted`).
+    pub fn unhosted_mid_step(&self) -> u32 {
+        self.mid_step_of(false)
+    }
+
+    fn mid_step_of(&self, hosted_too: bool) -> u32 {
         let home = &self.inner.config.home;
         let held = super::hold::held(home);
         let st = self.st();
         let mid_step = st
             .live
             .values()
+            .filter(|l| hosted_too || l.link.is_none())
             .filter(|l| l.tools.iter().any(|t| !held.contains(t)))
             .count();
         u32::try_from(mid_step).unwrap_or(u32::MAX)
@@ -4339,8 +4355,8 @@ impl SessionService {
         // A session's scratch goes with its worktree, or with its process when it has none.
         if remove_worktree || row.local.base_ref.is_none() {
             let home = self.inner.config.home.clone();
-            let id = id.to_owned();
-            blocking(move || share::remove_scratch(&home, &id)).await;
+            let owner = share::scratch_owner(&row).to_owned();
+            blocking(move || share::remove_scratch(&home, &owner)).await;
         }
         if remove_worktree && let Some(base_ref) = row.local.base_ref {
             let (root, path, branch) = (row.local.workspace_root, row.local.cwd, row.local.branch);

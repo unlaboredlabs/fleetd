@@ -1,6 +1,6 @@
 // The Update button's run: the hub updates itself and then its nodes (hub_update, followed with hub_update_status
-// through the hub's own restart), each node once its agents finish their step (Update now doesn't wait), then, when
-// every part came through, this app installs its update and relaunches.
+// through the hub's own restart), each node once nothing its restart would cut off runs (Update now doesn't wait),
+// then, when every part came through, this app installs its update and relaunches.
 // Retry updates one machine of the last run again (hub_update with its machine); Start over ends a run that stopped
 // moving and starts a new one (hub_update with startOver). The hub downloads the channel's
 // newest build ahead and says so (`ready`), read on connect and every few minutes. A tiny external store, so the
@@ -116,7 +116,7 @@ export const loadRun = async (deps: FlowDeps): Promise<void> => {
   if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps, false);
 };
 
-/** The Update button: the hub restarts at once, each machine once its agents finish their step (10 minutes at most). */
+/** The Update button: the hub restarts at once, each machine once nothing its restart would cut off runs (2 minutes at most). */
 export const startUpdate = async (deps: FlowDeps): Promise<void> => {
   if (going(flow)) return;
   set({ flow: { phase: "starting" } });

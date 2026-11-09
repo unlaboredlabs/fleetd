@@ -18,7 +18,7 @@ describe("routes on several hubs", () => {
     // A session's own window, as main opens it (main/sessionWindow.ts): on the hub it names.
     expect(parseHash("#/session/laptop/billing/bs-1?at=a1b2c3d4")).toEqual({ id: "session", project: { machineId: "laptop", projectId: "billing" }, session: "bs-1", at: "a1b2c3d4" });
     // Not a hub id: ignored, never passed on.
-    expect(parseHash("#/status?at=..%2Fhub")).toEqual({ id: "status" });
+    expect(parseHash("#/factory?at=..%2Fhub")).toEqual({ id: "factory", project: null });
     // The pairing screen's `hub` is an address, not which hub the screen is on.
     expect(parseHash("#/onboarding?hub=http%3A%2F%2Fdevbox%3A4790&at=a1b2")).toMatchObject({ id: "onboarding", hub: "http://devbox:4790", at: "a1b2" });
   });
@@ -36,15 +36,15 @@ describe("routes on several hubs", () => {
     // A link a screen builds as a plain hash, and a navigate that names no hub.
     window.location.hash = "#/settings/agents";
     expect(currentRoute()).toMatchObject({ id: "settings", at: "a1b2" });
-    navigate({ id: "status" });
-    expect(window.location.hash).toBe("#/status?at=a1b2");
-    navigate({ id: "status", at: "hub" });
-    expect(window.location.hash).toBe("#/status?at=hub");
+    navigate({ id: "factory", project: null });
+    expect(window.location.hash).toBe("#/factory?at=a1b2");
+    navigate({ id: "factory", project: null, at: "hub" });
+    expect(window.location.hash).toBe("#/factory?at=hub");
   });
 
   it("takes a hub since removed as the first", () => {
     setRouteHubs(["hub", "a1b2"]);
-    window.location.hash = "#/status?at=gone1";
+    window.location.hash = "#/factory?at=gone1";
     expect(currentRoute().at).toBe("hub");
   });
 });

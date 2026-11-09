@@ -13,8 +13,8 @@ config.watchFolders = [
   path.join(desktop, "renderer/screens/projects"),
   path.join(desktop, "renderer/screens/sessions"),
   path.join(desktop, "renderer/screens/settings"),
-  // status/view's `when`: the time linked hubs' words give an error.
-  path.join(desktop, "renderer/screens/status"),
+  // live/when's `when`: the time linked hubs' words give an error.
+  path.join(desktop, "renderer/screens/live"),
   path.join(desktop, "renderer/screens/updates"),
 ];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];

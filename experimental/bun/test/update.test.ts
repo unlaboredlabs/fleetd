@@ -1,10 +1,27 @@
 // Ports the core of crates/fleetd/src/update/tests.rs: the checked download from a local fake release (never the real
 // release server), the swap, and the watcher with fake ports.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { finish, type Plan, type Ports, readVerdict, run } from "../src/update/finish.ts";
-import { channelOf, Failure, HttpFeed, parseChannel, parseSums, releaseApi, restore, sha256Hex, swap, verifiedTo } from "../src/update/index.ts";
+import {
+  assetOf,
+  channelOf,
+  cliAsset,
+  Failure,
+  FLAVOUR,
+  helperPath,
+  HttpFeed,
+  parseChannel,
+  parseFlavour,
+  parseSums,
+  releaseApi,
+  restore,
+  sha256Hex,
+  swap,
+  updateHelper,
+  verifiedTo,
+} from "../src/update/index.ts";
 import { servicesIn } from "../src/update/service.ts";
 import { versionLabel, versionShown } from "../src/update/version.ts";
 import { tempHome } from "./helpers.ts";
@@ -95,6 +112,35 @@ test("channels, sums, release APIs and version labels read as the Rust ones", ()
   expect(versionLabel("0.0.0-edge.202610261056+1b563d7")).toBe("Edge · Oct 26, 10:56 UTC · 1b563d7");
   expect(versionShown("1.2.0")).toBe("1.2.0");
   expect(versionShown("0.0.0-nightly.202601051300")).toBe("Edge · Jan 5, 13:00 UTC (0.0.0-nightly.202601051300)");
+});
+
+test("each flavour has its own asset, and the Rust session host beside a Bun build moves with it", async () => {
+  expect(FLAVOUR).toBe("bun");
+  expect(cliAsset()).toBe(assetOf("bun"));
+  expect(assetOf("bun")).toBe(assetOf("rust").replace("fleetd-", "fleetd-bun-"));
+  expect(parseFlavour("rust")).toBe("rust");
+  expect(() => parseFlavour("ts")).toThrow('unknown flavour "ts": use rust or bun');
+  const rust = new TextEncoder().encode("the rust build");
+  const s = new Map([[assetOf("rust"), sha256Hex(rust)]]);
+  const asked: string[] = [];
+  const feed = {
+    get: async (name: string) => {
+      asked.push(name);
+      return rust;
+    },
+  };
+  const dir = join(home.dir, "flavour");
+  mkdirSync(dir);
+  const exe = join(dir, "fleetd");
+  // No session host beside it (one on PATH, say): nothing to move.
+  await updateHelper(feed, s, exe);
+  expect(existsSync(helperPath(exe))).toBe(false);
+  writeFileSync(helperPath(exe), "the previous rust build");
+  await updateHelper(feed, s, exe);
+  expect(readFileSync(helperPath(exe), "utf8")).toBe("the rust build");
+  // Already the release's: not downloaded again.
+  await updateHelper(feed, s, exe);
+  expect(asked).toEqual([assetOf("rust")]);
 });
 
 test("the swap keeps the previous binary, and a restore puts it back", () => {

@@ -241,7 +241,8 @@ export function change(db: HubDb, id: string): Change | undefined {
   }
 }
 
-function taskWorkstream(db: HubDb, task: string): string | undefined {
+/** The order a task works on. */
+export function taskWorkstream(db: HubDb, task: string): string | undefined {
   return db.conn.query<{ w: string | null }, [number]>("SELECT workstream_id AS w FROM tasks WHERE n = ?1").get(number(task))?.w ?? undefined;
 }
 

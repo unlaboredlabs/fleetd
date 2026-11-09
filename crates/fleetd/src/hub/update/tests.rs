@@ -18,7 +18,7 @@ use fleetd_contracts::prim::{List, Text};
 use serde_json::json;
 
 use super::{
-    NodeAnswer, NodeFacts, Refusal, Timing, UpdatePorts, Updates, by_machine, part, signal,
+    Held, NodeAnswer, NodeFacts, Refusal, Timing, UpdatePorts, Updates, by_machine, part, signal,
 };
 use crate::clock::SystemClock;
 use crate::hub::store::test_clock::ManualClock;
@@ -74,6 +74,9 @@ struct Fake {
     held: Mutex<Vec<String>>,
     /// What the apps were told (`hub.update`), in order.
     announced: Mutex<Vec<HubUpdateData>>,
+    /// Machines whose agents carry on through the restart, by machine: the host protocol their hold answers, and how
+    /// many of their sessions that aren't hosted (a Navi's) are mid-step. Absent: they don't, as without scopes.
+    hosted: Mutex<HashMap<String, (u32, u32)>>,
 }
 
 impl Fake {
@@ -104,6 +107,7 @@ impl Fake {
             steps: Mutex::default(),
             held: Mutex::default(),
             announced: Mutex::default(),
+            hosted: Mutex::default(),
         }
     }
 
@@ -185,16 +189,37 @@ impl UpdatePorts for Fake {
         assert_eq!(update.version.as_str(), NEW);
         self.fetched.lock().unwrap().push(machine_id.to_string());
     }
-    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>> {
-        self.held.lock().unwrap().push(machine_id.to_string());
-        let steps = self
-            .steps
+    fn hold_node<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        unhosted: bool,
+    ) -> BoxFuture<'a, Result<Held, String>> {
+        let hosted = self
+            .hosted
             .lock()
             .unwrap()
             .get(machine_id.as_str())
-            .copied()
-            .unwrap_or(0);
-        Box::pin(async move { Ok(steps) })
+            .copied();
+        let held = match hosted {
+            Some((protocol, unhosted_steps)) if unhosted => Held {
+                steps: unhosted_steps,
+                hosted: Some(protocol),
+            },
+            _ => {
+                self.held.lock().unwrap().push(machine_id.to_string());
+                Held {
+                    steps: self
+                        .steps
+                        .lock()
+                        .unwrap()
+                        .get(machine_id.as_str())
+                        .copied()
+                        .unwrap_or(0),
+                    hosted: None,
+                }
+            }
+        };
+        Box::pin(async move { Ok(held) })
     }
     fn claude_target(&self) -> String {
         "2.1.314".into()
@@ -271,6 +296,7 @@ fn result(ok: bool, stage: Option<UpdateStage>, message: &str) -> NodeActionResu
         login_url: None,
         steps: None,
         hosts: None,
+        hosted: None,
     }
 }
 
@@ -1122,6 +1148,182 @@ async fn a_node_waits_for_its_agents_to_finish_their_step_then_installs() {
     assert_eq!((part.agents, part.installs_by), (None, None));
 }
 
+/// The host protocol this build's nodes speak, as a node whose agents carry on through its restart answers its hold.
+const HOSTED: u32 = crate::node::runner::host::PROTOCOL;
+
+/// A node whose agents run under hosts that outlive it updates at once, its agents mid-step included: they carry on
+/// through the restart, so it neither holds nor waits for them.
+#[tokio::test]
+async fn hosted_agents_mid_step_dont_hold_their_nodes_update() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.steps.lock().unwrap().insert("builder".into(), 3);
+    fake.hosted
+        .lock()
+        .unwrap()
+        .insert("builder".into(), (HOSTED, 0));
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    let part = node_part(&run, "builder");
+    assert_eq!(part.state, UpdateState::Done);
+    assert_eq!(part.agents, None, "it never waited");
+    assert!(fake.held.lock().unwrap().is_empty(), "no agent was held");
+}
+
+/// What a node's restart would cut off is waited for even where agents carry on: a Navi mid-step (its session isn't
+/// hosted), an approved command running, a check, a live session. Once it ends, the node installs.
+#[tokio::test]
+async fn a_navi_mid_step_or_an_approved_command_is_waited_for() {
+    for (navi, busy) in [(1, None), (0, Some("1 approved command"))] {
+        let home = tempfile::tempdir().unwrap();
+        let fake = Arc::new(Fake::new(home.path(), b"new").node(
+            "builder",
+            OLD,
+            true,
+            true,
+            Some(Answer::BackOn(NEW)),
+        ));
+        fake.hosted
+            .lock()
+            .unwrap()
+            .insert("builder".into(), (HOSTED, navi));
+        fake.nodes.lock().unwrap()[0].busy = busy.map(str::to_owned);
+        let updates = area(home.path(), &fake);
+        updates.start(None, false).unwrap();
+        let after = hub_restarted(home.path(), &updates, &fake).await;
+        let run = until(&after, |r| node_part(r, "builder").installs_by.is_some()).await;
+        let message = node_part(&run, "builder").message.unwrap().to_string();
+        let waits_for = match busy {
+            Some(busy) => format!("waits for {busy}; installs by "),
+            None => "waits for 1 agent to finish its step; installs by ".to_owned(),
+        };
+        assert!(message.starts_with(&waits_for), "{message}");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(fake.asked.lock().unwrap().is_empty(), "not while it runs");
+        assert!(
+            fake.held.lock().unwrap().is_empty(),
+            "hosted agents aren't held"
+        );
+
+        fake.hosted
+            .lock()
+            .unwrap()
+            .insert("builder".into(), (HOSTED, 0));
+        fake.nodes.lock().unwrap()[0].busy = None;
+        let run = until(&after, |r| r.finished_at.is_some()).await;
+        assert_eq!(node_part(&run, "builder").state, UpdateState::Done);
+    }
+    assert_eq!(
+        super::ports::busy_words(1, 2, 1).as_deref(),
+        Some("1 live session and 2 approved commands and 1 check")
+    );
+    assert_eq!(super::ports::busy_words(0, 0, 0), None);
+}
+
+/// Where a node's agents can't carry on through its restart, it holds them and waits as before: a machine without
+/// systemd scopes (its hold answers no host protocol), or a new build on another host protocol than the node's.
+#[tokio::test]
+async fn without_scopes_or_across_a_host_protocol_change_agents_are_held_as_before() {
+    for hosted in [None, Some(HOSTED + 1)] {
+        let home = tempfile::tempdir().unwrap();
+        let fake = Arc::new(Fake::new(home.path(), b"new").node(
+            "builder",
+            OLD,
+            true,
+            true,
+            Some(Answer::BackOn(NEW)),
+        ));
+        fake.steps.lock().unwrap().insert("builder".into(), 2);
+        if let Some(protocol) = hosted {
+            fake.hosted
+                .lock()
+                .unwrap()
+                .insert("builder".into(), (protocol, 0));
+        }
+        let updates = area(home.path(), &fake);
+        updates.start(None, false).unwrap();
+        let after = hub_restarted(home.path(), &updates, &fake).await;
+        until(&after, |r| node_part(r, "builder").agents == Some(2)).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            fake.asked.lock().unwrap().is_empty(),
+            "{hosted:?}: it waits"
+        );
+        assert!(!fake.held.lock().unwrap().is_empty(), "{hosted:?}: held");
+        fake.steps.lock().unwrap().insert("builder".into(), 0);
+        let run = until(&after, |r| r.finished_at.is_some()).await;
+        assert_eq!(node_part(&run, "builder").state, UpdateState::Done);
+    }
+}
+
+/// A node waits 2 minutes at most by default, for whatever still runs.
+#[test]
+fn a_node_waits_two_minutes_at_most_by_default() {
+    assert_eq!(Timing::default().drain, Duration::from_secs(120));
+    let home = tempfile::tempdir().unwrap();
+    let updates = Updates::new(home.path(), Arc::new(SystemClock), Timing::default());
+    assert_eq!(updates.settings().drain_minutes, 2);
+}
+
+/// A cloud machine that wakes while an update runs (it slept through the run's start, so the run skipped it) isn't
+/// ready for work meanwhile: its catch-up waits for the run to end, then brings it to the hub's build at once, not at
+/// the next automatic update.
+#[tokio::test]
+async fn a_cloud_machine_that_wakes_mid_run_catches_up_as_the_run_ends() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("cloud", OLD, false, true, Some(Answer::BackOn(NEW))),
+    );
+    // A Navi mid-step on builder keeps the run going for as long as the test says.
+    fake.hosted
+        .lock()
+        .unwrap()
+        .insert("builder".into(), (HOSTED, 1));
+    let updates = area(home.path(), &fake);
+    updates.start(None, false).unwrap();
+    let after = hub_restarted(home.path(), &updates, &fake).await;
+    until(&after, |r| node_part(r, "builder").installs_by.is_some()).await;
+    assert_eq!(
+        state(&after.status().unwrap(), Some("cloud")).0,
+        UpdateState::Skipped
+    );
+
+    // The cloud machine wakes and links on its old build.
+    fake.nodes.lock().unwrap()[1].live_since = Some(5);
+    let catching = {
+        let after = after.clone();
+        tokio::spawn(async move { after.catch_up(&MachineId::unchecked("cloud")).await })
+    };
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        !catching.is_finished(),
+        "not ready for work while the run goes on"
+    );
+    assert!(!fake.asked.lock().unwrap().contains(&"cloud".to_owned()));
+
+    fake.hosted
+        .lock()
+        .unwrap()
+        .insert("builder".into(), (HOSTED, 0));
+    let caught = tokio::time::timeout(Duration::from_secs(5), catching)
+        .await
+        .expect("as the run ends")
+        .unwrap();
+    assert_eq!(caught, Ok(super::NodeCatchUp::Restarting));
+    assert!(after.status().unwrap().finished_at.is_some());
+    assert!(fake.asked.lock().unwrap().contains(&"cloud".to_owned()));
+}
+
 /// Agents that never reach a step's end (24/7 work) don't hold an update off: at the deadline the node installs
 /// whatever runs.
 #[tokio::test]
@@ -1187,7 +1389,7 @@ async fn the_deadline_comes_from_the_hubs_update_settings() {
     )
     .unwrap();
     assert_eq!(updates.drain(), Duration::ZERO);
-    assert_eq!(super::Timing::default().drain, Duration::from_secs(600));
+    assert_eq!(super::Timing::default().drain, Duration::from_secs(120));
 }
 
 /// The settings `hub_update_settings` writes: a field left out stays, and the drain is capped.

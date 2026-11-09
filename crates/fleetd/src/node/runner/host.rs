@@ -572,6 +572,17 @@ pub struct Link {
 }
 
 impl Link {
+    /// A link to a host that stands, for a session in a test that runs under one.
+    #[cfg(test)]
+    pub fn standing() -> Self {
+        Self {
+            applied: Arc::default(),
+            detached: Arc::default(),
+            detach: Arc::new(watch::channel(false).0),
+            done: watch::channel(true).1,
+        }
+    }
+
     /// Lets go of the host without ending its session, once the service applied what it was handed and the host knows.
     pub async fn detach(&self) {
         let _ = self.detach.send(true);

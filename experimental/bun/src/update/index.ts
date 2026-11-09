@@ -12,6 +12,7 @@
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync, chmodSync, copyFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { UpdateStage } from "../shared/contracts.ts";
+import { HELPER } from "../node/runner/helper.ts";
 import { VERSION } from "../shared/version.ts";
 import { edgeStamp } from "./version.ts";
 
@@ -347,12 +348,40 @@ export function parseSums(text: string): Map<string, string> {
 export const sha256Hex = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 export const fileSha256Hex = (path: string) => new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
 
-/** This platform's CLI asset: `fleetd-<os>-<arch>`. */
-export function cliAsset(): string {
+/** Which implementation a build is (update/mod.rs `Flavour`): each updates to its own flavour's asset, so a machine
+ * changes flavour only when `fleetd update --flavour` says so. */
+export type Flavour = "rust" | "bun";
+
+/** The flavour this build is. */
+export const FLAVOUR: Flavour = "bun";
+
+export function parseFlavour(name: string): Flavour {
+  if (name === "rust" || name === "bun") return name;
+  throw new Error(`unknown flavour ${JSON.stringify(name)}: use rust or bun`);
+}
+
+/** This platform's CLI asset: `fleetd-bun-<os>-<arch>`, this flavour's. */
+export const cliAsset = (): string => assetOf(FLAVOUR);
+
+/** This platform's asset of `flavour`: `fleetd-<os>-<arch>` for Rust, `fleetd-bun-<os>-<arch>` for Bun. */
+export function assetOf(flavour: Flavour): string {
   const os = process.platform === "darwin" ? "darwin" : "linux";
   const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : undefined;
   if (!arch) throw new Error(`no fleetd release build for ${process.arch === "ia32" ? "x86" : process.arch}`);
-  return `fleetd-${os}-${arch}`;
+  return flavour === "rust" ? `fleetd-${os}-${arch}` : `fleetd-bun-${os}-${arch}`;
+}
+
+/** The session host beside the Bun build at `exe` (node/runner/helper.ts): the release's Rust build, which is also the
+ * Rust build a switch back can put in place without a download. */
+export const helperPath = (exe: string) => join(dirname(exe), HELPER);
+
+/** Brings the session host beside `exe` to the release `s` names, when there is one there: it moves with the Bun build,
+ * so the two are always one release's. */
+export async function updateHelper(feed: Feed, s: Map<string, string>, exe: string): Promise<void> {
+  const path = helperPath(exe);
+  const asset = assetOf("rust");
+  if (!existsSync(path) || isBuild(path, s, asset)) return;
+  await checkedTo(feed, s, asset, path);
 }
 
 /** The installed binary this process was started from: the path the services name. */

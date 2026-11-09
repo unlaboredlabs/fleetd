@@ -57,8 +57,7 @@ What stops a machine, so a bill can't run on:
 | Sweep | At hub start and every 10 minutes, the hub lists every boat.dev machine with its label and stops any it doesn't know. |
 | Keepalive | A machine asleep 12 days is woken briefly, so boat.dev keeps its disk (it keeps a stopped disk 14 days). |
 
-Today's spend shows on [Status](/docs/status) and in Settings › Hub › Machines: "Cloud today: $0.41 of $3.00 · 2
-awake".
+Today's spend shows in Settings › Hub › Machines: "Cloud today: $0.41 of $3.00 · 2 awake".
 
 ## Waking up {#wake}
 
@@ -194,8 +193,7 @@ machine, once: nothing asks again by itself, and the next **Create cloud machine
 the key is scoped to, then Create again. A wake boat.dev refuses that way pauses cloud machines until you press
 **Resume**. Changing the key or the environment clears the old refusals.
 
-An asleep cloud machine shows offline elsewhere, but never counts as a machine down: no [notification](/docs/machines#down) says it is offline, unless the pool marks it broken. Members see the day's line on
-[Status](/docs/status), with who to ask.
+An asleep cloud machine shows offline elsewhere, but never counts as a machine down: no [notification](/docs/machines#down) says it is offline, unless the pool marks it broken.
 
 ## The kill switch {#kill}
 

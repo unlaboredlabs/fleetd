@@ -13,7 +13,7 @@
 #   macos-sign.sh enabled             prints true when the signing secrets are set (else logs and prints false)
 #   macos-sign.sh keychain            a temporary keychain with the identity, on this job's search list
 #   macos-sign.sh sign <binary>...    bare binaries (the CLI); the app is signed by electron-builder, with this
-#                                     job's keychain
+#                                     job's keychain. MACOS_ENTITLEMENTS: a plist of entitlements to sign them with
 #   macos-sign.sh verify <path>...    checks a signature: Team ID, hardened runtime, team-based requirement
 #   macos-sign.sh notarize <zip>      submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
 #   macos-sign.sh staple <app>        staples the accepted ticket onto the app and validates it, else fails
@@ -110,8 +110,11 @@ keychain)
 sign)
   shift
   for path in "$@"; do
-    # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`).
-    codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" --identifier sh.fleetd.cli "$path"
+    # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`), Rust or Bun: a switch of
+    # flavour keeps the signed identity (and the path) macOS's grants to a node go by.
+    # MACOS_ENTITLEMENTS names the entitlements the Bun build's JIT needs (bun-entitlements.plist).
+    codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" --identifier sh.fleetd.cli \
+      ${MACOS_ENTITLEMENTS:+--entitlements "$MACOS_ENTITLEMENTS"} "$path"
     verify "$path"
   done
   ;;

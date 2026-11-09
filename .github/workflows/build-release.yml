@@ -149,10 +149,36 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  cli-bun:
+    # The Bun flavour of the CLI (experimental/bun), as fleetd-bun-<os>-<arch>: linux x64 and arm64, macOS arm64, from
+    # this one Linux box (bun cross-compiles). Its own asset names keep machines on Rust on Rust; `fleetd update
+    # --flavour bun` switches one (docs/cutover/bun.md). Built with the Rust CLI, so a release has both or neither.
+    needs: plan
+    if: needs.plan.outputs.has-cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # As bun.yml's.
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+        working-directory: experimental/bun
+      - name: Build
+        run: .github/release/bun-build.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-bun
+          path: dist/
+          if-no-files-found: error
+
   cli-macos:
     # Signs and notarizes the darwin CLI binaries the Linux job cross-built. Without the secrets it does nothing
     # and the unsigned binaries ship as before. A bare binary can't be stapled; Gatekeeper finds its ticket online.
-    needs: [plan, cli]
+    needs: [plan, cli, cli-bun]
     # Like desktop-macos: builds that publish and manual dispatches, not pull request dry runs.
     if: inputs.publish || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
@@ -176,25 +202,43 @@ jobs:
       - if: steps.secrets.outputs.sign == 'true'
         uses: actions/download-artifact@v8
         with:
-          name: cli
+          pattern: cli*
           path: dist
+          merge-multiple: true
       - name: Sign with the Developer ID
         if: steps.secrets.outputs.sign == 'true'
         run: |
           .github/release/macos-sign.sh keychain
-          chmod 755 dist/fleetd-darwin-*
+          chmod 755 dist/fleetd-darwin-* dist/fleetd-bun-darwin-*
           .github/release/macos-sign.sh sign dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64
+          # The same Developer ID and identifier, with the entitlements Bun's JIT needs under the hardened runtime.
+          MACOS_ENTITLEMENTS=.github/release/bun-entitlements.plist .github/release/macos-sign.sh sign dist/fleetd-bun-darwin-arm64
+          # A Mac keeps its privacy grants across a switch of flavour only when the Bun build is the same signed program
+          # as the Rust one: the same identifier and Team ID (macos-sign.sh verify checks the hardened runtime and the
+          # team-based requirement) and the entitlements Bun needs. Each is checked against the Rust build's.
+          signed() { codesign -dvv "$1" 2>&1 | grep -E '^(Identifier|TeamIdentifier)='; }
+          if [ "$(signed dist/fleetd-bun-darwin-arm64)" != "$(signed dist/fleetd-darwin-arm64)" ]; then
+            echo "::error::fleetd-bun-darwin-arm64 isn't signed as fleetd-darwin-arm64 is"; signed dist/fleetd-bun-darwin-arm64; exit 1
+          fi
+          ents="$(codesign -d --entitlements - --xml dist/fleetd-bun-darwin-arm64 2>/dev/null)"
+          for e in allow-jit allow-unsigned-executable-memory disable-library-validation; do
+            if ! grep -q "com.apple.security.cs.$e" <<<"$ents"; then
+              echo "::error::fleetd-bun-darwin-arm64 lacks the entitlement com.apple.security.cs.$e"; exit 1
+            fi
+          done
+          # A signed Bun build that can't start (its JIT refused) fails here, not on the agents' Mac.
+          dist/fleetd-bun-darwin-arm64 --version
       - name: Notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/fleetd-cli"
-          cp dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 "$RUNNER_TEMP/fleetd-cli/"
+          cp dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 dist/fleetd-bun-darwin-arm64 "$RUNNER_TEMP/fleetd-cli/"
           ditto -c -k --keepParent "$RUNNER_TEMP/fleetd-cli" "$RUNNER_TEMP/fleetd-cli-notarize.zip"
           rc=0
           .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-cli-notarize.zip" || rc=$?
           if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
           # Logged, not enforced: Gatekeeper's verdict on a bare binary depends on fetching its ticket online.
-          for bin in dist/fleetd-darwin-*; do
+          for bin in dist/fleetd-darwin-* dist/fleetd-bun-darwin-*; do
             echo "$bin: $(spctl -a -vv -t open --context context:primary-signature "$bin" 2>&1 | tr '\n' ' ' || true)"
           done
       - name: Remove the signing keychain
@@ -204,7 +248,16 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cli
-          path: dist/
+          path: |
+            dist/
+            !dist/fleetd-bun-*
+          if-no-files-found: error
+          overwrite: true
+      - if: steps.secrets.outputs.sign == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-bun
+          path: dist/fleetd-bun-*
           if-no-files-found: error
           overwrite: true
 
@@ -466,7 +519,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, cli, cli-macos, desktop-macos, desktop-linux]
+    needs: [plan, cli, cli-bun, cli-macos, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
       always() && inputs.publish && needs.plan.result == 'success' &&

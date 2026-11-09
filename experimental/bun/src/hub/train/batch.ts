@@ -353,7 +353,7 @@ export async function sweepScratch(t: Train, repo: string): Promise<void> {
     try {
       await t.github.deleteBranch(repo, branch);
     } catch (error) {
-      console.warn(`train: scratch branch ${branch} of ${repo} not deleted: ${(error as Error).message}`);
+      t.warnHourly([`train: scratch branch ${branch} of ${repo} not deleted`], (error as Error).message, `train: scratch branch ${branch} of ${repo} not deleted: ${(error as Error).message}`);
     }
   }
 }
@@ -726,7 +726,7 @@ export async function finishBatchMember(t: Train, change: Change, landed: Landed
   try {
     pull = await t.github.pull(change.repo, change.prNumber);
   } catch (error) {
-    return console.warn(`train: batch member ${change.changeId} not read; the next pass finishes it: ${(error as Error).message}`);
+    return t.warnHourly([`train: batch member ${change.changeId} not read; the next pass finishes it`], (error as Error).message, `train: batch member ${change.changeId} not read; the next pass finishes it: ${(error as Error).message}`);
   }
   if (pull.head.sha.toLowerCase() !== change.headSha) {
     const why =

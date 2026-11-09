@@ -2954,8 +2954,10 @@ pub struct HubBusyItem {
 }
 
 // hub_update: updates the hub to the newest build of its channel at once (agents don't need it mid-step), then every
-// connected node once its agents finish the step they're on: each node holds the tool calls that haven't started, and
-// installs when none runs, or at the deadline (10 minutes unless the hub's settings say otherwise) whatever runs.
+// connected node, at once where nothing its restart would cut off runs: its agents carry on through it under hosts of
+// their own. A node waits only for a live session, an approved command, a check or a Navi mid-step there (and, without
+// systemd scopes, for its agents to finish their step, holding the tool calls that haven't started), and installs when
+// none runs, or at the deadline (2 minutes unless the hub's settings say otherwise) whatever runs.
 // `now` doesn't wait. Admin on every machine, a human key only. Answers at once with the run; hub_update_status follows
 // it. A run already going is returned, not started again (with `now`, its nodes stop waiting), unless nothing in the
 // hub drives it any more, or `startOver` asks. With `machine`, updates that machine of the last run again (Retry).
@@ -2967,7 +2969,7 @@ input!(HubUpdateInput {
     /// Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part
     /// left skipped, and starts a new one.
     start_over: Option<bool>,
-    /// Update now: nodes restart without waiting for their agents to finish their step.
+    /// Update now: nodes restart without waiting for what runs on them.
     now: Option<bool>,
 });
 output!(HubUpdateOutput {
@@ -3034,7 +3036,7 @@ input!(HubUpdateSettingsInput {
     /// Updates install by themselves as soon as a build is ready, at most one in 10 minutes: builds that come out within
     /// 10 minutes of the last update install once, as the newest, at the end of those 10 minutes. Off by default.
     auto: Option<bool>,
-    /// How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait.
+    /// How long a node waits at most for what its restart would cut off, in minutes, 0 to 240; 0 doesn't wait.
     drain_minutes: Option<u32>,
 });
 
@@ -3047,7 +3049,7 @@ pub const DRAIN_MINUTES_MAX: u32 = 240;
 pub struct UpdateSettings {
     /// Updates install by themselves as soon as a build is ready, at most one in 10 minutes.
     pub auto: bool,
-    /// How long a node waits for its agents to finish their step, in minutes.
+    /// How long a node waits at most for what its restart would cut off, in minutes.
     pub drain_minutes: u32,
 }
 
@@ -3068,7 +3070,7 @@ pub struct UpdateRun {
     pub finished_at: Option<Timestamp>,
     /// The hub first, then per machine, by name, its node and its Claude Code.
     pub parts: List<UpdatePart, 1, UPDATE_PARTS_MAX>,
-    /// Update now: its nodes don't wait for their agents to finish their step. Absent otherwise.
+    /// Update now: its nodes don't wait for what runs on them. Absent otherwise.
     pub now: Option<bool>,
     /// Started by itself (automatic updates), not by a person. Absent otherwise.
     pub auto: Option<bool>,

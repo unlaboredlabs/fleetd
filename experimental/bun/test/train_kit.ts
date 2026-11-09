@@ -77,6 +77,10 @@ export class FakeGh implements GhRunner {
   mergeReplies: GhOut[] = [];
   /** When set, the check runs of every head. */
   runs?: (sha: string) => unknown[];
+  /** The Actions jobs the train asked GitHub to re-run, in order. */
+  readonly reruns: number[] = [];
+  /** The workflow runs a person or a schedule started, [run id, event]: on every commit. Every other run is a push. */
+  readonly runEvents: [number, string][] = [];
 
   constructor(
     readonly origin: string,
@@ -107,6 +111,15 @@ export class FakeGh implements GhRunner {
       mergeable: p.mergeable ?? null,
       mergeable_state: p.mergeable === true ? "clean" : p.mergeable === false ? "dirty" : "unknown",
     };
+  }
+
+  /** A failed job the train re-ran fails again: a newer run of it (its id + 1000), unless a newer one is there. */
+  private failingAgain(runs: Record<string, unknown>[]): Record<string, unknown>[] {
+    const again = runs
+      .filter((r) => r.conclusion === "failure" && this.reruns.includes(r.id as number))
+      .filter((r) => !runs.some((o) => o.name === r.name && (o.id as number) > (r.id as number)))
+      .map((r) => ({ ...r, id: (r.id as number) + 1000 }));
+    return [...runs, ...again];
   }
 
   private red(sha: string): boolean {
@@ -190,7 +203,7 @@ export class FakeGh implements GhRunner {
     if (a === "pulls" && parts.length === 1 && method === "GET") {
       const head = q("head")?.split(":")[1];
       const state = q("state") ?? "open";
-      return pullsOf((p) => p.state === state && (head === undefined || p.branch === head));
+      return pullsOf((p) => (state === "all" || p.state === state) && (head === undefined || p.branch === head));
     }
     if (a === "pulls" && parts.length === 1 && method === "POST") {
       const n = 100 + this.pulls.size;
@@ -339,7 +352,11 @@ export class FakeGh implements GhRunner {
       return ok({ base_commit: committed(from), merge_base_commit: { ...committed(base), sha: base }, total_commits: list.length, commits: list, files: [] });
     }
     if (a === "commits" && c === "check-runs") {
-      if (this.runs) return ok({ check_runs: this.runs(b!) });
+      if (this.runs) {
+        // GitHub names the commit each run is on, as main's CI read takes it.
+        const head = this.headOf(b!) ?? b!;
+        return ok({ check_runs: this.failingAgain(this.runs(b!) as Record<string, unknown>[]).map((r) => ({ head_sha: head, ...r })) });
+      }
       if (this.noCi) return ok({ total_count: 0, check_runs: [] });
       const red = this.red(b!);
       return ok({
@@ -363,7 +380,15 @@ export class FakeGh implements GhRunner {
           : { total_count: 1, workflows: [{ name: "CI", path: ".github/workflows/ci.yml", state: "active" }] },
       );
     }
+    if (a === "actions" && b === "runs" && q("head_sha") !== undefined) {
+      return ok({ workflow_runs: this.runEvents.map(([id, event]) => ({ id, event })) });
+    }
     if (a === "actions" && b === "runs") return ok({ workflow_runs: [] });
+    if (a === "actions" && b === "jobs" && parts[3] === "rerun" && method === "POST") {
+      this.reruns.push(Number(c));
+      this.log.push(`rerun ${c}`);
+      return ok({});
+    }
     if (a === "branches") return ok({ name: "main", protected: false, protection: { enabled: false, required_status_checks: { contexts: [] } } });
     if (a === "rules") {
       return ok(this.required.length === 0 ? [] : [{ type: "required_status_checks", ruleset_id: 1, parameters: { required_status_checks: this.required.map((context) => ({ context })) } }]);
@@ -395,6 +420,8 @@ export class FakeHost implements TrainHost {
   readonly wakes: string[] = [];
   readonly orders: [string, string][] = [];
   readonly branches = new Map<string, string>();
+  /** The commands the train ran on a node, each its argv. */
+  readonly nodeRuns: string[][] = [];
   wsClosed = false;
   private listeners: (() => void)[] = [];
 
@@ -465,7 +492,8 @@ export class FakeHost implements TrainHost {
   sees() {
     return true;
   }
-  async nodeRun(): Promise<NodeRun> {
+  async nodeRun(_checkout: ProjectRef, _cwd: string, argv: string[]): Promise<NodeRun> {
+    this.nodeRuns.push(argv);
     throw new Error("no checkout");
   }
   async wakeLead(_r: ProjectRef, line: string) {
@@ -530,6 +558,7 @@ export class Kit {
   readonly clock = new ManualClock(Date.parse("2026-10-17T10:00:00Z"));
   readonly db = HubDb.memory();
   readonly train: Train;
+  private readonly options: Partial<TrainOptions>;
 
   constructor(options: Partial<TrainOptions> = {}) {
     this.dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-bun-train-"));
@@ -543,7 +572,7 @@ export class Kit {
     git(this.clone, ["push", "-q", "origin", "HEAD:main"]);
     const clock = this.clock;
     this.gh = new FakeGh(this.origin, () => clock.ms);
-    this.train = new Train(this.host, clock, this.db, this.gh, {
+    this.options = {
       autoRun: false,
       pollIntervalMs: 1000,
       // Each wait moves the clock, so CI timeouts come without sleeping.
@@ -552,12 +581,46 @@ export class Kit {
         await Bun.sleep(0);
       },
       ...options,
-    });
-    this.train.gate = this.gate;
+    };
+    this.train = this.newTrain();
+  }
+
+  private newTrain(): Train {
+    const train = new Train(this.host, this.clock, this.db, this.gh, this.options);
+    train.gate = this.gate;
+    this.trains.push(train);
+    return train;
+  }
+
+  private readonly trains: Train[] = [];
+
+  /** A new train on this kit's database, GitHub and host, as after a hub restart; the old ones stopped. */
+  restarted(): Train {
+    for (const t of this.trains) t.stop();
+    return this.newTrain();
+  }
+
+  /** Commits `files` (path → text) onto main, as a push to it. */
+  commitMain(files: Record<string, string>): void {
+    git(this.clone, ["fetch", "-q", "origin"]);
+    git(this.clone, ["checkout", "-q", "-B", "main", "origin/main"]);
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(this.clone, path, ".."), { recursive: true });
+      writeFileSync(join(this.clone, path), text);
+    }
+    git(this.clone, ["add", "-A"]);
+    git(this.clone, ["commit", "-q", "-m", `main: ${Object.keys(files).join(", ")}`]);
+    git(this.clone, ["push", "-q", "origin", "main:main"]);
+  }
+
+  /** The repo's `.fleetd/train.json` on main: its fast checks and the ones left for after the merge. */
+  trainFile(fast: string[], afterMerge: string[] = []): void {
+    this.commitMain({ ".fleetd/train.json": JSON.stringify({ fastChecks: fast, afterMerge }) });
+    for (const t of this.trains) t.repoChecks.clear();
   }
 
   done(): void {
-    this.train.stop();
+    for (const t of this.trains) t.stop();
     this.db.close();
     rmSync(this.dir, { recursive: true, force: true });
   }
