@@ -1,8 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
-import { Host } from "../src/node/mac_tool/host.ts";
+import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
+import { start as startMac } from "../src/node/mac_tool/index.ts";
+import { binDir, forwarder, forwarderDir, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
 import { publicKeyOf } from "../src/shared/sealed_box.ts";
@@ -111,3 +114,77 @@ test("a step's absent fields may come as null, as the Rust client sends them", a
   mkdirSync(join(wt, "out"));
   expect(destination(wt, "build/a.txt", null)).toBe(join(wt, "a.txt"));
 }, 30_000);
+
+test("mac sim start puts the forwarding agent-device first on the session's PATH, and mac sim end takes it off", async () => {
+  const { host, client, wt } = setup();
+  const agentHome = (client as unknown as { node: { home: string } }).node.home;
+  host.sims = {
+    held: new Map(),
+    touch: () => {},
+    env: () => undefined,
+    start: async () => ({ step: "sim_start", udid: "U1", device: "iPhone 17" }),
+    end: () => true,
+  } as never;
+  const fwd = forwarderDir(agentHome, "t1");
+  expect(await client.call("t1", wt, { step: "sim_start" })).toEqual({ step: "sim_start", udid: "U1", device: "iPhone 17" });
+  const script = readFileSync(join(fwd, "agent-device"), "utf8");
+  expect(script).toContain(" mac agent-device \"$@\"");
+  expect(statSync(join(fwd, "agent-device")).mode & 0o777).toBe(0o700);
+  expect(launchEnv(agentHome, "t1", "/usr/bin")[0]?.[1]).toBe(`${fwd}:${binDir(agentHome)}:/usr/bin`);
+  expect(await client.call("t1", wt, { step: "sim_end" })).toEqual({ step: "sim_end", ended: true });
+  expect(existsSync(fwd)).toBe(false);
+});
+
+test("the Mac sweeps agents' folders nothing touched for FOLDER_DAYS, with their snapshots, and keeps the rest", async () => {
+  const { client, wt, macRoot } = setup();
+  await client.call("t1", wt, { step: "push" });
+  const mirror = join(macRoot, ".mirrors", "p1.git");
+  const ref = () => Bun.spawnSync(["git", "-C", mirror, "rev-parse", "-q", "--verify", "refs/fleetd/T7"]).exitCode;
+  expect(ref()).toBe(0);
+  mkdirSync(join(macRoot, "T8"));
+  writeFileSync(join(macRoot, "T8", ".used"), "");
+  const now = Date.now();
+  // Two days on, nothing goes; four days on from T7's last step, it goes, and T8 (touched since) stays.
+  expect(sweep(macRoot, FOLDER_DAYS, now + 2 * 86_400_000)).toEqual([]);
+  const old = (now - 4 * 86_400_000) / 1000;
+  utimesSync(join(macRoot, "T7", ".used"), old, old);
+  expect(sweep(macRoot, FOLDER_DAYS, now)).toEqual(["T7"]);
+  expect(existsSync(join(macRoot, "T7"))).toBe(false);
+  expect(existsSync(join(macRoot, "T8"))).toBe(true);
+  expect(existsSync(join(macRoot, ".cache")) || existsSync(mirror)).toBe(true);
+  expect(ref()).not.toBe(0);
+}, 30_000);
+
+test("the menu bar's activity: agents' simulators and running jobs, oldest first, written only when it changes", async () => {
+  const { host, client, wt } = setup();
+  await client.call("t1", wt, { step: "push" });
+  const run = (await client.call("t1", wt, { step: "run", args: [`sleep 5 # ${"x".repeat(300)}`], background: true })) as { job: number };
+  host.sims = { held: new Map([["T7", { project: "p1", device: "iPhone 17", sinceMs: 5 }]]), touch: () => {}, env: () => undefined } as never;
+  const now = host.activity();
+  expect(now.simulators).toEqual([{ agent: "T7", projectId: "p1", device: "iPhone 17", sinceMs: 5 }]);
+  expect(now.jobs).toEqual([expect.objectContaining({ agent: "T7", projectId: "p1", job: run.job })]);
+  expect(now.jobs[0]!.command.endsWith("…")).toBe(true);
+  expect([...now.jobs[0]!.command].length).toBe(COMMAND_MAX + 1);
+  const home = tempHome();
+  cleanups.push(home.done);
+  const written = writeActivity(home.dir, now, undefined);
+  expect(JSON.parse(readFileSync(activityFile(home.dir), "utf8"))).toEqual(now);
+  writeFileSync(activityFile(home.dir), "{}");
+  // The same activity again isn't written.
+  expect(writeActivity(home.dir, host.activity(), written)).toBe(written);
+  expect(readFileSync(activityFile(home.dir), "utf8")).toBe("{}");
+  await client.call("t1", wt, { step: "kill", job: run.job });
+}, 30_000);
+
+test("an agent node writes `mac` at its start and puts it on every session's PATH; the agents' Mac doesn't", () => {
+  const agent = testNode("devbox");
+  cleanups.push(agent.done);
+  startMac(agent.node);
+  const bin = join(binDir(agent.node.home), "mac");
+  expect(readFileSync(bin, "utf8")).toMatch(/^#!\/bin\/sh\n# fleetd's: .*\nexec '.+' mac "\$@"\n$/);
+  expect(statSync(bin).mode & 0o777).toBe(0o755);
+  const path = new Map(agent.node.area("launch").env("t9", "/usr/bin")).get("PATH");
+  expect(path).toBe(`${forwarderDir(agent.node.home, "t9")}:${binDir(agent.node.home)}:/usr/bin`);
+  expect(shim(["/opt/it's/fleetd"])).toContain(`exec '/opt/it'\\''s/fleetd' mac "$@"`);
+  expect(forwarder(["/b/bun", "/src/main.ts"])).toContain(`exec '/b/bun' '/src/main.ts' mac agent-device "$@"`);
+});

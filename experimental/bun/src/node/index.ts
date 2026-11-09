@@ -21,6 +21,7 @@ import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame } from
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
 import { runPower, Wakes } from "./power/index.ts";
+import { pin as pinHelper } from "./self_exe.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
 import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
 import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
@@ -224,7 +225,8 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
   // Probed now rather than by the first spawn.
   void currentScope();
-  const sessions = await SessionService.start(configFor(home, fleetdDir(), nativeBin(), boxKey));
+  // Before any session starts: they're hosted by, and start their fleetd tools from, the helper's pinned copy.
+  const sessions = await SessionService.start(configFor(home, fleetdDir(), pinHelper(home, nativeBin()), boxKey));
   // Claude Code changes only when fleetd brings it to a version: its own background update goes off, for a person's
   // claude on this machine too.
   const settings = join(configDir(runnerEnv(sessions.config)), "settings.json");
