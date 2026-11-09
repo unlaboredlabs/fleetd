@@ -13,8 +13,6 @@ interface Member {
   readonly rig: Rig;
   readonly svg: SVGSVGElement;
   readonly body: Element | null;
-  readonly shadow: Element | null;
-  readonly sheen: Element | null;
   readonly eyes: readonly Element[];
   readonly glow: Element | null;
   readonly glows: readonly Element[];
@@ -39,9 +37,6 @@ let held: number | undefined;
 const draw = (m: Member): void => {
   const f = frameOf(m.rig);
   m.body?.setAttribute("transform", matrixAttr(f.body));
-  m.shadow?.setAttribute("transform", matrixAttr(f.shadow));
-  m.shadow?.setAttribute("opacity", String(Math.round(f.shadowOpacity * 1000) / 1000));
-  m.sheen?.setAttribute("transform", matrixAttr(f.sheen));
   m.eyes[0]?.setAttribute("d", f.eyes[0]);
   m.eyes[1]?.setAttribute("d", f.eyes[1]);
   m.svg.style.setProperty("--dim", String(Math.round(f.dim * 1000) / 1000));
@@ -141,8 +136,6 @@ export const bringToLife = (svg: SVGSVGElement, rig: Rig): Living => {
     rig,
     svg,
     body: part("body"),
-    shadow: part("shadow"),
-    sheen: part("sheen"),
     eyes: [...(part("eyes")?.children ?? [])],
     glow,
     glows: [...(glow?.children ?? [])],

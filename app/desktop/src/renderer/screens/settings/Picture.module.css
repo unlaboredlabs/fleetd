@@ -44,6 +44,20 @@
   width: 20px;
   height: 20px;
 }
+/* The bot has no circle: no round scrim behind it, just the upload mark in a small disc at its foot. */
+.target[data-bot] {
+  border-radius: var(--radius-lg);
+}
+.target[data-bot] .hover {
+  inset: auto -4px -4px auto;
+  width: 30px;
+  height: 30px;
+  background: #000000a6;
+}
+.target[data-bot] .hover > svg {
+  width: 16px;
+  height: 16px;
+}
 .target:hover:not(:disabled) .hover,
 .target:focus-visible .hover,
 .target[data-dragging] .hover {
