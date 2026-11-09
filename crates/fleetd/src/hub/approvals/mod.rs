@@ -687,6 +687,7 @@ impl Approvals {
                 sink: call.sink.clone(),
                 env_name: call.env_name.clone(),
                 fingerprint: None,
+                seal_to: None,
             }),
             gated: None,
             permission: None,

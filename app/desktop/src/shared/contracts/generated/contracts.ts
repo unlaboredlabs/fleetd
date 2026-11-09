@@ -133,6 +133,20 @@ export type ActivityNow = {
  */
 export type ActorKind = "human" | "bot" | "train" | "unknown";
 
+/** An address's sealed fields; each part a fill finds a field for. */
+export type AddressSecret = {
+  city?: string;
+  country?: string;
+  email?: string;
+  line1?: string;
+  line2?: string;
+  name?: string;
+  organization?: string;
+  phone?: string;
+  postalCode?: string;
+  region?: string;
+};
+
 /** An agent at work: the client fills in its live state. Exactly one of `taskId` and `threadRef`. */
 export type AgentBlock = {
   taskId?: TaskId;
@@ -1127,6 +1141,27 @@ export type CapSetProject = {
   projectRef: ProjectRef;
 };
 
+export type KnownCardBrand = "visa" | "mastercard" | "amex" | "discover" | "diners" | "jcb" | "unionpay" | "other";
+/** KnownCardBrand, or a value from a newer hub. */
+export type CardBrand = KnownCardBrand | (string & {});
+
+export type CardLast4 = string;
+
+export type CardRef = string;
+
+/** A card's sealed fields, also the plain JSON of a purchase claim's `sealedCard`. */
+export type CardSecret = {
+  cvc?: string;
+  /** `01`-`12`. */
+  month?: string;
+  /** The name on the card. */
+  name?: string;
+  /** Digits only. */
+  number?: string;
+  /** Four digits: `2029`. */
+  year?: string;
+};
+
 /** Which color a span gets in every view, and which breakdown row it adds to. */
 export type Category = "model" | "tools" | "queue" | "machine" | "human" | "pipeline" | "idle";
 
@@ -1395,6 +1430,11 @@ export type ChatMessage = {
   text: string;
   /** Set when the text was last appended to, or an item's state changed. */
   updatedAt?: Timestamp;
+  /**
+   * A system line with an import card: a lead proposed importing items from 1Password into the vault
+   * (`vault_import_propose`); the person answers with `vault_import`.
+   */
+  vaultImport?: VaultImportCard;
   /**
    * A system line "Cleanup kept 6 worktrees with unsaved work": the worktrees one nightly cleanup kept for work only
    * they hold.
@@ -2469,6 +2509,11 @@ export type Enforcement = "code" | "prompt";
 
 export type EnvName = string;
 
+/** A variable's sealed field. */
+export type EnvSecret = {
+  value: string;
+};
+
 export type EnvValue = string;
 
 export type EnvVarKind = "plain" | "secret";
@@ -2983,7 +3028,9 @@ export type KnownHubEventType =
   | "chat.pins"
   | "machine_add.step"
   | "mcp.oauth"
-  | "hub.update";
+  | "hub.update"
+  | "vault.changed"
+  | "vault.used";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -3653,6 +3700,9 @@ export type LiveText = {
 
 export type LocalDate = string;
 
+/** A login's field. */
+export type LoginField = "username" | "password" | "notes" | "totp";
+
 /** Read from the runner's login kind, never from credentials. */
 export type LoginKind = "subscription" | "api_key" | "custom_base_url" | "unknown";
 
@@ -3667,6 +3717,15 @@ export type LoginLimit = {
   status: string;
   /** 0 to 1 as claude sends it; absent when it sent none. */
   utilization?: number;
+};
+
+/** A login's sealed fields. In `vault_save` for an existing item, an absent field is kept and an empty one cleared. */
+export type LoginSecret = {
+  notes?: string;
+  password?: string;
+  /** An `otpauth://` URI or a base32 seed. */
+  totp?: string;
+  username?: string;
 };
 
 export type LongestWait = {
@@ -4842,14 +4901,24 @@ export type NaviAsksOutput = {
   truncated?: boolean;
 };
 
-/** The card a Navi pays with: a Credit Card item in its person's 1Password. Only the reference is kept. */
+/**
+ * The card a Navi pays with: a vault card, or a Credit Card item in its person's 1Password. Only the reference is
+ * kept.
+ */
 export type NaviCard = {
-  ref: OpItemReference;
+  brand?: CardBrand;
+  /** A vault card's label, brand and last four digits, as the hub reads them: `Visa (Personal)`, `visa`, `4242`. */
+  label?: string;
+  last4?: CardLast4;
+  ref: CardRef;
 };
 
 export type NaviCardSetInput = {
-  /** A Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it; absent: the Navi has no card. */
-  card?: OpItemReference;
+  /**
+   * A vault card, `vault:V…`, or a Credit Card item, `op://<vault>/<item>`, as onepassword_cards lists it (imported
+   * into the vault, then set); absent: the Navi has no card.
+   */
+  card?: CardRef;
   machineId: MachineId;
   projectId: ProjectId;
 };
@@ -7015,6 +7084,11 @@ export type SecretRequest = {
   fingerprint?: SecretFingerprint;
   /** The secret's name, a dotted slug such as "stripe.test_key". */
   key: DecisionKey;
+  /**
+   * The key the app seals the value to: the hub's own box key, for a sink the vault keeps (`env:`, `file:`,
+   * `order:`). Absent: the sink machine's, as before.
+   */
+  sealTo?: BoxPublicKey;
   sink: SecretSink;
 };
 
@@ -7048,6 +7122,8 @@ export type KnownSecretRequestState = "open" | "stored" | "withdrawn";
 export type SecretRequestState = KnownSecretRequestState | (string & {});
 
 export type SecretSink = string;
+
+export type SecretSinkKind = "env" | "file" | "order" | "fill";
 
 export type SecretSubmitInput = {
   requestId: ChatRequestId;
@@ -8670,6 +8746,538 @@ export type UsageStatusOutput = {
   truncated?: boolean;
 };
 
+export type KnownVaultAuditAction =
+  | "fill"
+  | "fill_refused"
+  | "reveal"
+  | "create"
+  | "update"
+  | "delete"
+  | "restore"
+  | "share"
+  | "import"
+  | "rotate"
+  | "unlock"
+  | "inject"
+  | "deliver"
+  | "purchase"
+  | "adopt";
+/** KnownVaultAuditAction, or a value from a newer hub. */
+export type VaultAuditAction = KnownVaultAuditAction | (string & {});
+
+/** An audit row's `data` column (`vault_audit.data`), the same JSON in both runtimes. Never a value. */
+export type VaultAuditData = {
+  /** Who did it in words: `human:<device>`, `system`, or the agent's session. */
+  by?: string;
+  /** How many, for an import or a rotation. */
+  count?: number;
+  /** `username`, `password`, `otp`, `address`, `card`, or the revealed fields. */
+  fields?: string[];
+  frame?: string;
+  /** The machine hosting the browser, for a fill: the per-machine rate limit counts it. */
+  host?: MachineId;
+  kind?: VaultKind;
+  /** The item's label when it was used. */
+  label?: string;
+  /** Why it was refused or failed, or what happened, in one line. */
+  message?: string;
+  /** The variable names a launch got, for `inject`. */
+  names?: EnvVarName[];
+  /** A card fill's purchase: `purchase_filled` closes its row by it. */
+  purchaseId?: ChatRequestId;
+  sessionId?: BrowserSessionId;
+  /** The page's host and the frame's, for a fill. */
+  site?: string;
+  /** A share's projects, `<machine>/<project>`. */
+  to?: string[];
+  /** Whether a fill reached the page. */
+  typed?: boolean;
+  /** The path it came by, in a word: `fill_credential`, `purchase_fill`, `fill_address`, `env`, `sink`. */
+  via?: string;
+};
+
+/** One row of the audit log, as `vault_audit` and `vault_get` list it. */
+export type VaultAuditEntry = {
+  action: VaultAuditAction;
+  atMs: number;
+  data: VaultAuditData;
+  deviceId?: string;
+  /**
+   * Absent for a row of no single item (`item_id` "" in the table): a refused fill that named no usable item, an
+   * unlock, a rotation, a launch's `inject` row listing `data.names`.
+   */
+  itemId?: VaultItemId;
+  machineId?: MachineId;
+  n: number;
+  outcome: VaultAuditOutcome;
+  personId?: PersonId;
+  projectId?: ProjectId;
+  taskId?: TaskId;
+  threadId?: ThreadId;
+  workstreamId?: WorkstreamId;
+};
+
+export type VaultAuditInput = {
+  /** Rows before this one (its `n`), for the next page. */
+  before?: number;
+  itemId?: VaultItemId;
+  /** At most; default 100. */
+  limit?: number;
+  machineId?: MachineId;
+  projectId?: ProjectId;
+};
+
+export type VaultAuditOutcome = "ok" | "refused" | "failed" | "pending";
+
+export type VaultAuditOutput = {
+  /** Newest first. */
+  entries: VaultAuditEntry[];
+  /** More rows before the last one. */
+  more: boolean;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** `vault.changed`: an item was made, changed, deleted, restored or shared. Never a value; vault_list reads it. */
+export type VaultChangedData = {
+  itemId: VaultItemId;
+  machineId?: MachineId;
+  personId?: PersonId;
+  projectId?: ProjectId;
+  scope: VaultScope;
+};
+
+export type VaultDeleteInput = {
+  itemId: VaultItemId;
+  /** Gone for good now instead of the trash: only an item already in the trash. */
+  purge?: boolean;
+};
+
+export type VaultDeleteOutput = {
+  /** In the trash until 30 days later; absent once purged. */
+  deletedMs?: number;
+  itemId: VaultItemId;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** What an env variable is delivered to besides the sessions' environment: a `request_secret` sink's file. */
+export type VaultEnvSink = {
+  /** An `env` sink's variable, when not the item's name. */
+  envName?: EnvVarName;
+  /** `env` (a line in an env file) or `file` (the whole file). */
+  kind: SecretSinkKind;
+  /** The sink's machine, then its absolute path there. */
+  machineId: MachineId;
+  path: string;
+  /** The `request_secret` key it answered: `stripe.test_key`. */
+  secretKey?: DecisionKey;
+};
+
+/**
+ * What a fill's `sealed` opens to: `value` for a login's field, the address fields for an address; and the sites the
+ * node checks the page against again.
+ */
+export type VaultFillPlain = {
+  city?: string;
+  country?: string;
+  email?: string;
+  line1?: string;
+  line2?: string;
+  name?: string;
+  organization?: string;
+  phone?: string;
+  postalCode?: string;
+  region?: string;
+  sites: string[];
+  value?: string;
+};
+
+export type VaultGetInput = {
+  itemId: VaultItemId;
+};
+
+export type VaultGetOutput = {
+  /** Its last 20 audit rows, newest first. */
+  activity: VaultAuditEntry[];
+  item: VaultItemSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** A 1Password item a person's token reads, for the import list: never a value. */
+export type VaultImportCandidate = {
+  /** Already in the vault, imported from it: that item. */
+  imported?: VaultItemId;
+  /** What it becomes in the vault. */
+  kind: VaultKind;
+  ref: OpItemReference;
+  /** Its websites' hosts. */
+  sites?: string[];
+  title: string;
+  vault: string;
+};
+
+/**
+ * A chat message's import card (`ChatMessage.vaultImport`): a lead proposed importing these items; the person ticks
+ * and taps Import (the `vault_import` tool with `proposalId`) or Dismiss. The only confirm in the vault.
+ */
+export type VaultImportCard = {
+  answeredMs?: number;
+  /** How many were imported, once answered. */
+  imported?: number;
+  items: VaultImportCardItem[];
+  proposalId: VaultImportId;
+  /** Where the items go unless the person picks another: the person's own by default. */
+  scope: VaultScope;
+  state: VaultImportState;
+  /** The lead's reason, one line. */
+  why: string;
+};
+
+/** One item of an import card. */
+export type VaultImportCardItem = {
+  kind: VaultKind;
+  ref: OpItemReference;
+  site?: string;
+  title: string;
+};
+
+/** One item it couldn't read, and why in words (the token masked). */
+export type VaultImportError = {
+  message: string;
+  ref: OpItemReference;
+};
+
+export type VaultImportId = string;
+
+export type VaultImportInput = {
+  dismiss?: boolean;
+  machineId?: MachineId;
+  projectId?: ProjectId;
+  proposalId?: VaultImportId;
+  refs?: OpItemReference[];
+  /** Where they go; default: the proposal's, else the caller's own. */
+  scope?: VaultScope;
+};
+
+export type VaultImportOutput = {
+  errors: VaultImportError[];
+  items: VaultItemSummary[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type VaultImportSearchInput = {
+  kinds?: VaultKind[];
+  /** Where to search; default: the first machine online that holds the caller's token. */
+  machineId?: MachineId;
+  query: string;
+};
+
+export type VaultImportSearchOutput = {
+  /** Why nothing could be searched, the token masked; absent when it worked. */
+  error?: string;
+  items: VaultImportCandidate[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type VaultImportState = "open" | "imported" | "dismissed";
+
+/**
+ * What an imported item holds, sealed to the hub (`vault_import_read`'s `sealed`): its title, sites and the fields of
+ * its kind.
+ */
+export type VaultImportedFields = {
+  address?: AddressSecret;
+  card?: CardSecret;
+  login?: LoginSecret;
+  sites?: string[];
+  title: string;
+};
+
+export type VaultItemId = string;
+
+/** One item as a person's app lists it: metadata only, never a value (a plain variable's `value` aside). */
+export type VaultItemSummary = {
+  /** What the caller may do, by the scope table: change (edit, delete, share) and reveal. */
+  canEdit: boolean;
+  canReveal: boolean;
+  createdMs: number;
+  /** In the trash since; purged [`TRASH_DAYS`] later. */
+  deletedMs?: number;
+  /** kind env only. */
+  envName?: EnvVarName;
+  itemId: VaultItemId;
+  kind: VaultKind;
+  label: string;
+  machineId?: MachineId;
+  meta: VaultMeta;
+  /** A person item's owner; for other scopes its creator. */
+  personId?: PersonId;
+  projectId?: ProjectId;
+  scope: VaultScope;
+  /** The projects a person item is shared with: their agents fill it, never reveal it. */
+  sharedWith?: ProjectRef[];
+  /** Who changed it last: `human:<device>`, or `system` for the migration. */
+  updatedBy: string;
+  updatedMs: number;
+  /** A plain (not secret) variable's value, which lists show without a reveal. */
+  value?: string;
+  /** Bumped at each change of its value. */
+  version: number;
+  workstreamId?: WorkstreamId;
+};
+
+export type VaultKeyId = string;
+
+/** Where the root key is kept (`~/.fleetd/vault/root.key`). */
+export type VaultKeyMode = "file" | "keyring" | "passphrase";
+
+export type KnownVaultKind = "login" | "card" | "address" | "env";
+/** KnownVaultKind, or a value from a newer hub. */
+export type VaultKind = KnownVaultKind | (string & {});
+
+export type VaultListInput = {
+  kind?: VaultKind;
+  /** A project's items: with projectId. */
+  machineId?: MachineId;
+  projectId?: ProjectId;
+  /** Only items whose label, site or variable name contains it. */
+  query?: string;
+  /** Only this scope's items; absent: every item the caller sees. */
+  scope?: VaultScope;
+  /** The trash instead: items deleted in the last 30 days. */
+  trash?: boolean;
+  /**
+   * With projectId: every item that project's work may use instead (its own, its owner's shared with it or of
+   * an Only me project, and the hub's), as Payments' card picker lists them.
+   */
+  usable?: boolean;
+};
+
+export type VaultListOutput = {
+  items: VaultItemSummary[];
+  next?: string;
+  truncated?: boolean;
+};
+
+/**
+ * An item's readable metadata (`vault_items.meta`), worked out by the hub from the value. Each kind sets its own:
+ * login `sites` and `fields`; card `brand`, `last4` and `billingAddress`; address `country` (and `sites`); env
+ * `secret`, `fingerprint` (secret only), `bytes` and `sink`.
+ */
+export type VaultMeta = {
+  /** A card's billing address: an address item. */
+  billingAddress?: VaultItemId;
+  brand?: CardBrand;
+  /** A variable's value's size in bytes. */
+  bytes?: number;
+  /** An address's country, ISO 3166-1 alpha-2 when known: `DE`. */
+  country?: string;
+  /** A login's fields that hold a value. */
+  fields?: LoginField[];
+  /** A secret variable's fingerprint, the same as the node reports for it. */
+  fingerprint?: SecretFingerprint;
+  last4?: CardLast4;
+  /** An env variable that is never shown in a list (it may be revealed). */
+  secret?: boolean;
+  sink?: VaultEnvSink;
+  /** The hosts it fills on (that host or a subdomain; shared-hosting suffixes as whole hosts only). */
+  sites?: ShopDomain[];
+  source: VaultSource;
+};
+
+export type VaultMigration = {
+  /** Nothing is left to take in. */
+  done: boolean;
+  machines: VaultMigrationMachine[];
+};
+
+/** How the migration of one machine's variables and sinks into the vault stands. */
+export type VaultMigrationMachine = {
+  /** Taken in: plain variables from the hub's rows, secrets and sinks from the node. */
+  adopted: number;
+  machineId: MachineId;
+  /** The node's value differed from the hub's record: the node's won, and the conflict is in the audit log. */
+  mismatched: number;
+  /** fleetd's own order variables (`GH_TOKEN` from the GitHub App), which stay on their own path. */
+  skippedSystem: number;
+  updatedMs: number;
+  /** Still on the node: it's offline, or runs a node that can't adopt (`waitingFor`). */
+  waiting: number;
+  /** Why some wait, in words: "offline", "its node needs fleetd's Bun build". */
+  waitingFor?: string;
+};
+
+export type VaultRestoreInput = {
+  itemId: VaultItemId;
+};
+
+export type VaultRestoreOutput = {
+  item: VaultItemSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type VaultRevealInput = {
+  /** The fields to reveal, as the kind names them: `password`, `number`, `value`. */
+  fields: string[];
+  itemId: VaultItemId;
+  /** The app's one-time X25519 public key for this reveal. */
+  replyKey: BoxPublicKey;
+};
+
+export type VaultRevealOutput = {
+  next?: string;
+  /** `crypto_box_seal(replyKey, utf8 JSON {field: value})`. */
+  sealed: SealedSecret;
+  truncated?: boolean;
+};
+
+export type VaultRotateInput = { [key: string]: unknown };
+
+export type VaultRotateOutput = {
+  keyId: VaultKeyId;
+  next?: string;
+  /** The items whose data keys it wrapped again. */
+  rewrapped: number;
+  truncated?: boolean;
+};
+
+export type VaultSaveInput = {
+  /** kind card: an address item. */
+  billingAddress?: VaultItemId;
+  /** kind env: its name. */
+  envName?: EnvVarName;
+  itemId?: VaultItemId;
+  kind?: VaultKind;
+  label?: string;
+  /** A project's or an order's item. */
+  machineId?: MachineId;
+  projectId?: ProjectId;
+  scope?: VaultScope;
+  /**
+   * `crypto_box_seal(hubBoxKey, utf8 JSON of the kind's fields)`: LoginSecret, CardSecret, AddressSecret,
+   * EnvSecret.
+   */
+  sealed?: SealedSecret;
+  /** kind env: never shown in lists. Absent on a new variable: secret. */
+  secret?: boolean;
+  /** A login's or address's sites: hosts, a pasted URL cut to its host by the app. */
+  sites?: ShopDomain[];
+  workstreamId?: WorkstreamId;
+};
+
+export type VaultSaveOutput = {
+  item: VaultItemSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Whose an item is, and so who lists, changes and reveals it, and which work uses it. */
+export type VaultScope = "person" | "project" | "order" | "hub";
+
+/**
+ * The plain JSON inside the vault's sealed boxes, each by what it's for, so apps and both runtimes seal and open the
+ * same shapes. Never sent as it is.
+ */
+export type VaultSealedShapes = {
+  address: AddressSecret;
+  card: CardSecret;
+  env: EnvSecret;
+  /** `vault_fill`'s answer. */
+  fill: VaultFillPlain;
+  /** `vault_import_read`'s items. */
+  imported: VaultImportedFields;
+  /** `vault_save` and `vault_reveal`, by kind; a purchase claim's `sealedCard` is a card. */
+  login: LoginSecret;
+};
+
+export type VaultShareSetInput = {
+  itemId: VaultItemId;
+  /** A person item's projects, replacing those before; empty: only its owner's own work. */
+  projects: ProjectRef[];
+};
+
+export type VaultShareSetOutput = {
+  item: VaultItemSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Where an item came from. */
+export type VaultSource = {
+  kind: "typed";
+} | {
+  importedMs: number;
+  kind: "1password";
+  ref: OpItemReference;
+} | {
+  from: string;
+  kind: "adopted";
+};
+
+export type VaultStatusInput = { [key: string]: unknown };
+
+/** The vault's state, for the app and the doctor. */
+export type VaultStatusOutput = {
+  /**
+   * The hub's box key (`~/.fleetd/hub/node-box-key.pem`'s public half): what an app seals `vault_save`'s fields and
+   * `vault_unlock`'s passphrase to.
+   */
+  hubBoxKey: BoxPublicKey;
+  /** The root key in use; absent while locked or missing. */
+  keyId?: VaultKeyId;
+  /** The key the items were sealed with is gone: they can't be opened until it's restored. */
+  keyMissing: boolean;
+  keyMode: VaultKeyMode;
+  /** Passphrase mode after a start: fills fail until an owner or admin unlocks it; delivered env keeps working. */
+  locked: boolean;
+  migration: VaultMigration;
+  next?: string;
+  /** An owner saved the recovery code (`fleetd vault recovery-code`). */
+  recoverySaved: boolean;
+  truncated?: boolean;
+};
+
+export type VaultUnlockInput = {
+  /** The passphrase, sealed to the hub's box key. */
+  sealed: SealedSecret;
+};
+
+/** The vault's state, for the app and the doctor. */
+export type VaultUnlockOutput = {
+  /**
+   * The hub's box key (`~/.fleetd/hub/node-box-key.pem`'s public half): what an app seals `vault_save`'s fields and
+   * `vault_unlock`'s passphrase to.
+   */
+  hubBoxKey: BoxPublicKey;
+  /** The root key in use; absent while locked or missing. */
+  keyId?: VaultKeyId;
+  /** The key the items were sealed with is gone: they can't be opened until it's restored. */
+  keyMissing: boolean;
+  keyMode: VaultKeyMode;
+  /** Passphrase mode after a start: fills fail until an owner or admin unlocks it; delivered env keeps working. */
+  locked: boolean;
+  migration: VaultMigration;
+  next?: string;
+  /** An owner saved the recovery code (`fleetd vault recovery-code`). */
+  recoverySaved: boolean;
+  truncated?: boolean;
+};
+
+/** `vault.used`: an audit row was written. vault_audit reads it. */
+export type VaultUsedData = {
+  action: VaultAuditAction;
+  itemId: VaultItemId;
+  machineId?: MachineId;
+  n: number;
+  outcome: VaultAuditOutcome;
+  projectId?: ProjectId;
+};
+
 export type Wake = {
   /** What to do with a firing missed while the hub was down. */
   catchUp: WakeCatchUp;
@@ -9255,6 +9863,19 @@ export interface ToolMap {
   time_spans: { input: TimeSpansInput; output: TimeSpansOutput };
   usage_resume: { input: UsageResumeInput; output: UsageResumeOutput };
   usage_status: { input: UsageStatusInput; output: UsageStatusOutput };
+  vault_audit: { input: VaultAuditInput; output: VaultAuditOutput };
+  vault_delete: { input: VaultDeleteInput; output: VaultDeleteOutput };
+  vault_get: { input: VaultGetInput; output: VaultGetOutput };
+  vault_import: { input: VaultImportInput; output: VaultImportOutput };
+  vault_import_search: { input: VaultImportSearchInput; output: VaultImportSearchOutput };
+  vault_list: { input: VaultListInput; output: VaultListOutput };
+  vault_restore: { input: VaultRestoreInput; output: VaultRestoreOutput };
+  vault_reveal: { input: VaultRevealInput; output: VaultRevealOutput };
+  vault_rotate: { input: VaultRotateInput; output: VaultRotateOutput };
+  vault_save: { input: VaultSaveInput; output: VaultSaveOutput };
+  vault_share_set: { input: VaultShareSetInput; output: VaultShareSetOutput };
+  vault_status: { input: VaultStatusInput; output: VaultStatusOutput };
+  vault_unlock: { input: VaultUnlockInput; output: VaultUnlockOutput };
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };
   wake_list: { input: WakeListInput; output: WakeListOutput };
   wake_set: { input: WakeSetInput; output: WakeSetOutput };
@@ -9320,6 +9941,8 @@ export interface HubEventDataMap {
   "thread.waiting": ThreadEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
+  "vault.changed": VaultChangedData;
+  "vault.used": VaultUsedData;
   "work.claimed": WorkEventData;
   "work.ended": WorkEventData;
   "work.landed": WorkLandedData;

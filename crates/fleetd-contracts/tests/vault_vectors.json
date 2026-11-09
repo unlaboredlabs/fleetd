@@ -1,0 +1,143 @@
+{
+  "about": "fleetd vault envelope vectors: experimental/bun/scripts/vault-vectors.ts writes them; every value is made up",
+  "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "keyId": "k1",
+  "checkBlob": "4OHi4+Tl5ufo6errNMLJg/XAiivAA35OXhz4g9QHjW62VXFdfClckwbiJxE=",
+  "checkAad": "fleetd-vault/check/1|k1",
+  "vectors": [
+    {
+      "name": "login",
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "plain": {
+        "username": "user@example.test",
+        "password": "example-password-not-real",
+        "totp": "EXAMPLESEEDNOTREAL"
+      },
+      "dekAad": "fleetd-vault/dek/1|V00000000000000000000000000000001|1",
+      "itemAad": "fleetd-vault/item/1|V00000000000000000000000000000001|login|person:p_abcdefgh|1",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "name": "card",
+      "itemId": "V00000000000000000000000000000002",
+      "kind": "card",
+      "scopeKey": "hub",
+      "version": 3,
+      "plain": {
+        "number": "0000000000000000",
+        "month": "01",
+        "year": "2099",
+        "cvc": "000",
+        "name": "Example Person"
+      },
+      "dekAad": "fleetd-vault/dek/1|V00000000000000000000000000000002|3",
+      "itemAad": "fleetd-vault/item/1|V00000000000000000000000000000002|card|hub|3",
+      "sealed": "AQJrMaGio6SlpqeoqaqrrGetxCuxE3knxzT5PBmMgyMzxXl7IhMD37vFbAw5Rji2/1GuKmN4t41lQqhIkEQ2dMHCw8TFxsfIycrLzHmf2rFWOMVOAguvU2jheW/fbnxu1jlID+Yv5c1iampWA2I7TCApIkJs2KecvKy1M+p9Y2s2Fv85yFxwW9EzqnnR6MltZF+N9uimTNY5ooU9E6fwauYU7K5CNjtHyAI/Ogvn6Zs8lQSABB+kVw=="
+    },
+    {
+      "name": "address",
+      "itemId": "V00000000000000000000000000000003",
+      "kind": "address",
+      "scopeKey": "project:devbox/p1",
+      "version": 1,
+      "plain": {
+        "name": "Example Person",
+        "line1": "1 Example Street",
+        "city": "Springfield",
+        "postalCode": "00000",
+        "country": "DE"
+      },
+      "dekAad": "fleetd-vault/dek/1|V00000000000000000000000000000003|1",
+      "itemAad": "fleetd-vault/item/1|V00000000000000000000000000000003|address|project:devbox/p1|1",
+      "sealed": "AQJrMaKjpKWmp6ipqqusrSUuwVnL8lJYaIosgqpYI/dL7LiAdOWuJqtqnOqB4PFtwdg9bEv0S4h4cZrMn+TDosLDxMXGx8jJysvMzeUokleHAl6SW80ipWyS0zy4cLSnXwmMA4WcsvF78lEM02tpH/vuV9jFAJ+0bhKbYSzTzpSWZDytOb+1xVGtAVVt2+vhyOCydOk9DpQRMZr435bfjApXQqF6ecgAI8MVA99M1bbS9QN2XguEQoq3zad3/1Y/L7b2N0BE0luu"
+    },
+    {
+      "name": "env",
+      "itemId": "V00000000000000000000000000000004",
+      "kind": "env",
+      "scopeKey": "order:devbox/p1/W7",
+      "version": 2,
+      "plain": {
+        "value": "example-token-not-real\nwith a second line, ünïcode and \"quotes\""
+      },
+      "dekAad": "fleetd-vault/dek/1|V00000000000000000000000000000004|2",
+      "itemAad": "fleetd-vault/item/1|V00000000000000000000000000000004|env|order:devbox/p1/W7|2",
+      "sealed": "AQJrMaOkpaanqKmqq6ytrucLEFY8AvyGLE2W+wFAg6XPFzQSe4WO7Cs+IrXCwYsS5ljphSMyI3C8hLZ2FSs6c8PExcbHyMnKy8zNzk3yojt2CDIqCmYehmDvBfRr5B57LpYTEaHMNRrlGv9VKuLpOLvxboIlDzGyT7ueo6dsV1ToFo6mEtfzfg3L2Nwx9bY2cqecs2D01HsytgInNqqA5eSt4IphmHH0DcmqnA=="
+    }
+  ],
+  "negatives": [
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "name": "wrong root key",
+      "why": "the data key doesn't unwrap",
+      "rootKey": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "name": "tampered tag",
+      "why": "the item's tag fails",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Cs="
+    },
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "name": "tampered wrap",
+      "why": "the data key's tag fails",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6dZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "itemId": "V00000000000000000000000000000009",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "name": "swapped item",
+      "why": "another item's id",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_zzzzzzzz",
+      "version": 1,
+      "name": "swapped scope",
+      "why": "another person's scope",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "card",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 1,
+      "name": "swapped kind",
+      "why": "another kind",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    },
+    {
+      "itemId": "V00000000000000000000000000000001",
+      "kind": "login",
+      "scopeKey": "person:p_abcdefgh",
+      "version": 2,
+      "name": "older version",
+      "why": "another version",
+      "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "sealed": "AQJrMaChoqOkpaanqKmqq6ZZPm4BjkT4KizNmEs3jpEg/QtDxuIUO8RXfN0j9ite47Zm+M4eebuseB2Sbj7by8DBwsPExcbHyMnKyyRmRb0f6FOKGdwGDInW0ajttTspv0NeZJmdRwlbDlhqpkYy9ILRec6OEkgwLkUlXh3oLRhxHVI7wNwNFcRmjiUi3ro0/HZaAtRmkA62GeBhht7c/9NoeBcix5RrK4y/QKWRpJWI1wimvaQLEOxFBSKz1Co="
+    }
+  ]
+}

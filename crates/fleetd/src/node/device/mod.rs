@@ -935,6 +935,7 @@ impl Router {
             BrowserCall::SessionEnd(_) => devices.session_end(&thread).await,
             BrowserCall::Device(call) => devices.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
+            | BrowserCall::FillAddress(_)
             | BrowserCall::RequestTakeover(_)
             | BrowserCall::PurchaseRequest(_)
             | BrowserCall::PurchaseFill(_)
@@ -992,6 +993,7 @@ impl Router {
                     .await
             }
             BrowserCall::FillCredential(_)
+            | BrowserCall::FillAddress(_)
             | BrowserCall::PurchaseRequest(_)
             | BrowserCall::PurchaseFill(_)
             | BrowserCall::RequestSecureInput(_)
@@ -1029,6 +1031,7 @@ impl Router {
             BrowserCall::SessionEnd(_) => simulators.session_end(&thread).await,
             BrowserCall::Device(call) => simulators.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
+            | BrowserCall::FillAddress(_)
             | BrowserCall::RequestTakeover(_)
             | BrowserCall::PurchaseRequest(_)
             | BrowserCall::PurchaseFill(_)

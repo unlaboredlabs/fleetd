@@ -66,8 +66,10 @@ function probesOf(schema: Schema, path: string[] = []): { path: string[]; value:
       out.push({ path, value: "\u0001", kind: "variants" }, { path, value: 5, kind: "expected" });
     } else if (schema.type === "string") {
       out.push({ path, value: true, kind: "expected" });
-      // A brand's pattern, or its check when the schema has none (a PR URL, a secret sink, a time zone).
-      if (schema.pattern !== "^[^\\r\\n]*$") out.push({ path, value: "!", kind: "pattern" });
+      // A brand's pattern, or its check when the schema has none (a PR URL, a secret sink, a time zone). Not a Line's
+      // or a Text's (lengths only): "!" passes those, and a call it completes would wait on the missing node.
+      const lengthsOnly = schema.pattern === undefined && (schema.minLength !== undefined || schema.maxLength !== undefined);
+      if (schema.pattern !== "^[^\\r\\n]*$" && !lengthsOnly) out.push({ path, value: "!", kind: "pattern" });
     } else if (schema.type === "integer" || schema.type === "number") {
       out.push({ path, value: "x", kind: "expected" }, { path, value: 1.5, kind: "fraction" });
       if (typeof schema.minimum === "number") out.push({ path, value: schema.minimum - 1, kind: "range" });

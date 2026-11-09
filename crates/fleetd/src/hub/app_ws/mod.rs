@@ -259,9 +259,14 @@ impl Session {
     ) {
         self.caller = Some((key, info));
         self.deflate |= features.any(|f| f == fleetd_contracts::app::APP_DEFLATE);
+        // The vault lives in fleetd's Bun build only (hub/vault answers each of its tools that it needs that one).
+        let offered: Vec<&str> = fleetd_contracts::app::APP_FEATURES
+            .into_iter()
+            .filter(|f| *f != fleetd_contracts::app::APP_VAULT)
+            .collect();
         self.send(json!({
             "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version(),
-            "features": fleetd_contracts::app::APP_FEATURES,
+            "features": offered,
         }));
     }
 

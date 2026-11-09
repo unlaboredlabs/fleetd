@@ -38,9 +38,11 @@ pub type AppCallId = Text<1, 64>;
 /// - `frame_acks`: `browser_watch`'s `acks` and `browser_frame_ack` are read: a client that acks each `browser_frame`
 ///   has only a few in flight, so on a slow link it sees the newest screen rather than one queued seconds ago, and the
 ///   hub fits the screen's encoding to what the link carries.
+/// - `vault` ([`APP_VAULT`]): the `vault_*` tools and the `vault.changed` and `vault.used` events: Settings › Vault and
+///   a project's Vault. Only fleetd's Bun build lists it; the Rust build answers each vault tool that it needs that one.
 ///
 /// The desktop app's `features.test.ts` checks that every feature it gates on is named here.
-pub const APP_FEATURES: [&str; 11] = [
+pub const APP_FEATURES: [&str; 12] = [
     "presence",
     "browser_sessions",
     "navi_asks",
@@ -52,7 +54,11 @@ pub const APP_FEATURES: [&str; 11] = [
     "agent_messages",
     APP_DEFLATE,
     "frame_acks",
+    APP_VAULT,
 ];
+
+/// The vault's feature, which a Rust hub leaves out of its `ready`.
+pub const APP_VAULT: &str = "vault";
 
 /// Compressed /app frames, the node link's `link_deflate` scheme (node_link.rs): a client lists this in its `auth`'s
 /// `features`, and a hub that reads it lists it in `ready`'s. Every hub frame after `ready` may then come as a Binary

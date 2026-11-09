@@ -1501,6 +1501,12 @@ impl SessionService {
                 };
                 Ok(SessionOutput::OnePasswordCards { cards, error })
             }
+            // The vault's calls go only to nodes listing CAP_VAULT, which this one doesn't yet.
+            SessionCall::VaultAdopt { .. }
+            | SessionCall::VaultImportRead { .. }
+            | SessionCall::VaultImportSearch { .. } => Err(invalid(
+                "The vault's calls need fleetd's Bun build on this machine: run `fleetd update --flavour bun`.",
+            )),
             SessionCall::ClaudeModels => {
                 let (models, error) =
                     match super::claude_accounts::hub_models(&self.inner.config.home).await {

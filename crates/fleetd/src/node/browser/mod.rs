@@ -671,6 +671,11 @@ impl Broker {
             BrowserCall::FillCredential(call) => {
                 credentials::fill_credential(self, &thread, call).await
             }
+            BrowserCall::FillAddress(_) => Err(refuse(
+                ErrorCode::Failed,
+                "fill_address needs fleetd's Bun build on this machine.",
+                "fill the address by hand, or ask the person to run `fleetd update --flavour bun`",
+            )),
             BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 "The desktop tool drives desktop sessions, not browsers.",

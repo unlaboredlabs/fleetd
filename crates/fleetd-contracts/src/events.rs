@@ -323,6 +323,13 @@ pub enum HubEventType {
     /// `data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.
     #[serde(rename = "hub.update")]
     HubUpdate,
+    /// A vault item was made, changed, deleted, restored or shared; `data` is `vault::VaultChangedData`. vault_list
+    /// reads it; never a value.
+    #[serde(rename = "vault.changed")]
+    VaultChanged,
+    /// A vault item was used (an audit row); `data` is `vault::VaultUsedData`. vault_audit reads it.
+    #[serde(rename = "vault.used")]
+    VaultUsed,
 }
 
 impl HubEventType {
@@ -423,6 +430,8 @@ impl HubEventType {
             Self::MachineAddStep => "machine_add.step",
             Self::McpOauth => "mcp.oauth",
             Self::HubUpdate => "hub.update",
+            Self::VaultChanged => "vault.changed",
+            Self::VaultUsed => "vault.used",
         }
     }
 }

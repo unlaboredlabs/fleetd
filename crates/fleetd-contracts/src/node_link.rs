@@ -261,6 +261,15 @@ pub const CAP_BUILD_BUN: &str = "build_bun";
 /// so the hub asks for it with `gated_resume` once the link is back, after its own restart too.
 pub const CAP_GATED_RESUME: &str = "gated_resume";
 
+/// `vault_adopt`, `vault_import_read` and `vault_import_search` (vault.rs): the node hands its variables and sinks to the
+/// vault, and reads and searches 1Password for import, everything sealed to the hub. A node without it keeps its
+/// secrets on its files, "waiting" in the migration's status.
+pub const CAP_VAULT: &str = "vault";
+
+/// The node fills from the vault (`vault_fill`) and from a purchase claim's `sealedCard`: the hub hands a vault card
+/// only to a node hosting the browser that lists it.
+pub const CAP_VAULT_FILL: &str = "vault_fill";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

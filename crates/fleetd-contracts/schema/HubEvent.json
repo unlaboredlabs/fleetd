@@ -454,6 +454,16 @@
           "const": "hub.update",
           "description": "An update started, its hub or a machine moved a state (restarting, back on the new build), or it ended:\n`data` is `mcp::HubUpdateData`, the hub row's Updating… / Updated / Put back. Sent only when that changes.",
           "type": "string"
+        },
+        {
+          "const": "vault.changed",
+          "description": "A vault item was made, changed, deleted, restored or shared; `data` is `vault::VaultChangedData`. vault_list\nreads it; never a value.",
+          "type": "string"
+        },
+        {
+          "const": "vault.used",
+          "description": "A vault item was used (an audit row); `data` is `vault::VaultUsedData`. vault_audit reads it.",
+          "type": "string"
         }
       ],
       "x-open": true

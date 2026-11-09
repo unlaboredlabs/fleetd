@@ -208,6 +208,7 @@ impl Approvals {
             request_id: claimed.request_id,
             domain: purchase.shop.domain,
             card: purchase.card.reference,
+            sealed_card: None,
         })
     }
 

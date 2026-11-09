@@ -29,7 +29,7 @@ use zeroize::Zeroize;
 
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, BrowserSessionState,
-    DeviceCall, DeviceDone, DeviceFile, IOS_GONE, SessionKind,
+    DeviceCall, DeviceDone, DeviceFile, FillCredentialCall, IOS_GONE, SessionKind,
 };
 use fleetd_contracts::ids::{MachineId, ThreadId};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
@@ -374,12 +374,16 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     let starting = matches!(frame.call, BrowserCall::SessionStart(_));
     // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
     let fill = match (&frame.call, broker.remote(&thread)) {
-        (BrowserCall::FillCredential(call), Some(remote)) => {
-            match sealed_fill(&router, broker, &thread, call.reference.as_str(), &remote).await {
-                Ok(sealed) => Some(sealed),
-                Err(error) => return error_frame(&frame.id, error),
-            }
-        }
+        (
+            BrowserCall::FillCredential(FillCredentialCall {
+                reference: Some(reference),
+                ..
+            }),
+            Some(remote),
+        ) => match sealed_fill(&router, broker, &thread, reference.as_str(), &remote).await {
+            Ok(sealed) => Some(sealed),
+            Err(error) => return error_frame(&frame.id, error),
+        },
         _ => None,
     };
     let (routed, relay_key) = match ask(&router, &thread, &frame, fill).await {

@@ -29,6 +29,16 @@ function machineTables(c: Database): [string, Column[]][] {
 /** A row of `machine`'s in each of `tables`, under project `p-shared` and thread `t-shared`. */
 function seedMachine(c: Database, tables: [string, Column[]][], machine: string, n: number): void {
   for (const [t, columns] of tables) {
+    if (t === "vault_items") {
+      // Its checks hold each scope to its ids: a project's variable.
+      c.run(
+        `INSERT INTO vault_items (item_id, kind, scope, machine_id, project_id, env_name, label, meta, sealed, key_id,
+           version, created_ms, created_by, updated_ms, updated_by)
+         VALUES (?, 'env', 'project', ?, 'p-shared', 'X', 'X', '{}', x'00', 'k1', 1, ?, 's', ?, 's')`,
+        [`V-${machine}`, machine, n, n],
+      );
+      continue;
+    }
     const values = columns.map(({ name, type, nullable }) => {
       if (["project_id", "checkout_project_id", "from_project_id", "to_project_id"].includes(name)) return "'p-shared'";
       if (name === "thread_id" || name === "origin_thread") return "'t-shared'";
@@ -57,7 +67,7 @@ test("removing a machine forgets its rows and leaves another's with the same pro
   const tables = machineTables(db.conn);
   for (const [t, columns] of tables) {
     const byId = columns.some((col) => col.name === "machine_id");
-    const ownRule = ["repos", "navi_asks", "session_places", "slot_claims"].includes(t);
+    const ownRule = ["repos", "navi_asks", "session_places", "slot_claims", "vault_items"].includes(t);
     expect(tableList(MACHINE_TABLES).includes(t) || tableList(MACHINE_KEEPS).includes(t) || ownRule).toBe(true);
     expect(byId || ownRule).toBe(true);
   }
@@ -90,7 +100,7 @@ test("forgetting a removed machine's project leaves its other project and anothe
   for (const [t, columns] of tables) {
     const has = (c: string) => columns.some((col) => col.name === c);
     expect([t, machineRows(db.conn, tables, t, "devbox")]).toEqual([t, 1]);
-    const ownRule = ["repos", "navi_asks", "session_places"].includes(t);
+    const ownRule = ["repos", "navi_asks", "session_places", "vault_items"].includes(t);
     const forgot =
       !tableList(MACHINE_KEEPS).includes(t) && (ownRule || (tableList(MACHINE_TABLES).includes(t) && (has("project_id") || has("thread_id"))));
     const other = ["projects", "threads", "thread_accounts"].includes(t) ? 1 : 0;

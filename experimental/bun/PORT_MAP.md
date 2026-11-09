@@ -323,6 +323,19 @@ approvals, secrets, integrations, updates, cloud machines.
 - [x] `onepassword_remove` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_remove` -->
 - [x] `onepassword_test` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_test` -->
 - [x] `onepassword_cards` → `src/hub/onepassword` (operate) <!-- tool:`onepassword_cards` -->
+- [ ] `vault_list` → `src/hub/vault` (read) <!-- tool:`vault_list` -->
+- [ ] `vault_get` → `src/hub/vault` (read) <!-- tool:`vault_get` -->
+- [ ] `vault_save` → `src/hub/vault` (operate) <!-- tool:`vault_save` -->
+- [ ] `vault_delete` → `src/hub/vault` (operate) <!-- tool:`vault_delete` -->
+- [ ] `vault_restore` → `src/hub/vault` (operate) <!-- tool:`vault_restore` -->
+- [ ] `vault_reveal` → `src/hub/vault` (operate) <!-- tool:`vault_reveal` -->
+- [ ] `vault_share_set` → `src/hub/vault` (operate) <!-- tool:`vault_share_set` -->
+- [ ] `vault_audit` → `src/hub/vault` (read) <!-- tool:`vault_audit` -->
+- [ ] `vault_status` → `src/hub/vault` (read) <!-- tool:`vault_status` -->
+- [ ] `vault_unlock` → `src/hub/vault` (admin) <!-- tool:`vault_unlock` -->
+- [ ] `vault_rotate` → `src/hub/vault` (admin) <!-- tool:`vault_rotate` -->
+- [ ] `vault_import_search` → `src/hub/vault` (operate) <!-- tool:`vault_import_search` -->
+- [ ] `vault_import` → `src/hub/vault` (operate) <!-- tool:`vault_import` -->
 - [x] `requests_list` → `src/hub/approvals` (read) <!-- tool:`requests_list` -->
 - [x] `secret_submit` → `src/hub/approvals` (operate) <!-- tool:`secret_submit` -->
 - [x] `approval_answer` → `src/hub/approvals` (operate) <!-- tool:`approval_answer` -->
@@ -393,6 +406,9 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] session call `one_password_token` → `src/node/sessions` <!-- session:session call `one_password_token` -->
 - [x] session call `one_password_test` → `src/node/sessions` <!-- session:session call `one_password_test` -->
 - [x] session call `one_password_cards` → `src/node/sessions` <!-- session:session call `one_password_cards` -->
+- [ ] session call `vault_adopt` → `src/node/sessions` <!-- session:session call `vault_adopt` -->
+- [ ] session call `vault_import_read` → `src/node/sessions` <!-- session:session call `vault_import_read` -->
+- [ ] session call `vault_import_search` → `src/node/sessions` <!-- session:session call `vault_import_search` -->
 - [x] session call `claude_models` → `src/node/sessions` <!-- session:session call `claude_models` -->
 - [x] session call `project_worktrees` → `src/node/sessions` <!-- session:session call `project_worktrees` -->
 - [x] session call `launch` → `src/node/sessions` <!-- session:session call `launch` -->
@@ -524,6 +540,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] browser call `session_start` → `src/node/browser` <!-- browser:browser call `session_start` -->
 - [x] browser call `session_end` → `src/node/browser` <!-- browser:browser call `session_end` -->
 - [x] browser call `fill_credential` → `src/node/browser` <!-- browser:browser call `fill_credential` -->
+- [ ] browser call `fill_address` → `src/node/browser` <!-- browser:browser call `fill_address` -->
 - [x] browser call `request_takeover` → `src/node/browser` <!-- browser:browser call `request_takeover` -->
 - [x] browser call `desktop` → `src/node/desktop` <!-- browser:browser call `desktop` -->
 - [x] browser call `device` → `src/node/device` <!-- browser:browser call `device` -->
@@ -725,6 +742,11 @@ every `fleetd` command.
 - [x] lead call `chat_read` → `src/hub/lead_calls` <!-- lead:lead call `chat_read` -->
 - [x] lead call `skill_save` → `src/hub/lead_calls` <!-- lead:lead call `skill_save` -->
 - [x] lead call `confirm_step` → `src/hub/lead_calls` <!-- lead:lead call `confirm_step` -->
+- [ ] lead call `vault_fill` → `src/hub/lead_calls` <!-- lead:lead call `vault_fill` -->
+- [ ] lead call `vault_filled` → `src/hub/lead_calls` <!-- lead:lead call `vault_filled` -->
+- [ ] lead call `vault_items` → `src/hub/lead_calls` <!-- lead:lead call `vault_items` -->
+- [ ] lead call `vault_import_search` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_search` -->
+- [ ] lead call `vault_import_propose` → `src/hub/lead_calls` <!-- lead:lead call `vault_import_propose` -->
 
 ### agent-mcp tools
 

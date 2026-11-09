@@ -231,6 +231,9 @@ pub async fn purchase_fill(
         Ok(filled) => {
             let card = NaviCard {
                 reference: claimed.card.clone(),
+                label: None,
+                brand: None,
+                last4: None,
             }
             .label();
             let message = format!(
