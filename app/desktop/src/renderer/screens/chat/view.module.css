@@ -68,7 +68,8 @@
   width: 100%;
   max-width: calc(var(--measure) + 2 * var(--pad) + var(--gutter));
   margin: 0 auto;
-  padding: var(--space-2) calc(var(--pad) + var(--gutter)) var(--space-3) var(--pad);
+  /* No room above the box: that is the list's (ChatList's paddingEnd), whose edge is the box's top. */
+  padding: 0 calc(var(--pad) + var(--gutter)) var(--space-3) var(--pad);
 }
 .composer:empty {
   display: none;
@@ -116,23 +117,20 @@
   flex-direction: row-reverse;
 }
 /*
- * Just come in (a reply, your send, a streamed reply's text): it enters once, from its side's bottom corner. Only
- * transform and opacity move, so nothing above it reflows and the list stays at the end; `--enter-since` picks a
- * remounted row up where it was. Reduced motion leaves the fade (tokens.css).
+ * Just come in (a reply, your send, a streamed reply as the lead starts writing): it enters once, fading in as it
+ * rides up with the rows above it (glide.ts), never moving or scaling on its own. `--enter-since` picks a remounted row
+ * up where it was. With reduced motion nothing glides, and this fade is all there is, a little longer (tokens.css).
  */
 .enter {
-  transform-origin: bottom left;
   animation: enter var(--dur-enter) var(--ease-enter) backwards;
   animation-delay: calc(var(--enter-stagger) * var(--enter-step, 0) - var(--enter-since, 0ms));
 }
 .mine .enter {
-  transform-origin: bottom right;
   animation-duration: var(--dur-enter-mine);
 }
 @keyframes enter {
   from {
     opacity: 0;
-    transform: translateY(var(--enter-rise)) scale(var(--enter-scale));
   }
 }
 /* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
@@ -727,7 +725,8 @@ span.changeUndo {
   justify-content: flex-end;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding-bottom: var(--space-4);
+  /* With the room the composer no longer keeps above its box. */
+  padding-bottom: calc(var(--space-4) + var(--space-2));
 }
 .emptyBody {
   display: flex;

@@ -9,7 +9,7 @@
 // as is everything once you're at the bottom. Scrolled up, the thread holds still while replies come, and a glass
 // button takes you back down and counts what came meanwhile; the status bar's tap goes a screen older. Pressing and holding a
 // bubble lifts it with iOS's own menu (ui/HoldMenu.tsx): Reply (quoted above your words), Copy, and Select Text.
-// Bubbles that arrive while you look rise in with the desktop's motion (ui/motion.ts). Messages written offline wait
+// Bubbles that arrive while you look glide in with the desktop's motion (ui/motion.ts, glide.ts). Messages written offline wait
 // and go when the hub is back.
 //
 // Smooth while a reply streams: each row draws again only when its own message changed (chatView.ts sameRow), so a
@@ -24,7 +24,7 @@ import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, Fla
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
+import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aimOf, attachmentBubbles, bubbleTime, bubbles, cardOf, dayLine, fullTime, landingOf, olderOffset, outgoing, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, type AttachmentRef, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
@@ -55,7 +55,8 @@ import { FileBubble, ImageBubble, ImageViewer, type OpenedImage } from "../ui/Me
 import { shareFile } from "../shareFile";
 import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
-import { bubbleIn, dur, ease, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
+import { bubbleIn, dur, ease, glide, PRESSED_OPACITY, useReduceMotion } from "../ui/motion";
+import { glideOf } from "../glide";
 import { SkeletonThread } from "../ui/Skeleton";
 import { StateGlyph } from "../ui/StateGlyph";
 import { StatusBarTap } from "../ui/StatusBarTap";
@@ -147,10 +148,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     return arrivals.current.entering;
   }, [items, live, chat.loaded]);
   // VoiceOver says each reply that comes in while you look, as Messages does.
-  const heard = useRef(entering);
+  const heard = useRef(new Set<Arrival>());
   useEffect(() => {
     for (const said of arrivedReplies(heard.current, entering, items, title)) announce(said);
-    heard.current = entering;
   }, [entering, items, title]);
 
   useEffect(() => {
@@ -365,6 +365,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   }, [streamAt]);
   const holdFrom = awayFrom !== null ? 0 : tall && streamAt !== undefined ? streamAt + 1 : undefined;
   const hold = useMemo(() => (holdFrom === undefined ? undefined : { minIndexForVisible: holdFrom }), [holdFrom]);
+  // At the newest end the rows make room for a new bubble, or the reply growing, on its spring, as it rides up with
+  // them. Not while held still: the list keeps its place there, and a row moving to its new place would slide.
+  const spring = glideOf(newestFirst);
+  const rowsGlide = useMemo(() => glide(spring), [spring]);
 
   // What you send shows at once, as in Messages, wherever the thread was scrolled to. The composer's words go as a
   // reply while its banner shows; a quick answer or a starter never does, and leaves the banner for what you type.
@@ -465,9 +469,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       <View style={styles.fill}>
         <RevealArea margin={metrics.margin}>
           <ArtifactLinks.Provider value={openLink}>
-            <FlatList
+            <Animated.FlatList
               ref={list}
               inverted
+              {...(reduce || hold !== undefined ? {} : { itemLayoutAnimation: rowsGlide })}
               style={moving ? styles.hidden : undefined}
               onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
               onContentSizeChange={onContentSize}
