@@ -31,16 +31,18 @@ set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${GITHUB_SHA:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
-if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-linux-* fleetd-darwin-* fleetd-bun-*; fi
+if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
 shopt -s nullglob
-# Each CLI build also goes up packed, <asset>.lzma (`xz --format=lzma`, about a third of the size), which hubs and nodes
-# download instead once the SHA256SUMS list it (src/update). The darwin builds are signed by now; what unpacks is them.
-# The Bun flavour's builds (fleetd-bun-*, built with the Rust ones, bun-build.sh) go up plain only: Bun has no LZMA
-# decoder, and they carry the same version, so release.json's cliVersion is theirs too.
+# The CLI's builds are fleetd-bun-<os>-<arch> (bun-build.sh). They also go up under the names the Rust builds had,
+# fleetd-<os>-<arch> and its .lzma (`xz --format=lzma`, which the Rust build's `fleetd update` takes when SHA256SUMS
+# lists it): a machine still on the Rust build (a hub, `fleetd update`, a node of an older hub) updates to this release
+# by the asset it knows and comes back on the Bun build, at the same path, reporting this version. The Bun build reads
+# the plain fleetd-bun-* names; Bun has no LZMA decoder.
 packing=()
-for bin in fleetd-linux-x64 fleetd-darwin-arm64 fleetd-darwin-x64; do
-  if [ -f "$bin" ]; then
-    xz --format=lzma -9e -c "$bin" > "$bin.lzma" &
+for target in linux-x64 darwin-arm64 darwin-x64; do
+  if [ -f "fleetd-bun-$target" ]; then
+    cp "fleetd-bun-$target" "fleetd-$target"
+    xz --format=lzma -9e -c "fleetd-$target" > "fleetd-$target.lzma" &
     packing+=("$!")
   fi
 done
@@ -51,7 +53,7 @@ if [ ${#assets[@]} -eq 0 ]; then
   exit 0
 fi
 cli_built=false
-if [ -n "$(compgen -G 'fleetd-linux-*')" ]; then cli_built=true; fi
+if [ -n "$(compgen -G 'fleetd-bun-linux-*')" ]; then cli_built=true; fi
 
 if [ "$CHANNEL" = edge ]; then tag=edge; else tag="${GITHUB_REF_NAME:?}"; fi
 # One line for whoever updates from before the Electron app (see the retired zip above).

@@ -100,7 +100,7 @@ Click Show to scroll to it. Questions you don't want to answer have two ways out
 until the lead asks something new (the app remembers it for that chat), and **Not needed, skip it** under the
 questions tells the lead to go on without an answer. Approvals and secrets have neither: the lead can't go on
 without them. When nothing waits on you but the project is blocked, the bar says why. A check red on main
-blocks nothing, so the bar warns instead, naming the check and whether a fix is under way: "`rust (macos)` is red on
+blocks nothing, so the bar warns instead, naming the check and whether a fix is under way: "`fleetd (macos)` is red on
 main, fix in progress". When nothing needs you, the bar is just the project's name.
 
 ### Things to look at {#look-at}

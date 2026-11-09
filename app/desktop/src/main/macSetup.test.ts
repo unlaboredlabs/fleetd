@@ -69,7 +69,7 @@ function ports(
     download: (url) => {
       fetched.push(url);
       if (url.endsWith("/release.json")) return Promise.resolve(new TextEncoder().encode(JSON.stringify({ channel: "edge", cliVersion: over.edgeHolds })));
-      return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`) : BUILD);
+      return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(`${SUM}  fleetd-bun-darwin-arm64\n`) : BUILD);
     },
     run: (file, args) => {
       ran.push({ file, args });
@@ -328,7 +328,7 @@ describe("a version difference", () => {
     expect(outcome.ok).toBe(true);
     if (pending === undefined) throw new Error("no pending join");
     expect((await joinMac(p, pending, () => undefined)).state).toBe("done");
-    expect(fetched).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/SHA256SUMS", "https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/fleetd-darwin-arm64"]);
+    expect(fetched).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/SHA256SUMS", "https://github.com/unlaboredlabs/fleetd/releases/download/v0.8.0/fleetd-bun-darwin-arm64"]);
   });
 
   it("a hub older than Mac setup codes says to update the hub, and where", async () => {

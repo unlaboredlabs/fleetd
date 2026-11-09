@@ -1,8 +1,0 @@
-app:/app client `chat`
-app:/app server `chat_delta`
-loop:hub loop `chat::flow::run`
-tool:`chat_history`
-tool:`chat_nudge_clear`
-tool:`chat_send`
-tool:`chat_stop`
-tool:`project_stop`

@@ -1,0 +1,381 @@
+// People's 1Password service account tokens (D235): one file each in
+// `<node home>/onepassword-tokens/<person id>.json`, kept as a Claude subscription is (./accounts.ts). And the SDK
+// helper that reads 1Password with one: `@1password/sdk`, pinned, run under Node.js by ./onepassword_helper.mjs, in
+// the node's install directory. The token is the helper's first line on stdin, never in an environment or argument;
+// errors are masked by the caller.
+//
+// A session launched with a person (`SessionLaunch.onepassword`) has their token among its masked secrets as
+// OP_SERVICE_ACCOUNT_TOKEN when its project and order have none of their own (`fallback`). It never reaches an
+// environment.
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import helperScript from "./onepassword_helper.mjs" with { type: "text" };
+import type { OnePasswordCard, VaultImportedFields, VaultKind } from "../../shared/contracts.ts";
+import { expiry } from "../browser/onepassword.ts";
+import { mkdirPrivate } from "../config.ts";
+import type { NodeBoxKey } from "../identity.ts";
+import type { Vars } from "../secrets/env.ts";
+import { fingerprintOf, writeAtomic } from "../secrets/files.ts";
+import { hasControl, ioWhy, openB64, readIfThere, removeIfThere, utf8 } from "./refusal.ts";
+
+/** The project secret variable holding the service account token. */
+export const TOKEN_ENV = "OP_SERVICE_ACCOUNT_TOKEN";
+/** The SDK release the node installs. */
+export const SDK_VERSION = "0.5.0";
+const DIR = "onepassword-tokens";
+const VALUE_MAX = 4096;
+const RESOLVE_TIMEOUT_MS = 30_000;
+const INSTALL_TIMEOUT_MS = 180_000;
+
+/** The helper script the node runs under Node.js, with the SDK installed beside it. */
+export const HELPER: string = helperScript;
+
+const tokenPath = (home: string, person: string) => join(home, DIR, `${person}.json`);
+
+/** The person's token, when the node holds one. Throws only when its file can't be read. */
+export function readToken(home: string, person: string): string | undefined {
+  let bytes: Buffer | undefined;
+  try {
+    bytes = readIfThere(() => readFileSync(tokenPath(home, person)));
+  } catch (error) {
+    throw new Error(`cannot read ${person}'s 1Password token: ${ioWhy(error)}`);
+  }
+  if (!bytes) return undefined;
+  try {
+    const file = JSON.parse(bytes.toString("utf8")) as { value?: unknown };
+    if (typeof file.value !== "string") throw new Error();
+    return file.value;
+  } catch {
+    throw new Error(`${person}'s 1Password token file does not parse`);
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/** Saves the person's token, or forgets it with no `sealed`. The fingerprint of the token held afterwards. */
+export function applyToken(home: string, person: string, sealed: string | undefined, boxKey: NodeBoxKey | undefined): string | undefined {
+  const file = tokenPath(home, person);
+  if (sealed === undefined) {
+    try {
+      removeIfThere(() => rmSync(file));
+    } catch (error) {
+      throw new Error(`cannot remove ${person}'s 1Password token: ${ioWhy(error)}`);
+    }
+    return undefined;
+  }
+  if (!boxKey) throw new Error("this node takes no secrets: it has no box key");
+  const plain = openB64(boxKey, sealed);
+  if (!plain) throw new Error("the 1Password token was not sealed to this machine's current box key: seal it to its boxPubKey again");
+  const text = utf8(plain);
+  plain.fill(0);
+  if (text === undefined) throw new Error("the 1Password token is not UTF-8 text");
+  const value = text.trim();
+  if (!value || Buffer.byteLength(value) > VALUE_MAX || hasControl(value)) throw new Error("the 1Password token is not one line of at most 4 KiB");
+  try {
+    mkdirPrivate(dirname(file));
+  } catch (error) {
+    throw new Error(`cannot make ${dirname(file)}: ${ioWhy(error)}`);
+  }
+  const bytes = Buffer.from(JSON.stringify({ value }));
+  try {
+    writeAtomic(file, bytes);
+  } catch (error) {
+    throw new Error(`cannot write ${person}'s 1Password token: ${ioWhy(error)}`);
+  } finally {
+    bytes.fill(0);
+  }
+  return fingerprintOf(value);
+}
+
+/** The person's token as OP_SERVICE_ACCOUNT_TOKEN, for a session whose project and order (`secrets`) have none: the
+ * project's or order's own always wins. Nothing without a person, or when the node holds no token of theirs. */
+export function fallback(home: string, person: string | undefined, secrets: Vars): Vars {
+  if (!person || secrets.some(([name]) => name === TOKEN_ENV)) return [];
+  const token = readToken(home, person);
+  return token === undefined ? [] : [[TOKEN_ENV, token]];
+}
+
+export const installDir = (home: string) => join(home, "browser", "onepassword");
+
+let installing: Promise<unknown> = Promise.resolve();
+
+/** The pinned SDK and the helper beside it; installed on first use. One install at a time. */
+export function install(home: string): Promise<string> {
+  const next = installing.catch(() => {}).then(() => installNow(home));
+  installing = next;
+  return next;
+}
+
+async function installNow(home: string): Promise<string> {
+  const dir = installDir(home);
+  const helper = join(dir, "resolve.mjs");
+  let have = false;
+  try {
+    have = JSON.parse(readFileSync(join(dir, "node_modules/@1password/sdk/package.json"), "utf8")).version === SDK_VERSION;
+  } catch {}
+  if (!have) {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      throw new Error(`cannot make ${dir}: ${(error as Error).message}`);
+    }
+    let failed: string | undefined;
+    try {
+      const npm = Bun.spawn(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", dir, `@1password/sdk@${SDK_VERSION}`], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const timer = setTimeout(() => npm.kill("SIGKILL"), INSTALL_TIMEOUT_MS);
+      const code = await npm.exited;
+      clearTimeout(timer);
+      if (npm.signalCode) failed = `installing the 1Password SDK took over ${INSTALL_TIMEOUT_MS / 1000} s`;
+      else if (code !== 0) failed = "installing the 1Password SDK failed";
+    } catch (error) {
+      failed = `cannot run npm (Node.js) to install the 1Password SDK: ${(error as Error).message}`;
+    }
+    if (failed) {
+      // Half an install is none: the next use starts again.
+      rmSync(join(dir, "node_modules"), { recursive: true, force: true });
+      throw new Error(failed);
+    }
+  }
+  try {
+    writeFileSync(helper, HELPER);
+  } catch (error) {
+    throw new Error(`cannot write ${helper}: ${(error as Error).message}`);
+  }
+  return helper;
+}
+
+/** What the helper answered as an error, in plain words (never a value), and whether 1Password rate-limited it. */
+export class OnePasswordError extends Error {
+  constructor(
+    message: string,
+    readonly rateLimited = false,
+  ) {
+    super(message);
+  }
+}
+
+/** The SDK helper with one token: a process started on the first question, asked one line at a time. */
+export class OnePassword {
+  #proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
+  #lines: AsyncIterator<string> | undefined;
+  #queue: Promise<unknown> = Promise.resolve();
+
+  constructor(
+    readonly home: string,
+    readonly token: string,
+  ) {}
+
+  async #start(): Promise<void> {
+    const helper = await install(this.home);
+    const env = { ...process.env } as Record<string, string>;
+    delete env[TOKEN_ENV];
+    try {
+      this.#proc = Bun.spawn(["node", helper], { cwd: installDir(this.home), env, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+    } catch (error) {
+      throw new Error(`cannot start Node.js for the 1Password SDK: ${(error as Error).message}`);
+    }
+    this.#proc.stdin.write(`${JSON.stringify({ token: this.token })}\n`);
+    this.#proc.stdin.flush();
+    this.#lines = lines(this.#proc.stdout);
+  }
+
+  /** One line to the helper and its answer, parsed; its error thrown as `1Password: …`. */
+  exchange(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const next = this.#queue.catch(() => {}).then(() => this.#exchange(request));
+    this.#queue = next;
+    return next;
+  }
+
+  async #exchange(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (!this.#proc) await this.#start();
+    try {
+      this.#proc!.stdin.write(`${JSON.stringify(request)}\n`);
+      this.#proc!.stdin.flush();
+    } catch {
+      this.#proc = undefined;
+      throw new Error("the 1Password helper stopped");
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const answer = await Promise.race([
+      this.#lines!.next().then((r) => (r.done ? undefined : r.value)),
+      new Promise<undefined>((r) => (timer = setTimeout(() => r(undefined), RESOLVE_TIMEOUT_MS))),
+    ]);
+    clearTimeout(timer);
+    if (answer === undefined) {
+      this.close();
+      throw new Error("1Password did not answer in 30 s");
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(answer) as Record<string, unknown>;
+    } catch {
+      throw new Error("the 1Password helper said nothing readable");
+    }
+    if (typeof parsed.error === "string") throw new OnePasswordError(`1Password: ${parsed.error}`, parsed.rateLimited === true);
+    return parsed;
+  }
+
+  /** A reference's value and its item's websites; an item without a website comes with no value (nothing fills it). */
+  async ask(reference: string): Promise<{ value: string; urls: string[] }> {
+    const parsed = await this.exchange({ ref: reference });
+    const urls = (Array.isArray(parsed.urls) ? parsed.urls : []).filter((u): u is string => typeof u === "string");
+    if (typeof parsed.value === "string") return { value: parsed.value, urls };
+    if (parsed.value === undefined && urls.length === 0) return { value: "", urls };
+    throw new OnePasswordError("1Password returned no value");
+  }
+
+  /** A field of an Identity, Passport, Driver License or Social Security item: for an approved secure input only. */
+  async identity(reference: string): Promise<{ value: string; urls: string[] }> {
+    const parsed = await this.exchange({ identity: reference });
+    if (typeof parsed.value === "string" && parsed.value) return { value: parsed.value, urls: [] };
+    throw new OnePasswordError("1Password returned no value");
+  }
+
+  /** A Credit Card item's details, as the helper reads them (browser/onepassword.ts shapes them). */
+  async card(reference: string): Promise<{ number: string; expiry: string; cvc: string; name: string }> {
+    const parsed = await this.exchange({ card: reference });
+    const card = (parsed.card ?? {}) as Record<string, unknown>;
+    const take = (key: string) => (typeof card[key] === "string" ? (card[key] as string) : "");
+    return { number: take("number"), expiry: take("expiry"), cvc: take("cvc"), name: take("name") };
+  }
+
+  /** The names of the vaults the token reads: a token's Test. */
+  async vaultNames(): Promise<string[]> {
+    const parsed = await this.exchange({ vaults: true });
+    return (Array.isArray(parsed.vaults) ? parsed.vaults : []).filter((v): v is string => typeof v === "string");
+  }
+
+  /** The Credit Card items the token reads: a Navi's card picker. */
+  async cards(): Promise<OnePasswordCard[]> {
+    const parsed = await this.exchange({ cards: true });
+    return (Array.isArray(parsed.cards) ? parsed.cards : []).filter(
+      (c): c is OnePasswordCard => !!c && typeof c.ref === "string" && typeof c.title === "string" && typeof c.vault === "string",
+    );
+  }
+
+  /** The items a vault import may take whose title or website has `query` in it: overviews, never a value. */
+  async search(query: string): Promise<Overview[]> {
+    const parsed = await this.exchange({ search: query });
+    return (Array.isArray(parsed.items) ? parsed.items : []).filter(
+      (i): i is Overview => !!i && typeof i.ref === "string" && typeof i.title === "string" && typeof i.category === "string" && typeof i.vault === "string",
+    );
+  }
+
+  /** One item's fields, for an import the person confirmed: sealed to the hub at once (vault_import_read). */
+  async read(reference: string): Promise<ReadItem> {
+    const parsed = await this.exchange({ read: reference });
+    const item = (parsed.item ?? {}) as ReadItem;
+    if (typeof item.title !== "string" || typeof item.category !== "string") throw new OnePasswordError("1Password returned no item");
+    return { ...item, sites: Array.isArray(item.sites) ? item.sites.filter((u) => typeof u === "string") : [], fields: Array.isArray(item.fields) ? item.fields : [] };
+  }
+
+  close(): void {
+    try {
+      this.#proc?.kill("SIGKILL");
+    } catch {}
+    this.#proc = undefined;
+  }
+}
+
+/** An item the helper's search found: its reference, title, category, vault and websites. */
+export type Overview = { ref: string; title: string; category: string; vault: string; sites?: string[] };
+/** An item the helper read for import: every field as 1Password keeps it. */
+export type ReadItem = {
+  title: string;
+  category: string;
+  sites: string[];
+  notes?: string;
+  fields: { id?: string; title?: string; type?: string; value?: string; details?: Record<string, unknown> }[];
+};
+
+/** What a 1Password category becomes in fleetd's vault; none for those it doesn't import. */
+export function importKind(category: string): VaultKind | undefined {
+  if (category === "Login" || category === "Password") return "login";
+  if (category === "CreditCard") return "card";
+  if (category === "Identity") return "address";
+  return undefined;
+}
+
+const text = (v: unknown) => (typeof v === "string" ? v : "");
+const hostOfSite = (url: string) => {
+  try {
+    return new URL(url.includes("://") ? url : `https://${url}`).hostname.toLowerCase() || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** An item read for import as the vault takes it (vault.rs `VaultImportedFields`): its title, its websites' hosts,
+ * and the fields of its kind. Empty fields are left out. */
+export function importedFields(item: ReadItem): VaultImportedFields {
+  const fields = item.fields;
+  const by = (ids: string[], types: string[], titles: RegExp) =>
+    text(
+      (fields.find((f) => ids.includes(text(f.id))) ?? fields.find((f) => types.includes(text(f.type))) ?? fields.find((f) => titles.test(text(f.title))))
+        ?.value,
+    );
+  const some = <T extends Record<string, string>>(o: T): T | undefined => {
+    const kept = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "")) as T;
+    return Object.keys(kept).length ? kept : undefined;
+  };
+  const sites = [...new Set(item.sites.map(hostOfSite).filter((h): h is string => h !== undefined))];
+  const out: VaultImportedFields = { title: item.title, ...(sites.length ? { sites } : {}) };
+  const kind = importKind(item.category);
+  if (kind === "login") {
+    const login = some({
+      username: by(["username"], [], /user ?name|e-?mail|login/i),
+      password: by(["password"], [], /password/i),
+      totp: by([], ["Totp"], /one-time|otp|totp/i),
+      notes: text(item.notes),
+    });
+    if (login) out.login = login;
+  } else if (kind === "card") {
+    const expires = expiry(by(["expiry"], ["MonthYear"], /expir/i));
+    const card = some({
+      number: by(["ccnum", "number"], ["CreditCardNumber"], /number/i).replace(/[^0-9]/g, ""),
+      month: expires?.[0] ?? "",
+      year: expires?.[1] ?? "",
+      cvc: by(["cvv"], [], /verification|cvv|cvc|security code/i),
+      name: by(["cardholder"], [], /cardholder|name on card/i),
+    });
+    if (card) out.card = card;
+  } else if (kind === "address") {
+    const at = fields.find((f) => text(f.type) === "Address")?.details ?? {};
+    const street = text(at.street).split("\n");
+    const name = [by(["firstname"], [], /first name/i), by(["lastname"], [], /last name/i)].filter(Boolean).join(" ");
+    const address = some({
+      name,
+      organization: by(["company"], [], /company|organi[sz]ation/i),
+      line1: street[0] ?? "",
+      line2: street.slice(1).join(", "),
+      city: text(at.city),
+      region: text(at.state),
+      postalCode: text(at.zip),
+      country: text(at.country).toUpperCase(),
+      phone: by(["defphone", "cellphone", "homephone"], ["Phone"], /phone/i),
+      email: by(["email"], ["Email"], /e-?mail/i),
+    });
+    if (address) out.address = address;
+  }
+  return out;
+}
+
+/** A byte stream's lines, without their line ends. */
+async function* lines(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of stream) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let at: number;
+    while ((at = buffer.indexOf("\n")) >= 0) {
+      yield buffer.slice(0, at).replace(/\r$/, "");
+      buffer = buffer.slice(at + 1);
+    }
+  }
+  if (buffer) yield buffer;
+}
+

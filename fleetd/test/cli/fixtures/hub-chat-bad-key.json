@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd chat: unknown agent key\n  fix: create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`\n"
+}

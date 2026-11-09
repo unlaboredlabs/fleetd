@@ -1,5 +1,5 @@
 {
-  "note": "Sealed boxes made by the hub's seal (crates/fleetd/src/hub/push/mod.rs, crypto_box 0.9.1's crypto_box_seal) to this fixed key pair. The app's tests (push.test.ts) and the iOS extension's (ios/test.swift) open them.",
+  "note": "Sealed boxes made by the hub's seal (crypto_box_seal, as libsodium and crypto_box 0.9.1 make it) to this fixed key pair. The app's tests (push.test.ts) and the iOS extension's (ios/test.swift) open them.",
   "secretKey": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw=",
   "publicKey": "u1D/noKldM+/gg6X9g+5wUPsdBXPUU+M/Zjv9Z4FlhQ=",
   "cases": [

@@ -1,4 +1,4 @@
-// Re-records the runner's stream-json fixtures (crates/fleetd/src/node/runner/fixtures) from the installed `claude`,
+// Re-records the runner's stream-json fixtures (fleetd/test/fixtures/runner) from the installed `claude`,
 // for a maintainer bumping TESTED in node/runner/version.rs. Never in CI. About 11 tiny turns through the
 // user's own claude login; the error scenarios instead point claude at a local stub that answers every request with
 // a fixed error and forwards nothing. The documented usage-limit fixture is built from the Agent SDK's types and is

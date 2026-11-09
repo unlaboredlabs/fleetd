@@ -46,7 +46,7 @@ const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "
 
 /**
  * `fleetdDir` is the fleetd dir main already resolved (FLEETD_HOME, else <appData>/fleetd), where `fleetd init` /
- * `fleetd pair` write app-pair.json (crates/fleetd/src/cli/pair.rs `app_pair_file`).
+ * `fleetd pair` write app-pair.json.
  */
 export const realPairingDeps = (
   fleetdDir: string,

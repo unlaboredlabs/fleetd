@@ -8,7 +8,7 @@
 #   put back when the head deletes it).
 # It names each counted commit and its files put back, and exits 1. A commit since the merge base whose message says
 # it reverts named commits or PRs ("revert" and, later on its line, a #<n> or a commit's hex) passes. The merge train
-# runs the same rule on every PR before review (crates/fleetd/src/hub/train/reverts.rs): keep the two in step.
+# runs the same rule on every PR before review: keep the two in step.
 set -uo pipefail
 base=${1:-origin/main} head=${2:-HEAD}
 mb=$(git merge-base "$base" "$head") || exit 2

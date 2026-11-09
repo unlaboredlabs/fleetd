@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "✗ no single project 'nope' on devbox\n  Fix: fleetd project list --machine devbox shows their ids\n"
+}

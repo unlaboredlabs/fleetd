@@ -1,8 +1,0 @@
-tool:`claude_account_test`
-tool:`claude_accounts_get`
-tool:`claude_choice_set`
-tool:`claude_hub_api_remove`
-tool:`claude_hub_api_set`
-tool:`claude_settings_set`
-tool:`claude_subscription_remove`
-tool:`claude_subscription_set`

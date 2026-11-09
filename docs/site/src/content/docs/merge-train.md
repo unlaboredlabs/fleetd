@@ -271,7 +271,7 @@ Built files (a docs site, generated types, reference pages) conflict on almost e
 ```json
 {
   "generated": ["site/docs/", "docs/reference/cli.md"],
-  "run": ["cargo run --locked -q -p docsgen", "npm ci --prefix docs", "npm run build --prefix docs"],
+  "run": ["make docs", "npm ci --prefix docs", "npm run build --prefix docs"],
   "migrations": "db/migrations/",
   "timeoutMinutes": 30
 }

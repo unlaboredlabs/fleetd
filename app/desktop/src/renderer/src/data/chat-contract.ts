@@ -1,4 +1,4 @@
-// The chat shapes the layer reads, from H1's generated contracts (crates/fleetd-contracts/src/chat.rs).
+// The chat shapes the layer reads, from H1's generated contracts.
 
 export type {
   AttachmentRef,

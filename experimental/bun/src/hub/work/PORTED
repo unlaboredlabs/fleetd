@@ -1,5 +1,0 @@
-loop:hub loop `work::bind::run`
-loop:hub loop `work::landings::run`
-tool:`work_claim`
-tool:`work_done`
-tool:`work_list`

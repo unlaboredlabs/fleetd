@@ -50,9 +50,8 @@ jobs:
             # minute stamp (no leading zero), and the commit as build metadata (a hash can start with 0).
             version="${base:-0.0.0}-edge.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::7}"
           fi
-          # crates/fleetd lands during the Rust port; until then there is no CLI to build.
           has_cli=false
-          if [ -f crates/fleetd/Cargo.toml ]; then has_cli=true; fi
+          if [ -f fleetd/package.json ]; then has_cli=true; fi
           # Edge rebuilds the app only when it changed since the build the edge release carries. Comparing with that
           # build, not the previous push, means a cancelled run never drops an app change. app/ holds the app's
           # lockfile and its generated contracts, so a dependency bump or a contract change counts. Before the first
@@ -91,68 +90,10 @@ jobs:
           jq -r '.changes[:20][] | "\(.commit[:7]) \(.areas | join(",")): \(.subject)"' "$RUNNER_TEMP/changes.json"
 
   cli:
-    needs: plan
-    if: needs.plan.outputs.has-cli == 'true'
-    # The release critical path. GitHub-hosted runners are free for this public repo; no paid larger runners.
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl,aarch64-apple-darwin,x86_64-apple-darwin
-          components: llvm-tools
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # One static musl binary for every Linux, and both darwin binaries, all from this Linux box. zig supplies the
-      # C toolchain for SQLite and ring; it has no macOS SDK, which is why fleetd must not link a macOS framework.
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-          # Its cache is saved under a new key on every run (about 230 MB each): 35 of them filled the repo's 10 GB
-          # cache quota, which CI's Rust caches share.
-          use-cache: false
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild@0.23.4
-      - name: No macOS framework dependencies
-        run: .github/release/check-darwin-deps.sh
-      - name: Build
-        run: cargo zigbuild --release --locked -p fleetd --target x86_64-unknown-linux-musl --target aarch64-apple-darwin --target x86_64-apple-darwin
-      - name: Check and stage the binaries
-        run: |
-          objdump="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-objdump"
-          mkdir -p dist
-          cp target/x86_64-unknown-linux-musl/release/fleetd dist/fleetd-linux-x64
-          cp target/aarch64-apple-darwin/release/fleetd dist/fleetd-darwin-arm64
-          cp target/x86_64-apple-darwin/release/fleetd dist/fleetd-darwin-x64
-          if "$objdump" -p dist/fleetd-linux-x64 | grep NEEDED; then
-            echo "::error::fleetd-linux-x64 is not static"; exit 1
-          fi
-          # zig's musl malloc keeps what the hub frees: the binary runs jemalloc, as .cargo/config.toml sets it up.
-          if ! grep -q 'narenas:4,dirty_decay_ms:0,muzzy_decay_ms:0' dist/fleetd-linux-x64; then
-            echo "::error::fleetd-linux-x64 doesn't run jemalloc with .cargo/config.toml's settings"; exit 1
-          fi
-          for bin in dist/fleetd-darwin-*; do
-            "$objdump" --macho --dylibs-used "$bin"
-            if "$objdump" --macho --dylibs-used "$bin" | grep -F '.framework/'; then
-              echo "::error::$bin links a macOS framework; see .github/release/check-darwin-deps.sh"; exit 1
-            fi
-          done
-          ls -l dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: cli
-          path: dist/
-          if-no-files-found: error
-
-  cli-bun:
-    # The Bun flavour of the CLI (experimental/bun), as fleetd-bun-<os>-<arch>: linux x64 and arm64, macOS arm64, from
-    # this one Linux box (bun cross-compiles). Its own asset names keep machines on Rust on Rust; `fleetd update
-    # --flavour bun` switches one (docs/cutover/bun.md). Built with the Rust CLI, so a release has both or neither.
+    # The CLI (fleetd/, `bun build --compile`), as fleetd-bun-<os>-<arch>: linux x64 and arm64, macOS arm64 and x64,
+    # from this one Linux box (bun cross-compiles). The release critical path. GitHub-hosted runners are free for this
+    # public repo; no paid larger runners. publish.sh also puts them up under the Rust builds' old names
+    # (fleetd-<os>-<arch>), so a machine still on the Rust build updates onto this one.
     needs: plan
     if: needs.plan.outputs.has-cli == 'true'
     runs-on: ubuntu-latest
@@ -163,22 +104,22 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          # As bun.yml's.
+          # As fleetd.yml's.
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
-        working-directory: experimental/bun
+        working-directory: fleetd
       - name: Build
         run: .github/release/bun-build.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: cli-bun
+          name: cli
           path: dist/
           if-no-files-found: error
 
   cli-macos:
     # Signs and notarizes the darwin CLI binaries the Linux job cross-built. Without the secrets it does nothing
     # and the unsigned binaries ship as before. A bare binary can't be stapled; Gatekeeper finds its ticket online.
-    needs: [plan, cli, cli-bun]
+    needs: [plan, cli]
     # Like desktop-macos: builds that publish and manual dispatches, not pull request dry runs.
     if: inputs.publish || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
@@ -209,36 +150,31 @@ jobs:
         if: steps.secrets.outputs.sign == 'true'
         run: |
           .github/release/macos-sign.sh keychain
-          chmod 755 dist/fleetd-darwin-* dist/fleetd-bun-darwin-*
-          .github/release/macos-sign.sh sign dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64
-          # The same Developer ID and identifier, with the entitlements Bun's JIT needs under the hardened runtime.
-          MACOS_ENTITLEMENTS=.github/release/bun-entitlements.plist .github/release/macos-sign.sh sign dist/fleetd-bun-darwin-arm64
-          # A Mac keeps its privacy grants across a switch of flavour only when the Bun build is the same signed program
-          # as the Rust one: the same identifier and Team ID (macos-sign.sh verify checks the hardened runtime and the
-          # team-based requirement) and the entitlements Bun needs. Each is checked against the Rust build's.
-          signed() { codesign -dvv "$1" 2>&1 | grep -E '^(Identifier|TeamIdentifier)='; }
-          if [ "$(signed dist/fleetd-bun-darwin-arm64)" != "$(signed dist/fleetd-darwin-arm64)" ]; then
-            echo "::error::fleetd-bun-darwin-arm64 isn't signed as fleetd-darwin-arm64 is"; signed dist/fleetd-bun-darwin-arm64; exit 1
-          fi
-          ents="$(codesign -d --entitlements - --xml dist/fleetd-bun-darwin-arm64 2>/dev/null)"
-          for e in allow-jit allow-unsigned-executable-memory disable-library-validation; do
-            if ! grep -q "com.apple.security.cs.$e" <<<"$ents"; then
-              echo "::error::fleetd-bun-darwin-arm64 lacks the entitlement com.apple.security.cs.$e"; exit 1
-            fi
+          chmod 755 dist/fleetd-bun-darwin-*
+          # With the entitlements Bun's JIT needs under the hardened runtime. The identifier and Team ID are the ones
+          # the Rust builds were signed with, so a Mac keeps its privacy grants across the update to this build.
+          MACOS_ENTITLEMENTS=.github/release/bun-entitlements.plist .github/release/macos-sign.sh sign dist/fleetd-bun-darwin-*
+          for bin in dist/fleetd-bun-darwin-*; do
+            ents="$(codesign -d --entitlements - --xml "$bin" 2>/dev/null)"
+            for e in allow-jit allow-unsigned-executable-memory disable-library-validation; do
+              if ! grep -q "com.apple.security.cs.$e" <<<"$ents"; then
+                echo "::error::$bin lacks the entitlement com.apple.security.cs.$e"; exit 1
+              fi
+            done
           done
-          # A signed Bun build that can't start (its JIT refused) fails here, not on the agents' Mac.
+          # A signed build that can't start (its JIT refused) fails here, not on the agents' Mac.
           dist/fleetd-bun-darwin-arm64 --version
       - name: Notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/fleetd-cli"
-          cp dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 dist/fleetd-bun-darwin-arm64 "$RUNNER_TEMP/fleetd-cli/"
+          cp dist/fleetd-bun-darwin-* "$RUNNER_TEMP/fleetd-cli/"
           ditto -c -k --keepParent "$RUNNER_TEMP/fleetd-cli" "$RUNNER_TEMP/fleetd-cli-notarize.zip"
           rc=0
           .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-cli-notarize.zip" || rc=$?
           if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
           # Logged, not enforced: Gatekeeper's verdict on a bare binary depends on fetching its ticket online.
-          for bin in dist/fleetd-darwin-* dist/fleetd-bun-darwin-*; do
+          for bin in dist/fleetd-bun-darwin-*; do
             echo "$bin: $(spctl -a -vv -t open --context context:primary-signature "$bin" 2>&1 | tr '\n' ' ' || true)"
           done
       - name: Remove the signing keychain
@@ -248,15 +184,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cli
-          path: |
-            dist/
-            !dist/fleetd-bun-*
-          if-no-files-found: error
-          overwrite: true
-      - if: steps.secrets.outputs.sign == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: cli-bun
           path: dist/fleetd-bun-*
           if-no-files-found: error
           overwrite: true
@@ -519,7 +446,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, cli, cli-bun, cli-macos, desktop-macos, desktop-linux]
+    needs: [plan, cli, cli-macos, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
       always() && inputs.publish && needs.plan.result == 'success' &&
@@ -562,7 +489,7 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           VERSION: ${{ needs.plan.outputs.version }}
           APP_BUILT: ${{ needs.plan.outputs.build-app }}
-          # crates/fleetd is a stub until the Rust cutover; set this repo variable to true to ship the CLI.
+          # The repo variable that ships the CLI; a fork without it publishes only the apps.
           CLI_PUBLISH: ${{ vars.FLEETD_RELEASE_CLI == 'true' }}
         run: .github/release/publish.sh
 

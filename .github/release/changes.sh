@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes changes.json, the "what's new" the app's update notice shows: newest first, the first-parent commits of the
 # channel, each with its subject (a merged PR's title and number, or a `batch: a (#1); b (#2)` of several) and the
-# areas it touched (app/ → app, crates/ → hub, anything else → other). Capped at 300.
+# areas it touched (app/ → app, fleetd/ → hub, anything else → other). Capped at 300.
 #
 #   {"changes": [{"commit", "date", "subject", "areas": ["app" | "hub" | "other"]}]}
 #
@@ -26,7 +26,7 @@ if [ -s "$prev_dir/changes.json" ]; then older="$(jq -c '.changes // []' "$prev_
 TZ=UTC git log --first-parent --date=format-local:%Y-%m-%dT%H:%M:%SZ --format='%H%x1f%cd%x1f%s' "${range[@]}" |
   while IFS=$'\x1f' read -r commit date subject; do
     areas="$(git diff-tree --no-commit-id --name-only -r --root -m --first-parent "$commit" |
-      awk '{ print /^app\// ? "app" : /^crates\// ? "hub" : "other" }' | sort -u | paste -sd, -)"
+      awk '{ print /^app\// ? "app" : /^(crates|fleetd|experimental\/bun)\// ? "hub" : "other" }' | sort -u | paste -sd, -)"
     jq -nc --arg commit "$commit" --arg date "$date" --arg subject "$subject" --arg areas "${areas:-other}" \
       '{commit: $commit, date: $date, subject: $subject, areas: ($areas | split(","))}'
   done |

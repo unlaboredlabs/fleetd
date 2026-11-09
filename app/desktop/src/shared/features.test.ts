@@ -9,16 +9,15 @@ const root = join(__dirname, "../../../..");
 const sources = (dir: string): string[] =>
   readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) return name === "node_modules" || name === "generated" ? [] : sources(path);
+    if (statSync(path).isDirectory()) return name === "node_modules" ? [] : sources(path);
     return /\.tsx?$/.test(name) && !/\.test(-util)?\.tsx?$/.test(name) ? [path] : [];
   });
 
 const served = (): string[] => {
-  const rust = readFileSync(join(root, "crates/fleetd-contracts/src/app.rs"), "utf8");
-  const list = /pub const APP_FEATURES: \[&str; \d+\] = \[([^\]]*)\]/.exec(rust)?.[1];
-  if (list === undefined) throw new Error("APP_FEATURES not found in app.rs");
-  // A string, or a constant of app.rs (APP_DEFLATE).
-  return [...list.matchAll(/"([^"]+)"|([A-Z][A-Z0-9_]*)/g)].map((m) => m[1] ?? new RegExp(`pub const ${m[2] ?? ""}: &str = "([^"]+)"`).exec(rust)?.[1] ?? "");
+  const hub = readFileSync(join(root, "fleetd/src/hub/app_ws/server.ts"), "utf8");
+  const list = /export const APP_FEATURES = \[([^\]]*)\]/.exec(hub)?.[1];
+  if (list === undefined) throw new Error("APP_FEATURES not found in the hub's app_ws/server.ts");
+  return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 };
 
 /** Each feature a source gates on: `features.includes(…)` with a string or a constant (a helper's variable, such as

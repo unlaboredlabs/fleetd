@@ -4,7 +4,7 @@ description: The tools fleetd gives each agent, the Claude Code tools it blocks,
 sidebar: { order: 20 }
 ---
 
-Generated from fleetd's source by `cargo run -p docsgen`, so it matches the code. Don't edit this file by hand: CI fails when it differs from the generator's output.
+Generated from fleetd's source by `bun scripts/docs.ts`, so it matches the code. Don't edit this file by hand: CI fails when it differs from the generator's output.
 
 Every agent fleetd starts is a Claude Code session. fleetd adds its own MCP server, named `fleetd`, with the tools for the agent's role. Claude Code shows them as `mcp__fleetd__<tool>`. Each call goes to the hub, which checks it whatever the prompt says.
 

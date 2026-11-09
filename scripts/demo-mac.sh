@@ -17,7 +17,7 @@
 # https://github.com/unlaboredlabs/fleetd/releases/download/edge/, each checked against the release's SHA256SUMS
 # as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
 # match. It prints that commit and its date. FLEETD_DEMO_BUILD=1, or running it from a checkout, builds from source
-# instead (cargo for the CLI, pnpm for the app).
+# instead (bun for the CLI, pnpm for the app).
 #
 # Everything lives in FLEETD_DEMO_DIR (default ~/fleetd-demo): the binaries, the fleetd checkout, a pinned Node if
 # yours is older than 24, a sandbox HOME for the hub, node, agents and app, the lab, the recordings. Your own
@@ -31,7 +31,7 @@
 #   token (one browser approval, pasted once, kept 0600 in the sandbox for the next run). Your /login itself sits in
 #   the macOS Keychain, which a sandbox can't borrow without writing to it when claude refreshes it.
 #
-# Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 turns and 15 minutes.
+# Needs git, gh (logged in), claude and curl (and bun and pnpm to build). Costs about 20 turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
 #   FLEETD_DEMO_DIR          the sandbox, and clip.mp4 in it (default ~/fleetd-demo)
 #   FLEETD_DEMO_BUILD=1      build from source instead of using the edge release
@@ -58,9 +58,9 @@ if [ "${FLEETD_DEMO_BUILD:-}" = 1 ] || [ "$in_checkout" = 1 ]; then build=1; fi
 # /usr/bin/git is a stub that offers to install the Command Line Tools; run it to know.
 git --version >/dev/null 2>&1 || die "git needs the Command Line Tools: xcode-select --install"
 needs="gh claude curl shasum ditto"
-[ "$build" = 1 ] && needs="$needs cargo pnpm"
+[ "$build" = 1 ] && needs="$needs bun pnpm"
 for c in $needs; do
-  case "$c" in cargo) hint=' (install Rust from https://rustup.rs)' ;; pnpm) hint=' (https://pnpm.io/installation)' ;; *) hint='' ;; esac
+  case "$c" in bun) hint=' (https://bun.sh)' ;; pnpm) hint=' (https://pnpm.io/installation)' ;; *) hint='' ;; esac
   command -v "$c" >/dev/null || die "$c is missing$hint"
 done
 gh auth status >/dev/null 2>&1 || die "gh is not logged in: gh auth login"
@@ -185,7 +185,7 @@ if [ "$build" = 0 ]; then
     die "can't find the commit of the edge release's CLI ($cli_version)"
   git -C "$repo" checkout -q --detach "$cli_commit"
   say "Edge published $(field date): CLI $cli_version (${cli_commit:0:7}), app $(field appVersion) (${app_commit:0:7})"
-  case "$(uname -m)" in arm64) cli_asset=fleetd-darwin-arm64 ;; x86_64) cli_asset=fleetd-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
+  case "$(uname -m)" in arm64) cli_asset=fleetd-bun-darwin-arm64 ;; x86_64) cli_asset=fleetd-bun-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
   fetch "$cli_asset" "$edge/fleetd"
   chmod 755 "$edge/fleetd"
   fetch fleetd-desktop-macos-universal.zip "$edge/app.zip"
@@ -199,7 +199,7 @@ else
   cli_commit="$(git -C "$repo" rev-parse HEAD)"
   app_commit="$cli_commit"
   say "Building fleetd ${cli_commit:0:7} from $repo (release; the first build takes a while)"
-  (cd "$repo" && cargo build --release --locked -p fleetd)
+  (cd "$repo/fleetd" && bun install --frozen-lockfile && bun run compile)
   (cd "$repo/app/desktop" && pnpm install --frozen-lockfile && pnpm build)
   # The driver starts the app as one executable with no arguments; this one runs Electron on the built app. Its own
   # path stays on the command line (the unused switch), so the PID checks below still find it.
@@ -210,7 +210,7 @@ else
   # shellcheck disable=SC2016 # $0 and $@ belong to the wrapper.
   printf '#!/bin/sh\nexec "%s" "%s" --fleetd-launcher="$0" "$@"\n' "$electron" "$repo/app/desktop" >"$app"
   chmod 755 "$app"
-  fleetd_bin="$repo/target/release/fleetd"
+  fleetd_bin="$repo/fleetd/dist/fleetd"
 fi
 
 # The sandbox HOME, so npm reads no ~/.npmrc and caches nothing in ~/.npm; no package needs an install script.

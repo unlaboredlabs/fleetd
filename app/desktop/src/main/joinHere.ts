@@ -41,7 +41,7 @@ export interface JoinPorts {
 }
 
 /**
- * The fleetd dir as the CLI resolves it (crates/fleetd/src/home.rs): FLEETD_HOME unless empty, with `~` expanded and
+ * The fleetd dir as the CLI resolves it: FLEETD_HOME unless empty, with `~` expanded and
  * a relative path taken against the working directory, else ~/.fleetd.
  */
 export const fleetdDir = (env: string | undefined = process.env["FLEETD_HOME"], home: string = os.homedir()): string => {
@@ -108,7 +108,7 @@ const exists = (file: string): Promise<boolean> =>
     () => false,
   );
 
-/** The fingerprint of an OS machine id, as the CLI makes it (crates/fleetd/src/fingerprint.rs `of`). */
+/** The fingerprint of an OS machine id, as the CLI makes it. */
 export const fingerprintOf = (osId: string): string => createHash("sha256").update(`fleetd machine ${osId.trim()}`).digest("hex");
 
 /** `"IOPlatformUUID" = "…"` in `ioreg -rd1 -c IOPlatformExpertDevice`. */
@@ -159,11 +159,12 @@ export const refusal = (here: ThisComputer): string | undefined =>
       ? `This computer is already part of ${here.hub === "" ? "a hub" : `the hub at ${here.hub}`} as ${here.machineId}; nothing was changed.`
       : undefined;
 
-/** The release asset for this computer, as the installer names it; undefined where fleetd has no build. */
+/** The release asset for this computer, as the installer names it (fleetd-bun-<os>-<arch>); undefined where fleetd has
+ * no build. */
 export const assetFor = (platform: NodeJS.Platform, arch: string): string | undefined => {
   const os = platform === "darwin" ? "darwin" : platform === "linux" ? "linux" : undefined;
   const cpu = arch === "x64" ? "x64" : arch === "arm64" ? "arm64" : undefined;
-  return os && cpu ? `fleetd-${os}-${cpu}` : undefined;
+  return os && cpu ? `fleetd-bun-${os}-${cpu}` : undefined;
 };
 
 /** The line of SHA256SUMS for `asset` (`<hex>  <name>`, or `<hex> *<name>`). */

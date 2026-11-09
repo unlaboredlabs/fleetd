@@ -35,7 +35,7 @@ function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version
     download: (url) => {
       fetched.push(url);
       if (url.endsWith("/release.json")) return Promise.resolve(new TextEncoder().encode(JSON.stringify({ cliVersion: over.nightlyIs ?? "0.9.0-nightly.20261020" })));
-      return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(over.sums ?? `${SUM}  fleetd-linux-x64\n${"0".repeat(64)}  fleetd-darwin-arm64\n`) : BUILD);
+      return Promise.resolve(url.endsWith("/SHA256SUMS") ? new TextEncoder().encode(over.sums ?? `${SUM}  fleetd-bun-linux-x64\n${"0".repeat(64)}  fleetd-bun-darwin-arm64\n`) : BUILD);
     },
     run: (file, args) => {
       ran.push({ file, args });
@@ -60,7 +60,7 @@ describe("joining this computer", () => {
     expect(fetched).toEqual([
       "https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json",
       "https://github.com/unlaboredlabs/fleetd/releases/download/edge/SHA256SUMS",
-      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-linux-x64",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-bun-linux-x64",
     ]);
     const bin = path.join(dir, "bin", "fleetd");
     expect(fs.readFileSync(bin)).toEqual(Buffer.from(BUILD));
@@ -77,7 +77,7 @@ describe("joining this computer", () => {
   });
 
   it("installs nothing when the build doesn't match SHA256SUMS", async () => {
-    const { p, dir, ran } = ports({ sums: `${"a".repeat(64)}  fleetd-linux-x64\n` });
+    const { p, dir, ran } = ports({ sums: `${"a".repeat(64)}  fleetd-bun-linux-x64\n` });
     const end = await joinHere(p, "laptop", () => undefined);
     expect(end.state).toBe("failed");
     expect(end.steps.map((s) => s.state)).toEqual(["done", "done", "done", "failed", "planned", "planned"]);
@@ -91,7 +91,7 @@ describe("joining this computer", () => {
     expect((await joinHere(p, "laptop", () => undefined)).state).toBe("done");
     expect(fetched).toEqual([
       "https://github.com/unlaboredlabs/fleetd/releases/download/v0.9.2/SHA256SUMS",
-      "https://github.com/unlaboredlabs/fleetd/releases/download/v0.9.2/fleetd-linux-x64",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/v0.9.2/fleetd-bun-linux-x64",
     ]);
   });
 
@@ -102,7 +102,7 @@ describe("joining this computer", () => {
     expect(fetched).toEqual([
       "https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json",
       "https://github.com/unlaboredlabs/fleetd/releases/download/edge/SHA256SUMS",
-      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-linux-x64",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-bun-linux-x64",
     ]);
     expect(fs.readFileSync(path.join(dir, "bin", "fleetd"))).toEqual(Buffer.from(BUILD));
     expect(ran).toHaveLength(1);
@@ -222,10 +222,10 @@ describe("joining this computer", () => {
   });
 
   it("names the release asset as the installer does", () => {
-    expect(assetFor("darwin", "arm64")).toBe("fleetd-darwin-arm64");
-    expect(assetFor("linux", "x64")).toBe("fleetd-linux-x64");
+    expect(assetFor("darwin", "arm64")).toBe("fleetd-bun-darwin-arm64");
+    expect(assetFor("linux", "x64")).toBe("fleetd-bun-linux-x64");
     expect(assetFor("win32", "x64")).toBeUndefined();
-    expect(expectedSum(`${SUM} *fleetd-linux-x64\n`, "fleetd-linux-x64")).toBe(SUM);
-    expect(expectedSum(`${SUM}  fleetd-linux-x64-old\n`, "fleetd-linux-x64")).toBeUndefined();
+    expect(expectedSum(`${SUM} *fleetd-bun-linux-x64\n`, "fleetd-bun-linux-x64")).toBe(SUM);
+    expect(expectedSum(`${SUM}  fleetd-bun-linux-x64-old\n`, "fleetd-bun-linux-x64")).toBeUndefined();
   });
 });

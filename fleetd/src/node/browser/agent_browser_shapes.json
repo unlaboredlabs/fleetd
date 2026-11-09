@@ -1,0 +1,141 @@
+{
+  "agentBrowser": "0.39.4",
+  "shapes": [
+    {
+      "hash": "024b72f03b69be72fad107feef9a06cce6988d478ba16eaad3163153cf6e9c58",
+      "script": "(function(){var el = this;var tag = el.tagName && el.tagName.toUpperCase();if(tag === \"\" &&(el.type === \"\" || el.type === \"\")){return el.checked;}\nvar role = el.getAttribute && el.getAttribute(\"\");var ariaCheckedRoles =[\"\",\"\",\"\",\"\",\"\",\"\",\"\"];if(role && ariaCheckedRoles.indexOf(role)!== 0){return el.getAttribute(\"\")=== \"\";}\nvar label = el;if(tag !== \"\"){label = el.closest && el.closest(\"\");}\nif(label && label.tagName && label.tagName.toUpperCase()=== \"\" && label.control){var ctrl = label.control;if(ctrl.type === \"\" || ctrl.type === \"\"){return ctrl.checked;}}\nvar input = el.querySelector && el.querySelector(\"\");if(input)return input.checked;return false;})"
+    },
+    {
+      "hash": "15bcbaf1da323ae4fd1e2cfe146d41c79d5e29b1999b3517e759271264712b9c",
+      "script": "(function(){const rect = this.getBoundingClientRect();const style = window.getComputedStyle(this);return rect.width > 0 && rect.height > 0 &&\nstyle.visibility !== \"\" &&\nstyle.display !== \"\" &&\nparseFloat(style.opacity)> 0;})"
+    },
+    {
+      "hash": "16b56ec2694ca95d3641b067107a5e3b86126edca8d384eb3c83e59f9635c3d0",
+      "script": "(()=>{const el = document.querySelector(\"\");if(!el)return null;const inView =(r)=> r.width > 0 && r.height > 0 &&\nr.bottom > 0 && r.right > 0 &&\nr.top <(window.innerHeight || document.documentElement.clientHeight)&&\nr.left <(window.innerWidth || document.documentElement.clientWidth);let rect = el.getBoundingClientRect();if(!inView(rect)){el.scrollIntoView({block:\"\",inline:\"\",behavior:\"\"});rect = el.getBoundingClientRect();}\nconst x = rect.x + rect.width / 0;const y = rect.y + rect.height / 0;const blockerAt =(doc,el,x,y)=>{let d = doc,lx = x,ly = y;let hit = d.elementFromPoint(lx,ly);while(hit &&(hit.tagName === \"\" || hit.tagName === \"\")&& hit.contentDocument && hit !== el){const r = hit.getBoundingClientRect();lx -= r.x + hit.clientLeft;ly -= r.y + hit.clientTop;d = hit.contentDocument;hit = d.elementFromPoint(lx,ly);}\nif(!hit || hit === el)return null;const up =(n)=> n.parentNode || n.host ||(n.getRootNode && n.getRootNode().host)|| null;for(let n = hit;n;n = up(n)){if(n === el)return null;}\nfor(let n = el;n;n = up(n)){if(n === hit)return null;}\nconst hitLabel = hit.closest ? hit.closest(\"\"):null;if(hitLabel &&(hitLabel.control === el || hitLabel.contains(el)))return null;const elLabel = el.closest ? el.closest(\"\"):null;if(elLabel && elLabel.contains(hit))return null;let desc = hit.tagName.toLowerCase();if(hit.id)desc += \"\" + hit.id;else if(typeof hit.className === \"\" && hit.className.trim())\ndesc += \"\" + hit.className.trim().split(/\\s+/).slice(0,0).join(\"\");if(!hit.id && hit.closest){const anchored = hit.closest(\"\");if(anchored && anchored !== hit)\ndesc += \"\" + anchored.tagName.toLowerCase()+ \"\" + anchored.id;}\nreturn desc;};const notActionable =(doc,el,x,y)=>{try{const rect = el.getBoundingClientRect();if((rect.width <= 0 && rect.height <= 0)||[\"\",\"\"].includes(el.ownerDocument.defaultView.getComputedStyle(el).visibility))return \"\";if(el.disabled || el.matches(\"\"))return \"\";const view = doc.defaultView;const outside = x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight;if(outside && !doc.elementFromPoint(x,y))return \"\";}catch(e){}\nreturn null;};return{x:x,y:y,reason:notActionable(document,el,x,y),blocker:blockerAt(document,el,x,y)};})()"
+    },
+    {
+      "hash": "1c28e526c6db2e79036faa646ffdad6851ef0cf7e5efcf3ec537cfacfe1bc850",
+      "script": "(function(){this.style.outline = \"\";this.style.outlineOffset = \"\";const el = this;setTimeout(()=>{el.style.outline = \"\";el.style.outlineOffset = \"\";},0);})"
+    },
+    {
+      "hash": "20b6566cdea3b2f3d5e425f0b7340e65c9e61ec997cbb773956ee4d23250a904",
+      "script": "(function(){this.select && this.select();this.value = \"\";this.dispatchEvent(new Event(\"\",{bubbles:false}));})"
+    },
+    {
+      "hash": "23e7e74e882337233c9b88d11787ad32c55d929e581d32fa58be6ee00db1b685",
+      "script": "(()=>{const all = document.querySelectorAll(\"\");for(const el of all){if(el.children.length === 0 && el.textContent.includes(\"\")){el.setAttribute(\"\",\"\");return false;}}\nreturn false;})()"
+    },
+    {
+      "hash": "3479050939bd0a2588ad4e17451628a02ad6b843f28c1b17a344276a66032755",
+      "script": "window.scrollBy(0,0)"
+    },
+    {
+      "hash": "37fad808ec6024c36afd694a2b4d907f99d1022b3036523c090fbf83c94f9568",
+      "script": "document.querySelector(\"\")"
+    },
+    {
+      "hash": "4bb69fd07f67374e65dccdee1cd2ec4836df2b8d912b44771b3224d29acf8b63",
+      "script": "document.title"
+    },
+    {
+      "hash": "502d73d856bbdfa2428c8f65fac2f1bc19d6ceed284fe85b32f6a5ce618ff9b6",
+      "script": "history.forward()"
+    },
+    {
+      "hash": "50b9680e55987ecbaa626c3d8ae8c8d1c2ceeebc2286ffb70162ce35a99baaa1",
+      "script": "document.querySelector(\"\")?.removeAttribute(\"\")"
+    },
+    {
+      "hash": "5e6dcfc65da44dcc261851e0932f9aa69759b2f43628741a04477cc75a97fab0",
+      "script": "(()=>{const el = document.querySelector(\"\");if(el){el.setAttribute(\"\",\"\");return false;}\nreturn false;})()"
+    },
+    {
+      "hash": "5f894e6f8a6d1e2c7d9f1cd689dc06abb5ddfccab1d8d88e2d5f26f6de1ab62c",
+      "script": "(function(){this.scrollIntoView({block:\"\",inline:\"\"});})"
+    },
+    {
+      "hash": "60570096894ed67ce8fdf2ff6f5c72457e0a24ee2ba4d135db42a8b24a03d2af",
+      "script": "location.href"
+    },
+    {
+      "hash": "65f9e2b9662d0c24d98d15635c4c6999701edce108f49973324658948e76f25a",
+      "script": "document.querySelectorAll(\"\").length"
+    },
+    {
+      "hash": "67a7352ce1ba644f44058d5df009a32b2a9fb83ddcf41a2559e912c9b92c8774",
+      "script": "history.back()"
+    },
+    {
+      "hash": "693d1bd2a45224df8130b75982a78e4d46dc7aaae033875d7d21dc80d1593514",
+      "script": "(function(){return this.getAttribute(\"\");})"
+    },
+    {
+      "hash": "799b98f693c84c645e671191f082e51096e75a4b922ccfcff91f7a0d87a6723f",
+      "script": "(()=>{const el = document.querySelector(\"\");if(!el)return false;const r = el.getBoundingClientRect();const s = window.getComputedStyle(el);return r.width > 0 && r.height > 0 && s.visibility !== \"\" && s.display !== \"\";})()"
+    },
+    {
+      "hash": "8fef951332e494a04c7e2773322c5a7f6ba7f163788b4d1ab4188e3664eafea1",
+      "script": "(function(){return this.innerText || this.textContent || \"\";})"
+    },
+    {
+      "hash": "a0cc8f8fb383953a9c231c69816c0240c0af6b3ca6992f41039bd5ace07c1d32",
+      "script": "(function(){return this.isConnected;})"
+    },
+    {
+      "hash": "a3760226926d006046b8a03ce99ee89c0aa8d4ab95005404e9a61bd843acad2e",
+      "script": "(function(){const r = this.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};})"
+    },
+    {
+      "hash": "a5597ed7309b6c98aa33d0911b4dcc3cda8d252af0a8059909530b27d204e837",
+      "script": "(function(x,y){let topDoc = this.ownerDocument || document;while(topDoc.defaultView && topDoc.defaultView.frameElement){topDoc = topDoc.defaultView.frameElement.ownerDocument;}\nconst blockerAt =(doc,el,x,y)=>{let d = doc,lx = x,ly = y;let hit = d.elementFromPoint(lx,ly);while(hit &&(hit.tagName === \"\" || hit.tagName === \"\")&& hit.contentDocument && hit !== el){const r = hit.getBoundingClientRect();lx -= r.x + hit.clientLeft;ly -= r.y + hit.clientTop;d = hit.contentDocument;hit = d.elementFromPoint(lx,ly);}\nif(!hit || hit === el)return null;const up =(n)=> n.parentNode || n.host ||(n.getRootNode && n.getRootNode().host)|| null;for(let n = hit;n;n = up(n)){if(n === el)return null;}\nfor(let n = el;n;n = up(n)){if(n === hit)return null;}\nconst hitLabel = hit.closest ? hit.closest(\"\"):null;if(hitLabel &&(hitLabel.control === el || hitLabel.contains(el)))return null;const elLabel = el.closest ? el.closest(\"\"):null;if(elLabel && elLabel.contains(hit))return null;let desc = hit.tagName.toLowerCase();if(hit.id)desc += \"\" + hit.id;else if(typeof hit.className === \"\" && hit.className.trim())\ndesc += \"\" + hit.className.trim().split(/\\s+/).slice(0,0).join(\"\");if(!hit.id && hit.closest){const anchored = hit.closest(\"\");if(anchored && anchored !== hit)\ndesc += \"\" + anchored.tagName.toLowerCase()+ \"\" + anchored.id;}\nreturn desc;};const notActionable =(doc,el,x,y)=>{try{const rect = el.getBoundingClientRect();if((rect.width <= 0 && rect.height <= 0)||[\"\",\"\"].includes(el.ownerDocument.defaultView.getComputedStyle(el).visibility))return \"\";if(el.disabled || el.matches(\"\"))return \"\";const view = doc.defaultView;const outside = x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight;if(outside && !doc.elementFromPoint(x,y))return \"\";}catch(e){}\nreturn null;};return{blocker:blockerAt(topDoc,this,x,y),reason:notActionable(topDoc,this,x,y)};})"
+    },
+    {
+      "hash": "b50b32012126e3aefa841455456271cebfa50cb0bda8d2c232ea15a4de0b13cb",
+      "script": "(function(){return this.innerHTML || \"\";})"
+    },
+    {
+      "hash": "b7478ed9ab631b0dc297cea89d8ee4e8e4248db96f6a53a585c1d85725023b96",
+      "script": "(function(){const s = window.getComputedStyle(this);const result ={};for(let i = 0;i < s.length;i++){const p = s[i];result[p]= s.getPropertyValue(p);}\nreturn result;})"
+    },
+    {
+      "hash": "c3e0c55dde965b969150a6dad80efa8c9bb33cc161ac0d7f92cbb47bb7bdcaa5",
+      "script": "(function(){var results =[];if(!document.body)return results;var interactiveRoles ={'button':0,'link':0,'textbox':0,'checkbox':0,'radio':0,'combobox':0,'listbox':0,'menuitem':0,'menuitemcheckbox':0,'menuitemradio':0,'option':0,'searchbox':0,'slider':0,'spinbutton':0,'switch':0,'tab':0,'treeitem':0};var interactiveTags ={'a':0,'button':0,'input':0,'select':0,'textarea':0,'details':0,'summary':0};var allElements = document.body.querySelectorAll(\"\");for(var i = 0;i < allElements.length;i++){var el = allElements[i];if(el.closest && el.closest(\"\"))continue;var tagName = el.tagName.toLowerCase();if(interactiveTags[tagName])continue;var role = el.getAttribute(\"\");if(role && interactiveRoles[role.toLowerCase()])continue;var computedStyle = getComputedStyle(el);var hasCursorPointer = computedStyle.cursor === \"\";var hasOnClick = el.hasAttribute(\"\")|| el.onclick !== null;var tabIndex = el.getAttribute(\"\");var hasTabIndex = tabIndex !== null && tabIndex !== \"\";var ce = el.getAttribute(\"\");var isEditable = ce === \"\" || ce === \"\";if(!hasCursorPointer && !hasOnClick && !hasTabIndex && !isEditable)continue;if(hasCursorPointer && !hasOnClick && !hasTabIndex && !isEditable){var parent = el.parentElement;if(parent && getComputedStyle(parent).cursor === \"\")continue;}\nvar text =(el.textContent || \"\").trim().slice(0,0);var rect = el.getBoundingClientRect();if(rect.width === 0 || rect.height === 0)continue;var hiddenInputType = null;var hiddenInputChecked = null;var hiddenInput = el.querySelector(\"\");if(hiddenInput){var hiddenInputStyle = getComputedStyle(hiddenInput);var isInputHidden = hiddenInputStyle.display === \"\" || hiddenInputStyle.visibility === \"\" || hiddenInput.hidden;if(isInputHidden){hiddenInputType = hiddenInput.type;hiddenInputChecked = hiddenInput.indeterminate ? \"\":String(hiddenInput.checked);}}\nel.setAttribute(\"\",String(results.length));results.push({text:text,tagName:tagName,hasOnClick:hasOnClick,hasCursorPointer:hasCursorPointer,hasTabIndex:hasTabIndex,isEditable:isEditable,hiddenInputType:hiddenInputType,hiddenInputChecked:hiddenInputChecked});}\nreturn results;})()"
+    },
+    {
+      "hash": "d181a045c2817068873c1cfac40b8de45a387ce4c7ef92673f657c654aceedc2",
+      "script": "(function(vals){const normalize =(value)=> String(value ?? \"\")\n.replace(/[\\u200B\\u200C\\u200D\\u2060\\uFEFF]/g,\"\")\n.replace(/\\s+/g,\"\")\n.trim();const options = Array.from(this.options);const wanted = new Set();for(const value of vals){let matches = options.filter((opt)=>\nvalue === opt.value ||\nvalue === opt.label.trim()||\nvalue === opt.textContent.trim());if(matches.length === 0){const normalizedValue = normalize(value);matches = options.filter((opt)=>\nnormalize(opt.label)=== normalizedValue);if(matches.length > 0){return{error:\"\" + JSON.stringify(value)+ \"\"};}}\nif(matches.length === 0){const available = options.map(o => o.value + \"\" + normalize(o.label)+ \"\").join(\"\");return{error:\"\" + JSON.stringify(vals)+ \"\" + available};}\nfor(const opt of matches)wanted.add(opt);}\nif(wanted.size === 0){const available = options.map(o => o.value + \"\" + normalize(o.label)+ \"\").join(\"\");return{error:\"\" + JSON.stringify(vals)+ \"\" + available};}\nfor(const opt of options)opt.selected = wanted.has(opt);this.dispatchEvent(new Event(\"\",{bubbles:false}));return{matched:wanted.size};})"
+    },
+    {
+      "hash": "d377709b50e5e2b04d437c75f59b8494b827f5fd374f0d43678f53cd6917ca9d",
+      "script": "(()=>{const els = document.querySelectorAll(\"\");const idx = 0 < 0 ? els.length + 0:0;if(idx < 0 || idx >= els.length)return false;els[idx].setAttribute(\"\",\"\");return false;})()"
+    },
+    {
+      "hash": "d84796b9b47c8b3b1806ecf3b309ea5a1993b56ff2a20bf1b3986f1e56421fdc",
+      "script": "(document.body.innerText || \"\").includes(\"\")"
+    },
+    {
+      "hash": "e1cc33cfac93e582fcfc7420b58a02375a43a49c2edd354f53c94a931979bad5",
+      "script": "(function(){return !this.disabled && !(this.matches && this.matches(\"\"));})"
+    },
+    {
+      "hash": "e224ec95f30c95583bae5834f05e33f6855659454d839cd417c9f5169417a26e",
+      "script": "(function(){var el = this;var tag = el.tagName && el.tagName.toUpperCase();if(tag === \"\" &&(el.type === \"\" || el.type === \"\")){el.click();return;}\nvar label = tag === \"\" ? el:(el.closest && el.closest(\"\"));if(label && label.tagName && label.tagName.toUpperCase()=== \"\" && label.control){label.control.click();return;}\nvar input = el.querySelector && el.querySelector(\"\");if(input){input.click();return;}\nel.click();})"
+    },
+    {
+      "hash": "e6e0125e7b7aafa1aff35ba17e0909ee9731b7d365df61c1b6ff0fdde8d2d5a2",
+      "script": "0"
+    },
+    {
+      "hash": "e714c60c7980812e88935f191f6eae650aa700b4a38c30710acabbdce66a12c6",
+      "script": "(function(){this.focus();})"
+    },
+    {
+      "hash": "ec222b8bbbce62ecead8b500995c3ceded6b038652bdfec47ec4ad46937f3ddf",
+      "script": "document.readyState === \"\""
+    },
+    {
+      "hash": "f90a64fea09eb736dd7ba3b3af38d79fa295f3b400d685f61e93216f1ea8078a",
+      "script": "(()=>{const matches =(s)=> !!s && s.includes(\"\");const label = Array.from(document.querySelectorAll(\"\")).find(el => matches(el.textContent));if(label){const forId = label.getAttribute(\"\");const target = forId ? document.getElementById(forId):label.querySelector(\"\");if(target){target.setAttribute(\"\",\"\");return false;}}\nconst aria = Array.from(document.querySelectorAll(\"\")).find(el => matches(el.getAttribute(\"\")));if(aria){aria.setAttribute(\"\",\"\");return false;}\nconst referenced = Array.from(document.querySelectorAll(\"\")).find(el =>{const text = el.getAttribute(\"\").split(/\\s+/)\n.map(id =>{const r = document.getElementById(id);return r ? r.textContent:\"\";})\n.join(\"\");return matches(text);});if(referenced){referenced.setAttribute(\"\",\"\");return false;}\nreturn false;})()"
+    }
+  ]
+}

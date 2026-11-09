@@ -1,12 +1,12 @@
 // A hub runs each migration it hasn't by name, and only warns about one that changed after it ran, so a PR only adds
 // new ones, never edits, renames or removes one on its base, and each sorts after every one there, so every hub runs
-// them in the order a fresh one does. build.rs fails the build on a duplicate prefix.
-// Run by CI's rust-lint job on a PR, from the repo root: node .github/migrations-check.mjs <base commit> [<head>]
+// them in the order a fresh one does. fleetd/scripts/gen.ts fails on a duplicate prefix.
+// Run by CI's fleetd job on a PR, from the repo root: node .github/migrations-check.mjs <base commit> [<head>]
 // CI names HEAD^1, the merge commit's first parent, so the base is exactly the one the tree under test was built on.
 // <head> is HEAD (CI's merge commit) unless named: scripts/check.sh names its worktree merged onto origin/main.
 import { execFileSync } from "node:child_process";
 
-const DIR = "crates/fleetd/src/hub/store/migrations/";
+const DIR = "fleetd/src/hub/store/migrations/";
 const [base, head = "HEAD"] = process.argv.slice(2);
 if (!base) throw new Error("usage: node .github/migrations-check.mjs <base commit> [<head>]");
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).split("\n").filter((line) => line !== "");

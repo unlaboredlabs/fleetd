@@ -2,19 +2,16 @@
 # CI's quick Linux checks, run before a push, for what changed since origin/main (committed or not):
 #
 #   scripts/check.sh              the checks the changes touch
-#   scripts/check.sh <check>...   these, changed or not: rust-lint rust-docs rust-tests site desktop qa
+#   scripts/check.sh <check>...   these, changed or not: fleetd site desktop qa
 #   scripts/check.sh --background [<check>...]   the same, detached, its output in the git dir's fleetd-check.log
 #   scripts/check.sh --wait       waits for the background run to end, and prints its last line
 #   scripts/check.sh --keys       each check's key on the worktree's tree: the hash of the files it reads (below)
 #
-# Each runs the commands of its ci.yml job, scoped as CI scopes it (.github/rust-scope.sh's paths for the Rust ones):
-# - rust-lint: cargo fmt --check, clippy -D warnings, and the hub migrations check: the worktree (untracked files too)
-#   merged onto origin/main, fetched fresh, as CI checks its merge commit.
-# - rust-docs: the docs' generated pages (docsgen --check), `fleetd help` for the site check, the lab scenarios.
-# - rust-tests: the workspace tests of the modules the changed files are in, two levels deep (a change to
-#   crates/fleetd/src/hub/train/batch.rs runs hub::train::), and the other crates' tests whole. CI's `rust (linux)`
-#   runs every test. A change to crates/fleetd-contracts or the files generated from it runs `fleetd-schema --check`
-#   (the drift that test generated_contracts_are_current fails on).
+# Each runs the commands of its CI job, scoped as CI scopes it (.github/fleetd-scope.sh's paths for fleetd):
+# - fleetd: in fleetd/, the generated files (migrations, docs pages, setup steps: bun run gen:check), the hub
+#   migrations check (the worktree, untracked files too, merged onto origin/main, fetched fresh, as CI checks its merge
+#   commit), the type check and the tests. CI's `fleetd` job also builds the binary and runs the black-box tests and
+#   the lab scenarios on it.
 # - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
 #   width. The identifier check runs on every call; it reads every tracked file, and the untracked ones not ignored.
 # - desktop: app/desktop's case clashes, typecheck, lint and unit tests.
@@ -25,25 +22,21 @@
 #   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
 #   fails there when one of its fixtures has no answer for it.
 #
-# The binaries they run (fleetd, docsgen, fleetd-schema) build in one cargo, and so do the tests picked: a run of them
-# all waits for a build slot 3 times: clippy, that build, the tests. The tests' build takes two slots when it builds
-# fleetd's lib tests beside its integration tests or another crate's (node/build_slots.rs: two of its biggest rustc).
-#
 # It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
 #   check.sh: passed <check>...; still to pass on <tree>: ...  the checks named passed, others are still to pass
 #   check.sh: failed <check>...                                these failed (their commands are listed above it)
-# It fetches origin/main first, and doesn't install toolchains: cargo, node 24 and pnpm, and cargo-nextest if it's there (else cargo test).
+# It fetches origin/main first, and doesn't install toolchains: bun, node 24 and pnpm.
 #
 # A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): it records the tree it
 # checked (the worktree's, committed or not) in the git dir's fleetd-checked once every check the changes touch has
-# passed on it, in one run or in several (scripts/check.sh rust-tests reruns only the one that failed). A check's pass
-# is kept under its key, the hash of its inputs: the Rust ones .github/rust-scope.sh's paths, the site those and its
-# own, desktop and qa the whole tree (their tests read files across it), each with this script. So a
-# run with none named skips a check that already passed on the same inputs, and says so: a desktop fix on a branch
-# whose Rust passed doesn't run the Rust checks again. So run it after your final rebase onto origin/main, and commit
-# exactly what it checked. One too long for a command's time limit runs with --background, and --wait, run with
-# Claude's Monitor tool, says how it ended (never a sleep loop): it records its pass when it ends either way.
+# passed on it, in one run or in several (scripts/check.sh fleetd reruns only the one that failed). A check's pass is
+# kept under its key, the hash of its inputs: fleetd .github/fleetd-scope.sh's paths, the site those and its own,
+# desktop and qa the whole tree (their tests read files across it), each with this script. So a run with none named
+# skips a check that already passed on the same inputs, and says so: a desktop fix on a branch whose fleetd passed
+# doesn't run the fleetd check again. So run it after your final rebase onto origin/main, and commit exactly what it
+# checked. One too long for a command's time limit runs with --background, and --wait, run with Claude's Monitor tool,
+# says how it ended (never a sleep loop): it records its pass when it ends either way.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
@@ -73,26 +66,26 @@ if [ "${1:-}" = --wait ]; then
   exit
 fi
 
-all=(rust-lint rust-docs rust-tests site desktop qa)
+all=(fleetd site desktop qa)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/check.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
-# .github/rust-scope.sh's paths, read from it so the two never differ.
-eval "$(sed -n '/^paths=(/,/^)$/p' .github/rust-scope.sh)"
+# .github/fleetd-scope.sh's paths, read from it so the two never differ.
+eval "$(sed -n '/^paths=(/,/^)$/p' .github/fleetd-scope.sh)"
 # shellcheck disable=SC2154
-rust_paths=("${paths[@]}")
+fleetd_paths=("${paths[@]}")
 site_paths=(docs/site site .github/site-check.mjs .github/site-layout-check.mjs .github/docs-links.mjs
-  .github/docs-serve.mjs "${rust_paths[@]}")
+  .github/docs-serve.mjs "${fleetd_paths[@]}")
 
 # key <tree> <check>: a hash of the check's inputs in the tree, every file it reads, this script among them. A check
 # that passed on a tree passes on any tree with the same key: a run with none named doesn't run it again.
 key() {
   local tree=$1 check=$2
   case $check in
-    rust-lint | rust-docs | rust-tests) set -- "${rust_paths[@]}" ;;
+    fleetd) set -- "${fleetd_paths[@]}" ;;
     site) set -- "${site_paths[@]}" ;;
-    # The desktop app's tests and screens read files across the repo (the Rust crates' features, the phone app's
-    # sources, every path's name for the case clashes): the whole tree. Neither waits for a build slot.
+    # The desktop app's tests and screens read files across the repo (the hub's features, the phone app's sources,
+    # every path's name for the case clashes): the whole tree.
     desktop | qa)
       echo "$tree"
       return
@@ -121,15 +114,6 @@ done
 git fetch -q origin main || echo "check.sh: couldn't fetch origin/main; comparing with the one fetched before" >&2
 base=$(git merge-base origin/main HEAD) || exit 1
 marks=$(git rev-parse --git-path fleetd-checked)
-target=${CARGO_TARGET_DIR:-target}
-[[ $target == /* ]] || target=$PWD/$target
-# A target dir another worktree builds into too: both build the same deps/fleetd-<hash>, and cargo's lock doesn't cover
-# the test run, so one check can run the other tree's tests (it happened on the devbox). Said, not refused.
-case $target in
-  "$(git rev-parse --show-toplevel)"/*) ;;
-  *) echo "check.sh: warning: the Rust target dir $target is outside this worktree; another worktree's check building there can swap the test binary this one runs" >&2 ;;
-esac
-
 # changed <path>...: whether a path under these differs from the base, in a commit, the worktree or an untracked file.
 changed() {
   ! git diff --quiet "$base" -- "$@" || [ -n "$(git ls-files --others --exclude-standard -- "$@")" ]
@@ -184,158 +168,41 @@ merged() {
   [ -n "$out" ] && echo "${out%%$'\n'*}"
 }
 
-if wanted rust-lint "${rust_paths[@]}"; then
-  step rust-lint cargo fmt --all --check
-  step rust-lint cargo clippy --locked --workspace --all-targets -- -D warnings
-  # Fix: rename a new migration to the current UTC time (date -u +%Y%m%d%H%M), after main's newest.
-  head=$(merged) || { echo "check.sh: couldn't merge the worktree onto origin/main; checking HEAD's migrations" >&2; head=HEAD; }
-  step rust-lint node .github/migrations-check.mjs origin/main "$head"
-fi
-
 # The checks the changes touch: what a run with none named runs, and what a tree must pass to be pushed.
 needed=()
-changed "${rust_paths[@]}" && needed+=(rust-lint rust-docs rust-tests)
+changed "${fleetd_paths[@]}" && needed+=(fleetd)
 changed "${site_paths[@]}" && needed+=(site)
 changed app/desktop .github/workflows/ci.yml && needed+=(desktop)
 changed app/desktop/src/renderer app/desktop/fixtures && needed+=(qa)
 
+# bun install in fleetd/, unless its node_modules is already newer than its lockfile.
+bun_install() {
+  [ fleetd/node_modules/.bun-tag -nt fleetd/bun.lock ] || { (cd fleetd && bun install --frozen-lockfile) && touch fleetd/node_modules/.bun-tag; }
+}
+in_fleetd() { (cd fleetd && "$@"); }
+
 help=$tmp/fleetd-help.txt
-site_wanted=false docs_wanted=false tests_wanted=false schema_wanted=false
+site_wanted=false
 wanted site "${site_paths[@]}" && site_wanted=true
-wanted rust-docs "${rust_paths[@]}" && docs_wanted=true
-wanted rust-tests "${rust_paths[@]}" && tests_wanted=true
-if $tests_wanted && { [ ${#named[@]} -gt 0 ] || changed crates/fleetd-contracts app/desktop/src/shared/contracts/generated; }; then
-  schema_wanted=true
-fi
 
-# The binaries the checks run, built by one cargo so they wait for one build slot: fleetd (the lab scenarios, the
-# site's `fleetd help`), docsgen and fleetd-schema. When it fails, so does each check that runs one of them.
-uses=() packages=()
-$docs_wanted && uses+=(rust-docs)
-$site_wanted && uses+=(site)
-$schema_wanted && uses+=(rust-tests)
-{ $docs_wanted || $site_wanted; } && packages+=(-p fleetd)
-$docs_wanted && packages+=(-p docsgen)
-$schema_wanted && packages+=(-p fleetd-contracts)
-built=true
-if [ ${#packages[@]} -gt 0 ]; then
-  build=(cargo build --locked "${packages[@]}")
-  # With the features the tests' build resolves (fleetd's dev-dependency on tokio adds test-util), so both build one
-  # copy of the deps and of fleetd's lib: without them the tests' build compiled tokio and all that depends on it a
-  # second time in a new worktree, and fleetd's lib a third time for the integration tests or another crate's.
-  [[ " ${packages[*]} " == *" fleetd "* ]] && build+=(--features tokio/test-util)
-  echo "==> ${uses[*]}: ${build[*]}"
-  if ! "${build[@]}"; then
-    built=false
-    for c in "${uses[@]}"; do failed+=("$c: ${build[*]}"); done
-    echo "==> FAILED ${uses[*]}: ${build[*]}"
-  fi
-fi
-
-if $docs_wanted && $built; then
-  # Fix: cargo run -q -p docsgen, and commit the pages it wrote.
-  step rust-docs "$target/debug/docsgen" --check
-  step rust-docs npm_ci tests/lab
-  # A short directory: the node's socket path in it must fit in SUN_LEN (108 bytes).
-  export FLEETD_BIN=$target/debug/fleetd FLEETD_FACTORY_DIR=$tmp/f
-  step rust-docs npm run factory --prefix tests/lab
-fi
-
-if $tests_wanted; then
-  # The modules the changed files of crates/fleetd are in (src/hub/train/batch.rs, src/hub/train/tests.rs and
-  # src/hub/train.rs are hub::train; the prompts are hub::prompts), its integration tests that changed, and the other
-  # crates whole. Its root files (lib.rs, main.rs) and anything else in it pick no tests.
-  mods=() itests=() crates=()
-  while read -r f; do
-    case $f in
-      crates/fleetd/assets/prompts/*) mods+=(hub::prompts::) ;;
-      crates/fleetd/src/*/*)
-        rel=${f#crates/fleetd/src/}
-        IFS=/ read -ra seg <<<"${rel%.*}"
-        case ${seg[-1]} in mod | tests | *_tests) unset 'seg[-1]' ;; esac
-        [ ${#seg[@]} -gt 0 ] && mods+=("${seg[0]}${seg[1]:+::${seg[1]}}::")
-        ;;
-      crates/fleetd/src/*.rs)
-        rel=${f#crates/fleetd/src/}
-        case $rel in lib.rs | main.rs) ;; *) mods+=("${rel%.rs}::") ;; esac
-        ;;
-      crates/fleetd/tests/*.rs) [ -e "$f" ] && itests+=("$(basename "$f" .rs)") ;;
-      crates/fleetd/*) ;;
-      crates/*/*) c=${f#crates/}; crates+=("${c%%/*}") ;;
-    esac
-  done < <(changed_files)
-  if $schema_wanted && $built; then
-    # Fix: cargo run -p fleetd-contracts --bin fleetd-schema, and commit what it wrote.
-    step rust-tests "$target/debug/fleetd-schema" --check
-  fi
-  mapfile -t mods < <(printf '%s\n' "${mods[@]}" | sort -u | sed '/^$/d')
-  mapfile -t itests < <(printf '%s\n' "${itests[@]}" | sort -u | sed '/^$/d')
-  mapfile -t crates < <(printf '%s\n' "${crates[@]}" | sort -u | sed '/^$/d')
-  # The tests picked build in one cargo, so they wait for a build slot once (two slots for the lib's tests beside other
-  # targets). Without other crates, only the lib and the integration tests picked build (a target flag would apply to
-  # every package).
-  packages=() targets=()
-  { [ ${#mods[@]} -gt 0 ] || [ ${#itests[@]} -gt 0 ]; } && packages+=(-p fleetd)
-  for c in "${crates[@]}"; do packages+=(-p "$c"); done
-  if [ ${#crates[@]} -eq 0 ]; then
-    [ ${#mods[@]} -gt 0 ] && targets+=(--lib)
-    for t in "${itests[@]}"; do targets+=(--test "$t"); done
-  fi
-  if cargo nextest --version >/dev/null 2>&1; then
-    run_tests() { cargo nextest run --locked --no-tests=pass "$@"; }
-    # The picked tests under one nextest, a filterset choosing them.
-    picked_tests() {
-      local m t c filter=''
-      for m in "${mods[@]}"; do filter+="${filter:+ | }(package(fleetd) & kind(lib) & test(/^$m/))"; done
-      for t in "${itests[@]}"; do filter+="${filter:+ | }binary_id(fleetd::$t)"; done
-      for c in "${crates[@]}"; do filter+="${filter:+ | }package($c)"; done
-      run_tests "${packages[@]}" "${targets[@]}" -E "$filter"
-    }
-  else
-    run_tests() { cargo test --locked "$@"; }
-    # The picked tests' binaries, built by one `cargo test --no-run`, each run as cargo test runs it, from its package's
-    # directory: the lib's with the modules as its filters, the integration tests picked, the other crates' every one.
-    test_binaries='select(.reason == "compiler-artifact" and .profile.test and .executable != null)
-      | [.manifest_path, .target.name, .target.kind[0], .executable] | @tsv'
-    picked_tests() {
-      local manifest name kind exe dir status=0
-      cargo test --locked --no-run --message-format=json-render-diagnostics "${packages[@]}" "${targets[@]}" \
-        >"$tmp/tests.json" || return
-      while IFS=$'\t' read -r manifest name kind exe; do
-        dir=$(dirname "$manifest")
-        filters=()
-        if [ "$(basename "$dir")" = fleetd ]; then
-          if [ "$kind" = lib ] && [ ${#mods[@]} -gt 0 ]; then
-            filters=("${mods[@]}")
-          elif [ "$kind" != test ] || [[ " ${itests[*]} " != *" $name "* ]]; then
-            continue
-          fi
-        fi
-        echo "     Running $name ($kind of ${dir#"$PWD"/}) ${filters[*]}"
-        (cd "$dir" && CARGO_MANIFEST_DIR=$dir "$exe" "${filters[@]}") || status=1
-      done < <(jq -r "$test_binaries" "$tmp/tests.json")
-      return $status
-    }
-  fi
-  if [ ${#mods[@]} -eq 0 ] && [ ${#itests[@]} -eq 0 ] && [ ${#crates[@]} -eq 0 ]; then
-    if [ ${#named[@]} -gt 0 ]; then
-      step rust-tests run_tests --workspace
-    else
-      echo "==> rust-tests: no change picks a test module; CI runs them all"
-    fi
-  fi
-  if [ ${#packages[@]} -gt 0 ]; then
-    echo "==> rust-tests: the tests of ${packages[*]} ${targets[*]}, in one cargo; in the lib, ${mods[*]:-none}"
-    step rust-tests picked_tests
-  fi
+if wanted fleetd "${fleetd_paths[@]}"; then
+  step fleetd bun_install
+  # Fix: cd fleetd && bun run gen, and commit what it wrote.
+  step fleetd in_fleetd bun run gen:check
+  # Fix: rename a new migration to the current UTC time (date -u +%Y%m%d%H%M), after main's newest.
+  head=$(merged) || { echo "check.sh: couldn't merge the worktree onto origin/main; checking HEAD's migrations" >&2; head=HEAD; }
+  step fleetd node .github/migrations-check.mjs origin/main "$head"
+  step fleetd in_fleetd bun run typecheck
+  step fleetd in_fleetd bun test
 fi
 
 if $site_wanted; then
   step site npm_ci docs/site
   step site npm run build --prefix docs/site
-  if $built && [ -x "$target/debug/fleetd" ]; then
-    "$target/debug/fleetd" help >"$help"
+  if bun_install && (cd fleetd && bun src/main.ts help) >"$help"; then
     step site node .github/site-check.mjs "$help"
+  else
+    failed+=("site: bun fleetd/src/main.ts help")
   fi
   step site node .github/docs-links.mjs
   step site node .github/site-layout-check.mjs

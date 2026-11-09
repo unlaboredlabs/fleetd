@@ -62,7 +62,7 @@ The docs' setup transcripts, a `console` block named `capture=init` or `capture=
 run from the repo root:
 
 ```sh
-cargo build --release --locked -p fleetd && npm ci --prefix tests/lab
+(cd fleetd && bun install && bun run compile) && npm ci --prefix tests/lab
 node tests/lab/site-capture.ts
 ```
 
@@ -79,7 +79,7 @@ its search index, `site/docs/pagefind`, are not committed: git ignores them, and
 locally:
 
 ```sh
-cargo run -q -p docsgen                  # only when the CLI or the prompt registry changed
+(cd fleetd && bun run docs)             # only when the CLI or the prompt registry changed
 npm ci --prefix docs/site
 npm run build --prefix docs/site
 ```
@@ -88,7 +88,7 @@ Before opening a PR that touches `docs/site/` or `site/`, run the `site` job's c
 that job (`.fleetd/train.json`), so a red one sends the PR back.
 
 ```sh
-cargo run -q -p fleetd -- help > "$TMPDIR/fleetd-help.txt"
+(cd fleetd && bun src/main.ts help) > "$TMPDIR/fleetd-help.txt"
 node .github/site-check.mjs "$TMPDIR/fleetd-help.txt"   # stale terms, commands fleetd help doesn't list
 node .github/personal-check.mjs                          # no maintainer's host, login or home directory
 node .github/docs-links.mjs                              # every internal link and anchor resolves
@@ -103,8 +103,8 @@ works once a build has written the ignored index), or `npm run dev --prefix docs
   `-` separated. The page lives at `/docs/<slug>`.
 - The sidebar is the `sidebar` list in `docs/site/astro.config.mjs`. A new page needs an entry there.
 - Generated, don't edit: `reference/cli.md` (from `fleetd help`), `reference/agent-tools.md` (from the agent tools),
-  and the prompt table between `<!-- prompt-table -->` markers in `what-agents-are-told.md`. `cargo run -q -p docsgen`
-  writes them; `crates/docsgen/src/main.rs` lists them.
+  and the prompt table between `<!-- prompt-table -->` markers in `what-agents-are-told.md`. `bun run docs` in
+  `fleetd/` writes them; `fleetd/scripts/docs.ts` lists them.
 - Images: `docs/site/public/img/<name>.png`, referenced as `/docs/img/<name>.png`.
 
 ### Frontmatter

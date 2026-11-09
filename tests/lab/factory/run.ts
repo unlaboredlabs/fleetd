@@ -1,6 +1,6 @@
 // `npm run factory -- [scenario…]` (in tests/lab): W9's "done when" on a project that isn't fleetd. Each scenario
 // gets a hub, a node and a generated project of its own (kit.ts, project.ts), with an offline claude stand-in, so it
-// needs no network, no GitHub and no claude login, and runs in CI. FLEETD_BIN (default the release build) is the
+// needs no network, no GitHub and no claude login, and runs in CI. FLEETD_BIN (default fleetd/dist/fleetd) is the
 // fleetd under test. The run dir is FLEETD_FACTORY_DIR, which must be new or empty and is never deleted; else a new one
 // under the temp dir, removed after a pass and kept, with its logs, after a failure or with FLEETD_FACTORY_KEEP=1.
 //

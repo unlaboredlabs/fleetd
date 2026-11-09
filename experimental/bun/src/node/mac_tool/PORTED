@@ -1,5 +1,0 @@
-link:hub→node `mac_call` handle
-link:node→hub `mac_result` send
-loop:node loop `mac_tool::host::Host::start`
-mod:`node/mac_tool/activity.rs`
-mod:`node/mac_tool/client.rs`

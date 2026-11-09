@@ -1,0 +1,24 @@
+{
+  "//": "The implementations under test. Each step runs from `cwd` in bash; $SCRATCH is a fresh directory per step (deleted before its clean run, kept for the incremental one), so a clean build shares no cache with any other. A step that doesn't apply is null. A step with `after` runs once, warm, in that step's $SCRATCH (the test suite's run on its finished build). Paths are relative to the repo. build.ts runs every step on the same N CPUs (--jobs).",
+  "bun": {
+    "bin": "fleetd/dist/fleetd",
+    "cwd": "fleetd",
+    "touch": "fleetd/src/main.ts",
+    "comment": "//",
+    "steps": {
+      "build": {
+        "prepare": "rm -rf dist",
+        "run": "bun run compile",
+        "artifact": "dist/fleetd"
+      },
+      "check": {
+        "prepare": "find . -name '*.tsbuildinfo' -not -path './node_modules/*' -delete",
+        "run": "bun run typecheck"
+      },
+      "testBuild": null,
+      "test": {
+        "run": "bun test"
+      }
+    }
+  }
+}

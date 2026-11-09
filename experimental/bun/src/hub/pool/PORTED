@@ -1,9 +1,0 @@
-loop:hub loop `pool::run`
-tool:`cloud_create`
-tool:`cloud_get`
-tool:`cloud_key_set`
-tool:`cloud_reset`
-tool:`cloud_resume`
-tool:`cloud_set`
-tool:`cloud_stop`
-tool:`cloud_test`

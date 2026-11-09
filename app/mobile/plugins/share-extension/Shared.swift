@@ -239,7 +239,7 @@ enum Avatar {
   }
 }
 
-/// The hub's limits (crates/fleetd-contracts: ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, ATTACHMENTS_MAX,
+/// The hub's limits (ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, ATTACHMENTS_MAX,
 /// CHAT_TEXT_MAX).
 enum Limits {
   static let fileBytes = 25 * 1024 * 1024

@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "high       claude-opus-5-5 at high (default)\n           The default: design, architecture and anything subtle. When in doubt, this one.\nmedium     claude-opus-5-5 at medium\n           Only for mechanical work: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup. Never for design, architecture or anything subtle (concurrency, the runner, auth and secrets, approvals, the merge train, status math).\n",
+  "stderr": ""
+}

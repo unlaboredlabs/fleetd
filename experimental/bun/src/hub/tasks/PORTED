@@ -1,6 +1,0 @@
-loop:hub loop `tasks.run`
-loop:hub loop `tasks::ci_wait::run`
-loop:hub loop `tasks::worktrees::run`
-tool:`cap_set`
-tool:`task_get`
-tool:`tasks_list`

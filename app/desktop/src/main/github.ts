@@ -1,4 +1,4 @@
-// Creating the hub's own GitHub App (crates/fleetd-contracts/src/github_app.rs, D190): main listens on a loopback
+// Creating the hub's own GitHub App (D190): main listens on a loopback
 // port, asks the hub for the App's manifest with that port's /created as where GitHub sends the admin back
 // (github_app_manifest), and opens its own page there in the browser, which posts the manifest to GitHub. The admin
 // presses Create on GitHub; GitHub comes back with a code, and main hands it to github_app_create, so the hub trades

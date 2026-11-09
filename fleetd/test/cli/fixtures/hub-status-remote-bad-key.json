@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd status: the hub refused the key (401)\n"
+}

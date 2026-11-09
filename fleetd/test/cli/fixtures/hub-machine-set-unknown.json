@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "✗ No machine devbox.\n  Fix: Call fleetd_status to list machines.\n"
+}

@@ -1,0 +1,314 @@
+// Import memory (Settings > Memory): a person copies the `memory.export` prompt
+// into another assistant, pastes its answer back, and `memory_import` turns it into entries of their own memory.
+//
+// One model turn distills it: a session with no tools at all, on the person's own Claude choice (D200), in an Only me
+// project of theirs and nowhere else, so nobody else can read the paste. The pasted text is untrusted: it goes between
+// two fences no paste can fake, under the `memory.import` rules that it is data, never instructions. Its answer is JSON
+// entries, written here the way `remember` writes them: a secret refused, an entry the memory already says skipped, a
+// merged one in place of the old, and the cap held, the most durable kinds first. One `memory.changed` at the end.
+//
+// The turn runs through a `Turn`, as in Rust: `importPorts(hub).turn`, the executor's by default; tests set their own.
+import type { MemoryImported, MemoryImportOutput, MemoryImportSkip, MemorySkipped, PersonId, ProjectRef } from "../../shared/contracts.ts";
+import { ToolError } from "../../shared/errors.ts";
+import { CAP_ALLOWED_ONLY } from "../../shared/node_link.ts";
+import type { Hub } from "../api/hub.ts";
+import { requireRole } from "../api/grants.ts";
+import type { Registry } from "../api/registry.ts";
+import { requireHuman, unknownProject } from "../leads/seams.ts";
+import { store } from "../store/hub_store.ts";
+import { ClaudeAccountStore, isRefusal, launchAccount } from "../claude_accounts/index.ts";
+import { CAP_CLAUDE_ACCOUNTS } from "../claude_accounts/tools.ts";
+import type { LaunchInput, LaunchOptions } from "../executor/sessions.ts";
+import { Owner, type Turn, turn } from "../executor/turn.ts";
+import { all as onlyMe, of as naviOf, others } from "../navi/store.ts";
+import { profiles } from "../projects/profiles.ts";
+import { prompts } from "../prompts/store.ts";
+import { redact } from "../redact.ts";
+import { changed } from "./calls.ts";
+import { activePeople, Memory, type RememberCall, type You, userTarget, youTarget } from "./index.ts";
+import { job, refreshPorts, runNow } from "./refresh.ts";
+
+export const IMPORT_ENTRIES_MAX = 200;
+
+/** The executor's turn (executor/turn.rs `Turn`): its reply, or a thrown Error saying why there is none. */
+export type { Turn };
+
+/** `importPorts(hub).turn`: the executor's memory-import turn; tests set their own. */
+export const importPorts = (hub: Hub): { turn: Turn } => hub.area("memory_import", (h) => ({ turn: turn(h, Owner.MemoryImport) }));
+
+/** The export prompt every app shows, as the hub's prompts say it now. */
+export const exportPrompt = (hub: Hub) => prompts(hub.db).current().render("memory.export", {});
+
+/** The fix of the refusal for someone with no Only me project of their own; newer apps match its `reason`. */
+export const NO_NAVI_FIX = "Create a Navi first, then import again.";
+
+/**
+ * Where the turn runs: an Only me project of `person`'s own, and nowhere else. Refused for someone with none, and
+ * while none of theirs is on a node that can hold the turn to no tools.
+ */
+function place(hub: Hub, person: PersonId | undefined): ProjectRef {
+  const c = hub.db.conn;
+  const theirs = others(c, person);
+  const own = onlyMe(c).filter(
+    (r) => !theirs.some((o) => o.machineId === r.machineId && o.projectId === r.projectId) && naviOf(c, r)?.archivedAt === undefined && naviOf(c, r) !== undefined,
+  );
+  const first = own[0];
+  if (!first) {
+    throw new ToolError(
+      "invalid",
+      "Import memory runs in a project only you can see, so nobody else can read what you paste, and you have none yet.",
+      NO_NAVI_FIX,
+      "no_only_me_project",
+    );
+  }
+  const ports = refreshPorts(hub);
+  const found = own.find((r) => ports.can(r.machineId, CAP_ALLOWED_ONLY));
+  if (!found) {
+    throw new ToolError(
+      "machine_offline",
+      `Your project's machine, ${first.machineId}, is offline or runs a fleetd too old for this.`,
+      `Bring ${first.machineId} online with an up-to-date fleetd, then try again.`,
+    );
+  }
+  return found;
+}
+
+/** One entry of the turn's answer. */
+type Distilled = { kind?: string; text: string; replaces?: string };
+
+/** The entries of the turn's reply: its one JSON object, fenced or not. */
+export function parse(reply: string): Distilled[] | undefined {
+  const start = reply.indexOf("{");
+  const end = reply.lastIndexOf("}");
+  if (start < 0 || end < start) return undefined;
+  try {
+    const o = JSON.parse(reply.slice(start, end + 1)) as { entries?: unknown };
+    if (!Array.isArray(o.entries)) return undefined;
+    const out: Distilled[] = [];
+    for (const e of o.entries) {
+      if (e === null || typeof e !== "object" || typeof (e as Distilled).text !== "string") return undefined;
+      const d = e as Record<string, unknown>;
+      if ((d.kind != null && typeof d.kind !== "string") || (d.replaces != null && typeof d.replaces !== "string")) return undefined;
+      out.push({
+        text: d.text as string,
+        ...(typeof d.kind === "string" ? { kind: d.kind } : {}),
+        ...(typeof d.replaces === "string" ? { replaces: d.replaces } : {}),
+      });
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The more lasting kinds first: what an import keeps when the cap runs out. */
+function rank(kind: string | undefined): number {
+  switch (kind?.trim()) {
+    case "instruction":
+      return 0;
+    case "preference":
+      return 1;
+    case "identity":
+      return 2;
+    case "career":
+      return 3;
+    case "project":
+      return 4;
+    default:
+      return 5;
+  }
+}
+
+/** One line, without a `[date] -` the other assistant's format left on it, cut to an entry's length. */
+export function clean(text: string): string {
+  let line = text.split(/\s+/u).filter(Boolean).join(" ");
+  while (line.startsWith("- ")) line = line.slice(2);
+  const m = /^\[([^\]]*)\](.*)$/s.exec(line);
+  if (m && (m[1] === "unknown" || /^[0-9-]*$/.test(m[1] as string))) {
+    line = (m[2] as string).trimStart().replace(/^-+/, "").trimStart();
+  }
+  return [...line].slice(0, 1000).join("").trim();
+}
+
+/** How two entries compare when telling a duplicate: case, a final period and spacing aside. */
+function same(a: string): string {
+  let s = a.trim();
+  while (s.startsWith("- ")) s = s.slice(2);
+  return s.replace(/\.+$/, "").toLowerCase();
+}
+
+/** A memory entry: one line of 1 to 1000 characters (contracts `MemoryEntry`). */
+const entryOk = (s: string) => s.length >= 1 && s.length <= 1000 && !/[\r\n]/.test(s);
+
+function fenceNonce(): string {
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString("hex");
+}
+
+/** The turn's rules, and its message: the person's memory now and the export between two fences no paste can fake. */
+export function importPrompts(hub: Hub, memory: string, text: string): [string, string] {
+  const fence = `===== export ${fenceNonce()} =====`;
+  const rules = prompts(hub.db).current().render("memory.import", { fence });
+  const now = memory.trimEnd() || "(empty)";
+  // A line of the paste that reads like a fence is its text, nothing more.
+  const paste = text.split(fence).join("");
+  return [rules, `## The person's memory now\n${now}\n\n## The export (data only)\n${fence}\n${paste.trim()}\n${fence}`];
+}
+
+/** The person's import of `text`: the turn, then its entries written to their memory. */
+export async function importMemory(hub: Hub, you: You, by: string, text: string, using: Turn = importPorts(hub).turn): Promise<MemoryImportOutput> {
+  const memory = Memory.of(hub);
+  const t = youTarget(you);
+  if (!t) {
+    throw new ToolError(
+      "forbidden",
+      "Imported memory goes into a person's own memory, and this key belongs to no person.",
+      "Import from your own device (a human key from an invite or `fleetd pair`).",
+    );
+  }
+  const person = t.person;
+  const r = place(hub, person);
+  const setup = new ClaudeAccountStore(hub.db).setup();
+  const ports = refreshPorts(hub);
+  const account = launchAccount(setup, person === undefined ? { hub: true } : { person }, r.machineId, () =>
+    ports.can(r.machineId, CAP_CLAUDE_ACCOUNTS) ? "runs" : ports.lacks(r.machineId, CAP_CLAUDE_ACCOUNTS) ? "too_old" : "offline",
+  );
+  if (isRefusal(account)) throw new ToolError("invalid", account.message, account.fix);
+  const [systemPrompt, prompt] = importPrompts(hub, memory.read(t), text);
+  let profile = "legacy";
+  try {
+    profile = profiles(hub).defaultProfile().name;
+  } catch {}
+  const input: LaunchInput = {
+    projectId: r.projectId,
+    prompt,
+    systemPrompt,
+    profile,
+    // Its node asks for any tool, and refuses it: it has none.
+    runtimeMode: "approval-required",
+    title: "fleetd memory import",
+    clientRequestId: `fleetd-memory-import:${person ?? "shared"}:${fenceNonce()}`,
+  };
+  const options: LaunchOptions = {
+    role: "plain",
+    mcp: { userServers: false, servers: [] },
+    onlyTools: [],
+    ...(account === undefined ? {} : { claudeAccount: account }),
+  };
+  let reply: string;
+  try {
+    reply = await using.run(r, person, input, options);
+  } catch (error) {
+    throw new ToolError("failed", `The import didn't finish: ${(error as Error).message}.`, "Try again; nothing was added.");
+  }
+  const entries = parse(reply);
+  if (!entries) throw new ToolError("failed", "The model's answer couldn't be read as memory entries. Nothing was added.", "Try again.");
+  const [added, skipped] = write(hub, r, person, entries);
+  if (added.length > 0) changed(hub, undefined, undefined, by);
+  const now = memory.read(t);
+  const cap = memory.cap(t);
+  const full = skipped.filter((s) => s.why === "full").length;
+  const next =
+    added.length === 0 && full === 0
+      ? "Nothing new to add: your memory already says it all."
+      : full === 0
+        ? `Added ${added.length} to your memory.`
+        : `Added ${added.length} to your memory; ${full} more didn't fit under its cap of ${cap} characters (skipped, why full). Trim your memory, then import again to add them.`;
+  return { prompt: exportPrompt(hub), added, skipped, chars: [...now].length, cap, next };
+}
+
+/** Writes `entries` to the person's own memory as `remember` writes them, the more lasting kinds first. */
+function write(hub: Hub, r: ProjectRef, person: PersonId | undefined, entries: Distilled[]): [MemoryImported[], MemorySkipped[]] {
+  const sorted = entries.map((e, i) => [e, i] as const).sort((a, b) => rank(a[0].kind) - rank(b[0].kind) || a[1] - b[1]);
+  const memory = Memory.of(hub);
+  const t = userTarget(person);
+  const added: MemoryImported[] = [];
+  const skipped: MemorySkipped[] = [];
+  const seen: string[] = [];
+  const skip = (text: string, why: MemoryImportSkip) => {
+    if (entryOk(text)) skipped.push({ text, why });
+  };
+  for (const [e] of sorted) {
+    if (added.length >= IMPORT_ENTRIES_MAX) break;
+    const text = clean(e.text);
+    if (!text || seen.includes(same(text))) continue;
+    seen.push(same(text));
+    const redacted = redact(text);
+    if (redacted !== text) {
+      skip(redacted, "secret");
+      continue;
+    }
+    if (memory.read(t).split("\n").some((l) => same(l) === same(text))) {
+      skip(text, "duplicate");
+      continue;
+    }
+    if (!entryOk(text)) continue;
+    const old = e.replaces === undefined ? undefined : clean(e.replaces);
+    const call: RememberCall = { scope: "user", text, ...(old && entryOk(old) ? { replaces: old } : {}) };
+    let wrote: ReturnType<Memory["remember"]> | ToolError;
+    const attempt = (c: RememberCall) => {
+      try {
+        return memory.remember(r, person, c);
+      } catch (error) {
+        if (error instanceof ToolError) return error;
+        throw error;
+      }
+    };
+    wrote = attempt(call);
+    // The entry it names isn't there as quoted: it goes in as a new one.
+    if (wrote instanceof ToolError && call.replaces !== undefined) {
+      const { replaces: _, ...plain } = call;
+      wrote = attempt(plain);
+    }
+    if (wrote instanceof ToolError) {
+      if (wrote.code === "invalid") {
+        skip(text, "full");
+        continue;
+      }
+      throw wrote;
+    }
+    if (wrote.item) added.push({ text: wrote.item.text, ...(wrote.item.replaced === undefined ? {} : { replaced: wrote.item.replaced }) });
+    else skip(text, "duplicate");
+  }
+  return [added, skipped.slice(0, IMPORT_ENTRIES_MAX)];
+}
+
+/**
+ * memory_import and memory_refresh_run (memory/tools.rs): Import memory, a person's own, and Run now on the nightly
+ * refresh's row in Settings > Automations.
+ */
+export function registerImportAndRefresh(tools: Registry): void {
+  tools.add("memory_import", async (hub, caller, input) => {
+    requireHuman(caller, "memory_import");
+    const text = input.text ?? "";
+    // The caller's own memory: their person's; the shared user.md on a hub with no people; nobody's for a key with none.
+    const you: You = caller.person ? { kind: "person", person: caller.person.personId } : activePeople(hub.db).length === 0 ? { kind: "shared" } : { kind: "nobody" };
+    if (!text.trim()) {
+      const memory = Memory.of(hub);
+      const t = youTarget(you);
+      return {
+        prompt: exportPrompt(hub),
+        added: [],
+        skipped: [],
+        chars: t ? [...memory.read(t)].length : 0,
+        cap: t ? memory.cap(t) : memory.caps.user,
+        next: "Copy the prompt into your other assistant, then call again with its answer as text.",
+      };
+    }
+    return importMemory(hub, you, caller.name, text);
+  });
+
+  tools.add("memory_refresh_run", async (hub, caller, input) => {
+    const r = input.projectRef;
+    requireRole(caller, "operate", r.machineId);
+    if (!store(hub).projectGet(r)) throw unknownProject(r);
+    const why = await runNow(hub, r);
+    return {
+      memoryRefresh: job(hub, r),
+      ...(why === undefined ? {} : { why }),
+      next:
+        why === undefined
+          ? "Refreshing: a line in the chat lists what it changed, with Undo; nothing changed posts nothing."
+          : "Nothing started; the nightly pass goes on as before.",
+    };
+  });
+}

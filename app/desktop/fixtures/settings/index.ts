@@ -84,7 +84,7 @@ function memory(f: Fixture) {
   f.answer("memory_undo", undefined, { ok: true });
   // Import memory: the hub's export prompt as it ships, and what an import of a ChatGPT export added.
   f.answer("memory_import", undefined, {
-    prompt: fs.readFileSync(new URL("../../../../crates/fleetd/assets/prompts/memory.export.md", import.meta.url), "utf8").trimEnd(),
+    prompt: fs.readFileSync(new URL("../../../../fleetd/src/hub/prompts/defaults/memory.export.md", import.meta.url), "utf8").trimEnd(),
     added: [
       { text: "Keep answers short and skip the pleasantries." },
       { text: "Likes plain, dense docs over marketing copy." },

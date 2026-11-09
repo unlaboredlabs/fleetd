@@ -27,12 +27,10 @@ export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? slotPort(4795)
 export const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
 /** Per hub port, so two runs on different ports never delete each other's state. */
 export const RUN = process.env.FLEETD_LAB_RUN ?? path.join(LAB, `e2e-${HUB_PORT}`);
-/** Cargo's release output, honouring CARGO_TARGET_DIR as cargo does. */
-export const RELEASE = path.join(process.env.CARGO_TARGET_DIR ?? path.join(REPO, "target"), "release");
-/** The release build of the binary (`cargo build --release -p fleetd`), so the lab exercises what ships. */
-export const CLI = path.join(RELEASE, "fleetd");
+/** The compiled binary (`bun run compile` in fleetd/), so the lab exercises what ships. */
+export const CLI = path.join(REPO, "fleetd/dist/fleetd");
 /**
- * The command for one fleetd invocation. FLEETD_BIN (default the release build) is the fleetd under test; FLEETD_HUB_BIN,
+ * The command for one fleetd invocation. FLEETD_BIN (default the compiled binary) is the fleetd under test; FLEETD_HUB_BIN,
  * FLEETD_NODE_BIN and FLEETD_CLI_BIN override it for `hub …`, `node …` and everything else, for mixed runs such as
  * two builds side by side. A .js/.mjs/.cjs/.ts bin runs under this node; any other bin is executed directly.
  */
@@ -47,7 +45,7 @@ export const MODEL = "claude-opus-5-5";
 /** Mechanics scenarios' tasks run the medium profile: what they check doesn't depend on how well the model reasons. */
 export const MECHANICS = "medium" as const;
 
-// Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
+// Texts the binary emits that scenarios match on; each mirrors a constant in fleetd/src.
 
 /** The two standing lab machines, each with its own test repo (seeded on first use) as its project. */
 export const MACHINES = [

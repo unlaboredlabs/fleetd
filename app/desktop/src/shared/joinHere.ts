@@ -21,8 +21,8 @@ export interface JoinHere {
 
 /**
  * This computer as main reads it (src/main/joinHere.ts thisComputer): what its fleetd dir holds (a hub's home, a node
- * already enrolled with a hub under whatever id, or neither), and its fingerprint, a hash of the OS's id for it
- * (crates/fleetd/src/fingerprint.rs), which hub_info gives for the hub's own computer. Only "none" is ever joined from
+ * already enrolled with a hub under whatever id, or neither), and its fingerprint, a hash of the OS's id for it,
+ * which hub_info gives for the hub's own computer. Only "none" is ever joined from
  * the app.
  */
 export type ThisComputer = (

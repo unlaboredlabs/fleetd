@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "fleetd push-relay: can't read nope.key: No such file or directory (os error 2)\n"
+}
