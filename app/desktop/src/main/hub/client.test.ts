@@ -249,6 +249,50 @@ describe("HubClient", () => {
     expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live"]);
   });
 
+  it("redials every 250 ms for a minute after the hub closes to restart, saying since when, then backs off", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    const at = Date.now();
+    hub.close(1012);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: at + 250, restarting: at });
+    // Down a while: each refused dial is tried again 250 ms later, still restarting since the close.
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(250);
+      expect(client.state).toMatchObject({ phase: "connecting", attempt: 0, restarting: at });
+      hub.close(1006);
+      expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 250, restarting: at });
+    }
+    vi.advanceTimersByTime(60_000 - (Date.now() - at));
+    hub.close(1006);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500, restarting: at });
+    vi.advanceTimersByTime(500);
+    hub.ready();
+    expect(client.state).toMatchObject({ phase: "live" });
+    // Back: the next drop that isn't a restart backs off as ever, and says nothing of one.
+    hub.close(1006);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 1000 });
+    expect(client.state).not.toHaveProperty("restarting");
+  });
+
+  it("takes a hub's going-away close as a restart too, saying the build only when it updates, but not a close before the link opened", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    hub.close(1001, "hub restarting");
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 250, restarting: Date.now() });
+    expect(client.state).not.toHaveProperty("updatingTo");
+    vi.advanceTimersByTime(250);
+    hub.ready();
+    hub.close(1001, "updating to 0.0.0-edge.202611082014+90e7a07");
+    expect(client.state).toMatchObject({ phase: "retrying", restarting: Date.now(), updatingTo: "0.0.0-edge.202611082014+90e7a07" });
+    client.stop();
+    client.start();
+    hub.close(1012);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
+    expect(client.state).not.toHaveProperty("restarting");
+  });
+
   it("keeps backing off from a hub that accepts the key and then drops, and starts over after a stable link", () => {
     const { hub, client } = setup();
     client.start();

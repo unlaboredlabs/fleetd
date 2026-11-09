@@ -1,6 +1,7 @@
 // What the frame shows, as plain view data: the sidebar's projects with their two marks, the home project, the
 // connection line. Pure, so it is unit-tested. The rows are the data layer's (selectShownProjects), in its order.
 import type { HubState } from "../../../shared/hub";
+import { RESTART_HOLD_MS } from "../../src/data/store";
 import type { ProjectRow } from "../../src/data/selectors";
 import type { ProjectKey } from "./routes";
 
@@ -111,7 +112,35 @@ export const stepProject = <P extends SidebarProject>(projects: ReadonlyArray<P>
 export const homeProject = <P extends SidebarProject>(projects: ReadonlyArray<P>, last: string | null): P | null =>
   projects.find((x) => x.key === last) ?? projects[0] ?? null;
 
-export type ConnTone = "success" | "warning" | "danger" | "quiet";
+/** `restarting`: the hub closed to restart, and its dot opens to a ring until it answers. */
+export type ConnTone = "success" | "warning" | "danger" | "quiet" | "restarting";
+
+/** An update's restart that runs longer than this gets the main area's one line (updates/RestartLine). */
+export const LONG_RESTART_MS = 30_000;
+/** And one longer than this is an outage: the offline banner, as for any lost link. */
+export const OUTAGE_MS = 120_000;
+
+export type RestartPhase = "quiet" | "long" | "outage";
+
+export interface Restart {
+  readonly phase: RestartPhase;
+  readonly since: number;
+  /** The build an update restarts into; null for a restart or stop that isn't an update. */
+  readonly to: string | null;
+}
+
+/**
+ * Where a restart stands: null when the hub didn't close to restart (connected, or any other drop). An update's is
+ * quiet for 30 s, then long until 2 minutes; any other restart or stop is quiet only while the screens hold what they
+ * showed (RESTART_HOLD_MS), then an outage like any lost link.
+ */
+export const restartOf = (hub: HubState, now: number): Restart | null => {
+  if ((hub.phase !== "connecting" && hub.phase !== "retrying") || hub.restarting === undefined) return null;
+  const away = now - hub.restarting;
+  const to = hub.updatingTo ?? null;
+  const phase = to === null ? (away < RESTART_HOLD_MS ? "quiet" : "outage") : away < LONG_RESTART_MS ? "quiet" : away < OUTAGE_MS ? "long" : "outage";
+  return { phase, since: hub.restarting, to };
+};
 
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "");
@@ -149,9 +178,26 @@ export interface ConnLine {
  * marked with the time they were last current (`asOf`, "as of 09:02"); the popover says it too, and the banner
  * counts down.
  */
-export const connLine = (state: HubState, fixture = false, asOf?: string): ConnLine => {
+export const connLine = (state: HubState, fixture = false, asOf?: string, now = Date.now()): ConnLine => {
   const none = { detail: null, fix: null, hub: null, retry: false };
   if (fixture) return { ...none, label: "Sample data", tone: "quiet", status: "Sample data", detail: "Sample data, no hub" };
+  // A restart isn't an outage while it is short (an update's for 2 minutes): the hub keeps its name, its dot opens to
+  // a ring. Only an update says it updates.
+  const restart = restartOf(state, now);
+  if (restart !== null && restart.phase !== "outage" && state.phase !== "live" && state.phase !== "unpaired" && state.phase !== "refused") {
+    return {
+      ...none,
+      label: hubName(state.hub),
+      tone: "restarting",
+      status: restart.to === null ? "Reconnecting…" : "Updating fleetd…",
+      detail:
+        restart.to === null
+          ? "The hub is restarting. Agents keep working on their machines, and anything you send goes once it's back"
+          : "The hub is restarting into a new build. Agents keep working on their machines, and anything you send goes once it's back",
+      hub: state.hub,
+      retry: restart.phase === "long",
+    };
+  }
   switch (state.phase) {
     // The first attempt is the usual start: quiet. Amber once it is trying again.
     case "connecting": {

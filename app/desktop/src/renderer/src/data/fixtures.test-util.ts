@@ -5,7 +5,7 @@ import type { HubFrame } from "../../../shared/hub";
 export const AT = "2026-10-19T10:00:00.000Z";
 export const project = { machineId: "devbox", projectId: "storefront" } as const;
 
-export const snapshot = (cursor: number): HubFrame => {
+export const snapshot = (cursor: number, resumed = false): HubFrame => {
   const snap: FleetStatus = {
     cursor,
     attention: [],
@@ -20,7 +20,7 @@ export const snapshot = (cursor: number): HubFrame => {
       },
     ],
   };
-  return { t: "snapshot", snapshot: snap };
+  return resumed ? { t: "snapshot", snapshot: snap, resumed: true } : { t: "snapshot", snapshot: snap };
 };
 
 /** The hub's live state; `features`, what newer it says it serves. */

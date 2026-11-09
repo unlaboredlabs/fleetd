@@ -74,10 +74,11 @@ export const selectConnection = memo(
         return { view: "unpaired" };
       case "refused":
         return { view: "refused", message: hub.message };
+      // A hub that closed to restart keeps the screens on what they held for a while (store.ts RESTART_HOLD_MS).
       case "retrying":
-        return { view: "skeleton", hub: hub.hub, reason: hub.reason, fix: hub.fix, retryAt: hub.retryAt };
+        return fresh ? { view: "live", hub: hub.hub } : { view: "skeleton", hub: hub.hub, reason: hub.reason, fix: hub.fix, retryAt: hub.retryAt };
       case "connecting":
-        return { view: "skeleton", hub: hub.hub };
+        return fresh ? { view: "live", hub: hub.hub } : { view: "skeleton", hub: hub.hub };
       case "live":
         return fresh ? { view: "live", hub: hub.hub } : { view: "skeleton", hub: hub.hub };
     }
