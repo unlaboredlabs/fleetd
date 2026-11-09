@@ -8,7 +8,7 @@ use crate::hub::store::{HubDb, StoreError};
 pub struct NewSteer<'a> {
     pub steer: Steer,
     pub task_id: Option<&'a str>,
-    /// `key:<id>` for a person, `lead` for a lead.
+    /// `key:<id>` for a person, `lead` for a lead, `agent:T<n>` for another agent.
     pub by: String,
     /// `steer:<by>:<clientRequestId>`: a resent request returns this steer, whatever its stage.
     pub request: String,

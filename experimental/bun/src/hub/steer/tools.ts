@@ -1,4 +1,4 @@
-// steer_send and steer_withdraw (crates/fleetd/src/hub/steer/tools.rs), with the "References:" lines an order's
+// steer_send, steer_withdraw and agent_messages (crates/fleetd/src/hub/steer/tools.rs), with the "References:" lines an order's
 // note or steer carries (orders/notes.rs `render_refs`).
 import type { IntakeRef, SteerStage } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -11,6 +11,9 @@ import { requireHuman } from "../leads/seams.ts";
 import { oneLine } from "../leads/text.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { ChangeRecords, parsePrUrl } from "../train/records.ts";
+import { unknownProject } from "../api/refusals.ts";
+import { mayUse } from "../navi/owner.ts";
+import { list } from "./dm.ts";
 import { send, withdraw } from "./index.ts";
 
 const unknownOrder = (id: string) => new ToolError("not_found", `No order ${id}.`, "Call orders_board to see open orders.");
@@ -67,6 +70,15 @@ export function register(tools: Registry): void {
     });
     const n = next(steer.stage);
     return { ...steer, ...(n === undefined ? {} : { next: n }) };
+  });
+
+  // What a project's agents wrote to each other: any key that reads its machine, but another person's Only me project
+  // is theirs alone (D310).
+  tools.add("agent_messages", async (hub, caller, input) => {
+    const r = input.projectRef;
+    if (!allows(caller, "read", r.machineId) || !mayUse(hub.db, caller, r)) throw unknownProject(r);
+    const page = list(hub.db, r, input.taskId, input.before, input.limit ?? 50);
+    return { ...page, ...(page.more ? { next: "Older ones remain: call again with before, the id of the oldest here." } : {}) };
   });
 
   tools.add("steer_withdraw", async (hub, caller, input) => {

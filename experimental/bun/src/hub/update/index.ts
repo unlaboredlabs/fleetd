@@ -1,7 +1,10 @@
 // `hub_update` (crates/fleetd/src/hub/update/mod.rs): the hub updates itself to the newest build of its channel,
-// then tells every connected node to do the same, with src/update's pieces. The hub restarts at once; a node waits
-// for its agents first, for a while at most (`drain`), holding their tool calls that haven't started until none runs.
-// Update now doesn't wait.
+// then tells every connected node to do the same, with src/update's pieces. The hub restarts at once; a node too when
+// nothing its restart would cut off runs: its agents run under hosts in systemd scopes of their own, which carry on
+// through it, mid-step included. It waits only for a live session, an approved command, a check the hub runs there or
+// a session that isn't hosted (a Navi's) mid-step, for a while at most (`drain`, 2 minutes by default). Where its
+// agents can't carry on (no scopes, or a new build on another host protocol) it holds their tool calls that haven't
+// started until none runs, as before. Update now doesn't wait.
 //
 // Every 2 minutes the hub downloads the channel's newest build ahead and asks its nodes to do the same (`prefetch`),
 // so pressing Update only swaps and restarts. With automatic updates on, the same look starts an update by itself as
@@ -34,10 +37,15 @@ import { checkedTo, channelOf, type Channel, Failure, type Feed, isBuild, releas
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
+import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
 import { pause } from "../cloud/every.ts";
 import { isoMs } from "../store/time.ts";
 
-export const DRAIN_MINUTES = 10;
+/**
+ * How long a node waits by default for what its restart would cut off (a live session, a Navi mid-step, an approved
+ * command, a check), or for its agents to finish their step where they don't carry on through it.
+ */
+export const DRAIN_MINUTES = 2;
 export const DRAIN_MINUTES_MAX = 240;
 export const UPDATE_PARTS_MAX = 401;
 /** Machines `hub.update` names one by one (mcp.rs `HUB_UPDATE_MACHINES_MAX`); past these, `moreMachines` counts the rest. */
@@ -84,7 +92,12 @@ export interface UpdatePorts {
   startWatcher(plan: Plan, planPath: string): void;
   nodes(): NodeFacts[];
   fetchOnNode(machineId: string, update: NodeUpdate): void;
-  holdNode(machineId: string): Promise<number>;
+  /**
+   * Holds the node's agents between steps for a while (`node_action` `hold`): how many are still mid-step. With
+   * `unhosted`, a node whose agents carry on through its restart (its answer's `hosted`) holds none, and counts only the
+   * sessions that don't.
+   */
+  holdNode(machineId: string, unhosted: boolean): Promise<Held>;
   /** Resolves once the machine's link goes live or drops after this call. */
   nodeChanged(machineId: string): Promise<void>;
   claudeTarget(): string;
@@ -93,6 +106,14 @@ export interface UpdatePorts {
   /** Tells the apps how the update looks now (the `hub.update` event); called only when that changed. */
   announce(update: HubUpdateData): void;
 }
+
+/** A node's answer to its hold. */
+export type Held = {
+  /** Its sessions still mid-step: with `unhosted` and `hosted`, only those not hosted. */
+  steps: number;
+  /** The host protocol of its sessions' hosts, when they carry on through its restart; absent when they don't. */
+  hosted?: number;
+};
 
 /** How long the update waits on things, in ms; tests shorten them. */
 export type Timing = {
@@ -297,6 +318,8 @@ export class Updates {
   /** Held while a build downloads to `kept` and while Update installs it. */
   private fetching: Promise<void> = Promise.resolve();
   private nextCheck_: number | undefined;
+  /** Woken at each write of the run: a cloud machine's catch-up waits on it for the run going on to end. */
+  private readonly saved = new Set<() => void>();
   private checkFailed: string | undefined;
   /** What `UpdatePorts.announce` last told the apps, so a write that changes nothing they show sends nothing. */
   private announced: string | undefined;
@@ -409,7 +432,11 @@ export class Updates {
       .catch((e) => {
         if (!entry.stop.signal.aborted) console.error(`update: ${id}:`, e);
       })
-      .finally(() => this.drives.delete(entry));
+      .finally(() => {
+        this.drives.delete(entry);
+        // A drive that ended without a last write still ends the wait of a catch-up.
+        for (const wake of [...this.saved]) wake();
+      });
   }
 
   /** The last run isn't finished, yet nothing in this process drives it any more. */
@@ -700,6 +727,7 @@ export class Updates {
   private save(run: UpdateRun): void {
     if (run.auto === true && run.finishedAt !== undefined) this.saveLastAuto(run);
     this.announce(run);
+    for (const wake of [...this.saved]) wake();
     try {
       mkdirSync(this.dir, { recursive: true });
       replaceFile(join(this.dir, "run.json"), runText(run));
@@ -748,11 +776,24 @@ export class Updates {
     return () => this.hurry.delete(f);
   }
 
-  /** A cloud machine's catch-up at its hello: one that slept through an update gets it now. */
+  /**
+   * A cloud machine's catch-up at its hello: one that slept through an update gets it now. While an update runs, which
+   * takes every node it saw online itself, it waits for the run to end first; nothing from a hub built by hand, which
+   * updates nobody.
+   */
   async catchUp(machineId: string): Promise<"current" | "restarting"> {
     const ports = this.ports_;
     if (!ports) throw new Error("the hub's updates aren't wired");
-    if (!ports.releaseBuild() || (this.run && this.going(this.run))) return "current";
+    if (!ports.releaseBuild()) return "current";
+    // A machine that wakes while an update goes on (it slept through the run's start, so the run skipped it) waits for
+    // the run to end, not ready for work meanwhile, then comes to the build the hub runs by then: at once, not at the
+    // next automatic update.
+    while (this.run && this.run.finishedAt === undefined && this.going(this.run)) {
+      await new Promise<void>((resolve) => {
+        const wake = () => (this.saved.delete(wake), resolve());
+        this.saved.add(wake);
+      });
+    }
     const node = ports.nodes().find((n) => n.machineId === machineId);
     if (!node) throw new Error(`${machineId} isn't linked`);
     const running = ports.running();
@@ -1079,14 +1120,28 @@ class Drive {
         `its fleetd (${versionLabel(node.version)}) is too old to update from the hub: run \`fleetd update\` on ${node.name} once`,
       );
     }
-    // The node holds its agents' tool calls that haven't started, and waits for those running to finish, so the
-    // restart finds them between steps. At the deadline it updates whatever runs; Update now doesn't wait.
+    // The node waits only for what its restart would cut off: a live session, an approved command, a check the hub runs
+    // there, and a session that isn't hosted (a Navi's) mid-step. Its hosted agents carry on through the restart,
+    // mid-step included, so they aren't held or waited for, unless they can't: a machine without systemd scopes, whose
+    // hosts die with the node, or a new build on another host protocol, whose node won't take them back. Then it holds
+    // every agent's tool calls that haven't started, and waits for those running to finish, as before. At the deadline
+    // it updates whatever runs; Update now doesn't wait.
     const by = this.u.clockNow() + this.u.drain();
     let said: string | undefined;
+    let carryOn = true;
     for (let now = facts(); now; now = facts()) {
       if (current(now)) return;
       if (this.u.status()?.now === true || this.u.clockNow() >= by || this.stopped()) break;
-      const agents = now.canHold ? await ports.holdNode(machineId).catch(() => 0) : 0;
+      let agents = 0;
+      if (now.canHold) {
+        const hold = (unhosted: boolean) => ports.holdNode(machineId, unhosted).catch((): Held => ({ steps: 0 }));
+        let held = await hold(carryOn);
+        if (carryOn && held.hosted !== HOST_PROTOCOL) {
+          carryOn = false;
+          held = await hold(false);
+        }
+        agents = held.steps;
+      }
       if (agents === 0 && now.busy === undefined) break;
       const key = JSON.stringify([agents, now.busy ?? null]);
       if (said !== key) {

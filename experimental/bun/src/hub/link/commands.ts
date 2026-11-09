@@ -229,8 +229,19 @@ export class NodeCommands {
     return this.runAction(machineId, "screens", { screens });
   }
 
-  holdNode(machineId: string) {
-    return this.runAction(machineId, "hold");
+  /** `hold`; with `unhosted`, a node whose sessions carry on through its restart holds none (`NodeAction.unhosted`). */
+  holdNode(machineId: string, unhosted = false) {
+    return this.runAction(machineId, "hold", unhosted ? { unhosted: true } : {});
+  }
+
+  /**
+   * The `cmd_check`s this hub process runs on the machine's node now (the train's checks and regenerations): its node's
+   * restart cuts them off. One that ran across the hub's own restart has no waiter left, and its asker runs it again.
+   */
+  checksRunning(machineId: string): number {
+    let n = 0;
+    for (const p of this.pending.values()) if (p.machineId === machineId && p.reply === "cmd_result") n++;
+    return n;
   }
 
   fetchUpdate(machineId: string, update: unknown) {

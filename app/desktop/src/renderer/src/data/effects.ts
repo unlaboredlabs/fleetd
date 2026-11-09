@@ -120,8 +120,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type === "people.changed") {
     out.push({ tool: "claude_accounts_get" }, { tool: "onepassword_get" }, { tool: "github_app_get" }, { tool: "hub_links_get" });
   }
-  // You moved a project on another desktop: this sidebar follows (the hub sends it to your devices only).
-  if (type === "sidebar.order") out.push({ tool: "sidebar_order_get" });
+  // You pinned or unpinned a chat on another device: this sidebar follows (the hub sends it to your devices only).
+  if (type === "chat.pins") out.push({ tool: "chat_pins_get" });
   // A device paired: Your devices shows it, and Pair a phone notices it.
   if (type === "key.paired") out.push({ tool: "people_list" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A

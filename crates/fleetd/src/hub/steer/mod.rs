@@ -2,6 +2,7 @@
 //! never through the wake debounce or with the digest. `queue` lands at the agent's next tool boundary as its own
 //! turn; `now` stops its current step. Every steer has a receipt the node decides from claude's own frames
 //! (`MachineEvent::Steer`), stored here and emitted as `steer.*` events. See docs/build/steering-spec.md.
+pub mod dm;
 pub mod store;
 pub mod tools;
 
@@ -15,8 +16,8 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::{
-    STEER_TEXT_MAX, Steer, SteerBy, SteerEventData, SteerId, SteerMode, SteerReceipt, SteerStage,
-    SteerTarget,
+    AgentMessageId, STEER_TEXT_MAX, Steer, SteerBy, SteerEventData, SteerId, SteerMode,
+    SteerReceipt, SteerStage, SteerTarget,
 };
 use fleetd_contracts::tasks::{Task, TaskState};
 
@@ -34,6 +35,11 @@ pub enum By<'a> {
     Human(&'a Caller),
     /// A lead, for a task of its own project.
     Lead(&'a fleetd_contracts::ids::ProjectRef),
+    /// A task's agent, for another agent of its project: one recipient of its agent message (`dm`).
+    Agent {
+        from: &'a Task,
+        message: &'a AgentMessageId,
+    },
 }
 
 impl By<'_> {
@@ -41,6 +47,7 @@ impl By<'_> {
         match self {
             By::Human(caller) => format!("key:{}", caller.key_id),
             By::Lead(_) => "lead".into(),
+            By::Agent { from, .. } => format!("agent:{}", from.task_id),
         }
     }
 
@@ -50,6 +57,10 @@ impl By<'_> {
                 key_name: caller.name.clone(),
             },
             By::Lead(_) => SteerBy::Lead,
+            By::Agent { from, message } => SteerBy::Agent {
+                task_id: from.task_id.clone(),
+                message_id: Some((*message).clone()),
+            },
         }
     }
 }
@@ -140,6 +151,19 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                     return Err(not_found(&format!("task {task_id} in this project")));
                 }
                 By::Lead(_) => {}
+                By::Agent { from, .. } if from.project_ref != *r => {
+                    return Err(ToolError::new(
+                        ErrorCode::NotFound,
+                        format!("There is no agent {task_id} in your project."),
+                    )
+                    .with_fix("Call `agents` to see your project's agents and their ids."));
+                }
+                By::Agent { from, .. } if from.task_id == *task_id => {
+                    return Err(invalid(format!("{task_id} is you.")).with_fix(
+                        "Call `agents` to find the agent you mean, or ask your lead with ask_lead.",
+                    ));
+                }
+                By::Agent { .. } => {}
             }
             if task.state == TaskState::Cancelled {
                 return Err(invalid(format!("{task_id} was cancelled."))
@@ -209,6 +233,22 @@ fn message(hub: &Hub, steer: &Steer, to: &Resolved, by: &By, req: &SteerRequest)
     let who = match by {
         By::Human(_) => "the human",
         By::Lead(_) => "your lead",
+        By::Agent { from, message } => {
+            return hub
+                .db
+                .prompts()
+                .for_thread(&to.thread.machine_id, to.thread.thread_id.as_str())
+                .render(
+                    "agent.message",
+                    &[
+                        ("id", message),
+                        ("from", &from.task_id),
+                        ("fromTitle", &one_line(from.title.as_str(), 80)),
+                        ("scope", &scope),
+                        ("text", &one_line(req.text, STEER_TEXT_MAX)),
+                    ],
+                );
+        }
     };
     hub.db
         .prompts()
@@ -236,6 +276,10 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
     let crid = format!("steer:{}:{}", by.stored(), req.client_request_id);
     let run_id = Executors::send_run_id(&to.thread, &crid);
     let now = now_ms(hub.clock.as_ref());
+    let running = to
+        .task
+        .as_ref()
+        .is_none_or(|t| t.state == TaskState::Running);
     let draft = Steer {
         id: SteerId::from_n(1),
         target: req.target.clone(),
@@ -254,6 +298,7 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         acked_at: None,
         ack_excerpt: None,
         detail: None,
+        held: (!running).then_some(true),
     };
     let task_id = to.task.as_ref().map(|t| t.task_id.to_string());
     let (mut steer, created) = store::insert(
@@ -269,12 +314,41 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
     if !created {
         return Ok(steer);
     }
+    // A lead's or a person's words answer a question the task asked, even mid-run: from then on another agent's
+    // message is held for it like any other.
+    if let (By::Human(_) | By::Lead(_), Some(task)) = (&by, &to.task) {
+        hub.tasks.answered(&task.task_id);
+    }
     emit(hub, &steer, HubEventType::SteerQueued, None);
     if let (By::Human(_), Some(task)) = (&by, &to.task) {
         tell_lead(hub, &steer, task);
     }
     let text = message(hub, &steer, &to, &by, &req);
     store::keep_message(&hub.db, &steer.id, &text)?;
+    // An agent never starts another's run: one that has ended keeps the message for a run something else starts (a
+    // Monitor or wait_ci of its own, its lead), unless it waits for an answer, which this may be.
+    if let (By::Agent { from, .. }, Some(task)) = (&by, &to.task)
+        && matches!(
+            task.state,
+            TaskState::Done | TaskState::Failed | TaskState::Idle
+        )
+        && hub.tasks.asked_at(&task.task_id).is_none()
+    {
+        let waits = hub.tasks.has_ci_wait(&task.task_id);
+        let (id, sender) = (&task.task_id, &from.task_id);
+        steer.detail = Some(Text::unchecked(if waits {
+            format!("{id} has finished and waits on wait_ci: it gets this when that wakes it")
+        } else {
+            format!(
+                "{id} has finished and isn't waiting on {sender}: it gets this only if a Monitor or wait_ci of its \
+                 own wakes it, or its lead continues it"
+            )
+        }));
+        store::put(&hub.db, &steer, None, None)?;
+        store::hold(&hub.db, &steer.id, Some(&text))?;
+        hub.tasks.hold_message(&task.task_id, &text).await?;
+        return Ok(store::get(&hub.db, &steer.id)?.map_or(steer, |(s, _)| s));
+    }
     // A task that is not running gets it with its next run (a queued task when it starts, an ended one as its
     // continuation): held until then, and sent tagged with that run, so its receipts are the run's.
     if let Some(task) = to.task.as_ref().filter(|t| t.state != TaskState::Running) {
@@ -383,11 +457,13 @@ pub fn take_held(
     leader.run_id = run_id.clone();
     leader.thread = thread.clone();
     leader.detail = None;
+    leader.held = None;
     store::bind(db, &leader).ok()?;
     let mut riders = Vec::new();
     for mut rider in held {
         rider.run_id = run_id.clone();
         rider.thread = thread.clone();
+        rider.held = None;
         rider.detail = Some(Text::unchecked(format!(
             "sent with {task_id}'s next run, together with {}",
             leader.id
@@ -418,6 +494,7 @@ pub fn hold_unrun(db: &crate::hub::store::HubDb, task_id: &str, run_id: &str) ->
         }
         let message = message.unwrap_or_else(|| steer.text.to_string());
         steer.stage = SteerStage::Queued;
+        steer.held = Some(true);
         steer.detail = Some(Text::unchecked(format!(
             "its run never began; it goes again with {task_id}'s resumed run"
         )));
@@ -441,6 +518,7 @@ pub fn rehold(db: &crate::hub::store::HubDb, id: &SteerId) {
         let SteerTarget::Task { task_id } = &steer.target else {
             continue;
         };
+        steer.held = Some(true);
         steer.detail = Some(Text::unchecked(format!(
             "queued until {task_id} starts; it gets this with its next run"
         )));
@@ -541,7 +619,15 @@ fn summary(steer: &Steer) -> String {
     let to = target_name(steer);
     let id = &steer.id;
     match steer.stage {
-        SteerStage::Queued => format!("{id} to {to}: '{}'", one_line(&steer.text, 120)),
+        SteerStage::Queued => match &steer.by {
+            SteerBy::Agent { task_id, .. } => {
+                format!(
+                    "{id} from {task_id} to {to}: '{}'",
+                    one_line(&steer.text, 120)
+                )
+            }
+            _ => format!("{id} to {to}: '{}'", one_line(&steer.text, 120)),
+        },
         SteerStage::Delivered => match (&steer.how, &steer.stopped_tool) {
             (Some(fleetd_contracts::steer::DeliveredHow::Stopped), Some(tool)) => {
                 format!("{id} reached {to}: it stopped `{}`", one_line(tool, 80))
@@ -576,6 +662,7 @@ fn emit(hub: &Hub, steer: &Steer, kind: HubEventType, extra: Option<serde_json::
             .as_ref()
             .filter(|_| kind == HubEventType::SteerFailed)
             .map(|r| r.to_string()),
+        held: steer.held,
     };
     let mut data = serde_json::to_value(data).unwrap_or_default();
     if let (Some(extra), Some(map)) = (extra, data.as_object_mut()) {
@@ -593,6 +680,9 @@ fn emit(hub: &Hub, steer: &Steer, kind: HubEventType, extra: Option<serde_json::
     };
     if let Err(error) = hub.events.append(event) {
         tracing::error!(%error, "steer event append failed");
+    }
+    if matches!(steer.by, SteerBy::Agent { .. }) && !queued {
+        dm::on_steer(hub, steer);
     }
 }
 
@@ -638,6 +728,7 @@ pub async fn withdraw(hub: &Hub, caller: &Caller, id: &SteerId) -> Result<Steer,
         store::unhold(&hub.db, id)?;
         steer.stage = SteerStage::Withdrawn;
         steer.detail = None;
+        steer.held = None;
         store::put(&hub.db, &steer, None, None)?;
         emit(hub, &steer, HubEventType::SteerWithdrawn, None);
         return Ok(steer);
@@ -788,11 +879,70 @@ impl crate::hub::link::lead_calls::LeadCallHandler for TaskMessage {
     }
 }
 
-/// Receipts from the node and expiries from the offline queue reach the steers; the lead's `task message` goes
-/// through them.
+/// `agent_message` and a lead's `agent_messages`.
+struct AgentMessageCalls(Weak<Hub>);
+
+impl crate::hub::link::lead_calls::LeadCallHandler for AgentMessageCalls {
+    fn handle(
+        &self,
+        caller: crate::hub::link::lead_calls::LeadCaller,
+        call: fleetd_contracts::lead_calls::LeadCall,
+    ) -> crate::hub::link::lead_calls::LeadCallFuture {
+        use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
+        let hub = self.0.clone();
+        Box::pin(async move {
+            let hub = hub
+                .upgrade()
+                .ok_or_else(|| ToolError::new(ErrorCode::Failed, "the hub is stopping"))?;
+            match call {
+                LeadCall::AgentMessage(c) => {
+                    let crate::hub::tasks::policy::CallerAgent::Task(from) = &caller.agent else {
+                        return Err(invalid(
+                            "agent_message is one agent's message to others, and this call comes from no task.",
+                        )
+                        .with_fix("A lead steers its agents with message_agent."));
+                    };
+                    let from = hub
+                        .tasks
+                        .get(from)?
+                        .ok_or_else(|| not_found(&format!("task {from}")))?;
+                    Ok(LeadCallResult::AgentMessage(
+                        dm::send(&hub, &from, c.to.as_slice(), c.text.as_str()).await?,
+                    ))
+                }
+                LeadCall::AgentMessages(c) => {
+                    let page = dm::list(
+                        &hub.db,
+                        &caller.project_ref,
+                        c.task_id.as_ref(),
+                        c.before.as_ref(),
+                        c.limit.map_or(20, |l| l.get() as usize),
+                    )?;
+                    Ok(LeadCallResult::AgentMessages(
+                        fleetd_contracts::lead_calls::AgentMessagesResult {
+                            next: page.more.then(|| {
+                                "Older ones remain: call again with before, the id of the oldest here.".to_owned()
+                            }),
+                            messages: page.messages,
+                            more: page.more,
+                            total: fleetd_contracts::prim::Count::unchecked(page.total),
+                        },
+                    ))
+                }
+                _ => Err(invalid("Not an agent message call.")),
+            }
+        })
+    }
+}
+
+/// Receipts from the node and expiries from the offline queue reach the steers; the lead's `task message` and an
+/// agent's `agent_message` go through them.
 pub fn wire(hub: &Arc<Hub>) {
     hub.lead_calls
         .register("task_message", Arc::new(TaskMessage(Arc::downgrade(hub))));
+    let dms = Arc::new(AgentMessageCalls(Arc::downgrade(hub)));
+    hub.lead_calls.register("agent_message", dms.clone());
+    hub.lead_calls.register("agent_messages", dms);
     hub.executors.set_steer_hub(Arc::downgrade(hub));
     let weak = Arc::downgrade(hub);
     hub.queue.on_steer_expired(Arc::new(move |id, reason| {

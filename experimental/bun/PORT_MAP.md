@@ -2,9 +2,9 @@
 # Bun port map
 
 Every HTTP route, /app message, MCP tool, node link message, session and lead call, agent-mcp tool, CLI command,
-background loop, heartbeat field and module without a wire surface in the Rust tree, with the Bun module that ports it
-(the Rust module's path under `src/`). To tick an item when its module does it and a test covers it, add its
-`<!-- key -->` as a line of `src/<module>/PORTED` (sorted), then run `bun run gen`.
+background loop, heartbeat field, module without a wire surface, service start step and hub HTTP layer in the Rust
+tree, with the Bun module that ports it (the Rust module's path under `src/`). To tick an item when its module does
+it and a test covers it, add its `<!-- key -->` as a line of `src/<module>/PORTED` (sorted), then run `bun run gen`.
 
 ## hub-core
 
@@ -108,6 +108,12 @@ server, auth, keys, people, devices, links, settings, store.
 - [x] hub loop `status.run` → `src/hub/status` <!-- loop:hub loop `status.run` -->
 - [x] hub loop `sweep.start` → `src/hub/sweep` <!-- loop:hub loop `sweep.start` -->
 - [x] hub loop `watchdog.start` → `src/hub/watchdog` <!-- loop:hub loop `watchdog.start` -->
+
+### Service start and HTTP layers
+
+- [x] the hub lowers its own OOM score at start → `src/hub/serve` <!-- service:the hub lowers its own OOM score at start -->
+- [x] hub HTTP layer `counted` → `src/hub/http` <!-- service:hub HTTP layer `counted` -->
+- [x] hub HTTP layer `gzip` → `src/hub/http` <!-- service:hub HTTP layer `gzip` -->
 
 ## hub-work
 
@@ -222,6 +228,7 @@ projects, orders, tasks, chat, leads, decisions, checklist, memory, automations.
 - [x] `thread_window` → `src/hub/time` (read) <!-- tool:`thread_window` -->
 - [x] `steer_send` → `src/hub/steer` (operate) <!-- tool:`steer_send` -->
 - [x] `steer_withdraw` → `src/hub/steer` (operate) <!-- tool:`steer_withdraw` -->
+- [x] `agent_messages` → `src/hub/steer` (read) <!-- tool:`agent_messages` -->
 - [x] `chat_send` → `src/hub/chat` (operate) <!-- tool:`chat_send` -->
 - [x] `chat_history` → `src/hub/chat` (read) <!-- tool:`chat_history` -->
 - [x] `chat_nudge_clear` → `src/hub/chat` (operate) <!-- tool:`chat_nudge_clear` -->
@@ -442,6 +449,10 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 
 - [x] `node/runner/scope.rs` → `src/node/runner` (each session host in a systemd scope of its own, so agents outlive the node's restart) <!-- mod:`node/runner/scope.rs` -->
 
+### Service start and HTTP layers
+
+- [x] the node lowers its own OOM score at start → `src/node` <!-- service:the node lowers its own OOM score at start -->
+
 ## node-browser+screens
 
 CDP proxy, screens, devices, the agents' Mac, session relays.
@@ -628,6 +639,8 @@ every `fleetd` command.
 - [x] lead call `task_list` → `src/hub/lead_calls` <!-- lead:lead call `task_list` -->
 - [x] lead call `task_message` → `src/hub/lead_calls` <!-- lead:lead call `task_message` -->
 - [x] lead call `task_cancel` → `src/hub/lead_calls` <!-- lead:lead call `task_cancel` -->
+- [x] lead call `agent_message` → `src/hub/lead_calls` <!-- lead:lead call `agent_message` -->
+- [x] lead call `agent_messages` → `src/hub/lead_calls` <!-- lead:lead call `agent_messages` -->
 - [x] lead call `close` → `src/hub/lead_calls` <!-- lead:lead call `close` -->
 - [x] lead call `review_verdict` → `src/hub/lead_calls` <!-- lead:lead call `review_verdict` -->
 - [x] lead call `change_enqueue` → `src/hub/lead_calls` <!-- lead:lead call `change_enqueue` -->
@@ -681,6 +694,7 @@ every `fleetd` command.
 - [x] agent-mcp tool `spawn_agent` → `src/cli/agent_mcp` (op task_spawn) <!-- agent-mcp:agent-mcp tool `spawn_agent` -->
 - [x] agent-mcp tool `message_agent` → `src/cli/agent_mcp` (op task_message) <!-- agent-mcp:agent-mcp tool `message_agent` -->
 - [x] agent-mcp tool `agents` → `src/cli/agent_mcp` (op task_list) <!-- agent-mcp:agent-mcp tool `agents` -->
+- [x] agent-mcp tool `agent_messages` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `agent_messages` -->
 - [x] agent-mcp tool `stop_agent` → `src/cli/agent_mcp` (op task_cancel) <!-- agent-mcp:agent-mcp tool `stop_agent` -->
 - [x] agent-mcp tool `brief` → `src/cli/agent_mcp` (op brief_create) <!-- agent-mcp:agent-mcp tool `brief` -->
 - [x] agent-mcp tool `request_secret` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secret` -->
@@ -713,6 +727,7 @@ every `fleetd` command.
 - [x] agent-mcp tool `report` → `src/cli/agent_mcp` (op review_verdict) <!-- agent-mcp:agent-mcp tool `report` -->
 - [x] agent-mcp tool `ask_lead` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `ask_lead` -->
 - [x] agent-mcp tool `brief_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `brief_read` -->
+- [x] agent-mcp tool `agent_message` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `agent_message` -->
 - [x] agent-mcp tool `wait_ci` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `wait_ci` -->
 - [x] agent-mcp tool `review_read` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `review_read` -->
 - [x] agent-mcp tool `chat_file` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `chat_file` -->

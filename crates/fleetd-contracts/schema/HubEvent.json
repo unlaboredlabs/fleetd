@@ -281,6 +281,16 @@
           "type": "string"
         },
         {
+          "const": "agent.messaged",
+          "description": "An agent wrote to others of its project (`agent_message`). `projectId` is the project's; `data` is an\n`AgentMessageEventData`: messageId, from, each recipient's outcome, the first 120 characters.",
+          "type": "string"
+        },
+        {
+          "const": "agent.message_updated",
+          "description": "An agent message's outcome changed for a recipient (a held one delivered, a delivery failed). The same `data`,\nevery recipient as it stands now.",
+          "type": "string"
+        },
+        {
           "const": "steer.queued",
           "description": "A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120\ncharacters), `data.mode` and `data.by`.",
           "type": "string"

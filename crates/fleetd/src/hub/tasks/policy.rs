@@ -19,11 +19,14 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 }
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
-/// project's decisions and its PRs' reviews, an image or file for its lead to show, a report published in its project's
-/// chat or read back from it, and a wait on CI that wakes it. Only a lead closes work.
+/// project's decisions and its PRs' reviews, its project's agents (`agents`, read only) and a message to one of them,
+/// an image or file for its lead to show, a report published in its project's chat or read back from it, and a wait
+/// on CI that wakes it. Only a lead starts, steers, stops and closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
+    "task_list",
+    "agent_message",
     "brief_read",
     "decisions_search",
     "review_read",
@@ -101,7 +104,8 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 )
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
-                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may upload an \
+                     (brief_read), decisions (decisions_search), its PRs' reviews (review_read) and its project's \
+                     agents (agents), writes to another agent (agent_message), and may upload an \
                      image or file for your lead to show (chat_file), publish a report \
                      (publish_artifact), read one of your project's (artifact_read) or wait on CI (wait_ci). Put anything else in your result or ask your lead.",
                 ));
@@ -141,6 +145,11 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
         .with_fix(
             "A lead hears of its PRs' CI from the train; to watch another run, spawn a read task that waits on it.",
         )),
+        CallerAgent::Person | CallerAgent::Lead if op == "agent_message" => Err(McpToolError::new(
+            ErrorCode::Invalid,
+            "agent_message is one agent's message to another, and this call comes from no task.",
+        )
+        .with_fix("A lead steers its agents with message_agent.")),
         CallerAgent::Person | CallerAgent::Lead => Ok(()),
     }
 }
@@ -205,7 +214,6 @@ mod tests {
         for op in [
             "task_message",
             "task_cancel",
-            "task_list",
             "ask",
             "decide",
             "brief_create",

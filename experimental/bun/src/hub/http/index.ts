@@ -14,6 +14,7 @@ import { mcp } from "../mcp/http.ts";
 import { oauthCallback } from "../mcp_oauth/callback.ts";
 import { macPair, pair } from "../pair/http.ts";
 import { app } from "../app_ws/socket.ts";
+import { gzipped } from "./gzip.ts";
 import { json, type Route, type RouteContext, type SocketData } from "./route.ts";
 
 /** Node links, /app sessions and events_wait long-polls never end on their own: after a stop they get this long. */
@@ -24,14 +25,14 @@ const healthz: Route = () => json({ ok: true, version: VERSION, protocol: PROTOC
 /** The Rust router's routes, in its order. `ANY` takes every method. */
 export const ROUTES: [method: "GET" | "POST" | "ANY", path: string, route: Route][] = [
   ["GET", "/healthz", healthz],
-  ["ANY", "/mcp", mcp],
+  ["ANY", "/mcp", gzipped(mcp)],
   ["GET", "/app", app],
   ["POST", "/pair", pair],
   ["POST", "/pair/mac", macPair],
   ["GET", "/node/link", nodeLink],
   ["GET", "/relay/{token}", relay],
   ["POST", "/hooks/{automation_id}/{secret}", hook],
-  ["ANY", "/link/v1/{op}", hubLink],
+  ["ANY", "/link/v1/{op}", gzipped(hubLink)],
   ["GET", "/oauth/callback", oauthCallback],
 ];
 

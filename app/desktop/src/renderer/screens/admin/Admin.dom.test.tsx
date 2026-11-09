@@ -11,8 +11,8 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { parseHash } from "../shell/routes";
 import { Sidebar } from "../shell/Sidebar";
-import { useAdministers } from "./role";
 import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -76,10 +76,9 @@ afterEach(() => {
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
 function Entry() {
-  const admin = useAdministers();
   return (
     <TooltipProvider>
-      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={() => undefined} />
+      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={() => undefined} />
     </TooltipProvider>
   );
 }
@@ -212,15 +211,14 @@ it("lists the Hub group's pages flat, and Setup always, saying how many required
   expect(rows().at(-1)).toBe("Setup");
 });
 
-it("counts the required setup steps left on Settings' entry, opening it on Hub › Setup, and says nothing once none is", async () => {
+it("marks an admin's name while required setup steps are left, and opens Hub › Setup from their card", async () => {
   setupLeft = 2;
   const went: unknown[] = [];
   const go = (s: unknown) => went.push(s);
   function Opener() {
-    const admin = useAdministers();
-    return (
+      return (
       <TooltipProvider>
-        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={go} />
+        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={go} />
       </TooltipProvider>
     );
   }
@@ -249,17 +247,22 @@ it("counts the required setup steps left on Settings' entry, opening it on Hub �
     await new Promise((r) => setTimeout(r, 0));
   });
   for (let i = 0; i < 3; i++) await settle();
-  const entry = host.querySelector<HTMLElement>("[data-opens='settings']");
-  expect(entry?.textContent).toContain("2 left");
-  if (entry === null) throw new Error("no Settings entry");
-  await click(entry);
-  expect(went).toEqual([{ id: "settings", tab: "hub.setup" }]);
+  const you = host.querySelector<HTMLElement>("[data-opens='you']");
+  expect(you?.dataset["mark"]).toBe("warning");
+  expect(you?.getAttribute("aria-label")).toContain("2 setup steps left");
+  if (you === null) throw new Error("no name at the foot");
+  await click(you);
+  const setup = document.querySelector<HTMLElement>("[aria-label='You'] [data-opens='setup']");
+  expect(setup?.textContent).toBe("2 steps left");
+  if (setup === null) throw new Error("no Setup line");
+  await click(setup);
+  expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hub.setup" });
 });
 
-it("never counts setup left on Settings' entry for a member", async () => {
+it("never counts setup left for a member", async () => {
   setupLeft = 2;
   await render({ me: bob, admin: false }, "sidebar");
-  expect(host.querySelector("[data-opens='settings']")?.textContent).not.toContain("left");
+  expect(host.querySelector<HTMLElement>("[data-opens='you']")?.dataset["mark"]).toBeUndefined();
   expect(sent("setup_list")).toEqual([]);
 });
 

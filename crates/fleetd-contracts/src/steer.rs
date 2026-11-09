@@ -112,6 +112,7 @@ pub enum DeliveredHow {
 }
 
 /// Who sent a steer.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SteerBy {
@@ -120,6 +121,13 @@ pub enum SteerBy {
         key_name: String,
     },
     Lead,
+    /// Another agent of the same project (`agent_message`): a peer's note, never its lead's word. `messageId` is the
+    /// agent message it delivers to this recipient.
+    #[serde(rename_all = "camelCase")]
+    Agent {
+        task_id: TaskId,
+        message_id: Option<AgentMessageId>,
+    },
 }
 
 /// One steer and its receipt.
@@ -151,6 +159,8 @@ pub struct Steer {
     /// Plain words on the stage: "waiting for lab-b (until 14:30)", "held: usage resets 14:00", the failure, or
     /// "sent (node older than 0.9)" when the node cannot report receipts.
     pub detail: Option<Text<0, 400>>,
+    /// Held for the task's next run (it isn't running), until that run carries it.
+    pub held: Option<bool>,
 }
 
 /// What the hub tells the node about a send that is a steer, so it can report its receipts.
@@ -200,6 +210,123 @@ pub struct SteerEventData {
     pub by: Option<SteerBy>,
     /// steer.failed: why.
     pub reason: Option<String>,
+    /// Held for the task's next run, not yet sent.
+    pub held: Option<bool>,
+}
+
+brand!(
+    /// "M" plus a positive integer, unique per hub: one agent's message to one or more others (`agent_message`).
+    AgentMessageId, name = "AgentMessageId", pattern = r"^M[1-9][0-9]*$"
+);
+
+impl AgentMessageId {
+    pub fn from_n(n: i64) -> Self {
+        Self::unchecked(format!("M{n}"))
+    }
+    pub fn n(&self) -> Option<i64> {
+        self.as_str().strip_prefix('M')?.parse().ok()
+    }
+}
+
+/// Where an agent message stands for one recipient.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentMessageOutcome {
+    /// Sent to a running agent, which takes it at its next tool boundary; `at` once its claude took it in.
+    Delivered,
+    /// The recipient hasn't started (it is queued): kept for its first run.
+    Held,
+    /// The recipient had ended its turn waiting for an answer (`ask_lead`), and this continued it.
+    Woke,
+    /// The recipient has finished and isn't waiting on the sender: kept for a run something else starts (a Monitor or
+    /// wait_ci of its own, its lead), since an agent never restarts a finished agent.
+    NotWoken,
+    /// Not sent: no such agent in the project, it was cancelled, or its delivery failed.
+    Refused,
+}
+
+impl AgentMessageOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Delivered => "delivered",
+            Self::Held => "held",
+            Self::Woke => "woke",
+            Self::NotWoken => "not_woken",
+            Self::Refused => "refused",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "delivered" => Self::Delivered,
+            "held" => Self::Held,
+            "woke" => Self::Woke,
+            "not_woken" => Self::NotWoken,
+            "refused" => Self::Refused,
+            _ => return None,
+        })
+    }
+}
+
+/// An agent of the project, as an agent message names it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageAgent {
+    pub task_id: TaskId,
+    /// Its title; absent for a recipient the project has no agent by that id.
+    pub title: Option<String>,
+}
+
+/// One recipient of an agent message and where the message stands for it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageRecipient {
+    pub task_id: TaskId,
+    pub title: Option<String>,
+    pub outcome: AgentMessageOutcome,
+    /// When the outcome last changed: delivered once its claude took it in, held or woke when sent.
+    pub at: Option<Timestamp>,
+    /// Plain words on it: "T12 has finished and isn't waiting on T9", "it answers what T12 asked", why it was refused.
+    pub detail: Option<String>,
+}
+
+/// One agent's message to others of its project, for the person to read and audit (`agent_messages`).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessage {
+    pub id: AgentMessageId,
+    pub from: AgentMessageAgent,
+    /// The whole text.
+    pub text: String,
+    pub sent_at: Timestamp,
+    /// In the order the sender named them.
+    pub to: Vec<AgentMessageRecipient>,
+}
+
+/// A recipient as `agent.messaged` and `agent.message_updated` name it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageEventRecipient {
+    pub task_id: TaskId,
+    pub outcome: AgentMessageOutcome,
+    pub detail: Option<String>,
+}
+
+/// Fields `HubEvent.data` carries on `agent.messaged` (sent) and `agent.message_updated` (a recipient's outcome
+/// changed). The event's `projectId` is the project's.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageEventData {
+    pub message_id: AgentMessageId,
+    pub from: TaskId,
+    pub to: Vec<AgentMessageEventRecipient>,
+    /// The first 120 characters.
+    pub text: String,
 }
 
 #[cfg(test)]

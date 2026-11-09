@@ -235,6 +235,36 @@ pub struct TaskMessageCall {
     pub now: bool,
 }
 
+/// `agent_message`: a task's agent writes to another agent of its project. A running one takes it at its next tool
+/// boundary; one that isn't running gets it with its next run (held until then), which a message from an agent never
+/// starts, except as the answer to a question the recipient is waiting on (`ask_lead`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageCall {
+    /// The agents it is for (T<n>), 1 to 5, in the same project; `agents` lists them.
+    pub to: List<TaskId, 1, AGENT_MESSAGE_TO_MAX>,
+    pub text: Text<1, AGENT_MESSAGE_MAX>,
+}
+
+/// The most agents one message is for.
+pub const AGENT_MESSAGE_TO_MAX: usize = 5;
+
+/// `agent_messages` for a lead: its project's agent messages, newest first, as the person reads them.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessagesCall {
+    /// Only those this agent sent or got.
+    pub task_id: Option<TaskId>,
+    /// Older than this one: the id of the oldest shown.
+    pub before: Option<crate::steer::AgentMessageId>,
+    #[serde(default)]
+    pub limit: Option<crate::prim::Int<1, 100>>,
+}
+
+/// The longest message one agent sends another.
+pub const AGENT_MESSAGE_MAX: usize = 4000;
+
 /// `fleetd task cancel T1 [--reason r]`. Interrupts the thread and releases its slot.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -311,6 +341,8 @@ pub enum LeadCall {
     TaskList(TaskListCall),
     TaskMessage(TaskMessageCall),
     TaskCancel(TaskCancelCall),
+    AgentMessage(AgentMessageCall),
+    AgentMessages(AgentMessagesCall),
     Close(CloseCall),
     /// `fleetd review verdict --task T4 --sha <head> --blocking 0 --non-blocking 2 --summary s`, the last step of a
     /// review task.
@@ -516,6 +548,30 @@ pub struct ReviewReadResult {
     pub next: Option<String>,
 }
 
+/// `agent_message`'s answer: the steer it is stored as, and where it stands.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageResult {
+    pub message_id: crate::steer::AgentMessageId,
+    /// Where it stands for each recipient.
+    pub to: Vec<crate::steer::AgentMessageRecipient>,
+    pub next: Option<String>,
+}
+
+/// A page of agent messages, newest first.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessagesResult {
+    pub messages: Vec<crate::steer::AgentMessage>,
+    /// Older ones remain: ask again with `before`, the id of the oldest here.
+    pub more: bool,
+    /// How many the filter matches, all pages.
+    pub total: crate::prim::Count,
+    pub next: Option<String>,
+}
+
 /// A wait `wait_ci` keeps until what it names finishes, then wakes its task.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -551,6 +607,8 @@ pub enum LeadCallResult {
     TaskList(TaskListResult),
     TaskMessage(TaskResultFrame),
     TaskCancel(TaskResultFrame),
+    AgentMessage(AgentMessageResult),
+    AgentMessages(AgentMessagesResult),
     Close(CloseResult),
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),

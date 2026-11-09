@@ -11,6 +11,14 @@
   padding: 0 var(--space-1);
 }
 
+/* With several hubs: which one the project goes to, on one quiet line above the field. */
+.hubPick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
 /* The repo list: section headers by machine and GitHub, then rows. */
 .list {
   display: flex;

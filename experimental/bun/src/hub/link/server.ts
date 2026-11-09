@@ -1,7 +1,8 @@
 // One node link per machine (crates/fleetd/src/hub/link/server.rs): challenge, hello (signature, enroll token or
 // enrolled key), welcome, then heartbeats, session frames, lead calls and command replies until the socket ends. 45 s
-// of silence takes the machine offline. A linked machine is online while its node's runner is usable (`runner_info`:
-// a supported version, logged in) and degraded with the runner's problem otherwise.
+// of silence takes the machine offline: no frame and, where the kernel's count can be read (../http/counted.ts), no
+// byte. A linked machine is online while its node's runner is usable (`runner_info`: a supported version, logged in)
+// and degraded with the runner's problem otherwise.
 //
 // `hub.area("link")` is the seam other areas use: `on(tag, fn)` for node frames, `send`/`request` for hub frames,
 // `can(machineId, cap)` for what the node's hello listed, `linkId`, and `onLinked`/`onUnlinked`.
@@ -12,6 +13,7 @@ import { type HubEvent, type Machine, type MachineStatus, PROTOCOL_VERSION } fro
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import { Unauthorized } from "../auth/nodes.ts";
+import { type Peer, ReadCounts } from "../http/counted.ts";
 import type { Socket, SocketHandler } from "../http/route.ts";
 import { onLeadCallFrame } from "../lead_calls/index.ts";
 import type { LeadCallFrame } from "../lead_calls/types.ts";
@@ -53,6 +55,8 @@ const RUNNER_CHECK_EVERY = 4;
  * otherwise a subscription lost on a healthy link leaves the machine offline until its node restarts.
  */
 export const REATTACH_AFTER_MS = 30_000;
+/** How often bytes still arriving on a link, in a frame not yet whole, count as a sighting (`progress`). */
+export const PROGRESS_EVERY_MS = 5000;
 /** The most one compressed node frame may inflate to: the socket's own message cap, a put_file's 64 MiB. */
 const MAX_INFLATED = 64 << 20;
 const NODE_TAGS: ReadonlySet<string> = new Set(NODE_TO_HUB);
@@ -63,7 +67,7 @@ export type FrameHandler<T extends NodeToHubTag = NodeToHubTag> = (machineId: st
 /** A welcomed link, as `onLinked` hears of it. */
 export type Linked = { machineId: string; linkId: number; hello: NodeHello };
 
-export type Timings = { heartbeatMs: number; silenceMs: number; helloMs: number };
+export type Timings = { heartbeatMs: number; silenceMs: number; helloMs: number; progressMs: number };
 
 type Announced = "online" | "degraded";
 
@@ -78,6 +82,10 @@ type LinkSocket = {
   id?: number;
   helloTimer?: Timer;
   heartbeat?: Timer;
+  /** Who dialed, from the upgrade: what its connection read is counted by it (`progress`). */
+  peer?: Peer;
+  /** What its connection had read at the last `progress`. */
+  read?: number;
   beats: number;
   /** The link's executor sender, once welcomed: `reattachIfDark` subscribes on it again. */
   sessions?: NodeSessions;
@@ -173,7 +181,10 @@ export class Link {
     heartbeatMs: HEARTBEAT_INTERVAL_SECS * 1000,
     silenceMs: HEARTBEAT_TIMEOUT_SECS * 1000,
     helloMs: HELLO_TIMEOUT_MS,
+    progressMs: PROGRESS_EVERY_MS,
   };
+  /** What each link's connection read so far; tests put a fake in. */
+  readCounts = new ReadCounts();
   readonly hubId = hubId();
   /** The live link per machine; a newer link replaces an older one. */
   private readonly links = new Map<string, { id: number; ws: Socket; state: LinkSocket }>();
@@ -181,6 +192,9 @@ export class Link {
   private readonly announced = new Map<string, Announced>();
   /** Per-machine silence timers. They outlive the socket, so a quick reconnect never flaps. */
   private readonly watchdogs = new Map<string, Timer>();
+  /** Reads the live links' byte counts while there are links (`progress`). */
+  private progressTimer: Timer | undefined;
+  private sampling = false;
   private nextLinkId = 0;
   private readonly loads = new Map<string, NodeLoad>();
   private readonly busyBy = new Map<string, NodeBusy>();
@@ -213,6 +227,8 @@ export class Link {
     hub.shutdown.signal.addEventListener("abort", () => {
       for (const timer of this.watchdogs.values()) clearTimeout(timer);
       this.watchdogs.clear();
+      clearInterval(this.progressTimer);
+      this.progressTimer = undefined;
     });
   }
 
@@ -415,7 +431,10 @@ export class Link {
   }
 
   private open(ws: Socket): void {
+    // `nodeLink` hands the upgrade's peer over in the socket's state.
+    const peer = (ws.data.state as { peer?: Peer } | undefined)?.peer;
     const state: LinkSocket = {
+      ...(peer ? { peer } : {}),
       nonce: nonce(),
       phase: "hello",
       beats: 0,
@@ -592,6 +611,7 @@ export class Link {
       console.error("node link: the executor did not take the link:", error);
     }
     state.heartbeat = setInterval(() => this.write(ws, state, { t: "hb", at: this.nowIso() }), this.timings.heartbeatMs);
+    this.progressTimer ??= setInterval(() => void this.progress(), this.timings.progressMs);
     // After the attach, so whoever acts on it can already run commands there.
     for (const hook of this.linkedHooks) {
       try {
@@ -818,6 +838,37 @@ export class Link {
       machineId,
       setTimeout(() => this.markOffline(machineId, armedFor), this.timings.silenceMs),
     );
+  }
+
+  /**
+   * Bytes still arriving keep a link alive while one large frame comes in slowly, as frames would: every
+   * `progressMs`, each live link whose connection read more since the last look restarts its silence timer. Stops once
+   * no link is left; the next welcome starts it again.
+   */
+  private async progress(): Promise<void> {
+    if (this.sampling) return;
+    if (this.links.size === 0) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = undefined;
+      return;
+    }
+    const live = [...this.links.entries()].flatMap(([machineId, l]) => (l.state.peer ? [{ machineId, ...l, peer: l.state.peer }] : []));
+    this.sampling = true;
+    try {
+      const counts = await this.readCounts.sample(live.map((l) => l.peer));
+      if (!counts) return;
+      for (const l of live) {
+        const now = ReadCounts.read(counts, l.peer);
+        if (now === undefined) continue;
+        const seen = l.state.read;
+        l.state.read = now;
+        if (seen !== undefined && now !== seen && this.links.get(l.machineId)?.id === l.id) this.touch(l.machineId);
+      }
+    } catch (error) {
+      console.error("node link: reading links' byte counts failed:", error);
+    } finally {
+      this.sampling = false;
+    }
   }
 
   /** Rewrites the stored machine's status; `degradedReason` is kept only while degraded. */

@@ -251,8 +251,8 @@ on the hub, as every project with a repo is by default.
 - **Its automations' runs close themselves.** In an Only me project, an [automation](/docs/automations)'s run closes its
   order once the lead's turn for it ends; in a shared one, the lead closes it.
 
-Your own Only me projects come first in your sidebar, in your order; drag a row to move it. ⌘1–9 (Ctrl on Linux and
-Windows) open the first nine.
+Your sidebar lists projects newest first, your pinned ones on top; pin one from its right-click menu. ⌘1–9 (Ctrl on
+Linux and Windows) open the first nine.
 
 ### Archive {#archive}
 

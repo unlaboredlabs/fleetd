@@ -3,12 +3,13 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { byMachine, defaultTiming, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
-import { healthUrl, updateSummary } from "../src/hub/update/ports.ts";
+import { byMachine, defaultTiming, type Held, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
+import { busyWords, healthUrl, updateSummary } from "../src/hub/update/ports.ts";
 import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
 import { sha256Hex } from "../src/update/index.ts";
 import type { Plan } from "../src/update/finish.ts";
 import { atLeast, versionCmp } from "../src/update/version.ts";
+import { PROTOCOL as HOSTED } from "../src/node/runner/host.ts";
 import { tempHome } from "./helpers.ts";
 
 const home = tempHome();
@@ -80,8 +81,18 @@ class Fake implements UpdatePorts {
   fetchOnNode(m: string) {
     this.fetched.push(m);
   }
-  async holdNode() {
-    return this.holds;
+  /**
+   * Machines whose agents carry on through the restart, by machine: the host protocol their hold answers, and how many
+   * of their sessions that aren't hosted (a Navi's) are mid-step. Absent: they don't, as without scopes.
+   */
+  hosted = new Map<string, [number, number]>();
+  /** The machines whose agents were held, a hold each. */
+  held: string[] = [];
+  async holdNode(m: string, unhosted: boolean): Promise<Held> {
+    const hosted = this.hosted.get(m);
+    if (hosted && unhosted) return { steps: hosted[1], hosted: hosted[0] };
+    this.held.push(m);
+    return { steps: this.holds };
   }
   nodeChanged() {
     return new Promise<void>((r) => this.waiters.push(r));
@@ -113,8 +124,8 @@ class Fake implements UpdatePorts {
 
 const timing = () => ({ ...defaultTiming(), poll: 1, nodePoll: 5, verdict: 50, nodeBack: 200, restart: 30, drainPoll: 1, drain: 50, prefetchEvery: 1000 });
 
-function updatesIn(dir: string, fake: Fake) {
-  const u = new Updates(join(dir, "update"), { now: () => fake.now }, timing());
+function updatesIn(dir: string, fake: Fake, more: Partial<ReturnType<typeof timing>> = {}) {
+  const u = new Updates(join(dir, "update"), { now: () => fake.now }, { ...timing(), ...more });
   u.setPorts(fake);
   return u;
 }
@@ -376,6 +387,107 @@ test("the look wakes at the window's end for a build due, else every 2 minutes",
   // Nothing newer out: the next look, 2 minutes on.
   fake.published = [OLD, new TextEncoder().encode("old fleetd")];
   expect(await sleeps(u)).toEqual([[120_000], fake.now + 120_000]);
+});
+
+/** Starts an update to NEW and restarts the hub onto it: the hub that comes up, driving the nodes in the background. */
+async function restarted(dir: string, fake: Fake) {
+  // Long enough a drain that the tests' waits end by what they change, not by the deadline.
+  const u = updatesIn(dir, fake, { drain: 20_000 });
+  u.start(undefined, false);
+  await until(() => fake.plans.length === 1);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  fake.version = NEW;
+  const after = updatesIn(dir, fake, { drain: 20_000 });
+  const resumed = after.resume();
+  return { after, resumed };
+}
+
+test("hosted agents mid-step don't hold their node's update", async () => {
+  const dir = join(home.dir, "i");
+  const fake = new Fake(dir, [{ name: "builder" }]);
+  fake.holds = 3;
+  fake.hosted.set("m0", [HOSTED, 0]);
+  const { after, resumed } = await restarted(dir, fake);
+  await resumed;
+  const part = byMachine(after.status()!).get("m0")!;
+  expect(part.state).toBe("done");
+  expect(part.agents).toBeUndefined();
+  expect(fake.held).toEqual([]);
+});
+
+test("a Navi mid-step or an approved command is waited for, its hosted agents not held", async () => {
+  for (const [navi, busy] of [
+    [1, undefined],
+    [0, "1 approved command"],
+  ] as const) {
+    const dir = join(home.dir, `j${navi}`);
+    const fake = new Fake(dir, [{ name: "builder", ...(busy ? { busy } : {}) }]);
+    fake.hosted.set("m0", [HOSTED, navi]);
+    const { after, resumed } = await restarted(dir, fake);
+    await until(() => byMachine(after.status()!).get("m0")!.installsBy !== undefined);
+    const message = byMachine(after.status()!).get("m0")!.message!;
+    expect(message.startsWith(busy ? `waits for ${busy}; installs by ` : "waits for 1 agent to finish its step; installs by ")).toBe(true);
+    await Bun.sleep(30);
+    expect(fake.updated).toEqual([]);
+    expect(fake.held).toEqual([]);
+
+    fake.hosted.set("m0", [HOSTED, 0]);
+    delete fake.facts[0]!.busy;
+    await resumed;
+    expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  }
+  expect(busyWords(1, 2, 1)).toBe("1 live session and 2 approved commands and 1 check");
+  expect(busyWords(0, 0, 0)).toBeUndefined();
+});
+
+test("without scopes, or across a host protocol change, agents are held as before", async () => {
+  for (const hosted of [undefined, HOSTED + 1]) {
+    const dir = join(home.dir, `k${hosted ?? 0}`);
+    const fake = new Fake(dir, [{ name: "builder" }]);
+    fake.holds = 2;
+    if (hosted !== undefined) fake.hosted.set("m0", [hosted, 0]);
+    const { after, resumed } = await restarted(dir, fake);
+    await until(() => byMachine(after.status()!).get("m0")!.agents === 2);
+    await Bun.sleep(30);
+    expect(fake.updated).toEqual([]);
+    expect(fake.held.length).toBeGreaterThan(0);
+    fake.holds = 0;
+    await resumed;
+    expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  }
+});
+
+test("a node waits 2 minutes at most by default", () => {
+  expect(defaultTiming().drain).toBe(120_000);
+  const dir = join(home.dir, "l");
+  const u = new Updates(join(dir, "update"), { now: () => 0 }, defaultTiming());
+  expect(u.settings().drainMinutes).toBe(2);
+});
+
+test("a cloud machine that wakes mid-run catches up as the run ends", async () => {
+  const dir = join(home.dir, "m");
+  const fake = new Fake(dir, [{ name: "builder" }, { name: "cloud", liveSince: undefined }]);
+  // A Navi mid-step on builder keeps the run going for as long as the test says.
+  fake.hosted.set("m0", [HOSTED, 1]);
+  const { after, resumed } = await restarted(dir, fake);
+  await until(() => byMachine(after.status()!).get("m0")!.installsBy !== undefined);
+  expect(byMachine(after.status()!).get("m1")!.state).toBe("skipped");
+
+  // The cloud machine wakes and links on its old build.
+  fake.facts[1]!.liveSince = 5;
+  let caught: string | undefined;
+  const catching = after.catchUp("m1").then((c) => (caught = c));
+  await Bun.sleep(50);
+  // Not ready for work while the run goes on.
+  expect(caught).toBeUndefined();
+  expect(fake.updated).not.toContain("m1");
+
+  fake.hosted.set("m0", [HOSTED, 0]);
+  await catching;
+  expect(caught).toBe("restarting");
+  expect(after.status()!.finishedAt).toBeDefined();
+  expect(fake.updated).toContain("m1");
+  await resumed;
 });
 
 test("versions order within a channel only, and the watcher's health URL reaches the hub", () => {

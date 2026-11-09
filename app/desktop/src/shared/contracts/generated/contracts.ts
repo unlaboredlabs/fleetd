@@ -175,6 +175,55 @@ export type AgentLane = {
   title: string;
 };
 
+/** One agent's message to others of its project, for the person to read and audit (`agent_messages`). */
+export type AgentMessage = {
+  from: AgentMessageAgent;
+  id: AgentMessageId;
+  sentAt: Timestamp;
+  /** The whole text. */
+  text: string;
+  /** In the order the sender named them. */
+  to: AgentMessageRecipient[];
+};
+
+/** An agent of the project, as an agent message names it. */
+export type AgentMessageAgent = {
+  taskId: TaskId;
+  /** Its title; absent for a recipient the project has no agent by that id. */
+  title?: string;
+};
+
+export type AgentMessageId = string;
+
+/** Where an agent message stands for one recipient. */
+export type AgentMessageOutcome = "delivered" | "held" | "woke" | "not_woken" | "refused";
+
+/** One recipient of an agent message and where the message stands for it. */
+export type AgentMessageRecipient = {
+  /** When the outcome last changed: delivered once its claude took it in, held or woke when sent. */
+  at?: Timestamp;
+  /** Plain words on it: "T12 has finished and isn't waiting on T9", "it answers what T12 asked", why it was refused. */
+  detail?: string;
+  outcome: AgentMessageOutcome;
+  taskId: TaskId;
+  title?: string;
+};
+
+export type AgentMessagesInput = {
+  before?: AgentMessageId;
+  limit?: number;
+  projectRef: ProjectRef;
+  taskId?: TaskId;
+};
+
+export type AgentMessagesOutput = {
+  messages: AgentMessage[];
+  more: boolean;
+  next?: string;
+  total: number;
+  truncated?: boolean;
+};
+
 export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
 
 /** One agent: a task, or a project's lead, with its project. */
@@ -2900,6 +2949,8 @@ export type KnownHubEventType =
   | "key.paired"
   | "prompt.changed"
   | "prompt.default_changed"
+  | "agent.messaged"
+  | "agent.message_updated"
   | "steer.queued"
   | "steer.delivered"
   | "steer.acknowledged"
@@ -7750,6 +7801,8 @@ export type Steer = {
    * "sent (node older than 0.9)" when the node cannot report receipts.
    */
   detail?: string;
+  /** Held for the task's next run (it isn't running), until that run carries it. */
+  held?: boolean;
   how?: DeliveredHow;
   id: SteerId;
   mode: SteerMode;
@@ -7774,12 +7827,18 @@ export type SteerBy = {
   kind: "human";
 } | {
   kind: "lead";
+} | {
+  kind: "agent";
+  messageId?: AgentMessageId;
+  taskId: TaskId;
 };
 
 /** Fields `HubEvent.data` carries on `steer.*` events. */
 export type SteerEventData = {
   by?: SteerBy;
   excerpt?: string;
+  /** Held for the task's next run, not yet sent. */
+  held?: boolean;
   how?: DeliveredHow;
   mode?: SteerMode;
   /** steer.failed: why. */
@@ -7818,6 +7877,8 @@ export type SteerSendOutput = {
    * "sent (node older than 0.9)" when the node cannot report receipts.
    */
   detail?: string;
+  /** Held for the task's next run (it isn't running), until that run carries it. */
+  held?: boolean;
   how?: DeliveredHow;
   id: SteerId;
   mode: SteerMode;
@@ -7863,6 +7924,8 @@ export type SteerWithdrawOutput = {
    * "sent (node older than 0.9)" when the node cannot report receipts.
    */
   detail?: string;
+  /** Held for the task's next run (it isn't running), until that run carries it. */
+  held?: boolean;
   how?: DeliveredHow;
   id: SteerId;
   mode: SteerMode;
@@ -8995,6 +9058,7 @@ export type WorktreesKept = {
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
+  agent_messages: { input: AgentMessagesInput; output: AgentMessagesOutput };
   agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
   agents_list: { input: AgentsListInput; output: AgentsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };

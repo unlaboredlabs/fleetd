@@ -451,6 +451,169 @@
       ],
       "type": "object"
     },
+    "AgentMessage": {
+      "description": "One agent's message to others of its project, for the person to read and audit (`agent_messages`).",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/AgentMessageAgent"
+        },
+        "id": {
+          "$ref": "#/$defs/AgentMessageId"
+        },
+        "sentAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "text": {
+          "description": "The whole text.",
+          "type": "string"
+        },
+        "to": {
+          "description": "In the order the sender named them.",
+          "items": {
+            "$ref": "#/$defs/AgentMessageRecipient"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "text",
+        "sentAt",
+        "to"
+      ],
+      "type": "object"
+    },
+    "AgentMessageAgent": {
+      "description": "An agent of the project, as an agent message names it.",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "title": {
+          "description": "Its title; absent for a recipient the project has no agent by that id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "type": "object"
+    },
+    "AgentMessageId": {
+      "pattern": "^M[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AgentMessageOutcome": {
+      "description": "Where an agent message stands for one recipient.",
+      "oneOf": [
+        {
+          "const": "delivered",
+          "description": "Sent to a running agent, which takes it at its next tool boundary; `at` once its claude took it in.",
+          "type": "string"
+        },
+        {
+          "const": "held",
+          "description": "The recipient hasn't started (it is queued): kept for its first run.",
+          "type": "string"
+        },
+        {
+          "const": "woke",
+          "description": "The recipient had ended its turn waiting for an answer (`ask_lead`), and this continued it.",
+          "type": "string"
+        },
+        {
+          "const": "not_woken",
+          "description": "The recipient has finished and isn't waiting on the sender: kept for a run something else starts (a Monitor or\nwait_ci of its own, its lead), since an agent never restarts a finished agent.",
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Not sent: no such agent in the project, it was cancelled, or its delivery failed.",
+          "type": "string"
+        }
+      ]
+    },
+    "AgentMessageRecipient": {
+      "description": "One recipient of an agent message and where the message stands for it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the outcome last changed: delivered once its claude took it in, held or woke when sent."
+        },
+        "detail": {
+          "description": "Plain words on it: \"T12 has finished and isn't waiting on T9\", \"it answers what T12 asked\", why it was refused.",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AgentMessageOutcome"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "AgentMessagesInput": {
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/AgentMessageId"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "AgentMessagesOutput": {
+      "properties": {
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/AgentMessage"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "messages",
+        "more",
+        "total"
+      ],
+      "type": "object"
+    },
     "AgentRole": {
       "enum": [
         "lead",
@@ -7605,6 +7768,16 @@
           "type": "string"
         },
         {
+          "const": "agent.messaged",
+          "description": "An agent wrote to others of its project (`agent_message`). `projectId` is the project's; `data` is an\n`AgentMessageEventData`: messageId, from, each recipient's outcome, the first 120 characters.",
+          "type": "string"
+        },
+        {
+          "const": "agent.message_updated",
+          "description": "An agent message's outcome changed for a recipient (a held one delivered, a delivery failed). The same `data`,\nevery recipient as it stands now.",
+          "type": "string"
+        },
+        {
           "const": "steer.queued",
           "description": "A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120\ncharacters), `data.mode` and `data.by`.",
           "type": "string"
@@ -10937,6 +11110,12 @@
         "actions_list.output": {
           "$ref": "#/$defs/ActionsListOutput"
         },
+        "agent_messages.input": {
+          "$ref": "#/$defs/AgentMessagesInput"
+        },
+        "agent_messages.output": {
+          "$ref": "#/$defs/AgentMessagesOutput"
+        },
         "agent_work.input": {
           "$ref": "#/$defs/AgentWorkInput"
         },
@@ -12159,6 +12338,8 @@
       "required": [
         "actions_list.input",
         "actions_list.output",
+        "agent_messages.input",
+        "agent_messages.output",
         "agent_work.input",
         "agent_work.output",
         "agents_list.input",
@@ -21715,6 +21896,10 @@
           "maxLength": 400,
           "type": "string"
         },
+        "held": {
+          "description": "Held for the task's next run (it isn't running), until that run carries it.",
+          "type": "boolean"
+        },
         "how": {
           "$ref": "#/$defs/DeliveredHow"
         },
@@ -21804,6 +21989,26 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "Another agent of the same project (`agent_message`): a peer's note, never its lead's word. `messageId` is the\nagent message it delivers to this recipient.",
+          "properties": {
+            "kind": {
+              "const": "agent",
+              "type": "string"
+            },
+            "messageId": {
+              "$ref": "#/$defs/AgentMessageId"
+            },
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            }
+          },
+          "required": [
+            "kind",
+            "taskId"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -21888,6 +22093,10 @@
           "description": "Plain words on the stage: \"waiting for lab-b (until 14:30)\", \"held: usage resets 14:00\", the failure, or\n\"sent (node older than 0.9)\" when the node cannot report receipts.",
           "maxLength": 400,
           "type": "string"
+        },
+        "held": {
+          "description": "Held for the task's next run (it isn't running), until that run carries it.",
+          "type": "boolean"
         },
         "how": {
           "$ref": "#/$defs/DeliveredHow"
@@ -22055,6 +22264,10 @@
           "description": "Plain words on the stage: \"waiting for lab-b (until 14:30)\", \"held: usage resets 14:00\", the failure, or\n\"sent (node older than 0.9)\" when the node cannot report receipts.",
           "maxLength": 400,
           "type": "string"
+        },
+        "held": {
+          "description": "Held for the task's next run (it isn't running), until that run carries it.",
+          "type": "boolean"
         },
         "how": {
           "$ref": "#/$defs/DeliveredHow"

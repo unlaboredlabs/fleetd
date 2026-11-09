@@ -85,9 +85,9 @@ describe("agent-mcp", () => {
     );
   });
 
-  test("a worker sees only report, ask_lead, its brief, CI, decisions, reviews, images, artifacts and browser", () => {
+  test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts and browser", () => {
     expect(names("worker")).toEqual([
-      "decisions_search", "report", "ask_lead", "brief_read", "wait_ci", "review_read", "chat_file", "publish_artifact",
+      "agents", "decisions_search", "report", "ask_lead", "brief_read", "agent_message", "wait_ci", "review_read", "chat_file", "publish_artifact",
       "artifact_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential",
     ]);
     const lead = names("lead");

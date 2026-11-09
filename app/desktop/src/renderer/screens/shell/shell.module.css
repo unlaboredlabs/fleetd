@@ -28,78 +28,6 @@
   transition-delay: 600ms;
 }
 
-.sidebarNote {
-  padding: var(--space-1) var(--space-2);
-}
-
-/* A project's mark: why it wants you, a new message, or its agents at work. */
-.mark {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1-5);
-}
-.jump {
-  min-width: 1ch;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The sidebar's footer, below the rows that scroll, with no background of its own so the translucent sidebar shows
-   through: one row like the rows above it, no rule over it; the hub, and any update as a pill at its end. */
-.footer {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin: 0 var(--space-2) var(--space-2);
-  padding-right: var(--space-1);
-}
-
-/* With several hubs, a row per hub. */
-.footers {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-}
-.footers > .footer + .footer {
-  margin-top: calc(-1 * var(--space-2));
-}
-
-/* A hub's group heading: its name, quiet, in the section's own type; a click collapses it. A colour, when the hub has
-   one, is a short bar before the name: it says which group, never a state. */
-.groupHead {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--quiet);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.groupHead:hover {
-  color: var(--text);
-}
-.groupHead > svg {
-  flex: none;
-  width: 12px;
-  height: 12px;
-}
-.groupMark {
-  flex: none;
-  width: 3px;
-  height: 10px;
-  border-radius: 1px;
-}
-.groupAside {
-  flex: none;
-  color: var(--faint);
-}
-
 .fixtureBanner {
   flex: none;
   padding: var(--space-1) var(--space-3);
@@ -109,25 +37,6 @@
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   text-align: center;
-}
-
-/* Static placeholder rows while the projects load; no shimmer, so nothing repaints. */
-.sidebarSkeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-1-5) var(--space-2);
-}
-.sidebarSkeleton > span {
-  height: var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--selected);
-}
-.sidebarSkeleton > span:nth-child(2) {
-  width: 70%;
-}
-.sidebarSkeleton > span:nth-child(3) {
-  width: 55%;
 }
 
 /* The panel beside the chat (panel.tsx): as wide as you set it (--panel-size). A container only: focus rests here
@@ -214,14 +123,4 @@
 }
 .swatch:focus-visible {
   outline: 2px solid var(--accent);
-}
-
-/* Words for a screen reader only: a section's reorder announcements. */
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }

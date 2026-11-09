@@ -102,6 +102,8 @@ export const MACHINE_KEEPS = [
   "metric_touches",
   "workstreams",
   "tasks",
+  // What its agents wrote to each other: the person's audit, kept with the tasks it names.
+  "agent_messages",
   "changes",
   "navi_erases",
   "pair_codes",
