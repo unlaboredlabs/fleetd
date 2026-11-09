@@ -8,21 +8,27 @@
 # zip, <asset>.blockmap beside it (blockmap.mjs, which needs app/desktop's node_modules), published with it; for the
 # AppImage, whose map electron-builder appended to the file (its size in the last 4 bytes), blockMapSize.
 #
+# The feed names the asset's pinned copy (pinned.sh), which never changes once uploaded, not its plain name, which edge
+# replaces in place: an app reading the feed then downloads the very package its sha512 is for, whatever edge publishes
+# meanwhile. Whoever publishes the feed uploads that copy first, and for the zip its blockmap as <pin>.blockmap.
+#
 #   update-yml.sh <asset> <version> > latest-mac.yml
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=.github/release/pinned.sh
+. "$here/pinned.sh"
 asset="$1"
 version="$2"
-name="$(basename "$asset")"
+name="$(pinned "$(basename "$asset")" "$(shasum -a 256 "$asset" | cut -d' ' -f1)")"
 sha512="$(openssl dgst -sha512 -binary "$asset" | base64 | tr -d '\n')"
 size="$(wc -c < "$asset" | tr -d ' ')"
 blockmap=""
-case "$name" in
+case "$asset" in
 *.zip) node "$here/blockmap.mjs" "$asset" ;;
 *.AppImage)
   blockmap="$(tail -c 4 "$asset" | od -An -tu1 | awk '{ print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }')"
   if [ "$blockmap" -le 0 ] || [ "$blockmap" -ge "$size" ]; then
-    echo "$name has no blockmap at its end" >&2
+    echo "$(basename "$asset") has no blockmap at its end" >&2
     exit 1
   fi
   blockmap="    blockMapSize: $blockmap"$'\n'
