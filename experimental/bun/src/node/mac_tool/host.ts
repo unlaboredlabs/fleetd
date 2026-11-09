@@ -141,7 +141,7 @@ export class Host {
   sims: MacSims | undefined;
 
   constructor(
-    /** `<home>/mac`: each agent's folder, and `.mirrors/` of each project's snapshots. */
+    /** `~/work`: each agent's folder, and `.mirrors/` of each project's snapshots. */
     readonly root: string,
     /** This node's box key: what the agents' nodes seal their steps to. */
     private readonly key: { open(sealed: Uint8Array): Uint8Array | null },
