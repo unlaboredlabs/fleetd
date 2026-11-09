@@ -15,14 +15,14 @@ const SWEEPER = "Sweep the dependencies";
 
 const SWEEP_V1 = `# Dependency sweep
 
-12 of 148 crates are behind their newest release; 2 have advisories.
+12 of 148 packages are behind their newest release; 2 have advisories.
 
-| Crate | Pinned | Newest | Why it matters |
+| Package | Pinned | Newest | Why it matters |
 |---|---|---|---|
-| \`rustls\` | 0.23.12 | 0.23.19 | RUSTSEC-2026-0031, a panic on a malformed certificate |
-| \`time\` | 0.3.36 | 0.3.41 | RUSTSEC-2026-0044, an overflow in parsing |
-| \`tokio\` | 1.41.0 | 1.47.1 | Faster timers; nothing breaking |
-| \`serde_json\` | 1.0.128 | 1.0.145 | Smaller binaries |
+| \`undici\` | 6.19.8 | 6.21.2 | An advisory: a crafted redirect can leak a header |
+| \`cookie\` | 0.6.0 | 0.7.2 | An advisory: names and paths aren't escaped |
+| \`zod\` | 4.1.5 | 4.6.7 | Faster parsing; nothing breaking |
+| \`pino\` | 9.4.0 | 9.9.0 | Smaller install |
 
 ## Next
 
@@ -32,24 +32,24 @@ const SWEEP_V1 = `# Dependency sweep
 
 const SWEEP_V2 = `# Dependency sweep
 
-Every crate is current. The two advisories are fixed and the other ten bumped, in two PRs.
+Every package is current. The two advisories are fixed and the other ten bumped, in two PRs.
 
-| Crate | Was | Now | PR |
+| Package | Was | Now | PR |
 |---|---|---|---|
-| \`rustls\` | 0.23.12 | 0.23.19 | #412 |
-| \`time\` | 0.3.36 | 0.3.41 | #412 |
-| \`tokio\` | 1.41.0 | 1.47.1 | #415 |
-| \`serde_json\` | 1.0.128 | 1.0.145 | #415 |
+| \`undici\` | 6.19.8 | 6.21.2 | #412 |
+| \`cookie\` | 0.6.0 | 0.7.2 | #412 |
+| \`zod\` | 4.1.5 | 4.6.7 | #415 |
+| \`pino\` | 9.4.0 | 9.9.0 | #415 |
 
 ## What changed
 
-- **Advisories:** none left (\`cargo audit\` is clean).
-- **Build:** the release binary is 180 KB smaller.
+- **Advisories:** none left (\`npm audit\` is clean).
+- **Build:** the server bundle is 180 KB smaller.
 - **Tests:** all green on both PRs; nothing needed a code change.
 
 ## Left for later
 
-\`sqlx\` 0.9 changes its query macros; it waits for its own order.
+\`drizzle-orm\` 1.0 changes its query builder; it waits for its own order.
 `;
 
 const version = (n: number, title: string, format: "md" | "html", by: string, minutesAgo: number, content: string, now: string) => ({
@@ -70,13 +70,13 @@ const published = (base: Fixture): Fixture => {
   const [v2, v1] = sweep as [ReturnType<typeof version>, ReturnType<typeof version>];
   const drafts: Draft[] = [
     { author: "human", text: "can you sweep the deps and show me where the build time goes?", minutesAgo: 50 },
-    { author: "lead", text: "on it: one agent sweeps the crates, I'll chart the builds", minutesAgo: 49 },
+    { author: "lead", text: "on it: one agent sweeps the packages, I'll chart the builds", minutesAgo: 49 },
     { author: "system", text: `${SWEEPER} published Dependency sweep`, extra: card("dependency-sweep", v1), minutesAgo: 42 },
     { author: "system", text: "Lead published Build times", extra: card("build-times", chart), minutesAgo: 24 },
     { author: "system", text: `${SWEEPER} published Dependency sweep, version 2`, extra: card("dependency-sweep", v2), minutesAgo: 6 },
     {
       author: "lead",
-      text: "sweep's done, every crate is current and both advisories are fixed: [Dependency sweep](artifact:dependency-sweep). The first pass is still there as [version 1](artifact:dependency-sweep@1).\n\nmost of the build is the release link step, see [Build times](artifact:build-times)",
+      text: "sweep's done, every package is current and both advisories are fixed: [Dependency sweep](artifact:dependency-sweep). The first pass is still there as [version 1](artifact:dependency-sweep@1).\n\nmost of the build is the release link step, see [Build times](artifact:build-times)",
       minutesAgo: 5,
     },
   ];

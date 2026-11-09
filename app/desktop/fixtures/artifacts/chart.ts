@@ -29,7 +29,7 @@ export const BUILD_TIMES_HTML = `<!doctype html>
 <p class="source">From <a id="source" href="https://github.com/acme/storefront/actions/workflows/release.yml">the release workflow's runs</a>.</p>
 <div id="tip" role="tooltip"></div>
 <script>
-  const steps = [["Link release binary", 7.4], ["Compile crates", 5.1], ["Desktop app bundle", 2.6], ["Tests", 1.7], ["Toolchain setup", 0.8], ["Upload", 0.4]];
+  const steps = [["Link release binary", 7.4], ["Typecheck", 5.1], ["Desktop app bundle", 2.6], ["Tests", 1.7], ["Toolchain setup", 0.8], ["Upload", 0.4]];
   const svg = document.getElementById("chart"), tip = document.getElementById("tip"), ns = "http://www.w3.org/2000/svg";
   const draw = () => {
     const w = svg.clientWidth || 600, labelW = 150, valueW = 52, row = 30, bar = 18, max = Math.max(...steps.map((s) => s[1]));

@@ -43,8 +43,8 @@ const withProjectRows = (f: Fixture, first: { needsYou?: boolean; leadWorking?: 
         writeChat(f, ref, fromLines(QUESTION).slice(0, 1), { needsYou: true });
         return statusRow(f, ref, title, "waiting_on_you", { merged: "Nightly export resumes after a crash" });
       case 2:
-        writeChat(f, ref, [{ author: "lead", text: "`rust (macos)` failed on main after the last merge; an agent is on it." }]);
-        return statusRow(f, ref, title, "idle", { warning: "`rust (macos)` is red on main, fix in progress" });
+        writeChat(f, ref, [{ author: "lead", text: "`e2e (webkit)` failed on main after the last merge; an agent is on it." }]);
+        return statusRow(f, ref, title, "idle", { warning: "`e2e (webkit)` is red on main, fix in progress" });
       default:
         writeChat(f, ref, []);
         return statusRow(f, ref, title, "idle");

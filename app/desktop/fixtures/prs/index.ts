@@ -145,58 +145,46 @@ const PACKAGE_JSON = `
      "zod": "4.6.7"
 `;
 
-const TOTALS_RS = `
-@@ -1,12 +1,14 @@
--/// A cart's total in dollars.
--pub fn total(lines: &[Line]) -> f64 {
--    lines.iter().map(|l| l.price * l.qty as f64).sum()
-+/// A cart's total in the currency's minor units (cents), so no sum ever drifts by a fraction of a cent.
-+pub fn total(lines: &[Line]) -> i64 {
-+    lines.iter().map(|l| l.price_minor * i64::from(l.qty)).sum()
+const TOTALS_TS = `
+@@ -1,9 +1,10 @@
+-/** A cart's total in dollars. */
+-export function total(lines: readonly Line[]): number {
+-  return lines.reduce((sum, l) => sum + l.price * l.qty, 0);
++/** A cart's total in the currency's minor units (cents), so no sum ever drifts by a fraction of a cent. */
++export function total(lines: readonly Line[]): number {
++  return lines.reduce((sum, l) => sum + l.priceMinor * l.qty, 0);
  }
 
--pub fn with_tax(total: f64, rate: f64) -> f64 {
--    (total * (1.0 + rate) * 100.0).round() / 100.0
-+/// Tax rounds half to even, as the tax office's own calculator does.
-+pub fn with_tax(total_minor: i64, rate_bp: i64) -> i64 {
-+    let tax = total_minor * rate_bp;
-+    total_minor + round_half_even(tax, 10_000)
+-export function withTax(total: number, rate: number): number {
+-  return Math.round(total * (1 + rate) * 100) / 100;
++/** Tax rounds half to even, as the tax office's own calculator does. */
++export function withTax(totalMinor: number, rateBp: number): number {
++  return totalMinor + roundHalfEven(totalMinor * rateBp, 10_000);
  }
 
- #[cfg(test)]
-@@ -20,8 +22,16 @@ mod tests {
-     #[test]
-     fn sums_lines() {
--        assert_eq!(total(&[line(9.99, 3)]), 29.97);
-+        assert_eq!(total(&[line(999, 3)]), 2997);
-     }
+@@ -18,4 +19,10 @@ describe("cart totals", () => {
+   test("sums lines", () => {
+-    expect(total([line(9.99, 3)])).toBe(29.97);
++    expect(total([line(999, 3)])).toBe(2997);
+   });
 +
-+    #[test]
-+    fn rounds_half_even() {
-+        assert_eq!(with_tax(1_000, 1_250), 1_125);
-+        assert_eq!(with_tax(1_004, 1_250), 1_130);
-+        assert_eq!(with_tax(1_012, 1_250), 1_138);
-+    }
- }
++  test("rounds half to even", () => {
++    expect(withTax(1_000, 1_250)).toBe(1_125);
++    expect(withTax(1_004, 1_250)).toBe(1_130);
++    expect(withTax(1_012, 1_250)).toBe(1_138);
++  });
+ });
 `;
 
-const ROUNDING_RS = `
-@@ -0,0 +1,15 @@
-+/// \`n / d\` rounded to the nearest integer, halves to the even neighbour (banker's rounding).
-+pub fn round_half_even(n: i64, d: i64) -> i64 {
-+    let q = n.div_euclid(d);
-+    let r = n.rem_euclid(d);
-+    match (2 * r).cmp(&d) {
-+        std::cmp::Ordering::Less => q,
-+        std::cmp::Ordering::Greater => q + 1,
-+        std::cmp::Ordering::Equal => {
-+            if q % 2 == 0 {
-+                q
-+            } else {
-+                q + 1
-+            }
-+        }
-+    }
+const ROUNDING_TS = `
+@@ -0,0 +1,8 @@
++/** \`n / d\` rounded to the nearest integer, halves to the even neighbour (banker's rounding). */
++export function roundHalfEven(n: number, d: number): number {
++  const q = Math.floor(n / d);
++  const r = n - q * d;
++  if (2 * r < d) return q;
++  if (2 * r > d) return q + 1;
++  return q % 2 === 0 ? q : q + 1;
 +}
 `;
 
@@ -263,7 +251,7 @@ const passing = (f: Fixture, at: number): JsonObject[] => [
   check(f, "lint", "passing", at, 63, "success"),
   check(f, "typecheck", "passing", at, 139, "success"),
   check(f, "unit (ubuntu)", "passing", at, 312, "success"),
-  check(f, "rust (ubuntu)", "passing", at, 401, "success"),
+  check(f, "unit (macos)", "passing", at, 401, "success"),
   check(f, "build", "passing", at, 254, "success"),
   check(f, "e2e (chromium)", "passing", at, 488, "success"),
   check(f, "docs", "none", at, undefined, "skipped"),
@@ -295,7 +283,7 @@ const specs = (f: Fixture): PrSpec[] => [
       check(f, "typecheck", "passing", 40, 141, "success"),
       check(f, "unit (ubuntu)", "passing", 40, 305, "success"),
       check(f, "build", "passing", 40, 247, "success"),
-      check(f, "rust (ubuntu)", "passing", 40, 398, "success"),
+      check(f, "unit (macos)", "passing", 40, 398, "success"),
       check(f, "e2e (chromium)", "pending", 9, undefined),
       check(f, "migrations", "passing", 40, 88, "success"),
       check(f, "docs", "none", 40, undefined, "skipped"),
@@ -341,7 +329,7 @@ const specs = (f: Fixture): PrSpec[] => [
       changeId: "X10",
       state: "ci_failed",
       length: 2,
-      reason: "`rust (macos)` failed: `cart::totals::tests::rounds_half_even` expected 1130, got 1131.",
+      reason: "`unit (windows)` failed: `cart totals › rounds half to even` expected 1130, got 1131.",
     },
     checks: { state: "failing", passed: 6, failed: 1, pending: 0 },
     review: { state: "approved", done: 1, needed: 1 },
@@ -350,13 +338,13 @@ const specs = (f: Fixture): PrSpec[] => [
     updated: 18,
     body: "Cart and tax maths move from floating-point dollars to integer cents, and tax rounds half to even.\n\nFixes the one-cent drift on carts with many lines.",
     checkRuns: [
-      check(f, "rust (macos)", "failing", 25, 422, "failure"),
+      check(f, "unit (windows)", "failing", 25, 422, "failure"),
       ...passing(f, 25).slice(0, 6),
       check(f, "docs", "none", 25, undefined, "skipped"),
       check(f, "e2e (webkit)", "none", 25, undefined, "cancelled"),
     ],
     reviews: [
-      { verdict: "approved", agent: reviewer(), blocking: 0, nonBlocking: 1, text: "Suggestion: `round_half_even` could live with the currency code, so other callers find it.", current: true, at: ago(f, 40) },
+      { verdict: "approved", agent: reviewer(), blocking: 0, nonBlocking: 1, text: "Suggestion: `roundHalfEven` could live with the currency code, so other callers find it.", current: true, at: ago(f, 40) },
       { verdict: "approved", agent: reviewer("qa"), blocking: 0, nonBlocking: 0, text: "Checkout, refunds and the receipt email all show the same totals.", current: true, at: ago(f, 47) },
       {
         verdict: "changes_requested",
@@ -377,8 +365,8 @@ const specs = (f: Fixture): PrSpec[] => [
       { at: ago(f, 250), from: "queued", to: "queued" },
     ],
     files: [
-      { path: "crates/cart/src/totals.rs", patch: TOTALS_RS },
-      { path: "crates/cart/src/rounding.rs", status: "added", patch: ROUNDING_RS },
+      { path: "packages/cart/src/totals.ts", patch: TOTALS_TS },
+      { path: "packages/cart/src/rounding.ts", status: "added", patch: ROUNDING_TS },
     ],
   },
   {
@@ -578,7 +566,7 @@ const heavySpec = (f: Fixture): PrSpec => {
   const files: FileSpec[] = [{ path: "src/tax/rates.generated.ts", patch: big.join("\n").replace(/^/u, "\n") }];
   for (let i = 0; i < 239; i++) {
     const dir = ["checkout", "cart", "receipts", "search", "payments", "shop"][i % 6] ?? "shop";
-    files.push({ path: `src/${dir}/money-${String(i).padStart(3, "0")}.ts`, patch: TOTALS_RS.replace(/total\(/gu, `total${i}(`) });
+    files.push({ path: `src/${dir}/money-${String(i).padStart(3, "0")}.ts`, patch: TOTALS_TS.replace(/total\(/gu, `total${i}(`) });
   }
   return { ...base, number: 13, title: "Every money value is an integer number of cents", branch: "fleetd/cents-everywhere", files, updated: 3 };
 };

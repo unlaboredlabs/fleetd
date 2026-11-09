@@ -26,6 +26,7 @@
     "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest",
     "site:shots": "QA_SCALE=2 playwright test -c qa/playwright.config.ts --project=site",
     "site:showcase": "QA_SCALE=3 playwright test -c qa/playwright.config.ts --project=showcase --workers=1",
+    "site:pebble": "node scripts/site-pebble.ts",
     "fixtures": "node fixtures/build.ts",
     "perf": "node fixtures/build.ts && node perf/run.ts",
     "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
