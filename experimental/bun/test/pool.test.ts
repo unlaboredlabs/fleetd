@@ -289,6 +289,8 @@ test("the setup script joins the hub through its tunnel on its channel, with eve
     "HUB=http://127.0.0.1:47900",
     "MACHINE=boat-2",
     "CHANNEL=stable",
+    // A Bun hub's machines install the Bun build.
+    "FLAVOUR=bun",
     "BASE_URL=https://github.com/unlaboredlabs/fleetd/releases/download/v0.4.0",
     "IDENTITY='Dev Box <dev@example.net>'",
     "TOKEN_FILE=/tmp/fleetd-enroll-token",
