@@ -1,11 +1,11 @@
-// `bun scripts/db-check.ts <hub.sqlite> [<sessions.sqlite>]`: whether the Bun hub and node open these databases in place
-// (docs/cutover/bun.md). Point it at copies of a live hub's and node's files (`sqlite3 <live> ".backup <copy>"`), never
-// the live ones, and never start a hub on a copy: it would act on the outside world.
+// `bun scripts/db-check.ts <hub.sqlite> [<sessions.sqlite>]`: whether this build's hub and node open these databases in
+// place. Point it at copies of a live hub's and node's files (`sqlite3 <live> ".backup <copy>"`), never the live ones,
+// and never start a hub on a copy: it would act on the outside world.
 //
-// The hub's: the migrations it records (`migrations_applied`) against the ones this build ships (src/gen/migrations.ts,
-// the Rust tree's files), by name and SHA-256, so none would run again or read as drift; then the schema it has once
-// this build's migration runner has run on a scratch copy of it, against a fresh database's. The node's: its schema
-// against a fresh node store's. The files given are opened read-only; the scratch copy is deleted after.
+// The hub's: the migrations it records (`migrations_applied`) against the ones this build ships (src/gen/migrations.ts),
+// by name and SHA-256, so none would run again or read as drift; then the schema it has once this build's migration
+// runner has run on a scratch copy of it, against a fresh database's. The node's: its schema against a fresh node
+// store's. The files given are opened read-only; the scratch copy is deleted after.
 //
 // Prints each difference and exits 1 when there is one; `same` lines and exit 0 otherwise.
 import { Database } from "bun:sqlite";

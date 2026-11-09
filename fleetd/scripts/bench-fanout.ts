@@ -1,4 +1,4 @@
-// One event stream to many viewers, against any hub (Bun or Rust): `bun scripts/bench-fanout.ts --url
+// One event stream to many viewers, against any hub: `bun scripts/bench-fanout.ts --url
 // http://127.0.0.1:4795 --home <its hub home> [--viewers 100] [--events 500]`. It adds a person and a human key to
 // the hub's database (as `fleetd pair` would), connects the viewers on /app with that key, each streaming events,
 // then one writer sets the person's chat pins `--events` times, each a `chat.pins` event every viewer reads. It
