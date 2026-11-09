@@ -332,7 +332,9 @@ too). The node keeps one Chrome launched for the next screen, about 0.5 GB of me
 | `sandbox` | `true` requires Chrome's own sandbox: a machine that refuses it starts no browser. `false` turns it off. Absent: on wherever the machine allows it, else off. |
 
 For fleetd's own development, the node's environment can point it at other binaries: `FLEETD_CHROME` (a Chrome or
-headless shell) and `FLEETD_FFMPEG` (Matroska and MJPEG in, `libvpx-vp9` out).
+headless shell) and `FLEETD_FFMPEG` (Matroska and MJPEG in, `libvpx-vp9` out). With `PLAYWRIGHT_BROWSERS_PATH` set,
+the node finds and installs Chrome and ffmpeg there instead of under its home: the labs point their throwaway nodes
+at the user's own Playwright cache, so a new node doesn't download Chrome again.
 
 ### How long a screen takes to start {#start-time}
 

@@ -3,7 +3,7 @@
 // `fleetd session-host` (FLEETD_NATIVE_BIN, else `fleetd` on PATH), which outlives the node.
 import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
@@ -35,7 +35,7 @@ import { router as sessionRoute } from "./session_route/index.ts";
 import { ANSWER_WAIT_MS, HEALTH_WAIT_SECS, markAnswered, markUp } from "../update/finish.ts";
 import { rmSync } from "node:fs";
 import { configDir } from "./runner/claude.ts";
-import { homeDir } from "./util.ts";
+import { homeDir, selfArgv } from "./util.ts";
 import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliver } from "./wire.ts";
 import { fleetdDir } from "../shared/home.ts";
 import { VERSION } from "../shared/version.ts";
@@ -76,6 +76,36 @@ export function startupCleanups(home: string): void {
   } catch {}
   for (const id of sessions) for (const dir of ["device-remote", "device-work"]) rmSync(join(home, "sessions", id, dir), { recursive: true, force: true });
   rmSync(join(home, "telegram"), { recursive: true, force: true });
+}
+
+/** The node's own temp dir, for it and everything it starts, when its environment names none. Not under `tmp/`: that
+ * is the sessions' scratch dirs, which the node prunes and whose processes it stops as a dead node's leftovers. */
+export const ownTmp = (home: string) => join(home, "own-tmp");
+
+type Exec = (file: string, args: string[], env: Record<string, string>) => void;
+// Bun has Node's process.execve; its types don't yet.
+const execve: Exec = (file, args, env) => (process as unknown as { execve: Exec }).execve(file, args, env);
+
+/**
+ * A node started without TMPDIR (a systemd unit, a lab's scrubbed environment) would leave its temp files and those
+ * of everything it starts in /tmp, which may be held in memory: on Nov 8 throwaway lab nodes, each killed while it
+ * downloaded Chrome, left 107 zips (4.2 GB) there. Such a node runs itself again at once (execve: the same pid, its
+ * stdin unread) with TMPDIR on disk under its home, emptied of what the last node left. Setting process.env would not
+ * do: Bun's spawns without an `env` take the environment the process started with. Returns when TMPDIR is set, or
+ * when the exec failed (the node then runs on as it is).
+ */
+export function ownTmpOrExec(home: string = defaultNodeHome(), env: NodeJS.ProcessEnv = process.env, exec: Exec = execve): void {
+  if (env.TMPDIR) return;
+  const dir = ownTmp(home);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const self = selfArgv();
+    const vars = Object.fromEntries(Object.entries(env).flatMap(([k, v]) => (v === undefined ? [] : [[k, v]])));
+    exec(self[0]!, [...self, ...process.argv.slice(2)], { ...vars, TMPDIR: dir, TMP: dir, TEMP: dir });
+  } catch (error) {
+    console.warn(`${new Date().toISOString()} WARN no temp dir of the node's own, so /tmp: ${(error as Error).message}`);
+  }
 }
 
 export function machineFingerprint(): string | undefined {

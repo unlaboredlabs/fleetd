@@ -1,7 +1,8 @@
 // The node's small helpers (crates/fleetd/src/node/util.rs).
 import { homedir } from "node:os";
 
-const BASE_ENV = ["HOME", "PATH", "USER", "LANG"];
+// The temp dir too: without it a command's temp files go to /tmp, which may be held in memory.
+const BASE_ENV = ["HOME", "PATH", "USER", "LANG", "TMPDIR", "TMP", "TEMP"];
 const GIT_SSH_ENV = ["SSH_AUTH_SOCK", "SSH_AGENT_PID", "GIT_SSH_COMMAND", "GIT_SSH"];
 
 export type Env = Record<string, string>;
@@ -9,7 +10,7 @@ export type Env = Record<string, string>;
 const passed = (keys: string[], from: NodeJS.ProcessEnv = process.env): Env =>
   Object.fromEntries(keys.flatMap((k) => (from[k] === undefined ? [] : [[k, from[k]!]])));
 
-/** What a command the node runs inherits: HOME, PATH, USER and LANG only. */
+/** What a command the node runs inherits: HOME, PATH, USER, LANG and the temp dir only. */
 export const scrubbedEnv = (): Env => passed(BASE_ENV);
 /** Git the hub runs reaches an SSH remote through the user's agent; nothing else gets it. */
 export const gitCommandEnv = (): Env => ({ ...scrubbedEnv(), ...passed(GIT_SSH_ENV) });

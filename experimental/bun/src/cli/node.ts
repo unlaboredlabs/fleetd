@@ -61,6 +61,8 @@ export async function nodeCommand(argv: string[]): Promise<number> {
   const node = () => import("../node/index.ts");
   switch (command) {
     case "join": {
+      // First, before the token is read from stdin: the node, run again, reads it in its turn.
+      (await node()).ownTmpOrExec(v.str("home"));
       let token = v.str("token");
       const file = v.str("token-file");
       if (token === undefined && file !== undefined) {
@@ -87,6 +89,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
     }
     case "run": {
       const home = v.str("home");
+      (await node()).ownTmpOrExec(home);
       return (await node()).run(home === undefined ? {} : { home });
     }
     case "flush": {

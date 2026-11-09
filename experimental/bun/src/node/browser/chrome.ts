@@ -23,7 +23,14 @@ export const WIPE_WAIT = 20_000;
 /** The Playwright release whose browser and ffmpeg builds the node installs. */
 export const PLAYWRIGHT_VERSION = "1.64.1";
 
-export const installDir = (home: string) => join(home, "browser", "ms-playwright");
+/** Where the browser builds live: Playwright's own PLAYWRIGHT_BROWSERS_PATH where the node's environment names one, a
+ * cache on disk that throwaway fleets (the labs) share so a new node home doesn't download Chrome again, else the
+ * node's own dir. */
+export const installDir = (home: string, env: Record<string, string | undefined> = process.env) => {
+  const shared = env.PLAYWRIGHT_BROWSERS_PATH;
+  // "0" is Playwright's "inside the package", which an npx install has none of.
+  return shared && shared !== "0" ? shared : join(home, "browser", "ms-playwright");
+};
 /** The temp dir of an install in progress, beside the install itself. */
 export const installTmp = (home: string) => join(home, "browser", "install-tmp");
 

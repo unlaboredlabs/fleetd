@@ -61,9 +61,21 @@ if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".fleetd"))) throw new 
 
 export type Body = Record<string, any>;
 
-/** Children get HOME, PATH, USER and LANG only: never this session's CLAUDE* variables. */
+/** Children get HOME, PATH, USER, LANG and TMPDIR only: never this session's CLAUDE* variables. TMPDIR keeps their
+ * temp files on disk in this session's scratch dir, never in a /tmp that may be held in memory. */
 export const scrubbedEnv = () =>
-  Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
+  Object.fromEntries(["HOME", "PATH", "USER", "LANG", "TMPDIR"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
+
+/**
+ * The user's own browser and npm caches, on disk, for a lab machine's node: with its HOME new each run, it would
+ * otherwise download Chrome and agent-browser again every time it starts (the killed downloads of Nov 8 filled the
+ * devbox's /tmp). Playwright's install into the shared dir takes a lock, so machines starting together are safe.
+ */
+export const sharedCaches = (): Record<string, string> => ({
+  PLAYWRIGHT_BROWSERS_PATH:
+    process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright"),
+  npm_config_cache: process.env.npm_config_cache || path.join(os.homedir(), ".npm"),
+});
 
 const userClaudeSettings = (): { env?: Record<string, unknown>; apiKeyHelper?: unknown } => {
   const file = path.join(os.homedir(), ".claude/settings.json");
@@ -207,6 +219,7 @@ export const nodeEnv = (id: string, opts: NodeOptions = {}): Record<string, stri
     // machine's claude would find, and refresh, the user's own login there instead of its copied one.
     ...(process.platform === "darwin" ? { CLAUDE_CONFIG_DIR: claudeConfigDir(id) } : {}),
     ...gitIdentity(),
+    ...sharedCaches(),
     ...opts.env,
   };
 };
