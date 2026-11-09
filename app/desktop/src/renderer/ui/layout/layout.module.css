@@ -72,6 +72,14 @@
   border-left: 1px solid var(--hairline);
   background: var(--bg);
 }
+/* Its column, in the panel's own tone from the frame that makes room for it, under the panel as it slides in. The
+   translucent frame paints nothing there, so the window's lighter material would show until the panel had covered it:
+   a grey that a darker one sweeps over. */
+.withAside::before {
+  content: "";
+  grid-area: aside;
+  background: var(--bg);
+}
 
 /* The sidebar floats in from the window's edges as a card of its own, as a macOS 26 sidebar does: its own tone, a
    hairline drawn inside its edge and a soft shadow under it, the traffic lights in its top left corner. */
