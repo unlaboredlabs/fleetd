@@ -76,10 +76,14 @@ export const fixtures = [
   "machines-checklist",
   // ...and cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken (W407).
   "machines-cloud",
-  // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
+  // F2: the lead chat's live strip with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
+  // (fixtures/live).
   "live-0",
+  "live-1",
   "live-3",
   "live-20",
+  "live-1-lead",
+  "live-20-lead",
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
@@ -362,10 +366,13 @@ export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undef
 
 export const screens: readonly Screen[] = [
   // F2 (A4): the live strip, a glass capsule floating just over the project's composer island. live-0 draws no strip.
+  // One line: the turn line (-lead), the dots, the headline and the now-line on the left, the DMs count (live-1 and
+  // live-20) at the right beside the chevron; in the narrowest window the now-line goes.
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-0", "live-3", "live-20"],
+    fixtures: ["live-0", "live-1", "live-3", "live-20", "live-1-lead", "live-20-lead"],
+    sizes: [...defaultSizes, "narrow"],
     variant: "strip",
   },
   // W533: the only trace of agents' DMs in the lead chat: their count at the strip's end.

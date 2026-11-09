@@ -860,7 +860,8 @@ span.changeUndo {
  * The lead's turn line (TurnLine.tsx): the live strip's first item while agents run (live.module.css), else first in
  * the island's band on its own, its left edge on the pill's: one line, 20 px tall. It is as wide as what it says
  * (TurnLine measures it and sets it at once); what follows it slides to its new place and its words are cut by a clip
- * sliding with it, all on transforms (TurnLine slide). Beside others it takes at most a little over half the row.
+ * sliding with it, all on transforms (TurnLine slide). Beside others it takes at most a little over half the row (two
+ * fifths of the strip's).
  * Gone, it has no width and gives back the row's gap (--turn-gap). On its own over the conversation scrolled up, a
  * soft patch of the ground keeps it legible; in the strip, the capsule's glass does.
  */
@@ -877,12 +878,16 @@ span.changeUndo {
   margin: 0 0 4px 0;
   pointer-events: none;
 }
-:global([data-strip]) > .turnLine {
-  --turn-gap: var(--space-3);
-  margin-bottom: 0;
-}
 .turnLine:not(:last-child) {
   max-width: 55%;
+}
+/* In the strip it keeps its few words whole while the headline's tail gives way ("· 1 on hold · 1 queued"); a long
+   one takes at most two fifths of the row, and its file name ellipsizes. */
+:global([data-strip]) > .turnLine {
+  --turn-gap: var(--space-3);
+  flex-shrink: 0;
+  max-width: 40%;
+  margin-bottom: 0;
 }
 .turnLine[data-turn] {
   min-width: 14px;
@@ -972,9 +977,12 @@ span.changeUndo {
   text-overflow: ellipsis;
   color: var(--quiet);
 }
+/* Cut short, what it does now ends in an ellipsis too, a file name included, never mid-letter at the clip. */
 .turnNow {
   display: inline-block;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   vertical-align: top;
   color: var(--text);
   font-weight: 500;
