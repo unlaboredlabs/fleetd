@@ -441,6 +441,9 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 ### Modules without a wire surface
 
 - [x] `node/runner/scope.rs` → `src/node/runner` (each session host in a systemd scope of its own, so agents outlive the node's restart) <!-- mod:`node/runner/scope.rs` -->
+- [x] `node/power/inhibit.rs` → `src/node/power` (the sleep inhibitor while agents run: logind's on Linux, an IOPMAssertion on macOS) <!-- mod:`node/power/inhibit.rs` -->
+- [x] `node/power/clock.rs` → `src/node/power` (time asleep, so the node notices a wake: CLOCK_BOOTTIME on Linux, mach clocks on macOS) <!-- mod:`node/power/clock.rs` -->
+- [x] `node/self_exe.rs` → `src/node/self_exe` (the session host pinned where an update can't replace it, for the sessions' fleetd tools) <!-- mod:`node/self_exe.rs` -->
 
 ## node-browser+screens
 
@@ -509,7 +512,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] node loop `desktop::Desktops::start` → `src/node/desktop` <!-- loop:node loop `desktop::Desktops::start` -->
 - [x] node loop `device::Devices::start` → `src/node/device` <!-- loop:node loop `device::Devices::start` -->
 - [x] node loop `device::ios::Simulators::start` → `src/node/device` <!-- loop:node loop `device::ios::Simulators::start` -->
-- [ ] node loop `mac_tool::host::Host::start` → `src/node/mac_tool` <!-- loop:node loop `mac_tool::host::Host::start` -->
+- [x] node loop `mac_tool::host::Host::start` → `src/node/mac_tool` <!-- loop:node loop `mac_tool::host::Host::start` -->
 
 ### Heartbeat fields (node → hub `hb`)
 
@@ -519,6 +522,11 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [ ] heartbeat `load.ios` → `src/node/device` <!-- hb:heartbeat `load.ios` -->
 - [x] heartbeat `load.desktop` → `src/node/desktop` <!-- hb:heartbeat `load.desktop` -->
 - [x] heartbeat `load.mac` → `src/node/agents_mac` <!-- hb:heartbeat `load.mac` -->
+
+### Modules without a wire surface
+
+- [x] `node/mac_tool/client.rs` → `src/node/mac_tool` (`mac` and, while the session holds a simulator, the forwarding agent-device first on every agent's PATH) <!-- mod:`node/mac_tool/client.rs` -->
+- [x] `node/mac_tool/activity.rs` → `src/node/mac_tool` (what agents do on the agents' Mac, written for its menu bar) <!-- mod:`node/mac_tool/activity.rs` -->
 
 ## cli
 

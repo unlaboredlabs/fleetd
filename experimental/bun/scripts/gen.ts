@@ -309,6 +309,11 @@ for (const f of hbFields) add("hb", `heartbeat \`${f}\``, HB_MODULES[f] ?? "node
 // interface lists can't see. Each file must exist in the Rust tree.
 const MODULES_WITHOUT_A_WIRE: [rust: string, module: string, what: string][] = [
   ["node/runner/scope.rs", "node/runner", "each session host in a systemd scope of its own, so agents outlive the node's restart"],
+  ["node/mac_tool/client.rs", "node/mac_tool", "`mac` and, while the session holds a simulator, the forwarding agent-device first on every agent's PATH"],
+  ["node/mac_tool/activity.rs", "node/mac_tool", "what agents do on the agents' Mac, written for its menu bar"],
+  ["node/power/inhibit.rs", "node/power", "the sleep inhibitor while agents run: logind's on Linux, an IOPMAssertion on macOS"],
+  ["node/power/clock.rs", "node/power", "time asleep, so the node notices a wake: CLOCK_BOOTTIME on Linux, mach clocks on macOS"],
+  ["node/self_exe.rs", "node/self_exe", "the session host pinned where an update can't replace it, for the sessions' fleetd tools"],
 ];
 for (const [rust, module, what] of MODULES_WITHOUT_A_WIRE) {
   if (!existsSync(join(CRATE, rust))) throw new Error(`gen: crates/fleetd/src/${rust} is gone: update MODULES_WITHOUT_A_WIRE`);
