@@ -15,11 +15,11 @@
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
 import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, isCut, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, isCut, observeSize, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { revealNext } from "../settings/reveal";
@@ -164,16 +164,36 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
  * bubble of its own, and a picture of the project's own, which can't, has the row's small working glyph in the dot's
  * place. While ⌘ (Ctrl) is held, its jump number stands before the name in the dot's place, as a row's stands in its
  * time's: the pins are ⌘1 onwards. Open or under the pointer, the capsule takes the shade, as the top bar's pill does.
- * A name too long for its place ends in an ellipsis, and is whole in a tooltip under the pin.
+ * A name too long for its place ends in an ellipsis, and is whole in a tooltip under the pin: only a cut name has a
+ * tooltip at all, as ui's Truncate does it, so a pin whose name fits never starts one.
  */
 function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   const m = mark(p);
   const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
   const dot = p.want !== undefined ? "want" : p.unread ? "new" : undefined;
-  const title = useRef<HTMLSpanElement>(null);
-  const [whole, setWhole] = useState(false);
+  // The name's element lives in state (a callback ref): the pin is a new node once its tooltip comes or goes.
+  const [title, setTitle] = useState<HTMLSpanElement | null>(null);
+  const [cut, setCut] = useState(false);
+  const refocus = useRef(false);
+  useLayoutEffect(() => {
+    // Right after a swap this can still hold the node React just removed; the next run has the new one.
+    if (!title?.isConnected) return;
+    const pin = title.closest("button");
+    if (refocus.current) {
+      refocus.current = false;
+      pin?.focus();
+    }
+    const measure = () => {
+      const now = isCut(title);
+      // The swap takes the pin's node: a pin that had the keyboard keeps it.
+      if (now !== cut && pin === document.activeElement) refocus.current = true;
+      setCut(now);
+    };
+    measure();
+    return observeSize(title, measure);
+  }, [title, cut, p.project.title]);
   return (
-    <Tooltip content={p.project.title} side="bottom" open={whole} onOpenChange={(open) => setWhole(open && title.current !== null && isCut(title.current))}>
+    <Tooltip content={cut ? p.project.title : undefined} side="bottom">
       <button
         type="button"
         className={s.pinCell}
@@ -191,7 +211,7 @@ function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
           ) : p.project.avatar !== undefined && (p.working || p.running > 0) ? (
             <StateGlyph state="thinking" size="sm" />
           ) : null}
-          <span ref={title} className={s.pinTitle}>
+          <span ref={setTitle} className={s.pinTitle}>
             {p.project.title}
           </span>
         </span>

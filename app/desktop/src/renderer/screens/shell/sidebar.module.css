@@ -18,6 +18,8 @@
 .list {
   flex: 1;
   min-height: 0;
+  /* It scrolls one way only. */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   /* The list's own moves (the first pin's place showing under a drag) never scroll it: a lifted chat's measures stay
@@ -25,6 +27,15 @@
   overflow-anchor: none;
   /* The first chat a clear step below the top row, not tucked under it. */
   padding: var(--space-2) var(--space-2) var(--space-3);
+}
+
+/* Nothing in a group counts past the list's own edges (a bot's picture is drawn on a canvas wider than itself, and in
+   the narrowest sidebar the right pin's reached 3 px past): the group spans the list's padding and clips there, so the
+   list has nowhere to go sideways. */
+.group {
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+  overflow-x: clip;
 }
 
 .group + .group {
@@ -492,28 +503,32 @@
    however wide the sidebar (Sidebar.tsx PIN_COLUMNS), each name under its picture in a small capsule; a breath below
    them, no line, and the list goes on. Their places are a fixed width and touch, so two 72 px pictures stand 16 px
    apart, a pair; the group is centred in the sidebar, and a wide one leaves room either side rather than between
-   them. The narrowest sidebar, once its list scrolls, is a hair short of two places: there the group reaches that
-   hair into the list's own padding rather than squeeze the pair. */
+   them. The narrowest sidebar, once its list scrolls, is a hair short of two places: there each place gives up its
+   share of the hair and its pin, kept to the place's outer side, twice that, so the pictures still stand 16 px apart
+   and nothing reaches into the list's own padding. */
 .pins {
   --pin-w: 88px;
   display: grid;
-  grid-template-columns: repeat(2, var(--pin-w));
+  grid-template-columns: repeat(2, minmax(0, var(--pin-w)));
   justify-content: center;
   gap: var(--space-1) 0;
-  margin: 0 min(0px, calc((100% - 2 * var(--pin-w)) / 2)) var(--space-3);
+  margin-bottom: var(--space-3);
   border-radius: var(--pin-round);
   transition: background-color var(--dur-quick) var(--ease-snap);
 }
 /* A pin's place, a cell of the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin fills it. */
 .pinSlot {
   display: flex;
-  justify-content: center;
   min-width: 0;
+}
+.pinSlot:nth-child(even) {
+  justify-content: flex-end;
 }
 /* A lone pin takes the whole row, so it sits in the group's middle rather than its left cell, still a place wide; a
    second one brings the two columns back. */
 .pinSlot:only-child {
   grid-column: 1 / -1;
+  justify-content: center;
 }
 .pins > [data-reorder-row][data-lifted] {
   background: transparent;
@@ -573,9 +588,10 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  width: var(--pin-w);
+  /* A whole place wide; in a place a hair short (see .pins), short by twice that. */
+  width: calc(200% - var(--pin-w));
   min-width: 0;
-  max-width: 100%;
+  max-width: var(--pin-w);
   padding: var(--space-1) 0;
   border: none;
   border-radius: var(--pin-round);

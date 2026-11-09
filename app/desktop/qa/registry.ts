@@ -1297,6 +1297,10 @@ export const screens: readonly Screen[] = [
             if (p == null) throw new Error("the pins' pictures aren't on screen");
             for (const picture of pictures) expect([picture?.width, picture?.height]).toEqual([72, 72]);
             if (q != null) expect(q.x - (p.x + p.width)).toBeCloseTo(16, 0);
+            // The list has nowhere to go sideways, a bot's picture (drawn on a canvas wider than itself) in the right
+            // place or not.
+            const list = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="list"]').first();
+            expect(await list.evaluate((el) => [el.scrollWidth, el.scrollLeft])).toEqual([await list.evaluate((el) => el.clientWidth), 0]);
           }).toPass();
         },
       }),
