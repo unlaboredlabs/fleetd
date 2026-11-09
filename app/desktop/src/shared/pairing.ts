@@ -176,15 +176,31 @@ export const compareVersions = (a: string, b: string): number | null => {
 const older = (nodeVersion: string, hubVersion: string) =>
   compareVersions(nodeVersion, "0.0.0") !== 0 && compareVersions(nodeVersion, hubVersion) === -1;
 
+type Linked = { readonly name: string; readonly nodeVersion: string; readonly cloud?: boolean; readonly status: string; readonly linkedSince?: string | undefined };
+
+/** Linked machines still on an older fleetd than the hub `windowMs` after their link came up. */
+const behindFor = (machines: ReadonlyArray<Linked>, hubVersion: string, nowMs: number, cloud: boolean, windowMs: number): ReadonlyArray<string> =>
+  machines
+    .filter((m) => (m.cloud === true) === cloud && m.status !== "offline" && m.linkedSince !== undefined && nowMs - Date.parse(m.linkedSince) >= windowMs)
+    .filter((m) => older(m.nodeVersion, hubVersion))
+    .map((m) => m.name);
+
 /**
- * Machines whose node runs an older fleetd than the hub, by name, for `fleetd update` on each. A node reporting 0.0.0
- * hasn't said its version. Cloud machines aren't among them: each takes the hub's build itself as it wakes
- * (`stuckCloud`).
+ * How long after its link comes up a machine's node may still run an older build than the hub: the hub updates
+ * itself first, then its nodes, and each waits up to its drain for what its restart would cut off (2 minutes by
+ * default; 10 minutes is the most this counts on), then relinks on the new build. Automatic updates also bring a
+ * machine an update left behind.
  */
-export const olderNodes = (
-  machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string; readonly cloud?: boolean }>,
-  hubVersion: string,
-): ReadonlyArray<string> => machines.filter((m) => m.cloud !== true && older(m.nodeVersion, hubVersion)).map((m) => m.name);
+export const NODE_CATCH_UP_MS = 12 * 60_000;
+
+/**
+ * Machines whose node still runs an older fleetd than the hub `NODE_CATCH_UP_MS` after their link came up, by name,
+ * for `fleetd update` on each: one whose update is on its way isn't stuck, and an offline one is updated as it links
+ * again. A node reporting 0.0.0 hasn't said its version. Cloud machines aren't among them: each takes the hub's build
+ * itself as it wakes (`stuckCloud`).
+ */
+export const olderNodes = (machines: ReadonlyArray<Linked>, hubVersion: string, nowMs: number): ReadonlyArray<string> =>
+  behindFor(machines, hubVersion, nowMs, false, NODE_CATCH_UP_MS);
 
 /**
  * How long after its link comes up a cloud machine may still run an older build: its catch-up downloads the hub's,
@@ -196,12 +212,5 @@ export const CLOUD_CATCH_UP_MS = 10 * 60_000;
  * Cloud machines awake on an older fleetd than the hub `CLOUD_CATCH_UP_MS` after their link came up, by name: their
  * wake didn't bring them to the hub's build. One asleep, or still catching up, is fine.
  */
-export const stuckCloud = (
-  machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string; readonly cloud?: boolean; readonly status: string; readonly linkedSince?: string | undefined }>,
-  hubVersion: string,
-  nowMs: number,
-): ReadonlyArray<string> =>
-  machines
-    .filter((m) => m.cloud === true && m.status !== "offline" && m.linkedSince !== undefined && nowMs - Date.parse(m.linkedSince) >= CLOUD_CATCH_UP_MS)
-    .filter((m) => older(m.nodeVersion, hubVersion))
-    .map((m) => m.name);
+export const stuckCloud = (machines: ReadonlyArray<Linked>, hubVersion: string, nowMs: number): ReadonlyArray<string> =>
+  behindFor(machines, hubVersion, nowMs, true, CLOUD_CATCH_UP_MS);

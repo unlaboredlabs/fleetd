@@ -21,6 +21,8 @@ export type FakeNodeOptions = {
   capabilities?: string[];
   protocol?: number;
   fingerprint?: string;
+  /** The fleetd its hello says it runs; 0.0.0-test by default. */
+  nodeVersion?: string;
   /** Answers each `session_call runner_info` as logged in; false leaves them unanswered. */
   runner?: "logged_in" | "logged_out" | false;
 };
@@ -81,7 +83,7 @@ export class FakeNode {
       machineId: this.machineId,
       name: this.machineId,
       tags: [],
-      nodeVersion: "0.0.0-test",
+      nodeVersion: o.nodeVersion ?? "0.0.0-test",
       protocol: o.protocol ?? PROTOCOL_VERSION,
       pubKey: this.key.pubKey,
       sig: this.key.sign(nonce),

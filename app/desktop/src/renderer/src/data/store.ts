@@ -404,12 +404,15 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
       break;
     case "machine.online":
     case "machine.offline":
-    case "machine.degraded": {
+    case "machine.degraded":
+    case "machine.linked": {
       const id = event.machineId;
       const machine = id === undefined ? undefined : next.machines[id];
       if (id !== undefined && machine !== undefined) {
-        const status = event.type === "machine.online" ? "online" : event.type === "machine.offline" ? "offline" : "degraded";
-        next = { ...next, machines: { ...next.machines, [id]: { ...machine, status } } };
+        const status = event.type === "machine.online" ? "online" : event.type === "machine.offline" ? "offline" : event.type === "machine.degraded" ? "degraded" : machine.status;
+        // The version its node linked on: a node an update restarted links again on the new build, after the snapshot.
+        const nodeVersion = dataField(event, "nodeVersion") ?? machine.nodeVersion;
+        next = { ...next, machines: { ...next.machines, [id]: { ...machine, status, nodeVersion } } };
       }
       break;
     }

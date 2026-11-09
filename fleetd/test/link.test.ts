@@ -177,6 +177,32 @@ test("a heartbeat keeps the status; a low disk pauses new agents; silence takes 
   links.timings = saved;
 });
 
+// A node back after an update links on a new build: clients that read the machine before then learn its version from
+// the events announcing it, also when it was away long enough to be announced offline (no machine.linked then).
+test("the events announcing a link say the node's version", async () => {
+  const saved = links.timings;
+  links.timings = { ...saved, silenceMs: 150 };
+  const versions = () =>
+    events(hub)
+      .page(0)
+      .events.filter((e) => e.machineId === "worker-11" && e.type !== "machine.hosts")
+      .map((e) => `${e.type} ${(e.data as { nodeVersion?: string } | undefined)?.nodeVersion ?? ""}`.trim());
+  const node = await linked("worker-11", { nodeVersion: "0.1.0" });
+  await until(() => versions().includes("machine.online 0.1.0"));
+  await node.closed;
+  await until(() => versions().includes("machine.offline"));
+  links.timings = saved;
+  const again = new FakeNode(url, { machineId: "worker-11", key: node.key, nodeVersion: "0.2.0" });
+  await until(() => versions().includes("machine.online 0.2.0"));
+  expect(store(hub).machineGet("worker-11")?.nodeVersion).toBe("0.2.0");
+  // Linked again while online: machine.linked says it.
+  const third = new FakeNode(url, { machineId: "worker-11", key: node.key, nodeVersion: "0.3.0" });
+  await until(() => versions().includes("machine.linked 0.3.0"));
+  await again.closed;
+  third.close();
+  await third.closed;
+});
+
 test("a node removed from the hub is ended at its next heartbeat", async () => {
   const node = await linked("worker-8");
   hub.auth.nodes.revokeNode("worker-8");
