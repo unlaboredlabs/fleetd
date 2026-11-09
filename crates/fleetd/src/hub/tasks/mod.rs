@@ -13,6 +13,8 @@ mod cap_tests;
 pub mod ci_wait;
 #[cfg(test)]
 mod ci_wait_tests;
+#[cfg(test)]
+mod dm_tests;
 pub mod duplicates;
 #[cfg(test)]
 mod duplicates_tests;
@@ -350,6 +352,10 @@ pub struct Tasks {
     /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
     /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
     asking: Mutex<HashSet<TaskId>>,
+    /// Tasks whose `ask_lead` question no message has answered yet, with when they asked. Unlike `asking` it outlives
+    /// the run's end: a finished agent that waits on an answer is the one another agent's message may continue. Not
+    /// kept across a hub restart: such a message is then held like any other.
+    asked: Mutex<HashMap<TaskId, i64>>,
     /// Tasks continued in their thread whose new run the hub hasn't seen yet, with that run's id and when it was sent.
     /// Until it shows up, for at most `CONTINUED_RUN_WAIT_MS`, an end event for another run is late word of an earlier
     /// one (T19: a node back from a stop reported the run it cut off after the task had been continued), so it doesn't
@@ -404,6 +410,7 @@ impl Tasks {
             awaiting: Mutex::new(HashSet::new()),
             looking_up: Mutex::new(HashSet::new()),
             asking: Mutex::new(HashSet::new()),
+            asked: Mutex::new(HashMap::new()),
             continuing: Mutex::new(HashMap::new()),
             stopping: Mutex::new(HashSet::new()),
             binding: Arc::new(Mutex::new(HashSet::new())),
@@ -2452,7 +2459,15 @@ impl Tasks {
                     );
                     next.queued_reason = None;
                 }
-                let held = stored.pending_message.clone().filter(|_| recovering);
+                // Or what other agents sent it while it was ended: a Monitor of its own woke it, and this run carries it.
+                let peers = !recovering
+                    && !crate::hub::steer::store::held_for_task(&self.d.db, task.task_id.as_str())
+                        .unwrap_or_default()
+                        .is_empty();
+                let held = stored
+                    .pending_message
+                    .clone()
+                    .filter(|_| recovering || peers);
                 // A person continued it, not fleetd (the usage layer's continue of a parked task aside): the digest no
                 // longer says it was resumed automatically.
                 if (recovering || task.parked.is_none())
@@ -3076,6 +3091,8 @@ impl Tasks {
         let stored = self.owned(caller, task_id)?;
         let task = stored.task.clone();
         let id = task_id.as_str();
+        // Any message answers its question.
+        self.asked.lock().unwrap().remove(task_id);
         match task.state {
             TaskState::Cancelled => Err(lead_error(
                 ErrorCode::Invalid,
@@ -3155,9 +3172,14 @@ impl Tasks {
                     recovery.signature = None;
                     recovery.resumed_at = None;
                 }
+                // What other agents sent while it was ended goes first, in the order it came.
+                let pending = match stored.pending_message {
+                    Some(earlier) => format!("{earlier}\n\n{text}"),
+                    None => text.to_owned(),
+                };
                 let stored = StoredTask {
                     task: next,
-                    pending_message: Some(text.to_owned()),
+                    pending_message: Some(pending),
                 };
                 let task = self.start_now(guard, stored, false).await;
                 stages.done("start");
@@ -3165,6 +3187,42 @@ impl Tasks {
                 Ok(task)
             }
         }
+    }
+
+    /// When `task_id` asked the `ask_lead` question no message has answered yet, if one hasn't been.
+    pub fn asked_at(&self, task_id: &TaskId) -> Option<i64> {
+        self.asked.lock().unwrap().get(task_id).copied()
+    }
+
+    /// Its lead or a person wrote to it (a steer, whatever its state): that answers its question, so another agent's
+    /// message no longer continues it once it ends.
+    pub fn answered(&self, task_id: &TaskId) {
+        self.asked.lock().unwrap().remove(task_id);
+    }
+
+    /// Keeps another agent's message for a task that isn't running, without starting it: the task's next run carries
+    /// it, whatever starts that run (a Monitor of its own, its wait_ci, its lead). One that is running again by now
+    /// takes it at once.
+    pub async fn hold_message(&self, task_id: &TaskId, text: &str) -> Result<(), TaskError> {
+        let guard = self.lock_task(task_id).await;
+        let Some(mut stored) = self
+            .db(|c| TaskRecords::get(c, task_id))
+            .map_err(store_error)?
+        else {
+            return Ok(());
+        };
+        if stored.task.state == TaskState::Running
+            && let Some(thread) = stored.task.thread_ref.clone()
+        {
+            drop(guard);
+            self.deliver(&stored.task, &thread, text).await;
+            return Ok(());
+        }
+        stored.pending_message = Some(match stored.pending_message.take() {
+            Some(earlier) => format!("{earlier}\n\n{text}"),
+            None => text.to_owned(),
+        });
+        self.put(&stored).map_err(store_error)
     }
 
     /// Removes `text` from a task's pending message (a withdrawn steer that was waiting for its next run); false once
@@ -3205,6 +3263,7 @@ impl Tasks {
         let _guard = self.lock_task(task_id).await;
         let task = self.owned(caller, task_id)?.task;
         let id = task_id.as_str();
+        self.asked.lock().unwrap().remove(task_id);
         match task.state {
             TaskState::Cancelled => return Ok(task),
             TaskState::Done | TaskState::Failed => {
@@ -3346,6 +3405,10 @@ impl Tasks {
             ));
         };
         self.asking.lock().unwrap().insert(task_id.clone());
+        self.asked
+            .lock()
+            .unwrap()
+            .insert(task_id.clone(), now_ms(self.d.clock.as_ref()));
         let text = render::task_waiting_lines(task_id.as_str(), task.title.as_str(), question);
         self.d
             .ports
@@ -3600,6 +3663,31 @@ impl Tasks {
             })
             .collect();
         Some(format!("also writing: {}", lines.join("; ")))
+    }
+
+    /// A writer's files changed so far, as its node reads its worktree, for `agents` on one task: who else edits a file
+    /// shows before a rebase does. `None` for another kind, one not started, or a node that didn't say in time.
+    pub async fn changing(&self, task: &Task) -> Option<String> {
+        const SHOWN: usize = 30;
+        if task.kind != TaskKind::Write {
+            return None;
+        }
+        let thread = task.thread_ref.as_ref()?;
+        let paths = tokio::time::timeout(OBSERVE_TIMEOUT, self.d.ports.changes(thread))
+            .await
+            .ok()
+            .flatten()?
+            .paths;
+        let id = task.task_id.as_str();
+        Some(match paths.len() {
+            0 => format!("{id} has changed no files yet."),
+            n if n > SHOWN => format!(
+                "{id} changes: {}, +{} more.",
+                paths[..SHOWN].join(", "),
+                n - SHOWN
+            ),
+            _ => format!("{id} changes: {}.", paths.join(", ")),
+        })
     }
 
     /// The project's agents against its max agents, from the slot board: the lead's own turns are not agents.

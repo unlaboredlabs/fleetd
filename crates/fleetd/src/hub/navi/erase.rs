@@ -335,6 +335,16 @@ fn rows(c: &Connection, r: &ProjectRef) -> Result<(Vec<String>, BTreeSet<String>
         "DELETE FROM automations WHERE machine_id = ? AND project_id = ?",
         params![m, p],
     )?;
+    // What its agents wrote to each other: each message's recipients, then the messages.
+    c.execute(
+        "DELETE FROM agent_message_to WHERE message_n IN
+           (SELECT n FROM agent_messages WHERE machine_id = ? AND project_id = ?)",
+        params![m, p],
+    )?;
+    c.execute(
+        "DELETE FROM agent_messages WHERE machine_id = ? AND project_id = ?",
+        params![m, p],
+    )?;
     // The time inspector's spans of its sessions, whose labels hold its commands, searches, URLs and paths: the
     // spans, then each label no other span uses.
     let spans = "FROM time_spans WHERE machine_id = ?1

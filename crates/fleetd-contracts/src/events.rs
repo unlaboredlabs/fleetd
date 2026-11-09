@@ -192,6 +192,14 @@ pub enum HubEventType {
     /// reset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.
     #[serde(rename = "prompt.default_changed")]
     PromptDefaultChanged,
+    /// An agent wrote to others of its project (`agent_message`). `projectId` is the project's; `data` is an
+    /// `AgentMessageEventData`: messageId, from, each recipient's outcome, the first 120 characters.
+    #[serde(rename = "agent.messaged")]
+    AgentMessaged,
+    /// An agent message's outcome changed for a recipient (a held one delivered, a delivery failed). The same `data`,
+    /// every recipient as it stands now.
+    #[serde(rename = "agent.message_updated")]
+    AgentMessageUpdated,
     /// A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120
     /// characters), `data.mode` and `data.by`.
     #[serde(rename = "steer.queued")]
@@ -379,6 +387,8 @@ impl HubEventType {
             Self::KeyPaired => "key.paired",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
+            Self::AgentMessaged => "agent.messaged",
+            Self::AgentMessageUpdated => "agent.message_updated",
             Self::SteerQueued => "steer.queued",
             Self::SteerDelivered => "steer.delivered",
             Self::SteerAcknowledged => "steer.acknowledged",

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { log, ok } from "../harness.ts";
+import { agentMessages } from "./agentMessages.ts";
 import { withFactory } from "./kit.ts";
 import { leadWake } from "./leadWake.ts";
 import { selfHealing } from "./selfHealing.ts";
@@ -19,6 +20,7 @@ const SCENARIOS = [
   { name: "throughput", run: throughput },
   { name: "self-healing", run: selfHealing },
   { name: "lead-wake", run: leadWake },
+  { name: "agent-messages", run: agentMessages },
 ] as const;
 
 async function main() {

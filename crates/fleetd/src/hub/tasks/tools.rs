@@ -233,8 +233,13 @@ pub async fn lead_call(
                             .full_result(&task.task_id)
                             .map_err(internal)?
                             .map(Text::unchecked);
+                        let changing = tasks.changing(&task).await;
+                        let next = [list_next(tasks, r, std::slice::from_ref(&task)), changing]
+                            .into_iter()
+                            .flatten()
+                            .reduce(|a, b| format!("{a} {b}"));
                         Ok(LeadCallResult::TaskList(TaskListResult {
-                            next: list_next(tasks, r, std::slice::from_ref(&task)),
+                            next,
                             tasks: List::unchecked(vec![task]),
                             full_result,
                             truncated: None,

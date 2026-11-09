@@ -38,7 +38,7 @@ test("wake_set needs a known thread; wake_list and wake_cancel see it", async ()
 test("prompt_get lists and shows; prompt_set saves, warns, resets; only admins edit hub-wide", async () => {
   const { hub, done } = testHub();
   const listed = (await tools.call(hub, caller("read"), "prompt_get", {})) as { output: { prompts: { id: string; scope: string }[] } };
-  expect(listed.output.prompts.length).toBe(27);
+  expect(listed.output.prompts.length).toBe(28);
   expect(await tools.call(hub, caller("read"), "prompt_get", { id: "lead.digest" })).toMatchObject({
     error: { error: { code: "not_found", message: expect.stringContaining("fleetd retired lead.digest") } },
   });

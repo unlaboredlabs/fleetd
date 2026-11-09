@@ -8,7 +8,7 @@ import type { HubDb } from "../store/db.ts";
 export type NewSteer = {
   steer: Steer;
   taskId?: string;
-  /** `key:<id>` for a person, `lead` for a lead. */
+  /** `key:<id>` for a person, `lead` for a lead, `agent:T<n>` for another agent. */
   by: string;
   /** `steer:<by>:<clientRequestId>`: a resent request returns this steer, whatever its stage. */
   request: string;
@@ -31,7 +31,7 @@ export function encode(s: Steer): string {
     stage: s.stage,
     queuedAt: s.queuedAt,
   };
-  for (const k of ["deliveredAt", "how", "stoppedTool", "seenAt", "ackedAt", "ackExcerpt", "detail"] as const) if (s[k] !== undefined) o[k] = s[k];
+  for (const k of ["deliveredAt", "how", "stoppedTool", "seenAt", "ackedAt", "ackExcerpt", "detail", "held"] as const) if (s[k] !== undefined) o[k] = s[k];
   return JSON.stringify(o);
 }
 

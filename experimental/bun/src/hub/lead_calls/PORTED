@@ -1,3 +1,5 @@
+lead:lead call `agent_message`
+lead:lead call `agent_messages`
 lead:lead call `artifact_publish`
 lead:lead call `artifact_read`
 lead:lead call `ask_lead`

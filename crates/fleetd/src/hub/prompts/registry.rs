@@ -379,6 +379,21 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "agent.message",
+        Msg,
+        Messages,
+        Task,
+        "Agent message",
+        "per agent_message, from another agent of the project, at the agent's next tool boundary or with its next run",
+        "id!=the message, M<n>; from!=the sending agent, T<n>; fromTitle=its title; scope!=the task (T<n> (kind) for W<n>); text!=the words",
+        &[(
+            "peer-not-lead",
+            "a peer's note: the brief and the lead outrank it",
+            "your brief and your lead outrank it",
+            Prompt
+        )]
+    ),
+    entry!(
         "task.brief.write",
         Start,
         Tasks,

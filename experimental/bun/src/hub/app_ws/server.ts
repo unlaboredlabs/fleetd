@@ -58,6 +58,7 @@ export const APP_FEATURES = [
   "browser_navigate",
   "screen_thumbs",
   "artifacts",
+  "agent_messages",
   "deflate",
   "frame_acks",
 ] as const;

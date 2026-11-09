@@ -130,6 +130,14 @@ pub enum Event<'a> {
         steer: &'a str,
         text: &'a str,
     },
+    /// One agent wrote to another (`agent_message`): a quiet copy for the lead, never a wake of its own.
+    AgentMessaged {
+        from: &'a str,
+        /// Its recipients, each with how it stands when not delivered: "T4, T7 (not woken)".
+        to: &'a str,
+        message: &'a str,
+        text: &'a str,
+    },
     PrMerged {
         change: &'a str,
         pr_url: &'a str,
@@ -349,6 +357,15 @@ impl Event<'_> {
                     "- the human steered {task} ({kind}) directly ({steer}): {}",
                     quote(text)
                 ),
+                vec![],
+            ),
+            Event::AgentMessaged {
+                from,
+                to,
+                message,
+                text,
+            } => (
+                format!("- {from} → {to} ({message}): {}", quote(text)),
                 vec![],
             ),
             Event::PrMerged {

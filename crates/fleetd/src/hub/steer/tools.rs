@@ -1,8 +1,10 @@
-//! steer_send and steer_withdraw; order_get lists an order's steers.
+//! steer_send, steer_withdraw and agent_messages; order_get lists an order's steers.
 use std::sync::Arc;
 
+use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    SteerSendInput, SteerSendOutput, SteerWithdrawInput, SteerWithdrawOutput,
+    AgentMessagesInput, AgentMessagesOutput, SteerSendInput, SteerSendOutput, SteerWithdrawInput,
+    SteerWithdrawOutput,
 };
 use fleetd_contracts::steer::{SteerStage, SteerTarget};
 
@@ -14,6 +16,38 @@ use crate::hub::orders::notes::{render_refs, require_human};
 pub fn register(tools: &mut Registry) {
     tools.add("steer_send", steer_send);
     tools.add("steer_withdraw", steer_withdraw);
+    tools.add("agent_messages", agent_messages);
+}
+
+/// What a project's agents wrote to each other: any key that reads the project's machine, but another person's Only
+/// me project is theirs alone (D310).
+async fn agent_messages(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: AgentMessagesInput,
+) -> Result<AgentMessagesOutput, ToolError> {
+    let r = &input.project_ref;
+    if !crate::hub::api::allows(&caller, Role::Read, Some(&r.machine_id))
+        || !crate::hub::navi::owner::may_use(&hub.db, &caller, r)?
+    {
+        return Err(crate::hub::api::unknown_project(r));
+    }
+    let page = super::dm::list(
+        &hub.db,
+        r,
+        input.task_id.as_ref(),
+        input.before.as_ref(),
+        input.limit.get() as usize,
+    )?;
+    Ok(AgentMessagesOutput {
+        next: page.more.then(|| {
+            "Older ones remain: call again with before, the id of the oldest here.".to_owned()
+        }),
+        messages: page.messages,
+        more: page.more,
+        total: fleetd_contracts::prim::Count::unchecked(page.total),
+        truncated: None,
+    })
 }
 
 fn next(stage: SteerStage) -> Option<String> {

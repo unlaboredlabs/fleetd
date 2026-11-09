@@ -330,6 +330,18 @@ impl Tasks {
         open
     }
 
+    /// Whether `task_id` keeps a wait_ci open, which wakes it when what it names ends.
+    pub fn has_ci_wait(&self, task_id: &TaskId) -> bool {
+        self.db(|c| {
+            c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM ci_waits WHERE task_id = ?)",
+                [task_id.as_str()],
+                |r| r.get::<_, bool>(0),
+            )
+        })
+        .unwrap_or(false)
+    }
+
     /// The lead's line for a done task with open waits: wait_ci wakes it, so it needs no steer.
     pub(super) fn waits_note(task_id: &str, urls: &[String]) -> String {
         format!(

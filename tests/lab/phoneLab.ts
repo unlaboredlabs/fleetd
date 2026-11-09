@@ -13,6 +13,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { callToolWith, check, descendants, fleetdCommand, ok } from "./harness.ts";
+import { seedAgentMessages } from "./factory/agentMessages.ts";
 import { MACHINE, withFactory } from "./factory/kit.ts";
 
 const [runDir, host] = process.argv.slice(2);
@@ -143,6 +144,8 @@ await withFactory(
       });
       check(gated.code === 0, `gated_run: ${gated.text}`);
       ok(`approval ${gated.result?.requestId} waits in inventory's chat`);
+      // What inventory's agents wrote to each other, with every outcome, for the DM views.
+      await seedAgentMessages(f);
 
       const hub = descendants(process.pid).find((p) => p.cmdline.includes("hub") && p.cmdline.includes("start"));
       const lab = { hubUrl: f.hubUrl, fleetdHome: f.dir, hubPid: hub?.pid, nodePid: f.nodePid(), pid: process.pid };

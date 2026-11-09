@@ -626,7 +626,8 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "taskId": "T7",
             "message": "Keep the old endpoint working until the mobile client ships.",
         }),
-        (Role::Lead, "agents") => json!({ "state": "running" }),
+        (_, "agents") => json!({ "state": "running" }),
+        (Role::Lead, "agent_messages") => json!({ "taskId": "T9" }),
         (Role::Lead, "stop_agent") => json!({ "taskId": "T7", "reason": "T9 covers this now." }),
         (Role::Lead, "brief") => json!({
             "text": "Rate-limit the upload API",
@@ -733,6 +734,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "question": "Should the limit apply to admin keys too?",
         }),
         (Role::Worker, "brief_read") => json!({}),
+        (Role::Worker, "agent_message") => json!({
+            "to": ["T9"],
+            "text": "My PR #42 renames upload_limit to upload_quota in api/limits.rs; rebase on it once it merges.",
+        }),
         (Role::Worker, "wait_ci") => {
             json!({ "url": "https://github.com/acme/storefront/actions/runs/4242" })
         }

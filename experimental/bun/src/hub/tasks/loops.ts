@@ -54,6 +54,11 @@ export function start(hub: Hub): void {
   Object.assign(steerTasks(hub), {
     message: async (caller: { projectRef: ProjectRef; by: string }, taskId: string, text: string) => void (await t.message(caller, taskId, text)),
     takeBack: (taskId: string, message: string) => t.takeBack(taskId, message),
+    holdMessage: (taskId: string, text: string) => t.holdMessage(taskId, text),
+    askedAt: (taskId: string) => t.askedAt(taskId),
+    answered: (taskId: string) => t.answered(taskId),
+    hasCiWait: (taskId: string) =>
+      (hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM ci_waits WHERE task_id = ?").get(taskId)?.n ?? 0) > 0,
   });
   // The landing scanner found git on a machine lose or regain GitHub: its agents hear it once per flip.
   work(hub).onGithubReach = (machineId, reached) => t.githubReach(machineId, reached);

@@ -16,6 +16,8 @@ export const maxOpenTasks = (maxAgents: number) => Math.max(MAX_OPEN_TASKS, 2 * 
 export const WORKER_OPS: readonly string[] = [
   "review_verdict",
   "ask_lead",
+  "task_list",
+  "agent_message",
   "brief_read",
   "decisions_search",
   "review_read",
@@ -65,7 +67,7 @@ export function check(agent: CallerAgent, op: string): void {
           "forbidden",
           `${op} is a lead's call, and ${task} is a task.`,
           "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief (brief_read), " +
-            "decisions (decisions_search) and its PRs' reviews (review_read), and may upload an image or file for your " +
+            "decisions (decisions_search), its PRs' reviews (review_read) and its project's agents (agents), writes to another agent (agent_message), and may upload an image or file for your " +
             "lead to show (chat_file), publish a report (publish_artifact), read one of your project's (artifact_read) or " +
             "wait on CI (wait_ci). Put anything else in your result or ask your lead.",
         );
@@ -112,6 +114,13 @@ export function check(agent: CallerAgent, op: string): void {
           "invalid",
           "wait_ci wakes the task that asked, and this call comes from no task.",
           "A lead hears of its PRs' CI from the train; to watch another run, spawn a read task that waits on it.",
+        );
+      }
+      if (op === "agent_message") {
+        throw new ToolError(
+          "invalid",
+          "agent_message is one agent's message to another, and this call comes from no task.",
+          "A lead steers its agents with message_agent.",
         );
       }
   }

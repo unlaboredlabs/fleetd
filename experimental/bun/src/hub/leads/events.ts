@@ -41,6 +41,9 @@ export type Event =
   | { kind: "agent_pr"; task: string; prUrl: string }
   | { kind: "agent_pr_skipped"; task: string; why: string }
   | { kind: "agent_steered"; task: string; steerKind: string; steer: string; text: string }
+  /** One agent wrote to others (`agent_message`): a quiet copy for the lead. `to` names each recipient, with how it
+   * stands when not delivered: "T4, T7 (not woken)". */
+  | { kind: "agent_messaged"; from: string; to: string; message: string; text: string }
   | { kind: "pr_merged"; change: string; prUrl: string; sha: string; by?: string }
   | { kind: "pr_left"; change: string; prUrl: string; why: string }
   | { kind: "pr_gave_up"; change: string; prUrl: string; why: string; tries: number }
@@ -119,6 +122,8 @@ export function renderEvent(e: Event): string {
         return [`- ${e.task}: PR lookup skipped: ${oneLine(e.why, 200)}`, []];
       case "agent_steered":
         return [`- the human steered ${e.task} (${e.steerKind}) directly (${e.steer}): ${quote(e.text)}`, []];
+      case "agent_messaged":
+        return [`- ${e.from} → ${e.to} (${e.message}): ${quote(e.text)}`, []];
       case "pr_merged":
         return [`- ${prLabel(e.prUrl)} merged${e.sha}: ${e.prUrl} (${e.change}${e.by === undefined ? "" : `, by ${e.by}`})`, []];
       case "pr_left":

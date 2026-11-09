@@ -231,6 +231,9 @@ export class Tasks {
   private readonly awaiting = new Set<MachineId>();
   /** Tasks whose `ask_lead` question their lead hasn't answered yet. */
   private readonly asking = new Set<TaskId>();
+  /** Tasks whose `ask_lead` question no message has answered yet, with when they asked. Unlike `asking` it outlives the
+   * run's end: a finished agent that waits on an answer is the one another agent's message may continue. */
+  private readonly asked = new Map<TaskId, number>();
   /** Tasks continued in their thread whose new run the hub hasn't seen yet: that run's id and when it was sent. */
   private readonly continuing = new Map<TaskId, [string, number]>();
   /** Tasks a run's end ended whose claude the node is still stopping. */
@@ -1496,7 +1499,11 @@ export class Tasks {
           console.info(`recovering task continued in its thread; its note is not sent (${task.taskId})`);
           delete next.queuedReason;
         }
-        const held = recovering ? stored.pendingMessage : undefined;
+        // Or what other agents sent it while it was ended: a Monitor of its own woke it, and this run carries it.
+        const peers =
+          !recovering &&
+          this.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued'").get(task.taskId)!.n > 0;
+        const held = recovering || peers ? stored.pendingMessage : undefined;
         // A person continued it, not fleetd: the digest no longer says it was resumed automatically.
         if ((recovering || task.parked === undefined) && next.recovery) {
           const { nextAt: _n, resumedAt: _r, ...kept } = next.recovery;
@@ -1872,6 +1879,8 @@ export class Tasks {
     try {
       const stored = this.owned(caller, taskId);
       const task = stored.task;
+      // Any message answers its question.
+      this.asked.delete(taskId);
       switch (task.state) {
         case "cancelled":
           throw leadError("invalid", `${taskId} was cancelled.`, "Spawn a new task for the remaining work.");
@@ -1928,12 +1937,56 @@ export class Tasks {
             next.recovery = kept as TaskRecovery;
           }
           handedOver = true;
-          return await this.startNow(release, { task: next, pendingMessage: text }, false);
+          // What other agents sent while it was ended goes first, in the order it came.
+          const pending = stored.pendingMessage === undefined ? text : `${stored.pendingMessage}\n\n${text}`;
+          return await this.startNow(release, { task: next, pendingMessage: pending }, false);
         }
       }
     } finally {
       if (!handedOver) release();
     }
+  }
+
+  /** When the task asked the `ask_lead` question no message has answered yet, if one hasn't been. */
+  askedAt(taskId: TaskId): number | undefined {
+    return this.asked.get(taskId);
+  }
+
+  /** Its lead or a person wrote to it (a steer, whatever its state): that answers its question. */
+  answered(taskId: TaskId): void {
+    this.asked.delete(taskId);
+  }
+
+  /** Keeps another agent's message for a task that isn't running, without starting it: its next run carries it,
+   * whatever starts that run (a Monitor of its own, its wait_ci, its lead). One running again by now takes it at once. */
+  async holdMessage(taskId: TaskId, text: string): Promise<void> {
+    const release = await this.lockTask(taskId);
+    let released = false;
+    try {
+      const stored = TaskRecords.get(this.db, taskId);
+      if (!stored) return;
+      if (stored.task.state === "running" && stored.task.threadRef) {
+        released = true;
+        release();
+        await this.deliver(stored.task, stored.task.threadRef, text);
+        return;
+      }
+      this.put({ task: stored.task, pendingMessage: stored.pendingMessage === undefined ? text : `${stored.pendingMessage}\n\n${text}` });
+    } finally {
+      if (!released) release();
+    }
+  }
+
+  /** A writer's files changed so far, as its node reads its worktree, for `agents` on one task. */
+  async changing(task: Task): Promise<string | undefined> {
+    const SHOWN = 30;
+    if (task.kind !== "write" || !task.threadRef) return undefined;
+    const paths = (await within(OBSERVE_TIMEOUT_MS, this.ports.changes(task.threadRef)))?.paths;
+    if (paths === undefined) return undefined;
+    const id = task.taskId;
+    if (paths.length === 0) return `${id} has changed no files yet.`;
+    if (paths.length > SHOWN) return `${id} changes: ${paths.slice(0, SHOWN).join(", ")}, +${paths.length - SHOWN} more.`;
+    return `${id} changes: ${paths.join(", ")}.`;
   }
 
   /** Removes `text` from a task's pending message (a withdrawn steer); false once that run went out. */
@@ -1969,6 +2022,7 @@ export class Tasks {
     let next: Task;
     try {
       task = this.owned(caller, taskId).task;
+      this.asked.delete(taskId);
       if (task.state === "cancelled") return task;
       if (task.state === "done" || task.state === "failed") {
         throw leadError("invalid", `${taskId} already ended (${task.state}); there is nothing to cancel.`);
@@ -2065,6 +2119,7 @@ export class Tasks {
     }
     if (!task) throw leadError("not_found", `No task ${taskId}.`);
     this.asking.add(taskId);
+    this.asked.set(taskId, this.now());
     this.ports.wake(task.projectRef, "task_waiting", taskWaitingLines(taskId, task.title, question));
     return task;
   }
