@@ -454,3 +454,12 @@ export function addIdentity(c: Database, identity: string, src: string): void {
      ON CONFLICT(identity) DO UPDATE SET src = excluded.src`,
   ).run(identity.trim().toLowerCase(), src);
 }
+
+/** Where a repo's reviews and comments were last read up to. */
+export function reviewsCursor(c: Database, repo: string): number | undefined {
+  return c.query<{ v: number | null }, [string]>("SELECT reviews_cursor_ms AS v FROM metric_repos WHERE repo = ?1").get(repo)?.v ?? undefined;
+}
+
+export function setReviewsCursor(c: Database, repo: string, atMs: number): void {
+  c.query("UPDATE metric_repos SET reviews_cursor_ms = MAX(COALESCE(reviews_cursor_ms, 0), ?2) WHERE repo = ?1").run(repo, atMs);
+}
