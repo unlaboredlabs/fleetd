@@ -7,6 +7,11 @@ import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "./db.ts";
 
 const PAGE = 100;
+/**
+ * How long a walk over a backlog of the log (a projector catching up, a replay at start) holds the event loop before it
+ * yields, so the hub answers while it catches up, as the Rust hub's walks run on tasks of their own.
+ */
+export const BATCH_MS = 20;
 const MAX_DATA_BYTES = 2048;
 const MAX_SUMMARY = 200;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;

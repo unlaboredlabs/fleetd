@@ -5,7 +5,7 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { HubEvent, HumanRequest, SpanExtra, SpanKind } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { events } from "../store/events.ts";
+import { BATCH_MS, events } from "../store/events.ts";
 import { parseMs } from "../store/time.ts";
 import { profileOf, threadLane, who, writeHub } from "./ingest.ts";
 import { kindCode, kindOf } from "./kinds.ts";
@@ -16,42 +16,64 @@ const CURSOR = "events";
 const BUSY_LOOKBACK_MS = 6 * 3600 * 1000;
 const QUEUE: SpanKind[] = ["queue.slot", "queue.lease", "queue.offline", "queue.usage"];
 
-/** Projects the log from its cursor now, and again after every append, until the hub stops. */
-export function startProjector(hub: Hub): void {
-  let scheduled = false;
-  const pass = () => {
-    scheduled = false;
-    if (hub.shutdown.signal.aborted) return;
-    try {
-      projectOnce(hub);
-    } catch (error) {
-      console.error("time: events not projected:", error);
-    }
+/**
+ * Projects the log from its cursor in the background, and again after every append, until the hub stops. As the Rust
+ * hub's projector runs on its own task, the hub serves while this catches up: one transaction of at most a page (or
+ * BATCH_MS) at a time, in seq order, then the event loop's other work. Reads see what has been projected so far.
+ */
+export function startProjector(hub: Hub): Promise<void> {
+  const stop = hub.shutdown.signal;
+  let dirty = true;
+  let wake: (() => void) | undefined;
+  const nudge = () => {
+    dirty = true;
+    wake?.();
   };
-  const unsubscribe = events(hub).subscribe(() => {
-    if (scheduled) return;
-    scheduled = true;
-    setTimeout(pass, 0);
-  });
-  hub.shutdown.signal.addEventListener("abort", unsubscribe, { once: true });
-  pass();
+  const unsubscribe = events(hub).subscribe(nudge);
+  stop.addEventListener("abort", nudge, { once: true });
+  return (async () => {
+    try {
+      for (;;) {
+        // The first batch after the hub's other loops have started, and each next after the work that waited.
+        await Bun.sleep(0);
+        if (!dirty && !stop.aborted) await new Promise<void>((resolve) => (wake = resolve));
+        wake = undefined;
+        if (stop.aborted) return;
+        try {
+          // A transaction that failed waits for the next append, as the Rust projector's does.
+          if (!projectSome(hub, BATCH_MS)) dirty = false;
+        } catch (error) {
+          console.error("time: events not projected:", error);
+          dirty = false;
+        }
+      }
+    } finally {
+      unsubscribe();
+    }
+  })();
 }
 
-/** Every page past the cursor, each in one transaction with the cursor's move. */
-export function projectOnce(hub: Hub): void {
-  let at = cursor(hub.db.conn, CURSOR) ?? 0;
-  for (;;) {
-    const page = events(hub).page(at);
-    if (page.events.length > 0 || page.cursor !== at) {
-      const next = page.cursor;
-      hub.db.transaction((c) => {
-        for (const e of page.events) apply(c, e);
-        setCursor(c, CURSOR, next);
-      });
-      at = next;
+/**
+ * One transaction's worth past the cursor: a page's events, or as many as fit in `budgetMs` (at least one), with the
+ * cursor's move. True while more wait.
+ */
+export function projectSome(hub: Hub, budgetMs: number): boolean {
+  const at = cursor(hub.db.conn, CURSOR) ?? 0;
+  const page = events(hub).page(at);
+  if (page.events.length === 0 && page.cursor === at) return false;
+  const started = performance.now();
+  const cut = hub.db.transaction((c) => {
+    let n = 0;
+    for (const e of page.events) {
+      apply(c, e);
+      n += 1;
+      if (n < page.events.length && performance.now() - started >= budgetMs) break;
     }
-    if (!page.more) return;
-  }
+    const rest = n < page.events.length;
+    setCursor(c, CURSOR, rest ? (page.events[n - 1] as HubEvent).seq : page.cursor);
+    return rest;
+  });
+  return cut || page.more;
 }
 
 const atMs = (e: HubEvent) => parseMs(e.at) ?? 0;
@@ -61,11 +83,14 @@ function dataStr(e: HubEvent, key: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/** Closes every open span of `kinds` matching `clause` at `end`. */
+/**
+ * Closes every open span of `kinds` matching `clause` at `end`. Through the open spans' index: by a thread's, SQLite
+ * walks every span the thread ever had.
+ */
 function closeOpen(c: Database, kinds: SpanKind[], clause: string, args: string[], end: number): void {
   const open = c
     .query<{ src_key: string; start_ms: number }, SQLQueryBindings[]>(
-      `SELECT src_key, start_ms FROM time_spans WHERE src = 'h' AND end_ms IS NULL
+      `SELECT src_key, start_ms FROM time_spans INDEXED BY time_spans_open WHERE src = 'h' AND end_ms IS NULL
          AND kind IN (SELECT value FROM json_each(?1)) AND ${clause}`,
     )
     .all(JSON.stringify(kinds.map(kindCode)), ...args);
@@ -291,7 +316,9 @@ export function apply(c: Database, e: HubEvent): void {
 export function busyMs(c: Database, m: string, t: string, from: number, to: number): number {
   const rows = c
     .query<{ created_ms: number; type: string }, [string, string, number, number]>(
-      `SELECT created_ms, type FROM events
+      // The window by `created_ms` bounds the walk; left to itself SQLite takes the machine's or the types' index and
+      // walks every such event the log holds, once per wake.
+      `SELECT created_ms, type FROM events INDEXED BY events_by_created
        WHERE created_ms >= ?3 AND created_ms <= ?4 AND machine_id = ?1 AND type IN
          ('thread.started', 'thread.completed', 'thread.failed', 'thread.interrupted', 'thread.usage_limited')
          AND json_extract(data, '$.threadId') = ?2

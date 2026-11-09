@@ -3,13 +3,14 @@ import { expect, test } from "bun:test";
 import { registerAll } from "../src/gen/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { HubDb } from "../src/hub/store/db.ts";
+import { events } from "../src/hub/store/events.ts";
 import { time } from "../src/hub/time/index.ts";
 import { closePrefix, ingestFrame, ingestNode, type SpanWire, writeHub } from "../src/hub/time/ingest.ts";
 import type { Row, RuleInput } from "../src/hub/time/model.ts";
 import { criticalPath } from "../src/hub/time/path.ts";
-import { busyMs } from "../src/hub/time/project.ts";
+import { busyMs, projectSome, startProjector } from "../src/hub/time/project.ts";
 import { compare, fmtDur, insights, ruleSpans } from "../src/hub/time/rules.ts";
-import { DAY, family, normalize, read, write } from "../src/hub/time/store.ts";
+import { cursor, DAY, family, normalize, read, write } from "../src/hub/time/store.ts";
 import { exclusive, tile } from "../src/shared/tiles.ts";
 import type { Category, CriticalPath, InsightRule, SpanKind } from "../src/shared/contracts.ts";
 import { caller, testHub } from "./hub-helpers.ts";
@@ -303,5 +304,53 @@ test("thread_window needs read on the machine, and says why it can't reach an of
   const offline = (await tools.call(hub, caller("read"), "thread_window", input)) as { error?: { kind: string; error?: { code: string } } };
   expect(offline.error?.kind).toBe("tool");
   expect(offline.error?.error?.code).not.toBe("failed");
+  done();
+});
+
+const queued = (hub: ReturnType<typeof testHub>["hub"], n: number, type = "task.queued") => {
+  for (let i = 1; i <= n; i++) {
+    events(hub).append({ at: "2026-11-08T10:00:00.000Z", type: type as never, summary: type, data: { taskId: `T${i}` } });
+  }
+};
+const openQueues = (hub: ReturnType<typeof testHub>["hub"]) =>
+  (hub.db.conn.query("SELECT count(*) AS n FROM time_spans WHERE src = 'h' AND end_ms IS NULL").get() as { n: number }).n;
+
+test("one projector step is at least one event and at most a page, the cursor at the last event applied", () => {
+  const { hub, done } = testHub();
+  queued(hub, 150);
+  const seqs = (hub.db.conn.query("SELECT seq FROM events ORDER BY seq").all() as { seq: number }[]).map((r) => r.seq);
+  // A budget already spent still applies one event.
+  expect(projectSome(hub, 0)).toBe(true);
+  expect(cursor(hub.db.conn, "events")).toBe(seqs[0]);
+  expect(openQueues(hub)).toBe(1);
+  expect(projectSome(hub, Number.POSITIVE_INFINITY)).toBe(true);
+  expect(cursor(hub.db.conn, "events")).toBe(seqs[100]);
+  expect(projectSome(hub, Number.POSITIVE_INFINITY)).toBe(false);
+  expect(cursor(hub.db.conn, "events")).toBe(seqs[149]);
+  expect(openQueues(hub)).toBe(150);
+  expect(projectSome(hub, Number.POSITIVE_INFINITY)).toBe(false);
+  done();
+});
+
+test("the projector catches up behind the hub's start, then follows appends in order", async () => {
+  const { hub, done } = testHub();
+  queued(hub, 450);
+  const running = startProjector(hub);
+  // Nothing ran inside the start: the hub goes on to serve.
+  expect(cursor(hub.db.conn, "events")).toBeUndefined();
+  const caughtUp = async () => {
+    while ((cursor(hub.db.conn, "events") ?? 0) < events(hub).head()) await Bun.sleep(1);
+  };
+  await caughtUp();
+  expect(openQueues(hub)).toBe(450);
+  // Each start closes its own task's wait.
+  queued(hub, 2, "task.started");
+  await caughtUp();
+  expect(openQueues(hub)).toBe(448);
+  hub.shutdown.abort();
+  await running;
+  queued(hub, 3, "task.completed");
+  await Bun.sleep(5);
+  expect(openQueues(hub)).toBe(448);
   done();
 });

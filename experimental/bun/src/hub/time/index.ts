@@ -149,12 +149,11 @@ export class Time {
   /** The hourly prune, until the hub stops. */
   startPrune(): void {
     const stop = this.hub.shutdown.signal;
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
       const now = this.nowMs();
       try {
-        while (this.hub.db.transaction((c) => prune(c, now))) {
-          // One batch per transaction, as the Rust hub yields between them.
-        }
+        // One batch per transaction, the hub serving between them, as the Rust hub yields between them.
+        while (!stop.aborted && this.hub.db.transaction((c) => prune(c, now))) await Bun.sleep(0);
       } catch (error) {
         console.warn("time: prune failed:", error);
       }
