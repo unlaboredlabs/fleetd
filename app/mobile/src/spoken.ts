@@ -70,19 +70,17 @@ const shortUrl = (url: string): string => url.replace(/^[a-z][\w+.-]*:\/\/(?:www
 
 /**
  * What VoiceOver says as replies come in while you look (arrivals.ts' entering, which holds only those): each new
- * one once its words are written, "Ada: its first line". Your own sends aren't said: you just sent them.
+ * one once its words are written, "Ada: its first line". Your own sends aren't said: you just sent them. `heard` holds
+ * the arrivals said already, and takes the ones said now: a streamed reply enters as it starts, and is said once
+ * written.
  */
-export const arrivedReplies = (
-  before: ReadonlyMap<string, Arrival>,
-  after: ReadonlyMap<string, Arrival>,
-  items: readonly ChatItem[],
-  title: string,
-): string[] => {
+export const arrivedReplies = (heard: Set<Arrival>, entering: ReadonlyMap<string, Arrival>, items: readonly ChatItem[], title: string): string[] => {
   const said: string[] = [];
   for (const item of items) {
-    const came = after.get(rowKeyOf(item));
-    if (came === undefined || before.get(rowKeyOf(item)) === came) continue;
+    const came = entering.get(rowKeyOf(item));
+    if (came === undefined || heard.has(came)) continue;
     if (item.author === "human" || item.kind === "event" || item.state === "streaming") continue;
+    heard.add(came);
     const first = spokenText(item.text).split("\n")[0]?.trim() ?? "";
     const words = first.length > 200 ? `${first.slice(0, 199)}…` : first;
     const who = item.author === "agent" ? (item.message?.by ?? "Agent") : title;

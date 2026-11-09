@@ -46,8 +46,13 @@ breaks a rule changes this page in the same PR and says why.
   - `--dur-quick` 140 ms for state changes and hovers.
   - Entrances:
     - a list row: `--dur-row-in` 160 ms, rising `--row-rise` 3 px
-    - a chat bubble: `--dur-enter` 200 ms, rising 6 px, a reply's bubbles 50 ms apart
-    - your own send: 140 ms
+    - a chat bubble glides in (`screens/chat/glide.ts`): the conversation moves as one sheet, the new bubble rising
+      from behind the composer's box with the rows above it on a critically damped spring (a reply: stiffness 500,
+      damping 44.7, mass 1; your send: 650, 51; the last message growing, as a streamed reply's text takes its dots'
+      place: 700, 53). One additive transform on the rows, so a burst sums. The bubble fades in over its first
+      `--dur-enter` 100 ms (`--ease-out`), a reply's bubbles 50 ms apart; it never moves or scales on its own. A
+      streamed reply enters once, as the lead starts writing. The list's edge is the box's top, so nothing shows
+      below it. Scrolled up, nothing glides.
   - Never scale text.
 - **Loops step on one beat, never on CSS animations.** While something live is on screen, `ui/lib/beat` advances
   every 120 ms (24 beats) and hands each loop the beat to write onto its own elements, so every loop steps together
@@ -102,7 +107,8 @@ breaks a rule changes this page in the same PR and says why.
   A row climbing passes over the rows it overtakes on the sidebar's own tone (`data-gliding="up"`), so no two lines of
   words cross. Nothing moves while the pointer is over the list; what changed takes its place once it leaves. A
   pinned row dragged or moved with ⌥↑ / ⌥↓ lands on the same spring.
-- **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
+- **Reduced motion:** no beat, so no loops, and entrances are a plain fade (a chat bubble 200 ms on `--ease-snap`,
+  your send 140 ms, the list taking its new place at once). Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
   against main.
