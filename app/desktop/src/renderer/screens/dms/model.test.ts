@@ -25,9 +25,11 @@ describe("a card's receipt", () => {
     expect(cardReceipt(to("T2577", "woke", { at: "2026-11-08T23:09:00Z", detail: "it answers what T2577 asked at 23:05" }), true, hhmm)).toBe(
       "Woke it, 23:09: it answers what T2577 asked at 23:05.",
     );
-    expect(cardReceipt(to("T2567", "not_woken", { detail: "T2567 has finished and isn’t waiting on T2584." }), false, hhmm)).toBe(
-      "Didn’t wake it: T2567 has finished and isn’t waiting on T2584. Held for its next run.",
-    );
+    // The hub's words as it writes them: one plain sentence, no second colon, "held" said once.
+    const guard = to("T2567", "not_woken", { detail: "T2567 has finished and isn't waiting on T2584: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it" });
+    expect(cardReceipt(guard, false, hhmm)).toBe("Didn’t wake T2567: it has finished and isn't waiting on T2584. Held for its next run.");
+    expect(logReceipt(guard)).toBe("wasn’t woken: it has finished and isn't waiting on T2584. Held for its next run");
+    expect(cardReceipt(to("T2567", "not_woken"), false, hhmm)).toBe("Didn’t wake T2567. Held for its next run.");
     expect(cardReceipt(to("T2574", "held"), false, hhmm)).toBe("Held: it isn’t running, and reads this when it runs again.");
     expect(cardReceipt(to("T9", "refused", { detail: "T9 was cancelled" }), false, hhmm)).toBe("Not sent: T9 was cancelled.");
   });

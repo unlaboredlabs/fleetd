@@ -56,7 +56,7 @@ it("shows a DM it sent to several with a receipt for each, and the guard's refus
       id: "M21",
       to: [
         { taskId: "T2577", title: "A stopping hub", outcome: "delivered", at: "2026-11-08T23:02:00.000Z" },
-        { taskId: "T2567", title: "Reply shows its quote", outcome: "not_woken", detail: "T2567 has finished and isn’t waiting on T2573" },
+        { taskId: "T2567", title: "Reply shows its quote", outcome: "not_woken", detail: "T2567 has finished and isn't waiting on T2573: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it" },
       ],
     },
     "T2573",
@@ -65,5 +65,5 @@ it("shows a DM it sent to several with a receipt for each, and the guard's refus
   expect(card?.getAttribute("aria-label")).toBe("DM to T2577, T2567");
   expect([...(card?.querySelectorAll("a") ?? [])].map((a) => a.textContent)).toEqual(["T2577", "T2567"]);
   expect(card?.querySelector("[data-outcome=delivered]")?.textContent).toMatch(/^T2577: Delivered at its next step, \d\d:\d\d\.$/u);
-  expect(card?.querySelector("[data-outcome=not_woken]")?.textContent).toBe("T2567: Didn’t wake it: T2567 has finished and isn’t waiting on T2573. Held for its next run.");
+  expect(card?.querySelector("[data-outcome=not_woken]")?.textContent).toBe("T2567: Didn’t wake T2567: it has finished and isn't waiting on T2573. Held for its next run.");
 });
