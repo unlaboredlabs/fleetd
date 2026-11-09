@@ -9,7 +9,7 @@
 
 .dock {
   /* Half the row's height: round ends, as the top row's capsules have. */
-  --corner: 14px;
+  --corner: calc(var(--island-capsule-h) / 2);
   position: relative;
   /* The band's whole width; Latest ↓ (scrolled up) takes its room at the end. */
   flex: 1 1 auto;
@@ -51,7 +51,8 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  min-height: var(--row);
+  /* The band's capsules share one height (tokens.css). */
+  min-height: var(--island-capsule-h);
   padding: 0 var(--space-3);
 }
 
