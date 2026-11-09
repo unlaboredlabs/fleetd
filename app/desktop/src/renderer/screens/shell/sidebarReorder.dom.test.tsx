@@ -87,8 +87,6 @@ const mount = (rows: SidebarProject[] = ROWS) => {
 // place as its transform says. Stacked so, the pins' grid is one column, and moves only up and down; "the pins' grid"
 // below lays them out two to a row, as the sidebar does.
 const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
-/** A hub's group of chats: the whole sidebar, its one hub's (Sidebar.tsx keeps a drag inside its own hub's). */
-const GROUP = DOMRect.fromRect({ x: 0, y: -10_000, width: 240, height: 20_000 });
 const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
 /** A row's name, or a pin's. */
 const NAME = "[class*=name], [class*=pinTitle]";
@@ -113,7 +111,6 @@ beforeEach(() => {
   root = createRoot(host);
   drawn = new Map();
   layout.mockImplementation(function (this: HTMLElement) {
-    if (this.tagName === "SECTION") return GROUP;
     for (const r of host.querySelectorAll<HTMLElement>("[data-reorder-row]")) drawn.set(r, slot(r) + translated(r));
     const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
     return DOMRect.fromRect({ x: 0, y: at * ROW + translated(this), width: 200, height: ROW });
@@ -397,7 +394,6 @@ describe("near the edge of a long sidebar", () => {
     Object.defineProperty(body, "scrollTop", { get: () => scrollTop, set: (v: number) => (scrollTop = Math.max(0, Math.min(400, v))) });
     const rect = layout.getMockImplementation();
     layout.mockImplementation(function (this: HTMLElement) {
-      if (this.tagName === "SECTION") return GROUP;
       return this === body ? DOMRect.fromRect({ x: 0, y: 0, width: 240, height: 200 }) : (rect?.call(this) ?? new DOMRect());
     });
     let queued: FrameRequestCallback[] = [];
@@ -555,7 +551,6 @@ describe("the pins' grid", () => {
   const cell = (title: string) => rows("Projects").find((r) => nameOf(r) === title) ?? host;
   beforeEach(() => {
     layout.mockImplementation(function (this: HTMLElement) {
-      if (this.tagName === "SECTION") return GROUP;
       const list = this.parentElement;
       const at = list === null ? 0 : [...list.children].indexOf(this);
       const [dx, dy] = moved(this);
@@ -607,15 +602,15 @@ describe("the pins' grid", () => {
 describe("pinning and unpinning by drag", () => {
   // The pins stacked from the top, ROW apart; the other chats' list GAP below them. The sidebar's rows come from the
   // Shell, which takes the pins saved (pins.ts usePins, pins.dom.test.tsx): here, what is saved is the pins.
-  // With no pins, the first pin's drop zone, while it shows, pushes the list ZONE further down. The hub's group spans
-  // `group`.
+  // With no pins, the first pin's drop zone, while it shows, pushes the list ZONE further down. The hub's group ends at
+  // its last row, as a browser lays it out: below it is the sidebar's empty space (or the next hub's group).
   const GAP = 100;
   const ZONE = 48;
   let group: DOMRect;
   const unpinned = (title: string) => ({ ...row(title), pinned: false });
   const zone = () => host.querySelector<HTMLElement>("[class*=pinZone]");
   beforeEach(() => {
-    group = GROUP;
+    group = DOMRect.fromRect({ x: 0, y: 0, width: 240, height: GAP + 3 * ROW });
     layout.mockImplementation(function (this: HTMLElement) {
       if (this.tagName === "SECTION") return group;
       const list = this.parentElement;
@@ -737,9 +732,25 @@ describe("pinning and unpinning by drag", () => {
     await settle(SETTLE_MS + 20);
   });
 
-  it("keeps a drop inside the chat's own hub's group: let go past it, in another hub's, it goes back", async () => {
-    group = DOMRect.fromRect({ x: 0, y: 0, width: 240, height: GAP + 3 * ROW });
+  it("unpins a pin let go below a short list, in the sidebar's empty space, with every chat pinned too", async () => {
+    mount([row("api"), row("docs"), unpinned("web")]);
+    await carry("api", 400);
+    expect(saved()).toEqual([["docs"]]);
+    calls.length = 0;
+    // Every chat pinned, the lone pin's case among them: its group ends at the pins.
+    group = DOMRect.fromRect({ x: 0, y: 0, width: 240, height: ROW });
+    mount([row("docs")]);
+    await carry("docs", 400);
+    expect(saved()).toEqual([[]]);
+  });
+
+  it("keeps a drop out of another hub's group: let go over one, above or below, it goes back", async () => {
     mount([row("api"), unpinned("web"), unpinned("misc")]);
+    // Another hub's group either side of this one's.
+    const own = section("Projects");
+    const other = () => Object.assign(document.createElement("section"), { ariaLabel: "Other" });
+    own.before(other());
+    own.after(other());
     await carry("misc", -40, { hold: true });
     expect(grid()?.hasAttribute("data-pinning")).toBe(false);
     pointer(window, "pointerup", -40);

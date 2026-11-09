@@ -16,6 +16,9 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* The list's own moves (the first pin's place showing under a drag) never scroll it: a lifted chat's measures stay
+     true. */
+  overflow-anchor: none;
   /* The first chat a clear step below the top row, not tucked under it. */
   padding: var(--space-2) var(--space-2) var(--space-3);
 }

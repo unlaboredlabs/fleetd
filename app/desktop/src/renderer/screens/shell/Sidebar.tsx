@@ -292,12 +292,15 @@ function ProjectGroup(props: {
   // The pins lift and move inside their grid, and the hub keeps your order; the other rows' order is their activity's,
   // and they only glide to it.
   // A pin dragged down past them is unpinned; a chat dragged up past the others is pinned where it is let go. Either
-  // stays inside its own hub's group: let go past it, it goes back.
+  // stays out of the other hubs' groups: let go over one, it goes back. Above the first group and below the last (the
+  // sidebar's empty space under a short list, say) are still its own.
   const grid = useRef<HTMLDivElement>(null);
   const group = useRef<HTMLElement>(null);
   const within = () => {
-    const box = group.current?.getBoundingClientRect();
-    return [box?.top ?? -Infinity, box?.bottom ?? Infinity] as const;
+    const el = group.current;
+    const box = el?.getBoundingClientRect();
+    const hub = (sibling: Element | null | undefined) => sibling?.tagName === "SECTION";
+    return [hub(el?.previousElementSibling) ? (box?.top ?? -Infinity) : -Infinity, hub(el?.nextElementSibling) ? (box?.bottom ?? Infinity) : Infinity] as const;
   };
   const pins = useReorder({
     keys: pinned,
