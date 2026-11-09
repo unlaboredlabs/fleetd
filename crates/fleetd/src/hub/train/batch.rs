@@ -51,15 +51,15 @@ fn named(runs: &[String]) -> String {
 /// for those), or the head has no checks at all. A cancelled or superseded run of the fast set, and any check outside
 /// both, doesn't count: the batch's own CI decides. A check the batch skips is decided here only, so a cancelled one
 /// counts as failed. None when it may join. `runs` are the newest of each check; `fast` None when the base's rules or
-/// the settings can't be read, and an empty fast set, judge by every check.
+/// the settings can't be read, and an empty fast set, judge by every check. With it, the checks that failed.
 pub(super) fn own_checks(
     runs: &[CheckRun],
     statuses: &[CommitStatus],
     fast: Option<&Fast>,
     batch: &[String],
-) -> Option<String> {
+) -> (Option<String>, Vec<Red>) {
     if runs.is_empty() && statuses.is_empty() {
-        return Some("its own head has no checks yet".into());
+        return (Some("its own head has no checks yet".into()), Vec::new());
     }
     let judged = own_judged(runs, fast, batch);
     let names = |f: &dyn Fn(&CheckRun) -> bool| -> Vec<String> {
@@ -69,7 +69,11 @@ pub(super) fn own_checks(
             .map(|r| r.name.clone())
             .collect()
     };
-    let mut red = names(&|r| is_red(r));
+    let mut red: Vec<Red> = judged
+        .iter()
+        .filter(|r| is_red(r))
+        .map(|r| (r.name.clone(), r.html_url.clone()))
+        .collect();
     let set = fast.map(|f| f.set.as_slice()).unwrap_or_default();
     let mut wanted: Vec<&String> = Vec::new();
     for name in set.iter().chain(batch) {
@@ -79,18 +83,18 @@ pub(super) fn own_checks(
     }
     let mut missing = Vec::new();
     for name in wanted {
-        match statuses
-            .iter()
-            .find(|s| &s.context == name)
-            .map(|s| s.state.as_str())
-        {
+        let status = statuses.iter().find(|s| &s.context == name);
+        match status.map(|s| s.state.as_str()) {
             Some("success") => {}
-            Some("failure" | "error") => red.push(name.clone()),
+            Some("failure" | "error") => {
+                red.push((name.clone(), status.and_then(|s| s.target_url.clone())))
+            }
             _ => missing.push(name.clone()),
         }
     }
     let running = names(&|r| r.status != "completed");
-    if !red.is_empty() {
+    let why = if !red.is_empty() {
+        let red: Vec<String> = red.iter().map(|(n, _)| n.clone()).collect();
         Some(format!("its own head's {} failed", named(&red)))
     } else if !running.is_empty() {
         Some(format!("its own head's {} still running", named(&running)))
@@ -101,8 +105,12 @@ pub(super) fn own_checks(
         ))
     } else {
         None
-    }
+    };
+    (why, red)
 }
+
+/// A check that failed on a PR's own head, with its log (the run's page, the status's target).
+pub(super) type Red = (String, Option<String>);
 
 /// The runs of `runs` that `own_checks` judges a PR's own head by.
 fn own_judged<'a>(
@@ -364,6 +372,7 @@ impl Train {
         let base = head.pull.base.ref_.clone();
         let mut members = Vec::new();
         let mut left = Vec::new();
+        let mut reds = Vec::new();
         if candidates.len() >= 2 {
             for c in &candidates {
                 let why = if members.len() == BATCH_MAX {
@@ -374,7 +383,11 @@ impl Train {
                         c.pull.base.ref_
                     ))
                 } else {
-                    self.own_ci(repo, &c.change, &base).await
+                    let (why, red) = self.own_ci_red(repo, &c.change, &base).await;
+                    if !red.is_empty() {
+                        reds.push((c.change.change_id.clone(), red));
+                    }
+                    why
                 };
                 match why {
                     None => members.push(c.clone()),
@@ -420,6 +433,12 @@ impl Train {
                         .any(|t| t.change.change_id == c.change.change_id)
                 });
             self.left_out(repo, &c.change, why);
+            // One that goes alone is told by its CI instead.
+            if why.is_some()
+                && let Some((_, red)) = reds.iter().find(|(id, _)| *id == c.change.change_id)
+            {
+                self.tell_own_red(&c.change, red).await;
+            }
         }
         // The batch PR gets its label once it is open (`take_batch`); its members keep one they have, as a red batch
         // sends each alone.
@@ -556,25 +575,34 @@ impl Train {
 
     /// Why the Change's own head keeps it out of a batch into `base` (`own_checks`); None when it may join.
     pub(super) async fn own_ci(&self, repo: &str, change: &Change, base: &str) -> Option<String> {
+        self.own_ci_red(repo, change, base).await.0
+    }
+
+    /// `own_ci`, with the checks that failed on the head.
+    async fn own_ci_red(
+        &self,
+        repo: &str,
+        change: &Change,
+        base: &str,
+    ) -> (Option<String>, Vec<Red>) {
         let runs = match self.github.check_runs(repo, change.head_sha.as_str()).await {
             Ok(runs) => runs,
             Err(e) => {
-                return Some(format!(
-                    "its checks could not be read: GitHub: {}",
-                    e.message
-                ));
+                let why = format!("its checks could not be read: GitHub: {}", e.message);
+                return (Some(why), Vec::new());
             }
         };
         let fast = self.fast(repo, base).await;
         let Some(workflows) = self.workflows(repo, base).await else {
-            return Some("its workflows could not be read for the checks a batch skips".into());
+            let why = "its workflows could not be read for the checks a batch skips";
+            return (Some(why.into()), Vec::new());
         };
         let sha = change.head_sha.as_str();
         if let Some(why) = self
             .rerun_cancelled_skips(repo, sha, &runs, &workflows.batch)
             .await
         {
-            return Some(why);
+            return (Some(why), Vec::new());
         }
         let runs = proven_runs(runs, &workflows.batch);
         let batch = workflows.batch_names();
@@ -606,25 +634,53 @@ impl Train {
             match self.github.statuses(repo, change.head_sha.as_str()).await {
                 Ok(statuses) => statuses,
                 Err(e) => {
-                    return Some(format!(
-                        "its statuses could not be read: GitHub: {}",
-                        e.message
-                    ));
+                    let why = format!("its statuses could not be read: GitHub: {}", e.message);
+                    return (Some(why), Vec::new());
                 }
             }
         } else {
             Vec::new()
         };
-        let why = own_checks(&runs, &statuses, fast.as_ref(), &batch);
+        let (why, red) = own_checks(&runs, &statuses, fast.as_ref(), &batch);
         // Still running, none failed: a check GitHub left pending under a finished run goes again (`rerun_stale`).
         let judged = own_judged(&runs, fast.as_ref(), &batch);
         if why.is_some() && !judged.iter().any(|r| is_red(r)) {
             let waited: Vec<CheckRun> = judged.into_iter().cloned().collect();
             if let Some(stale) = self.rerun_stale(repo, sha, &waited).await {
-                return Some(stale.why);
+                return (Some(stale.why), red);
             }
         }
-        why
+        if why.is_none() {
+            // Green: a later red head is told again (`tell_own_red`).
+            lock(&self.own_red_told).remove(&change.change_id);
+        }
+        (why, red)
+    }
+
+    /// Tells the author of a ready Change left out of the batch for its own head's red checks (`red`, each with its
+    /// log): the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, in
+    /// memory, so a restart may tell one again.
+    async fn tell_own_red(&self, change: &Change, red: &[Red]) {
+        let head = change.head_sha.as_str();
+        {
+            let mut told = lock(&self.own_red_told);
+            if told.get(&change.change_id).is_some_and(|h| h == head) {
+                return;
+            }
+            told.insert(change.change_id.clone(), head.to_string());
+        }
+        let names: Vec<String> = red.iter().map(|(n, _)| n.clone()).collect();
+        let log = red
+            .iter()
+            .find_map(|(_, url)| url.as_deref())
+            .map(|u| format!(" (log: {u})"))
+            .unwrap_or_default();
+        let problem = format!(
+            "the merge train leaves it out of every batch: its own head's {} failed on {}{log}",
+            named(&names),
+            short(head)
+        );
+        self.tell_author(change, &problem).await;
     }
 
     /// Records why this pass left a ready Change out of the batch, on the Change (`LEFT_OUT`) and in the log; None
@@ -872,8 +928,13 @@ impl Train {
             if picked.len() == BATCH_MAX {
                 break;
             }
-            if c.pull.base.ref_ == base && self.own_ci(repo, &c.change, base).await.is_none() {
-                picked.push(c);
+            if c.pull.base.ref_ != base {
+                continue;
+            }
+            match self.own_ci_red(repo, &c.change, base).await {
+                (None, _) => picked.push(c),
+                (Some(_), red) if !red.is_empty() => self.tell_own_red(&c.change, &red).await,
+                _ => {}
             }
         }
         if picked.is_empty() {
