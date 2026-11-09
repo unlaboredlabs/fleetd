@@ -127,6 +127,13 @@ export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; side
       style={{ "--panel-size": `${String(width)}px` } as CSSProperties}
       onKeyDown={onKeyDown}
     >
+      <Boundary key="panel" part="the panel">
+        <Suspense fallback={<div className={s.panelLoading} aria-busy="true" />}>
+          <ProjectPanel project={project} view={view} onWide={setWide} />
+        </Suspense>
+      </Boundary>
+      {/* After the panel: its tab row is a drag box, and Electron takes app-region boxes in document order, so an edge
+          before it would drag the window from its top instead of resizing. */}
       <ResizeEdge
         edge="left"
         label="Resize the panel"
@@ -138,11 +145,6 @@ export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; side
         max={bounds.max}
         onSet={(w) => setWidth(mode, w)}
       />
-      <Boundary key="panel" part="the panel">
-        <Suspense fallback={<div className={s.panelLoading} aria-busy="true" />}>
-          <ProjectPanel project={project} view={view} onWide={setWide} />
-        </Suspense>
-      </Boundary>
     </aside>
   );
 }

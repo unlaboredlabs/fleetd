@@ -399,8 +399,9 @@ export function runChecks(opts: CheckOptions): Finding[] {
     for (const child of parent.children) {
       if (!(child instanceof HTMLElement) || hidden(child) || !child.textContent.trim() || screenReaderOnly(child)) continue;
       const s = style(child);
-      // Sticky and fixed boxes overlap the content scrolling under them by design (see occluders above).
-      if (s.display === "inline" || s.display === "contents" || s.position === "fixed" || s.position === "sticky") continue;
+      // Sticky and fixed boxes, and a floating row (data-floats), overlap the content scrolling under them by design
+      // (see occluders above).
+      if (s.display === "inline" || s.display === "contents" || s.position === "fixed" || s.position === "sticky" || child.hasAttribute("data-floats")) continue;
       if (exempt(child, "overlap")) continue;
       const rect = intersect(rectOf(child.getBoundingClientRect()), clipOf(parent));
       if (empty(rect)) continue;
