@@ -14,7 +14,7 @@ import { createDataLayer, type DataLayer, type HubApi } from "../../src/data/que
 import { DataProvider, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { useSidebarProjects } from "./data";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, SPRING } from "./Sidebar";
 import { useFoldedSections } from "./sidebarState";
 
 vi.hoisted(() => {
@@ -296,6 +296,8 @@ describe("your sections in the sidebar", () => {
     rightClick(label("Work"));
     await choose("Rename…");
     expect(document.querySelector("[role='dialog']")?.textContent).toContain("Rename Work");
+    // The name's box has the focus, not the dialog's Close: the menu closing leaves it there.
+    expect(document.activeElement).toBe(document.querySelector("[role='dialog'] input"));
     // Its own name is no change, and no clash.
     expect(press("Rename").disabled).toBe(true);
     type("Job");
@@ -354,6 +356,9 @@ describe("a chat dragged in the sidebar", () => {
     return (to + 0.5) * ROW;
   };
 
+  /** The row let go is back in its place, and the next one can lift. */
+  const landed = () => settle(SPRING.ms + 20);
+
   it("joins the section whose label it is let go on, which says so while it is held there", async () => {
     stored = [section("s1", "Work", "api"), section("s2", "Home", "garden")];
     place();
@@ -371,24 +376,56 @@ describe("a chat dragged in the sidebar", () => {
     expect(sets.map(said)).toEqual([["Work: api docs", "Home: garden"]]);
   });
 
-  it("joins the section of the chat it is let go on, and stays where it is over its own or over none", async () => {
+  it("joins the section of the chat it is let go on, and stays where it is over its own", async () => {
     stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
     place();
     await mount();
     expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
     // Onto garden, in Home.
     point("pointerup", carry("api", 7));
-    await settle();
+    await landed();
     expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
     expect(said(sets.at(-1) ?? [])).toEqual(["Work: web", "Home: garden api"]);
 
-    // Over a chat in none, and over its own section's label: nothing takes it, and nothing is sent.
-    const y = carry("web", 1);
-    expect(host.querySelector("[data-taking]")).toBeNull();
-    point("pointerup", y);
-    point("pointerup", carry("web", 3));
-    await settle();
+    // Over its own section's label, and over another chat of its section: nothing takes it, and nothing is sent.
+    for (const line of [5, 6]) {
+      const y = carry("api", line);
+      expect(host.querySelector("[data-lifted]")?.textContent).toContain("api");
+      expect(host.querySelector("[data-taking]")).toBeNull();
+      expect(host.querySelector("[class*='into']")).toBeNull();
+      point("pointerup", y);
+      await landed();
+    }
     expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "[Home]", "garden", "api"]);
     expect(sets).toHaveLength(1);
+  });
+
+  it("leaves its section when let go on a chat in none, and a chat in none stays where it is there", async () => {
+    stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
+    place();
+    await mount();
+    expect(lines()).toEqual(["new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
+    const y = carry("web", 1);
+    // No label takes it: the lifted row says it would be in none.
+    expect(host.querySelector("[data-taking]")).toBeNull();
+    expect(host.querySelector("[data-lifted] [class*='into']")?.textContent).toBe("No section");
+    point("pointerup", y);
+    await landed();
+    expect(lines()).toEqual(["new", "docs", "web", "old", "[Work]", "api", "[Home]", "garden"]);
+    expect(sets.map(said)).toEqual([["Work: api", "Home: garden"]]);
+
+    // A section goes with its last chat, by drag as by the menu.
+    point("pointerup", carry("garden", 1));
+    await landed();
+    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(said(sets.at(-1) ?? [])).toEqual(["Work: api"]);
+
+    // A chat in none over another: nothing takes it, and nothing is sent.
+    const over = carry("docs", 3);
+    expect(host.querySelector("[data-lifted]")?.textContent).toContain("docs");
+    expect(host.querySelector("[class*='into']")).toBeNull();
+    point("pointerup", over);
+    await landed();
+    expect(sets).toHaveLength(2);
   });
 });

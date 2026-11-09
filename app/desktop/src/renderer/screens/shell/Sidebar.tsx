@@ -13,8 +13,9 @@
 // name first). An archived project is in none (Settings › Projects brings it back).
 //
 // Your own sections (sections.ts) come under the chats in none, each under a quiet label, in your order, its chats
-// newest first: a row's menu moves it to one, out of them, or into a new one you name; so does dragging it onto a
-// section's label or one of its chats, the held row naming the section where its time was. A label's click folds its section to one line, kept on this computer
+// newest first: a row's menu moves it to one, out of them, or into a new one you name; dragging it onto a section's
+// label or one of its chats moves it there too, and onto a chat in none takes it out, the held row saying where it
+// would go where its time was. A label's click folds its section to one line, kept on this computer
 // (sidebarState.ts); its menu renames the section, moves it up or down, or removes it (its chats go back on top). A
 // pinned chat shows among the pins only, and keeps its section.
 //
@@ -131,7 +132,7 @@ interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly current: boolean;
   readonly jump: number | null;
   readonly asOf: string | undefined;
-  /** Held over one of your sections, the one it would join if let go: its name, where the time is. */
+  /** Held over one of your sections or a chat in none, where it would go if let go, shown where the time is. */
   readonly into?: string | undefined;
 }
 
@@ -308,6 +309,8 @@ export const pinPlace = (cells: readonly DOMRect[], at: { readonly x: number; re
 /** A section's label among the rows' keys: no chat's key starts so. */
 const labelKey = (section: string): string => `\0${section}`;
 const NO_SECTIONS: readonly ChatSection[] = [];
+/** Where a chat let go on a chat in no section goes: out of its own. No section has this id. */
+const NO_SECTION = "";
 
 /** Placeholder rows while the chats load: their shapes, still, so nothing repaints. */
 const Loading = ({ busy }: { busy: boolean }) => (
@@ -408,20 +411,21 @@ function ProjectGroup(props: {
     out: (key, way, at) => {
       if (way === "up") pinOn(key, pinPlace([...(grid.current?.children ?? [])].map((c) => c.getBoundingClientRect()), at));
     },
-    // Over another section's label or one of its chats, a chat let go joins that section.
+    // Over another section's label or one of its chats, a chat let go joins that section; over a chat in none, it
+    // leaves its own.
     onto: {
       over: (key, at) => {
         for (const el of list.current?.children ?? []) {
           const box = el.getBoundingClientRect();
           if (!(el instanceof HTMLElement) || el.dataset["lifted"] !== undefined || at.y < box.top || at.y > box.bottom || at.x < box.left || at.x > box.right) continue;
-          const to = el.dataset["section"];
-          return to === undefined || to === rowsByKey.get(key)?.section ? null : to;
+          const to = el.dataset["section"] ?? NO_SECTION;
+          return to === (rowsByKey.get(key)?.section ?? NO_SECTION) ? null : to;
         }
         return null;
       },
       drop: (key, to) => {
         const p = rowsByKey.get(key);
-        if (p !== undefined) setSections(moveChat(sections, routeOf(p), to));
+        if (p !== undefined) setSections(moveChat(sections, routeOf(p), to === NO_SECTION ? null : to));
       },
     },
   });
@@ -544,10 +548,11 @@ function ProjectGroup(props: {
                 );
               }
               const p = line.row;
-              // These glide as their order changes, and lift only to be pinned or to join a section, whose name the
-              // lifted row then says: the row itself may cover the label.
+              // These glide as their order changes, and lift only to be pinned or to join or leave a section, which
+              // the lifted row then says: the row itself may cover the label.
               const row = reorder.row(p.key);
-              const into = "data-lifted" in row && reorder.onto !== null ? sections.find((x) => x.id === reorder.onto)?.name : undefined;
+              const to = "data-lifted" in row ? reorder.onto : null;
+              const into = to === null ? undefined : to === NO_SECTION ? "No section" : sections.find((x) => x.id === to)?.name;
               return (
                 <div key={p.key} {...row} data-section={p.section}>
                   <ContextMenu menu={menu(p)}>

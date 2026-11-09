@@ -1,8 +1,8 @@
 // The sidebar's projects, from the data layer: your pinned ones first, then the rest by their newest line, newest first
-// (pins.ts), the ones in your sections after the ones in none (sections.ts), archived ones left out: the project list (needs-you and agents at work), the open requests (what a lead
-// waits on you for), Status's rows (what is blocked, what is red on main), each chat's newest line (latest.ts) and what
-// you last saw in each chat. Offline, the projects held from before, with their marks as last known (the open requests
-// the store keeps).
+// (pins.ts), the ones in your sections after the ones in none (sections.ts), archived ones left out: the project list
+// (needs-you and agents at work), the open requests (what a lead waits on you for), Status's rows (what is blocked,
+// what is red on main), each chat's newest line (latest.ts) and what you last saw in each chat. Offline, the projects
+// held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { hubKey, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";

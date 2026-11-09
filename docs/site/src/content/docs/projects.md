@@ -259,8 +259,9 @@ Linux and Windows) open the first nine.
 
 Sections group your chats in the sidebar under names of your own. Right-click a chat and pick **Move to section**: it
 lists your sections with a tick on the chat's own, **No section**, and **New section…**, which asks for a name. Or drag
-a chat onto a section's label or onto one of its chats; while you hold it there, the chat says which section it would
-join. A section is made with its first chat and goes away with its last.
+a chat onto a section's label or onto one of its chats to move it there, and onto a chat in no section to take it out
+of its own; while you hold it there, the chat says where it would go. A section is made with its first chat and goes
+away with its last.
 
 Under the pins, the chats in no section come first, with no label. Then each section sits under its quiet label, in
 your order, its chats newest first. Click a label to fold the section to one line: its name, how many chats it holds,

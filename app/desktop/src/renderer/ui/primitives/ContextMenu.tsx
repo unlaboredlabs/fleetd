@@ -84,10 +84,11 @@ export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
     if (!open) return;
     wanted.current = null;
     // The trap pulls the focus back as it leaves (focusout, whose relatedTarget is where it was going), before any
-    // focusin there.
+    // focusin there. The first place it was sent is the item's: a dialog the item opened with the focus in a box of
+    // it then takes the focus to its first button, having found it back in the menu.
     const onFocusOut = (e: FocusEvent) => {
       const to = e.relatedTarget;
-      if (to instanceof HTMLElement && to.closest("[role='menu']") === null) wanted.current = to;
+      if (wanted.current === null && to instanceof HTMLElement && to.closest("[role='menu']") === null) wanted.current = to;
     };
     document.addEventListener("focusout", onFocusOut, true);
     return () => document.removeEventListener("focusout", onFocusOut, true);

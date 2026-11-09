@@ -1540,6 +1540,49 @@ export const screens: readonly Screen[] = [
       await expect(nav.getByRole("button", { name: "Later" })).toBeVisible();
     },
   },
+  // ...and a drag out of one: checkout, of Clients', held over "Rewrite the pricing…", a chat in none, says No section
+  // where its time was, and no label takes it; let go, it is in none, on top, and Clients keeps the rest.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-drag-out",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
+      const middle = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const from = await middle(lines.filter({ hasText: "checkout" }));
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      const to = await middle(lines.filter({ hasText: "Rewrite the pricing" }));
+      await page.mouse.move(to.x, to.y, { steps: 12 });
+      await expect(nav.locator('[data-lifted] [class*="into"]')).toHaveText("No section");
+      await expect(nav.locator("[data-taking]")).toHaveCount(0);
+      await page.mouse.up();
+      await expect(lines.filter({ hasText: "checkout" })).not.toHaveAttribute("data-section");
+      await expect(lines.nth(2)).toHaveText("Clients");
+      await expect(lines.filter({ hasText: "inventory" })).toHaveAttribute("data-section", "s1");
+    },
+  },
+  // ...and a label's Rename…: the dialog opens with the focus in the name's box, so the name can be typed right away.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-rename",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Rename…" }).click();
+      const name = page.getByRole("dialog", { name: "Rename Later" }).getByRole("textbox", { name: "Name" });
+      await expect(name).toBeFocused();
+      await page.keyboard.type(" on");
+      await expect(name).toHaveValue("Later on");
+    },
+  },
   {
     id: "shell",
     route: CHAT,
