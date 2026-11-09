@@ -59,8 +59,11 @@ explained! {
     /// Then the Bash rules against a nested claude. claude itself matches `Bash(claude *)` in every part of a compound
     /// command, in subshells and `$(…)`, past any leading `VAR=…`, and past the wrappers it strips (`timeout`,
     /// `nice`, `nohup`, `command`, bare `xargs`, …). It matches no other spelling of the program, so the rest name
-    /// the obvious ones: a path to the binary, a package runner, a `-c` shell, `env`, `exec`, `xargs` with flags. A
-    /// script that hides the name still gets through: these keep agents honest, they are not a sandbox.
+    /// the obvious ones: a path to the binary, a package runner, a `-c` shell, `env`, `exec`, `xargs` with flags.
+    /// Each starts with literal text, never `*`: claude matches a rule against a part's whole text, quoted arguments
+    /// and heredocs included, and at times against the whole chain, so `*sh -*c *claude*` refused
+    /// `git push -q …; gh pr create --body "…claude.com…"`. A script that hides the name still gets through: these
+    /// keep agents honest, they are not a sandbox.
     ALWAYS_DISALLOWED, DISALLOWED_WHY: &str = [
         "Task" => WHY_TASK,
         "Agent" => WHY_TASK,
@@ -81,17 +84,26 @@ explained! {
         "EnterWorktree" => WHY_WORKTREE,
         "ExitWorktree" => WHY_WORKTREE,
         "Bash(claude *)" => WHY_NESTED,
-        "Bash(*bin/claude)" => WHY_NESTED,
-        "Bash(*bin/claude *)" => WHY_NESTED,
-        "Bash(*/claude -*)" => WHY_NESTED,
-        "Bash(*claude/versions/*)" => WHY_NESTED,
-        "Bash(npx *claude*)" => WHY_NESTED,
-        "Bash(bunx *claude*)" => WHY_NESTED,
-        "Bash(*@anthropic-ai/claude-code*)" => WHY_NESTED,
-        "Bash(*sh -*c *claude*)" => WHY_NESTED,
-        "Bash(env *claude*)" => WHY_NESTED,
-        "Bash(exec *claude*)" => WHY_NESTED,
-        "Bash(xargs *claude*)" => WHY_NESTED,
+        "Bash(/*/claude *)" => WHY_NESTED,
+        "Bash(~/*/claude *)" => WHY_NESTED,
+        "Bash($HOME/*/claude *)" => WHY_NESTED,
+        "Bash(./*/claude *)" => WHY_NESTED,
+        "Bash(/*/claude/versions/*)" => WHY_NESTED,
+        "Bash(~/*/claude/versions/*)" => WHY_NESTED,
+        "Bash($HOME/*/claude/versions/*)" => WHY_NESTED,
+        "Bash(npx claude *)" => WHY_NESTED,
+        "Bash(bunx claude *)" => WHY_NESTED,
+        "Bash(npx *@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(bunx *@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(npm exec *@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(pnpm dlx *@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(sh -*c *claude -*)" => WHY_NESTED,
+        "Bash(bash -*c *claude -*)" => WHY_NESTED,
+        "Bash(zsh -*c *claude -*)" => WHY_NESTED,
+        "Bash(/*sh -*c *claude -*)" => WHY_NESTED,
+        "Bash(env *claude -*)" => WHY_NESTED,
+        "Bash(exec *claude -*)" => WHY_NESTED,
+        "Bash(xargs *claude -*)" => WHY_NESTED,
     ]
 }
 
@@ -970,10 +982,13 @@ mod tests {
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
              --disallowedTools Task Agent Workflow ListAgents SendMessage TaskStop TaskOutput TeamCreate TeamDelete \
              AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
-             CronList ScheduleWakeup EnterWorktree ExitWorktree Bash(claude *) Bash(*bin/claude) \
-             Bash(*bin/claude *) Bash(*/claude -*) Bash(*claude/versions/*) Bash(npx *claude*) Bash(bunx *claude*) \
-             Bash(*@anthropic-ai/claude-code*) Bash(*sh -*c *claude*) Bash(env *claude*) Bash(exec *claude*) \
-             Bash(xargs *claude*) WebFetch \
+             CronList ScheduleWakeup EnterWorktree ExitWorktree Bash(claude *) Bash(/*/claude *) \
+             Bash(~/*/claude *) Bash($HOME/*/claude *) Bash(./*/claude *) Bash(/*/claude/versions/*) \
+             Bash(~/*/claude/versions/*) Bash($HOME/*/claude/versions/*) Bash(npx claude *) Bash(bunx claude *) \
+             Bash(npx *@anthropic-ai/claude-code*) Bash(bunx *@anthropic-ai/claude-code*) \
+             Bash(npm exec *@anthropic-ai/claude-code*) Bash(pnpm dlx *@anthropic-ai/claude-code*) \
+             Bash(sh -*c *claude -*) Bash(bash -*c *claude -*) Bash(zsh -*c *claude -*) Bash(/*sh -*c *claude -*) \
+             Bash(env *claude -*) Bash(exec *claude -*) Bash(xargs *claude -*) WebFetch \
              --setting-sources user,project,local --add-dir /work/root"
         );
 
@@ -1127,6 +1142,12 @@ mod tests {
             "npx vitest run",
             "env",
             "claudette --help",
+            "npm view @anthropic-ai/claude-code version",
+            "ls ~/.local/share/claude/versions",
+            // Whole chains, which claude at times matches as one text: a push and a PR whose body names claude.
+            "cd /w; git push -q -u origin HEAD 2>&1 | tail -2; gh pr create --body \"$(cat <<'EOF'\nThe update logic \
+             names the flavour.\n\nGenerated with [Claude Code](https://claude.com/claude-code)\nEOF\n)\" | tail -1",
+            "git commit -qm 'fix(bun): bash -c runs a fresh shell' && git push -q; ls ~/.claude/projects",
         ] {
             assert!(!denied(work), "{work}");
         }
