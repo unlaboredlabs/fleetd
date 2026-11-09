@@ -3577,12 +3577,23 @@ impl SessionService {
 
     /// How many sessions are mid-step: a tool call of theirs runs that the hold (node/hold.rs) didn't stop from starting.
     pub fn mid_step(&self) -> u32 {
+        self.mid_step_of(true)
+    }
+
+    /// How many sessions that aren't hosted (a Navi's, one whose host didn't come up) are mid-step, holding none: the
+    /// node's restart cuts their step off, while hosted ones carry on through it (`hold` with `unhosted`).
+    pub fn unhosted_mid_step(&self) -> u32 {
+        self.mid_step_of(false)
+    }
+
+    fn mid_step_of(&self, hosted_too: bool) -> u32 {
         let home = &self.inner.config.home;
         let held = super::hold::held(home);
         let st = self.st();
         let mid_step = st
             .live
             .values()
+            .filter(|l| hosted_too || l.link.is_none())
             .filter(|l| l.tools.iter().any(|t| !held.contains(t)))
             .count();
         u32::try_from(mid_step).unwrap_or(u32::MAX)

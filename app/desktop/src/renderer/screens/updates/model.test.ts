@@ -85,7 +85,7 @@ describe("the hub and its machines", () => {
     expect(newer.hub?.status).toBe("Edge · Oct 23, 10:30 UTC · def5678 is available");
     expect(newer.nodes.map((n) => n.status)).toEqual(["Edge · Oct 23, 10:30 UTC · def5678 is available", "Offline"]);
     expect(newer.update?.note).toBe(
-      "Updates the hub, then its 2 machines once their agents finish their step (10 minutes at most), then this app, which restarts.",
+      "Updates the hub, then its 2 machines, each within 2 minutes (agents carry on through it), then this app, which restarts.",
     );
 
     const appOnly = view({ kind: "available", version: NEXT, percent: null, restart: false });

@@ -519,8 +519,8 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
           title: newest === null ? "Update fleetd" : `fleetd ${versionLabel(newest)} is ${hubReady !== null ? "ready" : "available"}`,
           note:
             hubReady !== null
-              ? `Downloaded and checked already: Update swaps it in on the hub, then ${machinesWord} once their agents finish their step (10 minutes at most), then this app, which restarts.`
-              : `Updates the hub, then ${machinesWord} once their agents finish their step (10 minutes at most), then this app, which restarts.`,
+              ? `Downloaded and checked already: Update swaps it in on the hub, then ${machinesWord}, each within 2 minutes (agents carry on through it), then this app, which restarts.`
+              : `Updates the hub, then ${machinesWord}, each within 2 minutes (agents carry on through it), then this app, which restarts.`,
           notes: whatsNew(hubPart?.notes ?? NO_NOTES, app === null ? NO_NOTES : appPart(app).notes),
         };
   // Only once a build is downloaded and checked, the hub's or this app's own: never for one still to fetch.

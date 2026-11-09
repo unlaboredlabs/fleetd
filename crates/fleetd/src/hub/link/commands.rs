@@ -189,6 +189,19 @@ impl NodeCommands {
             .map(|l| l.id)
     }
 
+    /// The `cmd_check`s this hub process runs on the machine's node now (the train's checks and regenerations): its
+    /// node's restart cuts them off. One that ran across the hub's own restart has no waiter left, and its asker runs it
+    /// again.
+    pub fn checks_running(&self, machine_id: &MachineId) -> usize {
+        self.state
+            .lock()
+            .unwrap()
+            .pending
+            .values()
+            .filter(|p| &p.machine_id == machine_id && p.reply == "cmd_result")
+            .count()
+    }
+
     /// Whether the machine's node is linked now.
     pub fn linked(&self, machine_id: &MachineId) -> bool {
         self.state.lock().unwrap().links.contains_key(machine_id)
@@ -475,8 +488,12 @@ impl NodeCommands {
     pub async fn hold_node(
         &self,
         machine_id: &MachineId,
+        unhosted: bool,
     ) -> Result<NodeActionResult, NodeCommandError> {
-        let request = json!({ "t": "node_action", "action": NodeActionKind::Hold });
+        let mut request = json!({ "t": "node_action", "action": NodeActionKind::Hold });
+        if unhosted {
+            request["unhosted"] = json!(true);
+        }
         self.node_action(machine_id, request, 30).await
     }
 
@@ -620,6 +637,7 @@ mod tests {
             login_url: None,
             steps: None,
             hosts: None,
+            hosted: None,
         })
     }
 

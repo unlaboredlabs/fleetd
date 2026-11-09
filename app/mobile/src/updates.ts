@@ -22,7 +22,7 @@ export interface UpdateSection {
   readonly updateNow: boolean;
 }
 
-export const UPDATE_NOTE = "Updates the hub, then every machine once its agents finish their step (10 minutes at most).";
+export const UPDATE_NOTE = "Updates the hub, then every machine, each within 2 minutes (agents carry on through it).";
 
 export interface UpdateInput {
   /** hub_info's `admin`; undefined until read. */

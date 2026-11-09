@@ -635,6 +635,19 @@ async fn a_session_is_mid_step_while_a_tool_call_of_its_runs() {
     assert_eq!(hub.service.hold(), 0);
     std::fs::remove_file(home.join("update/held").join(&tool)).unwrap();
     assert_eq!(hub.service.hold(), 1);
+    // A session that isn't hosted (a Navi's) mid-tool counts where the node's hosted agents carry on through its
+    // restart, and that count holds nothing; a hosted one mid-tool doesn't count there.
+    crate::node::hold::clear(&home);
+    assert_eq!(hub.service.unhosted_mid_step(), 1);
+    assert!(
+        !crate::node::hold::hold_path(&home).exists(),
+        "counting holds nothing"
+    );
+    hub.service.st().live.get_mut("s1").unwrap().link =
+        Some(crate::node::runner::host::Link::standing());
+    assert_eq!(hub.service.unhosted_mid_step(), 0, "hosted: it carries on");
+    assert_eq!(hub.service.hold(), 1, "a full hold still counts it");
+    hub.service.st().live.get_mut("s1").unwrap().link = None;
 
     let pending = waiting.pending_permission.unwrap();
     hub.ok(SessionCall::Answer {

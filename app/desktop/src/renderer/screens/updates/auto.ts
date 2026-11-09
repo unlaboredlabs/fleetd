@@ -33,7 +33,7 @@ export const autoOf = (out: HubUpdateOutput): AutoState | undefined =>
 
 /** What automatic updates do, beside the switch. */
 export const autoWords = (drainMinutes: number): string => {
-  const wait = drainMinutes === 0 ? "without waiting for agents" : `once agents finish their step (${String(drainMinutes)} minutes at most)`;
+  const wait = drainMinutes === 0 ? "without waiting" : `once nothing its restart would cut off runs (${String(drainMinutes)} minutes at most)`;
   return `New builds install by themselves as soon as they are ready, at most one update in 10 minutes, each machine ${wait}.`;
 };
 
