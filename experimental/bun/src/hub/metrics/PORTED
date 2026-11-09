@@ -1,1 +1,2 @@
+loop:hub loop `metrics::start`
 tool:`metrics_get`
