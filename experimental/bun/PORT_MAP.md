@@ -513,7 +513,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] heartbeat `load.hosts` → `src/node/hosts` <!-- hb:heartbeat `load.hosts` -->
 - [x] heartbeat `load.android` → `src/node/device` <!-- hb:heartbeat `load.android` -->
 - [ ] heartbeat `load.ios` → `src/node/device` <!-- hb:heartbeat `load.ios` -->
-- [ ] heartbeat `load.desktop` → `src/node/desktop` <!-- hb:heartbeat `load.desktop` -->
+- [x] heartbeat `load.desktop` → `src/node/desktop` <!-- hb:heartbeat `load.desktop` -->
 - [x] heartbeat `load.mac` → `src/node/agents_mac` <!-- hb:heartbeat `load.mac` -->
 
 ## cli
