@@ -8,6 +8,13 @@
 }
 @font-face {
   font-family: "IBM Plex Sans";
+  src: url("./fonts/plex-sans-medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
   src: url("./fonts/plex-sans-semibold.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;

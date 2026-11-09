@@ -10,6 +10,7 @@ export { BEAT_MS, BEATS, useBeat, useBeatRef } from "./lib/beat";
 
 export { Text, textClass, type TextProps, type TextSize, type TextTone, type TextStyleProps } from "./text/Text";
 export { Truncate, type TruncateProps } from "./text/Truncate";
+export { isCut, observeSize } from "./text/observeSize";
 export { IdChip, type IdChipProps } from "./text/IdChip";
 export { humanizeKey } from "./text/humanize";
 

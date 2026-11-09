@@ -1,6 +1,7 @@
 // The sidebar (W530): your chats, each a row with its picture, its name and its newest line, newest first, and you at
 // its foot (You.tsx). New sits at the top, beside the window's controls (NewButton). Your pinned chats stay on top in
-// your order (pins.ts): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
+// your order (pins.ts), two to a line, each a large picture over its name in a capsule (a name cut short shows whole
+// in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them; drag a chat up among them to pin it
 // there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
@@ -14,11 +15,11 @@
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
 import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, isCut, observeSize, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { revealNext } from "../settings/reveal";
@@ -36,10 +37,10 @@ import { holdRows, shownRows } from "./sidebarState";
 import { You } from "./You";
 import s from "./sidebar.module.css";
 
-/** A chat's picture in its row: big enough to enjoy its face, the row 56 px around it. */
-const AVATAR = 36;
-/** A pinned chat's picture, PIN_COLUMNS to a row, the group centred in the sidebar. */
-const PIN_AVATAR = 64;
+/** A chat's picture in its row: big enough to enjoy its face, the row a 56 px capsule around it. */
+const AVATAR = 40;
+/** A pinned chat's picture, PIN_COLUMNS to a row 16 px apart, the group centred in the sidebar. */
+const PIN_AVATAR = 72;
 const PIN_COLUMNS = 2;
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
 export const SPRING = { ms: 360, ease: "var(--ease-spring)" } as const;
@@ -157,38 +158,65 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
 }
 
 /**
- * A pinned chat, as the phone draws its pins (mobile screens/Pinned.tsx, after Messages): a large round picture, its
- * name under it, two to a row over the list. New, the name speaks up with the dot beside it (the warning's when it
- * waits on you); while its lead works, the picture's own bot says so, with no bubble of its own, and a picture of
- * the project's own, which can't, has the row's small working glyph in the dot's place. While ⌘ (Ctrl) is held, its
- * jump number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1 onwards.
- * Hovered or open, its shade hugs the picture and name, centred in its cell of the grid.
+ * A pinned chat, after the phone's pins (mobile screens/Pinned.tsx, after Messages): a large round picture standing
+ * free, its name under it in a small capsule, two to a row over the list. New, the name speaks up with the dot before
+ * it in the capsule (the warning's when it waits on you); while its lead works, the picture's own bot says so, with no
+ * bubble of its own, and a picture of the project's own, which can't, has the row's small working glyph in the dot's
+ * place. While ⌘ (Ctrl) is held, its jump number stands before the name in the dot's place, as a row's stands in its
+ * time's: the pins are ⌘1 onwards. Open or under the pointer, the capsule takes the shade, as the top bar's pill does.
+ * A name too long for its place ends in an ellipsis, and is whole in a tooltip under the pin: only a cut name has a
+ * tooltip at all, as ui's Truncate does it, so a pin whose name fits never starts one.
  */
 function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   const m = mark(p);
   const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
   const dot = p.want !== undefined ? "want" : p.unread ? "new" : undefined;
+  // The name's element lives in state (a callback ref): the pin is a new node once its tooltip comes or goes.
+  const [title, setTitle] = useState<HTMLSpanElement | null>(null);
+  const [cut, setCut] = useState(false);
+  const refocus = useRef(false);
+  useLayoutEffect(() => {
+    // Right after a swap this can still hold the node React just removed; the next run has the new one.
+    if (!title?.isConnected) return;
+    const pin = title.closest("button");
+    if (refocus.current) {
+      refocus.current = false;
+      pin?.focus();
+    }
+    const measure = () => {
+      const now = isCut(title);
+      // The swap takes the pin's node: a pin that had the keyboard keeps it.
+      if (now !== cut && pin === document.activeElement) refocus.current = true;
+      setCut(now);
+    };
+    measure();
+    return observeSize(title, measure);
+  }, [title, cut, p.project.title]);
   return (
-    <button
-      type="button"
-      className={s.pinCell}
-      {...(current ? { "aria-current": "page" as const } : {})}
-      data-unread={dot !== undefined || undefined}
-      aria-description={tip}
-      {...rest}
-    >
-      <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
-      <span className={s.pinName}>
-        {jump !== null ? (
-          <span className={s.jump}>{jump}</span>
-        ) : dot !== undefined ? (
-          <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden />
-        ) : p.project.avatar !== undefined && (p.working || p.running > 0) ? (
-          <StateGlyph state="thinking" size="sm" />
-        ) : null}
-        <span className={s.pinTitle}>{p.project.title}</span>
-      </span>
-    </button>
+    <Tooltip content={cut ? p.project.title : undefined} side="bottom">
+      <button
+        type="button"
+        className={s.pinCell}
+        {...(current ? { "aria-current": "page" as const } : {})}
+        data-unread={dot !== undefined || undefined}
+        aria-description={tip}
+        {...rest}
+      >
+        <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
+        <span className={s.pinName}>
+          {jump !== null ? (
+            <span className={s.jump}>{jump}</span>
+          ) : dot !== undefined ? (
+            <span className={s.dot} data-want={dot === "want" ? "you" : undefined} aria-hidden />
+          ) : p.project.avatar !== undefined && (p.working || p.running > 0) ? (
+            <StateGlyph state="thinking" size="sm" />
+          ) : null}
+          <span ref={setTitle} className={s.pinTitle}>
+            {p.project.title}
+          </span>
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -373,7 +401,7 @@ function ProjectGroup(props: {
         <button type="button" className={s.groupHead} aria-expanded={!collapsed} onClick={props.onToggle} data-hub-group={hub.id}>
           {collapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
           {hub.color === undefined ? null : <span className={s.groupMark} style={{ background: HUB_COLOR[hub.color] }} aria-hidden />}
-          <Truncate size="xs" tone="inherit" expand="none">
+          <Truncate size="sm" strong tone="inherit" expand="none">
             {hub.label}
           </Truncate>
           {asOf === undefined ? null : <span className={s.groupAside}>{asOf}</span>}

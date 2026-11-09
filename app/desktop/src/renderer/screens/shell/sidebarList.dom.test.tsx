@@ -167,6 +167,61 @@ describe("one list", () => {
     expect(button("Home").querySelector("[class*=pinName] [class*=dot]")).not.toBeNull();
   });
 
+  it("shows a pinned name whole in a tooltip only when it is cut short", async () => {
+    // happy-dom has no layout: a pinned name's text is as wide as its letters here, in a place 88 px wide.
+    const width = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? this.textContent.length * 8 : 0;
+    });
+    const box = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? 72 : 0;
+    });
+    try {
+      const long = row("Rewrite the pricing page headline");
+      mount([{ ...long, pinned: true }, { ...ADA, pinned: true }, STOREFRONT]);
+      const tip = () => document.querySelector("[role='tooltip']")?.textContent;
+      const rest = (on: HTMLElement) => act(() => void on.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse" })));
+
+      act(() => button("Ada").focus());
+      await settle();
+      expect(tip()).toBeUndefined();
+      // A name that fits starts no tooltip at all: one started and never shown would leave every tooltip after it
+      // without its delay. The next still waits its half second.
+      rest(button("Ada"));
+      await settle();
+      act(() => button("Ada").blur());
+      rest(button("Rewrite"));
+      await settle();
+      expect(tip()).toBeUndefined();
+      await act(() => new Promise((done) => setTimeout(done, 600)));
+      expect(tip()).toBe("Rewrite the pricing page headline");
+    } finally {
+      width.mockRestore();
+      box.mockRestore();
+    }
+  });
+
+  it("keeps the keyboard on a pin whose name comes to be cut", async () => {
+    const width = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? this.textContent.length * 4 : 0;
+    });
+    const box = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.className.includes("pinTitle") ? 72 : 0;
+    });
+    try {
+      mount([{ ...STOREFRONT, pinned: true }, ADA]);
+      act(() => button("storefront").focus());
+      const before = button("storefront");
+      // Renamed to more than its place holds: the pin is a new node, inside its tooltip, and still has the keyboard.
+      mount([{ ...STOREFRONT, project: { ...STOREFRONT.project, title: "storefront for the spring sale" }, pinned: true }, ADA]);
+      await settle();
+      expect(button("storefront")).not.toBe(before);
+      expect(document.activeElement).toBe(button("storefront"));
+    } finally {
+      width.mockRestore();
+      box.mockRestore();
+    }
+  });
+
   it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
     const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
     mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);
