@@ -91,7 +91,7 @@ function Harness({ text }: { text: string }) {
         <InlineText text={text} project={project} />
       </div>
       <PanelToggle panel={panel} />
-      <PanelSlot panel={panel} />
+      <PanelSlot panel={panel} sidebarPx={240} />
     </TooltipProvider>
   );
 }

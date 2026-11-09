@@ -57,8 +57,8 @@
   width: 100%;
 }
 
-/* Its left edge: a hairline-wide target that shows itself on hover, focus and drag. It sits over the frame's border
-   so the edge you see is the edge you drag. */
+/* Its left edge, and the sidebar's right one (ResizeEdge.tsx): a hairline-wide target that shows itself on hover, focus
+   and drag. It sits over the frame's border so the edge you see is the edge you drag. */
 .resize {
   position: absolute;
   z-index: 2;
@@ -68,6 +68,10 @@
   width: 8px;
   cursor: col-resize;
   touch-action: none;
+}
+.resize[data-edge="right"] {
+  left: auto;
+  right: -4px;
 }
 .resize::after {
   content: "";
@@ -91,8 +95,8 @@
   background: var(--accent);
 }
 /* While a drag runs, the cursor stays the resize one over the chat too, and nothing gets selected. */
-:global(html[data-panel-resizing]),
-:global(html[data-panel-resizing]) * {
+:global(html[data-resizing]),
+:global(html[data-resizing]) * {
   cursor: col-resize !important;
   user-select: none !important;
 }

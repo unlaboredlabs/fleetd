@@ -16,15 +16,15 @@ export interface WidthBounds {
 
 /** What the chat keeps beside a panel at its widest, past the sidebar. */
 export const CHAT_MIN_PX = 360;
-const SIDEBAR_PX = 240;
 /** An arrow key's step; with Shift, four of them. */
 export const STEP_PX = 16;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(Math.max(n, lo), hi);
 
-/** The same figures as tokens.css had for the fixed widths, with a max that leaves the chat its room. */
-export const widthBounds = (mode: PanelMode, windowPx: number): WidthBounds => {
-  const room = windowPx - SIDEBAR_PX - CHAT_MIN_PX;
+/** The same figures as tokens.css had for the fixed widths, with a max that leaves the sidebar as wide as it is
+ *  (sidebarWidth.ts; 0 while hidden) and the chat its room. */
+export const widthBounds = (mode: PanelMode, windowPx: number, sidebarPx: number): WidthBounds => {
+  const room = windowPx - sidebarPx - CHAT_MIN_PX;
   const [min, cap, share, initialCap] = mode === "normal" ? [320, 800, 0.3, 520] : [480, 1400, 0.55, 1040];
   const max = Math.max(min, Math.min(cap, room));
   return { min, max, initial: Math.round(clamp(Math.min(windowPx * share, initialCap), min, max)) };
@@ -33,15 +33,15 @@ export const widthBounds = (mode: PanelMode, windowPx: number): WidthBounds => {
 /** The width it shows: the one you set, within bounds, else its default. */
 export const shownWidth = (set: number | null, bounds: WidthBounds): number => Math.round(set === null ? bounds.initial : clamp(set, bounds.min, bounds.max));
 
-/** An arrow key, Home or End on its edge: the width it moves to, or null for a key it doesn't take. The edge is on the
- *  panel's left, so Left widens it. */
-export const keyedWidth = (key: string, shift: boolean, now: number, bounds: WidthBounds): number | null => {
+/** An arrow key, Home or End on an edge: the width it moves to, or null for a key it doesn't take. The panel's edge is
+ *  on its left, so Left widens it; the sidebar's is on its right, where Right does. */
+export const keyedWidth = (key: string, shift: boolean, now: number, bounds: WidthBounds, edge: "left" | "right" = "left"): number | null => {
   const step = shift ? STEP_PX * 4 : STEP_PX;
+  const wider = edge === "left" ? "ArrowLeft" : "ArrowRight";
   switch (key) {
     case "ArrowLeft":
-      return clamp(now + step, bounds.min, bounds.max);
     case "ArrowRight":
-      return clamp(now - step, bounds.min, bounds.max);
+      return clamp(key === wider ? now + step : now - step, bounds.min, bounds.max);
     case "Home":
       return bounds.min;
     case "End":

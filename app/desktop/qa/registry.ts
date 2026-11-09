@@ -1016,6 +1016,32 @@ export const screens: readonly Screen[] = [
       await expect(edge).toHaveAttribute("aria-valuenow", "320");
     },
   },
+  // The sidebar resized from its edge with the keyboard: at its narrowest (rows, times and dots still fit) and at its
+  // widest, with long names.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical", "long-text"],
+    variant: "sidebar-narrowest",
+    open: async (page) => {
+      const edge = page.getByRole("separator", { name: "Resize the sidebar" });
+      await edge.focus();
+      await edge.press("Home");
+      await expect(edge).toHaveAttribute("aria-valuenow", "200");
+    },
+  },
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical", "long-text"],
+    variant: "sidebar-widest",
+    open: async (page) => {
+      const edge = page.getByRole("separator", { name: "Resize the sidebar" });
+      await edge.focus();
+      await edge.press("End");
+      await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
+    },
+  },
   // ...and in the smallest window, where it had hidden itself, shown with its toggle beside the chat.
   {
     id: "shell",

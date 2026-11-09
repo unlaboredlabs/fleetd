@@ -6,17 +6,20 @@ afterEach(() => window.localStorage.clear());
 
 describe("the panel's width", () => {
   it("defaults as the fixed widths did, and its max leaves the sidebar and the chat their room", () => {
-    expect(widthBounds("normal", 1400)).toEqual({ min: 320, max: 800, initial: 420 });
-    expect(widthBounds("normal", 2400)).toEqual({ min: 320, max: 800, initial: 520 });
-    expect(widthBounds("wide", 1400)).toEqual({ min: 480, max: 800, initial: 770 });
-    const small = widthBounds("normal", 1000);
+    expect(widthBounds("normal", 1400, 240)).toEqual({ min: 320, max: 800, initial: 420 });
+    expect(widthBounds("normal", 2400, 240)).toEqual({ min: 320, max: 800, initial: 520 });
+    expect(widthBounds("wide", 1400, 240)).toEqual({ min: 480, max: 800, initial: 770 });
+    const small = widthBounds("normal", 1000, 240);
     expect(small.max).toBe(1000 - 240 - CHAT_MIN_PX);
     // Too small a window for both: the min still holds.
-    expect(widthBounds("wide", 900).max).toBe(480);
+    expect(widthBounds("wide", 900, 240).max).toBe(480);
+    // A wider sidebar takes from its max, and none gives it the room.
+    expect(widthBounds("normal", 1400, 420).max).toBe(1400 - 420 - CHAT_MIN_PX);
+    expect(widthBounds("normal", 1000, 0).max).toBe(1000 - CHAT_MIN_PX);
   });
 
   it("shows what you set, within bounds, else the default", () => {
-    const b = widthBounds("normal", 1400);
+    const b = widthBounds("normal", 1400, 240);
     expect(shownWidth(null, b)).toBe(420);
     expect(shownWidth(600, b)).toBe(600);
     expect(shownWidth(100, b)).toBe(320);
@@ -24,7 +27,7 @@ describe("the panel's width", () => {
   });
 
   it("moves by the arrow keys from its left edge, four steps with Shift, to its ends with Home and End", () => {
-    const b = widthBounds("normal", 1400);
+    const b = widthBounds("normal", 1400, 240);
     expect(keyedWidth("ArrowLeft", false, 420, b)).toBe(420 + STEP_PX);
     expect(keyedWidth("ArrowRight", false, 420, b)).toBe(420 - STEP_PX);
     expect(keyedWidth("ArrowLeft", true, 420, b)).toBe(420 + 4 * STEP_PX);
