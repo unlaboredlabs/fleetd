@@ -581,6 +581,7 @@ mod tests {
             system_prompt: None,
             queued_prompts: vec![],
             monitors: vec![],
+            scratch_of: None,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;
