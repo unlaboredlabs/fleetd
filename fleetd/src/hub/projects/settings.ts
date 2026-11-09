@@ -8,7 +8,9 @@
 // key, is relayed in the same call and is never stored, logged or returned.
 import type { Database } from "bun:sqlite";
 import type {
+  BotColor,
   EnvVarName,
+  KnownBotColor,
   EnvVarSet,
   MachineId,
   ProjectEnvVar,
@@ -33,7 +35,7 @@ import { projectEnv, projectUpsert, projectWorktrees } from "../executor/project
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { who } from "../navi/owner.ts";
-import { setOnlyMe as storeOnlyMe } from "../navi/store.ts";
+import { setAvatarColor, setOnlyMe as storeOnlyMe } from "../navi/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -47,6 +49,8 @@ export const ENV_VALUE_MAX_BYTES = 64 * 1024;
 export const ENV_TOTAL_MAX_BYTES = 512 * 1024;
 const SEAL_OVERHEAD = 48;
 const SETUP_TIMEOUT_DEFAULT_SEC = 600;
+/** The colors a project's bot comes in (app/desktop/src/shared/bot.ts BOT_PAINT), slate its default. */
+export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"];
 
 /** The refusal when a change would take a project's values past ENV_TOTAL_MAX_BYTES, naming the total. */
 export const envTotalOver = (total: number) =>
@@ -301,6 +305,17 @@ export function setOnlyMe(hub: Hub, caller: Caller, project: ProjectSummary, on:
   announce(hub, r, `${project.title}: Only me ${on ? "on" : "off"}`, { onlyMe: on });
 }
 
+/** Gives the project's bot a color of the palette, and tells every app that shows it. */
+function setColor(hub: Hub, project: ProjectSummary, color: BotColor): void {
+  if (!(BOT_COLORS as readonly string[]).includes(color)) {
+    throw new ToolError("invalid", `${color} isn't one of the bot's colors.`, `Pick one of ${BOT_COLORS.join(", ")}.`);
+  }
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  if ((project.avatarColor ?? "slate") === color) return;
+  setAvatarColor(hub.db.conn, r, color);
+  announce(hub, r, `${project.title}'s bot is ${color} now`, { avatarColor: color });
+}
+
 export function register(tools: Registry): void {
   tools.add("project_settings_get", async (hub, caller, input) => {
     requireRole(caller, "read", input.machineId);
@@ -330,6 +345,7 @@ export function register(tools: Registry): void {
       announce(hub, r, `${project.title} renamed ${input.title}`, { title: input.title });
     }
     if (input.onlyMe !== undefined) setOnlyMe(hub, caller, project, input.onlyMe);
+    if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
     if (input.memoryRefresh !== undefined) projectSettings(hub).setMemoryRefresh(r, input.memoryRefresh);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     const settings = await settingsOf(hub, r, repo);
@@ -338,6 +354,8 @@ export function register(tools: Registry): void {
       next = input.memoryRefresh
         ? "The lead refreshes this project's memory from tonight."
         : "The nightly memory refresh is off for this project; memory stays as the lead and you write it.";
+    } else if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
+      next = `Its bot is ${input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the project use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }

@@ -1,7 +1,7 @@
 // The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
 // desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
 // orders_board, checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title), Only me
-// (its onlyMe), Archive, its icon (project_icon_set) or picture (attachment_put, then project_avatar_set), Agent
+// (its onlyMe), Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), Agent
 // Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
 // by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
@@ -45,6 +45,12 @@ export const addCall = async (hub: Hub, call: AddCall, title: string, onlyMe: bo
 /** Its settings' title. Its folder keeps its name. */
 export const rename = async (hub: Hub, p: ProjectRef, name: string): Promise<Result<null>> => {
   const r = await hub.call("project_settings_set", { ...ref(p), title: name });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Its bot's color, from the palette (BOT_COLORS). */
+export const setBotColor = async (hub: Hub, p: ProjectRef, avatarColor: string): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), avatarColor });
   return r.ok ? { ok: true, value: null } : r;
 };
 

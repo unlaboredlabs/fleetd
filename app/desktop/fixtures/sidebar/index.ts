@@ -1,10 +1,12 @@
 // The sidebar's reasons (status-rows' eight projects): a lead waiting on a reply, two commands to approve, a secret
 // to enter, Status's blocked projects, agents at work, and a reply that arrives after the app opened (docs), which
-// shows bold until you look.
+// shows bold until you look. And the same projects' bots, each in a color of its own.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
-import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { projectSections } from "../kit/sections.ts";
 import { arr, obj } from "../kit/stress.ts";
+import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
 
 const reasons = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "sidebar-reasons", "Sidebar: reply, approve · 2, secret, blocked, CI red, working, and a new reply in docs.");
@@ -51,6 +53,39 @@ const reasons = (base: Fixture): Fixture => {
   return f;
 };
 
+/** The bots' colors (shared/bot.ts BOT_PAINT): status-rows' eight projects, one in each color, mobile in slate, the
+ * default, which the hub names by no color at all. */
+export const BOT_COLORED: Readonly<Record<string, string>> = {
+  storefront: "sage",
+  billing: "blue",
+  checkout: "coral",
+  docs: "mono",
+  inventory: "amber",
+  search: "lilac",
+  "Rewrite the pricing": "teal",
+};
+
+const colors = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "sidebar-colors", "Sidebar: each project's bot in a color of its own, mobile in slate, the default.");
+  if (f.snapshot !== undefined) {
+    f.snapshot["projects"] = arr(f.snapshot["projects"]).map((p) => {
+      const title = asText(obj(p)["title"]);
+      const color = Object.entries(BOT_COLORED).find(([t]) => title.startsWith(t))?.[1];
+      return color === undefined ? p : { ...obj(p), avatarColor: color };
+    });
+  }
+  // storefront's settings, where its color is picked.
+  const storefront = obj(arr(f.snapshot?.["projects"]).find((p) => obj(p)["title"] === "storefront"));
+  const ref = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };
+  f.answer("project_settings_get", ref, {
+    settings: { ...ref, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
+  });
+  f.answer(PROJECT_TOOLS.approvals, ref, { approvals: { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] });
+  f.answer(PROJECT_TOOLS.purchases, ref, { purchases: [] });
+  projectSections(f, ref);
+  return f;
+};
+
 /** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project (the showcase's too). */
 export const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): void => {
   const walk = (v: JsonValue | undefined): void => {
@@ -86,5 +121,5 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
 };
 
 export default defineGroup({
-  fixtures: (base) => [reasons(base("status-rows")), hubs(base, false), hubs(base, true)],
+  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), hubs(base, false), hubs(base, true)],
 });

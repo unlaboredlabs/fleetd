@@ -1,6 +1,6 @@
 // A project's avatar where its chat shows (the sidebar, the chat's title, its settings): its picture once a
 // person gave it one, read once per picture (project_avatar_get, refetched on its project.settings event), else its
-// bot (ui's Bot), in the state its project is in (botState.ts).
+// bot (ui's Bot), in the color picked for it and the state its project is in (botState.ts).
 import { useEffect } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
@@ -8,7 +8,7 @@ import { Avatar } from "../../ui";
 import type { BotIn } from "../../../shared/bot";
 import { useBotState } from "./botState";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "avatarColor">;
 
 /** Its picture's data: URL, undefined while it has none or it loads. */
 export const usePicture = (project: Pick<ProjectSummary, "machineId" | "projectId" | "avatar"> | undefined): string | undefined => {
@@ -27,5 +27,5 @@ export function ProjectAvatar({ project, size, own, className }: { project: Pict
   const picture = usePicture(project);
   const bot = useBotState(`${project.machineId}/${project.projectId}`, own);
   // While a new picture loads, the bot stays rather than flashing the letters.
-  return <Avatar name={project.title} size={size} src={picture} bot={bot} className={className} />;
+  return <Avatar name={project.title} size={size} src={picture} bot={bot} color={project.avatarColor} className={className} />;
 }

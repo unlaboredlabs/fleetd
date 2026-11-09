@@ -167,7 +167,8 @@ function aProject(r: ProjectRef): void {
 
 /**
  * The project with what the hub keeps of it, whatever its stored row says: its repos from `repos`, and from
- * `project_settings` whether only its owner has it (a Navi, sent as `kind: assistant` too for one release).
+ * `project_settings` whether only its owner has it (a Navi, sent as `kind: assistant` too for one release) and its
+ * bot's color.
  */
 function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   const r = { machineId: stored.machineId, projectId: stored.projectId };
@@ -179,6 +180,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     archivedAt: _archivedAt,
     owner: _owner,
     avatar: _avatar,
+    avatarColor: _avatarColor,
     icon: _icon,
     ...project
   } = stored;
@@ -191,6 +193,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.createdBy) out.createdBy = kept.createdBy;
   if (kept.owner !== undefined) out.owner = kept.owner;
   if (kept.archivedAt !== undefined) out.archivedAt = kept.archivedAt;
+  if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
   out.icon = icon.of(conn, r);
@@ -207,6 +210,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     archivedAt: _archivedAt,
     owner: _owner,
     avatar: _avatar,
+    avatarColor: _avatarColor,
     icon: _icon,
     ...row
   } = project;

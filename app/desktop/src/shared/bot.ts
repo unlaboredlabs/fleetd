@@ -1,8 +1,8 @@
 // The bot every project and Navi wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
-// of calm slate with two light eyes and no mouth, standing free with no circle behind it (Pebble, from the
-// avatar-no-circle report, without its contact shadow). Its motion says what it is doing: idle, thinking, working,
-// needs you, done, or an error.
+// of calm slate, or the color a person picked for its project (BOT_PAINT), with two eyes and no mouth, standing free
+// with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). Its motion says what
+// it is doing: idle, thinking, working, needs you, done, or an error.
 //
 // It is all here, pure, so both apps draw and move it alike. One rig: every frame is drawn from a few channels (the
 // lids, the eyes' size and look, the body's squash, lift and lean, the eyes' glow and dim). Each channel is a damped
@@ -18,6 +18,8 @@
 // them; a bot in any other state, or one that lives on its own (solo, a large one), keeps moving. Asleep its clock
 // stops, so it wakes exactly where it was. The functions the phone runs on its UI thread are worklets ("worklet"), a
 // plain string to the desktop.
+
+import type { KnownBotColor } from "./contracts";
 
 /** What a bot shows, from the app's own words (projects/botState.ts). */
 export type BotState = "idle" | "thinking" | "working" | "needs" | "done" | "error";
@@ -81,7 +83,7 @@ export const drawnAt = (box: number): number => {
   return (box * 100) / CROP.w;
 };
 
-/** What a bot is painted with (Pebble): one flat body and its eyes, the same for every bot. */
+/** What a bot is painted with (Pebble): one flat body and its eyes, in the color its project picked (BOT_PAINT). */
 export interface Paint {
   readonly body: string;
   /** Its eyes, and their glow's strength at its fullest. */
@@ -89,11 +91,62 @@ export interface Paint {
   readonly glowA: number;
 }
 
-/** One calm dusk slate (hue 258, low chroma) in both themes: dark enough in light for white eyes to read at 20 px
- * (about 5.5:1), light enough in dark to stand off the screen and still keep Done's crescents (about 4:1). */
-export const PEBBLE: { readonly light: Paint; readonly dark: Paint } = {
-  light: { body: oklch(0.5, 0.062, 258), eye: oklch(0.99, 0.006, 258), glowA: 0.35 },
-  dark: { body: oklch(0.6, 0.06, 258), eye: oklch(0.995, 0.004, 258), glowA: 0.4 },
+/** The colors a bot comes in (the contracts' BotColor), in the order a picker shows them: slate, the default, and the
+ * neutral, then round the wheel. */
+export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"];
+export type BotColorName = KnownBotColor;
+
+/**
+ * Each color's paint in both themes: one flat body, its eyes and their glow. The hues sit round the wheel at one calm
+ * chroma (no neon); each body is dark enough in light for white eyes to read at 20 px (at least 3.7:1) and in dark
+ * light enough to stand off the screen (at least 4.3:1) while keeping Done's crescents (at least 3.4:1).
+ */
+export const BOT_PAINT: { readonly [C in BotColorName]: { readonly light: Paint; readonly dark: Paint } } = {
+  /** One calm dusk slate (hue 258, low chroma), the default: dark enough in light for white eyes to read at 20 px
+   * (about 5.5:1), light enough in dark to stand off the screen and still keep Done's crescents (about 4:1). */
+  slate: {
+    light: { body: oklch(0.5, 0.062, 258), eye: oklch(0.99, 0.006, 258), glowA: 0.35 },
+    dark: { body: oklch(0.6, 0.06, 258), eye: oklch(0.995, 0.004, 258), glowA: 0.4 },
+  },
+  /** The app's own neutral: near-black in light and near-white in dark, which takes dark eyes and no glow. */
+  mono: {
+    light: { body: oklch(0.29, 0.01, 260), eye: oklch(0.98, 0.004, 258), glowA: 0.35 },
+    dark: { body: oklch(0.94, 0.005, 250), eye: oklch(0.25, 0.015, 258), glowA: 0 },
+  },
+  blue: {
+    light: { body: oklch(0.57, 0.13, 252), eye: oklch(0.99, 0.006, 252), glowA: 0.35 },
+    dark: { body: oklch(0.615, 0.12, 252), eye: oklch(0.995, 0.004, 252), glowA: 0.4 },
+  },
+  lilac: {
+    light: { body: oklch(0.57, 0.1, 298), eye: oklch(0.99, 0.006, 298), glowA: 0.35 },
+    dark: { body: oklch(0.625, 0.095, 298), eye: oklch(0.995, 0.004, 298), glowA: 0.4 },
+  },
+  coral: {
+    light: { body: oklch(0.62, 0.12, 33), eye: oklch(0.99, 0.006, 33), glowA: 0.35 },
+    dark: { body: oklch(0.645, 0.115, 33), eye: oklch(0.995, 0.004, 33), glowA: 0.4 },
+  },
+  /** Too light for white eyes in either theme: dark ones, with no glow. */
+  amber: {
+    light: { body: oklch(0.76, 0.11, 75), eye: oklch(0.3, 0.035, 60), glowA: 0 },
+    dark: { body: oklch(0.8, 0.105, 78), eye: oklch(0.27, 0.035, 60), glowA: 0 },
+  },
+  sage: {
+    light: { body: oklch(0.59, 0.085, 152), eye: oklch(0.99, 0.006, 152), glowA: 0.35 },
+    dark: { body: oklch(0.625, 0.085, 152), eye: oklch(0.995, 0.004, 152), glowA: 0.4 },
+  },
+  teal: {
+    light: { body: oklch(0.57, 0.075, 200), eye: oklch(0.99, 0.006, 200), glowA: 0.35 },
+    dark: { body: oklch(0.615, 0.075, 200), eye: oklch(0.995, 0.004, 200), glowA: 0.4 },
+  },
+};
+
+/** A color's name, as a picker says it. */
+export const botColorLabel = (color: BotColorName): string => color.charAt(0).toUpperCase() + color.slice(1);
+
+/** The paint of a bot of `color` (slate for none, or one a newer hub added), in the app's theme. */
+export const paintOf = (color: string | undefined, dark: boolean): Paint => {
+  const p = (BOT_PAINT as Record<string, { readonly light: Paint; readonly dark: Paint } | undefined>)[color ?? "slate"] ?? BOT_PAINT.slate;
+  return dark ? p.dark : p.light;
 };
 
 /** The eyes (Button): tall rounded-square ovals, half `hx` apart, their tops leaning in `tilt`°, never out (which

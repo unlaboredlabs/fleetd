@@ -1,5 +1,18 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PEBBLE, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, BOT_COLORS, BOT_PAINT, paintOf, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
+
+/** WCAG's contrast ratio of two "#rrggbb". */
+const contrast = (a: string, b: string): number => {
+  const lum = (hex: string) => {
+    const n = Number.parseInt(hex.slice(1), 16);
+    const [r, g, bl] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)) as [number, number, number];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+};
 
 const run = (r: Rig, seconds: number, calm = false, each?: (r: Rig) => void) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
@@ -20,8 +33,26 @@ const largestStep = (r: Rig, seconds: number): number => {
 };
 
 describe("the bot", () => {
-  it("paints one palette, light and dark, as hex", () => {
-    for (const p of [PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
+  it("paints each color, light and dark, as hex, its eyes legible and its body clear of the ground", () => {
+    expect(Object.keys(BOT_PAINT)).toEqual([...BOT_COLORS]);
+    for (const c of BOT_COLORS) {
+      for (const [p, ground] of [[BOT_PAINT[c].light, "#ffffff"], [BOT_PAINT[c].dark, "#1c1c1b"]] as const) {
+        for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
+        expect(contrast(p.body, p.eye), `${c}'s eyes`).toBeGreaterThan(3.3);
+        expect(contrast(p.body, ground), `${c} on its ground`).toBeGreaterThan(1.9);
+      }
+    }
+  });
+
+  it("paints slate for no color and for one it doesn't know", () => {
+    expect(paintOf(undefined, false)).toBe(BOT_PAINT.slate.light);
+    expect(paintOf("neon", true)).toBe(BOT_PAINT.slate.dark);
+    expect(paintOf("sage", true)).toBe(BOT_PAINT.sage.dark);
+  });
+
+  it("offers the contracts' colors, in their order", () => {
+    const schema = JSON.parse(readFileSync(join(__dirname, "contracts/schema/ProjectSummary.json"), "utf8")) as { $defs: { BotColor: { enum: string[] } } };
+    expect([...BOT_COLORS]).toEqual(schema.$defs.BotColor.enum);
   });
 
   it("draws every state as a body and two closed eyes", () => {
