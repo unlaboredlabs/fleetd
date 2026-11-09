@@ -51,6 +51,9 @@ pub struct FakeRunner {
     notices: Arc<tokio::sync::Notify>,
     /// Kills the idle process ([`FakeRunner::kill`]).
     kills: Arc<tokio::sync::Notify>,
+    /// False: claude isn't logged in on the machine, as on a new cloud machine; a probe with a key or token in its
+    /// env is logged in on that, as claude is.
+    pub own_login: bool,
 }
 
 impl FakeRunner {
@@ -98,6 +101,7 @@ impl FakeRunner {
             hosted: false,
             notices: Arc::new(tokio::sync::Notify::new()),
             kills: Arc::new(tokio::sync::Notify::new()),
+            own_login: true,
         }
     }
 
@@ -127,9 +131,13 @@ impl FakeRunner {
 }
 
 impl Runner for FakeRunner {
-    fn probe<'a>(&'a self, _env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
-        Box::pin(async {
-            RunnerInfo {
+    fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
+        Box::pin(async move {
+            let on_account = env.iter().any(|(k, _)| {
+                k == fleetd_contracts::claude_accounts::OAUTH_TOKEN_ENV
+                    || k == fleetd_contracts::claude_accounts::API_KEY_ENV
+            });
+            let info = RunnerInfo {
                 runner: RunnerKind::Claude,
                 version: Some("2.1.302 (Claude Code)".into()),
                 supported: ">=2.1.300, <2.2.0".into(),
@@ -145,6 +153,15 @@ impl Runner for FakeRunner {
                 self_update: None,
                 sandbox: None,
                 account_overrides: None,
+            };
+            if self.own_login || on_account {
+                return info;
+            }
+            RunnerInfo {
+                login: LoginStatus::LoggedOut,
+                login_kind: Some("none".into()),
+                problem: Some("claude is not logged in. Fix: claude auth login".into()),
+                ..info
             }
         })
     }

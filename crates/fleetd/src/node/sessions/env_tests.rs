@@ -1118,3 +1118,41 @@ async fn a_renewed_mcp_key_reaches_a_running_agents_next_turn() {
     assert!(spawned[1].resume, "it resumes its conversation");
     assert_eq!(header(&spawned[1]), "Bearer at-2");
 }
+
+/// A cloud machine's claude has no login of its own: the hub seals its Claude account to the node, and its sessions
+/// run on that. Read as logged out, the hub showed boat-1 degraded and refused every message to its agents. Its runner
+/// is logged in on the account the node holds, and logged out again once the hub takes it back.
+#[tokio::test]
+async fn a_machine_whose_claude_isnt_logged_in_runs_on_the_account_the_hub_sealed_to_it() {
+    use fleetd_contracts::claude_accounts::{ClaudeAccount, ClaudeSecretSet};
+    use fleetd_contracts::sessions::LoginStatus;
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut runner = FakeRunner::fixture("init-partial-two-turns");
+    runner.own_login = false;
+    let node = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    let info = node.service.reprobe().await;
+    assert_eq!(info.login, LoginStatus::LoggedOut);
+    assert!(info.problem.is_some());
+
+    let set = |sealed: Option<fleetd_contracts::secrets::SealedSecret>| {
+        SessionCall::ClaudeAccountSecret {
+            account: ClaudeAccount::Hub,
+            set: sealed.map(|s| ClaudeSecretSet {
+                sealed: Some(s),
+                endpoint: None,
+            }),
+        }
+    };
+    node.ok(set(Some(crate::node::project_env::seal(
+        &home,
+        "sk-ant-api03-hub",
+    ))))
+    .await;
+    let info = node.service.reprobe().await;
+    assert_eq!(info.login, LoginStatus::LoggedIn);
+    assert_eq!(info.problem, None);
+
+    node.ok(set(None)).await;
+    assert_eq!(node.service.reprobe().await.login, LoginStatus::LoggedOut);
+}
