@@ -41,7 +41,7 @@ const ADDED: MemoryImportOutput = {
   skipped: [
     { text: "Speaks English.", why: "duplicate" },
     { text: "Deploy notes: the staging key is [secret]", why: "secret" },
-    { text: "Ledgerline: a bookkeeping API in Rust.", why: "full" },
+    { text: "Ledgerline: a bookkeeping API in TypeScript.", why: "full" },
   ],
   chars: 3990,
   cap: 4000,
@@ -159,7 +159,7 @@ it("adds a pasted answer to your memory and says how many went in and what didn'
   expect(status()).toContain("Added 3 entries to your memory. Skipped 1 already there, 1 holding a secret.");
   expect(status()).toContain("1 entry didn't fit under your memory's cap of 4,000 characters");
   const left = Array.from(document.querySelectorAll('ul[aria-label="Left out"] li')).map((li) => li.textContent);
-  expect(left).toEqual(["Ledgerline: a bookkeeping API in Rust."]);
+  expect(left).toEqual(["Ledgerline: a bookkeeping API in TypeScript."]);
   expect(status()).not.toContain("[secret]");
   // The box is cleared for the next one, and the memory list reads again.
   expect(box.value).toBe("");
@@ -200,7 +200,7 @@ it("never says your memory already has it when nothing fit, or only secrets were
     added: [],
     skipped: [
       { text: "Speaks English.", why: "duplicate" },
-      { text: "Ledgerline: a bookkeeping API in Rust.", why: "full" },
+      { text: "Ledgerline: a bookkeeping API in TypeScript.", why: "full" },
       { text: "Harbor: a docs site builder.", why: "full" },
     ],
     chars: 15990,
