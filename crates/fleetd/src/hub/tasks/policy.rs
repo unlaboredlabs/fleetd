@@ -35,6 +35,7 @@ pub const WORKER_OPS: &[&str] = &[
     "chat_file",
     "artifact_publish",
     "artifact_read",
+    "vault_items",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser), and a Navi's purchases in them.
 pub const NODE_OPS: &[&str] = &[

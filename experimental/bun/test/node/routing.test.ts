@@ -59,3 +59,17 @@ test("a screens change restarts the node once no screen is live and its agents a
     home.done();
   }
 });
+
+test("an agent can't make the node's vault fills itself: only the node hosting its browser asks the hub; vault_items is its own", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const relay = new LeadRelay();
+  relay.call = async (frame) => (sent.push(frame.call), { id: frame.id, result: { items: [] } });
+  const hooks = { relay, identify: () => ({ kind: "session" as const, session: "t1" }), maskFor: () => new Masker() };
+  for (const op of ["vault_fill", "vault_filled"]) {
+    const answer = await answerLine(line({ op, sessionId: `B${"0".repeat(32)}`, item: "Shop", field: "password", page: "https://shop.devbox.test/" }), 42, hooks);
+    expect(answer).toMatchObject({ t: "lead_result", id: "m1", error: { code: "forbidden", message: `${op} is the node's own call for a browser session` } });
+  }
+  expect(sent).toEqual([]);
+  expect(await answerLine(line({ op: "vault_items", kind: "login" }), 42, hooks)).toEqual({ t: "lead_result", id: "m1", result: { items: [] } });
+  expect(sent).toEqual([{ op: "vault_items", kind: "login" }]);
+});

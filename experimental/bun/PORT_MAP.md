@@ -406,9 +406,9 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] session call `one_password_token` → `src/node/sessions` <!-- session:session call `one_password_token` -->
 - [x] session call `one_password_test` → `src/node/sessions` <!-- session:session call `one_password_test` -->
 - [x] session call `one_password_cards` → `src/node/sessions` <!-- session:session call `one_password_cards` -->
-- [ ] session call `vault_adopt` → `src/node/sessions` <!-- session:session call `vault_adopt` -->
-- [ ] session call `vault_import_read` → `src/node/sessions` <!-- session:session call `vault_import_read` -->
-- [ ] session call `vault_import_search` → `src/node/sessions` <!-- session:session call `vault_import_search` -->
+- [x] session call `vault_adopt` → `src/node/sessions` <!-- session:session call `vault_adopt` -->
+- [x] session call `vault_import_read` → `src/node/sessions` <!-- session:session call `vault_import_read` -->
+- [x] session call `vault_import_search` → `src/node/sessions` <!-- session:session call `vault_import_search` -->
 - [x] session call `claude_models` → `src/node/sessions` <!-- session:session call `claude_models` -->
 - [x] session call `project_worktrees` → `src/node/sessions` <!-- session:session call `project_worktrees` -->
 - [x] session call `launch` → `src/node/sessions` <!-- session:session call `launch` -->
@@ -540,7 +540,7 @@ CDP proxy, screens, devices, the agents' Mac, session relays.
 - [x] browser call `session_start` → `src/node/browser` <!-- browser:browser call `session_start` -->
 - [x] browser call `session_end` → `src/node/browser` <!-- browser:browser call `session_end` -->
 - [x] browser call `fill_credential` → `src/node/browser` <!-- browser:browser call `fill_credential` -->
-- [ ] browser call `fill_address` → `src/node/browser` <!-- browser:browser call `fill_address` -->
+- [x] browser call `fill_address` → `src/node/browser` <!-- browser:browser call `fill_address` -->
 - [x] browser call `request_takeover` → `src/node/browser` <!-- browser:browser call `request_takeover` -->
 - [x] browser call `desktop` → `src/node/desktop` <!-- browser:browser call `desktop` -->
 - [x] browser call `device` → `src/node/device` <!-- browser:browser call `device` -->
@@ -797,6 +797,10 @@ every `fleetd` command.
 - [x] agent-mcp tool `session_end` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `session_end` -->
 - [x] agent-mcp tool `request_takeover` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_takeover` -->
 - [x] agent-mcp tool `fill_credential` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `fill_credential` -->
+- [ ] agent-mcp tool `fill_address` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `fill_address` -->
+- [ ] agent-mcp tool `vault_items` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `vault_items` -->
+- [ ] agent-mcp tool `vault_import_search` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `vault_import_search` -->
+- [ ] agent-mcp tool `vault_import_propose` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `vault_import_propose` -->
 - [x] agent-mcp tool `purchase_request` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_request` -->
 - [x] agent-mcp tool `purchase_fill` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `purchase_fill` -->
 - [x] agent-mcp tool `request_secure_input` → `src/cli/agent_mcp` <!-- agent-mcp:agent-mcp tool `request_secure_input` -->
