@@ -63,7 +63,7 @@ const ROWS: readonly ((f: Fixture) => JsonObject)[] = [
   // Nothing merged this week on a repo the metrics read: a real zero, with no share. The idle row's repos aren't read.
   (f) => ({
     state: "working",
-    warning: "`rust (macos)` is red on main, no fix under way",
+    warning: "`e2e (webkit)` is red on main, no fix under way",
     counts: { waitingOnYou: 0, inReview: 0, working: 0, landing: 1, idle: 0, done: 0 },
     items: [item(f, "landing", "Lockfile bump for the CI image", 30, { taskId: "T9", pr: pr(88) })],
     agentsRunning: 0,

@@ -179,8 +179,8 @@ it("ranks below what the lead waits on you for", async () => {
 });
 
 it("keeps a red main in view after it", async () => {
-  await mount([msg(1, { text: "The new checkout is up." })], { nudges: [nudge(1, "the new checkout")] }, { state: "working", warning: "`rust (macos)` is red on main" });
-  expect(line()).toMatch(/1 to look at: the new checkout.*Show.*Dismiss.*rust \(macos\) is red on main/);
+  await mount([msg(1, { text: "The new checkout is up." })], { nudges: [nudge(1, "the new checkout")] }, { state: "working", warning: "`e2e (webkit)` is red on main" });
+  expect(line()).toMatch(/1 to look at: the new checkout.*Show.*Dismiss.*e2e \(webkit\) is red on main/);
 });
 
 it("shows one again when the lead flags it again after you saw it", async () => {
