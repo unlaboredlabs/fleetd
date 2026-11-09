@@ -43,6 +43,7 @@ import { forgetSignins, signinsKept } from "../actions/signins.ts";
 import * as skills from "../actions/skills.ts";
 import * as state from "./state.ts";
 import { Steers } from "./steers.ts";
+import { Stages } from "../../shared/stages.ts";
 import { tilde } from "../runner/claude/setup.ts";
 import { HELPER, NO_HELPER } from "../runner/helper.ts";
 import * as setup from "../worktree/setup.ts";
@@ -963,6 +964,7 @@ export class SessionService {
 
   async #launch(launch: SessionLaunch): Promise<SessionOutput> {
     const id = launch.sessionId;
+    const stages = new Stages("node launch", id);
     const existing = this.store.session(id);
     if (existing) return { kind: "launched", summary: existing.summary };
     if (!pathSafe(id)) throw invalid(`session id ${id} has characters a path can't hold`);
@@ -976,6 +978,7 @@ export class SessionService {
     // this launch.
     const token = launch.orderId ? orderVarsForSpawn(this.home, launch.projectId, launch.orderId).vars.find(([n]) => n === "GITHUB_TOKEN") : undefined;
     if (token) worktree.useToken(root, token[1]);
+    stages.done("checks");
     // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check. The head the
     // hub named needs no remote when this machine has its commit (its writer pushed from here); else the remote is
     // asked while the base fetches.
@@ -991,6 +994,7 @@ export class SessionService {
     let base: worktree.Base | undefined;
     if (ws.type !== "root" && !taken) base = await worktree.freshBase(root, ws.baseRef);
     const prHead = await head;
+    stages.done("fetch");
     // A retry that arrived while this one fetched.
     const raced = this.store.session(id);
     if (raced) return { kind: "launched", summary: raced.summary };
@@ -1027,6 +1031,7 @@ export class SessionService {
       cwd = join(this.home, "isolated");
       mkdirPrivate(cwd);
     }
+    stages.done("worktree");
     const at = nowIso();
     const profile = launch.profile ?? claude.profileOf(launch.model ?? "", launch.effort ?? "high");
     const own = claude.profileModel(profile);
@@ -1081,6 +1086,7 @@ export class SessionService {
       row.local.setupPending = true;
     }
     this.store.commit(row, [], false);
+    stages.done("store");
     const dir = join(this.home, "sessions", id);
     if (launch.mcpRole && launch.mcp) this.#keepMcp(id, { role: launch.mcpRole, config: launch.mcp });
     try {
@@ -1088,10 +1094,16 @@ export class SessionService {
     } catch (error) {
       throw new Refusal("internal", `cannot keep the session's skills: ${(error as Error).message}`);
     }
+    stages.done("record");
     // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
     if (plan) {
       if (this.#recordRun(id, launch.runId, prompt)) this.#setUpThenSend(id, launch.runId, prompt, "plain", plan);
-    } else await this.#beginRun(id, launch.runId, prompt, "plain");
+      stages.done("setup queued");
+    } else {
+      await this.#beginRun(id, launch.runId, prompt, "plain");
+      stages.done("run");
+    }
+    stages.end();
     const reported = base && { ref: base.baseRef, sha: base.sha, ...(base.fetchedAt ? { fetchedAt: base.fetchedAt } : {}), ...(base.error ? { error: base.error } : {}) };
     return { kind: "launched", summary: this.#session(id).summary, ...(reported ? { base: reported } : {}) };
   }
@@ -1188,16 +1200,25 @@ export class SessionService {
   /** The live process, spawning (first start) or resuming the session when there is none. One spawn per session at a
    * time, so two sends never start two processes. */
   #ensureLive(id: string): Promise<[Live, string | undefined]> {
+    const stages = new Stages("node spawn", id);
     const prior = this.#spawning.get(id) ?? Promise.resolve();
-    const next = prior.catch(() => {}).then(() => this.#spawn(id));
+    const next = prior
+      .catch(() => {})
+      .then(() => {
+        stages.done("spawn lock");
+        return this.#spawn(id, stages);
+      });
     this.#spawning.set(id, next);
     return next;
   }
 
-  async #spawn(id: string): Promise<[Live, string | undefined]> {
+  async #spawn(id: string, stages: Stages): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
     if (current && !current.closing) return [current, undefined];
-    if (current) await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
+    if (current) {
+      await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
+      stages.done("exit wait");
+    }
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
     if (!this.config.nativeBin) throw new Refusal("runner_unavailable", NO_HELPER);
     const row = this.#session(id);
@@ -1214,6 +1235,7 @@ export class SessionService {
       const frame = this.store.commit(row, [], true);
       if (frame) this.#machine(frame);
     }
+    stages.done("worktree");
     if (!existsSync(row.local.cwd)) throw invalid(`the session's workspace ${row.local.cwd} is missing`);
     const spec = this.#spec(row, resume, env);
     // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
@@ -1225,6 +1247,7 @@ export class SessionService {
     }
     const file = claude.sessionFile(claude.configDir(spec.env), spec.cwd, id);
     if (file) spec.resume = existsSync(file);
+    stages.done("spec");
     const mark = marker(id);
     let link: HostLink;
     try {
@@ -1244,6 +1267,7 @@ export class SessionService {
         throw new Refusal("runner_unavailable", `${this.config.claudeBin} was not found on PATH`, `install Claude Code: curl -fsSL https://claude.ai/install.sh | bash`);
       throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`);
     }
+    stages.done("session host");
     row.local.started = true;
     row.local.pid = link.pid;
     const start = startOf(link.pid);
@@ -1252,6 +1276,7 @@ export class SessionService {
     const live = this.#newLive(link, this.#secrets(row));
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
+    stages.end();
     return [live, note];
   }
 
