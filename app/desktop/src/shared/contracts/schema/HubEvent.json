@@ -441,6 +441,11 @@
           "type": "string"
         },
         {
+          "const": "chat.sections",
+          "description": "A person made, renamed, moved or removed a section of chats, or moved a chat between them; `data` is\n`people::ChatSectionsData`. Only that person's own devices see it; chat_sections_get reads the sections.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"

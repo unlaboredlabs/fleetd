@@ -1177,6 +1177,18 @@
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
     },
+    "ChatSectionsData": {
+      "description": "`chat.sections`: whose sections of chats changed.",
+      "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
+    },
     "CheckerNote": {
       "description": "What a Navi's approval checker said of an action it didn't let through.",
       "properties": {
@@ -1801,6 +1813,9 @@
         "chat.pins": {
           "$ref": "#/$defs/ChatPinsData"
         },
+        "chat.sections": {
+          "$ref": "#/$defs/ChatSectionsData"
+        },
         "chat.waiting": {
           "$ref": "#/$defs/ProjectChatState"
         },
@@ -1970,6 +1985,7 @@
         "change.state",
         "chat.message",
         "chat.pins",
+        "chat.sections",
         "chat.waiting",
         "checklist.changed",
         "ci.main",
