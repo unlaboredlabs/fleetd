@@ -302,6 +302,48 @@ async function cards() {
   return out;
 }
 
+// The kinds fleetd's vault imports, by 1Password category.
+const IMPORTS = ["Login", "Password", "CreditCard", "Identity"];
+
+// The items a vault import may take whose title or website has `query` in it: overviews only, never a value.
+async function search(query) {
+  vaults ??= await client.vaults.list();
+  const want = String(query ?? "").toLowerCase();
+  const out = [];
+  for (const vault of vaults) {
+    if (!items.has(vault.id)) items.set(vault.id, await client.items.list(vault.id));
+    const all = items.get(vault.id);
+    for (const item of all.filter((i) => IMPORTS.includes(i.category))) {
+      const sites = (item.websites ?? []).map((w) => w.url).filter(Boolean);
+      if (want && ![item.title, ...sites].some((t) => String(t).toLowerCase().includes(want))) continue;
+      const plain = (s) => !/[/?\r\n]/.test(s);
+      const vaultPart = plain(vault.title) && vaults.filter((v) => v.title === vault.title).length === 1 ? vault.title : vault.id;
+      const itemPart = plain(item.title) && all.filter((i) => i.title === item.title).length === 1 ? item.title : item.id;
+      out.push({ ref: `op://${vaultPart}/${itemPart}`, title: item.title, category: item.category, vault: vault.title, sites });
+      if (out.length >= 200) return out;
+    }
+  }
+  return out;
+}
+
+// op://vault/item: an item's fields, for an import the person confirmed; the node seals them to the hub.
+async function read(reference) {
+  const [vaultName, itemName] = reference.slice("op://".length).split("?")[0].split("/");
+  vaults ??= await client.vaults.list();
+  const vault = named(vaults, vaultName, "vault");
+  if (!items.has(vault.id)) items.set(vault.id, await client.items.list(vault.id));
+  const overview = named(items.get(vault.id), itemName, "item");
+  if (!IMPORTS.includes(overview.category)) throw new Error(`${itemName} is not a login, card or identity item`);
+  const item = await client.items.get(vault.id, overview.id);
+  return {
+    title: item.title,
+    category: item.category,
+    sites: (item.websites ?? []).map((w) => w.url).filter(Boolean),
+    notes: item.notes ?? "",
+    fields: (item.fields ?? []).map((f) => ({ id: f.id, title: f.title ?? "", type: f.fieldType, value: f.value ?? "", details: f.details?.content })),
+  };
+}
+
 for await (const line of createInterface({ input: process.stdin })) {
   if (token === undefined) {
     token = JSON.parse(line).token ?? "";
@@ -310,8 +352,12 @@ for await (const line of createInterface({ input: process.stdin })) {
   let answer;
   try {
     client ??= await createClient({ auth: token, integrationName: "fleetd", integrationVersion: "1" });
-    const { ref, vaults: list, card: cardRef, cards: listCards, identity: identityRef } = JSON.parse(line);
-    if (list) {
+    const { ref, vaults: list, card: cardRef, cards: listCards, identity: identityRef, search: query, read: readRef } = JSON.parse(line);
+    if (query !== undefined) {
+      answer = { items: await search(query) };
+    } else if (readRef) {
+      answer = { item: await read(readRef) };
+    } else if (list) {
       vaults ??= await client.vaults.list();
       answer = { vaults: vaults.map((v) => v.title) };
     } else if (listCards) {

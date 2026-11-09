@@ -109,7 +109,10 @@ const render = async (page: "settings" | "admin", admin: boolean) => {
 };
 
 const texts = () => [...document.querySelectorAll("button")].map((b) => b.textContent.trim());
-const rowNamed = (name: string) => [...document.querySelectorAll("button")].find((b) => b.textContent.startsWith(name));
+const rowNamed = (name: string) => {
+  const row = document.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}']`);
+  return row === null ? undefined : { textContent: row.textContent, open: row.querySelector("button") as HTMLElement };
+};
 const click = async (el: HTMLElement) => {
   await act(async () => {
     el.click();
@@ -143,10 +146,10 @@ it("says on each of a project's rows whether it is off, who changed it last and 
 
 it("opens one of the project's own skills' history in the panel, which has no Skills list of its own", async () => {
   await render("settings", false);
-  await click(rowNamed("triage") as HTMLElement);
+  await click((rowNamed("triage") as { open: HTMLElement }).open);
   // A repo skill's history is the repo's.
   expect(texts()).not.toContain("History, restore or turn off");
-  await click(rowNamed("checkout-qa") as HTMLElement);
+  await click((rowNamed("checkout-qa") as { open: HTMLElement }).open);
   await click([...document.querySelectorAll("button")].find((b) => b.textContent === "History, restore or turn off") as HTMLElement);
   expect(window.location.hash).toBe("#/project/devbox/storefront/skills/checkout-qa");
 });
@@ -185,7 +188,7 @@ it("lets an admin install, update and remove hub-wide skills on Every project â€
   expect(texts()).toContain("Install from a sourceâ€¦");
   const pr = rowNamed("pr-review");
   expect(pr).toBeDefined();
-  await click(pr as HTMLElement);
+  await click((pr as { open: HTMLElement }).open);
   expect(texts()).toEqual(expect.arrayContaining(["Update", "Delete"]));
   await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Update") as HTMLElement);
   expect(sent("skill_update")).toEqual([{ scope: "global", name: "pr-review" }]);

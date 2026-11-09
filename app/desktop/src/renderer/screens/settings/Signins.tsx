@@ -10,9 +10,8 @@ import { errorText, useHubCall, useLive } from "./hub";
 import { navigate } from "../shell/navigation";
 import { projectSkills } from "../shell/routes";
 import { revealNext } from "./search";
-import { Setting } from "./parts";
+import { DangerButton, SettingsRow } from "./parts";
 import { PROJECT_TOOLS } from "../projects/model";
-import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
 
@@ -25,21 +24,19 @@ export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: bo
   const [asking, setAsking] = useState(false);
   const [done, setDone] = useState(false);
   return (
-    <Setting
+    <SettingsRow
       reveal="projects.signins"
-      label="Sign-ins"
-      help={`Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.`}
-    >
-      {kept === false ? (
-        done ? null : (
-          <Text size="sm" tone="quiet">
-            No sign-ins kept yet.
-          </Text>
+      title="Sign-ins"
+      line={
+        done ? (
+          <span role="status">Forgotten. Its next browser session starts signed out of every site.</span>
+        ) : (
+          `Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.${kept === false ? " No sign-ins kept yet." : ""}`
         )
-      ) : (
-        <div className={s.inline}>
-          <Button
-            variant="danger"
+      }
+      control={
+        kept === false || done ? undefined : (
+          <DangerButton
             disabled={!live}
             onClick={() => {
               setDone(false);
@@ -47,16 +44,10 @@ export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: bo
             }}
           >
             Forget sign-ins…
-          </Button>
-        </div>
-      )}
-      {done ? (
-        <div role="status">
-          <Text size="sm" tone="quiet">
-            Forgotten. Its next browser session starts signed out of every site.
-          </Text>
-        </div>
-      ) : null}
+          </DangerButton>
+        )
+      }
+    >
       {asking ? (
         <ForgetDialog
           projectRef={projectRef}
@@ -67,7 +58,7 @@ export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: bo
           }}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }
 
@@ -118,13 +109,13 @@ function ForgetDialog(props: { projectRef: Ref; machine: string; onClose: (forgo
 /** What the lead has learned to do: its skills are listed in Agents' Skills, each one's history in the panel. */
 export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
   return (
-    <Setting
+    <SettingsRow
       reveal="projects.skills"
-      label="Skills"
-      help="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
-    >
-      <div className={s.inline}>
+      title="Skills"
+      line="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
+      control={
         <Button
+          variant="secondary"
           onClick={() => {
             revealNext("agents.skills");
             navigate(projectSkills(projectRef));
@@ -132,7 +123,7 @@ export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
         >
           Open its skills
         </Button>
-      </div>
-    </Setting>
+      }
+    />
   );
 }

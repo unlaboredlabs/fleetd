@@ -9,11 +9,12 @@
 import { useState, type ReactNode } from "react";
 import type { HostCheck, MachineRolesEntry, SessionHost, ToolInput } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
-import { Button, Select, Switch, Text } from "../../ui";
+import { Button, Select, Text, Toggle } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
 import { RunOn } from "../setup/Guide";
 import { navigate } from "../shell/navigation";
+import { GroupNote, SettingsRow } from "./parts";
 import { capChoices, hostsNote, sessionsLine } from "./machinesModel";
 import { daysChoices, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
@@ -22,18 +23,13 @@ const noInput = {};
 
 type Echo = { readonly ok: boolean; readonly text: string } | null;
 
+/** What a change did next, or why it didn't, as a note in its group. */
 function EchoLine({ echo }: { echo: Echo }) {
   if (echo === null) return null;
-  return echo.ok ? (
-    <Text size="xs" tone="quiet">
-      {echo.text}
-    </Text>
-  ) : (
-    <p role="alert" className={s.alertLine}>
-      <Text size="xs" tone="danger">
-        {echo.text}
-      </Text>
-    </p>
+  return (
+    <GroupNote tone={echo.ok ? "quiet" : "danger"}>
+      <span role={echo.ok ? "status" : "alert"}>{echo.text}</span>
+    </GroupNote>
   );
 }
 
@@ -66,7 +62,10 @@ export function useMachineSet<T extends MachineTool>(tool: T, machineId: string)
   return { set, disabled: !live || busy, echo: <EchoLine echo={echo} /> };
 }
 
-/** A machine's screens: a switch per kind it may open, what each needs, how many at once, and when an idle one ends. */
+/**
+ * A machine's screens, rows of its section: a switch per kind it may open with what each needs, how many at once, and
+ * when an idle one ends.
+ */
 export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
   const kind = useMachineSet("machine_screens_set", m.machineId);
   const cap = useMachineSet("machine_roles_set", m.machineId);
@@ -75,76 +74,66 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
   const wait = nodeWait(m);
   const note = hostsNote(m);
   return (
-    <div className={s.machineControls} data-screens={m.machineId}>
-      <div className={s.screenKinds}>
-        {kinds.map(({ host, label }) => {
-          const c = check(host);
-          const locked = lockedWhy(m, c);
-          return (
-            <Switch
-              key={host}
-              label={label}
-              description={stateLine(c)}
-              checked={switchOn(c)}
-              disabled={kind.disabled || locked !== null}
-              onCheckedChange={(on) => kind.set({ host, on })}
-              aria-label={`${label} screens on ${m.name}`}
-            />
-          );
-        })}
-      </div>
+    <div data-screens={m.machineId}>
       {kinds.map(({ host, label }) => {
-        const fix = fixOf(m, check(host));
-        return fix === null ? null : <RunOn key={host} where={`${m.name}, for ${label}`} command={fix} />;
+        const c = check(host);
+        const locked = lockedWhy(m, c);
+        const fix = fixOf(m, c);
+        return (
+          <SettingsRow
+            key={host}
+            title={label}
+            // Offline is the one reason a switch can't move that its line doesn't already say (the rest are below).
+            line={m.online ? stateLine(c) : `${stateLine(c)}. ${m.name} is offline: it changes once it's back.`}
+            control={<Toggle checked={switchOn(c)} disabled={kind.disabled || locked !== null} onCheckedChange={(on) => kind.set({ host, on })} aria-label={`${label} screens on ${m.name}`} />}
+          >
+            {fix === null ? null : <RunOn where={`${m.name}, for ${label}`} command={fix} />}
+          </SettingsRow>
+        );
       })}
-      {wait === "restarting" ? (
-        <Text size="xs" tone="quiet">
-          {`${m.name}'s node is restarting: these come back once it links again.`}
-        </Text>
-      ) : null}
+      {wait === "restarting" ? <GroupNote>{`${m.name}'s node is restarting: these come back once it links again.`}</GroupNote> : null}
       {wait === "old" ? (
-        <>
-          <div className={s.inline}>
-            <Text size="xs" tone="quiet">
-              {`Update ${m.name}'s fleetd to change these.`}
-            </Text>
+        <SettingsRow
+          title={`Update ${m.name}'s fleetd to change these.`}
+          control={
             <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.updates" })}>
               Open Updates
             </Button>
-          </div>
+          }
+        >
           {m.nodeRestart === undefined ? null : (
             <>
-              <Text size="xs" tone="quiet">
+              <Text size="sm" tone="quiet">
                 {`Still the same after updating? Run this on ${m.name}:`}
               </Text>
               <CommandLine command={m.nodeRestart} />
             </>
           )}
-        </>
+        </SettingsRow>
       ) : null}
       {kind.echo}
-      <div className={s.inline}>
-        <Text size="xs" tabular>
-          {sessionsLine(m)}
-        </Text>
-        <Select
-          aria-label={`Most screens ${m.name} hosts at once`}
-          className={s.machineCap}
-          value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
-          options={capChoices(m)}
-          disabled={cap.disabled}
-          onValueChange={(v) => cap.set(v === "auto" ? { autoSessions: true } : { maxSessions: Number(v) })}
-        />
-      </div>
-      {note === null ? null : (
-        <Text size="xs" tone="quiet">
-          {note}
-        </Text>
-      )}
+      <SettingsRow
+        title="At once"
+        line={sessionsLine(m)}
+        control={
+          <Select
+            aria-label={`Most screens ${m.name} hosts at once`}
+            className={s.machineCap}
+            value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
+            options={capChoices(m)}
+            disabled={cap.disabled}
+            onValueChange={(v) => cap.set(v === "auto" ? { autoSessions: true } : { maxSessions: Number(v) })}
+          />
+        }
+      >
+        {note === null ? null : (
+          <Text size="sm" tone="quiet">
+            {note}
+          </Text>
+        )}
+      </SettingsRow>
       {cap.echo}
-      <Text size="xs" tone="quiet">
-        {idleLine(m)}
-      </Text>
+      <GroupNote>{idleLine(m)}</GroupNote>
     </div>
   );
 }
@@ -158,10 +147,10 @@ export function Recordings() {
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo>(null);
   const retention = read.data?.retention;
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
-  if (read.error) return <Text tone="danger">{`Couldn't read it: ${errorText(read.error)}`}</Text>;
-  if (read.data === undefined) return <Text tone="quiet">Loading…</Text>;
-  if (retention === undefined) return <Text tone="quiet">Update the hub&apos;s fleetd to change this here.</Text>;
+  if (!live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
+  if (read.error) return <GroupNote tone="danger">{`Couldn't read it: ${errorText(read.error)}`}</GroupNote>;
+  if (read.data === undefined) return <GroupNote>Loading…</GroupNote>;
+  if (retention === undefined) return <GroupNote>Update the hub&apos;s fleetd to change this here.</GroupNote>;
   const set = (retentionDays: number) => {
     setBusy(true);
     setEcho(null);
@@ -177,12 +166,13 @@ export function Recordings() {
       });
   };
   return (
-    <div className={s.stack} data-screens-retention>
-      <div className={s.inline}>
-        <Text size="sm">Keep screen recordings for</Text>
-        <Select aria-label="Keep recordings for" className={s.machineCap} value={String(retention.retentionDays)} options={daysChoices(retention.retentionDays)} disabled={busy} onValueChange={(v) => set(Number(v))} />
-      </div>
+    <>
+      <SettingsRow
+        title="Keep screen recordings for"
+        data={{ "data-screens-retention": "" }}
+        control={<Select aria-label="Keep recordings for" className={s.machineCap} value={String(retention.retentionDays)} options={daysChoices(retention.retentionDays)} disabled={busy} onValueChange={(v) => set(Number(v))} />}
+      />
       <EchoLine echo={echo} />
-    </div>
+    </>
   );
 }

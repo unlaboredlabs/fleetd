@@ -427,12 +427,3 @@ test.skipIf(!chrome)("without a token a fill says where a person saves one, and 
   expect(JSON.stringify(tree)).toContain("***filled***");
   expect(TOKEN).toStartWith("ops_");
 });
-
-test("fill_credential takes item and field, or ref: a vault item is refused plainly until the node fills from the vault", async () => {
-  const { referenceOf } = await import("../src/node/browser/credentials.ts");
-  expect(referenceOf({ ref: "op://Team/Shop/password", target: "#f" })).toBe("op://Team/Shop/password");
-  expect(() => referenceOf({ item: "Example", field: "password", target: "#f" })).toThrow("Filling a vault item needs");
-  for (const call of [{ target: "#f" }, { item: "Example", target: "#f" }, { item: "Example", field: "password", ref: "op://Team/Shop/password" }]) {
-    expect(() => referenceOf(call)).toThrow(/give item and field, or ref|item goes with its field/);
-  }
-});

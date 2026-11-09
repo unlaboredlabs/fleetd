@@ -24,6 +24,11 @@
   /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
      --accent-deep. */
   --bubble: #ececea;
+  /* A Settings group: one soft fill under a section's rows, no lines between them (DESIGN.md). Controls on it are
+     --raised. */
+  --group: #f4f4f2;
+  /* Danger's one pill (Delete project, Remove machine): white words on it. */
+  --danger-fill: #c4302b;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
   --control-border: #7a7a75;
@@ -97,6 +102,8 @@
   --hairline: #323230;
   --border: #4a4a46;
   --bubble: #30302e;
+  --group: #262625;
+  --danger-fill: #b23a35;
   --control-border: #8a8a85;
   --text: #ededea;
   --quiet: #ababa5;
@@ -198,6 +205,8 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
+  /* A Settings group's corners. */
+  --radius-group: 12px;
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
   --float-shadow: 0 8px 28px var(--shadow), 0 0 0 1px var(--hairline);

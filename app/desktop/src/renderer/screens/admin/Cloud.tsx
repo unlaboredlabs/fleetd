@@ -10,9 +10,9 @@ import { useEffect, useState } from "react";
 import type { CloudView, ToolOutput } from "../../../shared/contracts";
 import { callKey } from "../../src/data/queries";
 import { useDataLayer, useHub } from "../../src/data/react";
-import { Button, Checkbox, Dialog, Field, Input, Select, Switch, Text, toast } from "../../ui";
+import { Button, Checkbox, Dialog, Field, Input, Select, Text, toast } from "../../ui";
 import { errorText, useHubCall, useRefetch } from "../settings/hub";
-import { PagePart, Setting, useProjects } from "../settings/parts";
+import { DangerButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow, useProjects } from "../settings/parts";
 import { awakeCount, cloudStatusLine, costPreview, heldLine, machineLine, money, parseDollars, resettable, stateTone, stateWord, stopAllLine } from "./cloudModel";
 import { useNow } from "../live";
 import { useCloud } from "./useCloud";
@@ -40,54 +40,48 @@ export function CloudGroup() {
   const status = cloudStatusLine(cloud);
   const held = heldLine(cloud);
   return (
-    <section className={`${a.section} ${a.machines}`} aria-labelledby="cloud-machines-list" data-cloud-group="">
-      <div className={a.groupHead}>
-        <div className={a.who}>
-          <Text strong id="cloud-machines-list">
-            boat.dev
-          </Text>
-          <Text size="xs" tone="quiet">
-            {status === null ? "Cloud machines" : `${status}${cloud.enabled ? "" : ": no work goes to them"}`}
-          </Text>
-        </div>
-        {cloud.enabled || awakeCount(cloud) > 0 ? (
-          <Button size="sm" variant="ghost" className={a.danger} onClick={() => setStopping(true)}>
+    <SettingsSection
+      title="boat.dev"
+      data={{ "data-cloud-group": "" }}
+      intro={status === null ? "Cloud machines" : `${status}${cloud.enabled ? "" : ": no work goes to them"}`}
+      aside={
+        cloud.enabled || awakeCount(cloud) > 0 ? (
+          <DangerButton size="sm" onClick={() => setStopping(true)}>
             Stop all cloud machines
-          </Button>
-        ) : null}
-      </div>
+          </DangerButton>
+        ) : undefined
+      }
+    >
       {held === null ? null : (
-        <Text size="xs" tone="warning">
+        <GroupNote tone="warning">
           <HubText>{held}</HubText>
-        </Text>
+        </GroupNote>
       )}
-      <div className={a.list} role="list" aria-label="Cloud machines">
+      <SettingsList label="Cloud machines">
         {cloud.machines.map((m) => (
-          <div key={m.machineId} className={a.row} role="listitem" aria-label={m.machineId} data-cloud-machine={m.machineId} data-state={m.state}>
-            <div className={a.who}>
-              <div className={a.name}>
-                <Text strong>{m.machineId}</Text>
-                <Text size="xs" tone={stateTone(m.state)}>
-                  {stateWord(m.state)}
-                </Text>
-              </div>
-              <Text size="xs" tone={m.state === "broken" || m.state === "failed" ? "default" : "quiet"}>
-                {machineLine(m, nowMs)}
-              </Text>
-            </div>
-            <div className={a.controls}>
-              {resettable(m.state) ? (
+          <SettingsListRow
+            key={m.machineId}
+            name={m.machineId}
+            label={m.machineId}
+            state={{ word: stateWord(m.state), tone: stateTone(m.state) }}
+            data={{ "data-cloud-machine": m.machineId, "data-state": m.state }}
+            controls={
+              resettable(m.state) ? (
                 <Button size="sm" variant="ghost" onClick={() => setReset(m.machineId)}>
                   Reset
                 </Button>
-              ) : null}
-            </div>
-          </div>
+              ) : undefined
+            }
+          >
+            <Text size="sm" tone={m.state === "broken" || m.state === "failed" ? "default" : "quiet"}>
+              {machineLine(m, nowMs)}
+            </Text>
+          </SettingsListRow>
         ))}
-      </div>
+      </SettingsList>
       {stopping ? <StopAll cloud={cloud} onClose={() => setStopping(false)} /> : null}
       {reset === null ? null : <ResetDialog machineId={reset} onClose={() => setReset(null)} />}
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -192,28 +186,28 @@ export function CloudPart() {
   const cloud = useCloud();
   if (cloud === null) return null;
   return (
-    <PagePart
+    <SettingsSection
       title="Cloud machines"
       reveal="hub.cloud"
       intro="When every machine here is at its agent limit, work runs on a few sleeping boat.dev machines of your own account, within budgets you set."
     >
-      {cloud === undefined ? <Text tone="quiet">Loading…</Text> : <CloudSettings cloud={cloud} />}
-    </PagePart>
+      {cloud === undefined ? <GroupNote>Loading…</GroupNote> : <CloudSettings cloud={cloud} />}
+    </SettingsSection>
   );
 }
 
 const DOCS = "https://fleetd.sh/docs/cloud-machines/";
 
-/** The cloud machines' settings, here and inline in the setup step. */
+/** The cloud machines' settings, rows of their section here and inline in the setup step. */
 export function CloudSettings({ cloud }: { cloud: CloudView }) {
   return (
     <>
-      <Text size="sm" tone="quiet">
+      <GroupNote>
         Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can.{" "}
         <button type="button" className={a.textLink} onClick={() => void window.fleetd.openExternal(DOCS)}>
           What it costs and what boat.dev sees
         </button>
-      </Text>
+      </GroupNote>
       <KeySetting cloud={cloud} />
       {cloud.hasKey ? <PoolSettings cloud={cloud} /> : null}
     </>
@@ -261,24 +255,29 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
   const open = editing || !cloud.hasKey;
   const tested = cloud.keyTest;
   return (
-    <Setting
+    <SettingsRow
       reveal="hub.cloud.key"
-      label="boat.dev key"
-      help="An API key of your own boat.dev account, with only the actions the setup step lists. It is sealed on this computer to the hub: fleetd never shows it again, and no machine or agent gets it."
-    >
-      {cloud.hasKey ? (
-        <div className={s.inline}>
-          <Text size="sm">Saved, sealed to the hub.</Text>
-          <Button size="sm" disabled={busy !== null} onClick={() => void test()}>
-            {busy === "test" ? "Testing…" : "Test"}
-          </Button>
-          {editing ? null : (
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              Change
+      title="boat.dev key"
+      line={
+        cloud.hasKey
+          ? "Saved, sealed to the hub. fleetd never shows it again, and no machine or agent gets it."
+          : "An API key of your own boat.dev account, with only the actions the setup step lists. It is sealed on this computer to the hub: fleetd never shows it again, and no machine or agent gets it."
+      }
+      control={
+        cloud.hasKey ? (
+          <>
+            <Button size="sm" disabled={busy !== null} onClick={() => void test()}>
+              {busy === "test" ? "Testing…" : "Test"}
             </Button>
-          )}
-        </div>
-      ) : null}
+            {editing ? null : (
+              <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+                Change
+              </Button>
+            )}
+          </>
+        ) : undefined
+      }
+    >
       {cloud.hasKey && tested !== undefined ? (
         <Text size="sm" tone={tested.ok ? "success" : "danger"} data-key-test={tested.ok ? "ok" : "failed"}>
           <HubText>{tested.said}</HubText>
@@ -298,6 +297,11 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
                 Cancel
               </Button>
             ) : null}
+            {busy === null && key.trim() === "" ? (
+              <Text size="sm" tone="quiet">
+                Paste a key to save it.
+              </Text>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -308,7 +312,7 @@ function KeySetting({ cloud }: { cloud: CloudView }) {
           </Text>
         </p>
       )}
-    </Setting>
+    </SettingsRow>
   );
 }
 
@@ -325,9 +329,11 @@ function PathTest({ cloud }: { cloud: CloudView }) {
   }, [running, refetch]);
   if (test === undefined) return null;
   return (
-    <Text size="sm" tone={test.ok === true ? "success" : test.ok === false ? "danger" : "default"} data-way={test.ok === true ? "ok" : test.ok === false ? "failed" : "testing"}>
-      <HubText>{test.said}</HubText>
-    </Text>
+    <GroupNote tone={test.ok === true ? "success" : test.ok === false ? "danger" : "default"}>
+      <span data-way={test.ok === true ? "ok" : test.ok === false ? "failed" : "testing"}>
+        <HubText>{test.said}</HubText>
+      </span>
+    </GroupNote>
   );
 }
 
@@ -417,10 +423,15 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
     });
   return (
     <>
-      <Setting reveal="hub.cloud.pool" label="Pool" help="Free while asleep. Work wakes one; it sleeps after 15 idle minutes.">
-        <Select aria-label="Machines" className={a.pick} value={String(poolSize)} options={POOL_SIZES.map((n) => ({ value: n, label: `${n} ${n === "1" ? "machine" : "machines"}` }))} disabled={busy !== null} onValueChange={(v) => setPoolSize(Number(v))} />
-      </Setting>
-      <Setting reveal="hub.cloud.budgets" label="Budgets" help="Past a budget, cloud machines stop within 30 minutes. Your own machines go on.">
+      <SettingsRow
+        reveal="hub.cloud.pool"
+        title="Pool"
+        line="Free while asleep. Work wakes one; it sleeps after 15 idle minutes."
+        control={
+          <Select aria-label="Machines" className={a.pick} value={String(poolSize)} options={POOL_SIZES.map((n) => ({ value: n, label: `${n} ${n === "1" ? "machine" : "machines"}` }))} disabled={busy !== null} onValueChange={(v) => setPoolSize(Number(v))} />
+        }
+      />
+      <SettingsRow reveal="hub.cloud.budgets" title="Budgets" line="Past a budget, cloud machines stop within 30 minutes. Your own machines go on.">
         <div className={s.inline}>
           <Field label="A day" error={dayBudget === null ? "Dollars above 0" : undefined}>
             <Input aria-label="Day budget" className={a.money} value={day} inputMode="decimal" disabled={busy !== null} onChange={(e) => setDay(e.target.value)} />
@@ -429,9 +440,13 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
             <Input aria-label="Month budget" className={a.money} value={month} inputMode="decimal" placeholder={`plan's ${money(cloud.planDollars ?? 20)}`} disabled={busy !== null} onChange={(e) => setMonth(e.target.value)} />
           </Field>
         </div>
-        <Text size="xs" tone="quiet">{`Today ${money(cloud.today)} of ${money(cloud.dayBudget)} · this month ${money(cloud.month)} of ${money(cloud.monthBudget)}`}</Text>
-      </Setting>
-      <Setting reveal="hub.cloud.projects" label="Projects" help="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Any of their agents may go there, and a writer's follow-ups wake the machine it ran on.">
+        <Text size="sm" tone="quiet">{`Today ${money(cloud.today)} of ${money(cloud.dayBudget)} · this month ${money(cloud.month)} of ${money(cloud.monthBudget)}`}</Text>
+      </SettingsRow>
+      <SettingsRow
+        reveal="hub.cloud.projects"
+        title="Projects"
+        line="Only the projects you tick run on cloud machines: their code, transcripts and the secrets sealed there go to boat.dev. Any of their agents may go there, and a writer's follow-ups wake the machine it ran on."
+      >
         {projects.length === 0 ? (
           <Text size="sm" tone="quiet">
             No projects yet.
@@ -444,11 +459,14 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
             })}
           </div>
         )}
-      </Setting>
-      <Setting reveal="hub.cloud.environment" label="boat.dev environment" help="The environment you made for fleetd, marked safe for third parties. The key is scoped to it.">
-        <Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />
-      </Setting>
-      <Setting reveal="hub.cloud.cost" label="What it can cost" help="Most days cost far less than the ceiling.">
+      </SettingsRow>
+      <SettingsRow
+        reveal="hub.cloud.environment"
+        title="boat.dev environment"
+        line="The environment you made for fleetd, marked safe for third parties. The key is scoped to it."
+        control={<Input aria-label="boat.dev environment" mono className={a.environment} value={environment} placeholder={cloud.environmentDefault} disabled={busy !== null} onChange={(e) => setEnvironment(e.target.value)} />}
+      />
+      <SettingsRow reveal="hub.cloud.cost" title="What it can cost" line="Most days cost far less than the ceiling.">
         <dl className={a.cost} data-cost="">
           <dt>Price</dt>
           <dd>{preview.perHour}</dd>
@@ -462,49 +480,66 @@ function PoolSettings({ cloud }: { cloud: CloudView }) {
           <dt>Month</dt>
           <dd>{preview.month}</dd>
         </dl>
-      </Setting>
-      <Setting reveal="hub.cloud.on" label="Turn on">
-        <Switch
-          label="Use cloud machines"
-          checked={cloud.enabled}
-          disabled={busy !== null || !valid || (!cloud.enabled && cloud.keyTest?.ok !== true)}
-          description={!cloud.enabled && cloud.keyTest?.ok !== true ? "Test the key first." : undefined}
-          onCheckedChange={(on) => void save(on)}
+      </SettingsRow>
+      <SwitchRow
+        reveal="hub.cloud.on"
+        title="Use cloud machines"
+        checked={cloud.enabled}
+        disabled={busy !== null || !valid || (!cloud.enabled && cloud.keyTest?.ok !== true)}
+        line={!cloud.enabled && cloud.keyTest?.ok !== true ? "Test the key first." : !valid ? "Fix the budgets first." : undefined}
+        onCheckedChange={(on) => void save(on)}
+      />
+      {/* A pause says why on its own row, with Resume. */}
+      {heldLine(cloud) === null || cloud.paused !== undefined ? null : (
+        <GroupNote tone="warning">
+          <HubText>{heldLine(cloud) ?? ""}</HubText>
+        </GroupNote>
+      )}
+      <PathTest cloud={cloud} />
+      {changed ? (
+        <SettingsRow
+          title="Save the changes"
+          line={valid ? "The pool, budgets, projects and environment are saved together." : "Fix the budgets first."}
+          control={
+            <Button size="sm" variant="primary" disabled={busy !== null || !valid} onClick={() => void save(cloud.enabled)}>
+              {busy === "save" ? "Saving…" : "Save"}
+            </Button>
+          }
         />
-        {heldLine(cloud) === null ? null : (
-          <Text size="sm" tone="warning">
-            <HubText>{heldLine(cloud) ?? ""}</HubText>
-          </Text>
-        )}
-        <PathTest cloud={cloud} />
-        <div className={s.inline}>
-          <Button variant={changed ? "primary" : "secondary"} disabled={busy !== null || !valid || !changed} onClick={() => void save(cloud.enabled)}>
-            {busy === "save" ? "Saving…" : "Save"}
-          </Button>
-          {cloud.enabled && missing > 0 && !changed ? (
-            <Button variant="primary" disabled={busy !== null} onClick={() => void create()}>
+      ) : null}
+      {cloud.enabled && missing > 0 && !changed ? (
+        <SettingsRow
+          title={missing === 1 ? "One cloud machine isn't made yet" : `${String(missing)} cloud machines aren't made yet`}
+          line={`Making ${missing === 1 ? "it" : "them"} spends ${String(missing)} ${missing === 1 ? "start" : "starts"}.`}
+          control={
+            <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => void create()}>
               {busy === "create" ? "Creating…" : `Create ${missing === 1 ? "the cloud machine" : `${String(missing)} cloud machines`} (${String(missing)} ${missing === 1 ? "start" : "starts"})`}
             </Button>
-          ) : null}
-          {cloud.paused === undefined ? null : (
-            <Button variant="ghost" disabled={busy !== null} onClick={() => void resume()}>
+          }
+        />
+      ) : null}
+      {cloud.paused === undefined ? null : (
+        <SettingsRow
+          title="Paused"
+          line={<HubText>{heldLine(cloud) ?? ""}</HubText>}
+          lineTone="warning"
+          control={
+            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void resume()}>
               {busy === "resume" ? "Resuming…" : "Resume"}
             </Button>
-          )}
-        </div>
-        {lines.map((line) => (
-          <Text key={line} size="xs" tone={line.includes("not created") ? "danger" : "quiet"} data-create-line="">
-            {line}
-          </Text>
-        ))}
-        {problem === null ? null : (
-          <p role="alert">
-            <Text size="sm" tone="danger">
-              {problem}
-            </Text>
-          </p>
-        )}
-      </Setting>
+          }
+        />
+      )}
+      {lines.map((line) => (
+        <GroupNote key={line} tone={line.includes("not created") ? "danger" : "quiet"}>
+          <span data-create-line="">{line}</span>
+        </GroupNote>
+      ))}
+      {problem === null ? null : (
+        <GroupNote tone="danger">
+          <span role="alert">{problem}</span>
+        </GroupNote>
+      )}
     </>
   );
 }

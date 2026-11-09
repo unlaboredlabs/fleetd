@@ -6,7 +6,7 @@
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set (memory_shared_set for the shared file), a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
 import { lacksTool } from "../../src/data/errors";
@@ -26,7 +26,7 @@ import {
   type CapState,
   type MemoryLine,
 } from "./memoryModel";
-import { PagePart, scopeName, useProjects } from "./parts";
+import { DangerButton, GroupNote, scopeName, SettingsSection, useProjects } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
 
@@ -61,9 +61,9 @@ export function Memory({ project }: { project: Scope | null }) {
   const head = "What the lead remembers about this project. Edit or delete anything that's wrong.";
   if (!live) {
     return (
-      <PagePart title="Memory" reveal="memory" intro={head}>
-        <Text tone="quiet">Not connected. Connect to a hub to see what its leads remember.</Text>
-      </PagePart>
+      <SettingsSection title="Memory" reveal="memory" intro={head}>
+        <GroupNote>Not connected. Connect to a hub to see what its leads remember.</GroupNote>
+      </SettingsSection>
     );
   }
 
@@ -87,38 +87,33 @@ export function Memory({ project }: { project: Scope | null }) {
     />
   );
   return (
-    <PagePart title="Memory" reveal="memory" intro={head}>
-      {read.isLoadingError ? (
-        <div className={s.inline}>
-          <Text tone="danger">{errorText(read.error)}</Text>
-          <Button onClick={() => void read.refetch()}>Try again</Button>
+    <>
+      <SettingsSection title="Memory" reveal="memory" intro={head} bare>
+        {read.isLoadingError ? <FileError read={read} /> : null}
+        <div className={m.search}>
+          <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div role="status">
+            {query.trim() && d && hits === 0 ? (
+              <Text size="sm" tone="quiet">
+                No entry has “{query.trim()}”.
+              </Text>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-      <div className={m.search}>
-        <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <div role="status">
-          {query.trim() && d && hits === 0 ? (
-            <Text size="sm" tone="quiet">
-              No entry has “{query.trim()}”.
-            </Text>
-          ) : null}
-        </div>
-      </div>
-      <div className={s.stack}>
         {total ? <CapMeter state={total} label="This project's memory" /> : null}
-        {ref && d?.files
-          ? files.map((f) =>
-              group(
-                f,
-                projectTarget(ref, f),
-                f.topic ? f.topic : "Always on",
-                f.topic ? "Read when needed." : "Always read.",
-                { files, cap: d.projectCap ?? 0 },
-              ),
-            )
-          : null}
-      </div>
-    </PagePart>
+      </SettingsSection>
+      {ref && d?.files
+        ? files.map((f) =>
+            group(
+              f,
+              projectTarget(ref, f),
+              f.topic ? f.topic : "Always on",
+              f.topic ? "Read when needed." : "Always read.",
+              { files, cap: d.projectCap ?? 0 },
+            ),
+          )
+        : null}
+    </>
   );
 }
 
@@ -132,13 +127,20 @@ export function YourMemory() {
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [query, setQuery] = useState("");
-  if (!live) return <Text tone="quiet">Not connected. Connect to a hub to see what its leads remember about you.</Text>;
+  if (!live) {
+    return (
+      <SettingsSection>
+        <GroupNote>Not connected. Connect to a hub to see what its leads remember about you.</GroupNote>
+      </SettingsSection>
+    );
+  }
   return (
-    <div className={s.stack}>
-      <FileError read={read} />
-      <div className={m.search}>
-        <Input type="search" aria-label="Search your memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
-      </div>
+    <>
+      {read.isLoadingError ? (
+        <SettingsSection bare>
+          <FileError read={read} />
+        </SettingsSection>
+      ) : null}
       <MemoryGroup
         bare
         label="Your memory"
@@ -146,11 +148,12 @@ export function YourMemory() {
         name="your memory"
         file={read.data?.user}
         query={query}
+        search={<Input type="search" aria-label="Search your memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />}
         onSave={(text) => hubCall("memory_set", { scope: "user", text }).then(() => refetch(["memory_get"]))}
         reread={() => hubCall("memory_get", {}).then((now) => now.user.text)}
         deletable={false}
       />
-    </div>
+    </>
   );
 }
 
@@ -169,16 +172,23 @@ export function SharedMemory() {
   const file = read.data?.file;
   if (!live || (!old && !read.isLoadingError && (file === undefined || file.text.trim() === ""))) return null;
   return (
-    <PagePart title="Shared memory" part="hub.shared-memory" intro="The one memory every lead read before each person had their own. Owners and admins only.">
+    <>
       {old ? (
-        <Text tone="quiet">This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</Text>
+        <SettingsSection title="Shared memory" part="hub.shared-memory" intro={SHARED}>
+          <GroupNote>This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</GroupNote>
+        </SettingsSection>
       ) : (
-        <div className={s.stack}>
-          <FileError read={read} />
+        <>
+          {read.isLoadingError ? (
+            <SettingsSection title="Shared memory" part="hub.shared-memory" intro={SHARED} bare>
+              <FileError read={read} />
+            </SettingsSection>
+          ) : null}
           {file === undefined ? null : (
             <MemoryGroup
               label="Shared memory"
-              help="No agent reads it now; its owner got a copy. Empty it once nothing in it is missing elsewhere, and it goes."
+              part="hub.shared-memory"
+              help={`${SHARED} No agent reads it now; its owner got a copy. Empty it once nothing in it is missing elsewhere, and it goes.`}
               name="user.md"
               file={file}
               query=""
@@ -187,14 +197,15 @@ export function SharedMemory() {
               deletable
             />
           )}
-        </div>
+        </>
       )}
-    </PagePart>
+    </>
   );
 }
 
+const SHARED = "The one memory every lead read before each person had their own. Owners and admins only.";
+
 function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; refetch: () => unknown } }) {
-  if (!read.isLoadingError) return null;
   return (
     <div className={s.inline}>
       <Text tone="danger">{errorText(read.error)}</Text>
@@ -206,10 +217,10 @@ function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; 
 const projectTarget = (projectRef: ProjectRef, f: MemoryFile): Target => ({ scope: "project", projectRef, ...(f.topic ? { topic: f.topic } : {}) });
 
 /** A file's length against its cap, as a bar and in words. */
-function CapMeter({ state, label, changed }: { state: CapState; label: string; changed?: string | undefined }) {
+function CapMeter({ state, label, changed, inGroup }: { state: CapState; label: string; changed?: string | undefined; inGroup?: boolean }) {
   const fill = state.cap > 0 ? Math.min(100, (state.chars / state.cap) * 100) : 0;
   return (
-    <div className={m.meter}>
+    <div className={inGroup === true ? `${m.meter} ${m.inGroup}` : m.meter}>
       <div className={m.track} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={state.cap} aria-valuenow={state.chars} aria-valuetext={state.line}>
         <div className={m.fill} data-over={state.over || undefined} style={{ width: `${String(fill)}%` }} />
       </div>
@@ -239,6 +250,10 @@ function MemoryGroup(props: {
   deletable: boolean;
   /** The page's one file, which the page already names: no label of its own, only Edit as text. */
   bare?: boolean;
+  /** Where a search for the file lands. */
+  part?: string;
+  /** The page's search, beside Edit as text, when this file is all the page searches. */
+  search?: ReactNode;
 }) {
   const { file, name } = props;
   const [asText, setAsText] = useState(false);
@@ -288,29 +303,27 @@ function MemoryGroup(props: {
   };
 
   return (
-    <section className={m.group} aria-label={`${props.label} (${name})`}>
-      <div className={m.groupHead}>
-        {props.bare === true ? (
-          <span />
-        ) : (
-          <div className={s.settingLabel}>
-            <div className={m.title}>
-              <Text strong>{props.label}</Text>
-              <span data-text="code">
-                <Text size="xs" tone="quiet">
-                  {name}
-                </Text>
-              </span>
-            </div>
-            <Text size="xs" tone="quiet">
-              {props.help}
-            </Text>
-          </div>
-        )}
-        <Button variant="ghost" size="sm" disabled={file === undefined} onClick={() => setAsText(!asText)}>
-          {asText ? "Show entries" : "Edit as text"}
-        </Button>
-      </div>
+    <SettingsSection
+      title={props.bare === true ? undefined : props.label}
+      part={props.part}
+      intro={
+        props.bare === true ? undefined : (
+          <>
+            <span data-text="code">{name}</span>
+            {` · ${props.help}`}
+          </>
+        )
+      }
+      aside={
+        <div className={m.tools}>
+          {props.search}
+          <Button variant="ghost" size="sm" disabled={file === undefined} onClick={() => setAsText(!asText)}>
+            {asText ? "Show entries" : "Edit as text"}
+          </Button>
+        </div>
+      }
+      bare={asText}
+    >
       {asText ? (
         <FileEditor
           label={`All of ${name}`}
@@ -322,19 +335,13 @@ function MemoryGroup(props: {
         />
       ) : (
         <>
-          {file ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} /> : null}
+          {file ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} inGroup /> : null}
           {file === undefined ? (
-            <Text size="sm" tone="quiet">
-              Loading…
-            </Text>
+            <GroupNote>Loading…</GroupNote>
           ) : lines.length === 0 ? (
-            <Text size="sm" tone="quiet">
-              Nothing remembered yet.
-            </Text>
+            <GroupNote>Nothing remembered yet.</GroupNote>
           ) : shown.length === 0 ? (
-            <Text size="sm" tone="quiet">
-              No entry here matches.
-            </Text>
+            <GroupNote>No entry here matches.</GroupNote>
           ) : (
             <ul className={m.entries} aria-label={`Entries of ${name}`}>
               {shown.map((line) =>
@@ -352,7 +359,7 @@ function MemoryGroup(props: {
           )}
         </>
       )}
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -563,19 +570,26 @@ function FileEditor(props: {
         {total ? `${cap.line}; ${total.line}` : cap.line}
         {over ? ". Past the cap: merge or cut entries before saving." : ""}
       </Text>
-      <div className={s.actions}>
-        <Button variant="primary" disabled={file === undefined || !dirty || over || busy} onClick={() => run(() => props.onSave(draft.text), "Saved. New sessions get it.")}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" disabled={!dirty} onClick={() => setDraft({ ...draft, text: draft.from })}>
-          Discard changes
-        </Button>
-        {props.onDelete ? (
-          <Button variant="danger" disabled={busy || file === undefined} onClick={() => run(props.onDelete ?? (() => Promise.resolve()), "Deleted.")}>
-            Delete {name}
-          </Button>
-        ) : null}
-      </div>
+      {/* Save shows once there is a change to save. */}
+      {dirty || busy || props.onDelete ? (
+        <div className={s.actions}>
+          {dirty || busy ? (
+            <>
+              <Button variant="primary" disabled={file === undefined || !dirty || over || busy} onClick={() => run(() => props.onSave(draft.text), "Saved. New sessions get it.")}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="ghost" disabled={!dirty} onClick={() => setDraft({ ...draft, text: draft.from })}>
+                Discard changes
+              </Button>
+            </>
+          ) : null}
+          {props.onDelete ? (
+            <DangerButton disabled={busy || file === undefined} onClick={() => run(props.onDelete ?? (() => Promise.resolve()), "Deleted.")}>
+              Delete {name}
+            </DangerButton>
+          ) : null}
+        </div>
+      ) : null}
       <div role="status">
         {echo ? (
           <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>

@@ -55,7 +55,7 @@ describe.each([
     if (!v) throw new Error(`missing --${k}`);
     return v;
   };
-  const bases = ["bg", "sidebar", "raised"].map((k) => [k, get(k)] as const);
+  const bases = ["bg", "sidebar", "raised", "group"].map((k) => [k, get(k)] as const);
   const surfaces = [
     ...bases,
     ["bubble", get("bubble")] as const,
@@ -86,6 +86,8 @@ describe.each([
     expect(contrast(get("on-accent"), get("accent-fill"))).toBeGreaterThanOrEqual(4.5);
     // A switch's white thumb on its track when on (WCAG 1.4.11).
     expect(contrast("#ffffff", get("switch-on"))).toBeGreaterThanOrEqual(3);
+    // Danger's pill: white words on its fill.
+    expect(contrast("#ffffff", get("danger-fill"))).toBeGreaterThanOrEqual(4.5);
     // Your chat bubbles: white words on the deep accent.
     expect(contrast(get("on-accent-deep"), get("accent-deep"))).toBeGreaterThanOrEqual(4.5);
     for (const [, bg] of bases) expect(contrast(get("faint"), bg)).toBeGreaterThanOrEqual(2.5);

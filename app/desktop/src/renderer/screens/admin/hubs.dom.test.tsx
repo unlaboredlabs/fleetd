@@ -154,7 +154,7 @@ const go = async (hash: string) => {
 
 const managing = () => host.querySelector<HTMLElement>("[data-managing]");
 const choices = () => [...host.querySelectorAll<HTMLElement>("[data-admin-hub]")].map((b) => [b.dataset["adminHub"], b.getAttribute("aria-current") === "page"]);
-const button = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === name);
+const button = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === name || b.getAttribute("aria-label") === name);
 /** Opens People's invite form, if it isn't open already. */
 const openInvite = async () => {
   const open = button("Invite someone");

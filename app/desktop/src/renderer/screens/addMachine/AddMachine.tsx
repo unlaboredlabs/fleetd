@@ -233,9 +233,11 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
 function Head(props: { title: string; line?: ReactNode }) {
   return (
     <div className={s.head}>
-      <Text strong>{props.title}</Text>
+      <Text as="h2" size="sm" strong tone="quiet" className={s.label}>
+        {props.title}
+      </Text>
       {props.line === undefined ? null : (
-        <Text size="xs" tone="quiet">
+        <Text size="sm" tone="quiet">
           {props.line}
         </Text>
       )}
@@ -252,7 +254,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
         <li className={s.row}>
           <div className={s.rowText}>
             <Text>This computer</Text>
-            <Text size="xs" tone="quiet">
+            <Text size="sm" tone="quiet">
               {hereLine(here)}
             </Text>
           </div>
@@ -265,7 +267,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
         <li className={s.row}>
           <div className={s.rowText}>
             <Text>A machine the hub can reach</Text>
-            <Text size="xs" tone="quiet">
+            <Text size="sm" tone="quiet">
               Over SSH from the hub: one in its ~/.ssh/config or on its tailnet.
             </Text>
           </div>
@@ -276,7 +278,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
         <li className={s.row}>
           <div className={s.rowText}>
             <Text>Any other machine</Text>
-            <Text size="xs" tone="quiet">
+            <Text size="sm" tone="quiet">
               A laptop, or one behind NAT: one line to paste in its terminal. It must reach the hub.
             </Text>
           </div>
@@ -287,7 +289,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
         <li className={s.row}>
           <div className={s.rowText}>
             <Text>A Mac for agents</Text>
-            <Text size="xs" tone="quiet">
+            <Text size="sm" tone="quiet">
               {MAC_LINE}
             </Text>
           </div>
@@ -326,7 +328,7 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
             <li key={h.machineId} className={s.row}>
               <div className={s.rowText}>
                 <Text tone={h.joined ? "quiet" : "default"}>{h.machineId}</Text>
-                <Text size="xs" tone="quiet">
+                <Text size="sm" tone="quiet">
                   {h.joined ? `${hostLine(h)} · a machine already` : hostLine(h)}
                 </Text>
               </div>
@@ -399,7 +401,7 @@ function Notes(props: { notes: ReadonlyArray<string> }) {
     <ul className={s.notes} aria-label="Notes">
       {props.notes.map((n) => (
         <li key={n}>
-          <Text size="xs" tone="quiet">
+          <Text size="sm" tone="quiet">
             {n}
           </Text>
         </li>
@@ -484,7 +486,7 @@ function Run(props: { run: MachineAddRun | undefined; pending: boolean; busy: bo
         <div className={s.head}>
           {run.message === undefined ? null : <Text tone="danger">{sentence(run.message.split("\n")[0] ?? "")}</Text>}
           {run.fix === undefined ? null : (
-            <Text size="xs" tone="quiet">
+            <Text size="sm" tone="quiet">
               {sentence(run.fix)}
             </Text>
           )}
@@ -662,7 +664,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
               {copied === true ? "Copied" : "Copy"}
             </Button>
           </div>
-          <Text size="xs" tone="quiet">
+          <Text size="sm" tone="quiet">
             {mac
               ? `${untilLine(made.join.expiresAt)} Paste it in Terminal on the Mac, logged in at its screen (su and ssh won't do). It opens Privacy & Security and waits for each grant.`
               : `${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
@@ -682,7 +684,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
       {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin ? 4 : 3) ?? []} from={2} /> : null}
       {mac ? (
         <>
-          <Text size="xs" tone="quiet">
+          <Text size="sm" tone="quiet">
             Agents act as this Mac account. To keep them out of yours, give them their own user (see Setup › A Mac for agents).
           </Text>
           <span>

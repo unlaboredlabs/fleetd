@@ -10,7 +10,7 @@ import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { Broker, start as startNodeBrowser } from "../src/node/browser/index.ts";
 import { Channel } from "../src/node/session_route/relay.ts";
 import { Router, start as startRoute } from "../src/node/session_route/index.ts";
-import { publicKeyOf } from "../src/shared/sealed_box.ts";
+import { publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import { addMachine, addProject, agent, callLead, testHub } from "./screens_helpers.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
@@ -182,6 +182,33 @@ test("a session the hub places on another machine: sealed to it, started there, 
   expect(asked).toEqual(["op://Team/Shop/password"]);
   expect(brokerOf(agentNode.node).credentials.filledSince("t1", 0)).toEqual([["op://Team/Shop/password", "Hunter2-Sekr3t"]]);
   expect(JSON.stringify(t.link.linked.get("box2")!.out)).not.toContain("Hunter2-Sekr3t");
+  // A vault login: the runner asks the hub's vault itself, in the hosted session's name, and the value is sealed to
+  // the runner alone; the agent's node reads nothing and holds nothing.
+  asked.length = 0;
+  const vaultAsks: { op: string; threadId?: string; args: Record<string, unknown> }[] = [];
+  const answer = runner.link.answer;
+  runner.link.answer = async (op, args, threadId) => {
+    if (op === "vault_fill") {
+      vaultAsks.push({ op, ...(threadId ? { threadId } : {}), args });
+      const plain = new TextEncoder().encode(JSON.stringify({ value: "Vault-Hunter2", sites: ["shop.devbox.test"] }));
+      const to = Buffer.from(brokerOf(runner.node).boxKey().publicKey(), "base64");
+      return { itemId: `V${"d".repeat(32)}`, label: "Shop", auditId: 9, sealed: Buffer.from(seal(to, plain)).toString("base64") };
+    }
+    if (op === "vault_filled") return vaultAsks.push({ op, args }), { auditId: 9 };
+    return answer(op, args, threadId);
+  };
+  const fromVault = await agentNode.local.call("fill_credential", { item: "Shop", field: "password", target: "#pw" }, "t1").catch((e: Error) => e);
+  expect((fromVault as Error).message).toBe("the vault's Shop (password) is for shop.devbox.test; this page is on no website.");
+  expect(asked).toEqual([]);
+  expect(vaultAsks.map((a) => [a.op, a.args.item ?? a.args.ok])).toEqual([
+    ["vault_fill", "Shop"],
+    ["vault_filled", false],
+  ]);
+  expect(vaultAsks[0]!.args.sessionId).toBe(started.sessionId);
+  expect(vaultAsks[0]!.threadId).toMatch(/^H[0-9a-f]{32}$/);
+  expect(JSON.stringify(t.link.linked.get("box2")!.out)).not.toContain("Vault-Hunter2");
+  expect(JSON.stringify(brokerOf(agentNode.node).credentials.filledSince("t1", 0))).not.toContain("Vault-Hunter2");
+  runner.link.answer = answer;
   ws.close();
   await agentNode.local.call("session_end", {}, "t1");
   expect(agentNode.router.remotes.size).toBe(0);

@@ -3,69 +3,46 @@
 // there; Remove; and Link a hub, which takes a link key made on the other hub (Links to this hub, in its Settings ›
 // Hubs). The key goes to main, which seals it to this hub's own key (main/secret.ts) and calls hub_link_add: it
 // never reaches the hub in the clear and is never shown again.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { HubLink, HubLinkAddOutput, ProjectRef } from "../../../shared/contracts";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Text, Textarea, toast } from "../../ui";
 import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { Setting } from "../settings/parts";
+import { AddButton, SettingsList, SettingsListRow, SettingsRow } from "../settings/parts";
 import { lacksLinks, LinksNeedUpdate } from "./parts";
 import { labelProblem, linkState, reachLine, readPasted, urlProblem } from "./model";
 import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
 
-export function LinkedHubs({ project }: { project: ProjectRef }) {
-  return (
-    <Setting
-      reveal="projects.linked"
-      label="Linked hubs"
-      help="Other hubs this project reaches: its lead opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub."
-    >
-      <LinkedBody project={project} />
-    </Setting>
-  );
-}
+const LINKED_LINE =
+  "Other hubs this project reaches: its lead opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub.";
 
-function LinkedBody({ project }: { project: ProjectRef }) {
+export function LinkedHubs({ project }: { project: ProjectRef }) {
   const live = useLive();
   const read = useToolQuery("hub_links_get", { navi: project }, { enabled: live });
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
-  if (lacksLinks(read.error)) return <LinksNeedUpdate />;
-  if (read.error) return <Text tone="danger">{`Couldn’t read the linked hubs: ${errorText(read.error)}`}</Text>;
-  if (read.data === undefined) return <Text tone="quiet">Loading…</Text>;
-  const links = read.data.links;
-  const form = (
-    <AddLink
-      project={project}
-      boxPubKey={read.data.boxPubKey}
-      taken={links.map((l) => l.label)}
-      onCancel={() => setAdding(false)}
-      onAdded={(out) => {
-        setAdding(false);
-        const n = out.projects.length;
-        setAdded(`Linked to ${out.link.label}: this project reaches ${n === 1 ? "1 project" : `${String(n)} projects`} there.`);
-      }}
-    />
+  const row = (control: ReactNode, body: ReactNode) => (
+    <SettingsRow reveal="projects.linked" title="Linked hubs" line={LINKED_LINE} control={control}>
+      {body}
+    </SettingsRow>
   );
-  return (
+  if (!live) return row(undefined, <Text tone="quiet">Connect to a hub to see and change this.</Text>);
+  if (lacksLinks(read.error)) return row(undefined, <LinksNeedUpdate />);
+  if (read.error) return row(undefined, <Text tone="danger">{`Couldn’t read the linked hubs: ${errorText(read.error)}`}</Text>);
+  if (read.data === undefined) return row(undefined, <Text tone="quiet">Loading…</Text>);
+  const links = read.data.links;
+  return row(
+    adding ? undefined : <AddButton label={links.length === 0 ? "Link a hub" : "Link another hub"} onClick={() => (setAdded(null), setAdding(true))} />,
     <>
-      {links.length === 0 && !adding ? (
-        <div className={s.inline}>
-          <Text tone="quiet">No linked hubs yet.</Text>
-          <Button size="sm" onClick={() => (setAdded(null), setAdding(true))}>
-            Link a hub
-          </Button>
-        </div>
-      ) : null}
+      {links.length === 0 && !adding ? <Text tone="quiet">No linked hubs yet.</Text> : null}
       {links.length === 0 ? null : (
-        <div className={a.list} role="list" aria-label="Linked hubs">
+        <SettingsList label="Linked hubs">
           {links.map((l) => (
             <LinkRow key={l.linkId} link={l} />
           ))}
-        </div>
+        </SettingsList>
       )}
       {added === null ? null : (
         <p role="status" className={s.alertLine}>
@@ -75,15 +52,19 @@ function LinkedBody({ project }: { project: ProjectRef }) {
         </p>
       )}
       {adding ? (
-        form
-      ) : links.length === 0 ? null : (
-        <span>
-          <Button size="sm" onClick={() => (setAdded(null), setAdding(true))}>
-            Link another hub
-          </Button>
-        </span>
-      )}
-    </>
+        <AddLink
+          project={project}
+          boxPubKey={read.data.boxPubKey}
+          taken={links.map((l) => l.label)}
+          onCancel={() => setAdding(false)}
+          onAdded={(out) => {
+            setAdding(false);
+            const n = out.projects.length;
+            setAdded(`Linked to ${out.link.label}: this project reaches ${n === 1 ? "1 project" : `${String(n)} projects`} there.`);
+          }}
+        />
+      ) : null}
+    </>,
   );
 }
 
@@ -109,44 +90,39 @@ function LinkRow({ link }: { link: HubLink }) {
       });
   };
   return (
-    <div className={a.row} role="listitem" aria-label={link.label} data-state={link.state}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong>{link.label}</Text>
-          <Text size="xs" tone="quiet" mono>
-            {link.url}
-          </Text>
-        </div>
-        {reach === null ? null : (
-          <Text size="xs" tone="quiet">
-            {reach}
-          </Text>
-        )}
-        {state.line === null ? null : (
-          <Text size="xs" tone={state.tone}>
-            <HubText>{state.line}</HubText>
-          </Text>
-        )}
-        {state.fix === null ? null : (
-          <Text size="xs" tone="quiet">
-            {state.fix}
-          </Text>
-        )}
-        {error === undefined ? null : (
-          <p role="alert" className={s.alertLine}>
-            <Text size="xs" tone="danger">{`Not removed: ${error}`}</Text>
-          </p>
-        )}
-      </div>
-      <div className={a.controls}>
-        <Text size="sm" tone={state.tone}>
-          {state.word}
-        </Text>
+    <SettingsListRow
+      name={link.label}
+      label={link.label}
+      data={{ "data-state": link.state }}
+      meta={<span data-text="code">{link.url}</span>}
+      state={{ word: state.word, tone: state.tone }}
+      controls={
         <Button size="sm" variant="ghost" disabled={!live || busy} onClick={remove}>
           {busy ? "Removing…" : "Remove"}
         </Button>
-      </div>
-    </div>
+      }
+    >
+      {reach === null ? null : (
+        <Text size="sm" tone="quiet">
+          {reach}
+        </Text>
+      )}
+      {state.line === null ? null : (
+        <Text size="sm" tone={state.tone}>
+          <HubText>{state.line}</HubText>
+        </Text>
+      )}
+      {state.fix === null ? null : (
+        <Text size="sm" tone="quiet">
+          {state.fix}
+        </Text>
+      )}
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="sm" tone="danger">{`Not removed: ${error}`}</Text>
+        </p>
+      )}
+    </SettingsListRow>
   );
 }
 

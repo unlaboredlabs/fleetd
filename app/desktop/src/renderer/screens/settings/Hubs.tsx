@@ -6,46 +6,47 @@ import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
-import { Button, Dialog, Dot, Field, Input, Truncate } from "../../ui";
+import { Button, Dialog, Field, Input, Truncate, type TextTone } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
+import { HubText } from "../projects/HubText";
 import { ColorPick } from "../shell/ColorPick";
-import { PagePart, Setting } from "./parts";
-import s from "./settings.module.css";
+import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
 
 /** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
   const hubs = useHubs();
   return (
-    <PagePart
+    <SettingsSection
       title="Paired hubs"
       reveal="hubs.add"
+      intro="This app acts as you on each."
       aside={
-        <Button
+        <AddButton
+          label="Add a hub"
           onClick={() => {
             window.location.hash = "#/onboarding?add";
           }}
-        >
-          Add a hub
-        </Button>
+        />
       }
     >
       {/* Main's word about the list itself (one that couldn't be read, its hubs found again), said once. */}
       {hubs[0]?.note === undefined ? null : (
-        <div className={s.hubLine} role="status">
-          <Dot color="var(--warning)" />
-          <Prose text={hubs[0].note} />
-        </div>
+        <GroupNote tone="warning">
+          <span role="status">
+            <HubText>{hubs[0].note}</HubText>
+          </span>
+        </GroupNote>
       )}
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <HubSetting only={hubs.length === 1} />
         </HubScope>
       ))}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -56,30 +57,30 @@ export function HubsSettings() {
 export function HubLinksSettings() {
   const hubs = useHubs();
   return (
-    <PagePart title="Hub links" part="hubs.hub-links">
+    <SettingsSection title="Hub links" part="hubs.hub-links">
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <LinksToThisHub label={hubs.length === 1 ? "Links to this hub" : `Links to ${hub.label}`} />
         </HubScope>
       ))}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
-function phaseLine(state: HubState): { tone: string; text: string } {
+function phaseLine(state: HubState): { tone: TextTone; text: string } {
   switch (state.phase) {
     case "live":
-      return { tone: "var(--success)", text: "Connected." };
+      return { tone: "success", text: "Connected." };
     case "connecting":
-      return { tone: "var(--faint)", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
+      return { tone: "quiet", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
     case "retrying": {
       const at = new Date(state.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      return { tone: "var(--warning)", text: `Can't reach it: ${sentence(state.reason)} ${state.fix === undefined ? "" : `${state.fix} `}Trying again at ${at}.` };
+      return { tone: "warning", text: `Can't reach it: ${sentence(state.reason)} ${state.fix === undefined ? "" : `${state.fix} `}Trying again at ${at}.` };
     }
     case "refused":
-      return { tone: "var(--danger)", text: `It refused this app's key: ${sentence(state.message)} Pair again to get a new key.` };
+      return { tone: "danger", text: `It refused this app's key: ${sentence(state.message)} Pair again to get a new key.` };
     case "unpaired":
-      return { tone: "var(--faint)", text: state.note ?? "This app isn't paired with a hub." };
+      return { tone: "quiet", text: state.note ?? "This app isn't paired with a hub." };
   }
 }
 
@@ -126,39 +127,38 @@ function HubSetting({ only }: { only: boolean }) {
   const line = phaseLine(state);
   const again = state.phase === "unpaired" || state.phase === "refused";
   return (
-    <Setting reveal={only ? "hubs.hub" : `hubs.${self.id}`} label={only ? "Hub" : self.label} help="This app acts as you on this hub.">
+    <SettingsRow
+      reveal={only ? "hubs.hub" : `hubs.${self.id}`}
+      title={only ? "Hub" : self.label}
+      // The hub's fix may name a command in backticks: shown as code.
+      line={<HubText>{line.text}</HubText>}
+      lineTone={line.tone}
+      control={
+        <>
+          {again ? (
+            <Button
+              variant="primary"
+              onClick={() => {
+                window.location.hash = `#/onboarding?another&at=${self.id}`;
+              }}
+            >
+              {hub === null ? "Pair with a hub" : "Pair again"}
+            </Button>
+          ) : null}
+          {hub ? <DangerButton onClick={() => setConfirm(true)}>{only ? "Disconnect and forget key" : "Remove…"}</DangerButton> : null}
+        </>
+      }
+    >
       {hub ? (
-        <Truncate mono size="sm">
+        <Truncate mono size="sm" tone="quiet">
           {hub}
         </Truncate>
       ) : null}
-      <div className={s.hubLine}>
-        <Dot color={line.tone} />
-        {/* The hub's fix may name a command in backticks: shown as code. */}
-        <Prose tone="quiet" text={line.text} />
-      </div>
       {/* Said only where there's something to fix: a key kept in the OS store needs no line. */}
       {store === null || store.kind === "os" ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
       {hub === null ? null : <NameAndColor key={`${self.label}:${self.color ?? ""}`} />}
-      <div className={s.inline}>
-        {again ? (
-          <Button
-            variant="primary"
-            onClick={() => {
-              window.location.hash = `#/onboarding?another&at=${self.id}`;
-            }}
-          >
-            {hub === null ? "Pair with a hub" : "Pair again"}
-          </Button>
-        ) : null}
-        {hub ? (
-          <Button variant="ghost" onClick={() => setConfirm(true)}>
-            {only ? "Disconnect and forget key" : "Remove…"}
-          </Button>
-        ) : null}
-      </div>
       <ForgetHubDialog open={confirm} onOpenChange={setConfirm} only={only} />
-    </Setting>
+    </SettingsRow>
   );
 }
 

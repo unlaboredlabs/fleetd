@@ -6,7 +6,12 @@ import type { SessionCall, SessionOutput } from "../../shared/sessions.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { Masker } from "../mask.ts";
 import { inspect } from "../repos/index.ts";
+import { readConfig } from "../config.ts";
+import { adopt } from "../secrets/adopt.ts";
 import { projectSecrets, projectVars } from "../secrets/env.ts";
+import { seal } from "../../shared/sealed_box.ts";
+import type { VaultImportCandidate, VaultImportError } from "../../shared/contracts.ts";
+import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
 import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount } from "./accounts.ts";
@@ -15,7 +20,7 @@ import { readImage } from "./image.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
 import { probe } from "./mcp_probe.ts";
-import { applyToken, OnePassword, readToken, TOKEN_ENV } from "./onepassword.ts";
+import { applyToken, importedFields, importKind, OnePassword, readToken, TOKEN_ENV } from "./onepassword.ts";
 import { CallRefusal, invalid, notFound } from "./refusal.ts";
 import { forgetSignins } from "./signins.ts";
 import { repoSkills } from "./skills.ts";
@@ -53,9 +58,21 @@ export const OPS = [
   "landed_log",
   "skills_list",
   "read_image",
+  "vault_adopt",
+  "vault_import_search",
+  "vault_import_read",
 ] as const;
 export type CallOp = (typeof OPS)[number];
 export const handles = (op: string): op is CallOp => (OPS as readonly string[]).includes(op);
+
+/** A website's host, as the vault keeps sites: `https://shop.example.com/login` is `shop.example.com`. */
+const siteHost = (url: string) => {
+  try {
+    return new URL(url.includes("://") ? url : `https://${url}`).hostname.toLowerCase() || undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const NO_TOKEN = "this machine holds no 1Password token of yours: save it again while it is online";
 
@@ -167,6 +184,72 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       if (token === undefined) return { kind: "onepassword_carded", cards: [], error: NO_TOKEN };
       const said = await withToken(home, token, (op) => op.cards());
       return "ok" in said ? { kind: "onepassword_carded", cards: said.ok } : { kind: "onepassword_carded", cards: [], error: said.error };
+    }
+    case "vault_adopt": {
+      let roots: string[];
+      try {
+        roots = readConfig(home)?.cmdRoots ?? [homeDir()];
+      } catch {
+        roots = [homeDir()];
+      }
+      const held = asInvalid(() => adopt({ home, roots, machineId: "" }, call.to));
+      return { kind: "vault_adopted", ...held };
+    }
+    case "vault_import_search": {
+      let token: string | undefined;
+      try {
+        token = readToken(home, call.personId);
+      } catch (error) {
+        return { kind: "vault_import_found", items: [], error: (error as Error).message };
+      }
+      if (token === undefined) return { kind: "vault_import_found", items: [], error: NO_TOKEN };
+      const said = await withToken(home, token, (op) => op.search(call.query));
+      if (!("ok" in said)) return { kind: "vault_import_found", items: [], error: said.error };
+      const items: VaultImportCandidate[] = [];
+      for (const found of said.ok) {
+        const kind = importKind(found.category);
+        if (!kind || (call.kinds && !call.kinds.includes(kind))) continue;
+        const sites = [...new Set((found.sites ?? []).map(siteHost).filter((h): h is string => h !== undefined))];
+        items.push({ ref: found.ref, title: found.title, kind, vault: found.vault, ...(sites.length ? { sites } : {}) });
+      }
+      return { kind: "vault_import_found", items };
+    }
+    case "vault_import_read": {
+      const to = Buffer.from(call.to, "base64");
+      if (to.length !== 32) throw invalid("the hub's box key is not 32 bytes");
+      const refs = [...new Set(call.refs)];
+      let token: string | undefined;
+      try {
+        token = readToken(home, call.personId);
+      } catch (error) {
+        return { kind: "vault_import_read", items: [], errors: refs.map((ref) => ({ ref, message: (error as Error).message })) };
+      }
+      if (token === undefined) return { kind: "vault_import_read", items: [], errors: refs.map((ref) => ({ ref, message: NO_TOKEN })) };
+      const items: VaultImportRead[] = [];
+      const errors: VaultImportError[] = [];
+      const helper = new OnePassword(home, token);
+      const masked = new Masker([[TOKEN_ENV, token]]);
+      try {
+        for (const ref of refs) {
+          try {
+            const read = await helper.read(ref);
+            const kind = importKind(read.category);
+            if (!kind) throw new Error(`${read.title} is not a login, card or identity item`);
+            // Sealed to the hub at once: the fields are never kept, logged or sent in the clear.
+            const plain = Buffer.from(JSON.stringify(importedFields(read)), "utf8");
+            try {
+              items.push({ ref, kind, sealed: Buffer.from(seal(to, plain)).toString("base64") });
+            } finally {
+              plain.fill(0);
+            }
+          } catch (error) {
+            errors.push({ ref, message: masked.text((error as Error).message).slice(0, 500) });
+          }
+        }
+      } finally {
+        helper.close();
+      }
+      return { kind: "vault_import_read", items, errors };
     }
     case "claude_models":
       try {

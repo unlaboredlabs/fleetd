@@ -15,8 +15,7 @@ import { Prose } from "../onboarding/Prose";
 import { when } from "../live/when";
 import { codeLife, deviceLine, linksMadeOn, pairedSince, qrPath, signOutLine, yourDevices } from "./devicesModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PagePart } from "./parts";
-import a from "../admin/admin.module.css";
+import { GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 /** Each paired hub's part: with one hub, just the list and Pair a phone, under the page's own title. */
@@ -59,10 +58,9 @@ function YourDevices({ title, reveal, one }: { title: string; reveal: string; on
       .catch((e: unknown) => setPairing({ phase: "failed", error: errorText(e) }));
   };
   return (
-    <PagePart
-      title={title}
+    <SettingsSection
+      title={one ? undefined : title}
       reveal={reveal}
-      untitled={one}
       intro={one ? undefined : "Each of these acts as you on this hub, on every machine."}
       aside={
         pairing === null ? (
@@ -74,13 +72,13 @@ function YourDevices({ title, reveal, one }: { title: string; reveal: string; on
     >
       {pairing === null ? null : <PairPhone pairing={pairing} paired={paired} onAgain={pair} onClose={() => setPairing(null)} />}
       {read.error ? (
-        <Text tone="danger">{`Couldn't read your devices: ${errorText(read.error)}`}</Text>
+        <GroupNote tone="danger">{`Couldn't read your devices: ${errorText(read.error)}`}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : devices.length === 0 ? (
-        <Text tone="quiet">No device is signed in as you.</Text>
+        <GroupNote>No device is signed in as you.</GroupNote>
       ) : (
-        <div className={a.list} role="list" aria-label="Your devices">
+        <SettingsList label="Your devices">
           {devices.map((d) => (
             <DeviceRow
               key={d.keyId}
@@ -91,10 +89,10 @@ function YourDevices({ title, reveal, one }: { title: string; reveal: string; on
               onSignOut={here === undefined || d.keyId === here ? undefined : () => setSigningOut(d)}
             />
           ))}
-        </div>
+        </SettingsList>
       )}
       <SignOutDialog device={signingOut} onClose={() => setSigningOut(null)} />
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -113,33 +111,23 @@ function DeviceRow({
 }) {
   const live = useLive();
   return (
-    <div className={a.row} role="listitem" aria-label={d.name}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong>{d.name}</Text>
-          {just ? (
-            <Text size="xs" tone="success">
-              just paired
-            </Text>
-          ) : null}
-          {here ? (
-            <Text size="xs" tone="quiet">
-              this computer
-            </Text>
-          ) : null}
-        </div>
-        <Text size="xs" tone="quiet">
-          {deviceLine(d, (iso) => when(iso, now))}
-        </Text>
-      </div>
-      {onSignOut === undefined ? null : (
-        <div className={a.controls}>
+    <SettingsListRow
+      name={d.name}
+      label={d.name}
+      meta={here ? "this computer" : undefined}
+      {...(just ? { state: { word: "just paired", tone: "success" as const } } : {})}
+      controls={
+        onSignOut === undefined ? undefined : (
           <Button size="sm" variant="ghost" disabled={!live} onClick={onSignOut}>
             Sign out
           </Button>
-        </div>
-      )}
-    </div>
+        )
+      }
+    >
+      <Text size="sm" tone="quiet">
+        {deviceLine(d, (iso) => when(iso, now))}
+      </Text>
+    </SettingsListRow>
   );
 }
 
@@ -212,8 +200,21 @@ function PairPhone({ pairing, paired, onAgain, onClose }: { pairing: Pairing; pa
   const waiting = pairing.phase === "shown" && paired === undefined;
   const now = useNow(waiting);
   return (
-    <section className={s.pairing} aria-label="Pair a phone">
-      <Text strong>Pair a phone</Text>
+    <SettingsRow
+      title="Pair a phone"
+      control={
+        <>
+          {pairing.phase === "failed" || (pairing.phase === "shown" && paired === undefined && codeLife(pairing.out.expiresAt, now) === null) ? (
+            <Button variant="primary" onClick={onAgain}>
+              New code
+            </Button>
+          ) : null}
+          <Button variant={paired === undefined ? "ghost" : "primary"} onClick={onClose}>
+            {paired === undefined ? "Cancel" : "Done"}
+          </Button>
+        </>
+      }
+    >
       {pairing.phase === "making" ? (
         <Text size="sm" tone="quiet">
           Making a code…
@@ -230,17 +231,7 @@ function PairPhone({ pairing, paired, onAgain, onClose }: { pairing: Pairing; pa
       ) : (
         <Shown out={pairing.out} life={codeLife(pairing.out.expiresAt, now)} />
       )}
-      <div className={s.actions}>
-        {pairing.phase === "failed" || (pairing.phase === "shown" && paired === undefined && codeLife(pairing.out.expiresAt, now) === null) ? (
-          <Button variant="primary" onClick={onAgain}>
-            New code
-          </Button>
-        ) : null}
-        <Button variant={paired === undefined ? "ghost" : "primary"} onClick={onClose}>
-          {paired === undefined ? "Cancel" : "Done"}
-        </Button>
-      </div>
-    </section>
+    </SettingsRow>
   );
 }
 

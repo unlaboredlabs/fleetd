@@ -178,6 +178,9 @@
   transform: translateX(2px);
   transition: transform var(--dur-fast) var(--ease-out);
 }
+.bare {
+  margin-top: 0;
+}
 .switch[data-state="checked"] .thumb {
   transform: translateX(14px);
 }

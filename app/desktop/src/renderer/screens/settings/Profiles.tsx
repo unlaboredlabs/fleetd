@@ -4,7 +4,7 @@
 // `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and says which leads run on.
 import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef } from "../../../shared/contracts";
-import { Button, Checkbox, Field, Input, Select, Separator, Switch, Text } from "../../ui";
+import { Button, Checkbox, Field, Input, Select, Switch, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { toHash } from "../shell/routes";
 import { adminNames, adminWho } from "../sessions/pickScreen";
@@ -26,7 +26,7 @@ import {
   updateInput,
   type ProfileDraft,
 } from "./profilesModel";
-import { Setting } from "./parts";
+import { AddButton, DangerButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -40,48 +40,51 @@ export function ProfilesEditor() {
   const list = useToolQuery("profiles_list", noInput, { enabled: live });
   const [editing, setEditing] = useState<Editing | undefined>(undefined);
   const [echo, setEcho] = useState<string | undefined>(undefined);
-  if (!live) return <Text tone="quiet">Connect to the hub to see and change its profiles.</Text>;
+  if (!live)
+    return (
+      <SettingsSection>
+        <GroupNote>Connect to the hub to see and change its profiles.</GroupNote>
+      </SettingsSection>
+    );
   const view = list.data;
-  if (view === undefined) return <Text tone="quiet">{list.error ? `Not read: ${errorText(list.error)}` : "Loading…"}</Text>;
+  if (view === undefined)
+    return (
+      <SettingsSection>
+        <GroupNote tone={list.error ? "danger" : "quiet"}>{list.error ? `Not read: ${errorText(list.error)}` : "Loading…"}</GroupNote>
+      </SettingsSection>
+    );
   const done = (said: string | undefined) => {
     setEditing(undefined);
     setEcho(said);
   };
+  const row = (p: Profile) => (
+    <ProfileRow key={p.id} profile={p} lead={p.id === leadOf(view.profiles)?.id} models={view.models} onEdit={() => (setEcho(undefined), setEditing({ kind: "edit", id: p.id }))} />
+  );
+  // The profile open in the editor takes its row's place: the rows before it, the editor, the rows after it.
+  const at = editing?.kind === "edit" ? view.profiles.findIndex((p) => p.id === editing.id) : -1;
+  const open = view.profiles[at];
+  const before = at === -1 ? view.profiles : view.profiles.slice(0, at);
+  const after = at === -1 ? [] : view.profiles.slice(at + 1);
   return (
-    <div className={s.stack}>
-      <div className={s.repoList} aria-label="Profiles" role="list">
-        {view.profiles.map((p) =>
-          editing?.kind === "edit" && editing.id === p.id ? (
-            <div key={p.id} className={s.repoRow} role="listitem">
-              <ProfileForm view={view} saved={p} onDone={done} />
-            </div>
-          ) : (
-            <ProfileRow key={p.id} profile={p} lead={p.id === leadOf(view.profiles)?.id} models={view.models} onEdit={() => (setEcho(undefined), setEditing({ kind: "edit", id: p.id }))} />
-          ),
-        )}
-      </div>
-      {editing?.kind === "new" ? (
-        <ProfileForm view={view} onDone={done} />
-      ) : (
-        <div className={s.actions}>
-          <Button variant="secondary" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))}>
-            New profile
-          </Button>
-          <Text size="xs" tone="quiet">
-            {view.modelsFrom === "api" ? "Models as the hub's API key lists them." : "Models from fleetd's own list: the hub has no API key that lists them."}
-          </Text>
-        </div>
-      )}
-      <div role="status">
+    <>
+      <SettingsSection
+        intro={view.modelsFrom === "api" ? "Models as the hub's API key lists them." : "Models from fleetd's own list: the hub has no API key that lists them."}
+        aside={editing?.kind === "new" ? undefined : <AddButton label="New profile" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))} />}
+      >
+        {before.length === 0 ? null : <SettingsList label="Profiles">{before.map(row)}</SettingsList>}
+        {open === undefined ? null : <ProfileForm view={view} saved={open} onDone={done} />}
+        {after.length === 0 ? null : <SettingsList label="Profiles">{after.map(row)}</SettingsList>}
+        {editing?.kind === "new" ? <ProfileForm view={view} onDone={done} /> : null}
         {echo === undefined ? null : (
-          <Text size="xs" tone="quiet">
-            {echo}
-          </Text>
+          <GroupNote>
+            <span role="status">{echo}</span>
+          </GroupNote>
         )}
-      </div>
-      <Separator />
-      <LeadPicker view={view} onDone={done} />
-    </div>
+      </SettingsSection>
+      <SettingsSection title="Leads">
+        <LeadPicker view={view} onDone={done} />
+      </SettingsSection>
+    </>
   );
 }
 
@@ -107,68 +110,60 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
       .finally(() => setBusy(false));
   };
   return (
-    <Setting reveal="hub.lead" label="Lead runs on" help="Every project's lead. Reviews and tasks that name no profile stay on the default.">
-      <Select
-        aria-label="Lead runs on"
-        value={lead?.name ?? ""}
-        disabled={busy}
-        options={view.profiles.map((p) => ({
-          value: p.name,
-          label: (
-            <>
-              <Text mono>{p.name}</Text>
-              <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${p.default ? " · default" : ""}`}</Text>
-            </>
-          ),
-          textValue: p.name,
-        }))}
-        onValueChange={pick}
-      />
-      <Text size="xs" tone="quiet">
-        Takes effect at each lead&apos;s next start; running leads keep theirs.
-      </Text>
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
-        </p>
-      )}
-    </Setting>
+    <SettingsRow
+      reveal="hub.lead"
+      title="Lead runs on"
+      line={
+        error === undefined
+          ? "Every project's lead. Takes effect at each lead's next start; running leads keep theirs. Reviews and tasks that name no profile stay on the default."
+          : `Not changed: ${error}`
+      }
+      lineTone={error === undefined ? undefined : "danger"}
+      control={
+        <Select
+          aria-label="Lead runs on"
+          value={lead?.name ?? ""}
+          disabled={busy}
+          options={view.profiles.map((p) => ({
+            value: p.name,
+            label: (
+              <>
+                <Text mono>{p.name}</Text>
+                <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${p.default ? " · default" : ""}`}</Text>
+              </>
+            ),
+            textValue: p.name,
+          }))}
+          onValueChange={pick}
+        />
+      }
+    />
   );
 }
 
 function ProfileRow({ profile: p, lead, models, onEdit }: { profile: Profile; lead: boolean; models: ReadonlyArray<ProfileModel>; onEdit: () => void }) {
   return (
-    <div className={s.repoRow} role="listitem" aria-label={p.name} data-profile={p.name}>
-      <div className={s.inline}>
-        <Text strong mono>
-          {p.name}
-        </Text>
-        {p.default ? (
-          <Text size="xs" tone="quiet">
-            default
-          </Text>
-        ) : null}
-        {lead ? (
-          <Text size="xs" tone="quiet">
-            lead
-          </Text>
-        ) : null}
-        <Text size="sm" tone="quiet">
-          {runsLine(models, p)}
-        </Text>
-        <span style={{ marginLeft: "auto" }}>
-          <Button variant="quiet" size="sm" onClick={onEdit} aria-label={`Edit ${p.name}`}>
-            Edit
-          </Button>
-        </span>
-      </div>
+    <SettingsListRow
+      name={<Text mono>{p.name}</Text>}
+      label={p.name}
+      data={{ "data-profile": p.name }}
+      meta={[p.default ? "default" : null, lead ? "lead" : null].filter((w) => w !== null).join(" · ") || undefined}
+      controls={
+        <Button variant="quiet" size="sm" onClick={onEdit} aria-label={`Edit ${p.name}`}>
+          Edit
+        </Button>
+      }
+    >
+      <Text size="sm" tone="quiet">
+        {runsLine(models, p)}
+      </Text>
       {p.note === "" ? null : <Text size="sm">{p.note}</Text>}
       {p.refused === undefined ? null : (
-        <Text size="xs" tone="danger">
+        <Text size="sm" tone="danger">
           {p.refused}
         </Text>
       )}
-    </div>
+    </SettingsListRow>
   );
 }
 
@@ -207,8 +202,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
   };
   const label = saved ? `Edit ${saved.name}` : "New profile";
   return (
-    <section className={s.stack} aria-label={label}>
-      <Text strong>{label}</Text>
+    <SettingsRow title={label}>
       <Field label="Name" description="The word the lead names it by: lowercase, no spaces." error={draft.name !== "" && wrong?.field === "name" ? wrong.text : undefined}>
         <Input mono value={draft.name} onChange={(e) => set({ name: e.target.value })} />
       </Field>
@@ -257,9 +251,9 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
           deleting ? (
             <>
               <Text size="sm">{deleteWords(saved, view.profiles.find((p) => p.default)?.name)}</Text>
-              <Button variant="danger" disabled={busy} onClick={() => run(call("profile_delete", { id: saved.id }))}>
+              <DangerButton disabled={busy} onClick={() => run(call("profile_delete", { id: saved.id }))}>
                 Delete
-              </Button>
+              </DangerButton>
               <Button variant="ghost" disabled={busy} onClick={() => setDeleting(false)}>
                 Keep it
               </Button>
@@ -271,12 +265,22 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
           )
         ) : null}
       </div>
+      {/* Why Save can't be pressed, where the fields don't already say. */}
+      {busy || deleting ? null : wrong?.field === "name" && draft.name === "" ? (
+        <Text size="sm" tone="quiet">
+          {wrong.text}
+        </Text>
+      ) : saved !== undefined && wrong === undefined && update === undefined ? (
+        <Text size="sm" tone="quiet">
+          Nothing changed yet.
+        </Text>
+      ) : null}
       {error === undefined ? null : (
         <p role="alert" className={s.alertLine}>
           <Text size="xs" tone="danger">{`Not saved: ${error}`}</Text>
         </p>
       )}
-    </section>
+    </SettingsRow>
   );
 }
 

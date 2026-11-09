@@ -144,7 +144,7 @@ const render = async () => {
 };
 
 const button = (text: string, within: ParentNode = document) => {
-  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+  const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.getAttribute("aria-label") === text);
   if (b === undefined) throw new Error(`no button ${text} in: ${within.textContent ?? ""}`);
   return b;
 };
@@ -184,7 +184,7 @@ describe("a project's MCP servers", () => {
   it("offers to add an MCP server, and says the lead's writes follow Approvals", async () => {
     await render();
     expect(document.querySelectorAll('[role="listitem"]')).toHaveLength(0);
-    expect(document.body.textContent).toContain("Add an MCP server");
+    expect(button("Add an MCP server")).toBeDefined();
     expect(document.body.textContent).toContain("Reads run unasked; anything else follows Approvals.");
     expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
@@ -192,14 +192,14 @@ describe("a project's MCP servers", () => {
   it("shows a connected server: its key sealed on the project's machine, and a test by policy", async () => {
     project = [crm];
     await render();
-    await click(button("Test connection", row("crm")));
+    await click(button("Test", row("crm")));
     const text = row("crm").textContent;
     expect(text).toContain("Connected");
     expect(text).toContain("Key sealed on devbox. It never goes in the chat.");
     expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools run without asking · 1 asks you each time.");
     expect(text).toContain("list_contacts, get_contact");
     tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
-    await click(button("Test connection", row("crm")));
+    await click(button("Test", row("crm")));
     expect(row("crm").querySelector('[role="alert"]')?.textContent).toContain("Failed on devbox: HTTP 401 Unauthorized");
   });
 

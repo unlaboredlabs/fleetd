@@ -224,7 +224,7 @@ const render = async (page: "project" | "instructions" = "project") => {
 
 
 const button = (text: string) => {
-  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.getAttribute("aria-label") === text);
   if (b === undefined) throw new Error(`no button ${text}`);
   return b;
 };
@@ -313,7 +313,7 @@ describe("Settings → Projects", () => {
     act(() => root.unmount());
     root = createRoot(host);
     await render("instructions");
-    const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label, div")?.textContent.includes("Refresh memory every night"));
+    const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("section")?.textContent.includes("Refresh memory every night"));
     if (toggle === undefined) throw new Error("no memory switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     // Its hour and last run, and Run now, are here too: Automations no longer lists it.
@@ -329,12 +329,14 @@ describe("Settings → Projects", () => {
 
   it("saves the default setup, under the repos, in order, with its limit, inputs and run anyway", async () => {
     await render();
-    const section = document.querySelector<HTMLElement>('section[aria-label="Repos"] section[aria-labelledby="default-setup"]');
+    // Setup is a section of its own, under Code's repos.
+    const section = document.querySelector<HTMLElement>('section[data-part="projects.setup"]');
     if (section === null) throw new Error("no setup section");
     const [commands, inputs] = [...section.querySelectorAll("textarea")];
     const limit = section.querySelector("input");
     if (commands === undefined || inputs === undefined || limit === null) throw new Error("no setup fields");
-    expect(button("Save setup").disabled).toBe(true);
+    // Save shows once there is something to save.
+    expect(() => button("Save setup")).toThrow();
     await type(commands, "pnpm install --frozen-lockfile\n\npnpm codegen\n");
     await type(limit, "0");
     expect(section.textContent).toContain("1 to 3600");
@@ -460,8 +462,8 @@ describe("Settings → Projects", () => {
     expect(part?.textContent).not.toContain("effort");
     expect(part?.textContent).toContain("It sees the action, never the mail or pages the lead read.");
     expect(part?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')?.closest("label")?.textContent).toContain("Checker decides");
-    const log = document.querySelector('ul[aria-label="Ran without asking"]');
-    expect(log?.querySelectorAll("li")).toHaveLength(2);
+    const log = document.querySelector('[role="list"][aria-label="Ran without asking"]');
+    expect(log?.querySelectorAll('[role="listitem"]')).toHaveLength(2);
     expect(log?.textContent).toContain("Checker: you asked to tell Sam that Saturday works");
     expect(log?.textContent).toContain("YOLO: nothing asks");
     const yolo = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"))?.querySelector<HTMLElement>('[role="radio"]');
@@ -579,6 +581,8 @@ describe("Settings → Projects → Repos", () => {
     if (el === null) throw new Error("no repos section");
     return el;
   };
+  /** Setup's own section, under Code. */
+  const setupTitle = () => document.querySelector('section[data-part="projects.setup"] h2')?.textContent;
   const row = (name: string) => {
     const el = section().querySelector<HTMLElement>(`[role="listitem"][aria-label="${name}"]`);
     if (el === null) throw new Error(`no repo ${name}`);
@@ -603,7 +607,7 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("/home/w/src/storefront on devbox");
     // Its setup is the project's, shown once, below: the row doesn't repeat it, and there is no "default" to explain.
     expect(text).not.toContain("pnpm install");
-    expect(section().querySelector("#default-setup")?.textContent).toBe("Setup");
+    expect(setupTitle()).toBe("Setup");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
 
@@ -624,11 +628,12 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
     // One repo has its own, so the project's is the default for the rest.
-    expect(section().querySelector("#default-setup")?.textContent).toBe("Default setup");
+    expect(setupTitle()).toBe("Default setup");
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {
     await renderRepos();
+    await click(button("Add a repo"));
     const field = section().querySelector<HTMLInputElement>('input[aria-label="Repo to add"]');
     const name = section().querySelector<HTMLInputElement>('input[aria-label="Repo name"]');
     if (field === null || name === null) throw new Error("no add form");

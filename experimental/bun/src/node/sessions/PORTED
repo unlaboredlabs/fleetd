@@ -50,5 +50,8 @@ session:session call `send`
 session:session call `skills_list`
 session:session call `stop`
 session:session call `subscribe`
+session:session call `vault_adopt`
+session:session call `vault_import_read`
+session:session call `vault_import_search`
 session:session call `window`
 session:session call `withdraw`

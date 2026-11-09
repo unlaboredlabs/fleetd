@@ -11,7 +11,7 @@ import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { draftOf, emptyDraft, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
-import { Setting } from "./parts";
+import { AddButton, GroupNote, SettingsList, SettingsListRow, SettingsRow, SwitchRow } from "./parts";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
 
@@ -42,15 +42,21 @@ function useMachineIds(): string[] {
 export function HubMcpServers() {
   const live = useLive();
   const read = useToolQuery("mcp_servers_get", {}, { enabled: live });
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
+  if (!live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
   const data = read.data;
   return (
     <>
       {read.isLoadingError ? (
-        <div className={s.inline}>
-          <Text tone="danger">{errorText(read.error)}</Text>
-          <Button onClick={() => void read.refetch()}>Try again</Button>
-        </div>
+        <SettingsRow
+          title="Couldn't read the MCP servers"
+          line={errorText(read.error)}
+          lineTone="danger"
+          control={
+            <Button size="sm" onClick={() => void read.refetch()}>
+              Try again
+            </Button>
+          }
+        />
       ) : null}
       {data ? (
         <>
@@ -63,7 +69,7 @@ export function HubMcpServers() {
           <UserServers on={data.userServers} />
         </>
       ) : read.isLoadingError ? null : (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       )}
     </>
   );
@@ -75,10 +81,11 @@ function UserServers({ on }: { on: boolean }) {
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   return (
-    <Setting reveal="mcp.user" label="Own MCP servers" help="The servers in the claude setup where an agent runs (~/.claude.json, a repo's .mcp.json).">
-      <Switch
-        label="Agents also get their own MCP servers"
-        description="Off: agents get fleetd's tools and the servers here only. fleetd's own tools are always there."
+    <>
+      <SwitchRow
+        reveal="mcp.user"
+        title="Agents also get their own MCP servers"
+        line="The servers in the claude setup where an agent runs (~/.claude.json, a repo's .mcp.json). Off: agents get fleetd's tools and the servers here only. fleetd's own tools are always there."
         checked={on}
         disabled={busy}
         onCheckedChange={(next) => {
@@ -98,7 +105,7 @@ function UserServers({ on }: { on: boolean }) {
         }}
       />
       <EchoLine echo={echo} />
-    </Setting>
+    </>
   );
 }
 
@@ -114,21 +121,17 @@ function ServersSetting(props: { label: string; help: string; scope: Ref | null;
     setEcho({ ok: true, text });
   };
   return (
-    <Setting label={props.label} help={props.help}>
+    <>
+      <SettingsRow title={props.label} line={props.help} control={<AddButton label="Add server" onClick={() => setEditing({ kind: "new" })} />} />
       {props.servers.length === 0 ? (
-        <Text size="sm" tone="quiet">
-          None yet.
-        </Text>
+        <GroupNote>None yet.</GroupNote>
       ) : (
-        <div role="list" aria-label={props.label} className={s.stack}>
+        <SettingsList label={props.label}>
           {props.servers.map((server) => (
             <ServerRow key={server.name} server={server} missing={missingOn(server, shownOn)} onEdit={() => setEditing({ kind: "edit", server })} onRemove={() => setEditing({ kind: "remove", server })} />
           ))}
-        </div>
+        </SettingsList>
       )}
-      <div className={s.inline}>
-        <Button onClick={() => setEditing({ kind: "new" })}>Add server</Button>
-      </div>
       <EchoLine echo={echo} />
       {editing?.kind === "new" || editing?.kind === "edit" ? (
         <ServerEditor
@@ -142,7 +145,7 @@ function ServersSetting(props: { label: string; help: string; scope: Ref | null;
         />
       ) : null}
       {editing?.kind === "remove" ? <ConfirmRemove server={editing.server} onClose={() => setEditing(null)} onRemoved={() => done(`Removed ${editing.server.name}. Agents already running keep it until they next start.`)} /> : null}
-    </Setting>
+    </>
   );
 }
 
@@ -167,39 +170,39 @@ function ServerRow(props: { server: McpServer; missing: string[]; onEdit: () => 
     );
   };
   return (
-    <div role="listitem" aria-label={server.name} className={s.stack}>
-      <div className={s.inline}>
-        <Text mono strong size="sm">
-          {server.name}
-        </Text>
-        <Text size="xs" tone="quiet">
-          {server.enabled ? rolesText(server.roles) : "Off"}
-        </Text>
-        <Button size="sm" variant="ghost" disabled={testing} onClick={test}>
-          {testing ? "Testing…" : "Test connection"}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={props.onEdit}>
-          Edit
-        </Button>
-        <Button size="sm" variant="ghost" onClick={props.onRemove}>
-          Remove
-        </Button>
-      </div>
+    <SettingsListRow
+      name={<Text mono>{server.name}</Text>}
+      label={server.name}
+      meta={server.enabled ? rolesText(server.roles) : "Off"}
+      controls={
+        <>
+          <Button size="sm" variant="ghost" disabled={testing} onClick={test}>
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={props.onEdit}>
+            Edit
+          </Button>
+          <Button size="sm" variant="ghost" onClick={props.onRemove}>
+            Remove
+          </Button>
+        </>
+      }
+    >
       <Truncate size="sm" tone="quiet" mono>
         {transportText(server)}
       </Truncate>
       {values !== "" ? (
-        <Truncate size="xs" tone="quiet" mono>
+        <Truncate size="sm" tone="quiet" mono>
           {values}
         </Truncate>
       ) : null}
       {props.missing.length > 0 ? (
-        <Text size="xs" tone="danger">
+        <Text size="sm" tone="danger">
           Its secrets aren't on {props.missing.join(", ")}: agents there go without it. Edit and save it while they're online.
         </Text>
       ) : null}
       {tested ? <TestResult tested={tested} /> : null}
-    </div>
+    </SettingsListRow>
   );
 }
 
@@ -417,14 +420,13 @@ export function ConfirmRemove(props: { server: McpServer; onClose: () => void; o
   );
 }
 
+/** What a change did, or why not, as a note in its group. */
 function EchoLine({ echo }: { echo: { ok: boolean; text: string } | null }) {
   if (!echo) return null;
   return (
-    <div role={echo.ok ? "status" : "alert"}>
-      <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
-        {echo.text}
-      </Text>
-    </div>
+    <GroupNote tone={echo.ok ? "quiet" : "danger"}>
+      <span role={echo.ok ? "status" : "alert"}>{echo.text}</span>
+    </GroupNote>
   );
 }
 

@@ -185,7 +185,7 @@ it("lists the machines, each with its page and Remove, and Repair only for one t
   expect(row("devbox")?.textContent).not.toContain("Repair sets");
   expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
   // Every row ends in a chevron, so it reads as one that opens without a hover.
-  for (const name of names) expect(row(name ?? "")?.lastElementChild?.matches("svg[aria-hidden='true']")).toBe(true);
+  for (const name of names) expect(row(name ?? "")?.lastElementChild?.lastElementChild?.matches("svg[aria-hidden='true']")).toBe(true);
 
   // No raw version on a row: the machine's page says it.
   expect(row("devbox")?.textContent).not.toContain("0.9.0");
@@ -230,7 +230,7 @@ it("says a machine the hub set up loses its service as well as its key", async (
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("its projects are deleted from fleetd with their chats, memory, skills, files and orders");
 });
 
-const items = () => [...host.querySelectorAll("li[data-item]")].map((li) => `${li.getAttribute("data-item") ?? ""}:${li.getAttribute("data-state") ?? ""}`);
+const items = () => [...host.querySelectorAll("[data-item]")].map((li) => `${li.getAttribute("data-item") ?? ""}:${li.getAttribute("data-state") ?? ""}`);
 
 it("shows a joined machine's checklist, each item waiting until the hub has checked it", async () => {
   checks = [];
@@ -274,7 +274,7 @@ it("checks a machine again as its page opens when the hub couldn't answer some o
 
 it("gives each fix as the command to run on the machine, with Copy", async () => {
   await render(<MachinePage machineId="laptop" />);
-  const android = host.querySelector("li[data-item='capabilities']");
+  const android = host.querySelector("[data-item='capabilities']");
   expect(android?.querySelector("dt")?.textContent).toBe("Run on laptop");
   expect(android?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo usermod -aG kvm ada");
 });
@@ -291,7 +291,7 @@ it("gives a fix that runs on the hub as the command to run on the hub's machine,
       : c,
   );
   await render(<MachinePage machineId="laptop" />);
-  const identity = host.querySelector("li[data-item='identity']");
+  const identity = host.querySelector("[data-item='identity']");
   // Named once the hub has said which machine it runs on (machine_hosts, asked as the fix shows).
   await vi.waitFor(() => expect(identity?.querySelector("dt")?.textContent).toBe("Run on devbox, the hub"));
   expect(identity?.querySelector("dd [data-text='code']")?.textContent).toBe("fleetd pair --worker laptop");
@@ -358,7 +358,7 @@ it("holds a machine's role, screens and max agents on its page, under its checkl
 it("says so when the hub has no such machine", async () => {
   await render(<MachinePage machineId="ghost" />);
   expect(host.textContent).toContain("This hub has no such machine. It may have been removed.");
-  expect(host.querySelector("li[data-item]")).toBeNull();
+  expect(host.querySelector("[data-item]")).toBeNull();
 });
 
 it("lists the projects left from a removed machine, and Remove only forgets one in fleetd", async () => {

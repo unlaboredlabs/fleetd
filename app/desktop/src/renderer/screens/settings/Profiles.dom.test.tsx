@@ -166,8 +166,8 @@ const rows = () => [...host.querySelectorAll("[data-profile]")].map((r) => r.tex
 it("lists the hub's profiles, the default marked, and creates one in fast mode", async () => {
   await render("editor");
   expect(rows()).toEqual([
-    expect.stringMatching(/^highdefaultleadClaude Opus 5.5 · high effortEditThe default\.$/u),
-    expect.stringMatching(/^mediumClaude Opus 5.5 · medium effortEditOnly for mechanical work\.$/u),
+    expect.stringMatching(/^highdefault · leadClaude Opus 5.5 · high effortThe default\.Edit$/u),
+    expect.stringMatching(/^mediumClaude Opus 5.5 · medium effortOnly for mechanical work\.Edit$/u),
     expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effortEdit$/u),
   ]);
   expect(host.textContent).toContain("Models from fleetd's own list");
@@ -189,7 +189,7 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
       input: { name: "quick", note: "Small, clear fixes where speed matters.", model: "claude-opus-5-5", effort: "high", fast: true },
     },
   ]);
-  expect(rows().at(-1)).toMatch(/^quickClaude Opus 5\.5 · high effort · fastEdit/u);
+  expect(rows().at(-1)).toMatch(/^quickClaude Opus 5\.5 · high effort · fast/u);
   expect(host.textContent).toContain("Projects allow quick once they pick it.");
 });
 
@@ -201,7 +201,7 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   await click(toggle("checkbox", "The default"));
   await click(button("Save"));
   expect(calls).toEqual([{ tool: "profile_update", input: { id: 2, name: "chores", default: true } }]);
-  expect(rows()[1]).toMatch(/^choresdefaultlead/u);
+  expect(rows()[1]).toMatch(/^choresdefault · lead/u);
   await click(button("Edit chores"));
   // The default can be neither unmarked nor deleted, only replaced.
   expect(toggle("checkbox", "The default").disabled).toBe(true);
@@ -212,7 +212,7 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   expect(host.textContent).toContain("Delete high? No project allows it after.");
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 1 } });
-  expect(rows().map((r) => r.split("Claude")[0])).toEqual(["choresdefaultlead", "wide"]);
+  expect(rows().map((r) => r.split("Claude")[0])).toEqual(["choresdefault · lead", "wide"]);
 });
 
 /** The Lead runs on picker's trigger, and the option for `name` once it is open. */
@@ -249,7 +249,7 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 3 } });
   expect(leadPicker().textContent).toContain("high");
-  expect(rows()[0]).toMatch(/^highdefaultlead/u);
+  expect(rows()[0]).toMatch(/^highdefault · lead/u);
 });
 
 it("tells a project which profile leads run on: an admin the way to change it, a member who to ask", async () => {

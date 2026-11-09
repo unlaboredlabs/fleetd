@@ -991,7 +991,7 @@ export const screens: readonly Screen[] = [
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
     fixtures: ["only-me-links"],
     open: async (page) => {
-      await page.getByRole("region", { name: "Archive" }).scrollIntoViewIfNeeded();
+      await page.getByRole("region", { name: "Archive", exact: true }).scrollIntoViewIfNeeded();
       await page.getByRole("region", { name: "Delete project" }).waitFor();
     },
   },
@@ -2320,7 +2320,7 @@ export const screens: readonly Screen[] = [
     variant: "created",
     open: async (page) => {
       await page.getByRole("button", { name: "Invite someone" }).click();
-      await page.getByLabel("Name").fill("Eve Park");
+      await page.getByRole("textbox", { name: "Name" }).fill("Eve Park");
       await page.getByRole("button", { name: "Create invite link" }).click();
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
@@ -2700,7 +2700,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Edit “No npm here: use pnpm.”" }).click();
       await page.getByRole("textbox", { name: "Edit the entry in MEMORY.md" }).fill("No npm here: use pnpm, and pin its version.");
-      await page.getByRole("region", { name: "deploys (deploys.md)" }).getByRole("button", { name: "Edit as text" }).click();
+      await page.getByRole("region", { name: "deploys", exact: true }).getByRole("button", { name: "Edit as text" }).click();
       await expect(page.getByRole("textbox", { name: "All of deploys.md" })).toBeVisible();
     },
   },

@@ -1,74 +1,38 @@
 // Settings › Hub › People's invites: a link for someone new (invite_create with a name and role), shown once with
-// Copy, and the invites still open, each with Revoke (invite_revoke). The link is today's fleetd://pair link, bound to the person
+// Copy, and an open invite's row with Revoke (invite_revoke). The link is today's fleetd://pair link, bound to the person
 // and good for 7 days; their app opens it and pairs as them.
-import { UserPlus } from "lucide-react";
-import { useState } from "react";
+import { Mail } from "lucide-react";
+import { useId, useState } from "react";
 import type { HubRole, Invite, InviteCreateOutput, Person } from "../../../shared/contracts";
-import { Button, copyText, Field, Input, Radio, RadioGroup, Text, Truncate } from "../../ui";
+import { Button, copyText, Input, Radio, RadioGroup, Text, Truncate } from "../../ui";
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { expiresLine, nameProblem, openInvites, ROLE_HELP, roleWord } from "./model";
+import { expiresLine, nameProblem, ROLE_HELP, roleWord } from "./model";
+import { SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
-import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
 /** The roles an invite offers; owners are made from People, by an owner. */
 const INVITE_ROLES: ReadonlyArray<HubRole> = ["member", "admin"];
 
-/** Invite someone, the link just made, and the invites waiting to join; below People's list, on a hub that has people. */
-export function Invites({ me }: { me: Person | undefined }) {
-  const read = usePeople();
-  const [inviting, setInviting] = useState(false);
+/** Invite someone, opened by People's plus: its form and the link just made. */
+export function InviteSection() {
   const [created, setCreated] = useState<InviteCreateOutput | null>(null);
-  // Days-grained, so the time the page opened is close enough.
-  const [now] = useState(() => Date.now());
-  const roleOf = (i: Invite): HubRole | undefined => read.data?.people.find((p) => p.personId === i.person.personId)?.role;
-  const open = read.data === undefined ? [] : openInvites(read.data.invites);
-  const inviteForm = useReveal<HTMLElement>("hub.invite");
-  const inviteButton = useReveal<HTMLSpanElement>("hub.invite");
-  const waiting = useReveal<HTMLElement>("hub.invites");
+  const ref = useReveal<HTMLDivElement>("hub.invite");
   return (
-    <>
-      {inviting ? (
-        <section ref={inviteForm} className={a.section} aria-labelledby="invite-someone">
-          <Text strong id="invite-someone">
-            Invite someone
-          </Text>
-          <Text size="xs" tone="quiet">
-            A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.
-          </Text>
-          <InviteForm onCreated={setCreated} />
-          {created === null ? null : <CreatedLink created={created} />}
-        </section>
-      ) : (
-        <span ref={inviteButton}>
-          <Button icon={<UserPlus size={14} />} onClick={() => setInviting(true)}>
-            Invite someone
-          </Button>
-        </span>
-      )}
-      {open.length === 0 && read.data !== undefined ? null : (
-        <section ref={waiting} className={a.section} aria-labelledby="invites-open">
-          <Text strong id="invites-open">
-            Waiting to join
-          </Text>
-          {read.error ? (
-            <Text tone="danger">{`Couldn't read the invites: ${errorText(read.error)}`}</Text>
-          ) : read.data === undefined ? (
-            <Text tone="quiet">Loading…</Text>
-          ) : (
-            <div className={a.list} role="list" aria-label="Open invites">
-              {open.map((i) => (
-                <OpenInvite key={i.inviteId} invite={i} role={roleOf(i)} me={me} now={now} />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-    </>
+    <div ref={ref}>
+      <SettingsSection title="Invite someone" intro="A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.">
+        <InviteForm onCreated={setCreated} />
+        {created === null ? null : <CreatedLink created={created} />}
+      </SettingsSection>
+    </div>
   );
 }
+
+/** Who made an invite, as its row says it: "by you", "by Sam", "from the hub machine". */
+export const invitedBy = (i: Invite, me: Person | undefined): string =>
+  i.createdBy === undefined ? "from the hub machine" : i.createdBy.personId === me?.personId ? "by you" : `by ${i.createdBy.name}`;
 
 function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => void }) {
   const call = useHubCall();
@@ -82,6 +46,7 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const problem = nameProblem(name);
+  const nameId = useId();
   const create = () => {
     setTried(true);
     if (problem !== undefined) return;
@@ -99,36 +64,36 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
   };
   return (
     <form
-      className={a.form}
       aria-label="Invite someone"
       onSubmit={(e) => {
         e.preventDefault();
         create();
       }}
     >
-      <Field label="Name" error={tried ? problem : undefined}>
-        <Input value={name} placeholder="Alice" autoComplete="off" onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <div className={s.settingLabel}>
-        <Text size="sm" strong id="invite-role">
-          Role
-        </Text>
+      <SettingsRow
+        title={<label htmlFor={nameId}>Name</label>}
+        label="Name"
+        line={tried && problem !== undefined ? problem : undefined}
+        lineTone="danger"
+        control={<Input id={nameId} className={a.inviteName} value={name} placeholder="Alice" autoComplete="off" onChange={(e) => setName(e.target.value)} />}
+      />
+      <SettingsRow title="Role" titleId="invite-role">
         <RadioGroup value={role} onValueChange={(v) => setRole(v)} aria-labelledby="invite-role">
           {INVITE_ROLES.map((r) => (
             <Radio key={r} value={r} label={roleWord(r)} description={ROLE_HELP[r]} />
           ))}
         </RadioGroup>
-      </div>
-      <div className={s.actions}>
-        <Button type="submit" variant="primary" disabled={busy}>
-          {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}
-        </Button>
-      </div>
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">{`No invite: ${error}`}</Text>
-        </p>
-      )}
+      </SettingsRow>
+      <SettingsRow
+        title={several ? `For ${hub.label}` : "The link"}
+        line={error === undefined ? "Shown once, to send them yourself." : <span role="alert">{`No invite: ${error}`}</span>}
+        lineTone={error === undefined ? "quiet" : "danger"}
+        control={
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}
+          </Button>
+        }
+      />
     </form>
   );
 }
@@ -139,20 +104,20 @@ function CreatedLink({ created }: { created: InviteCreateOutput }) {
   const name = created.invite.person.name;
   return (
     <section className={a.created} aria-label={`Invite link for ${name}`}>
-      <Text strong>{`Invite link for ${name}`}</Text>
+      <Text>{`Invite link for ${name}`}</Text>
       <div className={a.link}>
         <Truncate mono size="sm">
           {created.link}
         </Truncate>
-        <Button size="sm" onClick={() => void copyText(created.link).then(setCopied)}>
+        <Button variant="secondary" onClick={() => void copyText(created.link).then(setCopied)}>
           {copied === true ? "Copied" : "Copy link"}
         </Button>
       </div>
-      <Text size="xs" tone="quiet">
+      <Text size="sm" tone="quiet">
         {`Shown only now. Send it to ${name}; their fleetd app opens it and joins. Without the link, they enter ${created.hubUrl} and the code ${created.code}.`}
       </Text>
       {copied === false ? (
-        <Text size="xs" tone="danger">
+        <Text size="sm" tone="danger">
           Couldn't copy it. Select the link and copy it by hand.
         </Text>
       ) : null}
@@ -160,12 +125,15 @@ function CreatedLink({ created }: { created: InviteCreateOutput }) {
   );
 }
 
-function OpenInvite({ invite: i, role, me, now }: { invite: Invite; role: HubRole | undefined; me: Person | undefined; now: number }) {
+/** An open invite for one more device of someone already on the hub, with Revoke. */
+export function OpenInvite({ invite: i, role, me }: { invite: Invite; role: HubRole | undefined; me: Person | undefined }) {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // Days-grained, so the time the page opened is close enough.
+  const [now] = useState(() => Date.now());
   const revoke = () => {
     setBusy(true);
     setError(undefined);
@@ -174,32 +142,26 @@ function OpenInvite({ invite: i, role, me, now }: { invite: Invite; role: HubRol
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setBusy(false));
   };
-  const by = i.createdBy === undefined ? "from the hub machine" : i.createdBy.personId === me?.personId ? "by you" : `by ${i.createdBy.name}`;
   return (
-    <div className={a.row} role="listitem" aria-label={i.person.name}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong>{i.person.name}</Text>
-          {role === undefined ? null : (
-            <Text size="xs" tone="quiet">
-              {roleWord(role)}
-            </Text>
-          )}
-        </div>
-        <Text size="xs" tone="quiet">
-          {`${expiresLine(i.expiresAt, now)}. Invited ${by}.`}
-        </Text>
-        {error === undefined ? null : (
-          <p role="alert" className={s.alertLine}>
-            <Text size="xs" tone="danger">{`Not revoked: ${error}`}</Text>
-          </p>
-        )}
-      </div>
-      <div className={a.controls}>
-        <Button size="sm" variant="ghost" disabled={!live || busy} onClick={revoke}>
+    <SettingsListRow
+      label={i.person.name}
+      icon={<Mail />}
+      name={i.person.name}
+      meta={role === undefined ? undefined : roleWord(role)}
+      controls={
+        <Button variant="ghost" disabled={!live || busy} onClick={revoke}>
           Revoke
         </Button>
-      </div>
-    </div>
+      }
+    >
+      <Text size="sm" tone="quiet">
+        {`${expiresLine(i.expiresAt, now)}. Invited ${invitedBy(i, me)}.`}
+      </Text>
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="sm" tone="danger">{`Not revoked: ${error}`}</Text>
+        </p>
+      )}
+    </SettingsListRow>
   );
 }

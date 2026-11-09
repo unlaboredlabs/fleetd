@@ -30,7 +30,8 @@ import {
 import { emptyDraft, globalsFor, nameProblem, rolesText, type Draft } from "./mcpModel";
 import { ServerEditor } from "./McpServers";
 import { CommandLine, Prose } from "../onboarding/Prose";
-import { Setting } from "./parts";
+import { AddButton, SettingsList, SettingsListRow, SettingsRow } from "./parts";
+import { Plug } from "lucide-react";
 import s from "./settings.module.css";
 import { boxOf } from "./claudeModel";
 
@@ -289,11 +290,12 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
   const help = "Tools the lead reaches for you. Reads run unasked; anything else follows Approvals.";
   if (!live || read.data === undefined) {
     return (
-      <Setting reveal="projects.mcp" label="MCP servers" help={help}>
-        <Text size="sm" tone={read.isLoadingError ? "danger" : "quiet"}>
-          {!live ? "Not connected. Connect to a hub to change its MCP servers." : read.isLoadingError ? errorText(read.error) : "Loading…"}
-        </Text>
-      </Setting>
+      <SettingsRow
+        reveal="projects.mcp"
+        title="MCP servers"
+        line={!live ? "Not connected. Connect to a hub to change its MCP servers." : read.isLoadingError ? errorText(read.error) : "Loading…"}
+        lineTone={read.isLoadingError ? "danger" : "quiet"}
+      />
     );
   }
   const all = read.data.project ?? [];
@@ -304,8 +306,21 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
     setDialog(null);
   };
   return (
-    <Setting reveal="projects.mcp" label="MCP servers" help={help}>
-      <div role="list" aria-label="MCP servers" className={s.integrations}>
+    <SettingsRow
+      reveal="projects.mcp"
+      title="MCP servers"
+      line={help}
+      control={
+        <>
+          <Button variant="ghost" onClick={() => open(DOCS)}>
+            How they work
+          </Button>
+          <AddButton label="Add an MCP server" onClick={() => setDialog({ kind: "custom" })} />
+        </>
+      }
+    >
+      {all.length === 0 ? null : (
+        <SettingsList label="MCP servers">
         {all.map((server) => (
           <Row
             key={server.name}
@@ -320,7 +335,8 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
             onSignIn={(s2) => setDialog({ kind: "signin", server: s2 })}
           />
         ))}
-      </div>
+        </SettingsList>
+      )}
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
@@ -336,19 +352,13 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
           ))}
         </div>
       ) : null}
-      <div className={s.inline}>
-        <Button onClick={() => setDialog({ kind: "custom" })}>Add an MCP server</Button>
-        <Button variant="ghost" onClick={() => open(DOCS)}>
-          How MCP servers work
-        </Button>
-      </div>
       {dialog?.kind === "custom" ? <ConnectCustom projectRef={projectRef} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} /> : null}
       {dialog?.kind === "edit" ? (
         <ServerEditor scope={projectRef} editing={dialog.server} taken={all.map((x) => x.name)} onClose={() => setDialog(null)} onSaved={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} machine={machine.name} onClose={() => setDialog(null)} /> : null}
       {dialog?.kind === "signin" ? <SignInDialog projectRef={projectRef} server={dialog.server} onClose={() => setDialog(null)} onTested={tested} /> : null}
-    </Setting>
+    </SettingsRow>
   );
 }
 
@@ -387,47 +397,44 @@ function Row(props: {
   // Signed out, or its test found it wants a sign-in: the way back is right on the row.
   const signIn = (server.oauth?.status === "signed_out" && server.oauth.signingIn !== true) || wantsSignIn(props.tested);
   return (
-    <div role="listitem" aria-label={props.title} className={s.integration} data-connected="">
-      <div className={s.integrationHead}>
-        <div className={s.stack}>
-          <Text strong size="sm">
-            {props.title}
-          </Text>
-          <Truncate size="xs" tone="quiet">
-            {props.what}
-          </Truncate>
-        </div>
-        <div className={s.inline}>
-          <Text size="xs" tone={status.tone}>
-            {agents && server.enabled ? `${rolesText(server.roles)} · unasked` : status.text}
-          </Text>
+    <SettingsListRow
+      label={props.title}
+      icon={<Plug />}
+      name={props.title}
+      state={{ word: agents && server.enabled ? `${rolesText(server.roles)} · unasked` : status.text, tone: status.tone }}
+      controls={
+        <>
           {signIn ? (
-            <Button size="sm" variant="primary" onClick={() => props.onSignIn(server)}>
+            <Button variant="primary" onClick={() => props.onSignIn(server)}>
               {server.oauth?.signedInAt === undefined ? "Sign in" : "Reconnect"}
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" disabled={testing} onClick={() => test(server)}>
-            {testing ? "Testing…" : "Test connection"}
+          <Button variant="ghost" disabled={testing} onClick={() => test(server)}>
+            {testing ? "Testing…" : "Test"}
           </Button>
           {agents ? (
-            <Button size="sm" variant="ghost" onClick={() => props.onEdit(server)}>
+            <Button variant="ghost" onClick={() => props.onEdit(server)}>
               Edit
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onClick={() => props.onDisconnect(server)}>
+          <Button variant="ghost" onClick={() => props.onDisconnect(server)}>
             Disconnect
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      <Truncate size="sm" tone="quiet">
+        {props.what}
+      </Truncate>
       {line !== null ? (
-        <Prose size="xs" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} />
+        <Prose size="sm" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} />
       ) : sealed ? (
-        <Text size="xs" tone="quiet">
+        <Text size="sm" tone="quiet">
           Key sealed on {props.machine}. It never goes in the chat.
         </Text>
       ) : null}
       {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} brief={agents} />}
-    </div>
+    </SettingsListRow>
   );
 }
 
