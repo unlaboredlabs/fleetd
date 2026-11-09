@@ -243,13 +243,14 @@ export function runChecks(opts: CheckOptions): Finding[] {
     }
   }
 
-  // Content scrolls under an opaque sticky or fixed bar (a list's header, the top bar) by design, and a popover or
-  // menu (an opaque surface in a fixed positioner, as Radix draws them) opens over it. Where such a surface is the
-  // topmost thing over a run, that part of the run is hidden, not overlapping, and is cut from its visible rect.
+  // Content scrolls under an opaque sticky or fixed bar (a list's header) or the window's floating top row's glass
+  // (data-floats: the chat's capsules) by design, and a popover or menu (an opaque surface in a fixed positioner, as
+  // Radix draws them) opens over it. Where such a surface is the topmost thing over a run, that part of the run is
+  // hidden, not overlapping, and is cut from its visible rect.
   const fixedParent = (el: Element) => el.parentElement !== null && style(el.parentElement).position === "fixed";
   const occluders = [...document.body.querySelectorAll("*")].filter((el) => {
     const s = style(el);
-    return (s.position === "sticky" || s.position === "fixed" || fixedParent(el)) && opaque(s) && !hidden(el);
+    return (s.position === "sticky" || s.position === "fixed" || fixedParent(el) || el.closest("[data-floats]") !== null) && opaque(s) && !hidden(el);
   });
   // `v` minus `hit` (a rect inside it): what is left above, below, and beside it, at most four pieces.
   const minus = (v: Rect, hit: Rect): Rect[] =>
@@ -518,26 +519,29 @@ export function runChecks(opts: CheckOptions): Finding[] {
     const s = style(el);
     return s.getPropertyValue("app-region") || s.getPropertyValue("-webkit-app-region") || "none";
   };
-  const regions: { r: Rect; drag: boolean }[] = [];
+  // A floating row's drag box (data-floats) is over a list that scrolls under it by design, as content passes under a
+  // macOS toolbar: only the row's own controls are held to it, never the list's rows passing under.
+  const regions: { r: Rect; drag: boolean; floats: Element | null }[] = [];
   for (const el of document.body.querySelectorAll("*")) {
     const region = regionOf(el);
     // Not hidden(): a modal marks the page behind it aria-hidden, but Electron still drags from it.
     if ((region !== "drag" && region !== "no-drag") || !el.checkVisibility({ checkVisibilityCSS: true })) continue;
     // Only the part that can be seen: a box scrolled out of its container drags nothing.
     const r = intersect(rectOf(el.getBoundingClientRect()), el.parentElement ? clipOf(el.parentElement) : viewport);
-    if (!empty(r)) regions.push({ r, drag: region === "drag" });
+    if (!empty(r)) regions.push({ r, drag: region === "drag", floats: el.closest("[data-floats]") });
   }
   // Whether the window takes a click at the middle of this rect: the last box over it says.
-  const drags = (r: Rect) => {
+  const drags = (r: Rect, el: Element) => {
     const x = (r.left + r.right) / 2;
     const y = (r.top + r.bottom) / 2;
     let drag = false;
     for (const region of regions) {
+      if (region.floats !== null && !region.floats.contains(el)) continue;
       if (x >= region.r.left && x < region.r.right && y >= region.r.top && y < region.r.bottom) drag = region.drag;
     }
     return drag;
   };
-  const dragBoxes = regions.filter((b) => b.drag).map((b) => b.r);
+  const dragBoxes = regions.filter((b) => b.drag);
   if (dragBoxes.length > 0) {
     const focusable = document.body.querySelectorAll(
       // The same list base.css makes no-drag (minus its [data-no-drag] opt-out marker); keep the two in step.
@@ -547,8 +551,11 @@ export function runChecks(opts: CheckOptions): Finding[] {
       if (hidden(el) || screenReaderOnly(el) || exempt(el, "drag")) continue;
       const clip = style(el).position === "fixed" || !el.parentElement ? viewport : clipOf(el.parentElement);
       const rect = intersect(rectOf(el.getBoundingClientRect()), clip);
-      const over = dragBoxes.map((d) => intersect(rect, d)).find((hit) => !empty(hit));
-      if (!over || !drags(over)) continue;
+      const over = dragBoxes
+        .filter((d) => d.floats === null || d.floats.contains(el))
+        .map((d) => intersect(rect, d.r))
+        .find((hit) => !empty(hit));
+      if (!over || !drags(over, el)) continue;
       findings.push({
         check: "drag",
         message: "a control in the title-bar drag region: on macOS a click drags the window (set app-region: no-drag, after the drag box in the page's order)",

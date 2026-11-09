@@ -50,6 +50,7 @@ export {
   AppFrame,
   TopBar,
   FrameTitle,
+  Capsule,
   Sidebar,
   SidebarSection,
   SidebarItem,

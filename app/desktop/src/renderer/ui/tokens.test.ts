@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { TOP_BAR, TRAFFIC_LIGHTS } from "../../shared/frame";
 
 // The tokens' AA contrast, checked against the CSS the app actually ships. Read from
 // disk: Vitest blanks CSS imports, even ?raw ones.
@@ -90,9 +91,27 @@ describe.each([
     for (const [, bg] of bases) expect(contrast(get("faint"), bg)).toBeGreaterThanOrEqual(2.5);
   });
 
+  it("the glass capsules' words pass AA over the page and over a lead's bubble scrolled under them", () => {
+    for (const under of ["bg", "bubble"])
+      for (const token of ["text", "quiet"]) expect(contrast(get(token), over(get(under), get("glass"))), `${token} on glass over ${under}`).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("the sidebar is a tone step from the content, not a jump", () => {
     const r = contrast(get("bg"), get("sidebar"));
     expect(r).toBeGreaterThan(1.03);
     expect(r).toBeLessThan(1.15);
+  });
+});
+
+// The main process places the traffic lights by shared/frame.ts; the page lays out around them by these tokens.
+describe("the frame", () => {
+  // Its last value: the macOS one, where a platform sets its own.
+  const px = (name: string) => Number([...css.matchAll(new RegExp(`--${name}:\\s*(\\d+)px`, "g"))].at(-1)?.[1]);
+  it("the top row is as tall as the traffic lights are centred in", () => {
+    expect(px("top-bar-height")).toBe(TOP_BAR);
+  });
+  it("the room left for the traffic lights clears all three", () => {
+    // Three 14 px buttons 20 px apart, then a gap as wide as their margin.
+    expect(px("traffic-lights-inset")).toBe(TRAFFIC_LIGHTS.x + 54 + 10);
   });
 });

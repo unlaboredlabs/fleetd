@@ -24,6 +24,7 @@ const pages = {
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
     <div class="case drag-bar"><button class="no-drag">Close</button></div>
     <div class="case drag-stack"><div class="drag-bar"></div><div class="over-bar no-drag"><button>Close</button></div></div>
+    <div class="case float-stage"><div class="scroller">${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the floating row <button>Open</button></div>`).join("")}</div><header class="float-row" data-floats><span class="glass">A floating title</span><button class="no-drag">Agents</button></header></div>
   </div>`,
   // A popover (an opaque surface in a fixed positioner, as Radix draws them) over the start of a line: the covered
   // part is hidden, not overlapping, and the rest of the line touches nothing. No finding.

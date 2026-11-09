@@ -30,6 +30,8 @@ export interface VirtualListProps<T> {
   followOutput?: boolean;
   /** Start at the end instead of the top. */
   startAtEnd?: boolean;
+  /** Room before the first row, px, which a row scrolled to also keeps clear (a bar floating over the list's top). */
+  paddingStart?: number;
   className?: string | undefined;
   /** For scroll-to-index and friends. */
   virtualizerRef?: RefObject<Virtualizer<HTMLDivElement, Element> | null>;
@@ -59,6 +61,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     },
     overscan: props.overscan ?? 8,
     gap,
+    paddingStart: props.paddingStart ?? 0,
+    scrollPaddingStart: props.paddingStart ?? 0,
     paddingEnd,
     scrollPaddingEnd: paddingEnd,
     ...followOptions(followOutput),

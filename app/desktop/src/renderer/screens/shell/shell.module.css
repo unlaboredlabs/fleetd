@@ -3,12 +3,21 @@
   height: 100%;
 }
 
+/* Every screen starts below the floating top row, except the chat, whose conversation scrolls on under its glass (it
+   leaves the row's room at its own top); a banner above it still starts below the row. */
 .column {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  padding-top: var(--top-bar-height);
+}
+.column[data-under] {
+  padding-top: 0;
+}
+.column[data-under] > :first-child:not(.screen) {
+  margin-top: var(--top-bar-height);
 }
 
 /* Each screen owns its own scrolling inside this. */
@@ -52,6 +61,11 @@
 }
 .panel:focus {
   outline: none;
+}
+/* The agents capsule's count (panel.tsx PanelToggle): figures that don't jump as it changes. */
+.count {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-strong);
 }
 .panelLoading {
   width: 100%;

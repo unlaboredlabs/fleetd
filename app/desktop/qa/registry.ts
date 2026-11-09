@@ -645,7 +645,7 @@ export const screens: readonly Screen[] = [
     variant: "strip-to-panel",
     open: async (page) => {
       const panel = page.getByRole("complementary", { name: "Project panel" });
-      await page.getByRole("button", { name: "Hide the panel" }).click();
+      await page.locator('[data-opens="panel"]').click();
       await panel.waitFor({ state: "detached" });
       // Scoped to the strip: the sidebar's project button also says "3 agents working".
       const strip = page.getByRole("region", { name: /agents? working/u });
@@ -696,18 +696,18 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
   { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
-  // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
+  // Hidden with ⌘B in a wide window (it has no toggle icon): the top row runs the full width, after the traffic lights.
   {
     id: "shell",
     route: "#/",
     fixtures: ["chat-waiting"],
     variant: "sidebar-hidden",
     open: async (page) => {
-      await page.getByRole("button", { name: "Hide the sidebar" }).click();
+      await page.keyboard.press("ControlOrMeta+B");
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
     },
   },
-  // The panel beside the chat, open on a first launch on its Agents tab, and closed with its toggle.
+  // The panel beside the chat, open on a first launch on its Agents tab, and closed with the agents capsule.
   {
     id: "shell",
     route: "#/",
@@ -723,7 +723,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting"],
     variant: "panel-closed",
     open: async (page) => {
-      await page.getByRole("button", { name: "Hide the panel" }).click();
+      await page.locator('[data-opens="panel"]').click();
       await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
     },
   },
@@ -1042,7 +1042,7 @@ export const screens: readonly Screen[] = [
       await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
     },
   },
-  // ...and in the smallest window, where it had hidden itself, shown with its toggle beside the chat.
+  // ...and in the smallest window, where it had hidden itself, shown with the agents capsule beside the chat.
   {
     id: "shell",
     route: "#/",
@@ -1050,13 +1050,13 @@ export const screens: readonly Screen[] = [
     variant: "panel-narrow",
     sizes: ["narrow"],
     open: async (page) => {
-      await page.getByRole("button", { name: "Show the panel" }).click();
+      await page.locator('[data-opens="panel"]').click();
       await page.getByRole("complementary", { name: "Project panel" }).waitFor();
     },
   },
-  // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
+  // The smallest window: the sidebar has hidden itself, and the chat's title starts after the traffic lights.
   { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
-  // ...and shown again with the toggle at that width, the chat beside it.
+  // ...and shown again with ⌘B at that width, the chat beside it.
   {
     id: "shell",
     route: "#/",
@@ -1064,7 +1064,7 @@ export const screens: readonly Screen[] = [
     variant: "narrow-open",
     sizes: ["narrow"],
     open: async (page) => {
-      await page.getByRole("button", { name: "Show the sidebar" }).click();
+      await page.keyboard.press("ControlOrMeta+B");
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
     },
   },
@@ -1336,9 +1336,10 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("slider", { name: "Max agents" })).toBeFocused();
     },
   },
-  // W89: one header row. The panel runs from the window's top, its tabs beside the chat's title: the two rows share a
-  // top, a height and the hairline under them, and the bar carries no state word and no agents counter. The panel's
-  // toggle stays at the window's top right, so the click that closed the panel opens it again in the same place.
+  // W89 and W550: one header row. The panel runs from the window's top, its tabs beside the chat's floating title: the
+  // two rows share a top and a height (the chat's row has no bar or line; the panel's tabs keep theirs), and the row
+  // carries no state word and no Max agents. The agents capsule stays at the row's end, so the click that closed the
+  // panel opens it again in the same place.
   {
     id: "chat",
     route: `${CHAT}/agents`,
@@ -1351,8 +1352,7 @@ export const screens: readonly Screen[] = [
         const bar = document.querySelector("header");
         const head = list.parentElement;
         if (bar === null || head === null) return null;
-        // The hairline is each row's bottom border, so one bottom edge is one line.
-        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height, line: getComputedStyle(el).borderBottomWidth });
+        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height });
         return { bar: box(bar), panel: box(head) };
       });
       expect(rows).not.toBeNull();

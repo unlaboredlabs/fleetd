@@ -4,12 +4,15 @@
 // focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as its toggle opens it and
 // out as it closes it (AppFrame), only by transform, so the chat beside it never lays out again mid-way; leaving the
 // project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
-// reads from the hub.
-import { PanelRight } from "lucide-react";
+// reads from the hub. Its way in is the agents capsule at the window's top right (no panel icon), ⌥⌘B and the View menu.
+import { Bot } from "lucide-react";
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { display } from "../../../shared/shortcuts";
 import { Boundary } from "../../src/Boundary";
-import { Button } from "../../ui";
+import { Button, Capsule } from "../../ui";
+import { useData } from "../../src/data/react";
+import { selectProjectList } from "../../src/data/selectors";
+import { projectKey } from "../../src/data/store";
 import { navigate } from "./navigation";
 import { ResizeEdge } from "./ResizeEdge";
 import { shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
@@ -57,23 +60,31 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
   return { project, shown, open: !panel.hidden, view: routed ?? listView(panel.tab), toggle: panel.toggle };
 }
 
-/** The top row's toggle, beside a project's chat only. */
+/**
+ * The agents capsule, at the window's top right beside a project's chat only: the panel's toggle, with the agents at work
+ * counted beside the panel's own Agents mark. Pressed while the panel shows.
+ */
 export function PanelToggle({ panel }: { panel: ProjectPanelState }) {
-  if (panel.project === null) return null;
+  const project = panel.project;
+  const running = useData((d) => (project === null ? 0 : (selectProjectList(d)?.find((r) => r.key === projectKey(project))?.running ?? 0)));
+  if (project === null) return null;
   const verb = panel.shown ? "Hide" : "Show";
+  const working = running === 0 ? "" : `, ${String(running)} working`;
   return (
-    <Button
-      variant="quiet"
-      iconOnly
-      aria-label={`${verb} the panel`}
-      title={`${verb} the panel: agents, PRs and the checklist (${display("panel.toggle", window.fleetd.platform)})`}
-      aria-pressed={panel.shown}
-      aria-controls={panel.shown ? "project-panel" : undefined}
-      data-opens="panel"
-      onClick={panel.toggle}
-    >
-      <PanelRight />
-    </Button>
+    <Capsule>
+      <Button
+        variant="quiet"
+        icon={<Bot aria-hidden />}
+        aria-label={`Agents${working}`}
+        title={`${verb} the panel: agents, PRs and the checklist (${display("panel.toggle", window.fleetd.platform)})`}
+        aria-pressed={panel.shown}
+        aria-controls={panel.shown ? "project-panel" : undefined}
+        data-opens="panel"
+        onClick={panel.toggle}
+      >
+        {running === 0 ? null : <span className={s.count}>{running}</span>}
+      </Button>
+    </Capsule>
   );
 }
 
