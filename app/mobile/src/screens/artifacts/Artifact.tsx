@@ -138,7 +138,7 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
       {older}
       <Text style={[type.footnote, { color: t.secondary }]}>{rowLine(a, listTime(a.at, now))}</Text>
       <ArtifactLinks.Provider value={openLink}>
-        <Markdown text={r.value.content} ink={t.label} holdsBlocks={false} />
+        <Markdown text={r.value.content} ink={t.label} holdsBlocks={false} ground={t.bg} />
       </ArtifactLinks.Provider>
     </ScrollView>
   );
