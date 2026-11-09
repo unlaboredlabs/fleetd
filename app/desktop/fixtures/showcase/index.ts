@@ -610,9 +610,24 @@ const pinned = (base: Fixture): Fixture => {
   return f.answer("chat_pins_get", {}, { pins: [ref("storefront"), ref("billing"), ref("Ada")], set: true });
 };
 
+/**
+ * The showcase with only billing pinned: a lone pin sits in the sidebar's middle. Ada dragged up beside it pins it
+ * after billing, and billing dragged back down unpins it.
+ */
+const pinnedOne = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "showcase-pin", "The showcase with only billing pinned.");
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  const ref = (title: string) => {
+    const p = projects.find((x) => x["title"] === title);
+    return { machineId: p?.["machineId"] ?? "", projectId: p?.["projectId"] ?? "" };
+  };
+  for (const pins of [[ref("billing"), ref("Ada")], [ref("Ada")]]) f.answer("chat_pins_set", { pins }, { pins });
+  return f.answer("chat_pins_get", {}, { pins: [ref("billing")], set: true });
+};
+
 export default defineGroup({
   fixtures: (base) => {
     const order = build(base("typical"), base("chat-empty"));
-    return [order, pinned(order)];
+    return [order, pinned(order), pinnedOne(order)];
   },
 });

@@ -271,6 +271,8 @@ export const fixtures = [
   "showcase-order",
   // The showcase with storefront, billing and Ada pinned: the sidebar's pinned grid (W565).
   "showcase-pins",
+  // ...and with only billing pinned: a lone pin in the sidebar's middle (W574).
+  "showcase-pin",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -1086,6 +1088,61 @@ export const screens: readonly Screen[] = [
       // W572: storefront's open, so its highlight shows; billing's hovered beside it, the same compact shape, quieter.
       await expect(grid.nth(0).getByRole("button")).toHaveAttribute("aria-current", "page");
       await grid.nth(1).getByRole("button").hover();
+    },
+  },
+  // W574: a lone pin takes the whole row, centred in the sidebar however wide it is, not in the grid's left half: at
+  // the sidebar's narrowest and at its widest.
+  ...(["Home", "End"] as const).map(
+    (end): Screen => ({
+      id: "shell",
+      route: CHAT,
+      fixtures: ["showcase-pin"],
+      variant: end === "Home" ? "pin-one-narrowest" : "pin-one-widest",
+      open: async (page) => {
+        const edge = page.getByRole("separator", { name: "Resize the sidebar" });
+        await edge.focus();
+        await edge.press(end);
+        await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute(end === "Home" ? "aria-valuemin" : "aria-valuemax")) ?? "");
+        const grid = page.getByRole("navigation", { name: "Sidebar" }).locator('[class*="pins"]').first();
+        const pin = grid.locator("> [data-reorder-row]").getByRole("button");
+        await expect(pin).toHaveCount(1);
+        await expect(async () => {
+          const [g, b] = await Promise.all([grid.boundingBox(), pin.boundingBox()]);
+          if (g === null || b === null) throw new Error("the pin isn't on screen");
+          expect(Math.abs(b.x + b.width / 2 - (g.x + g.width / 2))).toBeLessThan(1);
+        }).toPass();
+      },
+    }),
+  ),
+  // W574: Ada dragged up from the list beside billing's lone pin joins the pins after it, the two to a row; then billing
+  // dragged down out of the pins leaves them, and Ada's pin sits alone in the middle.
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["showcase-pin"],
+    variant: "pin-drag",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const grid = nav.locator('[class*="pins"]').first();
+      const pins = grid.locator("> [data-reorder-row]");
+      const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 12 });
+        await page.mouse.up();
+      };
+      const middle = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2, box };
+      };
+      const ada = await middle(nav.locator("[data-reorder-row]").filter({ hasText: "Ada" }).first());
+      const billing = await middle(pins.first());
+      await drag(ada, { x: billing.box.x + billing.box.width - 8, y: billing.y });
+      await expect(pins).toHaveText([/billing/u, /Ada/u]);
+      const left = await middle(pins.first());
+      await drag(left, { x: left.x, y: ada.y + 60 });
+      await expect(pins).toHaveText([/Ada/u]);
     },
   },
   {

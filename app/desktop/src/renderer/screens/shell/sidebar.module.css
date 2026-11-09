@@ -483,6 +483,8 @@
   justify-content: center;
   gap: 2px;
   margin-bottom: var(--space-3);
+  border-radius: var(--radius-lg);
+  transition: background-color var(--dur-quick) var(--ease-snap);
 }
 /* A pin's place, half the grid, which lifts and moves inside it (ui/lib/reorder's grid); its pin sits centred in it,
    and only the pin is raised under the pointer, as compact as its shade. */
@@ -491,6 +493,14 @@
   justify-content: center;
   min-width: 0;
 }
+/* A lone pin takes the whole row, so it sits in the sidebar's middle rather than its left half, its name still
+   stopping at half the grid; a second one brings the two columns back. */
+.pinSlot:only-child {
+  grid-column: 1 / -1;
+}
+.pinSlot:only-child .pinCell {
+  max-width: 50%;
+}
 .pins > [data-reorder-row][data-lifted] {
   background: transparent;
   box-shadow: none;
@@ -498,6 +508,17 @@
 .pins > [data-lifted] .pinCell {
   background: var(--raised);
   box-shadow: 0 2px 8px var(--shadow), 0 0 0 1px var(--hairline);
+}
+/* A chat dragged up over the pins, to join them: they take the hover's shade. A pin dragged down out of them, to
+   leave: its picture and name fade a step. */
+.pins[data-pinning] {
+  background: var(--hover);
+}
+.pins[data-unpinning] > [data-lifted] .pinCell > * {
+  opacity: 0.6;
+}
+.rows > [data-lifted] {
+  border-radius: var(--radius-lg);
 }
 /* A pin: its shade, open or hovered, hugs the picture and name, 8 px around them on a row's corners, the same at
    every sidebar width; a long name stops at its half of the grid. */
