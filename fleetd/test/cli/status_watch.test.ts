@@ -1,18 +1,17 @@
-// `fleetd status --watch` ends at once on SIGINT, mid long-poll, as the Rust CLI does (it selects each wait against
-// the signal): against a Rust hub on a scratch home.
+// `fleetd status --watch` ends at once on SIGINT, mid long-poll (it selects each wait against the signal): against a
+// hub on a scratch home.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { join } from "node:path";
-import { Fleet, RUST } from "./golden.ts";
+import { Fleet } from "./golden.ts";
 
 let fleet: Fleet;
 beforeAll(async () => {
-  if (!RUST) return;
   fleet = new Fleet("status-watch");
-  await fleet.startRustHub();
+  await fleet.startHub();
 });
 afterAll(() => fleet?.stop());
 
-test.skipIf(!RUST)("Ctrl-C ends the watch within a second, exit 0", async () => {
+test("Ctrl-C ends the watch within a second, exit 0", async () => {
   const proc = Bun.spawn([process.execPath, join(import.meta.dir, "../../src/main.ts"), "status", "--watch"], {
     cwd: fleet.cwd,
     env: fleet.env(),
