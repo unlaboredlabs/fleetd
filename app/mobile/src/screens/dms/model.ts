@@ -104,14 +104,18 @@ export const joinPages = (shown: readonly AgentMessage[], older: readonly AgentM
   return [...shown, ...older.filter((m) => !ids.has(m.id))];
 };
 
-/**
- * The log as shown: the newest page as last read, over the older pages read as the person scrolled. A fresh newest
- * page (a DM sent, a receipt) replaces the rows it holds, with their new outcomes, and leaves the older pages where they
- * are, so the list never jumps back under the person's thumb.
- */
+/** The log as shown: every DM read so far, newest first, and whether older ones are left. */
 export interface DmLog {
   readonly messages: readonly AgentMessage[];
   readonly more: boolean;
 }
-export const logOf = (first: DmLog, older: DmLog | null): DmLog =>
-  older === null ? { messages: first.messages, more: first.more } : { messages: joinPages(first.messages, older.messages), more: older.more };
+
+/**
+ * A fresh newest page (a DM sent, a receipt) over the whole log as shown: the rows it holds take their new outcomes, a
+ * new DM goes on top, and every row read before stays where it was, so the list never jumps or loses a row under the
+ * person's thumb. The first read is the log.
+ */
+export const withNewest = (shown: DmLog | null, page: DmLog): DmLog => (shown === null ? { messages: page.messages, more: page.more } : { messages: joinPages(page.messages, shown.messages), more: shown.more });
+
+/** An older page, read from before the oldest shown, under the log. */
+export const withOlder = (shown: DmLog, page: DmLog): DmLog => ({ messages: joinPages(shown.messages, page.messages), more: page.more });
