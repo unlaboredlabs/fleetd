@@ -4,3 +4,5 @@ link:hub→node `browser_input` handle
 link:hub→node `browser_watch` handle
 link:node→hub `browser_frame` send
 loop:node loop `browser::Broker::start`
+mod:`node/browser/upload.rs`
+mod:`node/mask.rs`

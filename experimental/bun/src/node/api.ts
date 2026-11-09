@@ -14,8 +14,9 @@
 // - `node.area("launch")`: `contribute({ env, pluginDirs })`, what an agent's claude launch gets from an area (Rust's
 //   browser `SessionHooks::env` and `plugin_dirs`): `env(thread, path)` its variables, given the launch's PATH, and
 //   `pluginDirs()` its skills' plugins, for a lead's or a worker's session (a plain one gets none);
-// - `node.area("sessions")`: `maskFor(thread)` (the masker for a session's secrets) and `sessionCwd(thread)` (the
-//   folder this node started it in), for the screens' sessions of an agent;
+// - `node.area("sessions")`: `maskFor(thread)` (the masker for a session's secrets), `secretsFor(thread)` (the
+//   secrets themselves) and `sessionCwd(thread)` (the folder this node started it in), for the screens' sessions of an
+//   agent;
 // - `node.config`: node.json, its screens' sections typed by their areas.
 import type { NodeLoad } from "../shared/contracts.ts";
 import type { ThreadItem } from "./sessions/types.ts";
@@ -215,6 +216,9 @@ export class LaunchArea {
 export type SessionsArea = {
   /** The masker for the session's secrets (its project's and order's); throws why there is none. */
   maskFor: (thread: string) => Masker;
+  /** The session's secrets themselves, as `[name, value]`: a screen's recording scrubs them in every form a page shows
+   * them (mask.ts `Scrub`), and a screen placed on another machine gets them sealed to it. */
+  secretsFor: (thread: string) => [string, string][];
   /** The folder this node started the session in; undefined for a session it doesn't have. */
   sessionCwd: (thread: string) => string | undefined;
 };

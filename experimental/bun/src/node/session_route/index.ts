@@ -4,21 +4,33 @@
 // answer comes back. A session placed elsewhere is driven through the hub's relay: this node's proxy pipes the agent's
 // driver there, sealed with a relay key this node made and sealed to the runner (relay.ts).
 //
-// The other side: a session the hub placed on this machine for an agent elsewhere comes in as `session_host`, opened
-// with this node's box key, and is answered by the broker under the key the hub gave it; `relay_dial` connects one of
-// its channels to the session's own proxy here.
+// Every kind goes this way. The agent's node seals the session's secrets to the runner with the relay key, so the
+// runner scrubs its recording of them, and masks each step it sends there for that recording (`step`). The agents'
+// Mac's screen (kind mac) is always the hub's to place, and sealed to the Mac with its relay key alone: the Mac's node
+// is a tool every agent shares, so it gets none of the session's secrets. An Android screen the hub would place
+// elsewhere is refused before anything is sealed: agent-device drives an emulator over adb, which crosses no machine.
 //
-// TODO(bun): devices, desktops and the agents' Mac's screen (their starts and steps through the hub), 1Password fills
-// of a session hosted elsewhere, a hosted session's secrets for scrubbing its recording.
+// The other side: a session the hub placed on this machine for an agent elsewhere comes in as `session_host`, opened
+// with this node's box key, and is answered by the screen's kind (node/device's router) under the key the hub gave
+// it; `relay_dial` connects one of its channels to the session's own proxy here, and a `device` step (the hub's
+// install of a PR's build into a person's Android screen) runs only sealed with the session's relay key, after the one
+// before it (node/device/work.ts). What was sealed to this node for a session goes once it ends, however it ended.
+//
+// TODO(bun): 1Password fills of a session hosted elsewhere.
 import { seal } from "../../shared/sealed_box.ts";
 import { ToolError } from "../../shared/errors.ts";
-import type {
-  BrowserCallFrame,
-  BrowserResultFrame,
-  RelayDialFrame,
-  SessionHostFrame,
-  SessionRouteResult,
+import {
+  type BrowserCallFrame,
+  type BrowserResultFrame,
+  IOS_GONE,
+  type RelayDialFrame,
+  type SessionHostFrame,
+  type SessionRouteResult,
 } from "../../shared/screens_wire.ts";
+import { TOKEN_ENV } from "../actions/onepassword.ts";
+import type { SessionsArea } from "../api.ts";
+import { Masker } from "../mask.ts";
+import { type DeviceCall, type DeviceDone, isHostKey, openCall, sealDone } from "../device/work.ts";
 import { type Broker, broker as brokerOf, drivesBrowser } from "../browser/index.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
@@ -37,15 +49,17 @@ type Seal = { secrets: [string, string][]; relayKey: string };
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
-/** A hosted session's relay key, by the key the hub gave it. */
-type Hosted = Map<string, Uint8Array>;
+/**
+ * What an agent's node sealed to this one for a session it hosts, by the key the hub gave it: the session's secrets,
+ * kept only until its screen read them at its start; its relay key, until it ends; and the count of its last sealed
+ * device step, which each must come after.
+ */
+type HostedSession = { relayKey: Uint8Array; secrets: [string, string][] | undefined; deviceCount: number };
 
 export class Router {
   /** This node's agents' sessions hosted elsewhere: their relay on the hub and its key. */
   readonly remotes = new Map<string, { url: string; key: Uint8Array; sessionId?: string }>();
-  readonly hosted: Hosted = new Map();
-  /** A hosted start's secrets, to scrub its recording with: read once by the broker, then gone from here. */
-  private readonly secretsFor = new Map<string, [string, string][]>();
+  readonly hosted = new Map<string, HostedSession>();
 
   constructor(
     private readonly node: Node,
@@ -56,6 +70,28 @@ export class Router {
 
   private hubUrl(): string {
     return String(this.node.config.hub ?? "");
+  }
+
+  private sessions(): SessionsArea | undefined {
+    try {
+      return this.node.area("sessions");
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The secrets a screen of `thread`'s scrubs its recording of: for a session hosted here (a host key), what its
+   * agent's node sealed to this one; else the node's own session's. Throws why they can't be read.
+   */
+  secretsOf(thread: string): [string, string][] {
+    if (isHostKey(thread)) return this.hosted.get(thread)?.secrets ?? [];
+    return this.sessions()?.secretsFor(thread) ?? [];
+  }
+
+  /** The masker for what this node's agent session sends elsewhere (session_route.rs `mask_for`). */
+  private maskerOf(thread: string): Masker {
+    return this.sessions()?.maskFor(thread) ?? new Masker();
   }
 
   /** One `session_route` call to the hub. */
@@ -70,33 +106,56 @@ export class Router {
     return answer as unknown as SessionRouteResult;
   }
 
+  /**
+   * The session's secrets (none for `relayOnly`, the agents' Mac) and a new relay key, sealed to `to` (the runner's
+   * box key), base64. Never the 1Password token: the agent's node reads 1Password itself.
+   */
+  private sealFor(thread: string, to: string, runner: string, relayOnly: boolean): { data: string; relayKey: Uint8Array } {
+    const relayKey = crypto.getRandomValues(new Uint8Array(32));
+    try {
+      const secrets = relayOnly ? [] : this.secretsOf(thread).filter(([name]) => name !== TOKEN_ENV);
+      const plain: Seal = { secrets, relayKey: b64(relayKey) };
+      return { data: b64(seal(Buffer.from(to, "base64"), new TextEncoder().encode(JSON.stringify(plain)))), relayKey };
+    } catch (e) {
+      throw new ToolError(
+        "failed",
+        `The node could not seal this session's secrets for ${runner} (${(e as Error).message}).`,
+        "try again; if it keeps failing, check the node's log",
+      );
+    }
+  }
+
   /** An agent's session call: here, or wherever the hub placed its session. */
   async route(thread: string, frame: BrowserCallFrame): Promise<Record<string, unknown>> {
     const op = frame.call.op;
     if (screens(this.node).live(thread)) return this.here(thread, frame);
+    const host = hostOf(frame);
+    // iOS simulators are the agents' Mac's (`mac sim`): the hub isn't asked.
+    if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
     let routed = await this.ask(thread, frame);
     if (!routed.here && !routed.answer && routed.sealTo) {
-      // Placed on another machine, which needs the session's relay key first: sealed to it. The Bun node holds no
-      // session secrets to send with it yet (TODO above), so the runner scrubs nothing of its own.
-      const relayKey = crypto.getRandomValues(new Uint8Array(32));
-      const plain: Seal = { secrets: [], relayKey: b64(relayKey) };
-      let data: string;
-      try {
-        data = b64(seal(Buffer.from(routed.sealTo, "base64"), new TextEncoder().encode(JSON.stringify(plain))));
-      } catch (e) {
-        throw new ToolError(
-          "failed",
-          `The node could not seal this session's secrets for ${routed.runner} (${(e as Error).message}).`,
-          "try again; if it keeps failing, check the node's log",
-        );
-      }
+      if (host === "android") throw androidElsewhere();
+      // Placed on another machine, which needs the session's secrets and relay key first: sealed to it. The agents'
+      // Mac gets the relay key alone.
+      const relayOnly = host === "mac" || routed.relayOnly === true;
+      const { data, relayKey } = this.sealFor(thread, routed.sealTo, routed.runner, relayOnly);
       routed = await this.ask(thread, frame, { runner: routed.runner, dataB64: data });
-      if (routed.relay) this.remotes.set(thread, { url: relayUrl(this.hubUrl(), routed.relay), key: relayKey });
+      // The agent's driver reaches a browser or a desktop through the hub's relay, from this node's proxy; a Mac
+      // screen is driven by its desktop actions alone.
+      if (routed.relay && host !== "mac") this.remotes.set(thread, { url: relayUrl(this.hubUrl(), routed.relay), key: relayKey });
     }
     if (routed.here) return this.here(thread, frame);
     if (op === "session_end") this.remotes.delete(thread);
     const answer = routed.answer;
     if (!answer) throw new ToolError("failed", "the hub placed the session but sent no answer", "try again");
+    if (host === "android" && op === "session_start") {
+      // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): ended there.
+      if (answer.result) {
+        const end: BrowserCallFrame = { id: "device-elsewhere", cwd: frame.cwd, call: { op: "session_end" } };
+        await this.ask(thread, end).catch(() => undefined);
+      }
+      if (!answer.error) throw androidElsewhere();
+    }
     if (answer.error) throw new ToolError(answer.error.code, answer.error.message, answer.error.fix);
     const result = { ...(answer.result ?? {}) };
     // The agent's own address for it, as its AGENT_BROWSER_CDP names it: never the runner's.
@@ -113,12 +172,23 @@ export class Router {
     void this.route(thread, end).catch((e) => console.info(`hosted session not ended: ${(e as Error).message}`));
   }
 
-  /** A call for a screen on this machine, of whichever kind (node/device's router); a hosted start's secrets with it. */
+  /** A call for a screen on this machine, of whichever kind (node/device's router); a browser's start with the
+   * secrets its recording scrubs (a desktop's and an Android's read them through `secretsOf` at their start). */
   private here(thread: string, frame: BrowserCallFrame): Promise<{ op: string } & Record<string, unknown>> {
-    const secrets = this.secretsFor.get(thread);
-    this.secretsFor.delete(thread);
-    // A hosted browser's start: the broker scrubs its recording with them, read once there.
-    if (secrets && frame.call.op === "session_start") this.broker.secretsFor(thread, secrets);
+    const call = frame.call;
+    if (call.op === "session_start" && (call.kind === undefined || call.kind === "browser")) {
+      let secrets: [string, string][];
+      try {
+        secrets = this.secretsOf(thread);
+      } catch (e) {
+        throw new ToolError(
+          "failed",
+          `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
+          "try again; if it keeps failing, check the node's log",
+        );
+      }
+      this.broker.secretsFor(thread, secrets);
+    }
     return screens(this.node).handle(thread, frame);
   }
 
@@ -143,35 +213,67 @@ export class Router {
         const relayKey = Buffer.from(opened.relayKey, "base64");
         if (relayKey.length !== 32) return refuse("the session's sealed relay key is not 32 bytes");
         // TODO(bun): a person's screen on a project's kept profile (`navi`): the Bun broker keeps no profiles yet.
-        this.hosted.set(key, relayKey);
-        this.secretsFor.set(key, Array.isArray(opened.secrets) ? opened.secrets : []);
+        const secrets = (Array.isArray(opened.secrets) ? opened.secrets : [])
+          .filter((pair) => Array.isArray(pair) && pair.length === 2)
+          .map(([name, value]) => [String(name), String(value)] as [string, string]);
+        const hosted: HostedSession = { relayKey, secrets, deviceCount: 0 };
+        this.hosted.set(key, hosted);
         try {
-          return { id, result: await this.here(key, frame.frame) };
+          const result = await this.here(key, frame.frame);
+          // Its screen read them at the start: they leave this node's memory now.
+          hosted.secrets = undefined;
+          return { id, result };
         } catch (e) {
           this.hosted.delete(key);
           throw e;
         }
       }
+      if (op === "device") return await this.device(key, frame.frame);
       const result = await this.here(key, frame.frame);
       if (op === "session_end") this.hosted.delete(key);
       return { id, result };
     } catch (e) {
+      if (op === "session_end") this.hosted.delete(key);
       if (e instanceof ToolError) return { id, error: e.toJSON() };
       return { id, error: { code: "failed", message: (e as Error).message } };
     }
   }
 
   /**
-   * A finished `agent-browser` command of the agent's whose session runs on another machine: sent to the runner for
-   * its recording (`session_step`), its output cut short. TODO(bun): masked with the session's secrets first, as
-   * session_route.rs `masked_step` does, once the Bun node holds them.
+   * A device step for a screen hosted here: run only sealed by whoever started it (the agent's node, or the hub for a
+   * person's screen), after its last, never one the hub made up or played again. Its answer goes back sealed.
+   */
+  private async device(key: string, frame: BrowserCallFrame): Promise<BrowserResultFrame> {
+    const call = frame.call as unknown as DeviceCall;
+    const hosted = this.hosted.get(key);
+    if (call.step !== "sealed") return { id: frame.id, error: { code: "invalid", message: "device steps come sealed by the agent's node" } };
+    const count = Number(call.count);
+    const opened = hosted && Number.isSafeInteger(count) && count > hosted.deviceCount ? openCall(hosted.relayKey, count, String(call.dataB64)) : undefined;
+    if (!hosted || !opened) {
+      return { id: frame.id, error: { code: "invalid", message: "the device step did not open with this session's key, or came again" } };
+    }
+    hosted.deviceCount = count;
+    const { op: _, ...done } = await this.here(key, { ...frame, call: { op: "device", ...opened } });
+    return { id: frame.id, result: { op: "device", ...sealDone(hosted.relayKey, count, done as unknown as DeviceDone) } };
+  }
+
+  /**
+   * A finished command of the agent's that drove its session on another machine: sent to the runner for its
+   * recording (`session_step`), its output cut short and the session's secrets masked first. One whose secrets can't
+   * be read never leaves unmasked.
    */
   async step(thread: string, item: ThreadItem): Promise<void> {
     if (this.broker.live(thread) || !this.remotes.has(thread)) return;
     const kind = item.kind;
     if (kind.type !== "command" || !drivesBrowser(kind.command) || (item.status !== "completed" && item.status !== "failed")) return;
-    const output = kind.output === undefined ? undefined : kind.output.slice(0, STEP_OUTPUT);
-    const sent = { ...item, kind: { ...kind, ...(output === undefined ? {} : { output }) } };
+    const output = kind.output === undefined ? undefined : cut(kind.output, STEP_OUTPUT);
+    let sent: ThreadItem;
+    try {
+      sent = this.maskerOf(thread).value({ ...item, kind: { ...kind, ...(output === undefined ? {} : { output }) } });
+    } catch (e) {
+      console.info(`session step not sent to its runner: its secrets weren't read (${(e as Error).message})`);
+      return;
+    }
     try {
       await hubCall(this.node, "session_step", { threadId: thread, item: sent }, { threadId: thread });
     } catch (e) {
@@ -181,10 +283,33 @@ export class Router {
 
   /** The hub's `relay_dial`: one channel of a session hosted here, connected to its proxy. */
   dial(frame: RelayDialFrame): void {
-    const key = this.hosted.get(frame.hostKey);
-    if (!key || !this.broker.live(frame.hostKey)) return;
-    void dial(this.hubUrl(), frame.token, this.broker.proxy.url(frame.hostKey), key);
+    const hosted = this.hosted.get(frame.hostKey);
+    if (!hosted || !this.broker.live(frame.hostKey)) return;
+    void dial(this.hubUrl(), frame.token, this.broker.proxy.url(frame.hostKey), hosted.relayKey);
   }
+
+  /** A hosted session's end, as its screen reported it to the hub (its agent, idle, a person, the app): what was
+   * sealed to this node for it goes, its relay key with it. */
+  reported(thread: string, state: unknown): void {
+    if (state !== "live" && isHostKey(thread)) this.hosted.delete(thread);
+  }
+}
+
+/** The refusal of an Android screen the hub would place on another machine. */
+const androidElsewhere = () =>
+  new ToolError(
+    "failed",
+    "The hub placed this Android session on another machine, and agent-device can't drive an emulator there from here yet.",
+    "say so in your result: Android sessions run only on the agent's own machine for now",
+  );
+
+/** `text` cut to at most `max` UTF-8 bytes, on a character's boundary. */
+function cut(text: string, max: number): string {
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length <= max) return text;
+  let end = max;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+  return bytes.subarray(0, end).toString("utf8");
 }
 
 /** The node's router: `given` (a test's) when it is the first to ask, else the node's own. */
@@ -225,5 +350,12 @@ export function start(node: Node, given?: Router): Router {
   const b = brokerOf(node);
   b.remote = (thread) => r.remotes.get(thread);
   b.gone = (thread) => void r.remotes.delete(thread);
+  // However a hosted session ends here, its report of it makes this node forget what was sealed to it for it.
+  const link = node.area("link");
+  const leadCall = link.leadCall.bind(link);
+  link.leadCall = (op, args, opts) => {
+    if (op === "browser_session") r.reported(String(args.threadId ?? opts?.threadId ?? ""), args.state);
+    return leadCall(op, args, opts);
+  };
   return r;
 }

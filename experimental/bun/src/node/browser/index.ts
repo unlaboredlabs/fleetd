@@ -4,21 +4,20 @@
 // `session_end` frames, reports each session to the hub as a `browser_session` lead call in its agent's name, and
 // gives the heartbeat each live session's latest step. Each session is recorded (record.ts): its action log from the
 // agent's `agent-browser` commands (node.area("items")) and fleetd's own steps, and its video where Playwright's ffmpeg
-// is installed; once it ends the recording goes to the hub, tried again each minute until it does.
+// is installed, and its DOM trace (the page after each of the agent's commands, session.ts); once it ends the recording
+// goes to the hub, tried again each minute until it does.
 //
-// TODO(bun): the DOM trace (session.rs `queue_capture`), 1Password fills and their sealed sessions (credentials.rs,
-// onepassword.rs), cards and secure inputs, kept profiles (Navis), the warm pool and installing Playwright's Chrome.
-import { existsSync, readdirSync } from "node:fs";
+// TODO(bun): 1Password fills and their sealed sessions (credentials.rs, onepassword.rs), cards and secure inputs, kept profiles (Navis), the warm pool and installing Playwright's Chrome.
 import { join } from "node:path";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import type { BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame, SessionEndFrame } from "../../shared/screens_wire.ts";
 import { type Browser, findChrome, installDir, launch } from "./chrome.ts";
-import { CAP_BROWSER, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
+import { CAP_BROWSER, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_SEAL, RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { env as agentBrowserEnv, pluginDirs as agentBrowserPlugins, writePolicy } from "./agent_browser.ts";
 import { Proxy } from "./proxy.ts";
-import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, Scrub, Steps, upload, VideoSink, writeMeta } from "./record.ts";
+import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, Scrub, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
 import { HEIGHT, Session, WIDTH } from "./session.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "./node.ts";
 
@@ -142,9 +141,13 @@ export class Broker {
     if (!open) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
     this.sessions.delete(thread);
     const { session } = open;
+    // Every step's DOM capture queued so far lands first, while the page is still there.
+    await session.flushCaptures();
     session.end();
     await open.browser.close?.();
     const r = session.recording;
+    // The text files scrubbed once more whole, with every value the session knew.
+    if (r) for (const file of [RECORDING_FILES.actions.name, RECORDING_FILES.dom.name]) scrubFile(join(r.dir, file), r.scrub);
     let note = open.note;
     if (r?.video) {
       const why = await r.video.finish(session.offsetMs());
@@ -203,11 +206,9 @@ export class Broker {
     for (const [thread, open] of this.sessions) {
       if (open.session.control() !== "human" && now - open.session.touched >= idle) await this.end(thread).catch(() => {});
     }
-    const root = recordingsDir(this.node.home);
-    if (!existsSync(root)) return;
-    for (const id of readdirSync(root)) {
-      if (this.byId(id)) continue;
-      const dir = join(root, id);
+    // One a stopped node left unended (this one's or a Rust node's) is ended with a note, and goes too.
+    const live = [...this.sessions.values()].map((o) => o.session.id);
+    for (const dir of waitingIn(recordingsDir(this.node.home), live, now)) {
       const meta = readMeta(dir);
       if (!meta?.endedAt) continue;
       if (now - Date.parse(meta.endedAt) >= GIVE_UP_MS) {

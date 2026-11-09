@@ -252,7 +252,11 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const node = new Node(home, config, relay);
   sessions.onItemEnded = (session, item) => node.area("items").ended(session, item);
   sessions.launch = node.area("launch");
-  node.area("sessions", () => ({ maskFor: (thread: string) => sessions.maskFor(thread), sessionCwd: (thread: string) => sessions.sessionCwd(thread) }));
+  node.area("sessions", () => ({
+    maskFor: (thread: string) => sessions.maskFor(thread),
+    secretsFor: (thread: string) => sessions.secretsFor(thread),
+    sessionCwd: (thread: string) => sessions.sessionCwd(thread),
+  }));
   registerAreas(node);
   // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.
   const mac = isAgentsMac(config) ? agentsMac(node) : undefined;

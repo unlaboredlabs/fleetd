@@ -12,16 +12,21 @@
 // The agents' Mac's own screen is a session here too (`session_start` kind mac, desktop/mac/): on the screen the Mac's
 // node runs in rather than a display of its own, and leased to one session at a time.
 //
-// TODO(bun): the recordings (session.ts).
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+// Each session is recorded as a browser session is (session.ts, node/browser/record.ts): its video, where an ffmpeg
+// is installed, and its action log, scrubbed of its agent session's secrets (for a session hosted here for an agent
+// elsewhere, the ones its node sealed to this one). Once it ends the recording goes to the hub, tried again each
+// minute until it does, with any a Rust node left here, iOS screens' included.
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BrowserControlTo, BrowserSessionState, HostCheck } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import type { SessionsArea } from "../api.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
+import { findFfmpeg, report, Steps, Uploads } from "../browser/record.ts";
+import { installDir as browserInstallDir } from "../browser/chrome.ts";
+import { deviceDir, sdkAt } from "../device/sdk.ts";
 import { type Answer, router, type Screens, type SessionKind } from "../device/router.ts";
-import { Masker } from "../mask.ts";
 import { router as sessionRoute } from "../session_route/index.ts";
 import { homeDir } from "../util.ts";
 import { image as pinnedImage, Runtime } from "./container.ts";
@@ -49,6 +54,8 @@ export type DesktopConfig = {
   image?: string;
   /** The Xvfb to use instead of the one on the PATH: `FLEETD_XVFB`, for development. */
   xvfb?: string;
+  /** An ffmpeg to encode the video with (matroska and mjpeg in, libvpx-vp9 out): `FLEETD_FFMPEG`, for development. */
+  ffmpeg?: string;
   /** Displays kept started for the next sessions: 1, and 0 in tests that start none. */
   pool?: number;
   /** A session no action touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30. */
@@ -73,7 +80,7 @@ export function desktopConfig(node: Node): DesktopConfig {
     ...section,
     ...(node.config.screenIdleMinutes !== undefined ? { idleMinutes: node.config.screenIdleMinutes } : {}),
   };
-  for (const [key, env] of [["runtime", "FLEETD_DESKTOP_RUNTIME"], ["image", "FLEETD_DESKTOP_IMAGE"], ["xvfb", "FLEETD_XVFB"]] as const) {
+  for (const [key, env] of [["runtime", "FLEETD_DESKTOP_RUNTIME"], ["image", "FLEETD_DESKTOP_IMAGE"], ["xvfb", "FLEETD_XVFB"], ["ffmpeg", "FLEETD_FFMPEG"]] as const) {
     const v = devOverride(env);
     if (v) config[key] = v;
   }
@@ -91,6 +98,11 @@ const health = (state: DesktopHealth["state"], backend: Backend | undefined, mes
 });
 
 export const desktopDir = (home: string) => join(home, "desktop");
+/** Where the node keeps desktop recordings until the hub has them. */
+export const recordingsDir = (home: string) => join(desktopDir(home), "recordings");
+/** Where a Rust node kept iOS screens' recordings (device/ios/session.rs): iOS screens are gone, but what one left
+ * still goes to the hub. */
+export const iosRecordingsDir = (home: string) => join(deviceDir(home), "ios", "recordings");
 const statePath = (home: string) => join(desktopDir(home), "state.json");
 
 /** The fix a person runs on a machine with neither docker nor Xvfb that works: Xvfb, with its package manager. */
@@ -212,9 +224,9 @@ type Prep = { kind: "wanted" } | { kind: "preparing"; done: Promise<void> } | { 
 
 const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
-/** What Desktops reads of the node's sessions: their secrets (to scrub the steps) and their worktrees. The node core
- * sets these from its session service; the defaults know no session. */
-export type Hooks = { maskFor: (thread: string) => Masker; worktreeFor: WorktreeFor };
+/** What Desktops reads of the node's sessions: their secrets (to scrub the recording; throws why they can't be read)
+ * and their worktrees. The node core sets these from its session service; the defaults know no session. */
+export type Hooks = { secretsFor: (thread: string) => [string, string][]; worktreeFor: WorktreeFor };
 
 /** The node's Linux desktop sessions. */
 export class Desktops implements Screens {
@@ -226,9 +238,13 @@ export class Desktops implements Screens {
   private housekeeping: Timer | undefined;
   /** Read of the node's own sessions (node-core's `sessions` area) where it has one; a test's own otherwise. */
   hooks: Hooks = {
-    maskFor: (thread) => this.sessionsArea()?.maskFor(thread) ?? new Masker(),
+    // A host key's are what its agent's node sealed to this one; this node's own sessions' are its own.
+    secretsFor: (thread) => sessionRoute(this.node).secretsOf(thread),
     worktreeFor: (thread) => this.sessionsArea()?.sessionCwd(thread),
   };
+  /** Each session's latest step, for the heartbeat. */
+  private readonly latest = new Steps();
+  private readonly uploads = new Uploads((thread, cwd, op, args) => hubCall(this.node, op, args, { threadId: thread, cwd }), "desktop");
   /** What the hello lists for desktop sessions now (`capabilities`), kept for the `caps` seam, which reads it at once. */
   capsNow: string[] = [];
   /** node.json's `mac`: the agents' Mac's screen, where this node lends it. */
@@ -281,6 +297,7 @@ export class Desktops implements Screens {
       }
     }
     this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
+    void this.sweep();
   }
 
   private writeState(h: DesktopHealth): void {
@@ -369,9 +386,11 @@ export class Desktops implements Screens {
     return s ? { id: s.id, kind: s.kind } : undefined;
   }
 
-  /** Each live session's latest step, for the heartbeat. */
+  /** Each session's latest step, for the heartbeat: the live ones', and those whose recording is still here. */
   steps(): { sessionId: string; step: unknown }[] {
-    return [...this.sessions.values()].flatMap((s) => (s.step ? [{ sessionId: s.id, step: s.step }] : []));
+    const listed = this.latest.list();
+    const live = [...this.sessions.values()].flatMap((s) => (s.step && !listed.some((l) => l.sessionId === s.id) ? [{ sessionId: s.id, step: s.step }] : []));
+    return [...listed, ...live];
   }
 
   byId(id: string): Session | undefined {
@@ -417,16 +436,7 @@ export class Desktops implements Screens {
       const hosted = sessionRoute(this.node).hosted.has(thread);
       const mount = worktreeMount(pool.backend(), hosted, this.hooks.worktreeFor(thread));
       const didntStart = (why: string) => new ToolError("failed", `The desktop did not start: ${why}.`, "try session_start again");
-      let mask: Masker;
-      try {
-        mask = this.hooks.maskFor(thread);
-      } catch (e) {
-        throw new ToolError(
-          "failed",
-          `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
-          "try again; if it keeps failing, check the node's log",
-        );
-      }
+      const secrets = this.secrets(thread);
       let display;
       try {
         display = await pool.take(mount);
@@ -440,7 +450,8 @@ export class Desktops implements Screens {
         await display.drop();
         throw didntStart((e as Error).message);
       }
-      const session = new Session(display, x, { id: newId(), thread, cwd, purpose, mask, kind: "linux_desktop" });
+      const id = newId();
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", ...this.recording(id) });
       this.sessions.set(thread, session);
       session.open();
       session.logStep("session_start", { purpose, kind: "linux_desktop", backend: display.backend, worktree: mount ?? null }, true);
@@ -463,36 +474,52 @@ export class Desktops implements Screens {
     return this.close(session);
   }
 
-  /** Ends a session already out of the map, and tells the hub. */
+  /** The session's secrets for its recording; refused when they can't be read, so nothing is recorded unscrubbed. */
+  private secrets(thread: string): [string, string][] {
+    try {
+      return this.hooks.secretsFor(thread);
+    } catch (e) {
+      throw new ToolError(
+        "failed",
+        `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
+        "try again; if it keeps failing, check the node's log",
+      );
+    }
+  }
+
+  /** Where session `id` is recorded, and the ffmpeg that encodes its video. */
+  private recording(id: string): { dir: string; ffmpeg?: string; steps: Steps } {
+    const ffmpeg = this.ffmpeg();
+    return { dir: join(recordingsDir(this.node.home), id), ...(ffmpeg ? { ffmpeg } : {}), steps: this.latest };
+  }
+
+  /** `FLEETD_FFMPEG` (node.json `desktop.ffmpeg`), else one the Android or browser sessions installed. */
+  private ffmpeg(): string | undefined {
+    if (this.config.ffmpeg) return this.config.ffmpeg;
+    const android = sdkAt(this.node.home).ffmpeg;
+    if (existsSync(android) && statSync(android).isFile()) return android;
+    return findFfmpeg(browserInstallDir(this.node.home));
+  }
+
+  /** Ends a session already out of the map, and starts its upload. */
   private async close(session: Session): Promise<Record<string, unknown>> {
     session.logStep("session_end", {}, true);
-    await session.close();
+    const files = await session.close();
     this.releaseLease(session.id);
-    const note = session.note() ? `${session.note()}; ${NO_RECORDING}` : NO_RECORDING;
-    await this.report(session, "recorded", { endedAt: new Date().toISOString(), note });
-    return { sessionId: session.id, kind: session.kind, files: [], note };
+    const note = session.note();
+    // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
+    await this.report(session, "uploading", new Date().toISOString());
+    if (session.dir) void this.uploads.send(session.dir);
+    return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
   }
 
   /** Tells the hub where a session is now, in its agent's name. */
-  async report(session: Session, state: BrowserSessionState, extra: { endedAt?: string; note?: string } = {}): Promise<void> {
+  async report(session: Session, state: BrowserSessionState, endedAt?: string): Promise<void> {
     try {
-      await hubCall(
-        this.node,
-        "browser_session",
-        {
-          threadId: session.thread,
-          sessionId: session.id,
-          kind: session.kind,
-          purpose: session.purpose.slice(0, 200) || "a desktop session",
-          state,
-          control: session.control(),
-          startedAt: session.startedAt,
-          files: [],
-          credentialsFilled: 0,
-          ...extra,
-        },
-        { threadId: session.thread, cwd: session.cwd },
-      );
+      await hubCall(this.node, "browser_session", report(session.meta(endedAt), state, session.control(), []), {
+        threadId: session.thread,
+        cwd: session.cwd,
+      });
     } catch (e) {
       console.warn(`desktop session ${session.id} not reported to the hub: ${(e as Error).message}`);
     }
@@ -585,20 +612,16 @@ export class Desktops implements Screens {
     } catch (e) {
       throw new ToolError("failed", `The node could not make the session's folder: ${(e as Error).message}.`, "say so in your result; the node's log says why");
     }
-    let mask: Masker;
+    let secrets: [string, string][];
     try {
-      mask = this.hooks.maskFor(thread);
+      secrets = this.secrets(thread);
     } catch (e) {
       await lent.drop();
-      throw new ToolError(
-        "failed",
-        `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
-        "try again; if it keeps failing, check the node's log",
-      );
+      throw e;
     }
     // A holder whose session is gone holds nothing.
     const heldBy = this.heldBy();
-    const session = new Session(lent, screen, { id, thread, cwd, purpose, mask, kind: "mac", observing: heldBy !== undefined });
+    const session = new Session(lent, screen, { id, thread, cwd, purpose, secrets, kind: "mac", observing: heldBy !== undefined, ...this.recording(id) });
     if (heldBy === undefined) this.lease = id;
     this.sessions.set(thread, session);
     session.open();
@@ -700,9 +723,17 @@ export class Desktops implements Screens {
         await this.close(session);
       }
     }
+    await this.sweep();
   }
 
-  /** Ends every live session and every warm display (the node stops). */
+  /** Sends the recordings still waiting for the hub: this kind's, and what a Rust node's iOS screens left. */
+  async sweep(now = Date.now()): Promise<void> {
+    const live = [...this.sessions.values()].map((s) => s.id);
+    await this.uploads.sweep(recordingsDir(this.node.home), live, now);
+    await this.uploads.sweep(iosRecordingsDir(this.node.home), [], now);
+  }
+
+  /** Ends every live session and every warm display (the node stops); their recordings go at the node's next start. */
   async shutdown(): Promise<void> {
     clearInterval(this.housekeeping);
     for (const [thread, session] of [...this.sessions]) {
@@ -712,9 +743,6 @@ export class Desktops implements Screens {
     if (this.prep.kind === "ready") for (const d of this.prep.pool.drain()) await d.drop();
   }
 }
-
-/** What a desktop session's end says while the Bun node records none. */
-export const NO_RECORDING = "no recording: the Bun node records none yet";
 
 /** Picks the backend and gets it ready: a usable container runtime and its image, else Xvfb. */
 export async function prepare(home: string, config: DesktopConfig, state: (h: DesktopHealth) => void): Promise<Settings> {

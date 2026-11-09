@@ -208,6 +208,7 @@ test("one session holds the Mac's screen, others observe, and a person takes it"
   const reports: Record<string, unknown>[] = [];
   t.link.answer = async (op, args) => {
     if (op === "browser_session") reports.push(args);
+    if (op === "browser_recording_part") return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
     return {};
   };
   const d = desktops(t.node, new Desktops(t.node, { enabled: false }, { enabled: true }));
@@ -254,7 +255,9 @@ test("one session holds the Mac's screen, others observe, and a person takes it"
   const ended = await d.sessionEnd("th-a");
   expect(ended.kind).toBe("mac");
   expect(d.heldBy()).toBeUndefined();
-  expect(reports.some((r) => r.kind === "mac" && r.state === "recorded")).toBe(true);
+  expect(reports.some((r) => r.kind === "mac" && r.state === "uploading")).toBe(true);
+  for (let i = 0; i < 200 && !reports.some((r) => r.kind === "mac" && r.state === "recorded"); i++) await Bun.sleep(10);
+  expect(reports.some((r) => r.kind === "mac" && r.state === "recorded" && (r.files as unknown[]).length > 0)).toBe(true);
 });
 
 test("a Mac screen start off a Mac, or with nothing in the way checked, says why", async () => {

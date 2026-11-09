@@ -19,9 +19,45 @@ function encodeBytes(value: string, keep: string, space?: string): string {
   return out;
 }
 
+/** `value` as HTML text or an attribute shows it. */
+function htmlEscaped(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
 export class Masker {
   /** Each form and what it becomes, longest first. */
   readonly patterns: [form: string, shown: string][] = [];
+
+  /**
+   * `new Masker` plus the forms a web page or a recording's trace shows a value in: JSON- and HTML-escaped, as a
+   * page's script posts it (`+` for a space), and its base64 inside a longer encoded string at any of the three byte
+   * alignments (the characters that depend only on the value). For screens' recordings, where a page may echo or
+   * encode what was typed into it.
+   */
+  static thorough(secrets: [name: string, value: string][] = []): Masker {
+    const masker = new Masker(secrets);
+    for (const [name, value] of secrets) {
+      const bytes = utf8(value);
+      if (bytes.length < MIN_LEN) continue;
+      const shown = `***${name}***`;
+      const forms = [JSON.stringify(value).slice(1, -1), htmlEscaped(value), encodeBytes(value, "-_.!~*'()").replaceAll("%20", "+")];
+      for (let prefix = 0; prefix < 3; prefix++) {
+        const encoded = Buffer.concat([Buffer.alloc(prefix), bytes]).toString("base64");
+        // Character i covers bits 6i..6i+6; those wholly inside the value's bits depend on it alone.
+        const start = Math.ceil((8 * prefix) / 6);
+        const end = Math.floor((8 * (prefix + bytes.length)) / 6);
+        if (end >= start + 6) {
+          const inner = encoded.slice(start, end);
+          forms.push(inner, inner.replace(/\+/g, "-").replace(/\//g, "_"));
+        }
+      }
+      for (const form of forms) {
+        if (utf8(form).length >= MIN_LEN && !masker.patterns.some(([p]) => p === form)) masker.patterns.push([form, shown]);
+      }
+    }
+    masker.#sort();
+    return masker;
+  }
 
   constructor(secrets: [name: string, value: string][] = []) {
     for (const [name, value] of secrets) {
@@ -84,5 +120,45 @@ export class Masker {
       if (this.patterns.some(([p]) => p.length > tail.length && p.startsWith(tail))) return text.length - at;
     }
     return 0;
+  }
+}
+
+/**
+ * What a screen's recording scrubs (crates/fleetd/src/node/browser/record.rs `Scrub`): its agent session's secrets,
+ * and each value filled into it, in every form a page or a trace may show them (`Masker.thorough`). A value too short
+ * to mask wherever it appears (a card's 3-digit code, under MIN_LEN) is masked where it is a field's value: a whole
+ * JSON string, and an HTML `value` attribute.
+ */
+export class Scrub {
+  private readonly masker: Masker;
+  private readonly short: [shown: string, value: string][];
+
+  constructor(secrets: [name: string, value: string][] = []) {
+    this.masker = Masker.thorough(secrets);
+    this.short = secrets.filter(([, v]) => v !== "" && utf8(v).length < MIN_LEN).map(([name, v]) => [`***${name}***`, v]);
+  }
+
+  text(text: string): string {
+    let out = this.masker.text(text);
+    for (const [shown, value] of this.short) {
+      if (out === value) return shown;
+      for (const [open, close] of [['"', '"'], ["'", "'"], ["&quot;", "&quot;"], ['\\"', '\\"']]) {
+        out = out.replaceAll(`value=${open}${value}${close}`, `value=${open}${shown}${close}`);
+      }
+    }
+    return out;
+  }
+
+  /** Every string in a JSON value, object keys included (the short values only where they are a whole value). */
+  value<T>(value: T): T {
+    const masked = this.masker.value(value);
+    if (this.short.length === 0) return masked;
+    const shortOnly = (v: unknown): unknown => {
+      if (typeof v === "string") return this.text(v);
+      if (Array.isArray(v)) return v.map(shortOnly);
+      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shortOnly(x)]));
+      return v;
+    };
+    return shortOnly(masked) as T;
   }
 }

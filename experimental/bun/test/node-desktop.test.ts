@@ -13,11 +13,15 @@ import {
   Desktops,
   forgetRuntimeCheck,
   healthOf,
+  iosRecordingsDir,
+  recordingsDir,
   hostCheck,
   start as startDesktop,
   worktreeMount,
 } from "../src/node/desktop/index.ts";
 import { bmp, jpeg } from "../src/node/desktop/screen.ts";
+import { NO_VIDEO } from "../src/node/desktop/session.ts";
+import { Masker } from "../src/node/mask.ts";
 import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
 import { router } from "../src/node/device/router.ts";
 import { start as startRoute } from "../src/node/session_route/index.ts";
@@ -243,11 +247,22 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   });
   cleanups.push(t.done);
   const reports: Record<string, unknown>[] = [];
+  const parts: Record<string, unknown>[] = [];
   t.link.answer = async (op, args) => {
     if (op === "session_route") return { runner: "devbox", here: true };
     if (op === "browser_session") reports.push(args);
+    if (op === "browser_recording_part") {
+      parts.push(args);
+      return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
+    }
     return {};
   };
+  // The agent session's secret: its recording never holds it, in any form a page or a log shows it.
+  t.node.area("sessions", () => ({
+    maskFor: () => new Masker(),
+    secretsFor: (thread: string) => (thread === "thread-1" ? [["DEPLOY_TOKEN", "tok-hunter2-secret"]] : []),
+    sessionCwd: () => undefined,
+  }));
   startBrowser(t.node);
   startRoute(t.node);
   const d = startDesktop(t.node);
@@ -283,6 +298,7 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   expect(await t.local.call("desktop", { action: "left_click", coordinate: [5, 6] }, "thread-1")).toMatchObject({ message: "left_click at (5, 6)." });
   expect(await t.local.call("desktop", { action: "cursor_position" }, "thread-1")).toMatchObject({ message: "The mouse is at (5, 6)." });
   expect(await t.local.call("desktop", { action: "type", text: "hi" }, "thread-1")).toMatchObject({ message: "Typed 2 characters." });
+  await t.local.call("desktop", { action: "type", text: "tok-hunter2-secret" }, "thread-1");
   await expect(t.local.call("desktop", { action: "mouse_move" }, "thread-1")).rejects.toThrow("mouse_move needs coordinate");
   const launched = (await t.local.call("desktop", { action: "launch", text: "echo $DISPLAY on $HOME; exit 3" }, "thread-1")) as { message: string };
   expect(launched.message).toMatch(/exited at once with code 3: :\d+ on .*\/home/);
@@ -311,8 +327,16 @@ test("an agent opens a desktop, screenshots, clicks, types and launches on it, a
   const root = join(t.node.home, "desktop", "displays");
   expect(readdirSync(root).length).toBe(1);
   const ended = (await t.local.call("session_end", {}, "thread-1")) as Record<string, unknown>;
-  expect(ended).toMatchObject({ op: "session_end", sessionId: id, kind: "linux_desktop", files: [] });
-  expect(reports.at(-1)).toMatchObject({ sessionId: id, state: "recorded" });
+  // Recorded as a browser session is: its action log here (no ffmpeg in this test, so no video), then to the hub.
+  expect(ended).toMatchObject({ op: "session_end", sessionId: id, kind: "linux_desktop", files: [{ file: "actions" }], note: NO_VIDEO });
+  await until("its upload", () => reports.at(-1)?.state === "recorded");
+  expect(reports.at(-1)).toMatchObject({ sessionId: id, kind: "linux_desktop", files: [{ file: "actions" }] });
+  const log = parts.filter((p) => p.file === "actions").map((p) => Buffer.from(String(p.dataB64), "base64").toString()).join("");
+  const logged = log.trim().split("\n").map((l) => JSON.parse(l) as { tool: string; args: Record<string, unknown> });
+  expect(logged.map((l) => l.tool)).toEqual(expect.arrayContaining(["session_start", "desktop", "takeover", "handback", "session_end"]));
+  expect(log).toContain("***DEPLOY_TOKEN***");
+  expect(log).not.toContain("hunter2");
+  await until("its folder to go", () => !existsSync(join(t.node.home, "desktop", "recordings", id)));
   // The display goes with everything on it: its folder, its X server's socket and lock.
   expect(readdirSync(root)).toEqual([]);
   expect(readdirSync(x11)).toEqual([]);
@@ -346,4 +370,38 @@ test("a start on a machine that can't prepare says why at once, and the hub's se
   // A desktop the hub says ends goes; any other id is left.
   expect(d.endScreen("t", "Bnope")).toBe(false);
   expect(new Desktops(t.node, { enabled: false }).count()).toBe(0);
+});
+
+test("recordings a stopped node left (desktop ones and a Rust node's iOS screens') are ended and go to the hub", async () => {
+  const t = testNode("devbox");
+  cleanups.push(t.done);
+  const reports: Record<string, unknown>[] = [];
+  t.link.answer = async (op, args) => {
+    if (op === "browser_session") reports.push(args);
+    if (op === "browser_recording_part") return { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length };
+    return {};
+  };
+  const d = new Desktops(t.node, { enabled: false });
+  const write = (dir: string, meta: Record<string, unknown>) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "session.json"), JSON.stringify(meta));
+    writeFileSync(join(dir, "actions.jsonl"), '{"seq":1,"tool":"session_start"}\n');
+  };
+  const base = { kind: "linux_desktop", threadId: "t1", cwd: "/", purpose: "look", startedAt: "2026-11-01T10:00:00.000Z", credentialsFilled: 0 };
+  const ended = join(recordingsDir(t.node.home), `B${"1".repeat(32)}`);
+  write(ended, { ...base, sessionId: `B${"1".repeat(32)}`, endedAt: "2026-11-01T10:05:00.000Z" });
+  const cut = join(iosRecordingsDir(t.node.home), `B${"2".repeat(32)}`);
+  write(cut, { ...base, kind: "ios", sessionId: `B${"2".repeat(32)}` });
+  // A session still opening (its folder is new and it hasn't ended) is left alone; so is a live one.
+  const opening = join(recordingsDir(t.node.home), `B${"3".repeat(32)}`);
+  write(opening, { ...base, sessionId: `B${"3".repeat(32)}` });
+  await d.sweep(Date.now() + 60_000);
+  expect(existsSync(ended)).toBe(false);
+  expect(existsSync(opening)).toBe(true);
+  // Ten minutes on, those a node stopped during are ended with a note, and go too.
+  await d.sweep(Date.now() + 10 * 60_000);
+  expect(existsSync(cut)).toBe(false);
+  const recorded = reports.filter((r) => r.state === "recorded");
+  expect(recorded.map((r) => r.sessionId).sort()).toEqual([`B${"1".repeat(32)}`, `B${"2".repeat(32)}`, `B${"3".repeat(32)}`]);
+  expect(recorded.find((r) => r.kind === "ios")).toMatchObject({ note: "the node stopped during this session; its video may end early", files: [{ file: "actions" }] });
 });

@@ -1,14 +1,22 @@
-// One live desktop session (crates/fleetd/src/node/desktop/session.rs): the display it was lent, the node's connection
-// to its screen (x11.ts), the screen it reads ten times a second while anything changes (the frames a person watches),
-// and its steps, a line per `desktop` action and session tool call, each scrubbed of the session's secrets.
+// One live desktop session (crates/fleetd/src/node/desktop/session.rs): the display it was lent (or the Mac's lease),
+// the node's connection to its screen (x11.ts, mac/screen.ts), the screen it reads ten times a second while anything
+// changes (the video, and the frames a person watches), and the action log, a line per `desktop` action and session
+// tool call as a browser session keeps it (node/browser/record.ts), each scrubbed of the session's secrets.
 //
-// TODO(bun): the recording (its action log, video and upload), as node/browser's record.ts keeps a browser's once it
-// lands; until then a desktop session ends `recorded` with no files, as a browser session does here.
+// A Mac screen session that doesn't hold the Mac's lease only observes: it reads the screen only while a person
+// watches it, and records no video meanwhile.
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
+import { RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { Pacer } from "../browser/fit.ts";
-import type { Masker } from "../mask.ts";
+import { appendAction, files as recordedFiles, type Meta, scrubFile, type Steps, VideoSink, writeMeta } from "../browser/record.ts";
+import { Scrub } from "../mask.ts";
 import type { Launched, Lent, Screen } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
+
+/** What a session's recording says without an ffmpeg to encode its video. */
+export const NO_VIDEO = "no video: this machine has no ffmpeg for it";
 
 /** The start of a result's text a step keeps. */
 const RESULT_CHARS = 500;
@@ -35,21 +43,19 @@ export type DesktopDone = { message: string; jpegB64?: string; width?: number; h
 /** Where a watched session's frames go, and the budget the hub last named for it. */
 export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined };
 
-/** Scrubs a session's secrets out of what it logs, as the node masks them everywhere (mask.ts). */
-function scrubValue(mask: Masker, v: unknown): unknown {
-  if (typeof v === "string") return mask.text(v);
-  if (Array.isArray(v)) return v.map((x) => scrubValue(mask, x));
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubValue(mask, x)]));
-  return v;
-}
-
 export type Opened = {
   id: string;
   thread: string;
   cwd: string;
   purpose: string;
-  mask: Masker;
+  /** The agent session's secrets (its project's, its order's, its MCP servers'), scrubbed from the recording. */
+  secrets: [string, string][];
   kind: "linux_desktop" | "mac";
+  /** The recording's folder, and the ffmpeg that encodes its video (none: no video). Absent: nothing is recorded. */
+  dir?: string;
+  ffmpeg?: string;
+  /** Each session's latest step, for the heartbeat (the browsers' record.ts `Steps`). */
+  steps?: Steps;
   /** A Mac screen session that starts without the lease. */
   observing?: boolean;
 };
@@ -74,13 +80,19 @@ export class Session {
   private readonly pacer = new Pacer();
   private noteText: string | undefined;
   private seq = 0;
-  private readonly scrub: Masker;
+  private readonly scrub: Scrub;
+  readonly dir: string | undefined;
+  private readonly ffmpeg: string | undefined;
+  private readonly latest: Steps | undefined;
+  private video: VideoSink | undefined;
+  private ticker: Timer | undefined;
+  private videoFailed = false;
   private lastActive = performance.now();
   private closed = false;
   private capturing: Promise<void> = Promise.resolve();
   /** The latest step, for the heartbeat. */
   step: BrowserAction | undefined;
-  /** Every step so far, scrubbed, for the recording once it is ported. */
+  /** Every step so far, scrubbed, as the action log has them. */
   readonly steps: BrowserAction[] = [];
 
   constructor(
@@ -95,12 +107,41 @@ export class Session {
     this.purpose = opened.purpose;
     this.kind = opened.kind;
     this.observingNow = opened.observing ?? false;
-    this.scrub = opened.mask;
+    this.scrub = new Scrub(opened.secrets);
+    this.dir = opened.dir;
+    this.ffmpeg = opened.ffmpeg;
+    this.latest = opened.steps;
+    if (this.dir && !this.ffmpeg) this.noteText = NO_VIDEO;
+    this.writeMeta();
   }
 
-  /** Starts reading the screen. */
+  /** Starts reading the screen, and keeps a still screen's frame showing in the video. */
   open(): void {
     this.capturing = this.capture();
+    this.ticker = setInterval(() => this.video?.tick(this.offsetMs()), 1_000);
+  }
+
+  meta(endedAt?: string): Meta {
+    return {
+      sessionId: this.id,
+      kind: this.kind,
+      threadId: this.thread,
+      cwd: this.cwd,
+      purpose: this.purpose,
+      startedAt: this.startedAt,
+      ...(endedAt ? { endedAt } : {}),
+      credentialsFilled: 0,
+      ...(this.noteText !== undefined ? { note: this.noteText } : {}),
+    };
+  }
+
+  writeMeta(endedAt?: string): void {
+    if (!this.dir) return;
+    try {
+      writeMeta(this.dir, this.meta(endedAt));
+    } catch (e) {
+      console.warn(`desktop ${this.id}: session file not written: ${(e as Error).message}`);
+    }
   }
 
   offsetMs(): number {
@@ -176,9 +217,18 @@ export class Session {
     void this.pacer.fit(watcher.kbps, last).then((fitted) => this.watcher?.send(fitted));
   }
 
-  /** A new screen: to the hub while it watches. */
+  /** A new screen: into the video (not while it only observes), and to the hub while it watches. */
   private frame(jpeg: Uint8Array, width: number, height: number): void {
     if (this.closed) return;
+    if (this.dir && this.ffmpeg && !this.video && !this.observingNow && !this.videoFailed) {
+      try {
+        this.video = new VideoSink(this.ffmpeg, join(this.dir, RECORDING_FILES.video.name), [width, height]);
+      } catch (e) {
+        this.videoFailed = true;
+        this.setNote(`no video: ${(e as Error).message}`);
+      }
+    }
+    if (!this.observingNow) this.video?.frame(jpeg, this.offsetMs());
     this.liveSeq++;
     this.last = {
       sessionId: this.id,
@@ -234,13 +284,21 @@ export class Session {
       at: new Date().toISOString(),
       offsetMs: Math.max(0, this.offsetMs() - durationMs),
       tool,
-      args: scrubValue(this.scrub, args),
+      args,
       ok,
-      ...(result === undefined ? {} : { result: this.scrub.text(result.slice(0, RESULT_CHARS)) }),
+      ...(result === undefined ? {} : { result: [...result].slice(0, RESULT_CHARS).join("") }),
       durationMs,
     };
-    this.step = action;
-    this.steps.push(action);
+    const clean = this.scrub.value(action);
+    this.step = clean;
+    this.steps.push(clean);
+    if (this.dir && this.latest) {
+      try {
+        appendAction(this.dir, action, this.scrub, this.latest, this.id);
+      } catch (e) {
+        console.warn(`desktop ${this.id}: action not logged: ${(e as Error).message}`);
+      }
+    }
     return seq;
   }
 
@@ -297,16 +355,40 @@ export class Session {
     return this.lent.launch(command, this.cwd);
   }
 
-  /** Stops reading the screen and throws the display away with everything on it. */
-  async close(): Promise<void> {
-    if (this.closed) return;
+  /**
+   * Stops reading the screen, finishes the video and throws the display away with everything on it. Returns the
+   * recording's files there are.
+   */
+  async close(): Promise<[string, number][]> {
+    if (this.closed) return this.dir ? recordedFiles(this.dir) : [];
     this.closed = true;
     this.watcher = undefined;
+    clearInterval(this.ticker);
     await this.capturing;
     this.screen.close();
+    const sink = this.video;
+    this.video = undefined;
+    if (sink && this.dir) {
+      const why = await sink.finish(this.offsetMs());
+      if (why) {
+        rmSync(join(this.dir, RECORDING_FILES.video.name), { force: true });
+        this.setNote(`no video: ${why}`);
+      }
+    }
     const lent = this.lent;
     this.lent = undefined;
     await lent?.drop();
+    if (!this.dir) return [];
+    // The action log was scrubbed line by line as it was written; scrubbed once more whole, with every secret known.
+    const actions = join(this.dir, RECORDING_FILES.actions.name);
+    try {
+      scrubFile(actions, this.scrub);
+    } catch (e) {
+      console.warn(`desktop ${this.id}: recording not scrubbed: ${(e as Error).message}`);
+      rmSync(actions, { force: true });
+    }
+    this.writeMeta(new Date().toISOString());
+    return recordedFiles(this.dir);
   }
 }
 

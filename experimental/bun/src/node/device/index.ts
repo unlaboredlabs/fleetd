@@ -8,9 +8,8 @@
 // Live view and takeover: the hub's `browser_watch`, `browser_input` and `browser_control` for an android session come
 // here (live.ts); the browser's own go on to the broker.
 //
-// TODO(bun): `device` steps for an Android screen hosted for another machine (remote.rs `Work`: the hub's install of
-// a PR's build into a person's screen); a session's secrets for scrubbing (node.area("sessions") gives a masker, not
-// the values the recording's Scrub takes).
+// A screen hosted here for another machine takes `device` steps (work.ts): the hub's install of a PR's build into a
+// person's screen, each step opened by session routing from what the hub sealed with the screen's relay key.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AndroidHealth, BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
@@ -18,16 +17,18 @@ import { ToolError } from "../../shared/errors.ts";
 import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import { CAP_SESSION_ANDROID } from "../../shared/node_link.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
-import { GIVE_UP_MS, giveUp, readMeta, report, Steps, upload } from "../browser/record.ts";
+import { GIVE_UP_MS, giveUp, readMeta, report, Steps, upload, waitingIn } from "../browser/record.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
+import { router as sessionRoute } from "../session_route/index.ts";
 import { writeAtomic } from "../secrets/files.ts";
-import { agentEnv, findAgentDevice, install as installAgentDevice, pluginDir, release, writeConfig, VERSION as AGENT_DEVICE_VERSION } from "./agent_device.ts";
+import { agentEnv, binDir, findAgentDevice, install as installAgentDevice, pluginDir, release, writeConfig, VERSION as AGENT_DEVICE_VERSION } from "./agent_device.ts";
 import { killLeftovers, Pool } from "./emulator.ts";
 import { deviceInput, Pump } from "./live.ts";
 import { type Answer, router, type Screens } from "./router.ts";
 import { Stream } from "./scrcpy.ts";
 import { deviceDir, findSdk, install as installSdk, kvm, type KvmCheck, PINS, type Sdk, sdkAt, supported } from "./sdk.ts";
 import { recordingsDir, Session, type StreamStarter } from "./session.ts";
+import { commandLine, type DeviceCall, type DeviceDone, isHostKey, ranDone, ranOutput, RUN_WAIT, Work } from "./work.ts";
 
 /** A session no tool call touched this long is ended (node.json `screenIdleMinutes`, else 30). */
 const IDLE_MINUTES = 30;
@@ -259,11 +260,35 @@ export class Devices implements Screens {
       case "session_end":
         return { op: "session_end", ...(await this.sessionEnd(thread)) };
       case "device":
-        // TODO(bun): remote.rs `Work`, for a screen this machine hosts for another (the thread is then a host key).
-        throw new ToolError("invalid", "device steps are for an Android screen hosted for another machine", "run agent-device yourself");
+        return { op: "device", ...(await this.device(thread, frame.call as unknown as DeviceCall)) };
       default:
         throw new ToolError("invalid", `${frame.call.op} is not available in Android sessions yet.`, "do without it and say so in your result");
     }
+  }
+
+  /**
+   * An agent-device command, or a file it reads, for a screen this machine hosts for another (work.ts): the hub's
+   * install of a PR's build into a person's screen. Run by the node's own wrapper on that screen's emulator alone, in
+   * the screen's folder, and logged as an agent's command is; a person's control holds it back as the wrapper holds a
+   * local one.
+   */
+  async device(thread: string, call: DeviceCall): Promise<DeviceDone> {
+    if (!isHostKey(thread)) {
+      throw new ToolError("invalid", "device steps are for an Android screen hosted for another machine", "run agent-device yourself");
+    }
+    const session = this.sessions.get(thread);
+    if (!session) throw new ToolError("not_found", "No Android session is open.", "start one with session_start kind android");
+    const work = new Work(this.home, thread);
+    if (call.step !== "run") {
+      session.touch();
+      return work.step(call);
+    }
+    const args = Array.isArray(call.args) ? call.args.map(String) : [];
+    work.check(args);
+    const started = performance.now();
+    const ran = await work.run(join(binDir(this.home), "agent-device"), agentEnv(this.home, thread, process.env.PATH), args, RUN_WAIT);
+    session.step("agent-device", { command: commandLine(args) }, ran.exitCode === 0, ranOutput(ran), Math.round(performance.now() - started));
+    return ranDone(ran);
   }
 
   private async sessionStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
@@ -293,10 +318,12 @@ export class Devices implements Screens {
       const id = newId();
       let session: Session;
       try {
+        // A host key's are what its agent's node sealed to this one; this node's own sessions' are its own.
+        const secrets = sessionRoute(this.node).secretsOf(thread);
         session = Session.open(
           lent,
           pool.sdk,
-          { id, thread, cwd, purpose, dir: join(recordingsDir(this.home), id), home: this.home, secrets: [], steps: this.steps },
+          { id, thread, cwd, purpose, dir: join(recordingsDir(this.home), id), home: this.home, secrets, steps: this.steps },
           this.options.stream ?? Stream.start,
         );
       } catch (e) {
@@ -325,6 +352,7 @@ export class Devices implements Screens {
     this.unwatch(session.id);
     session.step("session_end", {}, true, undefined, 0);
     const files = await session.close();
+    new Work(this.home, session.thread).remove();
     const note = session.note();
     // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
     void this.report(session, "uploading");
@@ -372,13 +400,9 @@ export class Devices implements Screens {
         await this.close(session).catch(() => {});
       }
     }
-    const root = recordingsDir(this.home);
-    if (!existsSync(root)) return;
-    for (const id of readdirSync(root)) {
-      if (this.byId(id)) continue;
-      const dir = join(root, id);
-      if (readMeta(dir)?.endedAt) await this.send(dir);
-    }
+    // A recording a stopped node left (this one's or a Rust node's) is ended and sent too.
+    const live = [...this.sessions.values()].map((s) => s.id);
+    for (const dir of waitingIn(recordingsDir(this.home), live, now)) await this.send(dir);
   }
 
   /** Ends the agent session's screen `id` if it is open here; whether it was. */
