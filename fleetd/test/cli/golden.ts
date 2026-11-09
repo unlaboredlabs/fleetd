@@ -106,6 +106,8 @@ export function normalize(text: string, fleet: Fleet): string {
     .replace(/(^[█▀▄ ]+$\n?)+/gm, "<QR>\n")
     // A test's own server (a release feed) is on a port of its own each run.
     .replace(/http:\/\/127\.0\.0\.1:\d+\//g, "http://127.0.0.1:PORT/")
+    // The hub database's size, which each new table changes.
+    .replace(/"storedBytes":\d+/g, '"storedBytes":0')
     .replace(/fld_[a-z2-7]{52}/g, "fld_KEY")
     .replace(/fle_[a-z2-7]{52}/g, "fle_CODE")
     .replace(/fld_[a-z2-7]{6}/g, "fld_PFX")
