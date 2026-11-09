@@ -64,7 +64,7 @@ type ManageParams = {
   NewScreen: { key: Key };
   /** A project's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
   ChatInfo: NavigatorScreenParams<ChatInfoParams>;
-  /** Its icon: a built-in face and color, or a photo (IconPicker.tsx). */
+  /** Its icon: its bot, or a photo (IconPicker.tsx). */
   Icon: { key: Key };
   /** A photo as picked, moved and scaled in a circle to become the chat's picture; with no `key`, the person's own. */
   Photo: { key?: Key | undefined; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };

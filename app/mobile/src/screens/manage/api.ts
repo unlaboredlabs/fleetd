@@ -5,7 +5,7 @@
 // Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
 // by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type ProjectIcon, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -79,13 +79,7 @@ export const removeMyPicture = async (hub: Hub): Promise<Result<null>> => {
   return r.ok ? { ok: true, value: null } : r;
 };
 
-/** A built-in icon picked: it takes the place of its picture. */
-export const setIcon = async (hub: Hub, p: ProjectRef, icon: ProjectIcon): Promise<Result<ProjectSummary>> => {
-  const r = await hub.call("project_icon_set", { ...ref(p), icon });
-  return r.ok ? { ok: true, value: r.output.project } : r;
-};
-
-/** Its picture taken away: its icon shows again. */
+/** Its picture taken away: its bot shows again. */
 export const removePicture = async (hub: Hub, p: ProjectRef): Promise<Result<ProjectSummary>> => {
   const r = await hub.call("project_avatar_set", ref(p));
   return r.ok ? { ok: true, value: r.output.project } : r;
