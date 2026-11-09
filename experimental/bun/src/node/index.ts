@@ -482,6 +482,11 @@ async function runNodeProcess(home: string, config: NodeConfig, enrollToken: str
   // The last process the kernel kills when memory runs out.
   protect("node");
   guard();
+  // Listening before the node starts anything: a SIGTERM while it starts up stops it once it is up, rather than
+  // killing it outright.
+  const signalled = new Promise<number>((resolve) => {
+    for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => resolve(0));
+  });
   let running: RunningNode;
   try {
     running = await startNode(home, config, enrollToken, exitWhenEnrolled);
@@ -489,9 +494,6 @@ async function runNodeProcess(home: string, config: NodeConfig, enrollToken: str
     process.stderr.write(`fleetd: ${(error as Error).message}\n`);
     return 1;
   }
-  const signalled = new Promise<number>((resolve) => {
-    for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => resolve(0));
-  });
   const code = await Promise.race([running.done, signalled]);
   await running.stop();
   return code;

@@ -253,3 +253,15 @@ fn a_node_exits_at_once_on_sigterm_and_its_next_start_re_adopts_the_session() {
     stop(second);
     assert!(registration.host_alive());
 }
+
+#[test]
+fn a_sigterm_while_the_node_starts_up_stops_it_once_it_is_up_rather_than_killing_it() {
+    let machine = Machine::new();
+    let (node, lines) = machine.node();
+    let mut node = Running(node);
+    // Logged as it starts, before its sessions and link are up.
+    said(&lines, &["fleetd node starting"]);
+    sigterm(&node.0);
+    let status = node.0.wait().unwrap();
+    assert!(status.success(), "{status:?}");
+}

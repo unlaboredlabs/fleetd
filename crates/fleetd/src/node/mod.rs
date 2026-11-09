@@ -214,18 +214,23 @@ fn enrolled_retry(attempt: u32) -> std::time::Duration {
     std::time::Duration::from_secs(5u64.saturating_mul(1 << attempt.min(6)).min(300))
 }
 
-/// Resolves on SIGINT or SIGTERM.
-async fn shutdown_signal() {
+/// Resolves on SIGINT or SIGTERM. It listens from the call, not from its first poll: a node whose first link try
+/// failed within the same poll (a refused dial to a hub on this machine) logged "hub link lost" while SIGTERM still
+/// killed it outright.
+fn shutdown_signal() -> impl std::future::Future<Output = ()> {
     use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut int), Ok(mut term)) = (
+    let signals = (
         signal(SignalKind::interrupt()),
         signal(SignalKind::terminate()),
-    ) else {
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = int.recv() => {}
-        _ = term.recv() => {}
+    );
+    async move {
+        let (Ok(mut int), Ok(mut term)) = signals else {
+            return std::future::pending().await;
+        };
+        tokio::select! {
+            _ = int.recv() => {}
+            _ = term.recv() => {}
+        }
     }
 }
 
@@ -241,6 +246,8 @@ async fn run_node(
         .with_writer(std::io::stdout)
         .with_ansi(false)
         .try_init();
+    // Listening before the node starts anything: a SIGTERM while it starts up stops it once it is up.
+    let stopped = shutdown_signal();
     crate::oom::protect("node");
     crate::update::service::refresh_own_unit();
     let shown = home.display();
@@ -531,7 +538,7 @@ async fn run_node(
         fatal = link::run_node(options) => Err(NodeError::Refused(fatal)),
         () = enrolled => Ok(()),
         // A screen setting changed in Settings: the node stops as for SIGTERM, and its service manager starts it again.
-        () = async { tokio::select! { () = shutdown_signal() => {}, () = screens::restart_wanted() => {} } } => {
+        () = async { tokio::select! { () = stopped => {}, () = screens::restart_wanted() => {} } } => {
             node_sessions.shutdown().await;
             if let Some(router) = &sessions_router {
                 router.shutdown().await;
