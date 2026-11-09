@@ -38,7 +38,7 @@ import s from "./sidebar.module.css";
 
 /** A chat's picture in its row: big enough to enjoy its face, the row 56 px around it. */
 const AVATAR = 36;
-/** A pinned chat's picture, PIN_COLUMNS to a row across the sidebar. */
+/** A pinned chat's picture, PIN_COLUMNS to a row, the group centred in the sidebar. */
 const PIN_AVATAR = 64;
 const PIN_COLUMNS = 2;
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
@@ -162,7 +162,7 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
  * waits on you); while its lead works, the picture's own bot says so, with no bubble of its own, and a picture of
  * the project's own, which can't, has the row's small working glyph in the dot's place. While ⌘ (Ctrl) is held, its
  * jump number stands before the name in the dot's place, as a row's stands in its time's: the pins are ⌘1 onwards.
- * Hovered or open, its shade hugs the picture and name, centred in its half of the grid.
+ * Hovered or open, its shade hugs the picture and name, centred in its cell of the grid.
  */
 function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   const m = mark(p);
