@@ -83,8 +83,12 @@
   min-width: 0;
 }
 
+/* In a narrow band (the chat beside a panel, Latest beside the strip) the dots give way first, cut at the capsule's
+   edge, before the headline does: they are only a picture of what it says. */
 .dots {
-  flex: none;
+  flex: 0 1000 auto;
+  min-width: 10px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -141,7 +145,8 @@
      so its box can't come from its text. It gives way before the headline does. */
   flex: 0 100 auto;
   width: 320px;
-  min-width: 0;
+  /* Narrower, a role and a step don't fit: it goes instead (below). */
+  min-width: 120px;
   overflow: hidden;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -163,8 +168,9 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-/* Too narrow a band (the chat beside a wide panel) has no room for a useful now-line: the headline takes it all. */
-@container (width < 420px) {
+/* Too narrow a band (the chat beside a wide panel, with Latest beside the strip) has no room for a useful now-line:
+   the headline takes it all. */
+@container (width < 520px) {
   .now {
     display: none;
   }
