@@ -40,6 +40,7 @@ const fake = vi.hoisted(() => {
     platform: "linux",
     fixture: null,
     vibrancy: false,
+    softwareCompositing: false,
     version: "test",
     app: {
       onMenuCommand: () => () => undefined,

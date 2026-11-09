@@ -1,6 +1,6 @@
 // New bubbles glide in (decision ui.bubble-entrance: option A of the bubble-motion report). The conversation moves as
 // one sheet: a new message, or the last one growing (a streamed reply's text taking its dots' place, a picture
-// loading, the composer's island growing), adds its height under the end the reader is at, and the rows are drawn
+// loading), adds its height under the end the reader is at, and the rows are drawn
 // where they were, the new one hanging behind the composer's glass island (the list runs on under it to the window's
 // edge), then spring up by that height. So a bubble rises from behind the island with the rows above it, and nothing
 // ever crosses anything. It is one additive transform on the rows (composite
@@ -28,6 +28,8 @@ export interface Place {
   readonly top: number;
   readonly view: number;
   readonly width: number;
+  /** Where the rows end, px, short of the room the list keeps after them (the composer's island). */
+  readonly end: number;
   /** Oldest first. A few, since the last may go as a message comes. */
   readonly tail: readonly { readonly key: string; readonly start: number }[];
 }
@@ -51,10 +53,12 @@ const AT_END = 24;
  * The spring the list makes room on, from `was` to `now`, or undefined when it doesn't glide. It glides only when it
  * grew under the end the reader was at, and the newest row that stayed (`anchor`, anchorOf) hasn't moved: an older
  * page landing above, or the window resizing, isn't a new message. A message of yours after it glides on your send's
- * spring, any other on a reply's, and none (the last row grew) on the growing one.
+ * spring, any other on a reply's, and none (the last row grew) on the growing one. The island growing with its words
+ * only adds room after the rows: the last message moves up with the pill in the same frame, as the pill grows, so a
+ * line wrap doesn't redraw the conversation and its glass for a spring's frames while you type.
  */
-export function glideOf(was: Place, now: Pick<Place, "height" | "view" | "width">, anchor: ReturnType<typeof anchorOf>): Spring | undefined {
-  if (now.height <= was.height || was.height - was.top - was.view > AT_END) return undefined;
+export function glideOf(was: Place, now: Pick<Place, "height" | "view" | "width" | "end">, anchor: ReturnType<typeof anchorOf>): Spring | undefined {
+  if (now.height <= was.height || now.end === was.end || was.height - was.top - was.view > AT_END) return undefined;
   if (now.view !== was.view || now.width !== was.width || anchor === undefined || anchor.now !== anchor.was) return undefined;
   if (anchor.after.length === 0) return GLIDE.grow;
   return anchor.after.some(isMineRow) ? GLIDE.mine : GLIDE.theirs;
@@ -81,6 +85,7 @@ export function useGlide(list: RefObject<Virtualizer<HTMLDivElement, Element> | 
       top: el.scrollTop,
       view: el.clientHeight,
       width: el.clientWidth,
+      end: v.measurementsCache.at(-1)?.end ?? 0,
       tail: v.measurementsCache.slice(-TAIL).map((m) => ({ key: String(m.key), start: m.start })),
     });
     let was = look();

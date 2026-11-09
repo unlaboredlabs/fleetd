@@ -152,6 +152,9 @@ const pagePreferences = (mode: HubsMode) => {
       // The hubs as the window opens, so the page renders at once rather than after a round trip; it asks again after.
       `--fleetd-hubs=${encodeURIComponent(JSON.stringify(hubService?.list() ?? []))}`,
       ...(mac ? ["--fleetd-vibrancy"] : []),
+      // Chromium composites without a GPU (a VM, a remote desktop, a Linux driver it won't use, CI): the page's glass
+      // goes solid, as with Reduce transparency, since each frame would blur on the CPU.
+      ...(app.getGPUFeatureStatus().gpu_compositing.startsWith("enabled") ? [] : ["--fleetd-software-compositing"]),
     ],
   };
 };
