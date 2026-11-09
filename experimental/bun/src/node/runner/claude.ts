@@ -8,12 +8,19 @@ import { homeDir, type Env } from "../util.ts";
 import type { Effort } from "../../shared/contracts.ts";
 import { autoupdaterOff } from "./install.ts";
 import { accountOverrides, loginLabel, proxyOf } from "./claude/setup.ts";
+import {
+  AGENT_DISALLOWED_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, items, LEAD_ALLOWED_WHY, LEAD_ASK_WHY, LEAD_DISALLOWED_WHY,
+  NESTING_VARS_WHY, pairs, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY,
+  WORKER_ENV_WHY,
+} from "./claude/explained.ts";
 import type { RunnerInfo, RuntimeMode, SessionRole } from "../sessions/types.ts";
 
 /** Every profile's own model (guide.rs MODEL). */
 export const MODEL = "claude-opus-5-5";
 export const SUPPORTED = ">=2.1.300, <2.2.0";
 export const TESTED = "2.1.314";
+/** The claude the runner's recorded fixtures came from. */
+export const RECORDED = "2.1.302";
 const INSTALL_FIX = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /** A profile's own model and effort: `medium` at effort medium and any other at high. */
@@ -22,16 +29,10 @@ export const profileModel = (profile: string): { model: string; effort: Effort }
 export const profileOf = (model: string, effort: Effort) => (model === MODEL && effort === "medium" ? "medium" : "high");
 
 /** Tools no fleetd session gets, then the Bash rules against a nested claude. */
-export const ALWAYS_DISALLOWED = [
-  "Task", "Agent", "Workflow", "ListAgents", "SendMessage", "TaskStop", "TaskOutput", "TeamCreate", "TeamDelete",
-  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
-  "EnterWorktree", "ExitWorktree", "Bash(claude *)", "Bash(*bin/claude)", "Bash(*bin/claude *)", "Bash(*/claude -*)",
-  "Bash(*claude/versions/*)", "Bash(npx *claude*)", "Bash(bunx *claude*)", "Bash(*@anthropic-ai/claude-code*)",
-  "Bash(*sh -*c *claude*)", "Bash(env *claude*)", "Bash(exec *claude*)", "Bash(xargs *claude*)",
-];
-const AGENT_DISALLOWED = ["ReportFindings", "DesignSync", "NotebookEdit"];
-const TASK_DISALLOWED = ["Bash(git push *--no-verify*)", "Bash(git *core.hooksPath*)", "Bash(git *core.hookspath*)"];
-const LEAD_DISALLOWED = ["Edit", "Write", "WebFetch", "WebSearch"];
+export const ALWAYS_DISALLOWED = items(DISALLOWED_WHY);
+const AGENT_DISALLOWED = items(AGENT_DISALLOWED_WHY);
+const TASK_DISALLOWED = items(TASK_DISALLOWED_WHY);
+const LEAD_DISALLOWED = items(LEAD_DISALLOWED_WHY);
 
 export function roleDisallowed(role: SessionRole): string[] {
   switch (role) {
@@ -46,19 +47,14 @@ export function roleDisallowed(role: SessionRole): string[] {
   }
 }
 
-const LEAD_ALLOWED = ["Read", "Edit", "Write", "WebSearch", "Skill", "mcp__fleetd", "Bash(agent-device *)"];
-const LEAD_ASK = ["WebFetch", "mcp__fleetd__confirm_step", "mcp__fleetd__automation_confirm", "mcp__fleetd__project_message"];
+const LEAD_ALLOWED = items(LEAD_ALLOWED_WHY);
+const LEAD_ASK = items(LEAD_ASK_WHY);
 const manualLead = (role: SessionRole, mode: RuntimeMode) => (role === "lead" || role === "assistant") && mode === "approval-required";
 export const roleAllowed = (role: SessionRole, mode: RuntimeMode) => (manualLead(role, mode) ? LEAD_ALLOWED : []);
 export const roleAsk = (role: SessionRole, mode: RuntimeMode) => (manualLead(role, mode) ? LEAD_ASK : []);
 
-export const SUBAGENTS_OFF_ENV: [string, string][] = [
-  ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"],
-  ["CLAUDE_CODE_DISABLE_WORKFLOWS", "1"],
-  ["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "1"],
-  ["CLAUDE_CODE_DISABLE_AGENT_VIEW", "1"],
-];
-const SUBAGENTS_ON_ENV = ["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "CLAUDE_CODE_COORDINATOR_MODE"];
+export const SUBAGENTS_OFF_ENV = pairs(SUBAGENTS_OFF_ENV_WHY);
+const SUBAGENTS_ON_ENV = items(SUBAGENTS_ON_ENV_WHY);
 export const subagentsOffSettingsEnv = (): Record<string, string> => ({
   ...Object.fromEntries(SUBAGENTS_OFF_ENV),
   ...Object.fromEntries(SUBAGENTS_ON_ENV.map((k) => [k, ""])),
@@ -74,18 +70,15 @@ export const HEAVY_LSP_PLUGINS = [
   "kotlin-lsp@claude-plugins-official",
 ];
 export const heavyLspOn = (env: Env) => env.HEAVY_LANGUAGE_SERVERS?.trim() === "1";
-export const DEFAULT_ENV: [string, string][] = [["ENABLE_TOOL_SEARCH", "true"]];
-const WORKER_ENV: [string, string][] = [["BASH_MAX_TIMEOUT_MS", "280000"]];
+export const DEFAULT_ENV = pairs(DEFAULT_ENV_WHY);
+export const WORKER_ENV = pairs(WORKER_ENV_WHY);
 export const roleEnv = (role: SessionRole, env: Env): Env =>
   role === "worker" ? Object.fromEntries(WORKER_ENV.filter(([k]) => !(k in env))) : {};
 export const PROMPT_CACHE_TTL_VARS = ["CLAUDE_CODE_PROMPT_CACHE_TTL", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"];
-export const defaultCacheTtl = (role: SessionRole) => (role === "worker" ? "5m" : "1h");
-const NESTING_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"];
+export const defaultCacheTtl = (role: SessionRole) => PROMPT_CACHE_TTL_WHY.find(([[r]]) => r === role)?.[0][1] ?? "1h";
+const NESTING_VARS = items(NESTING_VARS_WHY);
 export const HELPER_MODEL_ENV = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
-export const SESSION_ENV: [string, string][] = [
-  ["DISABLE_AUTOUPDATER", "1"],
-  ["CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1"],
-];
+export const SESSION_ENV = pairs(SESSION_ENV_WHY);
 export const FLEETD_ENV_SOURCE = "FLEETD_ENV_SOURCE";
 export const SESSION_MARKER = "FLEETD_RUNNER_SESSION";
 
