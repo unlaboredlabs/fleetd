@@ -590,14 +590,23 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   return f.settleAt(0);
 };
 
-/** The showcase with three chats pinned (design exploration: the sidebar's pinned grid). */
+/** Storefront's own picture in the pinned showcase, where a pin's working cue shows beside the name. */
+const STOREFRONT_PICTURE = "5f0e7a1c2b3d4e6f";
+
+/**
+ * The showcase with three chats pinned (design exploration: the sidebar's pinned grid). Storefront, whose lead works,
+ * has a picture of its own, so its pin says so beside the name; billing and Ada keep their bots.
+ */
 const pinned = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "showcase-pins", "The showcase with storefront, billing and Ada pinned.");
+  const f = Fixture.from(base, "showcase-pins", "The showcase with storefront (its own picture), billing and Ada pinned.");
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const ref = (title: string) => {
     const p = projects.find((x) => x["title"] === title);
     return { machineId: p?.["machineId"] ?? "", projectId: p?.["projectId"] ?? "" };
   };
+  const storefront = projects.find((x) => x["title"] === "storefront");
+  if (storefront !== undefined) storefront["avatar"] = STOREFRONT_PICTURE;
+  f.answer("project_avatar_get", ref("storefront"), { avatar: STOREFRONT_PICTURE, mime: "image/jpeg", dataB64: b64("storefrontPicture") });
   return f.answer("chat_pins_get", {}, { pins: [ref("storefront"), ref("billing"), ref("Ada")], set: true });
 };
 

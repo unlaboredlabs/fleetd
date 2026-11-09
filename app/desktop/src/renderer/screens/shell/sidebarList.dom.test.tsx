@@ -151,6 +151,22 @@ describe("one list", () => {
     expect(host.querySelector("[class*=pinCell] [class*=dot]")).not.toBeNull();
   });
 
+  it("shows a working pin's glyph in its dot's place only when its picture is its own, the dot first", () => {
+    const pictured = row("Home", { onlyMe: true, avatar: "a1b2c3d4e5f60718" });
+    mount([
+      { ...ADA, pinned: true, working: true },
+      { ...pictured, pinned: true, running: 2 },
+    ]);
+    const glyph = (title: string) => button(title).querySelector("[class*=pinName] [data-state]");
+    // A bot says it works itself; a picture can't, so the name has the row's working glyph beside it.
+    expect(glyph("Ada")).toBeNull();
+    expect(glyph("Home")?.getAttribute("data-state")).toBe("thinking");
+
+    mount([{ ...pictured, pinned: true, running: 2, unread: true }]);
+    expect(glyph("Home")).toBeNull();
+    expect(button("Home").querySelector("[class*=pinName] [class*=dot]")).not.toBeNull();
+  });
+
   it("marks a chat that wants you or has a new message with a dot alone, why in its description", () => {
     const want = { word: "approve" as const, count: 2, label: "2 commands to approve" };
     mount([{ ...ADA, want, line: "Ship it?" }, { ...HOME, unread: true }, STOREFRONT]);
