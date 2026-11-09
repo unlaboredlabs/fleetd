@@ -1,4 +1,4 @@
-// The hub's people (table `people`), as crates/fleetd/src/hub/people/mod.rs keeps them: who is behind each human key,
+// The hub's people (table `people`): who is behind each human key,
 // with a hub role. A hub has at least one owner, made at its first start from the machine's user; an older hub's
 // human keys all bind to it, so a one-person hub reads exactly as before.
 import type { Database } from "bun:sqlite";
@@ -74,7 +74,7 @@ export function ensureOwnerOn(c: Database, name: string, now: number): Person {
     owner = getOn(c, id) as Person;
   }
   c.query("UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL").run(owner.personId);
-  // A Navi from before people is the owner's too (D215): crates/fleetd/src/hub/navi/store.rs `adopt`.
+  // A Navi from before people is the owner's too (D215).
   c.query("UPDATE project_settings SET owner_person = ? WHERE only_me = 1 AND owner_person IS NULL").run(owner.personId);
   return owner;
 }
@@ -168,7 +168,6 @@ export class People {
         "UPDATE pair_codes SET revoked_ms = ?2 WHERE person_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
       ).run(id, now);
       c.query("DELETE FROM person_avatars WHERE person_id = ?1").run(id);
-      // crates/fleetd/src/hub/navi/store.rs `archive_of`.
       c.query(
         "UPDATE project_settings SET archived_ms = ?2 WHERE only_me = 1 AND owner_person = ?1 AND archived_ms IS NULL",
       ).run(id, now);

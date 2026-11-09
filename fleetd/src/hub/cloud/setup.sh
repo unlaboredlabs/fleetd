@@ -1,5 +1,5 @@
 #!/bin/bash
-# fleetd: make this VM one of the hub's cloud machines (crates/fleetd/src/hub/cloud/setup.rs renders it for each slot).
+# fleetd: make this VM one of the hub's cloud machines (setup.ts renders it for each slot).
 # boat.dev runs it once, as `user` with sudo, after the VM is ready. What the steps print goes to $LOG; a step that fails
 # exits with one line on stderr naming it and its last line, which boat shows as the sandbox's setupError. Safe to run
 # again.

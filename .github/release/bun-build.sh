@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the CLI (fleetd/, `bun build --compile`) for every platform it ships on, into dist/ as fleetd-bun-<os>-<arch>:
-# the names `fleetd update` asks for (src/update `cliAsset`). The Rust builds' fleetd-<os>-<arch> stay what they were
-# on the release, so an install from before the switch never takes this build by surprise.
+# the names `fleetd update` asks for (src/update `cliAsset`). publish.sh copies them to the Rust builds' old names too,
+# for the machines still on the Rust build.
 #
 # FLEETD_VERSION goes in at build time: a Bun build reads `process.env.FLEETD_VERSION` for its version, which a
 # service's environment doesn't have. The x64 builds are the baseline ones (no AVX2), which run on any x64 CPU, VMs

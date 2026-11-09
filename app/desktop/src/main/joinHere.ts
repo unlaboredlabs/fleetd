@@ -159,11 +159,12 @@ export const refusal = (here: ThisComputer): string | undefined =>
       ? `This computer is already part of ${here.hub === "" ? "a hub" : `the hub at ${here.hub}`} as ${here.machineId}; nothing was changed.`
       : undefined;
 
-/** The release asset for this computer, as the installer names it; undefined where fleetd has no build. */
+/** The release asset for this computer, as the installer names it (fleetd-bun-<os>-<arch>); undefined where fleetd has
+ * no build. */
 export const assetFor = (platform: NodeJS.Platform, arch: string): string | undefined => {
   const os = platform === "darwin" ? "darwin" : platform === "linux" ? "linux" : undefined;
   const cpu = arch === "x64" ? "x64" : arch === "arm64" ? "arm64" : undefined;
-  return os && cpu ? `fleetd-${os}-${cpu}` : undefined;
+  return os && cpu ? `fleetd-bun-${os}-${cpu}` : undefined;
 };
 
 /** The line of SHA256SUMS for `asset` (`<hex>  <name>`, or `<hex> *<name>`). */

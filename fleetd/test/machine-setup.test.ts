@@ -16,7 +16,7 @@ import { caller, testHub } from "./hub-helpers.ts";
 /** Another OS than the hub's, of a CPU fleetd has a build for: macOS from a Linux hub, Linux x64 from a Mac. */
 const [hubOs, hubArch] = localTarget();
 const other: [string, string] = hubOs === "darwin" ? ["linux", "x64"] : ["darwin", hubArch];
-const otherAsset = `fleetd-${other[0]}-${other[1]}`;
+const otherAsset = `fleetd-bun-${other[0]}-${other[1]}`;
 const sha = (b: string | Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex");
 
 // Each test builds a hub on a fresh database, migrations and all, and some wait out a background run: a busy shared

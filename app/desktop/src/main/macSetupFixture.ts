@@ -165,7 +165,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       later(
         STEP_MS,
         url.endsWith("/SHA256SUMS")
-          ? new TextEncoder().encode(`${SUM}  fleetd-darwin-arm64\n`)
+          ? new TextEncoder().encode(`${SUM}  fleetd-bun-darwin-arm64\n`)
           : url.endsWith("/release.json")
             ? new TextEncoder().encode(JSON.stringify({ channel: "edge", cliVersion: NEW_EDGE }))
             : BUILD,

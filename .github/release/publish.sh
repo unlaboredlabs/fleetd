@@ -33,10 +33,20 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
 if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
 shopt -s nullglob
-# The CLI's builds are fleetd-bun-<os>-<arch> (bun-build.sh), plain: the Bun build has no LZMA decoder. The Rust
-# builds (fleetd-<os>-<arch> and their .lzma) are no longer built; like any asset a run doesn't build, the last ones
-# stay on the release with their SHA256SUMS lines (sums below), so installs from before the switch still find and
-# check them.
+# The CLI's builds are fleetd-bun-<os>-<arch> (bun-build.sh). They also go up under the names the Rust builds had,
+# fleetd-<os>-<arch> and its .lzma (`xz --format=lzma`, which the Rust build's `fleetd update` takes when SHA256SUMS
+# lists it): a machine still on the Rust build (a hub, `fleetd update`, a node of an older hub) updates to this release
+# by the asset it knows and comes back on the Bun build, at the same path, reporting this version. The Bun build reads
+# the plain fleetd-bun-* names; Bun has no LZMA decoder.
+packing=()
+for target in linux-x64 darwin-arm64 darwin-x64; do
+  if [ -f "fleetd-bun-$target" ]; then
+    cp "fleetd-bun-$target" "fleetd-$target"
+    xz --format=lzma -9e -c "fleetd-$target" > "fleetd-$target.lzma" &
+    packing+=("$!")
+  fi
+done
+for pid in ${packing[@]+"${packing[@]}"}; do wait "$pid"; done
 assets=(fleetd-*)
 if [ ${#assets[@]} -eq 0 ]; then
   echo "nothing was built; the release stays as it is"

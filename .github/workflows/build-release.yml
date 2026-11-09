@@ -92,8 +92,8 @@ jobs:
   cli:
     # The CLI (fleetd/, `bun build --compile`), as fleetd-bun-<os>-<arch>: linux x64 and arm64, macOS arm64 and x64,
     # from this one Linux box (bun cross-compiles). The release critical path. GitHub-hosted runners are free for this
-    # public repo; no paid larger runners. The Rust builds' names (fleetd-<os>-<arch>) are no longer built: publish.sh
-    # keeps the last ones on edge, with their checksums, for installs from before the switch.
+    # public repo; no paid larger runners. publish.sh also puts them up under the Rust builds' old names
+    # (fleetd-<os>-<arch>), so a machine still on the Rust build updates onto this one.
     needs: plan
     if: needs.plan.outputs.has-cli == 'true'
     runs-on: ubuntu-latest

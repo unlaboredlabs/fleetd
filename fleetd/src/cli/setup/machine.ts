@@ -497,10 +497,10 @@ export async function prepare(
   let fetched: [string, Uint8Array] | undefined;
   let listed: Begin | undefined;
   const target: [string, string] = [facts.platform, facts.arch];
-  const buildable =
-    (target[0] === "linux" && target[1] === "x64") || (target[0] === "darwin" && (target[1] === "x64" || target[1] === "arm64"));
+  // The release's builds: fleetd-bun-<os>-<arch> for Linux and macOS, x64 and arm64 (.github/release/bun-build.sh).
+  const buildable = (target[0] === "linux" || target[0] === "darwin") && (target[1] === "x64" || target[1] === "arm64");
   if ((target[0] !== input.binaryTarget[0] || target[1] !== input.binaryTarget[1]) && buildable) {
-    const asset = `fleetd-${target[0]}-${target[1]}`;
+    const asset = `fleetd-bun-${target[0]}-${target[1]}`;
     const again = (e: unknown) => Stop.fail(`${e instanceof Error ? e.message : String(e)}, then run ${r.again}`);
     const wanted = await builds.digest(VERSION, asset).catch((e: unknown) => {
       throw again(e);
