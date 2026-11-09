@@ -503,15 +503,25 @@ export class Desktops implements Screens {
 
   /** Ends a session already out of the map, and starts its upload. */
   private async close(session: Session): Promise<Record<string, unknown>> {
-    session.logStep("session_end", {}, true);
-    const files = await session.close();
-    this.releaseLease(session.id);
-    const note = session.note();
-    // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
-    await this.report(session, "uploading", new Date().toISOString());
-    if (session.dir) void this.uploads.send(session.dir);
-    return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
+    // Out of the map but not yet ended: the sweep leaves its recording alone until its upload has started.
+    this.ending.add(session.id);
+    try {
+      session.logStep("session_end", {}, true);
+      const files = await session.close();
+      this.releaseLease(session.id);
+      const note = session.note();
+      // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
+      await this.report(session, "uploading", new Date().toISOString());
+      if (session.dir) void this.uploads.send(session.dir);
+      return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
+    } finally {
+      this.ending.delete(session.id);
+    }
   }
+
+  /** Sessions out of the map whose end is still under way (their video): not yet a recording to send, nor one a
+   * stopped node left. */
+  private readonly ending = new Set<string>();
 
   /** Tells the hub where a session is now, in its agent's name. */
   async report(session: Session, state: BrowserSessionState, endedAt?: string): Promise<void> {
@@ -728,7 +738,7 @@ export class Desktops implements Screens {
 
   /** Sends the recordings still waiting for the hub: this kind's, and what a Rust node's iOS screens left. */
   async sweep(now = Date.now()): Promise<void> {
-    const live = [...this.sessions.values()].map((s) => s.id);
+    const live = [...this.sessions.values()].map((s) => s.id).concat([...this.ending]);
     await this.uploads.sweep(recordingsDir(this.node.home), live, now);
     await this.uploads.sweep(iosRecordingsDir(this.node.home), [], now);
   }

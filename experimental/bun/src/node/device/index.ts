@@ -349,16 +349,26 @@ export class Devices implements Screens {
 
   /** Ends a session already out of the map, and starts its upload. */
   private async close(session: Session): Promise<Record<string, unknown>> {
-    this.unwatch(session.id);
-    session.step("session_end", {}, true, undefined, 0);
-    const files = await session.close();
-    new Work(this.home, session.thread).remove();
-    const note = session.note();
-    // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
-    void this.report(session, "uploading");
-    void this.send(session.dir);
-    return { sessionId: session.id, kind: "android", files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
+    // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until its upload has started.
+    this.ending.add(session.id);
+    try {
+      this.unwatch(session.id);
+      session.step("session_end", {}, true, undefined, 0);
+      const files = await session.close();
+      new Work(this.home, session.thread).remove();
+      const note = session.note();
+      // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
+      void this.report(session, "uploading");
+      void this.send(session.dir);
+      return { sessionId: session.id, kind: "android", files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
+    } finally {
+      this.ending.delete(session.id);
+    }
   }
+
+  /** Sessions out of the map whose end is still under way (their video): not yet a recording to send, nor one a
+   * stopped node left. */
+  private readonly ending = new Set<string>();
 
   private readonly hub = (thread: string, cwd: string, op: string, args: Record<string, unknown>) =>
     hubCall(this.node, op, args, { threadId: thread, cwd });
@@ -401,7 +411,7 @@ export class Devices implements Screens {
       }
     }
     // A recording a stopped node left (this one's or a Rust node's) is ended and sent too.
-    const live = [...this.sessions.values()].map((s) => s.id);
+    const live = [...this.sessions.values()].map((s) => s.id).concat([...this.ending]);
     for (const dir of waitingIn(recordingsDir(this.home), live, now)) await this.send(dir);
   }
 

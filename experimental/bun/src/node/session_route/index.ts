@@ -215,6 +215,9 @@ export class Router {
         );
       }
       this.broker.secretsFor(thread, secrets);
+      // Taken by the broker's open as it begins; a start refused before it (another kind's screen open, browser
+      // sessions off) leaves none of them behind.
+      return screens(this.node).handle(thread, frame).finally(() => this.broker.secretsFor(thread, undefined));
     }
     return screens(this.node).handle(thread, frame);
   }

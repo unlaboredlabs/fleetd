@@ -326,3 +326,45 @@ test("an Android screen the hub would place on another machine is refused before
   await expect(android.tn.local.call("session_start", { purpose: "Settings", kind: "ios" }, "t1")).rejects.toThrow("mac sim start");
   expect(android.routes.length).toBe(1);
 });
+
+test("a browser start refused before the broker opens it leaves none of the session's secrets in memory", async () => {
+  const { seal } = await import("../src/shared/sealed_box.ts");
+  const { router: screens } = await import("../src/node/device/router.ts");
+  const tn = testNode("box2");
+  cleanups.push(tn.done);
+  const secrets: [string, string][] = [["DEPLOY_TOKEN", "tok-hunter2-secret"]];
+  tn.node.area("sessions", () => ({ maskFor: () => new Masker(secrets), secretsFor: () => secrets, sessionCwd: () => undefined }));
+  tn.link.answer = async (op) => (op === "session_route" ? { runner: "box2", here: true } : {});
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const broker = startNodeBrowser(tn.node, new Broker(tn.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  const router = startRoute(tn.node, new Router(tn.node, broker, new NodeBoxKey(secret)));
+  cleanups.push(() => broker.shutdown());
+  const key = `H${"ef".repeat(16)}`;
+  // A desktop is open for this agent session and for the hosted key: a browser start is refused before the broker.
+  const open = new Set(["t1", key]);
+  screens(tn.node).desktops = {
+    handle: async () => ({ op: "noop" }),
+    live: (thread) => (open.has(thread) ? { id: `B${"1".repeat(32)}`, kind: "linux_desktop" } : undefined),
+    count: () => open.size,
+    endScreen: () => false,
+    ended: () => {},
+    shutdown: async () => {},
+  };
+  const pending = () => (broker as unknown as { pendingSecrets: Map<string, unknown> }).pendingSecrets;
+
+  await expect(tn.local.call("session_start", { purpose: "look" }, "t1")).rejects.toThrow("Desktop session");
+  expect(pending().has("t1")).toBe(false);
+
+  const plain = { secrets, relayKey: Buffer.alloc(32, 7).toString("base64") };
+  const sealed = Buffer.from(seal(publicKeyOf(secret), new TextEncoder().encode(JSON.stringify(plain)))).toString("base64");
+  const answer = await router.host({ hostKey: key, frame: { id: "1", cwd: "/", call: { op: "session_start", purpose: "look" } }, sealed } as never);
+  expect(answer.error?.message).toContain("Desktop session");
+  expect(pending().has(key)).toBe(false);
+  expect(router.hosted.has(key)).toBe(false);
+
+  // A start that opens takes them, and leaves none behind either.
+  open.clear();
+  await tn.local.call("session_start", { purpose: "look" }, "t1");
+  expect(broker.live("t1")?.scrub().text("tok-hunter2-secret")).toBe("***DEPLOY_TOKEN***");
+  expect(pending().size).toBe(0);
+});
