@@ -56,6 +56,7 @@ export function start(hub: Hub): void {
     takeBack: (taskId: string, message: string) => t.takeBack(taskId, message),
     holdMessage: (taskId: string, text: string) => t.holdMessage(taskId, text),
     askedAt: (taskId: string) => t.askedAt(taskId),
+    answered: (taskId: string) => t.answered(taskId),
     hasCiWait: (taskId: string) =>
       (hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM ci_waits WHERE task_id = ?").get(taskId)?.n ?? 0) > 0,
   });

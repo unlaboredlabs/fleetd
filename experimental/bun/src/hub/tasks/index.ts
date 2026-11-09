@@ -1952,6 +1952,11 @@ export class Tasks {
     return this.asked.get(taskId);
   }
 
+  /** Its lead or a person wrote to it (a steer, whatever its state): that answers its question. */
+  answered(taskId: TaskId): void {
+    this.asked.delete(taskId);
+  }
+
   /** Keeps another agent's message for a task that isn't running, without starting it: its next run carries it,
    * whatever starts that run (a Monitor of its own, its wait_ci, its lead). One running again by now takes it at once. */
   async holdMessage(taskId: TaskId, text: string): Promise<void> {
@@ -2017,6 +2022,7 @@ export class Tasks {
     let next: Task;
     try {
       task = this.owned(caller, taskId).task;
+      this.asked.delete(taskId);
       if (task.state === "cancelled") return task;
       if (task.state === "done" || task.state === "failed") {
         throw leadError("invalid", `${taskId} already ended (${task.state}); there is nothing to cancel.`);

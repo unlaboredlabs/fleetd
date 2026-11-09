@@ -24,6 +24,7 @@ async function setup() {
     takeBack: (taskId: string, message: string) => k.t.takeBack(taskId, message),
     holdMessage: (taskId: string, text: string) => k.t.holdMessage(taskId, text),
     askedAt: (taskId: string) => k.t.askedAt(taskId),
+    answered: (taskId: string) => k.t.answered(taskId),
     hasCiWait: () => false,
   });
   k.ports.takeHeld = ((taskId: string, thread: never, id: string) => takeHeld(k.hub, taskId, thread, id)) as never;
@@ -127,6 +128,19 @@ test("a message continues a finished agent only when it waits for an answer", as
   expect(sent.to[0]?.detail).toStartWith("it answers what T1 asked at ");
   await until(() => k.ports.sends.some((s) => s.message.includes("'1001: SocketRocket rejects 1012'")));
   expect(k.t.get("T1")?.attempt).toBe(2);
+  k.hub.shutdown.abort();
+});
+
+// The common case: the agent asks and carries on, its lead answers mid-run, and it finishes. The question is answered,
+// so another agent's message is held for it, never a restart.
+test("a question its lead answered mid-run no longer lets a message restart it", async () => {
+  const k = await setup();
+  k.t.askLead("T1", "Which close code does iOS take?");
+  await send(k.hub, { kind: "lead", project: P }, { target: { taskId: "T1" }, text: "1001", mode: "queue", refs: [], attached: [], clientRequestId: "lead-answer" });
+  await k.ended();
+  const sent = await k.dm(["T1"], "SocketRocket rejects 1012 too");
+  expect(sent.to[0]?.outcome).toBe("not_woken");
+  expect(k.t.get("T1")?.attempt).toBe(1);
   k.hub.shutdown.abort();
 });
 

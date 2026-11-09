@@ -314,6 +314,11 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
     if !created {
         return Ok(steer);
     }
+    // A lead's or a person's words answer a question the task asked, even mid-run: from then on another agent's
+    // message is held for it like any other.
+    if let (By::Human(_) | By::Lead(_), Some(task)) = (&by, &to.task) {
+        hub.tasks.answered(&task.task_id);
+    }
     emit(hub, &steer, HubEventType::SteerQueued, None);
     if let (By::Human(_), Some(task)) = (&by, &to.task) {
         tell_lead(hub, &steer, task);

@@ -58,6 +58,8 @@ export type SteerTasks = {
   holdMessage(taskId: string, text: string): Promise<void>;
   /** When the task asked the `ask_lead` question no message has answered yet. */
   askedAt(taskId: string): number | undefined;
+  /** Its lead or a person wrote to it: that answers its question. */
+  answered(taskId: string): void;
   /** Whether the task keeps a wait_ci open. */
   hasCiWait(taskId: string): boolean;
 };
@@ -73,6 +75,7 @@ export const steerTasks = (hub: Hub) =>
       throw new NotImplemented("src/hub/tasks (a task's next-run message)");
     },
     askedAt: () => undefined,
+    answered: () => {},
     hasCiWait: () => false,
   }));
 
@@ -186,6 +189,9 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
   const ins = steers.insert(hub.db, { steer: draft, ...(to.task ? { taskId: to.task.taskId } : {}), by: stored(by), queuedMs: now, request: crid });
   let steer = ins.steer;
   if (!ins.created) return steer;
+  // A lead's or a person's words answer a question the task asked, even mid-run: from then on another agent's message
+  // is held for it like any other.
+  if (by.kind !== "agent" && to.task) steerTasks(hub).answered(to.task.taskId);
   emit(hub, steer, "steer.queued");
   if (by.kind === "human" && to.task) tellLead(hub, steer, to.task);
   const body = message(hub, steer, to, by, req);

@@ -279,6 +279,42 @@ async fn a_message_continues_a_finished_agent_only_when_it_waits_for_an_answer()
     assert_eq!(task(&hub).attempt.get(), 2);
 }
 
+/// The common case: the agent asks and carries on, its lead answers mid-run, and it finishes. The question is answered,
+/// so another agent's message is held for it, never a restart.
+#[tokio::test]
+async fn a_question_its_lead_answered_mid_run_no_longer_lets_a_message_restart_it() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    let t1 = running(&hub, 1);
+    let from = running(&hub, 2);
+    hub.tasks
+        .ask_lead(&TaskId::unchecked("T1"), "Which close code does iOS take?")
+        .unwrap();
+    crate::hub::steer::send(
+        &hub,
+        crate::hub::steer::By::Lead(&t1.project_ref),
+        crate::hub::steer::SteerRequest {
+            target: fleetd_contracts::steer::SteerTarget::Task {
+                task_id: TaskId::unchecked("T1"),
+            },
+            text: "1001",
+            mode: fleetd_contracts::steer::SteerMode::Queue,
+            refs: vec![],
+            attached: vec![],
+            client_request_id: "lead-answer",
+        },
+    )
+    .await
+    .unwrap();
+    ended(&hub).await;
+
+    let sent_dm = dm(&hub, &from, &["T1"], "SocketRocket rejects 1012 too")
+        .await
+        .unwrap();
+    assert_eq!(sent_dm.to[0].outcome, Outcome::NotWoken);
+    assert_eq!(task(&hub).attempt.get(), 1);
+}
+
 #[tokio::test]
 async fn one_message_reaches_each_of_its_recipients_and_refuses_those_outside_the_project() {
     let (hub, _home) = hub();

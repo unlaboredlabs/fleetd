@@ -3194,6 +3194,12 @@ impl Tasks {
         self.asked.lock().unwrap().get(task_id).copied()
     }
 
+    /// Its lead or a person wrote to it (a steer, whatever its state): that answers its question, so another agent's
+    /// message no longer continues it once it ends.
+    pub fn answered(&self, task_id: &TaskId) {
+        self.asked.lock().unwrap().remove(task_id);
+    }
+
     /// Keeps another agent's message for a task that isn't running, without starting it: the task's next run carries
     /// it, whatever starts that run (a Monitor of its own, its wait_ci, its lead). One that is running again by now
     /// takes it at once.
@@ -3257,6 +3263,7 @@ impl Tasks {
         let _guard = self.lock_task(task_id).await;
         let task = self.owned(caller, task_id)?.task;
         let id = task_id.as_str();
+        self.asked.lock().unwrap().remove(task_id);
         match task.state {
             TaskState::Cancelled => return Ok(task),
             TaskState::Done | TaskState::Failed => {
