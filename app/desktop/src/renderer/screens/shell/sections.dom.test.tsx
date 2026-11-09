@@ -51,6 +51,9 @@ let stored: ChatSection[];
 let sets: ChatSection[][];
 /** Why the hub refuses the next set, if it does. */
 let refuse: { code: string; message: string } | undefined;
+/** What the hub's read of your sections waits for before it answers, and why it fails, if it does. */
+let reading: Promise<void>;
+let unread: { code: string; message: string } | undefined;
 let seq: number;
 
 beforeEach(() => {
@@ -59,11 +62,13 @@ beforeEach(() => {
   stored = [];
   sets = [];
   refuse = undefined;
+  reading = Promise.resolve();
+  unread = undefined;
   seq = 10;
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "chat_pins_get") return Promise.resolve({ ok: true, output: { pins, set: true } });
-      if (tool === "chat_sections_get") return Promise.resolve({ ok: true, output: { sections: stored } });
+      if (tool === "chat_sections_get") return reading.then(() => (unread === undefined ? { ok: true, output: { sections: stored } } : { ok: false, error: unread }));
       if (tool === "chat_sections_set") {
         const { sections } = input as { sections: ChatSection[] };
         sets.push(sections);
@@ -331,6 +336,60 @@ describe("your sections in the sidebar", () => {
     expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
     expect(document.body.textContent).toContain("This hub doesn’t keep sections yet. Update it to use them.");
     expect(document.body.textContent).not.toContain("unknown tool");
+  });
+});
+
+describe("a change made before the hub has said what your sections are", () => {
+  /** The sections last read on this computer, shown until the hub answers. */
+  const keptFromBefore = (...sections: ChatSection[]) => window.localStorage.setItem("fleetd.sidebarSections", JSON.stringify({ [layer.hub]: sections }));
+
+  it("waits for the hub's list and is made to it, so a section made on another device stays", async () => {
+    keptFromBefore(section("s1", "Work", "api"));
+    // Home was made on your phone since.
+    stored = [section("s1", "Work", "api"), section("s2", "Home", "garden")];
+    let answer: () => void = () => undefined;
+    reading = new Promise((done) => (answer = done));
+    await mount();
+    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    await moveTo("docs");
+    await choose("Work");
+    await moveTo("web");
+    await choose("Work");
+    expect(sets).toEqual([]);
+
+    await act(async () => {
+      answer();
+      await reading;
+    });
+    await settle();
+    // Both changes, on top of the hub's list: one after the other, each the whole list.
+    expect(sets.map(said)).toEqual([
+      ["Work: api docs", "Home: garden"],
+      ["Work: api docs web", "Home: garden"],
+    ]);
+    expect(lines()).toEqual(["new", "old", "[Work]", "docs", "web", "api", "[Home]", "garden"]);
+  });
+
+  it("sends nothing when the hub can't say, and says why", async () => {
+    keptFromBefore(section("s1", "Work", "api"));
+    stored = [section("s1", "Work", "api"), section("s2", "Home", "garden")];
+    unread = { code: "forbidden", message: "This device is no longer signed in." };
+    await mount();
+    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    await moveTo("docs");
+    await choose("Work");
+    await settle();
+    expect(sets).toEqual([]);
+    expect(lines()).toEqual(["new", "docs", "garden", "web", "old", "[Work]", "api"]);
+    expect(document.body.textContent).toContain("Couldn’t save your sections");
+    expect(document.body.textContent).toContain("This device is no longer signed in.");
+
+    // Asked again at the next change: once it answers, the change is made to its list.
+    unread = undefined;
+    await moveTo("docs");
+    await choose("Work");
+    await settle();
+    expect(sets.map(said)).toEqual([["Work: api docs", "Home: garden"]]);
   });
 });
 

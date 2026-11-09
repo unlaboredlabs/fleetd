@@ -41,7 +41,7 @@ import { useOfflineAsOf } from "./offline";
 import { PINS_MAX, savePins } from "./pins";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
-import { addSection, moveChat, moveSection, newSectionId, removeSection, renameSection, saveSections, sectionLines, useSections } from "./sections";
+import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { foldKey, holdRows, shownRows } from "./sidebarState";
 import { You } from "./You";
@@ -350,9 +350,8 @@ function ProjectGroup(props: {
   const [naming, setNaming] = useState<Naming | null>(null);
   const layer = useDataLayer();
   const sections = useSections() ?? NO_SECTIONS;
-  const setSections = (next: readonly ChatSection[]) => {
-    if (next !== sections) void saveSections(layer, next);
-  };
+  // A change is made to the hub's own list (sections.ts), which the ones on show may not be yet.
+  const change = (how: (now: readonly ChatSection[]) => readonly ChatSection[]) => void changeSections(layer, how);
   // Under the pins: the chats in none of your sections, then each section's label and, unless folded, its chats.
   const { folded } = props;
   const lines = useMemo(
@@ -425,7 +424,7 @@ function ProjectGroup(props: {
       },
       drop: (key, to) => {
         const p = rowsByKey.get(key);
-        if (p !== undefined) setSections(moveChat(sections, routeOf(p), to === NO_SECTION ? null : to));
+        if (p !== undefined) change((now) => moveChat(now, routeOf(p), to === NO_SECTION ? null : to));
       },
     },
   });
@@ -444,7 +443,7 @@ function ProjectGroup(props: {
         >
           {p.pinned ? "Unpin" : "Pin to top"}
         </ContextMenuItem>
-        <MoveToSection sections={sections} chat={routeOf(p)} title={title} onMove={(to) => setSections(moveChat(sections, routeOf(p), to))} onNew={setNaming} />
+        <MoveToSection sections={sections} chat={routeOf(p)} title={title} onMove={(to) => change((now) => moveChat(now, routeOf(p), to))} onNew={setNaming} />
         <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
         {/* Its connections, sign-ins, approvals and the rest are in its settings. */}
         <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
@@ -470,10 +469,10 @@ function ProjectGroup(props: {
       <>
         <ContextMenuItem onSelect={() => setNaming({ t: "rename", section })}>Rename…</ContextMenuItem>
         {/* A move only where there is a section on show to move past. */}
-        {at > 0 ? <ContextMenuItem onSelect={() => setSections(moveSection(sections, section.id, -1, labelled))}>Move up</ContextMenuItem> : null}
-        {at < labelled.length - 1 ? <ContextMenuItem onSelect={() => setSections(moveSection(sections, section.id, 1, labelled))}>Move down</ContextMenuItem> : null}
+        {at > 0 ? <ContextMenuItem onSelect={() => change((now) => moveSection(now, section.id, -1, labelled))}>Move up</ContextMenuItem> : null}
+        {at < labelled.length - 1 ? <ContextMenuItem onSelect={() => change((now) => moveSection(now, section.id, 1, labelled))}>Move down</ContextMenuItem> : null}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => setSections(removeSection(sections, section.id))}>Remove section</ContextMenuItem>
+        <ContextMenuItem onSelect={() => change((now) => removeSection(now, section.id))}>Remove section</ContextMenuItem>
       </>
     );
   };
@@ -571,7 +570,7 @@ function ProjectGroup(props: {
       <SectionNameDialog
         naming={naming}
         sections={sections}
-        onName={(n, name) => setSections(n.t === "new" ? addSection(sections, newSectionId(), name, n.chat) : renameSection(sections, n.section.id, name))}
+        onName={(n, name) => change((now) => (n.t === "new" ? addSection(now, newSectionId(), name, n.chat) : renameSection(now, n.section.id, name)))}
         onClose={() => setNaming(null)}
       />
     </section>
