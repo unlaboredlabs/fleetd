@@ -607,3 +607,205 @@
 .pinCell[data-unread] .pinTitle {
   font-weight: var(--weight-strong);
 }
+
+/* ---- W580 design exploration, temporary: the options under review (Sidebar.tsx `fleetd.sidebarDesign`). The pick
+   replaces the rules above; the others go. ---- */
+.pinPic {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  isolation: isolate;
+}
+
+/* A section's label: quiet words over its chats, in line with their pictures; no rule. Its chevron shows under the
+   pointer, and stays while it is folded. */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin-top: 10px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.sectionHead:first-child {
+  margin-top: 0;
+}
+.sectionHead:hover {
+  color: var(--text);
+}
+.sectionHead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.sectionName {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sectionHead > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sectionHead:hover > svg,
+.sectionHead:focus-visible > svg,
+.sectionHead[aria-expanded="false"] > svg {
+  opacity: 1;
+}
+.sectionCount {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.sectionHead > .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+}
+
+/* Every option: the pinned name in the text's own colour, a step up in size; the rows' names a step up too. */
+.sidebar[data-design] .pinCell {
+  color: var(--text);
+}
+.sidebar[data-design] .pinTitle {
+  font-size: var(--text-md);
+  line-height: var(--leading-sm);
+  font-weight: 500;
+}
+.sidebar[data-design] .pinCell[data-unread] .pinTitle {
+  font-weight: var(--weight-strong);
+}
+.sidebar[data-design] .name {
+  font-size: 14px;
+}
+.sidebar[data-design] .groupHead {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+}
+.sidebar[data-design] .groupHead > svg {
+  color: var(--quiet);
+}
+
+/* A, "Close": today's plates, drawn in. Each plate is its place, 80 px around a 64 px picture, 2 px from the next. */
+.sidebar[data-design="a"] .pins {
+  --pin-w: 80px;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+.sidebar[data-design="a"] .pinCell {
+  gap: var(--space-1);
+  width: var(--pin-w);
+  padding: var(--space-2) var(--space-1) var(--space-1-5);
+}
+
+/* B, "Tile": larger pictures, a soft tile behind the picture alone, the name free under it on up to two lines, and
+   the dot on the picture's corner. */
+.sidebar[data-design="b"] .pins {
+  --pin-w: 88px;
+  gap: var(--space-1) 0;
+  margin-bottom: var(--space-3);
+}
+.sidebar[data-design="b"] .pinSlot {
+  align-items: flex-start;
+}
+.sidebar[data-design="b"] .pinCell {
+  position: relative;
+  gap: 10px;
+  width: var(--pin-w);
+  padding: var(--space-1-5) var(--space-1) var(--space-1);
+}
+.sidebar[data-design="b"] .pinCell:hover,
+.sidebar[data-design="b"] .pinCell[aria-current="page"] {
+  background: transparent;
+}
+.sidebar[data-design="b"] .pinPic::before {
+  position: absolute;
+  inset: -6px;
+  z-index: -1;
+  border-radius: 26px;
+  background: transparent;
+  content: "";
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar[data-design="b"] .pinCell:hover .pinPic::before {
+  background: var(--hover);
+}
+.sidebar[data-design="b"] .pinCell[aria-current="page"] .pinPic::before {
+  background: var(--selected);
+}
+.sidebar[data-design="b"] .pinName > .dot {
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 24px);
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 2.5px var(--sidebar);
+}
+.sidebar[data-design="b"] .pinTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.sidebar[data-design="b"] .row {
+  padding: 10px var(--space-2);
+}
+.sidebar[data-design="b"] .name {
+  font-size: 15px;
+  font-weight: 500;
+}
+.sidebar[data-design="b"] .sectionHead {
+  font-size: var(--text-md);
+}
+
+/* C, "Pill": no plate; the name sits in a capsule that takes the shade, as the top bar's pill does, and a row's shade
+   is a capsule too, its picture concentric with its end. */
+.sidebar[data-design="c"] .pins {
+  --pin-w: 88px;
+  gap: var(--space-1) 0;
+  margin-bottom: var(--space-3);
+}
+.sidebar[data-design="c"] .pinCell {
+  gap: var(--space-1);
+  width: var(--pin-w);
+  padding: var(--space-1) 0;
+}
+.sidebar[data-design="c"] .pinCell:hover,
+.sidebar[data-design="c"] .pinCell[aria-current="page"] {
+  background: transparent;
+}
+.sidebar[data-design="c"] .pinName {
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.sidebar[data-design="c"] .pinCell:hover .pinName {
+  background: var(--hover);
+}
+.sidebar[data-design="c"] .pinCell[aria-current="page"] .pinName {
+  background: var(--selected);
+}
+.sidebar[data-design="c"] .row {
+  padding-right: 14px;
+  border-radius: 28px;
+}

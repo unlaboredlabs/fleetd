@@ -14,11 +14,11 @@
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
 import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, StateGlyph, toast, Tooltip, Truncate, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { revealNext } from "../settings/reveal";
@@ -41,6 +41,35 @@ const AVATAR = 36;
 /** A pinned chat's picture, PIN_COLUMNS to a row, the group centred in the sidebar. */
 const PIN_AVATAR = 64;
 const PIN_COLUMNS = 2;
+
+// W580 design exploration, temporary: the list's look under review, picked in this window's storage
+// (`fleetd.sidebarDesign`: a, b or c; absent, today's), and sections to show them with (`fleetd.sidebarSections`, a
+// JSON list of { name, titles, collapsed }). The pick replaces all of this.
+const stored = (key: string): string | null => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const DESIGN_PIN: Readonly<Record<string, number>> = { a: 64, b: 72, c: 72 };
+const DESIGN_AVATAR: Readonly<Record<string, number>> = { a: 36, b: 40, c: 40 };
+const design = (): string | undefined => {
+  const d = stored("fleetd.sidebarDesign");
+  return d !== null && d in DESIGN_PIN ? d : undefined;
+};
+interface DesignSection {
+  readonly name: string;
+  readonly titles: readonly string[];
+  readonly collapsed?: boolean;
+}
+const designSections = (): readonly DesignSection[] => {
+  try {
+    return JSON.parse(stored("fleetd.sidebarSections") ?? "[]") as DesignSection[];
+  } catch {
+    return [];
+  }
+};
 /** The glide to a new place: the app's spring (--ease-spring, --dur-spring in tokens.css). */
 export const SPRING = { ms: 360, ease: "var(--ease-spring)" } as const;
 
@@ -135,7 +164,7 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
       aria-description={tip}
       {...rest}
     >
-      <ProjectAvatar project={p.project} size={AVATAR} own={botOwn(p)} className={s.avatar} />
+      <ProjectAvatar project={p.project} size={DESIGN_AVATAR[design() ?? ""] ?? AVATAR} own={botOwn(p)} className={s.avatar} />
       <span className={s.text}>
         <span className={s.top}>
           <span className={s.name}>{p.project.title}</span>
@@ -177,7 +206,9 @@ function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
       aria-description={tip}
       {...rest}
     >
-      <ProjectAvatar project={p.project} size={PIN_AVATAR} own={botOwn(p)} />
+      <span className={s.pinPic}>
+        <ProjectAvatar project={p.project} size={DESIGN_PIN[design() ?? ""] ?? PIN_AVATAR} own={botOwn(p)} />
+      </span>
       <span className={s.pinName}>
         {jump !== null ? (
           <span className={s.jump}>{jump}</span>
@@ -207,7 +238,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
   const keys = projects?.map((p) => p.key);
 
   return (
-    <nav className={s.sidebar} aria-label="Sidebar">
+    <nav className={s.sidebar} aria-label="Sidebar" data-design={design()}>
       <div className={s.list} onPointerEnter={() => holdRows(keys ?? null)} onPointerLeave={() => holdRows(null)}>
         {hubs.map((hub) => {
           // A hub whose projects haven't loaded (offline from the start, say) waits on its own; the others show theirs.
@@ -268,6 +299,35 @@ const Loading = ({ busy }: { busy: boolean }) => (
 );
 
 /**
+ * W580 design exploration, temporary: a section's label over its chats. A click folds it; folded, it says how many it
+ * holds, with the dot when one of them wants you. Its own menu renames, moves or removes it.
+ */
+function SectionHead({ section, rows }: { section: DesignSection; rows: ReadonlyArray<Placed> }) {
+  const mine = rows.filter((p) => !p.pinned && section.titles.includes(p.project.title));
+  const folded = section.collapsed === true;
+  return (
+    <ContextMenu
+      menu={() => (
+        <>
+          <ContextMenuItem>Rename…</ContextMenuItem>
+          <ContextMenuItem>Move up</ContextMenuItem>
+          <ContextMenuItem>Move down</ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem>Remove section</ContextMenuItem>
+        </>
+      )}
+    >
+      <button type="button" className={s.sectionHead} aria-expanded={!folded} data-section={section.name}>
+        <span className={s.sectionName}>{section.name}</span>
+        {folded ? <span className={s.sectionCount}>{mine.length}</span> : null}
+        {folded ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
+        {folded && mine.some((p) => p.want !== undefined) ? <span className={s.dot} data-want="you" aria-hidden /> : null}
+      </button>
+    </ContextMenu>
+  );
+}
+
+/**
  * One hub's chats. Named, they are a group under the hub's name (a click collapses it, and collapsed it still says how
  * many want you); unnamed, just the rows.
  */
@@ -320,8 +380,20 @@ function ProjectGroup(props: {
     }
     pin(layer, rows ?? [], [...pinned.slice(0, at), key, ...pinned.slice(at)]);
   };
+  // W580 design exploration, temporary: the chats with no section first, then each section's, each by activity.
+  const sections = designSections();
+  const sectionOf = (p: Placed) => sections.findIndex((x) => x.titles.includes(p.project.title));
   const reorder = useReorder({
-    keys: useMemo(() => (rows ?? []).filter((p) => !p.pinned).map((p) => p.key), [rows]),
+    keys: useMemo(
+      () =>
+        (rows ?? [])
+          .filter((p) => !p.pinned && sections[sectionOf(p)]?.collapsed !== true)
+          .map((p, i) => ({ p, i }))
+          .sort((a, b) => sectionOf(a.p) - sectionOf(b.p) || a.i - b.i)
+          .map(({ p }) => p.key),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [rows],
+    ),
     name,
     onMove: () => undefined,
     settle: SPRING,
@@ -346,6 +418,18 @@ function ProjectGroup(props: {
         >
           {p.pinned ? "Unpin" : "Pin to top"}
         </ContextMenuItem>
+        {design() === undefined ? null : (
+          <ContextMenuSub label="Move to section">
+            {sections.map((x) => (
+              <ContextMenuItem key={x.name} hint={x.titles.includes(title) ? "✓" : undefined}>
+                {x.name}
+              </ContextMenuItem>
+            ))}
+            {sections.some((x) => x.titles.includes(title)) ? <ContextMenuItem>No section</ContextMenuItem> : null}
+            {sections.length === 0 ? null : <ContextMenuSeparator />}
+            <ContextMenuItem>New section…</ContextMenuItem>
+          </ContextMenuSub>
+        )}
         <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
         {/* Its connections, sign-ins, approvals and the rest are in its settings. */}
         <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
@@ -423,18 +507,29 @@ function ProjectGroup(props: {
             </div>
           )}
           <div className={s.rows} {...reorder.list}>
-            {reorder.shown.map((key) => {
+            {reorder.shown.map((key, i) => {
               const p = rowsByKey.get(key);
               if (p === undefined) return null;
+              const before = rowsByKey.get(reorder.shown[i - 1] ?? "");
+              const section = sections[sectionOf(p)];
+              const head = section !== undefined && (before === undefined || sectionOf(before) !== sectionOf(p)) ? <SectionHead section={section} rows={rows} /> : null;
               // These glide as their order changes, and lift only to be pinned.
               return (
-                <div key={key} {...reorder.row(key)}>
-                  <ContextMenu menu={menu(p)}>
-                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
-                  </ContextMenu>
-                </div>
+                <Fragment key={key}>
+                  {head}
+                  <div {...reorder.row(key)}>
+                    <ContextMenu menu={menu(p)}>
+                      <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
+                    </ContextMenu>
+                  </div>
+                </Fragment>
               );
             })}
+            {sections
+              .filter((x) => x.collapsed === true && rows.some((p) => !p.pinned && x.titles.includes(p.project.title)))
+              .map((x) => (
+                <SectionHead key={x.name} section={x} rows={rows} />
+              ))}
           </div>
         </>
       )}
