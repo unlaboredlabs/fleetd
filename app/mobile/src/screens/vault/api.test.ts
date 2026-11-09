@@ -58,6 +58,12 @@ describe("saving an item", () => {
     expect(calls).toEqual([{ tool: "vault_save", input: { itemId: "V1", kind: "login", scope: "person", label: "Amazon", sites: ["amazon.com"] }, timeoutMs: undefined }]);
   });
 
+  it("seals a cleared field as empty, which the hub's merge takes away", async () => {
+    const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
+    await saveItem(hub, { itemId: "V1", kind: "address", scope: "person", label: "Home", sites: [], fields: { line2: "" } });
+    expect(opened(calls.find((c) => c.tool === "vault_save")!.input.sealed as string)).toEqual({ line2: "" });
+  });
+
   it("puts a project's item in that project, and a variable's name and secrecy beside it", async () => {
     const { hub, calls } = fake({ vault_status: () => STATUS, vault_save: () => ({ item: SUMMARY }) });
     await saveItem(hub, { kind: "env", scope: "project", project: { machineId: "devbox", projectId: "p1", title: "x" } as never, label: "K", envName: "K", secret: false, fields: { value: "v" } });

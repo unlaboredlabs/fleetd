@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, titleOf, shownFields, sitesOf, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
+import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, titleOf, shownFields, sitesOf, toggleCleared, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
 import type { VaultAuditEntry, VaultItemSummary } from "./types";
 
 /** An item's metadata as the hub sends it: what it holds, and where it came from. */
@@ -218,6 +218,19 @@ describe("a form, checked", () => {
     expect(check(draft("card", { label: "Work" }, { cvc: "999" }), true, NOW)).toEqual({ ok: true, value: { secret: { cvc: "999" }, label: "Work", sites: [] } });
     expect(check(draft("login", { label: "Amazon" }), true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "Amazon", sites: [] } });
     expect(check(draft("env", { envName: "K" }), true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "K", sites: [], envName: "K", secretEnv: true } });
+  });
+
+  it("takes away a field marked to go on an edit, by sending it empty, and only what an item can do without", () => {
+    const moved = toggleCleared(toggleCleared(draft("address", { label: "Home" }, { line2: "Apt 4" }), "line2"), "organization");
+    expect(moved.fields.line2).toBe("");
+    expect(check(moved, true, NOW)).toEqual({ ok: true, value: { secret: { line2: "", organization: "" }, label: "Home", sites: [] } });
+    const login = toggleCleared(draft("login", { label: "Shop" }), "totp");
+    expect(check(login, true, NOW)).toEqual({ ok: true, value: { secret: { totp: "" }, label: "Shop", sites: [] } });
+    // Undo keeps it; a field typed into again is sent as typed; a street can't be cleared; a new item clears nothing.
+    expect(check(toggleCleared(login, "totp"), true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "Shop", sites: [] } });
+    expect(check({ ...login, fields: { totp: "JBSWY3DP" }, cleared: [] }, true, NOW)).toMatchObject({ ok: true, value: { secret: { totp: "JBSWY3DP" } } });
+    expect(check({ ...draft("address", { label: "Home" }), cleared: ["line1", "city"] }, true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "Home", sites: [] } });
+    expect(check({ ...draft("login", { sites: "x.com" }, { password: "p" }), cleared: ["notes"] }, false, NOW)).toMatchObject({ ok: true, value: { secret: { password: "p" } } });
   });
 
   it("needs an address's street, city and country, the country as its code", () => {

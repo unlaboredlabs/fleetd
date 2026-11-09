@@ -318,7 +318,21 @@ export const FIELDS: Readonly<Record<VaultKind, readonly FieldSpec[]>> = {
 /** The fields the hub keeps sealed for a kind: a card's expiry is its month and year. */
 export const sealedFields = (kind: VaultKind): string[] => (kind === "card" ? ["name", "number", "month", "year", "cvc"] : FIELDS[kind].map((f) => f.key));
 
-/** A form as the person left it: every field as typed, plus the label, sites and (a variable's) name and secrecy. */
+/**
+ * The fields an edit may take away (Clear in the edit sheet), as the desktop's: what an item can do without. A card's
+ * number and expiry, an address's street, city and country, and a variable's value are only ever replaced.
+ */
+export const CLEARABLE: Readonly<Record<VaultKind, readonly string[]>> = {
+  login: ["username", "password", "totp", "notes"],
+  card: ["name", "cvc"],
+  address: ["name", "organization", "line2", "postalCode", "region", "phone", "email"],
+  env: [],
+};
+
+/**
+ * A form as the person left it: every field as typed, plus the label, sites and (a variable's) name and secrecy, and on
+ * an edit the fields to take away.
+ */
 export interface Draft {
   readonly kind: VaultKind;
   readonly label: string;
@@ -326,12 +340,20 @@ export interface Draft {
   readonly envName: string;
   readonly secret: boolean;
   readonly fields: Readonly<Record<string, string>>;
+  readonly cleared: readonly string[];
 }
 
-export const emptyDraft = (kind: VaultKind): Draft => ({ kind, label: "", sites: "", envName: "", secret: true, fields: {} });
+export const emptyDraft = (kind: VaultKind): Draft => ({ kind, label: "", sites: "", envName: "", secret: true, fields: {}, cleared: [] });
+
+/** A field marked to be taken away, or not again; typing into it unmarks it (VaultEdit's `set`). */
+export const toggleCleared = (d: Draft, key: string): Draft =>
+  d.cleared.includes(key) ? { ...d, cleared: d.cleared.filter((k) => k !== key) } : { ...d, cleared: [...d.cleared, key], fields: { ...d.fields, [key]: "" } };
 
 export interface Checked {
-  /** What goes to the hub sealed: only the fields typed (an edit merges them into the stored ones). */
+  /**
+   * What goes to the hub sealed: only the fields typed, and "" for each one cleared (an edit merges them into the
+   * stored ones, "" taking a field away).
+   */
   readonly secret: Record<string, string>;
   /** The readable part. */
   readonly label: string;
@@ -416,6 +438,8 @@ export const check = (d: Draft, editing: boolean, now: Date): { ok: true; value:
     }
   }
   if (label === "") return { ok: false, problem: "Give it a name." };
+  // Only on an edit, and only what may go: a field typed into again isn't cleared.
+  if (editing) for (const k of d.cleared) if (CLEARABLE[d.kind].includes(k) && secret[k] === undefined) secret[k] = "";
   return { ok: true, value: { secret, label, sites } };
 };
 
