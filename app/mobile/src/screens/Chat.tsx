@@ -899,7 +899,6 @@ function ItemView({
       {parts.map((b, i) => {
         const view = (
           <BubbleView
-            key={i}
             bubble={b}
             canAnswer={canAnswer}
             chatKey={chatKey}
@@ -910,12 +909,12 @@ function ItemView({
             said={said}
           />
         );
-        return worked !== undefined && i === parts.length - 1 ? (
-          <Stamped key={i} words={worked}>
+        // Each bubble in the same wrapper, stamped or not: the stamp coming or going (as a turn ends) never remounts a
+        // bubble, which would draw it at full width again until its words measure.
+        return (
+          <Stamped key={i} words={i === parts.length - 1 ? worked : undefined} wide={b.kind !== "text"}>
             {view}
           </Stamped>
-        ) : (
-          view
         );
       })}
       {files.map((b, i) => (
@@ -926,18 +925,19 @@ function ItemView({
 }
 
 /**
- * A bubble with "Worked for 4s" beside its foot, quiet, in the room the thread keeps right of the lead's bubbles: out of
- * the row's layout, so nothing moves as it comes. It takes one line where the bubble leaves room, two beside a wide one.
+ * A lead's bubble, and once its turn is over "Worked for 4s" beside its foot, quiet, in the room the thread keeps right
+ * of the lead's bubbles: out of the row's layout, so nothing moves as it comes. It takes one line where the bubble leaves
+ * room, two beside a wide one. As wide as a text bubble; a card (`wide`) keeps the row's width, as it would without it.
  */
-function Stamped({ words, children }: { words: string; children: ReactNode }) {
+function Stamped({ words, wide, children }: { words: string | undefined; wide: boolean; children: ReactNode }) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const { width } = useWindowDimensions();
   const [room, setRoom] = useState<number>();
   return (
-    <View onLayout={(e) => setRoom(width - 2 * metrics.margin - e.nativeEvent.layout.x - e.nativeEvent.layout.width - space.sm)}>
+    <View style={wide ? styles.stampedWide : styles.stamped} onLayout={(e) => setRoom(width - 2 * metrics.margin - e.nativeEvent.layout.x - e.nativeEvent.layout.width - space.sm)}>
       {children}
-      {room === undefined ? null : (
+      {words === undefined || room === undefined ? null : (
         <Animated.Text
           entering={FadeIn.duration(reduce ? 0 : dur.swap).easing(ease.out)}
           style={[type.caption, styles.stamp, { color: t.tertiary, maxWidth: room }]}
@@ -1358,6 +1358,8 @@ const styles = StyleSheet.create({
   noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
   them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
   stamp: { position: "absolute", left: "100%", bottom: 9, marginLeft: space.sm },
+  stamped: { alignSelf: "flex-start" },
+  stampedWide: { alignSelf: "stretch", alignItems: "flex-start" },
   // In line with the words in the bubble under it.
   by: { marginLeft: metrics.padX, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },
