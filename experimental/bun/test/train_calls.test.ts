@@ -6,6 +6,7 @@ import { stopHooks } from "../src/hub/chat/stop.ts";
 import { executorHooks } from "../src/hub/executor/hooks.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { withReviews } from "../src/hub/reviews/service.ts";
+import { prKey } from "../src/hub/reviews/verdicts.ts";
 import { registerLeadCalls } from "../src/hub/train/calls.ts";
 import { HubHost } from "../src/hub/train/hub_host.ts";
 import { start } from "../src/hub/train/loops.ts";
@@ -76,6 +77,38 @@ test("review_verdict records a reviewer's own verdict and review_read reads it b
     leadCalls(hub).handler("review_verdict")!(reviewer, { op: "review_verdict", taskId: "T61", blocking: 0, nonBlocking: 0, summary: "x" }),
   ).catch((e) => e);
   expect((other as ToolError).message).toBe("You are T60, so you record only your own verdict, not T61's.");
+});
+
+test("review_read: an author reads any PR of its project it names, one it is stacked on, and no other project's", async () => {
+  const { k, hub, task } = lab();
+  registerLeadCalls(hub);
+  const mine = k.pr(10, "fleetd/T70-a", { "a.md": "a\n" });
+  const sibling = k.pr(11, "fleetd/T71-a", { "b.md": "b\n" });
+  const theirs = "https://github.com/acme/other/pull/12";
+  task("T70", "write", mine);
+  task("T71", "write", sibling);
+  task("T72", "review", sibling);
+  const reviewer: LeadCaller = { projectRef: PROJECT, by: "lead:devbox/storefront", agent: { kind: "task", taskId: "T72" } };
+  await leadCalls(hub).handler("review_verdict")!(reviewer, { op: "review_verdict", prHeadSha: "d".repeat(40), blocking: 1, nonBlocking: 0, summary: "b.md:1 blocks the stack" });
+  k.db.conn
+    .query("INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES ('T90', ?, ?, 1, 0, ?)")
+    .run(prKey(theirs), "e".repeat(40), JSON.stringify({ taskId: "T90", blocking: 1, nonBlocking: 0, summary: "p2's own: secret/plan.rs:1" }));
+  const author: LeadCaller = { projectRef: PROJECT, by: "lead:devbox/storefront", agent: { kind: "task", taskId: "T70" } };
+  const read = leadCalls(hub).handler("review_read")!;
+  for (const pr of [sibling, "#11"]) {
+    const out = (await read(author, { op: "review_read", pr })) as { prs: { pr: string; reviews: { taskId: string; findings: string }[] }[] };
+    expect(out.prs.map((p) => p.pr)).toEqual([sibling]);
+    expect(out.prs[0]!.reviews.map((r) => [r.taskId, r.findings])).toEqual([["T72", "b.md:1 blocks the stack"]]);
+  }
+  // Leaving out pr still lists only its own.
+  const own = (await read(author, { op: "review_read" })) as { prs: { pr: string }[] };
+  expect(own.prs.map((p) => p.pr)).toEqual([mine]);
+  const refused = await Promise.resolve().then(() => read(author, { op: "review_read", pr: theirs })).catch((e) => e);
+  expect((refused as ToolError).code).toBe("forbidden");
+  expect((refused as ToolError).message).toBe(`PR ${theirs} is not one of this project's PRs; another project's reviews are not yours to read.`);
+  // A reviewer still reads only the PR it reviews.
+  const notReviewed = await Promise.resolve().then(() => read(reviewer, { op: "review_read", pr: mine })).catch((e) => e);
+  expect((notReviewed as ToolError).message).toContain("is not one of T72's PRs");
 });
 
 test("start wires the lead calls and the project's trains into project_get", async () => {

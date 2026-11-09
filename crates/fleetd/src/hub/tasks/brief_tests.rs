@@ -1,7 +1,8 @@
 //! A task's agent reads its workstream's brief and its project's decisions itself, over a real hub with a fake node:
 //! `brief_read` and `decisions_search` answer in full, another project's decisions are refused, and the first prompt
 //! carries the whole brief and the decisions it names by id or key. `review_read` gives an author, and its lead, every
-//! finding of its PRs' latest reviews in full, a reviewer those of the PR it reviews, and refuses another project's.
+//! finding of its PRs' latest reviews in full, and of any other PR of its project it names, a reviewer those of the PR
+//! it reviews, and refuses another project's.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, DecisionKey, DecisionScope, DecisionSource, IntakeChannel};
@@ -234,7 +235,7 @@ fn verdict(hub: &Hub, task: &str, pr: &str, sha: char, blocking: i64, summary: &
 }
 
 #[tokio::test]
-async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_projects() {
+async fn an_author_reads_every_finding_of_its_projects_prs_latest_reviews_but_no_other_projects() {
     let (hub, _home) = hub();
     let (mine, theirs) = (
         "https://github.com/acme/app/pull/7",
@@ -356,6 +357,35 @@ async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_pr
                 && !format!("{refused:?}").contains("p2's own")
         );
     }
+
+    // An author reads another PR of its project it names, one it is stacked on, by URL or number; still not another
+    // project's, and leaving out pr still lists only its own.
+    for pr in [sibling, "#9"] {
+        let Ok(LeadCallResult::ReviewRead(stacked)) =
+            as_task(&hub, json!({ "op": "review_read", "pr": pr }))
+        else {
+            panic!("review_read of a same-project PR was not answered")
+        };
+        assert_eq!(stacked.prs.len(), 1);
+        assert_eq!(stacked.prs[0].pr.as_str(), sibling);
+        let findings: Vec<_> = stacked.prs[0]
+            .reviews
+            .iter()
+            .map(|r| (r.task_id.as_str(), r.findings.as_str()))
+            .collect();
+        assert_eq!(findings, [("T11", "src/d.rs:4 not the reviewer's")]);
+    }
+    let refused = as_task(&hub, json!({ "op": "review_read", "pr": theirs })).unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Forbidden);
+    assert!(
+        refused.message.contains("is not one of this project's PRs"),
+        "{}",
+        refused.message
+    );
+    let Ok(LeadCallResult::ReviewRead(own)) = as_task(&hub, json!({ "op": "review_read" })) else {
+        panic!("review_read was not answered")
+    };
+    assert_eq!(own.prs, read.prs);
 }
 
 /// W373 (#976): a review blocked the PR, then the train sent it back for a rebase and its writer pushed a new head that

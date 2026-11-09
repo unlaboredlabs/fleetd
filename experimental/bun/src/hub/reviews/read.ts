@@ -1,6 +1,6 @@
 // `review_read` (crates/fleetd/src/hub/reviews/read.rs): an author reads every finding of its PRs' latest reviews,
-// whole, a reviewer those of the one PR it reviews, and a lead its project's. Read-only; a PR that is not the caller's
-// is refused, whoever's it is.
+// whole, and of any other PR of its project it names (one it builds on), a reviewer those of the one PR it reviews, and
+// a lead its project's. Read-only; another project's PR is refused, and so is any PR but its own for a reviewer.
 import type { Task } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { redact } from "../../shared/redact.ts";
@@ -26,12 +26,12 @@ export type ReviewFindings = {
 export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown }): { prs: { pr: string; reviews: ReviewFindings[] }[]; next?: string } {
   const task = caller.agent.kind === "task" ? caller.agent.taskId : undefined;
   const picked = typeof call.pr === "string" ? call.pr.trim() : undefined;
-  const mine = callerPrs(hub, caller, task, picked !== undefined);
+  const { prs: mine, reviewer } = callerPrs(hub, caller, task, picked !== undefined);
   let prs = mine;
   if (picked !== undefined) {
     prs = mine.filter((pr) => names(picked, pr));
     if (prs.length === 0) {
-      const whose = task !== undefined ? `${task}'s` : "this project's";
+      const whose = task !== undefined && reviewer ? `${task}'s` : "this project's";
       throw new ToolError(
         "forbidden",
         `PR ${picked} is not one of ${whose} PRs; another project's reviews are not yours to read.`,
@@ -51,8 +51,12 @@ export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown })
   return out;
 }
 
-/** The caller's PRs, newest first: a task's own, a review task's one PR, a lead's project's. */
-function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: boolean): string[] {
+/**
+ * The caller's PRs, newest first, and whether it is a reviewer: a task's own, a review task's one PR, a lead's
+ * project's in the merge queue. With `all`, a lead and an author get every PR the project knows too, after an author's
+ * own; a reviewer still gets only the PR it reviews.
+ */
+function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: boolean): { prs: string[]; reviewer: boolean } {
   const project = caller.projectRef;
   const changes = projectChanges(hub, project);
   const prs: string[] = [];
@@ -62,21 +66,26 @@ function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: 
       throw new ToolError("not_found", `No task ${task} in this project.`);
     }
     // A reviewer reads the earlier reviews of the one PR it reviews, and no other PR's.
-    if (own.kind === "review") return own.pr !== undefined ? [own.pr] : [];
+    if (own.kind === "review") return { prs: own.pr !== undefined ? [own.pr] : [], reviewer: true };
     prs.push(...changes.filter((c) => c.taskId === task).map((c) => c.prUrl));
     if (own.pr !== undefined) prs.push(own.pr);
-  } else {
+  } else if (!all) {
     const queued = (s: string) => s !== "merged" && s !== "refused" && s !== "abandoned";
-    prs.push(...changes.filter((c) => all || queued(c.state)).map((c) => c.prUrl));
-    if (all) for (const t of projectTasks(hub, project)) if (t.pr !== undefined) prs.push(t.pr);
+    prs.push(...changes.filter((c) => queued(c.state)).map((c) => c.prUrl));
+  }
+  // A PR named, the lead and an author may read any of the project's: an author the one it is stacked on, say.
+  if (all) {
+    prs.push(...changes.map((c) => c.prUrl));
+    for (const t of projectTasks(hub, project)) if (t.pr !== undefined) prs.push(t.pr);
   }
   const seen = new Set<string>();
-  return prs.filter((pr) => {
+  const unique = prs.filter((pr) => {
     const k = prKey(pr);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   });
+  return { prs: unique, reviewer: false };
 }
 
 /** Whether `wanted`, a PR's URL or its number (`#7`, `7`), names `pr`. */
