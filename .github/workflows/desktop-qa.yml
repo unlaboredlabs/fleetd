@@ -100,6 +100,11 @@ jobs:
             echo "app/desktop didn't change."
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true' && runner.os == 'macOS'
+        # Spotlight indexes every fresh profile and PNG the screens write: up to a whole vCPU of the VM's 3, under the
+        # apps the screens time.
+        name: Spotlight off
+        run: sudo mdutil -a -i off
       - if: steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@v6
         with:
