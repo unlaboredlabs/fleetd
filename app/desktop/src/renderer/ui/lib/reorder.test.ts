@@ -1,6 +1,6 @@
 // The reorder's arithmetic: where a lifted row drops, how far the rows it passes slide aside, and the run of its group.
 import { describe, expect, it } from "vitest";
-import { ARM_PX, dropIndex, EDGE_PX, edgeSpeed, headedFor, MAX_SCROLL_PX, moved, shiftOf } from "./reorder";
+import { ARM_PX, dropIndex, EDGE_PX, edgeSpeed, gridShiftOf, headedFor, MAX_SCROLL_PX, moved, nearest, shiftOf } from "./reorder";
 
 describe("a lifted row", () => {
   // Four 28 px rows: centres at 14, 42, 70, 98.
@@ -30,6 +30,40 @@ describe("a lifted row", () => {
   it("takes its new place in the list", () => {
     expect(moved(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
     expect(moved(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
+  });
+});
+
+describe("a lifted cell of a grid", () => {
+  // Three to a row, 80 by 76: four cells, the fourth under the first.
+  const slots = [
+    { x: 0, y: 0 },
+    { x: 80, y: 0 },
+    { x: 160, y: 0 },
+    { x: 0, y: 76 },
+  ];
+  const centres = slots.map((s) => ({ x: s.x + 40, y: s.y + 38 }));
+
+  it("drops on the cell whose centre is nearest its own", () => {
+    expect(nearest(centres, { x: 40, y: 38 })).toBe(0);
+    expect(nearest(centres, { x: 190, y: 50 })).toBe(2);
+    expect(nearest(centres, { x: 50, y: 100 })).toBe(3);
+  });
+
+  it("slides the cells it passed one place back along the reading order, across rows too", () => {
+    // The fourth over the first: the first row moves on, its last down to the next row's start.
+    expect([0, 1, 2, 3].map((i) => gridShiftOf(i, 3, 0, slots))).toEqual([
+      { x: 80, y: 0 },
+      { x: 80, y: 0 },
+      { x: -160, y: 76 },
+      { x: 0, y: 0 },
+    ]);
+    // The first over the third: the two after it step back.
+    expect([0, 1, 2, 3].map((i) => gridShiftOf(i, 0, 2, slots))).toEqual([
+      { x: 0, y: 0 },
+      { x: -80, y: 0 },
+      { x: -80, y: 0 },
+      { x: 0, y: 0 },
+    ]);
   });
 });
 

@@ -62,11 +62,6 @@
 .panel:focus {
   outline: none;
 }
-/* The agents capsule's count (panel.tsx PanelToggle): figures that don't jump as it changes. */
-.count {
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--weight-strong);
-}
 .panelLoading {
   width: 100%;
 }

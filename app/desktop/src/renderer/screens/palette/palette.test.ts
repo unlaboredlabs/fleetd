@@ -249,10 +249,11 @@ describe("projects", () => {
   it("offers the project's other pages as actions, scoped to it", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
-    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Instructions for this project", "Prompts for this project", "Max agents for this project"]);
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Settings for this project", "Instructions for this project", "Prompts for this project", "Max agents for this project"]);
     for (const action of project?.actions ?? []) action.run();
     expect(opened).toEqual([
       "#/project/devbox/storefront/prs",
+      "#/settings/projects?for=devbox/storefront",
       "#/settings/instructions?for=devbox/storefront",
       "#/settings/prompts?for=devbox/storefront",
       "#/settings/agents?for=devbox/storefront",
@@ -266,7 +267,7 @@ describe("projects", () => {
     expect(rank("acme", project === undefined ? [] : [project]).matches.map((i) => i.title)).toEqual(["storefront"]);
     project?.run();
     project?.actions?.[1]?.run();
-    expect(opened).toEqual(["#/project/devbox/storefront?at=a1b2", "#/settings/instructions?for=devbox/storefront&at=a1b2"]);
+    expect(opened).toEqual(["#/project/devbox/storefront?at=a1b2", "#/settings/projects?for=devbox/storefront&at=a1b2"]);
     expect(currentProjectItem("#/project/devbox/storefront?at=a1b2")).toBe("project:a1b2:devbox/storefront");
   });
 
