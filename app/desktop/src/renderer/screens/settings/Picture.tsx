@@ -8,13 +8,12 @@
 import { RadioGroup as RadioPrimitive } from "radix-ui";
 import { Upload } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type WheelEvent } from "react";
-import { ICON_COLORS, ICON_FACES } from "../../../shared/botIcons";
+import { colorsOf, ICON_COLORS, ICON_FACES } from "../../../shared/botAvatar";
 import { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout, type Size } from "../../../shared/crop";
 import type { AttachmentMime, IconColor, IconFace, ProjectIcon, ProjectSummary } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
-import { Avatar, Button, Dialog, Text } from "../../ui";
+import { Avatar, BotFace, Button, Dialog, Text } from "../../ui";
 import { upload } from "../chat/drafts";
-import { iconImage } from "../projects/icons";
 import { usePicture } from "../projects/ProjectAvatar";
 import { errorText, useHubCall } from "./hub";
 import { Setting } from "./parts";
@@ -153,7 +152,8 @@ export function PictureSetting({ project }: { project: Pictured }) {
   const shownIcon = chosen === undefined ? undefined : { ...chosen, ...peek };
   const peeking = peek !== null;
   const tint = chosen?.color ?? "fleet";
-  const field = (id: IconColor) => ICON_COLORS.find((c) => c.id === id)?.field ?? "transparent";
+  // A swatch is the ground its avatar stands on, light or dark with the theme (Picture.module.css).
+  const field = (id: IconColor) => ({ "--field-l": colorsOf(id, false).field, "--field-d": colorsOf(id, true).field }) as CSSProperties;
   return (
     <Setting reveal="projects.picture" label="Icon" help="Its chat shows it on every device. Pick a face and a color, or upload an image of your own.">
       <div className={p.picker} onPointerLeave={() => setPeek(null)}>
@@ -173,7 +173,7 @@ export function PictureSetting({ project }: { project: Pictured }) {
             name={project.title}
             size={PREVIEW}
             src={hasPicture && !peeking ? picture : undefined}
-            icon={iconImage(shownIcon, PREVIEW)}
+            icon={shownIcon}
             className={p.preview}
           />
           <span className={p.hover} aria-hidden>
@@ -217,7 +217,7 @@ export function PictureSetting({ project }: { project: Pictured }) {
                 className={p.swatch}
                 aria-label={c.name}
                 title={c.name}
-                style={{ "--field": field(c.id) } as CSSProperties}
+                style={field(c.id)}
                 onPointerEnter={() => setPeek({ color: c.id })}
               />
             ))}
@@ -259,8 +259,7 @@ export function PictureSetting({ project }: { project: Pictured }) {
 
 /** One face of the grid, in the color picked. */
 function FaceImage({ face, color }: { face: IconFace; color: IconColor }) {
-  const image = iconImage({ face, color }, FACE);
-  return image === undefined ? null : <img src={image.src} srcSet={image.srcSet} width={FACE} height={FACE} alt="" draggable={false} />;
+  return <BotFace face={face} color={color} size={FACE} />;
 }
 
 /** The picked image in a circle, to drag and zoom; Save hands back the square under the circle. */

@@ -64,7 +64,7 @@ export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/sh
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
 export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";
-export { ICON_COLORS, ICON_FACES } from "../../desktop/src/shared/botIcons";
+export { blinks, BODY, colorsOf, drawnFace, ICON_COLORS, ICON_FACES, LARGE, Life, LIGHT, listMoment, listRest, motionAt, PLACE, Plan, pose, poseParts, random, STILL, type Colors, type Matrix, type Moves } from "../../desktop/src/shared/botAvatar";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
 export { deleteWords, isArchived, isOnlyMe, isYours, NAME_MAX, nameProblem, PROJECT_TOOLS } from "../../desktop/src/renderer/screens/projects/model";

@@ -25,7 +25,7 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("react-native", () => ({ Animated: {}, Image: {}, StyleSheet: { create: (s: unknown) => s }, Text: {}, View: {} }));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: {} }));
-vi.mock("../botIconFiles", () => ({ ICON_FILES: {} }));
+vi.mock("./Being", () => ({ Being: {} }));
 vi.mock("../theme", () => ({ useTheme: () => ({}) }));
 const picture = vi.fn((_ref: unknown, _avatar: string) => Promise.resolve("AAAA"));
 let state: unknown;
