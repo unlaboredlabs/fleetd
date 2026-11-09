@@ -3,12 +3,15 @@
 // holds still), "3 agents working · 1 needs you" in a quiet
 // voice, and a now-line saying what the busiest agent is doing. A click on the row (or Enter on it) opens the lanes
 // above it, one row per agent, and a second click, a press outside it or Escape closes them; an agent (its row, or
-// the now-line) opens in the panel's agents, where its live work and steer box are. Nothing is drawn when no agent is
-// shown.
+// the now-line) opens in the panel's agents, where its live work and steer box are. At its end, quiet until pointed at,
+// "8 DMs between agents" opens Activity's log of them: the only trace of agents' DMs in the lead chat. Nothing is
+// drawn when no agent is shown.
 import { ChevronUp } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useData } from "../../src/data/react";
 import { RoleTag, StateGlyph, Text, Truncate, cx, roleTint, type GlyphState } from "../../ui";
+import { useDmTotal } from "../dms/hooks";
+import { countWords } from "../dms/model";
 import { panelRoute, toHash } from "../shell/routes";
 import { useNow } from "./clock";
 import { ActivityLine } from "./parts";
@@ -65,10 +68,22 @@ function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
           </span>
         </button>
         <NowLine project={project} strip={strip} />
+        <DmCount project={project} />
         <ChevronUp className={s.chevron} size={14} aria-hidden />
       </div>
       {open ? <Lanes id={lanesId} project={project} strip={strip} onOpened={close} /> : null}
     </section>
+  );
+}
+
+/** "8 DMs between agents", a link to Activity › DMs; nothing until there is one. */
+function DmCount({ project }: { project: ProjectRef }) {
+  const words = countWords(useDmTotal(project));
+  if (words === undefined) return null;
+  return (
+    <a className={s.dms} href={toHash(panelRoute(project, { tab: "activity", dms: true }))}>
+      {words}
+    </a>
   );
 }
 

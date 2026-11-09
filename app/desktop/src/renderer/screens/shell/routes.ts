@@ -32,7 +32,9 @@ export type PanelView =
   | { readonly tab: "skills"; readonly skill: string | null }
   /** The chat's artifacts, or one of them by name: its newest version, or `version`. */
   | { readonly tab: "artifacts"; readonly artifact: string | null; readonly version?: number | undefined }
-  | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions" | "skills" | "artifacts"> };
+  /** Activity, or (`dms`) its log of the agents' DMs to each other: where the lead chat's DM count opens. */
+  | { readonly tab: "activity"; readonly dms?: true }
+  | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions" | "skills" | "artifacts" | "activity"> };
 
 /** A tab's own view: its list, no item. */
 export const listView = (tab: PanelTab): PanelView => {
@@ -189,7 +191,7 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
 const versionNumber = (value: string | undefined): number | undefined => (value !== undefined && /^[1-9][0-9]{0,8}$/u.test(value) ? Number(value) : undefined);
 
 /**
- * `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]`, `skills[/<name>]`, `artifacts[/<name>[/<version>]]` or another
+ * `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]`, `skills[/<name>]`, `artifacts[/<name>[/<version>]]`, `activity[/dms]` or another
  * tab's name after the project; else, no view.
  */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
@@ -199,6 +201,7 @@ const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   if (tab === "sessions") return { tab, session: item.length === 1 ? (item[0] ?? null) : null };
   if (tab === "skills") return { tab, skill: item.length === 1 ? (item[0] ?? null) : null };
   if (tab === "artifacts") return item.length === 1 || item.length === 2 ? { tab, artifact: item[0] ?? null, version: versionNumber(item[1]) } : { tab, artifact: null };
+  if (tab === "activity") return item.length === 1 && item[0] === "dms" ? { tab, dms: true } : { tab };
   return isPanelTab(tab) ? listView(tab) : null;
 };
 
@@ -286,6 +289,7 @@ const panelPath = (view: PanelView): Array<string> => {
   if (view.tab === "sessions") return view.session === null ? ["sessions"] : ["sessions", view.session];
   if (view.tab === "skills") return view.skill === null ? ["skills"] : ["skills", view.skill];
   if (view.tab === "artifacts") return view.artifact === null ? ["artifacts"] : ["artifacts", view.artifact, ...(view.version === undefined ? [] : [String(view.version)])];
+  if (view.tab === "activity") return view.dms === true ? ["activity", "dms"] : ["activity"];
   if (view.tab !== "prs") return [view.tab];
   const pr = view.pr;
   return pr === null ? ["prs"] : ["prs", ...(pr.repo === null ? [] : pr.repo.split("/", 2)), String(pr.number)];

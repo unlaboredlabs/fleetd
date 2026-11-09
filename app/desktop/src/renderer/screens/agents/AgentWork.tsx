@@ -1,6 +1,7 @@
 // One agent's live work, read-only: its state, role and order, where its work is (its PR, or its branch), what it is
 // doing now and the browser it has open, and its newest steps (what it wrote, what it ran and edited), with the message
-// it is writing streaming in at the end. Under it, a box steers it directly. Its head opens what it was told at its
+// it is writing streaming in at the end. The DMs it sent other agents and got from them stand among its steps as quiet
+// cards, where they happened (screens/dms). Under it, a box steers it directly. Its head opens what it was told at its
 // start: its first message and the prompts it pinned.
 import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
@@ -12,6 +13,9 @@ import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { AgentSession } from "../sessions/AgentSession";
+import { DmCard } from "../dms/DmCard";
+import { useAgentDms } from "../dms/hooks";
+import { withDms, type AgentMessage } from "../dms/model";
 import { describe } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
@@ -19,7 +23,12 @@ import { actionLine, agentState, STATE_WORD, workPlace } from "./model";
 import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
-type FeedItem = WorkStep | { readonly kind: "writing"; readonly id: string; readonly text: string };
+type FeedItem =
+  | WorkStep
+  | { readonly kind: "writing"; readonly id: string; readonly text: string }
+  | { readonly kind: "dm"; readonly id: string; readonly dm: AgentMessage };
+
+const NO_PROJECT = { machineId: "", projectId: "" };
 
 export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
@@ -30,12 +39,15 @@ export function AgentWork({ id }: { id: string }) {
   const work = useAgentWork(agent);
   const [told, setTold] = useState(false);
   const row = agent?.row;
+  const taskId = row?.taskId;
+  const dms = useAgentDms(row?.projectRef ?? NO_PROJECT, taskId);
   // The message being written shows only while the agent writes; once it ends, its thread's event reads it in.
   const writing = row?.live?.activity?.activity.kind === "writing" ? work.streaming : undefined;
   const feed = useMemo((): readonly FeedItem[] | undefined => {
     if (work.steps === undefined) return undefined;
-    return writing === undefined || writing.text === "" ? work.steps : [...work.steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
-  }, [work.steps, writing]);
+    const steps = taskId === undefined ? work.steps : withDms(work.steps, dms, taskId);
+    return writing === undefined || writing.text === "" ? steps : [...steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
+  }, [work.steps, writing, dms, taskId]);
 
   if (!listed) {
     // Nothing held and no hub to ask: a blank pane would read as loading that never ends.
@@ -126,7 +138,7 @@ export function AgentWork({ id }: { id: string }) {
             Nothing yet.
           </Text>
         ) : (
-          <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => <Step item={item} />} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
+          <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => (item.kind === "dm" ? <DmCard dm={item.dm} self={row.taskId ?? ""} project={row.projectRef} /> : <Step item={item} />)} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
         )}
       </div>
       {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
@@ -147,7 +159,7 @@ const prLabel = (row: Parameters<typeof workPlace>[0]): string => {
   return place === undefined ? "PR" : `PR ${place.text}${place.state === undefined ? "" : ` · ${place.state}`}`;
 };
 
-function Step({ item }: { item: FeedItem }) {
+function Step({ item }: { item: Exclude<FeedItem, { kind: "dm" }> }) {
   if (item.kind === "writing") {
     return (
       <div className={s.message}>
