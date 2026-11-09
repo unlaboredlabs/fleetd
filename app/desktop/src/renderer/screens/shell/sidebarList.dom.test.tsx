@@ -75,6 +75,8 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
             jumpHints={jumpHints}
             collapsed={new Set()}
             onToggleHub={() => undefined}
+            folded={new Set()}
+            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />
@@ -243,7 +245,7 @@ describe("one list", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(quiet)}>
-            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={() => undefined} />
+            <Sidebar projects={undefined} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={() => undefined} />
           </DataProvider>
         </UiProvider>,
       ),
@@ -265,7 +267,7 @@ describe("one list", () => {
   it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {
     mount([ADA, HOME, STOREFRONT]);
     rightClick(button("storefront"));
-    expect(items()).toEqual(["Open", "Pin to top", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+    expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
@@ -320,6 +322,8 @@ describe("each row's avatar", () => {
               jumpHints={false}
               collapsed={new Set()}
               onToggleHub={() => undefined}
+              folded={new Set()}
+              onToggleSection={() => undefined}
               factory={false}
               go={(s) => went.push(s)}
             />

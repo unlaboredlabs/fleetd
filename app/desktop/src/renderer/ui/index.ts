@@ -31,7 +31,16 @@ export {
 export { Select, type SelectProps, type SelectOption } from "./primitives/Select";
 export { Segmented, type SegmentOption } from "./primitives/Segmented";
 export { Menu, MenuTrigger, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./primitives/Menu";
-export { ContextMenu, ContextMenuItem, ContextMenuCopy, ContextMenuSub, ContextMenuSeparator, type ContextMenuProps } from "./primitives/ContextMenu";
+export {
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuCopy,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSub,
+  ContextMenuSeparator,
+  type ContextMenuProps,
+} from "./primitives/ContextMenu";
 export { Dialog, Sheet, type DialogProps } from "./primitives/Dialog";
 export { Tooltip, type TooltipProps } from "./primitives/Tooltip";
 export { Popover, PopoverTrigger, PopoverContent } from "./primitives/Popover";

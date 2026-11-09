@@ -1,5 +1,6 @@
 // The sidebar's order: your pins on top in their order, then every other chat by its newest line, newest first; while
-// the pointer is over the list (`held`), the unpinned rows stay where they were.
+// the pointer is over the list (`held`), the unpinned rows stay where they were. The chats in one of your sections come
+// after those in none, each section's together in your order.
 import { describe, expect, it } from "vitest";
 import { arranged } from "./pins";
 
@@ -23,5 +24,15 @@ describe("the sidebar's order", () => {
     expect(keys(arranged(later, ["m/new"], ["m/docs", "m/web", "m/api"]))).toEqual(["m/new", "m/docs", "m/web", "m/api", "m/fresh"]);
     // Let go, they take their places.
     expect(keys(arranged(later, ["m/new"]))).toEqual(["m/new", "m/fresh", "m/api", "m/docs", "m/web"]);
+  });
+
+  it("puts the chats in none of your sections first, then each section's together, newest first in each", () => {
+    const inSection = (key: string, at: string, section?: string) => ({ ...row(key, at), section });
+    const rows = [inSection("m/api", "09:00", "work"), inSection("m/docs", "11:00"), inSection("m/web", "10:00", "home"), inSection("m/new", "12:00", "work"), inSection("m/old", "07:00")];
+    expect(keys(arranged(rows, [], undefined, ["work", "home"]))).toEqual(["m/docs", "m/old", "m/new", "m/api", "m/web"]);
+    expect(keys(arranged(rows, [], undefined, ["home", "work"]))).toEqual(["m/docs", "m/old", "m/web", "m/new", "m/api"]);
+    // A pinned chat is among the pins only; held, a section's rows keep their places among their own.
+    expect(keys(arranged(rows, ["m/new"], undefined, ["work", "home"]))).toEqual(["m/new", "m/docs", "m/old", "m/api", "m/web"]);
+    expect(keys(arranged(rows, [], ["m/old", "m/docs", "m/api", "m/new", "m/web"], ["work", "home"]))).toEqual(["m/old", "m/docs", "m/api", "m/new", "m/web"]);
   });
 });

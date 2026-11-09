@@ -73,6 +73,8 @@ beforeEach(() => {
             jumpHints={false}
             collapsed={new Set()}
             onToggleHub={() => undefined}
+            folded={new Set()}
+            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />
@@ -106,7 +108,7 @@ const rightClick = () => {
 
 it("opens the project or its settings, and copies its path", async () => {
   rightClick();
-  expect(items()).toEqual(["Open", "Pin to top", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
+  expect(items()).toEqual(["Open", "Pin to top", "Move to section", "Rename…", "Open settings", "Copy path", "Archive", "Delete project…"]);
   await choose("Open");
   rightClick();
   await choose("Open settings");

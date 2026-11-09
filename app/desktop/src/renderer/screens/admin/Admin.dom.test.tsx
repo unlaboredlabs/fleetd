@@ -78,7 +78,7 @@ const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 function Entry() {
   return (
     <TooltipProvider>
-      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={() => undefined} />
+      <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={() => undefined} />
     </TooltipProvider>
   );
 }
@@ -219,7 +219,7 @@ it("marks an admin's name while required setup steps are left, and opens Hub ›
   function Opener() {
       return (
       <TooltipProvider>
-        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} go={go} />
+        <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} folded={new Set()} onToggleSection={() => undefined} factory={false} go={go} />
       </TooltipProvider>
     );
   }

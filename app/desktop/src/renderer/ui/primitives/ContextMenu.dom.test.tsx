@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSub } from "./ContextMenu";
+import { Dialog } from "./Dialog";
 import o from "./Overlay.module.css";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -160,4 +161,31 @@ it("a submenu leaves the page once it closes", () => {
   press(document.querySelectorAll("[role='menu']")[1] ?? document.body, { key: "ArrowLeft" });
   expect(document.querySelectorAll("[role='menu']")).toHaveLength(1);
   expect(items()).not.toContain("Pin");
+});
+
+/** A row whose menu's Rename… opens a dialog with the focus in its box, as the sidebar's rows and labels do. */
+function Renamed() {
+  const [asking, setAsking] = useState(false);
+  return (
+    <>
+      <ContextMenu menu={() => <ContextMenuItem onSelect={() => setAsking(true)}>Rename…</ContextMenuItem>}>
+        <button type="button" data-renamed>
+          A chat
+        </button>
+      </ContextMenu>
+      <Dialog open={asking} onOpenChange={setAsking} title="Rename">
+        <input aria-label="Name" autoFocus />
+      </Dialog>
+    </>
+  );
+}
+
+it("a dialog an item opens keeps the focus in its box, not on its Close", async () => {
+  act(() => root.render(<Renamed />));
+  rightClick(el("[data-renamed]"));
+  await choose("Rename…");
+  // The menu's focus scope gives the focus up a turn after it has gone.
+  await act(() => new Promise((done) => setTimeout(done, 0)));
+  expect(document.querySelector("[role='menu']")).toBeNull();
+  expect(document.activeElement).toBe(document.querySelector("[role='dialog'] input"));
 });

@@ -1,8 +1,8 @@
 // The sidebar's projects, from the data layer: your pinned ones first, then the rest by their newest line, newest first
-// (pins.ts), archived ones left out: the project list (needs-you and agents at work), the open requests (what a lead
-// waits on you for), Status's rows (what is blocked, what is red on main), each chat's newest line (latest.ts) and what
-// you last saw in each chat. Offline, the projects held from before, with their marks as last known (the open requests
-// the store keeps).
+// (pins.ts), the ones in your sections after the ones in none (sections.ts), archived ones left out: the project list
+// (needs-you and agents at work), the open requests (what a lead waits on you for), Status's rows (what is blocked,
+// what is red on main), each chat's newest line (latest.ts) and what you last saw in each chat. Offline, the projects
+// held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { hubKey, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
@@ -13,6 +13,7 @@ import type { ProjectKey } from "./routes";
 import { useHubRole } from "../admin/role";
 import { useFollowLatest, useLatest } from "./latest";
 import { arranged, usePins } from "./pins";
+import { useSections } from "./sections";
 
 const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
 const ALL = {} as const;
@@ -47,6 +48,8 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   );
   // Your pinned ones on top, in your order (pins.ts).
   const pins = usePins();
+  // Then the ones in none of your sections, then each section's (sections.ts).
+  const sections = useSections();
   const me = useHubRole().me?.personId;
   const openKey = open === null ? null : projectId(open);
   // The open chat is seen as it grows; a project seen for the first time starts read, not as a backlog of unread.
@@ -60,8 +63,15 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     markSeen(marks);
   }, [rows, openKey, seen, hub]);
   return useMemo(() => {
-    const shown = toSidebar(rows, { requests, blocked, warnings, seen, open, latest, lastAt, pins, me });
-    return shown === undefined ? undefined : arranged(sidebarOrder(shown), pins);
-  }, [rows, requests, blocked, warnings, seen, open, latest, lastAt, pins, me]);
+    const shown = toSidebar(rows, { requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me });
+    return shown === undefined
+      ? undefined
+      : arranged(
+          sidebarOrder(shown),
+          pins,
+          undefined,
+          sections?.map((s) => s.id),
+        );
+  }, [rows, requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me]);
 };
 

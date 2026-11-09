@@ -186,6 +186,9 @@ export const fixtures = [
   "sidebar-colors",
   // Three pinned: a long name, one that waits on you, one with a new reply (fixtures/sidebar).
   "sidebar-pins",
+  // Your sections, Clients and Later, under two pinned and a chat in none; and the same beside another hub's.
+  "sidebar-sections",
+  "sidebar-sections-hubs",
   // Several hubs: Personal and Acme in one sidebar, and Acme unreachable beside Personal.
   "sidebar-hubs",
   "sidebar-hubs-offline",
@@ -1404,6 +1407,180 @@ export const screens: readonly Screen[] = [
       const right = await middle(pins.nth(1));
       await drag(right, { x: right.x, y: ada.y + 60 });
       await expect(pins).toHaveText([/Ada/u]);
+    },
+  },
+  // W580: your own sections. Under the pins (billing is one of Clients' too, and shows among the pins only) and the chat
+  // in no section, Clients and Later under their labels: 12/16 regular in the quiet colour, in line with the
+  // pictures, 12 px under the row before and 2 px over the next, no line and no count. Their chats are in the order
+  // of their latest activity.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "sections",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/storefront/u, /billing/u]);
+      const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
+      await expect(lines).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      const label = nav.getByRole("button", { name: "Clients", expanded: true });
+      const name = label.locator('[class*="sectionName"]');
+      const quiet = await lines.first().locator('[class*="line"]').first().evaluate((el) => getComputedStyle(el).color);
+      expect(
+        await name.evaluate((el) => {
+          const { fontSize, fontWeight, lineHeight, color } = getComputedStyle(el);
+          return { fontSize, fontWeight, lineHeight, color };
+        }),
+      ).toEqual({ fontSize: "12px", fontWeight: "400", lineHeight: "16px", color: quiet });
+      const [before, at, text, after, picture] = await Promise.all([lines.nth(0), label, name, lines.nth(2), lines.nth(2).locator('[class*="avatar"]').first()].map((l) => l.boundingBox()));
+      if (before == null || at == null || text == null || after == null || picture == null) throw new Error("the label isn't on screen");
+      expect(at.y - (before.y + before.height)).toBeCloseTo(12, 0);
+      expect(after.y - (at.y + at.height)).toBeCloseTo(2, 0);
+      expect(text.x).toBeCloseTo(picture.x, 0);
+    },
+  },
+  // ...Later folded by a click on its label: one line with its name, how many chats, a chevron, and the dot (search
+  // waits on you) in line with the rows' dots. The fold is kept on this device.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-folded",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      await nav.getByRole("button", { name: "Later", expanded: true }).click();
+      const folded = nav.getByRole("button", { name: "Later", expanded: false });
+      await expect(folded).toHaveAccessibleDescription("2 chats, one waits on you");
+      await expect(nav.locator('[class*="rows"] > [data-reorder-row]')).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later2"]);
+      expect(await page.evaluate(() => window.localStorage.getItem("fleetd.foldedSections"))).toContain("/s2");
+      const end = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return box.x + box.width;
+      };
+      expect(await end(folded.locator('[class*="dot"]'))).toBeCloseTo(await end(nav.locator('[class*="rows"] [class*="mark"] [class*="dot"]').first()), 0);
+      // The pointer is off the label, as it is at rest.
+      await page.mouse.move(600, 400);
+    },
+  },
+  // ...beside another hub: each hub's group reads its pins, its chats in no section, then its own sections.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections-hubs"],
+    variant: "sections-hubs",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const groups = nav.locator('[class*="rows"]');
+      await expect(groups).toHaveCount(2);
+      await expect(groups.nth(0).locator("> [data-reorder-row]")).toHaveText([/^recipes/u, "Home", /^garden-sensors/u]);
+      await expect(groups.nth(1).locator("> [data-reorder-row]")).toHaveText([/^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later", /^docs/u, /^search/u]);
+      await expect(nav.locator('[class*="pins"] > [data-reorder-row]')).toHaveText([/blog/u, /storefront/u, /billing/u]);
+    },
+  },
+  // ...a chat's Move to section: your sections with a tick on its own, No section, New section….
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-move-menu",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      await nav.locator('[class*="rows"] > [data-reorder-row]').filter({ hasText: "inventory" }).getByRole("button").click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Move to section" }).hover();
+      await expect(page.getByRole("menuitemradio")).toHaveText(["Clients", "Later", "No section"]);
+      await expect(page.getByRole("menuitemradio", { name: "Clients" })).toBeChecked();
+      await expect(page.getByRole("menuitem", { name: "New section…" })).toBeVisible();
+    },
+  },
+  // ...a label's menu: Rename…, the ways it can move (Later, the last, only up), Remove section.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-label-menu",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
+      await expect(page.getByRole("menuitem")).toHaveText(["Rename…", "Move up", "Remove section"]);
+    },
+  },
+  // ...and a drag into a section. "Rewrite the pricing…" held over Clients' label covers it, so the lifted row says
+  // where it would go, where its time was; let go, it is one of Clients'. docs held over checkout, a chat of Clients',
+  // shades Clients' label; let go, it joins too, and Later keeps search.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-drag",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
+      const middle = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const hold = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 12 });
+      };
+      const label = nav.getByRole("button", { name: "Clients", exact: true });
+      await hold(await middle(lines.filter({ hasText: "Rewrite the pricing" })), await middle(label));
+      await expect(label).toHaveAttribute("data-taking", "true");
+      await expect(nav.locator('[data-lifted] [class*="into"]')).toHaveText("Clients");
+      await page.mouse.up();
+      await expect(lines.nth(0)).toHaveText("Clients");
+      await expect(lines.filter({ hasText: "Rewrite the pricing" })).toHaveAttribute("data-section", "s1");
+      await hold(await middle(lines.filter({ hasText: "docs" })), await middle(lines.filter({ hasText: "checkout" })));
+      await expect(label).toHaveAttribute("data-taking", "true");
+      await page.mouse.up();
+      await expect(lines.filter({ hasText: "docs" })).toHaveAttribute("data-section", "s1");
+      await expect(lines.last()).toHaveText(/^search/u);
+      await expect(nav.getByRole("button", { name: "Later" })).toBeVisible();
+    },
+  },
+  // ...and a drag out of one: checkout, of Clients', held over "Rewrite the pricing…", a chat in none, says No section
+  // where its time was, and no label takes it; let go, it is in none, on top, and Clients keeps the rest.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-drag-out",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      const lines = nav.locator('[class*="rows"] > [data-reorder-row]');
+      const middle = async (at: Locator) => {
+        const box = await at.boundingBox();
+        if (box === null) throw new Error("not on screen");
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const from = await middle(lines.filter({ hasText: "checkout" }));
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      const to = await middle(lines.filter({ hasText: "Rewrite the pricing" }));
+      await page.mouse.move(to.x, to.y, { steps: 12 });
+      await expect(nav.locator('[data-lifted] [class*="into"]')).toHaveText("No section");
+      await expect(nav.locator("[data-taking]")).toHaveCount(0);
+      await page.mouse.up();
+      await expect(lines.filter({ hasText: "checkout" })).not.toHaveAttribute("data-section");
+      await expect(lines.nth(2)).toHaveText("Clients");
+      await expect(lines.filter({ hasText: "inventory" })).toHaveAttribute("data-section", "s1");
+    },
+  },
+  // ...and a label's Rename…: the dialog opens with the focus in the name's box, so the name can be typed right away.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-rename",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: "Later" }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Rename…" }).click();
+      const name = page.getByRole("dialog", { name: "Rename Later" }).getByRole("textbox", { name: "Name" });
+      await expect(name).toBeFocused();
+      await page.keyboard.type(" on");
+      await expect(name).toHaveValue("Later on");
     },
   },
   {

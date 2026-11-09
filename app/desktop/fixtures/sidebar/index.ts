@@ -1,7 +1,8 @@
 // The sidebar's reasons (status-rows' eight projects): a lead waiting on a reply, two commands to approve, a secret
 // to enter, Status's blocked projects, agents at work, and a reply that arrives after the app opened (docs), which
 // shows bold until you look. And the same projects' bots, each in a color of its own; and three of them pinned (W580):
-// a name too long for its place, one that waits on you, one with a new reply.
+// a name too long for its place, one that waits on you, one with a new reply. And your own sections of them: two
+// pinned, one chat in no section, Clients and Later under their labels, alone and beside another hub's.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -108,6 +109,31 @@ const pins = (base: Fixture): Fixture => {
   return f.answer("chat_pins_get", {}, { pins: [ref("Rewrite the pricing"), ref("inventory"), ref("docs")], set: true });
 };
 
+/** `f`'s chat by the start of its title, as the hub names it. */
+const chatRef = (f: Fixture, title: string): JsonObject => {
+  const p = arr(f.snapshot?.["projects"])
+    .filter(isObject)
+    .find((x) => asText(x["title"]).startsWith(title));
+  if (p === undefined) throw new Error(`${f.name} has no ${title}`);
+  return { machineId: p["machineId"] ?? "", projectId: p["projectId"] ?? "" };
+};
+
+/** `f` with these chats pinned and these sections, each a name over its chats' titles; a change to them is taken. */
+const sectioned = (f: Fixture, pinned: readonly string[], sections: Readonly<Record<string, readonly string[]>>): Fixture =>
+  f
+    .answer("chat_pins_get", {}, { pins: pinned.map((t) => chatRef(f, t)), set: true })
+    .answer("chat_sections_get", {}, { sections: Object.entries(sections).map(([name, chats], i) => ({ id: `s${String(i + 1)}`, name, chats: chats.map((t) => chatRef(f, t)) })) })
+    .answer("chat_sections_set", undefined, { sections: [] });
+
+const ACME_SECTIONS = { Clients: ["billing", "checkout", "inventory", "mobile"], Later: ["docs", "search"] } as const;
+
+/**
+ * The sidebar's reasons in your sections: storefront and billing pinned (billing is one of Clients' too, and shows
+ * among the pins only), "Rewrite the pricing…" in no section, on top; Clients, then Later, where search waits on you.
+ */
+const sections = (base: Fixture): Fixture =>
+  sectioned(colored(Fixture.from(reasons(base), "sidebar-sections", "Sidebar: your sections, Clients and Later, under two pinned and a chat in none.")), ["storefront", "billing"], ACME_SECTIONS);
+
 /** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project (the showcase's too). */
 export const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): void => {
   const walk = (v: JsonValue | undefined): void => {
@@ -142,6 +168,14 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
   return f;
 };
 
+/** The two hubs, each with pins and sections of its own: Personal's Home, and Acme's Clients and Later. */
+const sectionHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixture => {
+  const f = Fixture.from(hubs(base, false), "sidebar-sections-hubs", "Two hubs, each with its own pins and sections: Personal's Home, Acme's Clients and Later.");
+  sectioned(f, ["blog"], { Home: ["garden-sensors"] });
+  for (const hub of f.hubs) sectioned(colored(hub.fixture), ["storefront", "billing"], ACME_SECTIONS);
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), pins(base("status-rows")), hubs(base, false), hubs(base, true)],
+  fixtures: (base) => [reasons(base("status-rows")), colors(base("status-rows")), pins(base("status-rows")), sections(base("status-rows")), hubs(base, false), hubs(base, true), sectionHubs(base)],
 });

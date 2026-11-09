@@ -100,43 +100,58 @@ export function usePanel(): PanelState {
 }
 
 const COLLAPSED = "fleetd.collapsedHubs";
+const FOLDED = "fleetd.foldedSections";
 
-const readCollapsed = (): ReadonlySet<string> => {
+const readSet = (name: string): ReadonlySet<string> => {
   try {
-    const raw: unknown = JSON.parse(window.localStorage.getItem(COLLAPSED) ?? "[]");
+    const raw: unknown = JSON.parse(window.localStorage.getItem(name) ?? "[]");
     return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
   } catch {
     return new Set();
   }
 };
 
-/** The sidebar's hub groups you collapsed, by hub id, kept across launches. */
-export function useCollapsedHubs(): readonly [ReadonlySet<string>, (hub: string) => void] {
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const toggle = useCallback((hub: string) => {
-    setCollapsed((was) => {
-      const next = new Set(was);
-      if (!next.delete(hub)) next.add(hub);
-      try {
-        window.localStorage.setItem(COLLAPSED, JSON.stringify([...next]));
-      } catch {
-        // Kept for this window only.
-      }
-      return next;
-    });
-  }, []);
-  return [collapsed, toggle] as const;
+/** A set of ids you toggle, kept under `name` across launches on this computer. */
+function useKeptSet(name: string): readonly [ReadonlySet<string>, (id: string) => void] {
+  const [set, setSet] = useState(() => readSet(name));
+  const toggle = useCallback(
+    (id: string) => {
+      setSet((was) => {
+        const next = new Set(was);
+        if (!next.delete(id)) next.add(id);
+        try {
+          window.localStorage.setItem(name, JSON.stringify([...next]));
+        } catch {
+          // Kept for this window only.
+        }
+        return next;
+      });
+    },
+    [name],
+  );
+  return [set, toggle] as const;
 }
 
+/** The sidebar's hub groups you collapsed, by hub id, kept across launches. */
+export const useCollapsedHubs = (): readonly [ReadonlySet<string>, (hub: string) => void] => useKeptSet(COLLAPSED);
+
+/** One of your sections on one hub, as the folded ones are kept (sections.ts). */
+export const foldKey = (hub: string, section: string): string => `${hub}/${section}`;
+
+/** Your sections you folded, by foldKey, kept across launches as the hub groups are: this computer's alone. */
+export const useFoldedSections = (): readonly [ReadonlySet<string>, (key: string) => void] => useKeptSet(FOLDED);
+
 /**
- * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden. ⌘1–9 count these,
- * in the sidebar's numbers and in the commands alike.
+ * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden, and so are a
+ * folded section's chats, bar the pinned ones (among the pins). ⌘1–9 count these, in the sidebar's numbers and in the
+ * commands alike.
  */
-export const shownRows = <P extends { readonly hub: string }>(
+export const shownRows = <P extends { readonly hub: string; readonly pinned: boolean; readonly section?: string | undefined }>(
   rows: ReadonlyArray<P>,
   collapsed: ReadonlySet<string>,
   several: boolean,
-): ReadonlyArray<P> => (several ? rows.filter((p) => !collapsed.has(p.hub)) : rows);
+  folded: ReadonlySet<string>,
+): ReadonlyArray<P> => rows.filter((p) => !(several && collapsed.has(p.hub)) && (p.pinned || p.section === undefined || !folded.has(foldKey(p.hub, p.section))));
 
 /**
  * The sidebar's rows held where they are while the pointer is over its list (Sidebar.tsx): a chat with new activity

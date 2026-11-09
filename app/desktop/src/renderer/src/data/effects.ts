@@ -128,6 +128,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   }
   // You pinned or unpinned a chat on another device: this sidebar follows (the hub sends it to your devices only).
   if (type === "chat.pins") out.push({ tool: "chat_pins_get" });
+  // You changed your sections of chats on another device: the same.
+  if (type === "chat.sections") out.push({ tool: "chat_sections_get" });
   // A device paired: Your devices shows it, and Pair a phone notices it.
   if (type === "key.paired") out.push({ tool: "people_list" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A

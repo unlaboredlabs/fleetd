@@ -72,7 +72,8 @@
   display: inline-flex;
   justify-content: center;
 }
-.indicator > svg {
+/* The tick sits inside Radix's own indicator. */
+.indicator svg {
   width: 14px;
   height: 14px;
 }

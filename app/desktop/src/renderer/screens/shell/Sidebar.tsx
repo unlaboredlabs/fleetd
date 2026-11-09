@@ -12,10 +12,18 @@
 // path, archives it (Undo in the toast) or deletes it (from its settings, which list its worktrees and ask for its
 // name first). An archived project is in none (Settings › Projects brings it back).
 //
+// Your own sections (sections.ts) come under the chats in none, each under a quiet label, in your order, its chats
+// newest first: a row's menu moves it to one, out of them, or into a new one you name; dragging it onto a section's
+// label or one of its chats moves it there too, and onto a chat in none takes it out, the held row saying where it
+// would go where its time was. A label's click folds its section to one line, kept on this computer
+// (sidebarState.ts); its menu renames the section, moves it up or down, or removes it (its chats go back on top). A
+// pinned chat shows among the pins only, and keeps its section.
+//
 // With several hubs each hub's chats are a group under its name, which collapses. With one, there is no name and no
 // group.
-import { ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Pin, Plus } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
@@ -32,8 +40,10 @@ import type { Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { PINS_MAX, savePins } from "./pins";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
+import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
+import { addSection, moveChat, moveSection, newSectionId, removeSection, renameSection, saveSections, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
-import { holdRows, shownRows } from "./sidebarState";
+import { foldKey, holdRows, shownRows } from "./sidebarState";
 import { You } from "./You";
 import s from "./sidebar.module.css";
 
@@ -54,6 +64,9 @@ export interface SidebarProps {
   /** The hub groups collapsed, by hub id (the frame keeps them: ⌘1–9 count only the rows on show). */
   readonly collapsed: ReadonlySet<string>;
   readonly onToggleHub: (hub: string) => void;
+  /** Your sections folded, by foldKey (the frame keeps them too: a folded section's chats have no ⌘ number). */
+  readonly folded: ReadonlySet<string>;
+  readonly onToggleSection: (key: string) => void;
   /** The hub reports metrics (or hasn't said yet): the Factory opens on Output, else on Agent time. */
   readonly factory: boolean;
   readonly go: (screen: Screen) => void;
@@ -119,10 +132,12 @@ interface RowProps extends Omit<ComponentProps<"button">, "children"> {
   readonly current: boolean;
   readonly jump: number | null;
   readonly asOf: string | undefined;
+  /** Held over one of your sections or a chat in none, where it would go if let go, shown where the time is. */
+  readonly into?: string | undefined;
 }
 
 /** One chat's row: picture, name and time, then its line and its mark. The menu's trigger props go on its button. */
-function Row({ p, current, jump, asOf, ...rest }: RowProps) {
+function Row({ p, current, jump, asOf, into, ...rest }: RowProps) {
   const m = mark(p);
   // Offline the marks are the last known ones, and their words say since when ("as of 09:02").
   const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
@@ -140,7 +155,16 @@ function Row({ p, current, jump, asOf, ...rest }: RowProps) {
       <span className={s.text}>
         <span className={s.top}>
           <span className={s.name}>{p.project.title}</span>
-          {jump !== null ? <span className={s.jump}>{jump}</span> : <span className={s.when}>{whenShort(p.at)}</span>}
+          {into !== undefined ? (
+            <span className={s.into}>
+              <ArrowRight aria-hidden />
+              <span>{into}</span>
+            </span>
+          ) : jump !== null ? (
+            <span className={s.jump}>{jump}</span>
+          ) : (
+            <span className={s.when}>{whenShort(p.at)}</span>
+          )}
         </span>
         <span className={s.bottom}>
           <span className={s.line} data-empty={p.line === "" || undefined}>
@@ -220,12 +244,12 @@ function PinCell({ p, current, jump, asOf, ...rest }: RowProps) {
   );
 }
 
-export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, factory, go }: SidebarProps) {
+export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, folded, onToggleSection, factory, go }: SidebarProps) {
   const hubs = useHubs();
   const loaded = useHubRows();
   const several = hubs.length > 1;
-  // ⌘1..9 count the rows on show, in order: a collapsed group's rows have none.
-  const shown = projects === undefined ? undefined : shownRows(projects, collapsed, several);
+  // ⌘1..9 count the rows on show, in order: a collapsed group's rows have none, nor a folded section's.
+  const shown = projects === undefined ? undefined : shownRows(projects, collapsed, several, folded);
   const jumpOf = (p: Placed): number | null => {
     const at = shown?.indexOf(p) ?? -1;
     return jumpHints && at >= 0 && at < 9 ? at + 1 : null;
@@ -248,6 +272,8 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
                 named={several}
                 collapsed={several && collapsed.has(hub.id)}
                 onToggle={() => onToggleHub(hub.id)}
+                folded={folded}
+                onToggleSection={onToggleSection}
                 open={screen.id === "project" && screen.at === hub.id ? screen.project : null}
                 jumpOf={jumpOf}
                 go={go}
@@ -280,6 +306,12 @@ const pin = (layer: DataLayer, rows: ReadonlyArray<Placed>, keys: readonly strin
 export const pinPlace = (cells: readonly DOMRect[], at: { readonly x: number; readonly y: number }): number =>
   cells.filter((c) => c.bottom <= at.y || (c.top <= at.y && c.left + c.width / 2 < at.x)).length;
 
+/** A section's label among the rows' keys: no chat's key starts so. */
+const labelKey = (section: string): string => `\0${section}`;
+const NO_SECTIONS: readonly ChatSection[] = [];
+/** Where a chat let go on a chat in no section goes: out of its own. No section has this id. */
+const NO_SECTION = "";
+
 /** Placeholder rows while the chats load: their shapes, still, so nothing repaints. */
 const Loading = ({ busy }: { busy: boolean }) => (
   <div className={s.loading} aria-busy={busy} aria-label="Loading projects">
@@ -304,6 +336,8 @@ function ProjectGroup(props: {
   named: boolean;
   collapsed: boolean;
   onToggle: () => void;
+  folded: ReadonlySet<string>;
+  onToggleSection: (key: string) => void;
   open: ProjectKey | null;
   jumpOf: (p: Placed) => number | null;
   go: (screen: Screen) => void;
@@ -313,7 +347,24 @@ function ProjectGroup(props: {
   const state = useHubState();
   const asOf = useOfflineAsOf();
   const [renaming, setRenaming] = useState<ProjectTarget | null>(null);
+  const [naming, setNaming] = useState<Naming | null>(null);
   const layer = useDataLayer();
+  const sections = useSections() ?? NO_SECTIONS;
+  const setSections = (next: readonly ChatSection[]) => {
+    if (next !== sections) void saveSections(layer, next);
+  };
+  // Under the pins: the chats in none of your sections, then each section's label and, unless folded, its chats.
+  const { folded } = props;
+  const lines = useMemo(
+    () =>
+      sectionLines(
+        (rows ?? []).filter((p) => !p.pinned),
+        sections,
+        (id) => folded.has(foldKey(hub.id, id)),
+      ),
+    [rows, sections, folded, hub.id],
+  );
+  const labelled = lines.flatMap((l) => (l.t === "section" ? [l.section.id] : []));
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);
   const pinned = useMemo(() => (rows ?? []).filter((p) => p.pinned).map((p) => p.key), [rows]);
   const name = (key: string) => rowsByKey.get(key)?.project.title ?? "";
@@ -348,8 +399,10 @@ function ProjectGroup(props: {
     }
     pin(layer, rows ?? [], [...pinned.slice(0, at), key, ...pinned.slice(at)]);
   };
+  // The labels are among the rows' keys, so they glide and close up with them; only a chat lifts.
+  const list = useRef<HTMLDivElement>(null);
   const reorder = useReorder({
-    keys: useMemo(() => (rows ?? []).filter((p) => !p.pinned).map((p) => p.key), [rows]),
+    keys: useMemo(() => lines.map((l) => (l.t === "chat" ? l.row.key : labelKey(l.section.id))), [lines]),
     name,
     onMove: () => undefined,
     settle: SPRING,
@@ -357,6 +410,23 @@ function ProjectGroup(props: {
     within,
     out: (key, way, at) => {
       if (way === "up") pinOn(key, pinPlace([...(grid.current?.children ?? [])].map((c) => c.getBoundingClientRect()), at));
+    },
+    // Over another section's label or one of its chats, a chat let go joins that section; over a chat in none, it
+    // leaves its own.
+    onto: {
+      over: (key, at) => {
+        for (const el of list.current?.children ?? []) {
+          const box = el.getBoundingClientRect();
+          if (!(el instanceof HTMLElement) || el.dataset["lifted"] !== undefined || at.y < box.top || at.y > box.bottom || at.x < box.left || at.x > box.right) continue;
+          const to = el.dataset["section"] ?? NO_SECTION;
+          return to === (rowsByKey.get(key)?.section ?? NO_SECTION) ? null : to;
+        }
+        return null;
+      },
+      drop: (key, to) => {
+        const p = rowsByKey.get(key);
+        if (p !== undefined) setSections(moveChat(sections, routeOf(p), to === NO_SECTION ? null : to));
+      },
     },
   });
   const at = named ? { at: hub.id } : {};
@@ -374,6 +444,7 @@ function ProjectGroup(props: {
         >
           {p.pinned ? "Unpin" : "Pin to top"}
         </ContextMenuItem>
+        <MoveToSection sections={sections} chat={routeOf(p)} title={title} onMove={(to) => setSections(moveChat(sections, routeOf(p), to))} onNew={setNaming} />
         <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
         {/* Its connections, sign-ins, approvals and the rest are in its settings. */}
         <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
@@ -390,6 +461,19 @@ function ProjectGroup(props: {
         >
           Delete project…
         </ContextMenuItem>
+      </>
+    );
+  };
+  const labelMenu = (section: ChatSection) => () => {
+    const at = labelled.indexOf(section.id);
+    return (
+      <>
+        <ContextMenuItem onSelect={() => setNaming({ t: "rename", section })}>Rename…</ContextMenuItem>
+        {/* A move only where there is a section on show to move past. */}
+        {at > 0 ? <ContextMenuItem onSelect={() => setSections(moveSection(sections, section.id, -1, labelled))}>Move up</ContextMenuItem> : null}
+        {at < labelled.length - 1 ? <ContextMenuItem onSelect={() => setSections(moveSection(sections, section.id, 1, labelled))}>Move down</ContextMenuItem> : null}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => setSections(removeSection(sections, section.id))}>Remove section</ContextMenuItem>
       </>
     );
   };
@@ -450,15 +534,29 @@ function ProjectGroup(props: {
               })}
             </div>
           )}
-          <div className={s.rows} {...reorder.list}>
-            {reorder.shown.map((key) => {
-              const p = rowsByKey.get(key);
-              if (p === undefined) return null;
-              // These glide as their order changes, and lift only to be pinned.
+          <div ref={list} className={s.rows} {...reorder.list}>
+            {lines.map((line) => {
+              if (line.t === "section") {
+                // A label glides and closes up as the rows do, and never lifts.
+                const { ref, style } = reorder.row(labelKey(line.section.id));
+                return (
+                  <div key={labelKey(line.section.id)} ref={ref} style={style} className={s.sectionSlot} data-reorder-row="" data-section={line.section.id}>
+                    <ContextMenu menu={labelMenu(line.section)}>
+                      <SectionLabel line={line} taking={reorder.onto === line.section.id} onClick={() => props.onToggleSection(foldKey(hub.id, line.section.id))} />
+                    </ContextMenu>
+                  </div>
+                );
+              }
+              const p = line.row;
+              // These glide as their order changes, and lift only to be pinned or to join or leave a section, which
+              // the lifted row then says: the row itself may cover the label.
+              const row = reorder.row(p.key);
+              const to = "data-lifted" in row ? reorder.onto : null;
+              const into = to === null ? undefined : to === NO_SECTION ? "No section" : sections.find((x) => x.id === to)?.name;
               return (
-                <div key={key} {...reorder.row(key)}>
+                <div key={p.key} {...row} data-section={p.section}>
                   <ContextMenu menu={menu(p)}>
-                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} onClick={() => openRow(p)} />
+                    <Row p={p} current={sameProject(open, p.project)} jump={props.jumpOf(p)} asOf={asOf} into={into} onClick={() => openRow(p)} />
                   </ContextMenu>
                 </div>
               );
@@ -470,6 +568,12 @@ function ProjectGroup(props: {
         {pins.status}
       </span>
       <RenameProjectDialog project={renaming} onClose={() => setRenaming(null)} />
+      <SectionNameDialog
+        naming={naming}
+        sections={sections}
+        onName={(n, name) => setSections(n.t === "new" ? addSection(sections, newSectionId(), name, n.chat) : renameSection(sections, n.section.id, name))}
+        onClose={() => setNaming(null)}
+      />
     </section>
   );
 }

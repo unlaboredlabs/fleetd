@@ -30,7 +30,7 @@ import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { NewButton, Sidebar } from "./Sidebar";
-import { shownRows, useCollapsedHubs, useHeldRows, useSidebar } from "./sidebarState";
+import { shownRows, useCollapsedHubs, useFoldedSections, useHeldRows, useSidebar } from "./sidebarState";
 import { useSidebarWidth } from "./sidebarWidth";
 import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
@@ -113,7 +113,10 @@ const usePlaced = (hubs: readonly HubView[], on: HubId): ReadonlyArray<Placed> |
     if (rows.get(on)?.projects === undefined) return undefined;
     return hubs.flatMap((h) => {
       const placed = (rows.get(h.id)?.projects ?? []).map((p): Placed => ({ ...p, key: hubKey(h.id, p.key), hub: h.id }));
-      return held === null ? placed : arranged(placed, placed.filter((p) => p.pinned).map((p) => p.key), held);
+      if (held === null) return placed;
+      // Each hub's rows come in their order: the pins, the chats in none of your sections, then section by section.
+      const sections = [...new Set(placed.flatMap((p) => (p.pinned || p.section === undefined ? [] : [p.section])))];
+      return arranged(placed, placed.filter((p) => p.pinned).map((p) => p.key), held, sections);
     });
   }, [rows, hubs, on, held]);
 };
@@ -125,9 +128,10 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const held = useData((st) => st.fresh && st.hub.phase !== "live");
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's left out.
+  // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's and a folded section's left out.
   const [collapsed, toggleHub] = useCollapsedHubs();
-  const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1);
+  const [folded, toggleSection] = useFoldedSections();
+  const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1, folded);
   const modHeld = useModHeld();
   const [sidebarPx, setSidebarPx] = useSidebarWidth();
 
@@ -317,7 +321,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} factory={factory} go={go} />
+              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} folded={folded} onToggleSection={toggleSection} factory={factory} go={go} />
             </Boundary>
           ) : undefined
         }
