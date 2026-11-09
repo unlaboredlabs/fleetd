@@ -293,10 +293,13 @@ test("stopping the node ends its live sessions: reported, their browsers closed"
 });
 
 test("the node's hello lists what its screens answer: browsers on a node, and on the agents' Mac its own screen, hosted for agents elsewhere", async () => {
-  const { start: startMac } = await import("../src/node/mac_tool/index.ts");
+  const { host, start: startMac } = await import("../src/node/mac_tool/index.ts");
+  const { Host } = await import("../src/node/mac_tool/host.ts");
   const listed = (agentsMac: boolean) => {
     const t = testNode("devbox", agentsMac ? { agentsMac: true } : {});
     const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+    // Its agents' folders in the test's home: the Mac's own are `~/work`, which starting it sweeps.
+    host(t.node, new Host(join(t.node.home, "work"), { open: () => null }));
     startMac(t.node);
     cleanups.push(async () => {
       await broker.shutdown();

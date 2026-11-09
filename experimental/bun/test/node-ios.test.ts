@@ -422,7 +422,7 @@ test("the Mac's heartbeat carries its simulators' state for the doctor", async (
   writeGolden(ready.node.home, xctestrun);
   const { xcrun } = fakeXcrun(ready.node.home);
   const simctl = new Simctl(setDir(ready.node.home), xcrun);
-  startSims(ready.node, host(ready.node), new Simulators(ready.node.home, { enabled: true }, { simctl, runner: async () => {} }), 2);
+  startSims(ready.node, host(ready.node, new Host(join(ready.node.home, "work"), { open: () => null })), new Simulators(ready.node.home, { enabled: true }, { simctl, runner: async () => {} }), 2);
   cleanups.push(() => stop(ready.node));
   expect(await hbOf(ready)).toMatchObject({ state: "ready", message: expect.stringContaining("iPhone 18") });
 
@@ -430,7 +430,7 @@ test("the Mac's heartbeat carries its simulators' state for the doctor", async (
   const failed = testNode("mac2", { agentsMac: true });
   cleanups.push(failed.done);
   const making = new Simulators(failed.node.home, { enabled: true }, { simctl, prepare: async () => Promise.reject(new Error("no iOS runtime")) });
-  startSims(failed.node, host(failed.node), making, 2);
+  startSims(failed.node, host(failed.node, new Host(join(failed.node.home, "work"), { open: () => null })), making, 2);
   cleanups.push(() => stop(failed.node));
   await until(() => !JSON.parse(readFileSync(join(failed.node.home, "device/ios/state.json"), "utf8")).preparing);
   expect((await hbOf(failed))?.state).toBe("unavailable");
