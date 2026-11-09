@@ -14,6 +14,7 @@ import { baseUrl, cliAsset, HttpFeed, installedExe, runningBinary } from "../../
 import { isHubService, services } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
+import { CAP_BUILD_BUN, CAP_BUILD_RUST } from "../../shared/node_link.ts";
 import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
 
 /** The Claude Code version this fleetd was tested with (node/runner/claude/version.rs `TESTED`). */
@@ -87,6 +88,8 @@ export function hubPorts(hub: Hub): UpdatePorts {
             canInstallClaude: l.can(m.machineId, "claude_install"),
             agentsMac: l.can(m.machineId, "agents_mac"),
           };
+          if (l.can(m.machineId, CAP_BUILD_BUN)) facts.flavour = "bun";
+          else if (l.can(m.machineId, CAP_BUILD_RUST)) facts.flavour = "rust";
           if (m.cloud) facts.cloud = true;
           if (live !== undefined) facts.liveSince = live;
           if (typeof claude === "string") facts.claude = claude;

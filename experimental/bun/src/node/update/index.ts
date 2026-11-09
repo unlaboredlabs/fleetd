@@ -6,17 +6,40 @@
 //
 // `fetch` comes first, while the hub fetches its own build: the node downloads the build its hub is about to run and
 // keeps it, checked again against the release's sums before it is installed.
+//
+// The update names the hub's flavour too: a node on the other one switches to it, as `fleetd update --flavour` does, at
+// the same path (docs/cutover/bun.md). The hub's flavour is the target either way, so a hub rolled back to Rust brings
+// its nodes back too.
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { UpdateStage } from "../../shared/contracts.ts";
 import { VERSION } from "../../shared/version.ts";
 import { HEALTH_WAIT_SECS, readVerdict, start as startWatcher, upPath, type Plan } from "../../update/finish.ts";
-import { baseUrl, checkedTo, cliAsset, Failure, HttpFeed, installedExe, isBuild, release, replaceFile, restore, runningBinary, sums, swap, updateHelper, type Feed } from "../../update/index.ts";
+import {
+  assetOf,
+  baseUrl,
+  checkedTo,
+  cliAsset,
+  Failure,
+  FLAVOUR,
+  HttpFeed,
+  installedExe,
+  isBuild,
+  release,
+  replaceFile,
+  restore,
+  runningBinary,
+  sums,
+  swap,
+  updateHelper,
+  type Feed,
+  type Flavour,
+} from "../../update/index.ts";
 import { isHubService, services, type Service } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
 
-/** Where this node's binary and service are, and what it runs: the real ones, or a test's. */
-export type Place = { home: string; exe: string; services: Service[]; running: string; releaseBuild: boolean; asset: string };
+/** Where this node's binary and service are, and what it runs: the real ones, or a test's. `asset` is its flavour's. */
+export type Place = { home: string; exe: string; services: Service[]; running: string; releaseBuild: boolean; flavour: Flavour; asset: string };
 
 export function placeHere(home: string): Place {
   let exe: string;
@@ -31,8 +54,24 @@ export function placeHere(home: string): Place {
   } catch (error) {
     throw new Failure("download", (error as Error).message);
   }
-  return { home, exe, services: services(exe), running: VERSION, releaseBuild: VERSION !== "0.0.0", asset };
+  return { home, exe, services: services(exe), running: VERSION, releaseBuild: VERSION !== "0.0.0", flavour: FLAVOUR, asset };
 }
+
+/** What `update` installs: its flavour (this node's own when it names none, as from an older hub) and that flavour's
+ * asset. */
+function target(update: NodeUpdate, p: Place): { flavour: Flavour; asset: string } {
+  const flavour = update.flavour ?? p.flavour;
+  if (flavour !== "rust" && flavour !== "bun") throw new Failure("download", "the hub asked for a flavour of fleetd this one doesn't know");
+  if (flavour === p.flavour) return { flavour, asset: p.asset };
+  try {
+    return { flavour, asset: assetOf(flavour) };
+  } catch (error) {
+    throw new Failure("download", (error as Error).message);
+  }
+}
+
+/** The node runs what `update` names: its version, and its flavour. */
+const runs = (update: NodeUpdate, p: Place, flavour: Flavour) => update.version === p.running && flavour === p.flavour;
 
 const dir = (p: Place) => join(p.home, "update");
 export const planPath = (p: Place) => join(dir(p), "node-plan.json");
@@ -78,19 +117,20 @@ async function releaseOf(to: string, feed: Feed): Promise<Map<string, string>> {
   return s;
 }
 
-export type NodeUpdate = { version: string; channel: string };
+export type NodeUpdate = { version: string; channel: string; flavour?: string };
 
 /** Downloads `update.version` ahead of the update, checked, and keeps it beside the node's binary with the sums. */
 export function fetch(update: NodeUpdate, p: Place, feed: Feed): Promise<void> {
   return exclusive(async () => {
     const to = update.version;
+    const { flavour, asset } = target(update, p);
     // Nothing the update that follows could install.
-    if (to === p.running || !p.releaseBuild || !p.services.some((s) => !isHubService(s))) return;
+    if (runs(update, p, flavour) || !p.releaseBuild || !p.services.some((s) => !isHubService(s))) return;
     const s = await releaseOf(to, feed);
     keepSums(p, to, s);
     // This binary is the hub's too, which the hub puts in place itself.
-    if (p.services.some(isHubService) || isBuild(p.exe, s, p.asset) || isBuild(fetched(p), s, p.asset)) return;
-    await checkedTo(feed, s, p.asset, fetched(p));
+    if (p.services.some(isHubService) || isBuild(p.exe, s, asset) || isBuild(fetched(p), s, asset)) return;
+    await checkedTo(feed, s, asset, fetched(p));
   });
 }
 
@@ -99,7 +139,14 @@ export type Staged = { kind: "current" } | { kind: "restarting"; plan: Plan };
 /** Puts `update.version` in place, checked, keeping `previous` (the running binary) for a rollback. */
 export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => Uint8Array): Promise<Staged> {
   const to = update.version;
-  if (to === p.running) return Promise.resolve({ kind: "current" });
+  let flavour: Flavour;
+  let asset: string;
+  try {
+    ({ flavour, asset } = target(update, p));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  if (runs(update, p, flavour)) return Promise.resolve({ kind: "current" });
   const service = p.services.find((s) => !isHubService(s));
   if (!service)
     return Promise.reject(
@@ -113,9 +160,11 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
   // A fetch still downloading this build finishes first.
   return exclusive(async () => {
     const kept = keptSums(p, to);
-    const s = kept && (isBuild(p.exe, kept, p.asset) || isBuild(fetched(p), kept, p.asset)) ? kept : await releaseOf(to, feed);
+    const s = kept && (isBuild(p.exe, kept, asset) || isBuild(fetched(p), kept, asset)) ? kept : await releaseOf(to, feed);
+    // A switch the release has no build for is refused for good, not tried again.
+    if (flavour !== p.flavour && !s.has(asset)) throw new Failure("install", `the release has no ${flavour} build for this machine (${asset}), so it stays on ${p.flavour}`);
     // On the hub's machine the hub's update already put this build at the shared path.
-    const inPlace = isBuild(p.exe, s, p.asset);
+    const inPlace = isBuild(p.exe, s, asset);
     const prev = join(dir(p), "fleetd.prev");
     let running: Uint8Array;
     try {
@@ -131,8 +180,10 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
         throw new Failure("install", `couldn't keep the running binary for a rollback: ${(error as Error).message}; nothing was changed`);
       }
     } else {
-      if (!isBuild(fetched(p), s, p.asset)) await checkedTo(feed, s, p.asset, fetched(p));
-      await updateHelper(feed, s, p.exe, prev);
+      if (!isBuild(fetched(p), s, asset)) await checkedTo(feed, s, asset, fetched(p));
+      // Staying on Bun: its session host moves with it. Back to Rust: the Rust build needs none, and the one beside it
+      // stays as it is.
+      if (flavour === "bun") await updateHelper(feed, s, p.exe, prev);
       swap(p.exe, fetched(p), running, prev);
     }
     rmSync(fetched(p), { force: true });
@@ -178,6 +229,8 @@ export async function run(update: NodeUpdate, home: string, opts: { place?: Plac
   const p = opts.place ?? placeHere(home);
   const staged = await stage(update, p, opts.feed ?? feedOf(update), opts.previous ?? runningBinary);
   if (staged.kind === "current") return { message: `already runs ${versionLabel(update.version)}` };
+  const flavour = update.flavour ?? p.flavour;
+  const switched = flavour === p.flavour ? "" : ` (${flavour}, from ${p.flavour})`;
   const { plan } = staged;
   try {
     (opts.startWatcher ?? startWatcher)(plan, planPath(p));
@@ -187,7 +240,7 @@ export async function run(update: NodeUpdate, home: string, opts: { place?: Plac
     } catch {}
     throw new Failure("restart", `couldn't start the restart (${(error as Error).message}), so the previous binary was put back`);
   }
-  return { message: `restarting on ${versionLabel(plan.to)}`, ...(plan.answered ? { watch: { answered: plan.answered, verdict: plan.verdict } } : {}) };
+  return { message: `restarting on ${versionLabel(plan.to)}${switched}`, ...(plan.answered ? { watch: { answered: plan.answered, verdict: plan.verdict } } : {}) };
 }
 
 /** After the node answered "restarting": the watcher's verdict, if this process lives to read it. A restart that

@@ -8,16 +8,21 @@
 //! about to run and keeps it ([`fetch`]), so its update, once the hub runs it, needn't download it again. What it kept
 //! is checked against the release's SHA256SUMS again before it is installed: the sums read then, as the rolling edge
 //! channel may offer a newer build than the hub's by the time the node's agents let it update.
+//!
+//! The update names the hub's flavour too (`NodeUpdate::flavour`): a node on the other one switches to it, as
+//! `fleetd update --flavour` does, at the same path, a Bun build with the release's Rust one beside it as its session
+//! host (docs/cutover/bun.md). The hub's flavour is the target either way, so a hub rolled back to Rust brings its
+//! nodes back too.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use fleetd_contracts::mcp::{HubChannel, UpdateStage, UpdateState};
-use fleetd_contracts::node_link::NodeUpdate;
+use fleetd_contracts::node_link::{BuildFlavour, NodeUpdate};
 
 use crate::update::finish::{self, HEALTH_WAIT_SECS, Health, Plan};
 use crate::update::service::{self, Service};
-use crate::update::{Channel, Failure, Feed, is_build};
+use crate::update::{Channel, Failure, Feed, Flavour, HELPER, asset_of, is_build};
 
 /// What the update did before the restart.
 #[derive(Debug, PartialEq)]
@@ -35,6 +40,8 @@ pub struct Place {
     pub services: Vec<Service>,
     pub running: String,
     pub release_build: bool,
+    /// The flavour it runs, and that flavour's asset.
+    pub flavour: Flavour,
     pub asset: String,
 }
 
@@ -52,6 +59,7 @@ impl Place {
             exe,
             running: crate::version().to_owned(),
             release_build: option_env!("FLEETD_VERSION").is_some(),
+            flavour: crate::update::FLAVOUR,
             asset: crate::update::cli_asset()
                 .map_err(|e| Failure::new(UpdateStage::Download, e))?,
         })
@@ -73,6 +81,32 @@ impl Place {
     /// The SHA256SUMS of the build [`fetch`] was asked for, read while the channel still offered it.
     fn kept_sums(&self) -> PathBuf {
         self.dir().join("fleetd.next.sums.json")
+    }
+
+    /// What `update` installs: its flavour (this node's own when it names none, as from an older hub) and that
+    /// flavour's asset.
+    fn target(&self, update: &NodeUpdate) -> Result<(Flavour, String), Failure> {
+        let flavour = match update.flavour {
+            None => self.flavour,
+            Some(BuildFlavour::Rust) => Flavour::Rust,
+            Some(BuildFlavour::Bun) => Flavour::Bun,
+            Some(BuildFlavour::Unknown) => {
+                return Err(Failure::new(
+                    UpdateStage::Download,
+                    "the hub asked for a flavour of fleetd this one doesn't know",
+                ));
+            }
+        };
+        if flavour == self.flavour {
+            return Ok((flavour, self.asset.clone()));
+        }
+        let asset = asset_of(flavour).map_err(|e| Failure::new(UpdateStage::Download, e))?;
+        Ok((flavour, asset))
+    }
+
+    /// The node runs what `update` names: its version, and its flavour.
+    fn runs(&self, update: &NodeUpdate, flavour: Flavour) -> bool {
+        update.version.as_str() == self.running && flavour == self.flavour
     }
 }
 
@@ -147,20 +181,24 @@ async fn release_of(
 pub async fn fetch(update: &NodeUpdate, place: &Place, feed: &dyn Feed) -> Result<(), Failure> {
     let _fetching = FETCHING.lock().await;
     let to = update.version.as_str();
+    let (flavour, asset) = place.target(update)?;
     // Nothing the update that follows could install.
-    if to == place.running || !place.release_build || !place.services.iter().any(|s| !s.hub()) {
+    if place.runs(update, flavour)
+        || !place.release_build
+        || !place.services.iter().any(|s| !s.hub())
+    {
         return Ok(());
     }
     let sums = release_of(to, feed).await?;
     keep_sums(place, to, &sums)?;
     // This binary is the hub's too, which the hub, downloading it now, puts in place itself: the sums check it then.
     if place.services.iter().any(Service::hub)
-        || is_build(&place.exe, &sums, &place.asset)
-        || is_build(&place.fetched(), &sums, &place.asset)
+        || is_build(&place.exe, &sums, &asset)
+        || is_build(&place.fetched(), &sums, &asset)
     {
         return Ok(());
     }
-    crate::update::checked_to(feed, &sums, &place.asset, &place.fetched()).await
+    crate::update::checked_to(feed, &sums, &asset, &place.fetched()).await
 }
 
 /// Puts `update.version` in place, checked, keeping `previous` (the running binary) for a rollback.
@@ -171,7 +209,8 @@ pub async fn stage(
     previous: impl FnOnce() -> std::io::Result<Vec<u8>>,
 ) -> Result<Staged, Failure> {
     let to = update.version.as_str();
-    if to == place.running {
+    let (flavour, asset) = place.target(update)?;
+    if place.runs(update, flavour) {
         return Ok(Staged::Current);
     }
     let Some(service) = place.services.iter().find(|s| !s.hub()).cloned() else {
@@ -192,15 +231,25 @@ pub async fn stage(
     // What the fetch kept, checked by the sums it kept: the channel may offer a newer build by now.
     let sums = match kept_sums(place, to) {
         Some(sums)
-            if is_build(&place.exe, &sums, &place.asset)
-                || is_build(&place.fetched(), &sums, &place.asset) =>
+            if is_build(&place.exe, &sums, &asset) || is_build(&place.fetched(), &sums, &asset) =>
         {
             sums
         }
         _ => release_of(to, feed).await?,
     };
+    // A switch the release has no build for (Bun has none for Intel Macs) is refused for good, not tried again.
+    if flavour != place.flavour && !sums.contains_key(&asset) {
+        return Err(Failure::new(
+            UpdateStage::Install,
+            format!(
+                "the release has no {} build for this machine ({asset}), so it stays on {}",
+                flavour.as_str(),
+                place.flavour.as_str()
+            ),
+        ));
+    }
     // On the hub's machine the hub's update already put this build at the shared path.
-    let in_place = is_build(&place.exe, &sums, &place.asset);
+    let in_place = is_build(&place.exe, &sums, &asset);
     let prev = place.dir().join("fleetd.prev");
     let previous = previous().map_err(|e| {
         Failure::new(
@@ -220,8 +269,17 @@ pub async fn stage(
                 )
             })?;
     } else {
-        if !is_build(&place.fetched(), &sums, &place.asset) {
-            crate::update::checked_to(feed, &sums, &place.asset, &place.fetched()).await?;
+        if !is_build(&place.fetched(), &sums, &asset) {
+            crate::update::checked_to(feed, &sums, &asset, &place.fetched()).await?;
+        }
+        // A switch to Bun: the release's Rust build goes beside it first, as the session host it runs agents under.
+        if flavour == Flavour::Bun && flavour != place.flavour {
+            let helper = place.exe.with_file_name(HELPER);
+            let rust =
+                asset_of(Flavour::Rust).map_err(|e| Failure::new(UpdateStage::Download, e))?;
+            if !is_build(&helper, &sums, &rust) {
+                crate::update::checked_to(feed, &sums, &rust, &helper).await?;
+            }
         }
         crate::update::swap(&place.exe, &place.fetched(), &previous, &prev)?;
     }
@@ -290,6 +348,7 @@ pub async fn run_fetch(update: &NodeUpdate, home: &Path) {
 pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
     let place = Place::here(home)?;
     let feed = feed(update)?;
+    let (flavour, _) = place.target(update)?;
     match stage(update, &place, &feed, crate::update::running_binary).await? {
         Staged::Current => Ok(Answer {
             message: format!("already runs {}", crate::version_label(&update.version)),
@@ -311,8 +370,12 @@ pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
                 verdict,
                 ..
             } = *plan;
+            let switch = match flavour == place.flavour {
+                true => String::new(),
+                false => format!(" ({}, from {})", flavour.as_str(), place.flavour.as_str()),
+            };
             Ok(Answer {
-                message: format!("restarting on {}", crate::version_label(&to)),
+                message: format!("restarting on {}{switch}", crate::version_label(&to)),
                 watch: answered.map(|answered| Watch { answered, verdict }),
             })
         }
@@ -365,6 +428,7 @@ mod tests {
             }],
             running: OLD.into(),
             release_build: true,
+            flavour: Flavour::Rust,
             asset: "fleetd-linux-x64".into(),
         }
     }
@@ -373,6 +437,7 @@ mod tests {
         NodeUpdate {
             version: Text::unchecked(version.to_owned()),
             channel: HubChannel::Edge,
+            flavour: None,
         }
     }
 
@@ -606,6 +671,62 @@ mod tests {
             .unwrap_err();
         assert_eq!(by_hand.stage, UpdateStage::Restart);
         assert_eq!(fs::read(&place.exe).unwrap(), b"old");
+    }
+
+    /// boat-2 and boat-3, 9 Nov: a cloud machine on the Rust build woke to a Bun hub of the same version. Told the
+    /// hub's flavour, it switches: the Bun build at its path, the release's Rust one beside it as the session host, and
+    /// the Rust build it ran kept for the rollback.
+    #[tokio::test]
+    async fn a_rust_node_told_bun_switches_to_it_with_the_rust_build_beside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut place = place(dir.path());
+        let rust = asset_of(Flavour::Rust).unwrap();
+        let bun = asset_of(Flavour::Bun).unwrap();
+        place.asset = rust.clone();
+        place.running = NEW.into();
+        let feed = FakeFeed::with(
+            &[(rust.as_str(), &b"rust"[..]), (bun.as_str(), &b"bun"[..])],
+            &format!(r#"{{"cliVersion":"{NEW}"}}"#),
+        );
+        let mut update = to(NEW);
+        let unchanged = stage(&update, &place, &feed, || Ok(b"old".to_vec())).await;
+        assert_eq!(unchanged, Ok(Staged::Current), "no flavour named: its own");
+
+        update.flavour = Some(BuildFlavour::Bun);
+        let no_bun = FakeFeed::with(
+            &[(rust.as_str(), &b"rust"[..])],
+            &format!(r#"{{"cliVersion":"{NEW}"}}"#),
+        );
+        let refused = stage(&update, &place, &no_bun, || Ok(b"old".to_vec()))
+            .await
+            .unwrap_err();
+        assert_eq!(refused.stage, UpdateStage::Install, "{refused}");
+        assert_eq!(fs::read(&place.exe).unwrap(), b"old");
+
+        fetch(&update, &place, &feed).await.unwrap();
+        assert_eq!(fs::read(place.fetched()).unwrap(), b"bun", "fetched ahead");
+        let Staged::Restarting(plan) = stage(&update, &place, &feed, || Ok(b"old".to_vec()))
+            .await
+            .unwrap()
+        else {
+            panic!("not staged");
+        };
+        assert_eq!(fs::read(&place.exe).unwrap(), b"bun");
+        assert_eq!(fs::read(place.exe.with_file_name(HELPER)).unwrap(), b"rust");
+        assert_eq!(fs::read(&plan.prev).unwrap(), b"old");
+        assert_eq!((plan.from.as_str(), plan.to.as_str()), (NEW, NEW));
+
+        // Told its own flavour, a node on it is current; one it doesn't know changes nothing.
+        update.flavour = Some(BuildFlavour::Rust);
+        assert_eq!(
+            stage(&update, &place, &feed, || Ok(b"old".to_vec())).await,
+            Ok(Staged::Current)
+        );
+        update.flavour = Some(BuildFlavour::Unknown);
+        let refused = stage(&update, &place, &feed, || Ok(b"old".to_vec()))
+            .await
+            .unwrap_err();
+        assert!(refused.message.contains("flavour"), "{refused}");
     }
 
     /// A verdict read by the node still running means the restart was refused: it becomes the node's second answer.

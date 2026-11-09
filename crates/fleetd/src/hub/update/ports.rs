@@ -14,7 +14,7 @@ use super::{Held, NodeAnswer, NodeFacts, Refusal, UpdatePorts};
 use crate::hub::api::Hub;
 use crate::update::finish::{self, Plan};
 use crate::update::service::{self, Service};
-use crate::update::{BoxFuture, Channel, Feed, HttpFeed};
+use crate::update::{BoxFuture, Channel, Feed, Flavour, HttpFeed};
 
 pub struct HubPorts(pub Weak<Hub>);
 
@@ -95,6 +95,9 @@ impl UpdatePorts for HubPorts {
                     .executors
                     .cached_runner(&m.machine_id)
                     .and_then(|r| r.version),
+                flavour: [Flavour::Rust, Flavour::Bun]
+                    .into_iter()
+                    .find(|f| hub.link.node_can(&m.machine_id, f.cap())),
                 busy: busy(&hub, &m.machine_id),
                 cloud: m.cloud == Some(true),
                 machine_id: m.machine_id,

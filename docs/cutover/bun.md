@@ -13,8 +13,13 @@ and how each step goes back. Steps marked **[approval]** change the live fleet: 
   (`allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`). That is what keeps a Mac's Screen
   Recording and Accessibility grants when it switches; signed any other way, every Mac would ask for both again. The
   release build checks it and fails otherwise (build-release.yml, `cli-macos`).
-- **Each build stays on its own flavour.** `fleetd update`, the hub's Update button, automatic updates and a node
-  its hub updates always fetch the running build's own flavour. A Rust machine never picks up a Bun build by itself.
+- **The hub's flavour is the fleet's.** `fleetd update` on a machine, and the hub's own update, fetch the running
+  build's own flavour. A node its hub updates (Update, automatic updates, a cloud machine's catch-up as it wakes) is
+  told the hub's flavour with its version, and a node on the other one switches, as `fleetd update --flavour` does.
+  Each node lists its flavour at its hello (`build_rust`, `build_bun`), so one on the other flavour counts as behind
+  whatever its version. A node from before flavours names none: it takes its own flavour of the hub's version first,
+  then switches at the next update or wake. A machine the release has no build of the hub's flavour for (Bun has
+  none for Intel Macs) stays as it is, and its update says why.
 - **The switch.** `fleetd update --flavour bun` on a Rust machine installs the release's Bun build at the same path
   (the one its services run: one binary path, never renamed or hard-linked), puts the release's Rust build beside
   it as `fleetd-session-host`, and restarts the services, as any update does. The Bun build hosts its agents'
@@ -159,9 +164,8 @@ Rollback: `~/.fleetd/bin/fleetd update --flavour rust` on it, or the offline cop
 then `systemctl --user restart fleetd-node`.
 
 Cloud machines (Settings › Hub › Machines › Cloud machines): a new one installs the hub's flavour, so once the hub
-runs Bun, new ones come up Bun. The ones made before stay Rust, and a Bun hub runs them as before. To move one, run
-`fleetd update --flavour bun` on it while it's awake, or Reset it while it's asleep (that deletes its disk). After a
-hub rollback, new ones come up Rust again; Bun ones keep working.
+runs Bun, new ones come up Bun. One made before switches to Bun as it next wakes (its catch-up), or at the next update
+while it's awake; nothing to run on it. After a hub rollback they switch back to Rust the same way.
 
 ### 3. The agents' Mac, last **[approval]**
 
@@ -190,11 +194,12 @@ If a grant reads lost after either switch, it's the node check's one setup step,
 
 ### 4. Updates back on **[approval]**
 
-Turn Update automatically back on. From now on each machine updates to its own flavour's builds: the Bun ones, and
-the Rust session host beside each with them.
+Turn Update automatically back on. From now on each machine updates to the hub's flavour's builds: the Bun ones, and
+the Rust session host beside each with them. A machine still on Rust switches at the first update.
 
 ## Rolling everything back
 
 Reverse order: the Mac, the other machines, then the hub, each with its step's rollback. A mixed fleet works at
-every point in between (a Bun hub with Rust nodes, and the reverse), so stop wherever things are healthy again.
+every point in between (a Bun hub with Rust nodes, and the reverse), so stop wherever things are healthy again. With
+the hub back on Rust, the hub's next update (and each cloud machine's next wake) brings every node back to Rust too.
 The Rust code stays in the repo, and every release keeps shipping both flavours, until the human says otherwise.

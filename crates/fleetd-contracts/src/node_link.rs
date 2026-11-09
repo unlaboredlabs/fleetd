@@ -250,6 +250,13 @@ pub const CAP_AGENTS_MAC: &str = "agents_mac";
 /// other direction.
 pub const CAP_LINK_DEFLATE: &str = "link_deflate";
 
+/// The node runs the Rust build of its `nodeVersion` (docs/cutover/bun.md), and takes [`NodeUpdate::flavour`]. A node
+/// that lists neither this nor [`CAP_BUILD_BUN`] is older and says nothing of its flavour.
+pub const CAP_BUILD_RUST: &str = "build_rust";
+
+/// The node runs the Bun build of its `nodeVersion` (experimental/bun), and takes [`NodeUpdate::flavour`].
+pub const CAP_BUILD_BUN: &str = "build_bun";
+
 /// `gated_run` with `requestId`: an approved command outlives a dropped link and the node's result of it is kept on disk,
 /// so the hub asks for it with `gated_resume` once the link is back, after its own restart too.
 pub const CAP_GATED_RESUME: &str = "gated_resume";
@@ -755,6 +762,24 @@ pub struct NodeUpdate {
     /// node reads `nightly` as edge. Its release, `nightly`, keeps the newest edge build for them.
     #[serde(serialize_with = "edge_as_nightly")]
     pub channel: crate::mcp::HubChannel,
+    /// The build's flavour: the hub's own. A node on the other one switches to it; one from before ignores it and
+    /// installs its own flavour of `version`, then, listing [`CAP_BUILD_RUST`] or [`CAP_BUILD_BUN`], takes it next.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flavour: Option<BuildFlavour>,
+}
+
+/// Which implementation a fleetd build is: the Rust one, or the Bun/TypeScript port. A release ships both of each
+/// version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum BuildFlavour {
+    Rust,
+    Bun,
+    /// A flavour this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 fn edge_as_nightly<S: serde::Serializer>(
@@ -919,6 +944,7 @@ mod tests {
         let update = NodeUpdate {
             version: Text::unchecked("0.0.0-edge.202610271703+bd87c55".to_owned()),
             channel: HubChannel::Edge,
+            flavour: None,
         };
         let sent = serde_json::to_value(&update).unwrap();
         assert_eq!(sent["channel"], "nightly");
@@ -928,6 +954,29 @@ mod tests {
             ..update
         };
         assert_eq!(serde_json::to_value(&stable).unwrap()["channel"], "stable");
+    }
+
+    /// A node from before flavours reads an update naming one as it always did, and a flavour it doesn't know (a newer
+    /// hub's) isn't a frame it can't decode.
+    #[test]
+    fn an_update_names_its_flavour_and_older_nodes_read_it_still() {
+        let bun =
+            r#"{"version":"0.0.0-edge.202611091200+aaaaaaa","channel":"nightly","flavour":"bun"}"#;
+        let update: NodeUpdate = serde_json::from_str(bun).unwrap();
+        assert_eq!(update.flavour, Some(BuildFlavour::Bun));
+        assert_eq!(serde_json::to_string(&update).unwrap(), bun);
+        let newer =
+            r#"{"version":"0.0.0-edge.202611091200+aaaaaaa","channel":"nightly","flavour":"zig"}"#;
+        assert_eq!(
+            serde_json::from_str::<NodeUpdate>(newer).unwrap().flavour,
+            Some(BuildFlavour::Unknown)
+        );
+        let none = serde_json::to_value(NodeUpdate {
+            flavour: None,
+            ..update
+        })
+        .unwrap();
+        assert!(none.get("flavour").is_none());
     }
 
     #[test]

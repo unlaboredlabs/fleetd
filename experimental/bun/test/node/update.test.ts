@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fetch, notRestarted, run, stage, type Place } from "../../src/node/update/index.ts";
-import type { Feed } from "../../src/update/index.ts";
+import { assetOf, type Feed } from "../../src/update/index.ts";
 import type { Plan } from "../../src/update/finish.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -31,7 +31,7 @@ const place = (home: string, over: Partial<Place> = {}): Place => {
   mkdirSync(join(home, "bin"), { recursive: true });
   const exe = join(home, "bin", "fleetd");
   writeFileSync(exe, "old build");
-  return { home: join(home, "node"), exe, services: [{ name: "fleetd-node", unit: "node" }], running: "1.0.0", releaseBuild: true, asset: "fleetd-linux-x64", ...over };
+  return { home: join(home, "node"), exe, services: [{ name: "fleetd-node", unit: "node" }], running: "1.0.0", releaseBuild: true, flavour: "bun", asset: "fleetd-linux-x64", ...over };
 };
 
 test("a fetched build is installed by the update that follows, the running one kept, and the restart planned", async () => {
@@ -53,6 +53,41 @@ test("a fetched build is installed by the update that follows, the running one k
     expect(readFileSync(join(p.home, "update", "fleetd.prev"), "utf8")).toBe("old build");
     expect(planned).toMatchObject({ from: "1.0.0", to: "1.1.0", service: { unit: "node" }, health: { kind: "node" } });
     expect(answer.watch?.verdict).toBe(join(p.home, "update", "node-verdict.json"));
+  } finally {
+    home.done();
+  }
+});
+
+// The hub rolled back to Rust: a Bun node told the hub's flavour switches to the release's Rust build at its path, even
+// one of its own version, and keeps the Bun build it ran for the rollback. Told its own flavour, or none, it's current.
+test("a Bun node told rust switches to the Rust build of the same release", async () => {
+  const home = tempHome();
+  try {
+    const [rust, bun] = [assetOf("rust"), assetOf("bun")];
+    const files: Record<string, string> = {
+      "release.json": JSON.stringify({ cliVersion: "1.0.0" }),
+      SHA256SUMS: `${sha("rust build")}  ${rust}\n${sha("bun build")}  ${bun}\n`,
+      [rust]: "rust build",
+      [bun]: "bun build",
+    };
+    const feed: Feed = { get: async (name) => (name in files ? new TextEncoder().encode(files[name]) : Promise.reject(new Error(`no ${name}`))) };
+    const p = place(home.dir, { asset: bun });
+    writeFileSync(join(home.dir, "bin", "fleetd-session-host"), "rust build");
+    const previous = () => new TextEncoder().encode("old build");
+    expect(await stage({ version: "1.0.0", channel: "stable" }, p, feed, previous)).toEqual({ kind: "current" });
+    expect(await stage({ version: "1.0.0", channel: "stable", flavour: "bun" }, p, feed, previous)).toEqual({ kind: "current" });
+    const refused = await stage({ version: "1.0.0", channel: "stable", flavour: "zig" }, p, feed, previous).catch((e: Error) => e.message);
+    expect(refused).toContain("flavour");
+    const noRust: Feed = { get: async (name) => new TextEncoder().encode(name === "SHA256SUMS" ? `${sha("bun build")}  ${bun}\n` : files[name] ?? "") };
+    const missing = await stage({ version: "1.0.0", channel: "stable", flavour: "rust" }, p, noRust, previous).catch((e: { stage: string; message: string }) => e);
+    expect(missing).toMatchObject({ stage: "install", message: `the release has no rust build for this machine (${rust}), so it stays on bun` });
+
+    let planned: Plan | undefined;
+    const answer = await run({ version: "1.0.0", channel: "stable", flavour: "rust" }, p.home, { place: p, feed, previous, startWatcher: (plan) => (planned = plan) });
+    expect(answer.message).toBe("restarting on 1.0.0 (rust, from bun)");
+    expect(readFileSync(p.exe, "utf8")).toBe("rust build");
+    expect(readFileSync(join(p.home, "update", "fleetd.prev"), "utf8")).toBe("old build");
+    expect(planned).toMatchObject({ from: "1.0.0", to: "1.0.0" });
   } finally {
     home.done();
   }
