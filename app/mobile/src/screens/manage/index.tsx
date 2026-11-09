@@ -1,6 +1,6 @@
 // Making and managing projects from the phone: their screens in the root stack (New Project as a sheet; New Screen, a
 // screen of your own, as one too; a project's screen, Rename, Agent Profiles, Approvals, Payments, Linked hubs,
-// Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, pushed over its chat, in a stack of their own, its icon as a
+// Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, its Vault (screens/vault), pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
 // bar. App.tsx adds these to its
 // navigators.
@@ -31,10 +31,14 @@ import { Artifacts } from "../artifacts/Artifacts";
 import { ArtifactVersions } from "../artifacts/ArtifactVersions";
 import { Dm } from "../dms/Dm";
 import { Dms } from "../dms/Dms";
+import { Vault } from "../vault/Vault";
+import { VaultEdit } from "../vault/VaultEdit";
+import { VaultImport } from "../vault/VaultImport";
+import { VaultItem } from "../vault/VaultItem";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
-const sheet = (t: Palette, title: string): NativeStackNavigationOptions => ({
+export const sheet = (t: Palette, title: string): NativeStackNavigationOptions => ({
   title,
   presentation: "modal",
   headerTintColor: t.label,
@@ -130,6 +134,10 @@ function ChatInfo() {
       <InfoStack.Screen name="ArtifactVersions" component={ArtifactVersions} options={pushed(t, "Versions")} />
       <InfoStack.Screen name="Dms" component={Dms} options={pushed(t, "DMs Between Agents")} />
       <InfoStack.Screen name="Dm" component={Dm} options={pushed(t, "DM")} />
+      <InfoStack.Screen name="Vault" component={Vault} options={pushed(t, "Vault")} />
+      <InfoStack.Screen name="VaultItem" component={VaultItem} options={pushed(t, "")} />
+      <InfoStack.Screen name="VaultEdit" component={VaultEdit} options={sheet(t, "")} />
+      <InfoStack.Screen name="VaultImport" component={VaultImport} options={sheet(t, "Import from 1Password")} />
     </InfoStack.Navigator>
   );
 }

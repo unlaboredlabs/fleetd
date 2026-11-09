@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
 import { createDataStore, type DataState } from "../../src/data/store";
 import { leadLaneId } from "../../src/data/selectors";
-import { doingWords, leadDid, leadDoing, leadTurnSince, leadTurnUntil, turnLine, turnTally, workedFor } from "./activity";
+import { doingWords, leadDid, leadDoing, leadLastTurnSince, leadLastTurnUntil, leadTurnSince, leadTurnUntil, turnLine, turnTally, workedFor } from "./activity";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -110,6 +110,13 @@ describe("the lead's activity line", () => {
     // Without the idle before it, the first "working" may be mid-turn: no time rather than a short one.
     const cut = state({ events: [...events.slice(1), ev(5, "chat.waiting", working(false), ref.projectId, t(4, 40))] });
     expect([leadTurnSince(cut, KEY), leadTurnUntil(cut, KEY)]).toEqual([undefined, undefined]);
+    // The last finished turn, the reply's stamp: none while the first runs, and still that one once the next runs.
+    const last = (st: DataState) => [leadLastTurnSince(st, KEY), leadLastTurnUntil(st, KEY)];
+    expect(last(running)).toEqual([undefined, undefined]);
+    expect(last(over)).toEqual([ms(t(1)), ms(t(4, 40))]);
+    const next = state({ events: [...over.events, ev(6, "chat.waiting", working(true), ref.projectId, t(6))] });
+    expect([leadTurnSince(next, KEY), leadTurnUntil(next, KEY)]).toEqual([ms(t(6)), undefined]);
+    expect(last(next)).toEqual([ms(t(1)), ms(t(4, 40))]);
   });
 
   it("counts up while the lead works and says how long it worked once it's done, elapsed only", () => {

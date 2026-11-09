@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Typing renders the composer and nothing else: not the chat's list, its bubbles, the lead's activity or the screen
+// Typing renders the composer and nothing else: not the chat's list, its bubbles, the lead's turn line or the screen
 // around them. A key that renders more than the box does work the animations wait for (W95).
 import { renders } from "../../ui/lib/renders.test-util";
 import { act } from "react";
@@ -21,7 +21,7 @@ vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "darwin", fixture: null }))
 /** What a key may render: the box's own component and its words under the tools. */
 const COMPOSER = new Set(["ChatComposer", "Text"]);
 /** Rendered as the screen mounts, and never again for a key. */
-const EXPENSIVE = ["ChatScreen", "AttentionLine", "ChatList", "RowView", "MessageView", "Markdown", "LeadActivity"];
+const EXPENSIVE = ["ChatScreen", "AttentionLine", "ChatList", "RowView", "MessageView", "Markdown", "TurnLine"];
 
 let root: Root | undefined;
 const host = document.createElement("div");
@@ -112,7 +112,7 @@ it("renders the composer and nothing else while you type", async () => {
   // The screen is all there, so a render of any of it below would count.
   for (const name of EXPENSIVE) expect(renders.counts.get(name), name).toBeGreaterThan(0);
   expect(host.querySelectorAll("[data-index]").length).toBeGreaterThanOrEqual(8);
-  expect(host.querySelector("[data-entry='activity'][data-turn='running']")).not.toBeNull();
+  expect(host.querySelector("[data-turn-line][data-turn='running']")).not.toBeNull();
 
   const box = host.querySelector<HTMLTextAreaElement>("textarea[aria-label^='Message']");
   if (box === null) throw new Error("no composer");

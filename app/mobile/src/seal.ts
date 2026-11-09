@@ -41,13 +41,26 @@ export const openSealed = (sealed: Uint8Array, keys: KeyPair): Uint8Array | null
   return nacl.box.open(sealed.subarray(32), nonceOf(ephemeral, keys.publicKey), ephemeral, keys.secretKey);
 };
 
-/** crypto_box_seal, for tests: the hub's side. */
+/** crypto_box_seal: the hub's side for tests, and the app's for a value on its way to the hub (`ephemeral` then from expo-crypto). */
 export const seal = (plain: Uint8Array, recipient: Uint8Array, ephemeral: KeyPair = nacl.box.keyPair()): Uint8Array => {
   const box = nacl.box(plain, nonceOf(ephemeral.publicKey, recipient), recipient, ephemeral.secretKey);
   const out = new Uint8Array(32 + box.length);
   out.set(ephemeral.publicKey);
   out.set(box, 32);
   return out;
+};
+
+/** UTF-8 bytes of a string, by hand as `utf8` reads them. */
+export const utf8Encode = (text: string): Uint8Array => {
+  const out: number[] = [];
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (cp < 0x80) out.push(cp);
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f));
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+    else out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+  }
+  return Uint8Array.from(out);
 };
 
 /** Strict UTF-8, or null: Hermes may have no TextDecoder. */

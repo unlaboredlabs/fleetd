@@ -24,11 +24,17 @@ export const leadTurn = (events: readonly HubEvent[], ref: ProjectRef): { readon
   const isIdle = idleAt(ours);
   const firstWorking = (after: number, before: number) =>
     after === -1 ? -1 : events.findIndex((e, i) => i > after && i < before && isEvent(e, "chat.waiting") && ours(e));
+  const running = firstWorking(events.findLastIndex(isIdle), events.length);
+  return running !== -1 ? { start: running, end: -1 } : lastTurn(events, ref);
+};
+
+/** The lead's latest turn that is over, as leadTurn has it, whether or not another runs now. */
+export const lastTurn = (events: readonly HubEvent[], ref: ProjectRef): { readonly start: number; readonly end: number } | undefined => {
+  const ours = ofProject(ref);
+  const isIdle = idleAt(ours);
   const idle = events.findLastIndex(isIdle);
-  const running = firstWorking(idle, events.length);
-  if (running !== -1) return { start: running, end: -1 };
-  if (idle === -1) return undefined;
-  const done = firstWorking(events.findLastIndex((e, i) => i < idle && isIdle(e)), idle);
+  const before = idle === -1 ? -1 : events.findLastIndex((e, i) => i < idle && isIdle(e));
+  const done = before === -1 ? -1 : events.findIndex((e, i) => i > before && i < idle && isEvent(e, "chat.waiting") && ours(e));
   return done === -1 ? undefined : { start: done, end: idle };
 };
 
@@ -75,6 +81,21 @@ export const leadTurnSince = (s: DataState, key: ProjectKey): number | undefined
 export const leadTurnUntil = (s: DataState, key: ProjectKey): number | undefined => {
   const turn = leadTurn(s.events, refOf(key));
   const at = turn === undefined || turn.end === -1 ? undefined : s.events[turn.end]?.at;
+  return at === undefined ? undefined : Date.parse(at);
+};
+
+/**
+ * When the lead's latest finished turn began and ended, hub epoch ms: its reply wears how long it took as a stamp
+ * ("Worked for 4s"), and keeps it while the next turn runs.
+ */
+export const leadLastTurnSince = (s: DataState, key: ProjectKey): number | undefined => {
+  const turn = lastTurn(s.events, refOf(key));
+  const at = turn === undefined ? undefined : s.events[turn.start]?.at;
+  return at === undefined ? undefined : Date.parse(at);
+};
+export const leadLastTurnUntil = (s: DataState, key: ProjectKey): number | undefined => {
+  const turn = lastTurn(s.events, refOf(key));
+  const at = turn === undefined ? undefined : s.events[turn.end]?.at;
   return at === undefined ? undefined : Date.parse(at);
 };
 

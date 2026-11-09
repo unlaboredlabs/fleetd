@@ -5,12 +5,13 @@
 //   springs (glide.ts), fading in over its first 100 ms, a reply's bubbles 50 ms apart; nothing scales
 // - a list row rises 3 pt in 160 ms; one that leaves fades in place for 140 ms, then the gap closes as rows move up
 // - state changes (a send button, a menu, a banner, a press) take 140 ms on the snap curve
+// - the lead's turn line changes its words in place: the new ones rise in 3 pt as the old rise out, over 200 ms
 // - loops (the state glyph's grain and ring) step on the desktop's 120 ms beat, one beat for the whole app, rather than glide
 // With Reduce Motion nothing moves: what arrives fades in place (a bubble 200 ms, your send 140 ms), and loops stand still. iOS's own transitions (a
 // pushed screen, a sheet) stay iOS's.
 import { useEffect, useState } from "react";
 import { AccessibilityInfo } from "react-native";
-import { cancelAnimation, Easing, FadeOut, LinearTransition, makeMutable, withDelay, withRepeat, withSpring, withTiming, type EntryAnimationsValues, type SharedValue } from "react-native-reanimated";
+import { cancelAnimation, Easing, FadeOut, LinearTransition, makeMutable, withDelay, withRepeat, withSpring, withTiming, type EntryAnimationsValues, type ExitAnimationsValues, type SharedValue } from "react-native-reanimated";
 import { GLIDE, type Spring } from "../glide";
 import { BEAT_MS, LOOP_BEATS } from "../glyph";
 
@@ -32,6 +33,8 @@ export const dur = {
   rowIn: 160,
   /** --enter-stagger. */
   stagger: 50,
+  /** The turn line's crossfade (the desktop's view.module.css .turnLayer). */
+  swap: 200,
   /** ui/lib/beat: loops step on it. */
   beat: BEAT_MS,
 } as const;
@@ -84,6 +87,18 @@ export const glide = (spring: Spring) => LinearTransition.springify().stiffness(
 
 /** A list row that turned up while the list was on screen. */
 export const rowIn = (reduce: boolean) => riseIn(reduce ? 0 : rise.row, dur.rowIn, 0);
+
+/** A line's words taking the place of others, in place: they rise in by --row-rise as the old ones rise out. */
+export const swapIn = (reduce: boolean) => (_: EntryAnimationsValues) => {
+  "worklet";
+  const timing = (to: number) => withTiming(to, { duration: dur.swap, easing: ease.out });
+  return { initialValues: { opacity: 0, transform: [{ translateY: reduce ? 0 : rise.row }] }, animations: { opacity: timing(1), transform: [{ translateY: timing(0) }] } };
+};
+export const swapOut = (reduce: boolean) => (_: ExitAnimationsValues) => {
+  "worklet";
+  const timing = (to: number) => withTiming(to, { duration: dur.swap, easing: ease.out });
+  return { initialValues: { opacity: 1, transform: [{ translateY: 0 }] }, animations: { opacity: timing(0), transform: [{ translateY: timing(reduce ? 0 : -rise.row) }] } };
+};
 
 /** A row leaving: one quick fade where it stood. */
 export const rowOut = FadeOut.duration(dur.quick).easing(ease.snap);

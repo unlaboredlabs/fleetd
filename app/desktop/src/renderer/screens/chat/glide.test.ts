@@ -11,18 +11,11 @@ const starts = new Map([["z", 880], ["a", 940]]);
 const at = (rows: readonly Row[], moved: Record<string, number> = {}) => anchorOf(was, rows, (k) => moved[k] ?? starts.get(k));
 const z = message("z", "human");
 const a = message("a", "lead");
-const activity: Row = { kind: "activity", key: "activity" };
 
 describe("the conversation making room", () => {
   it("glides on a reply's spring, or your send's, as a message comes in under the end", () => {
     expect(glideOf(was, grown, at([z, a, message("b", "lead")]))).toBe(GLIDE.theirs);
     expect(glideOf(was, grown, at([z, a, message("b", "human")]))).toBe(GLIDE.mine);
-  });
-
-  it("glides as a reply takes the place of the lead's activity line", () => {
-    const working: Place = { ...was, tail: [...was.tail, { key: "activity", start: 990 }] };
-    expect(glideOf(working, grown, anchorOf(working, [z, a, message("b", "lead")], (k) => starts.get(k)))).toBe(GLIDE.theirs);
-    expect(glideOf(was, grown, at([z, a, activity]))).toBe(GLIDE.theirs);
   });
 
   it("glides on the growing spring as the last message grows", () => {

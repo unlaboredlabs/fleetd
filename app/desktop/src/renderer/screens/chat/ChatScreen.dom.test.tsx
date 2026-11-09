@@ -127,47 +127,14 @@ it("says only that it is blocked when the hub gave no reason, and nothing when i
   expect(line()).toBeNull();
 });
 
-it("keeps the beat going only while the lead's activity line is on screen", async () => {
-  // happy-dom has no layout: the line is on screen until the observer says otherwise.
-  const seen: IntersectionObserverCallback[] = [];
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      constructor(cb: IntersectionObserverCallback) {
-        seen.push(cb);
-      }
-      observe() {}
-      disconnect() {}
-    },
-  );
-  // happy-dom has no layout either: the list's scroller is 600 px tall and each row 50 px, so every row renders.
-  const heightOf = (el: Element) => (el.getAttribute("role") === "list" ? 600 : el instanceof HTMLElement && el.dataset["index"] !== undefined ? 50 : 0);
-  const proto = HTMLElement.prototype;
-  const realRect = proto.getBoundingClientRect.bind(proto);
-  const rect = vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    const h = heightOf(this);
-    return h ? new DOMRect(0, 0, 400, h) : realRect.call(this);
-  });
-  Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
-  try {
-    await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
-    expect(host.querySelector("[data-entry='activity'][data-turn='running']")).not.toBeNull();
-    const beat = () => document.documentElement.dataset["beat"];
-    expect(beat()).toBeDefined();
-    const view = (isIntersecting: boolean) =>
-      act(() => {
-        for (const cb of seen) cb([{ isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
-      });
-    view(false);
-    expect(beat()).toBeUndefined();
-    view(true);
-    expect(beat()).toBeDefined();
-  } finally {
-    rect.mockRestore();
-    delete (proto as { clientHeight?: number }).clientHeight;
-    vi.unstubAllGlobals();
-    vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
-  }
+it("says what the lead is doing on one line in the composer's band, never as a row of the conversation", async () => {
+  await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
+  const line = host.querySelector("[data-band] > [data-turn-line]");
+  expect(line?.getAttribute("data-turn")).toBe("running");
+  expect(line?.querySelector("[role='status']")?.textContent).toBe("Working");
+  expect(host.querySelector("[data-index] [data-turn-line], [data-index] [role='status']")).toBeNull();
+  // Its glyph and the scan over its words step on the app's beat.
+  expect(document.documentElement.dataset["beat"]).toBeDefined();
 });
 
 it("floats the composer as an island over the conversation, which runs on behind it rather than ending above it", async () => {

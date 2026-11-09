@@ -1,13 +1,13 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass
-// island over the conversation, which runs on behind it and keeps clear of it at its end; the live strip floats as a
-// capsule in a band just over it. The conversation scrolls on under the window's top row too, where its title floats
-// as a glass capsule that says what needs you after the name (what the lead waits on you for, a block, what there is to
-// look at, a red main), and is just the name when nothing does; an empty chat asks what to do. It opens where you
-// stopped reading, under a "New" divider. Its settings (where its connections, sign-ins and approvals are) are a click
-// away in a capsule beside the title; your own (Only me) project with no repo has its name in the box and everyday
-// starters, not a codebase's.
+// island over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, a
+// line saying what the lead is doing (TurnLine), then the live strip as a capsule. The conversation scrolls on under
+// the window's top row too, where its title floats as a glass capsule that says what needs you after the name (what
+// the lead waits on you for, a block, what there is to look at, a red main), and is just the name when nothing does;
+// an empty chat asks what to do. It opens where you stopped reading, under a "New" divider. Its settings (where its
+// connections, sign-ins and approvals are) are a click away in a capsule beside the title; your own (Only me) project
+// with no repo has its name in the box and everyday starters, not a codebase's.
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
@@ -21,8 +21,9 @@ import { LiveStrip, useNow } from "../live";
 import { AttentionLine } from "./Attention";
 import { lookingAt, sameLooks, waitingOn, type LookAt } from "./attentionModel";
 import { hideWait, useHiddenWait } from "./hiddenWait";
-import { leadTurnSince, leadTurnUntil } from "./activity";
+import { leadLastTurnSince, leadLastTurnUntil, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
+import { TurnLine } from "./TurnLine";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
@@ -53,9 +54,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const view = data.view;
   const asOf = useAsOfWords(view?.asOf);
   const strip = data.strip;
-  const turnSince = useData((d) => leadTurnSince(d, projectKey(project)));
-  const turnOver = useData((d) => leadTurnUntil(d, projectKey(project)) !== undefined);
-  const workedSince = data.leadWorking !== true && turnOver ? turnSince : undefined;
+  const workedSince = useData((d) => leadLastTurnSince(d, projectKey(project)));
+  const workedUntil = useData((d) => leadLastTurnUntil(d, projectKey(project)));
+  const worked = useMemo(
+    () => (workedSince === undefined || workedUntil === undefined ? undefined : { since: workedSince, until: workedUntil }),
+    [workedSince, workedUntil],
+  );
   // What you had seen when the chat opened, read before the sidebar marks it seen (a key per project remounts this),
   // and its newest seq once known: only messages already there then are new, never those arriving while it's open.
   const key = projectKey(project);
@@ -84,15 +88,14 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             loadingOlder: view.loadingOlder,
             held: view.held,
             offline: view.offline,
-            activity: data.leadWorking === true,
-            workedSince,
+            worked,
             seenSeq,
             me,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, data.leadWorking, workedSince, seenSeq, me],
+    [view, worked, seenSeq, me],
   );
   // Rows that say what they said keep their object, so a streamed word draws its own row and not the whole list.
   const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});
@@ -356,6 +359,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           // the conversation by design (data-floats, for the QA checks).
           <div ref={island} className={s.island} data-floats="">
             <div className={s.band} data-band="">
+              <TurnLine project={project} writing={items?.at(-1)?.state === "streaming"} />
               {strip ? (
                 <Boundary part="the live strip">
                   <LiveStrip project={project} />

@@ -193,6 +193,8 @@ function BubbleLine(props: {
   mine: boolean;
   /** Your message's last bubble: its receipt mark goes beside it; true when it's your latest message. */
   receipt?: boolean | undefined;
+  /** The last bubble of the reply a turn ended with: how long the turn took, a quiet stamp beside it. */
+  worked?: string | undefined;
 }) {
   const { item, bubble, first, last, lead, mine } = props;
   const actions = useBubbleActions();
@@ -274,6 +276,12 @@ function BubbleLine(props: {
         </div>
       </ContextMenu>
       {props.receipt !== undefined ? <ReceiptMarkView item={item} latest={props.receipt} /> : null}
+      {props.worked !== undefined ? (
+        // Beside the bubble's last line, over the room its actions keep: it takes none, so nothing moves as it comes.
+        <span className={s.workedSlot}>
+          <span className={s.worked}>{props.worked}</span>
+        </span>
+      ) : null}
       <span className={s.aside}>
         {lead && actions !== undefined ? (
           <>
@@ -363,6 +371,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
               opening={n === 0}
               mine={mine}
               receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
+              worked={n === bubbles.length - 1 ? r.worked : undefined}
             />
           ))
         )}
