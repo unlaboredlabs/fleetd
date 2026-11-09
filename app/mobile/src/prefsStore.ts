@@ -5,7 +5,8 @@
 import { File, Paths } from "expo-file-system";
 import { useSyncExternalStore } from "react";
 import type { PinStore } from "./pins";
-import { hubPinStore, noPrefs, parsePrefs, reducePrefs, type HubOrigin, type Prefs, type PrefsAction } from "./prefs";
+import type { SectionStore } from "./sections";
+import { hubPinStore, hubSectionStore, noPrefs, parsePrefs, reducePrefs, type HubOrigin, type Prefs, type PrefsAction } from "./prefs";
 import { saveMuted } from "./vault";
 
 let prefs: Prefs = noPrefs;
@@ -53,3 +54,6 @@ export const onPrefs = (listener: (now: Prefs, was: Prefs) => void): (() => void
 
 /** A hub's session's copy of its pinned chats (pins.ts): the prefs' own, so the list follows it. */
 export const pinStoreFor = (hub: HubOrigin): PinStore => hubPinStore(() => prefs, dispatchPrefs, hub);
+
+/** A hub's session's copy of the person's sections (sections.ts): the prefs' own, so the list follows it. */
+export const sectionStoreFor = (hub: HubOrigin): SectionStore => hubSectionStore(() => prefs, dispatchPrefs, hub);

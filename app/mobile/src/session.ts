@@ -1,13 +1,14 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves. The
-// person's pinned chats sync with the hub on each snapshot (pins.ts). A project's or agent's live screen is watched one
-// at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
-// whole app again with each.
+// person's pinned chats and their sections sync with the hub on each snapshot (pins.ts, sections.ts). A project's or
+// agent's live screen is watched one at a time: its frames go to the live view's listener alone (onFrame), never
+// through the state, which would draw the whole app again with each.
 import { loadRun, mergeMessages, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
+import { memorySections, Sections, type Section, type SectionStore } from "./sections";
 import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
@@ -30,6 +31,8 @@ export interface SessionOptions {
   readonly push?: PushDeps;
   /** Where this phone keeps its copy of this hub's pinned chats (prefsStore.ts pinStoreFor); in memory without one. */
   readonly pins?: PinStore;
+  /** Where this phone keeps its copy of the person's sections on this hub (prefsStore.ts sectionStoreFor); in memory without one. */
+  readonly sections?: SectionStore;
   /** Where the chats as last seen and the messages on their way are kept between launches (cacheStore.ts); none without one. */
   readonly cache?: CacheStore;
   /** Where the pictures' previews are kept between launches (cacheStore.ts); in memory without one. */
@@ -78,6 +81,8 @@ export class Session {
   readonly #push: PushDeps | undefined;
   #unsubscribeToken: (() => void) | undefined;
   readonly #pins: Pins;
+  readonly #sections: Sections;
+  readonly #sectionsRefusedListeners = new Set<(words: string) => void>();
   readonly #hub: string;
   readonly #cache: CacheStore | undefined;
   readonly #previewStore: PreviewStore | undefined;
@@ -103,6 +108,9 @@ export class Session {
     if (open !== undefined && this.#state.projects?.[open.key] !== undefined) this.#reopen = { key: open.key, at: { offset: open.offset, rows: open.rows, oldestSeq: open.oldestSeq } };
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
     this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins(), (key) => this.#state.projects?.[key] !== undefined);
+    this.#sections = new Sections((tool, input) => this.#client.call(tool, input), options.sections ?? memorySections(), (words) => {
+      for (const listener of this.#sectionsRefusedListeners) listener(words);
+    });
   }
 
   get state(): State {
@@ -206,6 +214,17 @@ export class Session {
   /** The pinned chats as they are now (pinned, unpinned or moved here): this phone's copy at once, then the hub. */
   setPins(keys: readonly Key[]): Promise<void> {
     return this.#pins.set(keys);
+  }
+
+  /** The person's sections as they are now (a chat moved, one named, moved or removed here): this phone's copy at once, then the hub. */
+  setSections(sections: readonly Section[]): Promise<void> {
+    return this.#sections.set(sections);
+  }
+
+  /** A change to the sections the hub refused was taken back: its words, for the list to say. */
+  onSectionsRefused(listener: (words: string) => void): () => void {
+    this.#sectionsRefusedListeners.add(listener);
+    return () => this.#sectionsRefusedListeners.delete(listener);
   }
 
   openChat(key: Key | null): void {
@@ -531,6 +550,7 @@ export class Session {
       void this.#readBoard();
       // After the snapshot: an older build's pins go up only for this hub's own chats.
       void this.#pins.read();
+      void this.#sections.read();
       void this.#readLatest();
       // An admin's: the build the hub has ready, and a run going on, followed.
       if (this.#state.admin === true) void loadRun(this.updates);
@@ -544,7 +564,7 @@ export class Session {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
       }
     }
-    // What a missed event changed, the snapshot before it already read again (requests, pins, screens, projects).
+    // What a missed event changed, the snapshot before it already read again (requests, pins, sections, screens, projects).
     if (frame.t === "event" && frame.replayed === true) for (const listener of this.#eventListeners) listener(frame.event);
     else if (frame.t === "event") {
       for (const listener of this.#eventListeners) listener(frame.event);
@@ -553,6 +573,7 @@ export class Session {
       if (effects.board) void this.#readBoard();
       if (effects.snapshot) this.#client.resync();
       if (effects.pins) void this.#pins.read();
+      if (effects.sections) void this.#sections.read();
       if (effects.info) void this.#readInfo();
       if (effects.screens !== undefined && (effects.screens === this.#open || this.#state.screens[effects.screens] !== undefined)) void this.readScreens(effects.screens);
     }

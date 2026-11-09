@@ -60,12 +60,31 @@ other address works over plain HTTP too.
 Swipe a chat right and tap the orange pin, or hold it and pick **Pin**. Pinned chats sit above the list as large round
 avatars, three to a row, up to nine. An unread chat's newest message shows in a bubble over its avatar, with a dot by
 its name. While its lead works, a typing bubble shows instead. An approval waiting shows as an orange count. Tap an
-avatar to open the chat, or hold it to mark it read or unread, unpin it or mute it. A filter or a search shows pinned
-chats as plain rows.
+avatar to open the chat, or hold it to mark it read or unread, unpin it, mute it or move it to a
+[section](#sections). A filter or a search shows pinned chats as plain rows.
 
 Your pins are yours: the hub keeps them, in order, for each person, so they're the same on each of your phones. A
 teammate's pins never change your list. Each hub keeps its own, and the app keeps them apart. The first time it connects
 to a hub that keeps pins, it sends up the pins it already had of that hub's chats, never another hub's.
+
+## Sections {#sections}
+
+Sections group your chats under names of your own. Hold a chat, or a pinned avatar, and pick **Move to Section…**: the
+sheet lists your sections with a ✓ on the chat's own, **No Section**, and **New Section…**, which asks for a name. A
+section is made with its first chat and goes away with its last.
+
+Under the pins, the chats in no section come first, with no label. Then each section sits under its quiet label, its
+chats ordered as the rest of the list is. Tap a label to fold the section to one line: its name, how many chats it
+holds, and a dot when one of them needs you or is unread. Tap again to open it. Which sections are folded is kept on
+this phone. Hold a label for **Rename…**, **Move Up**, **Move Down** and **Remove Section**, which puts its chats back
+on top and deletes none of them. A pinned chat shows among the pins only, and keeps its section for when you unpin it. A
+filter or a search is a flat list with no labels.
+
+Your sections are yours: the hub keeps them, in your order, for each person, so they're the same in the desktop app and
+on each of your phones. A teammate's sections never change your list, and each hub keeps its own. A name is up to 40
+characters, no two sections share one, and you can have up to 50. A project that's deleted leaves its section by itself;
+an archived one keeps its place. A change shows at once and is sent when the hub is next reachable. If the hub refuses
+it, the list goes back and a line over it says why.
 
 ## Projects {#manage}
 

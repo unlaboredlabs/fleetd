@@ -3,8 +3,8 @@
 // rows), each name under it at medium weight in the text's own colour. Unread, its newest message rises out of the
 // avatar in a bubble, with a dot before the name, which turns semibold; while its lead works, a typing bubble with the
 // working glyph takes the bubble's place; an approval waiting is an orange count on the avatar (pinnedGrid.ts). A tap
-// opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute) in iOS's menu. A pin
-// grows into its place and an unpinned one shrinks away, on the app's snap curve.
+// opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute, Move to Section…) in
+// iOS's menu. A pin grows into its place and an unpinned one shrinks away, on the app's snap curve.
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Animated, { withTiming, type EntryAnimationsValues, type ExitAnimationsValues } from "react-native-reanimated";
 import { phaseOf } from "../desktop";

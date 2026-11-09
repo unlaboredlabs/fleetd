@@ -4,6 +4,7 @@ import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
 import { memoryPins } from "./pins";
 import { controlOf, PageTouches } from "./screen";
+import { memorySections } from "./sections";
 import { Session, type SessionOptions } from "./session";
 
 const REF = { machineId: "m1", projectId: "navi" };
@@ -552,6 +553,54 @@ describe("Pinned chats", () => {
     void session.setPins([KEY]);
     expect(store.saved()).toEqual([KEY]);
     expect(pinCalls(hub, "chat_pins_set").at(-1)?.input).toEqual({ pins: [REF] });
+  });
+});
+
+describe("Sections", () => {
+  const sectionCalls = (hub: ReturnType<typeof fakeHub>, tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
+  const work = { id: "s1", name: "Work", chats: [REF] };
+
+  it("read on each snapshot, and again when another of the person's devices changed them", async () => {
+    const hub = fakeHub();
+    const store = memorySections();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, sections: store });
+    session.start();
+    hub.ready();
+    expect(sectionCalls(hub, "chat_sections_get")).toHaveLength(0);
+    hub.link.frame(snapshot);
+    expect(sectionCalls(hub, "chat_sections_get")).toHaveLength(1);
+    hub.answer("chat_sections_get", { sections: [work] });
+    await flush();
+    expect(store.saved()).toEqual([{ id: "s1", name: "Work", chats: [KEY] }]);
+
+    hub.link.frame({ t: "event", seq: 2, type: "chat.sections", at: AT, data: { personId: "p_abcd2345" } });
+    expect(sectionCalls(hub, "chat_sections_get")).toHaveLength(2);
+    hub.answer("chat_sections_get", { sections: [] });
+    await flush();
+    expect(store.saved()).toEqual([]);
+  });
+
+  it("shows a change made here at once, sends it, and takes it back with the hub's words when the hub refuses", async () => {
+    const hub = fakeHub();
+    const store = memorySections();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, sections: store });
+    const said: string[] = [];
+    session.onSectionsRefused((words) => said.push(words));
+    session.start();
+    hub.ready();
+    hub.link.frame(snapshot);
+    hub.answer("chat_sections_get", { sections: [] });
+    await flush();
+    void session.setSections([{ id: "s1", name: "Work", chats: [KEY] }]);
+    expect(store.saved()).toEqual([{ id: "s1", name: "Work", chats: [KEY] }]);
+    expect(sectionCalls(hub, "chat_sections_set").at(-1)?.input).toEqual({ sections: [work] });
+    hub.fail("chat_sections_set", "invalid", "A section needs a name.");
+    await flush();
+    expect(said).toEqual(["A section needs a name."]);
+    hub.answer("chat_sections_get", { sections: [] });
+    await flush();
+    expect(store.saved()).toEqual([]);
+    expect(store.pending()).toBe(false);
   });
 });
 

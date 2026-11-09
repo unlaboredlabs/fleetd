@@ -27,7 +27,7 @@ import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
-import { pinStoreFor } from "./src/prefsStore";
+import { pinStoreFor, sectionStoreFor } from "./src/prefsStore";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
@@ -212,7 +212,7 @@ const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "proj
 };
 
 function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget: (why?: string) => void; opened: ShortcutLink | null; onOpened: () => void }) {
-  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
+  const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), sections: sectionStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const t = useTheme();
   const theme = useMemo(() => navigationTheme(t), [t]);
