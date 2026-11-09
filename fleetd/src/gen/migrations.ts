@@ -154,6 +154,7 @@ import m150 from "../hub/store/migrations/202611082300_agent_messages.sql" with 
 import m151 from "../hub/store/migrations/202611091303_vault.sql" with { type: "text" };
 import m152 from "../hub/store/migrations/202611091500_time_digests.sql" with { type: "text" };
 import m153 from "../hub/store/migrations/202611091900_project_avatar_color.sql" with { type: "text" };
+import m154 from "../hub/store/migrations/202611092050_lead_profile_switch.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -310,4 +311,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611091303_vault", sql: m151 },
   { name: "202611091500_time_digests", sql: m152 },
   { name: "202611091900_project_avatar_color", sql: m153 },
+  { name: "202611092050_lead_profile_switch", sql: m154 },
 ];

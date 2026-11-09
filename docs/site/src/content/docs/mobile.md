@@ -14,7 +14,7 @@ closes is left out. Notifications show the full text,
 end-to-end encrypted. You can [watch and take over](#screens) a lead's or agent's screen when it needs
 you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, read a chat's
 [artifacts](#artifacts), make, rename, archive and delete projects, and on an iPhone
-[share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
+[share](#share) text, links and images into a chat from any app. An admin can update fleetd and restart the hub. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
@@ -157,6 +157,10 @@ An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a
 hub. It does what the desktop app's Update does: the hub updates itself, then every machine, and the app follows it
 live, machine by machine, to the outcome. A machine that failed or was put back gets **Retry**. Members don't see it,
 and the hub refuses them anyway.
+
+Above it, an admin has **Restart Hub**, the desktop app's [Restart hub](/docs/several-hubs#restart): it asks first, the
+hub is back in about a second while agents carry on, and each lead whose profile changed since it started comes back
+on the current one. Members don't see it either.
 
 ## Import memory {#import-memory}
 

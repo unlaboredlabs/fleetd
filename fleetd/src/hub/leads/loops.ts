@@ -151,9 +151,25 @@ export function start(hub: Hub): void {
     }
     await endRemovedRepos(hub).catch((error) => console.warn("repo removal failed:", error));
   });
+  // After a restart from Settings, the leads marked for a profile switch start again on their current profile: now
+  // when idle on a linked machine, else once their machine is back or their turn has ended.
+  const switchLeads = async (machineId?: string) => {
+    for (const r of area.records.leadsSwitchDue()) {
+      if (machineId !== undefined && r.machineId !== machineId) continue;
+      await switchLead(r);
+    }
+  };
+  const switchLead = (r: ProjectRef) =>
+    area.switchIfDue(r).then(
+      () => undefined,
+      (error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`),
+    );
+  void switchLeads();
   // A machine comes online once its runner is usable: then the leads its waiting orders need start.
   follow(hub, ["machine.online"], async (e) => {
-    if (e.machineId !== undefined) await area.startWaiting(e.machineId).catch((error) => console.warn("waiting orders: leads not started:", error));
+    if (e.machineId === undefined) return;
+    await area.startWaiting(e.machineId).catch((error) => console.warn("waiting orders: leads not started:", error));
+    await switchLeads(e.machineId);
   });
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
@@ -161,7 +177,10 @@ export function start(hub: Hub): void {
     const found = end(e, area.records.leadsList());
     if (!found) return;
     const key = `${found.project.machineId}/${found.project.projectId}`;
-    if (found.end.kind === "completed") return void carriedOn.delete(key);
+    if (found.end.kind === "completed") {
+      carriedOn.delete(key);
+      return switchLead(found.project);
+    }
     if (found.end.kind === "own") {
       if (carriedOn.has(key)) return;
       carriedOn.add(key);

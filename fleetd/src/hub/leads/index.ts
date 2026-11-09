@@ -46,6 +46,8 @@ export class Leads {
   parkedOf: ParkedOf = (thread) => leadWiring(this.hub).hooks.parkedOf?.(thread);
   /** Serializes start and restart, so two concurrent calls for one project launch one thread. */
   private lock: Promise<void> = Promise.resolve();
+  /** Set once this process marked the leads for its own restart: the switches are the next hub process's to make. */
+  private restarting = false;
 
   constructor(private readonly hub: Hub) {
     this.records = new LeadRecords(hub.db);
@@ -205,9 +207,70 @@ export class Leads {
     return mcpServers(this.hub).leadSet(r);
   }
 
-  /** Whether the lead's next turn starts a fresh session: it is cold, or its MCP servers changed. */
+  /** Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, or its profile switch is due. */
   freshDue(r: ProjectRef): boolean {
-    return this.cold(r) || this.mcpChanged(r) !== undefined;
+    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r);
+  }
+
+  /** What a lead session started now is launched with: the lead profile's name, model, effort and fast mode. */
+  private launchedNow(): string {
+    const store_ = profiles(this.hub);
+    const { profile, model, effort, fast } = store_.chosen(store_.leadProfile().name);
+    return JSON.stringify({ profile, model: model ?? null, effort, fast });
+  }
+
+  /**
+   * Whether the lead profile is another, or has another model, effort or fast mode, than the project's lead session
+   * started on. A session from before fleetd kept what it was launched with: the profile's name differs, or it was
+   * edited since the session started.
+   */
+  profileChanged(r: ProjectRef): boolean {
+    const lead = this.records.leadGet(r);
+    if (!lead) return false;
+    const was = this.records.leadLaunchedGet(r);
+    if (was !== undefined) return was !== this.launchedNow();
+    const now = profiles(this.hub).leadProfile();
+    const name = this.records.leadProfileGet(r);
+    return (name !== undefined && name !== now.name) || (parseMs(now.updatedAt) ?? 0) > (parseMs(lead.startedAt) ?? 0);
+  }
+
+  /**
+   * Marks every lead whose profile changed since its session started: each starts again on the current one once it is
+   * idle and its machine is linked (`switchIfDue`). Returns how many. Called as the hub restarts from Settings.
+   */
+  markProfileSwitches(): number {
+    let marked = 0;
+    for (const lead of this.records.leadsList()) {
+      const project = store(this.hub).projectGet(lead.projectRef);
+      if (!project || project.archivedAt !== undefined || !this.profileChanged(lead.projectRef)) continue;
+      this.records.leadSwitchSet(lead.projectRef, true);
+      marked += 1;
+    }
+    this.restarting = true;
+    return marked;
+  }
+
+  /** The lead's profile switch is due, it still differs, and the lead is idle. */
+  private switchReady(r: ProjectRef): boolean {
+    return !this.restarting && this.records.leadSwitchDue(r) && this.idle(r) !== undefined && this.profileChanged(r);
+  }
+
+  /**
+   * A lead marked by `markProfileSwitches` starts again on its current profile, as `restart` does: it keeps its chat,
+   * memory and open orders. One that is mid-turn stays marked until its turn ends; one whose profile is the one it
+   * runs on again, or whose project is gone or archived, is unmarked.
+   */
+  switchIfDue(r: ProjectRef): Promise<Lead | undefined> {
+    return this.locked(async () => {
+      if (this.restarting || !this.records.leadSwitchDue(r)) return undefined;
+      const project = store(this.hub).projectGet(r);
+      if (!project || project.archivedAt !== undefined || !this.profileChanged(r)) {
+        this.records.leadSwitchSet(r, false);
+        return undefined;
+      }
+      const idle = this.idle(r);
+      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1) : undefined;
+    });
   }
 
   /** When fresh is due: a fresh lead session instead, from the digest (and memory), then the chat's tail and `first`. */
@@ -215,7 +278,7 @@ export class Leads {
     return this.locked(async () => {
       const changed = this.mcpChanged(r);
       const existing = this.records.leadGet(r);
-      if (!existing || (!changed && !this.cold(r))) return undefined;
+      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r))) return undefined;
       const project = this.projectOf(r);
       // A digest as of no wake, as at any start.
       const { lastWakeAt: _, ...rest } = existing;
@@ -319,6 +382,8 @@ export class Leads {
     const manual = wiring.ports.oneLeadMode(r.machineId);
     const ownWork = manual ? (project.repos ?? []).length === 0 : project.kind === "assistant";
     const leadProfile = store_.leadProfile();
+    // Read before the launch, as the launch reads it: an edit that lands meanwhile reads as changed.
+    const launched = this.launchedNow();
     const start = renderLeadStart(
       set,
       r,
@@ -369,7 +434,7 @@ export class Leads {
     const lead: StoredLead = { projectRef: r, threadId, startedAt: at, sessionGeneration };
     this.records.leadPut(lead);
     // Its lane names the profile this session runs on, not a later pick.
-    this.records.leadProfilePut(r, threadId, leadProfile.name);
+    this.records.leadProfilePut(r, threadId, leadProfile.name, launched);
     events(this.hub).append({
       at,
       type: "lead.started",

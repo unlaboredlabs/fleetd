@@ -8353,6 +8353,29 @@
       ],
       "type": "object"
     },
+    "HubRestartInput": {
+      "type": "object"
+    },
+    "HubRestartOutput": {
+      "properties": {
+        "leads": {
+          "description": "The leads that start again on the current lead profile once the hub is back and each is idle: those whose\nprofile changed since their session started.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "leads"
+      ],
+      "type": "object"
+    },
     "HubRole": {
       "description": "What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;\nmembers work in projects. Each device is still capped by its own grants.",
       "enum": [
@@ -11599,6 +11622,12 @@
         "hub_links_get.output": {
           "$ref": "#/$defs/HubLinksGetOutput"
         },
+        "hub_restart.input": {
+          "$ref": "#/$defs/HubRestartInput"
+        },
+        "hub_restart.output": {
+          "$ref": "#/$defs/HubRestartOutput"
+        },
         "hub_update.input": {
           "$ref": "#/$defs/HubUpdateInput"
         },
@@ -12625,6 +12654,8 @@
         "hub_link_revoke.output",
         "hub_links_get.input",
         "hub_links_get.output",
+        "hub_restart.input",
+        "hub_restart.output",
         "hub_update.input",
         "hub_update.output",
         "hub_update_settings.input",
