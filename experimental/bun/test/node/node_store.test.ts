@@ -56,9 +56,41 @@ test("the span outbox keeps its newest rows and says with a gap span how many we
     expect(rows.length).toBe(10);
     expect(rows.filter((s) => s.kind === "gap").map((s) => s.extra?.count)).toEqual([6]);
     expect(rows.filter((s) => s.kind === "run").map((s) => s.key)).toEqual(Array.from({ length: 9 }, (_, n) => `k${n + 7}`));
-    // A full outbox stays full: the next span takes the oldest row's place, with one more gap.
+    // A full outbox stays full: the next span takes the oldest row's place, and the gap counts it.
     store.putSpans([span(16, now)], now, 10);
+    const full = store.spansAfter(0, 100).map(([, s]) => s as { kind: string; extra?: { count: number } });
+    expect(full.length).toBe(10);
+    expect(full.filter((s) => s.kind === "gap").map((s) => s.extra?.count)).toEqual([7]);
+  } finally {
+    store.close();
+    home.done();
+  }
+});
+
+test("a full span outbox counts a long outage's drops in one gap span, and a sent gap span takes no more", () => {
+  const { store, home } = open();
+  try {
+    const now = Date.now();
+    const span = (n: number) => ({ key: `k${n}`, kind: "run", sessionId: "s1", startMs: now, endMs: now, status: "ok" });
+    const gaps = () =>
+      store
+        .spansAfter(0, 100)
+        .filter(([, s]) => (s as { kind: string }).kind === "gap")
+        .map(([rid, s]) => [rid, (s as { extra: { count: number } }).extra.count]);
+    store.putSpans(Array.from({ length: 10 }, (_, n) => span(n)), now, 10);
+    // Full to the cap: the first span drops the two oldest, one for itself and one for the gap span; each later one
+    // drops one more and raises that gap's count, and the prune ends every time. Past a cap this small the gap span
+    // itself reaches the oldest end now and then, and passes its count to the next.
+    for (let n = 10; n < 1_010; n++) store.putSpans([span(n)], now, 10);
     expect(store.spansAfter(0, 100).length).toBe(10);
+    expect(gaps().map(([, count]) => count)).toEqual([1_001]);
+    // Once a gap span is sent, the hub has it: the next drop adds a new one.
+    store.spansAcked(store.spansHead());
+    store.putSpans(Array.from({ length: 11 }, (_, n) => span(2_000 + n)), now, 10);
+    const [[gap]] = gaps() as [[number]];
+    store.putSpans([span(3_000)], now, 10, gap);
+    expect(store.spansAfter(0, 100).length).toBe(10);
+    expect(gaps()).toEqual([[gap, 2], [store.spansHead(), 2]]);
   } finally {
     store.close();
     home.done();

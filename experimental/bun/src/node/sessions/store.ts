@@ -9,7 +9,8 @@ import type { MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, SessionRole
 export const EVENTS_KEPT = 10_000;
 
 /** The span outbox keeps at most this many rows, and none older than SPANS_KEPT_MS, while the hub is away. Past either
- * bound the oldest rows go and one `gap` span says how many, so the loss shows in coverage. */
+ * bound the oldest rows go and one `gap` span says how many, so the loss shows in coverage. The gap spans these drops
+ * add have keys under `node/gap/`. */
 export const SPANS_KEPT = 500_000;
 export const SPANS_KEPT_MS = 7 * 24 * 3600 * 1000;
 const SPANS_DROP_BATCH = 5_000;
@@ -78,6 +79,9 @@ const eventJson = (event: MachineEvent) => JSON.stringify(event);
 
 export class NodeStore {
   readonly db: Database;
+  /** The rid of the last gap span the outbox's drops added (0 when none): later drops raise its count while it's still
+   * in the outbox and not sent yet. */
+  #openGap = 0;
   constructor(
     path: string,
     readonly eventsKept = EVENTS_KEPT,
@@ -240,34 +244,56 @@ export class NodeStore {
       .map((r) => [r.rid, JSON.parse(r.json)]);
   }
 
-  /** Appends spans to the outbox in one transaction, then holds the outbox to its bounds. */
-  putSpans(spans: { sessionId: string; endMs: number }[], nowMs = Date.now(), kept = SPANS_KEPT): void {
+  /** Appends spans to the outbox in one transaction, then holds the outbox to its bounds. `sent` is the newest row sent
+   * to the hub: a gap span past it may still take a later drop's count. */
+  putSpans(spans: { sessionId: string; endMs: number }[], nowMs = Date.now(), kept = SPANS_KEPT, sent = 0): void {
     if (!spans.length) return;
     this.tx(() => {
       const put = this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)");
       for (const span of spans) put.run(span.sessionId, span.endMs, JSON.stringify(span));
-      this.#boundSpans(nowMs, kept);
+      this.#boundSpans(nowMs, kept, sent);
     });
   }
 
-  /** Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`. */
-  #boundSpans(nowMs: number, kept: number): void {
+  /** Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`. A drop raises the count of
+   * the last gap span the drops added while it's still here and not sent (the hub ignores a span it has already), so a
+   * long outage costs one gap row, not one per span; else it adds a gap span, and leaves room for it. A gap span
+   * dropped in turn passes its count on, unless it was sent. As store.rs. */
+  #boundSpans(nowMs: number, kept: number, sent: number): void {
     for (;;) {
-      const { min, max } = this.db.query<{ min: number | null; max: number | null }, []>("SELECT MIN(rid) AS min, MAX(rid) AS max FROM spans").get()!;
+      // Each bound a lookup, as a full outbox takes this on every put: one MIN and one MAX in the same SELECT scan the
+      // table, and so does the first young row's scan unless the oldest row is young.
+      const { min, max } = this.db
+        .query<{ min: number | null; max: number | null }, []>("SELECT (SELECT MIN(rid) FROM spans) AS min, (SELECT MAX(rid) FROM spans) AS max")
+        .get()!;
       if (min === null || max === null) return;
-      const firstYoung = this.db.query<{ r: number | null }, [number]>("SELECT MIN(rid) AS r FROM spans WHERE at_ms >= ?").get(nowMs - SPANS_KEPT_MS)!.r;
+      const cutoff = nowMs - SPANS_KEPT_MS;
+      const oldest = this.db.query<{ at: number }, [number]>("SELECT at_ms AS at FROM spans WHERE rid = ?").get(min)!.at;
+      const firstYoung = oldest >= cutoff ? min : this.db.query<{ r: number | null }, [number]>("SELECT MIN(rid) AS r FROM spans WHERE at_ms >= ?").get(cutoff)!.r;
       const byAge = firstYoung === null ? max : firstYoung - 1;
-      // Past the count, room for the gap span too: store.rs's `max - SPANS_KEPT` dropped one row and added one gap on
-      // every pass once the outbox was full, and never stopped.
-      const byCount = max - min + 1 > kept ? max - kept + 1 : min - 1;
-      const upto = Math.min(Math.max(byAge, byCount), min + SPANS_DROP_BATCH - 1);
+      const uptoWith = (room: number) => Math.min(Math.max(byAge, max - min + 1 > kept ? max - kept + room : min - 1), min + SPANS_DROP_BATCH - 1);
+      const rid = this.#openGap;
+      const open = rid > uptoWith(0) && rid > sent ? this.db.query<{ json: string }, [number]>("SELECT json FROM spans WHERE rid = ?").get(rid) : null;
+      const upto = open ? uptoWith(0) : uptoWith(1);
       if (upto < min) return;
       const dropped = this.db
-        .query<{ n: number; first: number; last: number; session: string }, [number]>(
-          "SELECT COUNT(*) AS n, MIN(at_ms) AS first, MAX(at_ms) AS last, MIN(session_id) AS session FROM spans WHERE rid <= ?",
+        .query<{ n: number; first: number; last: number; session: string }, [number, number]>(
+          `WITH d AS (SELECT session_id, at_ms, json, rid > ?2 AND json_extract(json, '$.key') LIKE 'node/gap/%' AS gap
+             FROM spans WHERE rid <= ?1)
+           SELECT SUM(IIF(gap, COALESCE(json_extract(json, '$.extra.count'), 1), 1)) AS n,
+             MIN(IIF(gap, json_extract(json, '$.startMs'), at_ms)) AS first,
+             MAX(IIF(gap, json_extract(json, '$.endMs'), at_ms)) AS last, MIN(session_id) AS session FROM d`,
         )
-        .get(upto)!;
+        .get(upto, sent)!;
       this.db.query("DELETE FROM spans WHERE rid <= ?").run(upto);
+      if (open) {
+        const gap = JSON.parse(open.json) as { startMs?: number; endMs?: number; extra?: { count?: number } };
+        gap.startMs = Math.max(0, Math.min(gap.startMs ?? dropped.first, dropped.first));
+        gap.endMs = Math.max(0, gap.endMs ?? dropped.last, dropped.last);
+        gap.extra = { ...gap.extra, count: (gap.extra?.count ?? 0) + dropped.n };
+        this.db.query("UPDATE spans SET at_ms = ?, json = ? WHERE rid = ?").run(nowMs, JSON.stringify(gap), rid);
+        continue;
+      }
       const gap = {
         key: `node/gap/${upto}`,
         kind: "gap",
@@ -277,7 +303,7 @@ export class NodeStore {
         status: "incomplete",
         extra: { count: dropped.n, reason: "the node's span outbox was full while the hub was away" },
       };
-      this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)").run(dropped.session, nowMs, JSON.stringify(gap));
+      this.#openGap = Number(this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)").run(dropped.session, nowMs, JSON.stringify(gap)).lastInsertRowid);
       console.warn(`${new Date().toISOString()} WARN span outbox full: dropped the oldest spans {"dropped":${dropped.n}}`);
     }
   }
