@@ -52,7 +52,7 @@ test("a browser session id that isn't one is refused before any handler sees it"
   expect(refusal(frame)).toEqual({
     code: "invalid",
     message: 'Invalid lead call: expected a string matching ^B[0-9a-f]{32}$, got "x/../../sentinel"',
-    fix: "Send the call as its contract has it (crates/fleetd-contracts/src/lead_calls.rs); a node on another fleetd than the hub's may need updating.",
+    fix: "Send the call as its contract has it (LeadCall.json); a node on another fleetd than the hub's may need updating.",
   });
   expect(seen.length).toBe(before);
   expect("result" in (await answer(SESSION))).toBe(true);
