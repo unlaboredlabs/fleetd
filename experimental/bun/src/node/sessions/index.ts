@@ -51,7 +51,7 @@ import type { LaunchArea } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
-import { ITEMS_KEPT_MS, NodeStore, type SessionLocal, type SessionRow } from "./store.ts";
+import { ITEMS_KEPT_MS, NodeStore, SPANS_KEPT, type SessionLocal, type SessionRow } from "./store.ts";
 import { Health } from "./health.ts";
 import { killOrphans, killRecorded } from "./proc.ts";
 import { briefNote, compileCacheEnv, jobsEnv } from "./share.ts";
@@ -1507,7 +1507,12 @@ export class SessionService {
               });
             break;
           case "Spans":
-            this.store.putSpans((body as { sessionId: string; endMs: number }[]).map((s) => ({ ...s, sessionId: s.sessionId ?? id })));
+            this.store.putSpans(
+              (body as { sessionId: string; endMs: number }[]).map((s) => ({ ...s, sessionId: s.sessionId ?? id })),
+              Date.now(),
+              SPANS_KEPT,
+              this.#spans.sent,
+            );
             this.#flushSpans();
             break;
           case "Withdrawn": {
