@@ -8,13 +8,27 @@ import { registerLeadCalls } from "./calls.ts";
 import { trainArea } from "./index.ts";
 import { parsePrUrl } from "./records.ts";
 import { prsGithub } from "../prs/index.ts";
+import { openBlocking } from "../reviews/read.ts";
+import { type TaskHooks, taskHooks } from "../tasks/ports.ts";
+import { seesPr, upstream } from "./next.ts";
 
 /** Trains in a project_get outcome (api limits `TRAINS`). */
 const TRAINS = 10;
 
 export function start(hub: Hub): void {
-  const { train } = trainArea(hub);
+  const { train, reviews } = trainArea(hub);
   registerLeadCalls(hub);
+  // What tasks reach the train and its review gate by, as the Rust hub's `hub.train` and `hub.reviews`: a finished
+  // writer's PR found after its result, the train's GitHub reader (agents' `wait_ci` polls and branch PR reads), where
+  // an upstream PR stands (`wait_ci` with `merged`), and the reviewers and a PR's still-open blocking findings.
+  Object.assign(taskHooks(hub), {
+    train: {
+      onTaskPr: (taskId: string) => void train.onTaskPr(taskId).catch((error) => console.warn(`train: ${taskId}'s PR not queued:`, error)),
+      github: train.github,
+      merges: { seesPr: (by, url) => seesPr(train, by, url), upstream: (url) => upstream(train, url) },
+    },
+    reviews: { isReviewer: (taskId: string) => reviews.isReviewer(taskId), openBlocking: (pr: string) => openBlocking(hub.db, pr) },
+  } satisfies Pick<TaskHooks, "train" | "reviews">);
   // The head a review task reviewed when its verdict doesn't say: its round's head, else its PR's head now.
   reviewedHeads(hub).of = async (task) => {
     const round = hub.db.conn
