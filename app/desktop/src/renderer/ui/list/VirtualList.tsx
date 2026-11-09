@@ -24,14 +24,14 @@ export interface VirtualListProps<T> {
   overscan?: number;
   /** Space between rows, px. */
   gap?: number;
+  /** Room before the first row, px, which a row scrolled to also keeps clear (a bar floating over the list's top). */
+  paddingStart?: number;
   /** Room after the last row, px: inside the list, so its rows are drawn and clipped there (the chat's glide). */
   paddingEnd?: number;
   /** Keep the view pinned to the end while new items arrive, unless the reader has scrolled up (logs, chat). */
   followOutput?: boolean;
   /** Start at the end instead of the top. */
   startAtEnd?: boolean;
-  /** Room before the first row, px, which a row scrolled to also keeps clear (a bar floating over the list's top). */
-  paddingStart?: number;
   className?: string | undefined;
   /** For scroll-to-index and friends. */
   virtualizerRef?: RefObject<Virtualizer<HTMLDivElement, Element> | null>;
@@ -45,7 +45,7 @@ export interface VirtualListProps<T> {
  * their content (wrapped text included) and are re-measured when they resize.
  */
 export function VirtualList<T>(props: VirtualListProps<T>) {
-  const { items, getKey, followOutput, startAtEnd, gap = 0, paddingEnd = 0 } = props;
+  const { items, getKey, followOutput, startAtEnd, gap = 0, paddingStart = 0, paddingEnd = 0 } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
 
@@ -61,8 +61,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     },
     overscan: props.overscan ?? 8,
     gap,
-    paddingStart: props.paddingStart ?? 0,
-    scrollPaddingStart: props.paddingStart ?? 0,
+    paddingStart,
+    scrollPaddingStart: paddingStart,
     paddingEnd,
     scrollPaddingEnd: paddingEnd,
     ...followOptions(followOutput),
