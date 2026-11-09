@@ -59,6 +59,13 @@ export type {
   BrowserInput,
   BrowserSession,
   BrowserSessionEventData,
+  KnownVaultKind,
+  VaultAuditEntry as WireVaultAuditEntry,
+  VaultImportCandidate as WireVaultImportCandidate,
+  VaultImportCard as WireVaultImportCard,
+  VaultItemSummary as WireVaultItemSummary,
+  VaultScope,
+  VaultStatusOutput,
 } from "../../desktop/src/shared/contracts";
 export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";

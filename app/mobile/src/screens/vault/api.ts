@@ -7,7 +7,7 @@ import type { HubError, ProjectRef } from "../../desktop";
 import type { Session } from "../../session";
 import { fromBase64, keyPairOf, openSealed, seal, toBase64, utf8, utf8Encode } from "../../seal";
 import type { Result } from "../manage/api";
-import { KINDS } from "./model";
+import { knownKind } from "./model";
 import type { VaultAuditEntry, VaultImportCandidate, VaultItemSummary, VaultKind, VaultScope, VaultStatus } from "./types";
 
 /** The calls these make, typed loosely: the vault's tools are read by their own shapes (types.ts). */
@@ -34,7 +34,7 @@ export type Whose = { readonly kind: "mine" } | { readonly kind: "project"; read
  * variables) among them, the person's shared ones and the hub's staying in Settings.
  */
 /** Only the kinds this app knows: one from a newer hub has no screen here. */
-const known = <T extends { readonly kind: string }>(items: readonly T[]): T[] => items.filter((i) => (KINDS as readonly string[]).includes(i.kind));
+const known = <T extends { readonly kind: string }>(items: readonly T[]): Array<T & { kind: VaultKind }> => items.filter((i): i is T & { kind: VaultKind } => knownKind(i.kind));
 
 export const listItems = async (hub: VaultHub, whose: Whose): Promise<Result<readonly VaultItemSummary[]>> => {
   const r = await hub.call("vault_list", whose.kind === "mine" ? {} : cleanRef(whose.project));

@@ -13,7 +13,7 @@ import { haptics } from "../../ui/haptics";
 import { Icon } from "../../ui/Icon";
 import { errorWords } from "../manage/parts";
 import { dismissImport, importItems, vaultErrorWords, vaultHub } from "./api";
-import { importOutcome, KIND_WORDS, KINDS, SCOPE_WORDS } from "./model";
+import { importOutcome, KIND_WORDS, knownKind, SCOPE_WORDS } from "./model";
 import { KindTile } from "./parts";
 import type { VaultImportCard } from "./types";
 
@@ -81,8 +81,8 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
       <View style={[styles.items, { backgroundColor: t.cell }]}>
         {card.items.map((i, n) => {
           const on = !unticked.has(i.ref);
-          const known = (KINDS as readonly string[]).includes(i.kind);
-          const line = [known ? KIND_WORDS[i.kind].one : undefined, i.site].filter((x) => x !== undefined && x !== "").join(" · ");
+          const kind = knownKind(i.kind) ? i.kind : undefined;
+          const line = [kind === undefined ? undefined : KIND_WORDS[kind].one, i.site].filter((x) => x !== undefined && x !== "").join(" · ");
           return (
             <Pressable
               key={i.ref}
@@ -93,7 +93,7 @@ export function ImportCard({ card }: { card: VaultImportCard }) {
               onPress={() => toggle(i.ref)}
               style={({ pressed }) => [styles.item, n > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.separator }, pressed && { backgroundColor: t.fillQuiet }]}
             >
-              {known ? <KindTile kind={i.kind} size={26} /> : <Icon name="import" size={22} color={t.secondary} />}
+              {kind === undefined ? <Icon name="import" size={22} color={t.secondary} /> : <KindTile kind={kind} size={26} />}
               <View style={styles.grow}>
                 <Text style={[type.body, { color: t.label }]} numberOfLines={1}>
                   {i.title}

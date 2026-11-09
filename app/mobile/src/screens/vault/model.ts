@@ -1,6 +1,6 @@
 // The phone's Vault in the person's words, with no UI: each kind's fields and checks (a card's number by Luhn and its
 // brand, its expiry as MM/YY, a login's site cut from a pasted address, a variable's name by the hub's rule), the one
-// quiet line a row shows ("Visa ••4242", "amazon.com", "Berlin, DE", "STRIPE_KEY · secret"), the scope tag, and the
+// quiet line a row shows ("Visa ••4242", "amazon.com", "Germany", "Secret"), the scope tag, and the
 // list's sections and search. Values never come through here except as the person types them into a form; the lists
 // hold metadata alone.
 import type { HubState } from "../../desktop";
@@ -10,6 +10,9 @@ import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind, Vau
 export const vaultShown = (hub: HubState): boolean => hub.phase === "live" && hub.features?.includes("vault") === true;
 
 export const KINDS: readonly VaultKind[] = ["login", "card", "address", "env"];
+
+/** Whether a kind from the hub is one this app knows. */
+export const knownKind = (kind: string): kind is VaultKind => (KINDS as readonly string[]).includes(kind);
 
 /** A kind as a section's header, a row in the + menu, and a screen's title. */
 export const KIND_WORDS: Readonly<Record<VaultKind, { plural: string; one: string }>> = {
@@ -200,10 +203,9 @@ export const rowLine = (item: Pick<VaultItemSummary, "kind" | "meta" | "envName"
       return [brandWord(str(meta.brand)), last4 === undefined ? undefined : `••${last4}`].filter((x) => x !== undefined).join(" ");
     }
     case "address": {
-      const city = str(meta.city);
+      // Its lines are sealed: only its country is readable.
       const country = str(meta.country);
-      if (country === undefined) return city ?? "Address";
-      return city === undefined ? countryName(country) : `${city}, ${country}`;
+      return country === undefined ? "Address" : countryName(country);
     }
     case "env":
       // A plain one shows its value, as a setting does.

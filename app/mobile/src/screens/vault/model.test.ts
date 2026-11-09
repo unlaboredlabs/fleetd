@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { auditLine, brandOf, check, copyText, cvcOk, emptyDraft, envNameProblem, expired, groupNumber, hostOf, luhn, importOutcome, parseDotenv, parseExpiry, presentFields, rowLine, scopeTag, sections, shownFields, sitesOf, typeExpiry, utf8Bytes, vaultShown, type Draft } from "./model";
-import type { VaultItemSummary } from "./types";
+import type { VaultAuditEntry, VaultItemSummary } from "./types";
+
+/** An item's metadata as the hub sends it: what it holds, and where it came from. */
+const m = (meta: Omit<VaultItemSummary["meta"], "source">): VaultItemSummary["meta"] => ({ source: { kind: "typed" }, ...meta });
 
 const NOW = new Date("2026-11-09T12:00:00Z");
 
@@ -9,7 +12,7 @@ const item = (over: Partial<VaultItemSummary>): VaultItemSummary => ({
   kind: "login",
   scope: "person",
   label: "Shop",
-  meta: {},
+  meta: m({}),
   createdMs: 0,
   updatedMs: 0,
   updatedBy: "human:phone",
@@ -127,16 +130,16 @@ describe("a variable", () => {
 
 describe("a row's line", () => {
   it("says the one thing that tells items apart", () => {
-    expect(rowLine(item({ kind: "login", meta: { sites: ["amazon.com"] } }))).toBe("amazon.com");
-    expect(rowLine(item({ kind: "login", meta: { sites: ["amazon.com", "amazon.de", "a.co"] } }))).toBe("amazon.com +2");
-    expect(rowLine(item({ kind: "login", meta: {} }))).toBe("No site");
-    expect(rowLine(item({ kind: "card", meta: { brand: "visa", last4: "4242" } }))).toBe("Visa ••4242");
-    expect(rowLine(item({ kind: "card", meta: { brand: "other", last4: "1111" } }))).toBe("Card ••1111");
-    expect(rowLine(item({ kind: "address", meta: { city: "Berlin", country: "DE" } }))).toBe("Berlin, DE");
-    expect(rowLine(item({ kind: "address", meta: { country: "DE" } }))).toMatch(/^(Germany|DE)$/u);
-    expect(rowLine(item({ kind: "env", envName: "K", meta: { secret: true } }))).toBe("Secret");
-    expect(rowLine(item({ kind: "env", envName: "K", meta: { secret: false } }))).toBe("Plain");
-    expect(rowLine(item({ kind: "env", envName: "K", meta: { secret: false }, value: "eu-west-1" }))).toBe("eu-west-1");
+    expect(rowLine(item({ kind: "login", meta: m({ sites: ["amazon.com"] }) }))).toBe("amazon.com");
+    expect(rowLine(item({ kind: "login", meta: m({ sites: ["amazon.com", "amazon.de", "a.co"] }) }))).toBe("amazon.com +2");
+    expect(rowLine(item({ kind: "login", meta: m({}) }))).toBe("No site");
+    expect(rowLine(item({ kind: "card", meta: m({ brand: "visa", last4: "4242" }) }))).toBe("Visa ••4242");
+    expect(rowLine(item({ kind: "card", meta: m({ brand: "other", last4: "1111" }) }))).toBe("Card ••1111");
+    expect(rowLine(item({ kind: "address", meta: m({ country: "DE" }) }))).toMatch(/^(Germany|DE)$/u);
+    expect(rowLine(item({ kind: "address", meta: m({}) }))).toBe("Address");
+    expect(rowLine(item({ kind: "env", envName: "K", meta: m({ secret: true }) }))).toBe("Secret");
+    expect(rowLine(item({ kind: "env", envName: "K", meta: m({ secret: false }) }))).toBe("Plain");
+    expect(rowLine(item({ kind: "env", envName: "K", meta: m({ secret: false }), value: "eu-west-1" }))).toBe("eu-west-1");
   });
 
   it("tags where an item is used when it isn't only the person's work", () => {
@@ -151,10 +154,10 @@ describe("a row's line", () => {
 
 describe("the list", () => {
   const items = [
-    item({ itemId: "a", kind: "login", label: "Zed", meta: { sites: ["zed.dev"] } }),
-    item({ itemId: "b", kind: "login", label: "Amazon", meta: { sites: ["amazon.com"] } }),
-    item({ itemId: "c", kind: "card", label: "Visa (Personal)", meta: { brand: "visa", last4: "4242" } }),
-    item({ itemId: "d", kind: "env", label: "STRIPE_KEY", envName: "STRIPE_KEY", meta: { secret: true } }),
+    item({ itemId: "a", kind: "login", label: "Zed", meta: m({ sites: ["zed.dev"] }) }),
+    item({ itemId: "b", kind: "login", label: "Amazon", meta: m({ sites: ["amazon.com"] }) }),
+    item({ itemId: "c", kind: "card", label: "Visa (Personal)", meta: m({ brand: "visa", last4: "4242" }) }),
+    item({ itemId: "d", kind: "env", label: "STRIPE_KEY", envName: "STRIPE_KEY", meta: m({ secret: true }) }),
     item({ itemId: "e", kind: "login", label: "Gone", deletedMs: 1 }),
   ];
 
@@ -225,18 +228,18 @@ describe("revealed fields", () => {
   });
 
   it("are the ones the item has, when the hub says which", () => {
-    expect(presentFields(item({ kind: "login", meta: { fields: ["username", "password"] } })).map((f) => f.key)).toEqual(["username", "password"]);
-    expect(presentFields(item({ kind: "card", meta: { fields: ["number", "month", "year"] } })).map((f) => f.key)).toEqual(["number", "expiry"]);
-    expect(presentFields(item({ kind: "env", meta: {} })).map((f) => f.key)).toEqual(["value"]);
+    expect(presentFields(item({ kind: "login", meta: m({ fields: ["username", "password"] }) })).map((f) => f.key)).toEqual(["username", "password"]);
+    expect(presentFields(item({ kind: "card", meta: m({ brand: "visa" }) })).map((f) => f.key)).toEqual(["name", "number", "expiry", "cvc"]);
+    expect(presentFields(item({ kind: "env", meta: m({}) })).map((f) => f.key)).toEqual(["value"]);
   });
 });
 
 describe("activity", () => {
   const name = (m: string, p: string) => (p === "p1" ? "Nova" : undefined);
-  const entry = { n: 1, atMs: 0, itemId: "V1", outcome: "ok", data: {} };
+  const entry: VaultAuditEntry = { n: 1, atMs: 0, itemId: "V1", action: "fill", outcome: "ok", data: {} };
 
   it("says what happened, where and for which project, never a value", () => {
-    expect(auditLine({ ...entry, action: "fill", machineId: "devbox", projectId: "p1", data: { site: "amazon.com", field: "password" } }, name)).toEqual({ title: "Filled", detail: "amazon.com · Nova" });
+    expect(auditLine({ ...entry, action: "fill", machineId: "devbox", projectId: "p1", data: { site: "amazon.com", fields: ["password"] } }, name)).toEqual({ title: "Filled", detail: "amazon.com · Nova" });
     expect(auditLine({ ...entry, action: "reveal", data: {} }, name)).toEqual({ title: "Shown", detail: undefined });
     expect(auditLine({ ...entry, action: "fill_refused", outcome: "refused", data: { site: "amaz0n.com", message: "not one of its sites" } }, name)).toEqual({ title: "Fill refused", detail: "amaz0n.com · Not one of its sites" });
     expect(auditLine({ ...entry, action: "some_new_thing" }, name).title).toBe("Some new thing");
