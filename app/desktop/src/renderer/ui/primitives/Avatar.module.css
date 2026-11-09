@@ -22,8 +22,8 @@
 .avatar::before {
   content: attr(data-letters);
 }
-/* A built-in icon is its own round field, drawn to the circle's edge. */
-.iconOnly {
+/* A bot is its own round field, drawn to the circle's edge. */
+.bot {
   background: none;
 }
 .picture {

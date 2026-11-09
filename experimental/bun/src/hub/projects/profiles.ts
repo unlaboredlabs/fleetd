@@ -268,29 +268,68 @@ export class ProfileStore {
 
 export const profiles = (hub: Hub) => new ProfileStore(hub.db.conn);
 
-/** The machine holding the hub's API key that can list its models, if one is online. */
-function apiMachine(hub: Hub): string | undefined {
+/** The hub's API key as kept (which machines hold it), and the one of them online that can list its models. */
+function apiMachine(hub: Hub): { key: string; machine?: string } | undefined {
   const row = hub.db.conn.query<{ data: string }, []>("SELECT data FROM claude_accounts WHERE account = 'hub'").get();
   if (!row) return undefined;
   const api = JSON.parse(row.data) as { sealedOn?: { machineId: string }[] };
-  return api.sealedOn?.map((s) => s.machineId).find((m) => executors(hub).isConnected(m) && link(hub).can(m, CAP_CLAUDE_MODELS));
+  const machine = api.sealedOn?.map((s) => s.machineId).find((m) => executors(hub).isConnected(m) && link(hub).can(m, CAP_CLAUDE_MODELS));
+  return { key: row.data, ...(machine !== undefined ? { machine } : {}) };
 }
 
-/** The models a profile may pick: what the Models API lists on the hub's API key, else fleetd's own list. */
-export async function models(hub: Hub): Promise<[ProfileModel[], "api" | "builtin"]> {
+/** How long a list the Models API gave is reused. */
+export const MODELS_FRESH_MS = 10 * 60_000;
+/** How long fleetd's own list stands in after the API couldn't list, before it is asked again. */
+export const MODELS_RETRY_MS = 60_000;
+/** How long a read waits on the API before it answers with the last list (else fleetd's own) and lets the ask finish. */
+export const MODELS_WAIT_MS = 1_000;
+
+type Listed = [ProfileModel[], "api" | "builtin"];
+/** The last list asked for the key kept as `key`, and the ask still running. */
+type ModelCache = { key: string; at?: number; listed?: Listed; asking?: Promise<Listed> };
+const modelCaches = new WeakMap<Hub, ModelCache>();
+
+const builtinModels = (): Listed => [BUILTIN_MODELS.map(([id, name]) => ({ id, displayName: name, fast: hasFast(id) }) as ProfileModel), "builtin"];
+
+/**
+ * The models a profile may pick: what the Models API lists on the hub's API key, else fleetd's own list. The API is
+ * asked through a machine holding the key at most once per MODELS_FRESH_MS (MODELS_RETRY_MS after it couldn't list),
+ * again at once when the key changes, and never waited on past MODELS_WAIT_MS: an endpoint that didn't answer kept
+ * every profiles_list waiting 10 s.
+ */
+export async function models(hub: Hub): Promise<Listed> {
+  const api = apiMachine(hub);
+  if (api?.machine === undefined) return builtinModels();
+  const machine = api.machine;
+  let c = modelCaches.get(hub);
+  if (c?.key !== api.key) modelCaches.set(hub, (c = { key: api.key }));
+  const cache = c;
+  const age = hub.clock.now() - (cache.at ?? Number.NaN);
+  if (cache.listed && age >= 0 && age < (cache.listed[1] === "api" ? MODELS_FRESH_MS : MODELS_RETRY_MS)) return cache.listed;
+  cache.asking ??= askModels(hub, machine).then((listed) => {
+    cache.at = hub.clock.now();
+    cache.listed = listed;
+    cache.asking = undefined;
+    return listed;
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), MODELS_WAIT_MS)));
+  const answered = await Promise.race([cache.asking, late]);
+  clearTimeout(timer);
+  return answered ?? cache.listed ?? builtinModels();
+}
+
+async function askModels(hub: Hub, machine: string): Promise<Listed> {
   let fromApi: ApiModel[] = [];
-  const machine = apiMachine(hub);
-  if (machine !== undefined) {
-    try {
-      const out = await executors(hub).call(machine, "read", { op: "claude_models" }, READ_TIMEOUT_MS);
-      if (out.kind === "claude_models" && out.error === undefined) fromApi = out.models;
-    } catch {}
-  }
+  try {
+    const out = await executors(hub).call(machine, "read", { op: "claude_models" }, READ_TIMEOUT_MS);
+    if (out.kind === "claude_models" && out.error === undefined) fromApi = out.models;
+  } catch {}
   const listed = fromApi
     .filter((m) => m.id !== "")
     .map((m): ProfileModel => ({ id: m.id, ...(m.displayName !== undefined ? { displayName: m.displayName } : {}), fast: hasFast(m.id) }) as ProfileModel);
   if (listed.length > 0) return [listed, "api"];
-  return [BUILTIN_MODELS.map(([id, name]) => ({ id, displayName: name, fast: hasFast(id) }) as ProfileModel), "builtin"];
+  return builtinModels();
 }
 
 const now = (hub: Hub) => isoMs(hub.clock.now());

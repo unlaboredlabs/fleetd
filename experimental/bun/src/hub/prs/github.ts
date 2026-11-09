@@ -5,7 +5,6 @@
 // is remembered for the same TTL, so a rate-limited or signed-out `gh` is asked again at most once a minute.
 import type { Clock } from "../../shared/clock.ts";
 import { GhStartError, type GhRunner } from "../train/gh.ts";
-import { Mutex } from "../train/mutex.ts";
 import { clip } from "../train/seams.ts";
 
 /** How long a repo's PR list is reused. */
@@ -14,6 +13,8 @@ export const LIST_TTL_MS = 60_000;
 export const DETAIL_TTL_MS = 30_000;
 /** How long a failed read is remembered before GitHub is asked again. */
 export const ERROR_TTL_MS = 60_000;
+/** GitHub reads run at once; more wait for one of them to finish. */
+export const READS_AT_ONCE = 4;
 /** PRs per page read from GitHub. */
 export const PAGE_SIZE = 50;
 /** A file's patch kept for paging; GitHub itself leaves out the patch of very large files. */
@@ -176,6 +177,8 @@ type Entry<T> = { value?: T; okMs: number; error?: [string, number]; used: numbe
 /** A small map that drops its least recently used entry past `max`. */
 class Cache<T> {
   private readonly entries = new Map<string, Entry<T>>();
+  /** The read of each key running now, which a burst of calls for the key shares. */
+  readonly asking = new Map<string, Promise<Read<T>>>();
   private tick = 0;
   constructor(private readonly max: number) {}
 
@@ -245,8 +248,12 @@ export class PrsGitHub {
   private readonly lists = new Cache<GhPage>(MAX_LISTS);
   private readonly details = new Cache<GhDetail>(MAX_DETAILS);
   private readonly files_ = new Cache<GhFile[]>(MAX_FILE_PAGES);
-  /** One read from GitHub at a time: a burst of refetches waits for the first and takes its answer from the cache. */
-  private readonly fetch = new Mutex();
+  /**
+   * GitHub reads running, at most READS_AT_ONCE, and the ones waiting for a turn. Once one at a time, a chat with five
+   * PR cards waited 3 s for their details, each behind the one before.
+   */
+  private running = 0;
+  private readonly turns: (() => void)[] = [];
 
   constructor(
     private readonly gh: GhRunner,
@@ -273,14 +280,29 @@ export class PrsGitHub {
     }
   }
 
-  private async cached<T>(cache: Cache<T>, key: string, ttl: number, fetch: () => Promise<{ ok: true; value: T } | { ok: false; error: string }>): Promise<Read<T>> {
+  /** The cached answer for `key`, else one read of it: a burst of calls for the same key shares it. */
+  private cached<T>(cache: Cache<T>, key: string, ttl: number, fetch: () => Promise<{ ok: true; value: T } | { ok: false; error: string }>): Promise<Read<T>> {
     const hit = cache.get(key, this.clock.now(), ttl);
-    if (hit) return hit;
-    return this.fetch.run(async () => {
-      const again = cache.get(key, this.clock.now(), ttl);
-      if (again) return again;
-      return cache.put(key, await fetch(), this.clock.now());
-    });
+    if (hit) return Promise.resolve(hit);
+    let asking = cache.asking.get(key);
+    if (!asking) {
+      asking = this.turn(async () => cache.put(key, await fetch(), this.clock.now())).finally(() => cache.asking.delete(key));
+      cache.asking.set(key, asking);
+    }
+    return asking;
+  }
+
+  /** Runs `read` once fewer than READS_AT_ONCE others run; a finished read hands its turn to the first waiting. */
+  private async turn<T>(read: () => Promise<T>): Promise<T> {
+    if (this.running < READS_AT_ONCE) this.running++;
+    else await new Promise<void>((resolve) => this.turns.push(resolve));
+    try {
+      return await read();
+    } finally {
+      const next = this.turns.shift();
+      if (next) next();
+      else this.running--;
+    }
   }
 
   /** A page of the repo's open PRs (`closed` false) or of its closed and merged ones, most recently updated first. */

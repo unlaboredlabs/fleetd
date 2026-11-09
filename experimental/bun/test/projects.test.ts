@@ -1,6 +1,8 @@
 // Task profiles, a project's icon and picture (crates/fleetd/src/hub/projects/profiles.rs, icon.rs, avatar.rs).
 import { expect, test } from "bun:test";
-import { profiles } from "../src/hub/projects/profiles.ts";
+import { executors } from "../src/hub/executor/index.ts";
+import { link } from "../src/hub/link/server.ts";
+import { MODELS_FRESH_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { key, kit, project } from "./work-kit.ts";
@@ -21,6 +23,42 @@ test("a fresh hub has its two profiles, the default first, and fleetd's own mode
   expect(out.modelsFrom).toBe("builtin");
   expect(out.models[0]).toEqual({ id: "claude-opus-5-5", displayName: "Claude Opus 5.5", fast: true });
   expect(out.efforts).toEqual(["low", "medium", "high", "xhigh", "max"]);
+});
+
+test("profiles_list never waits on a Models API that doesn't answer, and asks it again only once its list is old", async () => {
+  const k = kit();
+  k.hub.db.conn.run(`INSERT INTO claude_accounts (account, data) VALUES ('hub', '{"sealedOn":[{"machineId":"devbox"}]}')`);
+  let asked = 0;
+  let answer: (models: { id: string; displayName?: string }[]) => void = () => {};
+  Object.assign(executors(k.hub), {
+    isConnected: (m: string) => m === "devbox",
+    call: () => {
+      asked += 1;
+      return new Promise((resolve) => (answer = (models) => resolve({ kind: "claude_models", models })));
+    },
+  });
+  Object.assign(link(k.hub), { can: () => true });
+  const t0 = performance.now();
+  const first = await k.ok(key("read"), "profiles_list", {});
+  expect(performance.now() - t0).toBeLessThan(MODELS_WAIT_MS + 500);
+  expect(first.modelsFrom).toBe("builtin");
+  // A second read while the ask runs joins it rather than asking again.
+  const second = k.ok(key("read"), "profiles_list", {});
+  answer([{ id: "claude-next", displayName: "Claude Next" }]);
+  expect((await second).modelsFrom).toBe("api");
+  expect(asked).toBe(1);
+  const cached = await k.ok(key("read"), "profiles_list", {});
+  expect([cached.modelsFrom, cached.models.map((m: { id: string }) => m.id), asked]).toEqual(["api", ["claude-next"], 1]);
+  // Past its freshness the API is asked again; a changed key is asked at once.
+  k.clock.ms += MODELS_FRESH_MS;
+  const again = k.ok(key("read"), "profiles_list", {});
+  answer([{ id: "claude-later" }]);
+  expect((await again).models.map((m: { id: string }) => m.id)).toEqual(["claude-later"]);
+  k.hub.db.conn.run(`UPDATE claude_accounts SET data = '{"sealedOn":[{"machineId":"devbox"}],"v":2}' WHERE account = 'hub'`);
+  const rekeyed = k.ok(key("read"), "profiles_list", {});
+  answer([{ id: "claude-rekeyed" }]);
+  expect((await rekeyed).models.map((m: { id: string }) => m.id)).toEqual(["claude-rekeyed"]);
+  expect(asked).toBe(3);
 });
 
 test("only an owner or admin changes profiles; create, rename, default, lead, delete", async () => {

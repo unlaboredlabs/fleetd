@@ -10,7 +10,7 @@ import { parseMs } from "../store/time.ts";
 import { profileOf, threadLane, who, writeHub } from "./ingest.ts";
 import { kindCode, kindOf } from "./kinds.ts";
 import { cursor, headUtf16, type Ids, type NewSpan, setCursor, type Share, write } from "./store.ts";
-import { orderPath } from "./tools.ts";
+import { orderPath } from "./reads.ts";
 
 const CURSOR = "events";
 const BUSY_LOOKBACK_MS = 6 * 3600 * 1000;

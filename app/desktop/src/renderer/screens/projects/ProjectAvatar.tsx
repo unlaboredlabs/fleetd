@@ -1,12 +1,14 @@
 // A project's avatar where its chat shows (the sidebar, the chat's title, its settings): its picture once a
 // person gave it one, read once per picture (project_avatar_get, refetched on its project.settings event), else its
-// built-in icon (ui's BotFace), else its letters.
+// bot (ui's Bot), in the state its project is in (botState.ts).
 import { useEffect } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Avatar } from "../../ui";
+import type { BotIn } from "../../../shared/bot";
+import { useBotState } from "./botState";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar" | "icon">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "kind" | "avatar">;
 
 /** Its picture's data: URL, undefined while it has none or it loads. */
 export const usePicture = (project: Pick<ProjectSummary, "machineId" | "projectId" | "avatar"> | undefined): string | undefined => {
@@ -21,8 +23,9 @@ export const usePicture = (project: Pick<ProjectSummary, "machineId" | "projectI
   return avatar === undefined || got.data === undefined ? undefined : `data:${got.data.mime};base64,${got.data.dataB64}`;
 };
 
-export function ProjectAvatar({ project, size, className }: { project: Pictured; size?: number | undefined; className?: string | undefined }) {
+export function ProjectAvatar({ project, size, own, className }: { project: Pictured; size?: number | undefined; own?: Partial<BotIn> | undefined; className?: string | undefined }) {
   const picture = usePicture(project);
-  // While a new picture loads, the icon stays rather than flashing the letters.
-  return <Avatar name={project.title} size={size} src={picture} icon={project.icon} className={className} />;
+  const bot = useBotState(`${project.machineId}/${project.projectId}`, own);
+  // While a new picture loads, the bot stays rather than flashing the letters.
+  return <Avatar name={project.title} size={size} src={picture} bot={bot} className={className} />;
 }

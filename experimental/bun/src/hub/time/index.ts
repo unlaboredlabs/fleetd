@@ -5,7 +5,7 @@
 import type { Hub } from "../api/hub.ts";
 import { parseMs } from "../store/time.ts";
 import { type Ack, closePrefix, gap, ingestFrame, type SpansFrame, writeHub } from "./ingest.ts";
-import { cursor, type NewSpan, prune, storedBytes, write } from "./store.ts";
+import { cursor, type NewSpan, prune, write } from "./store.ts";
 
 /** Node batches waiting for the writer; past this a batch is not acked and the node resends it on reconnect. */
 export const NODE_BATCHES = 64;
@@ -16,8 +16,6 @@ const HUB_BATCH = 500;
 /** Clock offsets are the minimum over this window of heartbeats. */
 const OFFSET_WINDOW_MS = 10 * 60 * 1000;
 const PRUNE_EVERY_MS = 3_600_000;
-/** How long a breakdown's `storedBytes` may be reused. */
-const STORED_FOR_MS = 60_000;
 
 /** What the hub's areas send the writer: a span, or "close every open hub span under `prefix` at `endMs`". */
 export type HubMsg = { span: NewSpan } | { close: string; endMs: number };
@@ -35,7 +33,6 @@ export class Time {
   private scheduled = false;
   /** Per machine: (hub ms, hub receive time minus the node's heartbeat stamp), newest last. */
   private readonly offsets = new Map<string, [number, number][]>();
-  private stored: [atMs: number, bytes: number] | undefined;
   readonly sink: TimeSink;
 
   constructor(private readonly hub: Hub) {
@@ -99,14 +96,6 @@ export class Time {
         console.error("time: hub spans not stored:", error);
       }
     }
-  }
-
-  /** The bytes the time tables take on disk, measured at most STORED_FOR_MS ago. */
-  storedBytes(now: number): number {
-    if (this.stored && now - this.stored[0] >= 0 && now - this.stored[0] < STORED_FOR_MS) return this.stored[1];
-    const bytes = storedBytes(this.hub.db.conn);
-    this.stored = [now, bytes];
-    return bytes;
   }
 
   /** A heartbeat from `machine` stamped `nodeAt` (its clock) arrived now. */
