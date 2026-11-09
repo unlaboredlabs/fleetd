@@ -86,13 +86,13 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
-/** `hub`: the data layer's hub id (useDataLayer().hub). */
-export const useFlow = (hub: string): Flow => useSyncExternalStore(subscribe, () => slotOf(hub).flow);
-export const useRun = (hub: string): UpdateRun | null => useSyncExternalStore(subscribe, () => slotOf(hub).run);
+/** `hub`: the data layer's hub id (useDataLayer().hub); "" with one hub, as the phone app has (FlowDeps' default). */
+export const useFlow = (hub = ""): Flow => useSyncExternalStore(subscribe, () => slotOf(hub).flow);
+export const useRun = (hub = ""): UpdateRun | null => useSyncExternalStore(subscribe, () => slotOf(hub).run);
 /** The channel's newest build when the hub has it downloaded and checked, ready to swap in; else null. */
-export const useReady = (hub: string): string | null => useSyncExternalStore(subscribe, () => slotOf(hub).ready);
+export const useReady = (hub = ""): string | null => useSyncExternalStore(subscribe, () => slotOf(hub).ready);
 /** The hub's update settings and when its ready build installs by itself; null until the hub said (or an older hub). */
-export const useAutoUpdates = (hub: string): AutoState | null => useSyncExternalStore(subscribe, () => slotOf(hub).auto);
+export const useAutoUpdates = (hub = ""): AutoState | null => useSyncExternalStore(subscribe, () => slotOf(hub).auto);
 export const currentFlow = (hub = ""): Flow => slotOf(hub).flow;
 export const currentReady = (hub = ""): string | null => slotOf(hub).ready;
 export const currentRun = (hub = ""): UpdateRun | null => slotOf(hub).run;
