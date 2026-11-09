@@ -1,5 +1,8 @@
 <!doctype html>
-<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the recorded app read as one document. Dark unless the reader picks Light in the header. -->
+<!-- Type-led and quiet. One thing moves: the bot beside the headline, drawn by the app's own code (pebble.js, from
+     app/desktop's shared/bot.ts and ui/lib/botLife.ts by `pnpm site:pebble`). Every other bot is a still pose beside the
+     idea it stands for. IBM Plex Sans for every human sentence and Lilex for machine text, the two faces the app itself
+     renders in, so the page and the recorded app read as one document. Dark unless the reader picks Light. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -10,15 +13,15 @@
 // Light or Dark, from the header's switch; Dark until the reader picks Light. Kept under the docs' own key (Starlight's
 // starlight-theme: "light", "dark", or empty for its Auto), so the choice carries over between this page and /docs;
 // anything but "light" (the docs' Auto, or an "auto" this page once stored) reads as Dark here. Applied before the
-// first paint; the switch's script applies it again once the clips' posters are parsed. It sets data-theme for the
-// CSS and the theme-color, and turns each poster's light <source> on ("all") or off ("not all").
+// first paint; the switch's script applies it again once the posters are parsed. It sets data-theme for the CSS and
+// the bots, the theme-color, and turns each picture's light <source> on ("all") or off ("not all").
 (function(){
   var KEY="starlight-theme",root=document.documentElement;
   var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
   var apply=function(){
     var t=get();
     root.dataset.theme=t;
-    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f2f2ef":"#121212");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
     document.querySelectorAll("source[data-light]").forEach(function(el){el.setAttribute("media",t==="light"?"all":"not all")});
   };
   window.fleetdTheme={
@@ -36,8 +39,8 @@
 <meta property="og:image" content="https://fleetd.sh/showcase-lead-dark.jpg">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="alternate" type="text/plain" href="/fleetd.txt" title="fleetd.sh as plain text">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/plex-sans-Medium.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
@@ -48,142 +51,144 @@
 :root{
   color-scheme:dark;
   --paper:#121212;
-  --tone:#1d1d1d;
-  --ink:#ececea;
-  --grey:#a4a5a7;
-  --faint:#7c7e81;
-  --rule:#313133;
-  --mark:#f0884e;
-  --ring:rgba(255,255,255,.12);
-  --drop:0 18px 40px -22px rgba(0,0,0,.9);
+  --tone:#1c1c1c;
+  --ink:#ededeb;
+  --grey:#a2a3a5;
+  --faint:#76787b;
+  --rule:#2c2c2e;
+  --ring:rgba(255,255,255,.10);
+  --drop:0 24px 48px -28px rgba(0,0,0,.95);
+  --well:#1b1b1c;
+  --well-ring:rgba(255,255,255,.075);
+  --well-ring-on:rgba(255,255,255,.15);
+  --well-lift:inset 0 1px 0 rgba(255,255,255,.025);
+  --well-hover:rgba(255,255,255,.07);
+  --well-press:rgba(255,255,255,.11);
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
-  --max:1240px;
-  --gap:clamp(24px,3.2vw,48px);
-  --sec:clamp(36px,4.6vw,64px);
+  --max:1280px;
   --snap:cubic-bezier(.2,0,0,1);
 }
 :root[data-theme="light"]{
   color-scheme:light;
-  --paper:#f2f2ef;
+  --paper:#f4f4f1;
   --tone:#e9e9e5;
-  --ink:#18191b;
-  --grey:#5d5f63;
-  --faint:#86888b;
-  --rule:#cfcfca;
-  --mark:#c2410c;
-  --ring:rgba(0,0,0,.14);
-  --drop:0 18px 40px -22px rgba(0,0,0,.45);
+  --ink:#17181a;
+  --grey:#5b5d61;
+  --faint:#8a8c8f;
+  --rule:#d6d6d1;
+  --ring:rgba(0,0,0,.12);
+  --drop:0 24px 48px -30px rgba(0,0,0,.4);
+  --well:#fbfbf9;
+  --well-ring:rgba(0,0,0,.085);
+  --well-ring-on:rgba(0,0,0,.16);
+  --well-lift:0 1px 2px rgba(0,0,0,.04);
+  --well-hover:rgba(0,0,0,.055);
+  --well-press:rgba(0,0,0,.09);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.55 var(--sans);font-kerning:normal;-webkit-font-smoothing:antialiased}
-a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.2em;text-decoration-color:var(--rule)}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);font-kerning:normal;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.22em;text-decoration-color:var(--rule)}
 a:hover{text-decoration-color:currentColor}
-:focus-visible{outline:2px solid var(--mark);outline-offset:3px;border-radius:2px}
-code{font-family:var(--mono);font-size:.88em;font-variant-ligatures:none;letter-spacing:0}
-p{margin:0}
-h1,h2{margin:0;font-weight:500}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:2px}
+p,h1,h2,figure{margin:0}
 .w{max-width:var(--max);margin:0 auto;padding:0 var(--pad)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
 /* header */
-.top{display:flex;align-items:baseline;justify-content:space-between;gap:24px;padding-top:22px;padding-bottom:22px}
-.mark{font-weight:600;font-size:18px;letter-spacing:-.01em;text-decoration:none}
-.nav{display:flex;gap:20px;font-size:14px;color:var(--grey)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:24px;padding-bottom:24px}
+.mark{font-weight:600;font-size:19px;letter-spacing:-.015em;text-decoration:none}
+.nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
 .nav a{text-decoration:none}
-.nav a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--rule)}
-.theme{display:flex;align-self:center;border:1px solid var(--rule);border-radius:4px;font-size:13px;line-height:1.5}
-.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 7px;cursor:pointer}
+.nav a:hover{color:var(--ink)}
+.theme{display:flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
+.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
 .theme button:hover{color:var(--ink)}
 .theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
 
-/* hero */
-.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,26em);gap:20px var(--gap);align-items:end;padding-top:clamp(20px,3.4vw,48px);padding-bottom:var(--sec)}
-.hero h1{font-size:clamp(24px,2.6vw,32px);line-height:1.2;letter-spacing:-.015em;text-wrap:balance}
-.sub{margin-top:8px;max-width:38em;color:var(--grey)}
-.cmd{display:flex;align-items:center;gap:12px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:10px 0}
-.cmd code{flex:1;min-width:0;font-size:15px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
-.cmd code::before{content:"$ ";color:var(--faint)}
-.copy{font:500 13px/1 var(--sans);color:var(--ink);background:none;border:1px solid var(--rule);border-radius:4px;padding:7px 10px;cursor:pointer;min-width:62px}
-.copy:hover{border-color:var(--ink)}
-.copy:active{background:var(--tone)}
-.facts{margin-top:8px;font-size:13px;color:var(--grey)}
+/* hero: the headline set as large as the measure allows, the bot the one thing that moves */
+.hero{padding-top:clamp(40px,7vw,104px);padding-bottom:clamp(64px,9vw,136px)}
+.lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,4.4vw,72px);align-items:center;--av:clamp(160px,24vw,330px)}
+/* The bot as the app draws it: a box, and a canvas a quarter past each side so a hop or a slump is never cut off
+   (botLife.ts's PAD, Bot.module.css's .canvas). */
+.pb{position:relative;display:block;flex:none}
+.pb canvas{position:absolute;left:-25%;top:-25%;width:150%;height:150%;pointer-events:none}
+#hero-bot{width:var(--av);height:var(--av)}
+h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
+.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:26em;text-wrap:balance}
+.install{margin-top:clamp(28px,3.2vw,44px);max-width:31em}
+/* The install command: one quiet surface sized to it, the prompt dim and left out of a selection, a small copy icon
+   inside on the right that turns into a check once copied. */
+.cmd{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 5px 5px 16px;border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 1px var(--well-ring),var(--well-lift);transition:box-shadow .14s var(--snap)}
+.cmd:hover,.cmd:focus-within{box-shadow:inset 0 0 0 1px var(--well-ring-on),var(--well-lift)}
+.cmd code{min-width:0;font:400 14px/1.5 var(--mono);font-variant-ligatures:none;letter-spacing:-.005em;color:var(--ink);white-space:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 0}
+.cmd code::-webkit-scrollbar{display:none}
+.cmd .ps{color:var(--faint);margin-right:.6em;user-select:none;-webkit-user-select:none}
+.cmd .line{user-select:all;-webkit-user-select:all}
+.copy{position:relative;flex:none;display:grid;place-items:center;width:32px;height:32px;margin-left:8px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--faint);cursor:pointer;transition:color .14s var(--snap),background-color .14s var(--snap)}
+.copy:hover{color:var(--ink);background:var(--well-hover)}
+.copy:active{background:var(--well-press)}
+.copy:focus-visible{outline:2px solid var(--ink);outline-offset:1px;border-radius:8px}
+.copy svg{grid-area:1/1;width:16px;height:16px;transition:opacity .14s var(--snap),transform .14s var(--snap)}
+.copy .i-done{opacity:0;transform:scale(.8)}
+.copy.done{color:var(--ink)}
+.copy.done .i-copy{opacity:0;transform:scale(.8)}
+.copy.done .i-done{opacity:1;transform:none}
+.facts{margin-top:12px;font-size:13px;color:var(--grey)}
 
-/* the philosophy: three lines set big (what software isn't, what it is, what to do), then a paragraph at the hero's
-   measure. Its one moment: the count steps up from 7 to 12 like a mechanical counter, once, when it first comes on
-   screen; with reduced motion, or without script, it just says 12. */
-.phil{padding-top:calc(var(--sec)*1.5);padding-bottom:calc(var(--sec)*1.6);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
-.say{--lh:1.06;font-size:clamp(28px,4.4vw,58px);line-height:var(--lh);letter-spacing:-.03em;font-weight:500;font-feature-settings:"tnum"}
-.say>span{display:block}
-.say .nw{white-space:nowrap}
-.say .rest{color:var(--faint)}
-.phil p{margin-top:clamp(20px,2.2vw,30px);max-width:38em;color:var(--grey);text-wrap:pretty}
-.odo{display:inline-flex;color:var(--mark)}
-.odo .col{display:block;height:calc(var(--lh)*1em);overflow:hidden}
-.odo .reel{display:block;transform:translateY(calc(var(--to)*var(--lh)*-1em))}
-.odo .reel>span{display:block;height:calc(var(--lh)*1em)}
-.odo.arm .reel{transform:none}
-.odo.go .ones .reel{animation:odo-ones 1.05s both}
-.odo.go .tens .reel{animation:odo-tens 1.05s both}
-@keyframes odo-ones{
-  0%{transform:translateY(0);animation-timing-function:cubic-bezier(.3,0,0,1)}
-  12%{transform:translateY(calc(var(--lh)*-1em));animation-timing-function:cubic-bezier(.3,0,0,1)}
-  26%{transform:translateY(calc(var(--lh)*-2em));animation-timing-function:cubic-bezier(.3,0,0,1)}
-  42%{transform:translateY(calc(var(--lh)*-3em));animation-timing-function:cubic-bezier(.3,0,0,1)}
-  64%{transform:translateY(calc(var(--lh)*-4em));animation-timing-function:cubic-bezier(.3,0,0,1)}
-  100%{transform:translateY(calc(var(--lh)*-5em))}
-}
-@keyframes odo-tens{
-  0%,26%{transform:translateY(0);animation-timing-function:cubic-bezier(.3,0,0,1)}
-  42%,100%{transform:translateY(calc(var(--lh)*-1em))}
-}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-@media (max-width:640px){.say{--lh:1.1;letter-spacing:-.025em}.say>span+span{margin-top:.12em}}
+/* sections: one idea each, a heading and up to two sentences beside its clip */
+.sec{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:28px clamp(32px,4.4vw,72px);align-items:start;padding-top:clamp(48px,6vw,88px);padding-bottom:clamp(48px,6vw,88px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.who{display:flex;align-items:center;gap:12px;margin-bottom:22px;height:52px}
+.who .pb{width:48px;height:48px}
+.who .pair{display:flex;gap:10px}
+.sec h2{font-weight:600;font-size:clamp(28px,2.7vw,38px);line-height:1.06;letter-spacing:-.028em;text-wrap:balance;max-width:11em}
+.sec p{margin-top:16px;color:var(--grey);max-width:25em;text-wrap:pretty}
+.sec .more{display:inline-block;margin-top:14px;font-size:14px;color:var(--grey)}
+.sec .more:hover{color:var(--ink)}
 
-/* sections: a heading and a line or two beside its clip */
-.sec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.6fr);gap:14px var(--gap);align-items:start;padding-top:var(--sec);padding-bottom:var(--sec);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
-.sec h2{font-size:18px;line-height:1.3;letter-spacing:-.005em}
-.sec p{margin-top:6px;color:var(--grey);font-size:15px;max-width:24em}
-.sec a{display:inline-block;margin-top:8px;font-size:14px}
-
-/* a clip: 1400x900 windows at 2x. The still is the picture; the recording plays over it once it can, never with
-   reduced motion until Play. */
-figure{margin:0}
-.shot{display:block;position:relative;border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px var(--ring),var(--drop);background:var(--tone)}
-.shot img,.shot video{display:block;width:100%;height:auto;aspect-ratio:14/9}
+/* a clip: 1400x900 windows at 2x. The poster is the picture; the recording plays over it once it can, never with
+   reduced motion until Play. A still: a part of the window at 2x. */
+.shot{position:relative;border-radius:8px;overflow:hidden;box-shadow:0 0 0 1px var(--ring),var(--drop);background:var(--tone)}
+.shot img,.shot video{display:block;width:100%;height:auto}
+.shot[data-clip] img,.shot video{aspect-ratio:14/9}
 .shot video{position:absolute;inset:0;opacity:0}
 .shot.on video{opacity:1}
-.play{position:absolute;right:8px;bottom:8px;font:500 12px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;cursor:pointer;opacity:0;visibility:hidden}
-.shot.on .play,.shot.ready .play{opacity:1;visibility:visible}
-.play:hover{border-color:var(--ink)}
-.note{padding-bottom:var(--sec);font-size:13px;color:var(--faint)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:clamp(12px,1.6vw,20px)}
+.duo .shot img{aspect-ratio:400/556}
+.shot.wide img{aspect-ratio:730/348}
+.play{position:absolute;right:10px;bottom:10px;font:500 12px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:5px;padding:6px 9px;cursor:pointer;opacity:0;visibility:hidden}
+.shot.on:hover .play,.shot.ready .play,.play:focus-visible{opacity:1;visibility:visible}
 
-.end{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:36px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:14px;color:var(--grey)}
-.end nav{display:flex;gap:20px}
-.end a{text-decoration:none}
-.end a:hover{color:var(--ink);text-decoration:underline}
+/* the philosophy: three lines set big, then the paragraph at a reading measure */
+.phil{padding-top:clamp(56px,7vw,112px);padding-bottom:clamp(64px,8vw,120px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.say{font-weight:600;font-size:clamp(32px,4.6vw,66px);line-height:1.02;letter-spacing:-.04em}
+.say>span{display:block}
+.say .rest{color:var(--faint)}
+.phil p{margin-top:clamp(22px,2.4vw,34px);max-width:36em;color:var(--grey);font-size:clamp(17px,1.35vw,19px);line-height:1.55;text-wrap:pretty}
+.note{padding-top:8px;padding-bottom:clamp(40px,5vw,72px);font-size:13px;color:var(--faint)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
+.foot nav{display:flex;gap:20px}
+.foot a{text-decoration:none}
+.foot a:hover{color:var(--ink)}
 
 @media (max-width:1000px){
-  .hero,.sec{grid-template-columns:minmax(0,1fr)}
-  .install{max-width:30em}
-  .sec p{max-width:36em}
+  .sec{grid-template-columns:minmax(0,1fr)}
+  .sec p{max-width:34em}
 }
 @media (max-width:640px){
-  .nav{gap:10px 14px;flex-wrap:wrap;justify-content:flex-end;align-items:baseline}
-  .shot{border-radius:4px}
+  .lockup{grid-template-columns:minmax(0,1fr);--av:150px}
+  .nav{gap:14px}
+  .nav .gh{display:none}
+  .cmd code{font-size:13px}
+  .shot{border-radius:5px}
   .play{right:6px;bottom:6px;padding:4px 7px}
-  .cmd code{font-size:13.5px}
-}
-@media (max-width:420px){
-  .cmd{gap:10px}
-  .cmd code{font-size:12.5px}
-  .cmd code::before{content:none}
-  .copy{min-width:0}
 }
 /* Snappy, as in the app (app/desktop/src/renderer/ui/DESIGN.md): state changes in 140 ms, only colour and opacity. */
 @media (prefers-reduced-motion:no-preference){
-  .copy,.nav a,a{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .nav a,a,.theme button{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
   .shot video,.play{transition:opacity .14s var(--snap),visibility .14s var(--snap)}
 }
 </style>
@@ -194,8 +199,7 @@ figure{margin:0}
   <a class="mark" href="/">fleetd</a>
   <nav class="nav" aria-label="Site">
     <a href="/docs">Docs</a>
-    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <div class="theme" role="group" aria-label="Colour theme">
       <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
       <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
@@ -204,39 +208,39 @@ figure{margin:0}
 </header>
 
 <main>
-<section class="w hero">
-  <div>
-    <h1>Software factories, reinvented as fast as the models improve.</h1>
-    <p class="sub">You set the direction. Agents build, review and ship it while you sleep.</p>
-  </div>
-  <div class="install">
-    <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
-    <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a></p>
+<section class="w hero" aria-labelledby="h">
+  <div class="lockup">
+    <span class="pb" id="hero-bot" role="img" aria-label="fleetd’s bot, the face every project and agent has in the app"></span>
+    <div>
+      <h1 id="h">Software factories, reinvented as fast as the models improve.</h1>
+      <p class="sub">You set the direction. Agents build, review and ship it while you sleep.</p>
+      <div class="install">
+        <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd">curl -fsSL https://fleetd.sh | sh</span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
+        <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a></p>
+      </div>
+    </div>
   </div>
 </section>
 
 <!-- The philosophy: software is an experiment, not an asset. -->
 <section class="w phil" aria-labelledby="phil">
-  <h2 class="say" id="phil">
-    <span>Software isn’t an asset.</span>
-    <span><span class="nw">It’s <span class="odo"><span class="sr">12</span><span class="col tens" aria-hidden="true"><span class="reel" style="--to:1"><span>&#8199;</span><span>1</span></span></span><span class="col ones" aria-hidden="true"><span class="reel" style="--to:5"><span>7</span><span>8</span><span>9</span><span>0</span><span>1</span><span>2</span></span></span></span> experiments</span> a night.</span>
-    <span>Keep one. <span class="rest">Drop the rest.</span></span>
-  </h2>
+  <h2 class="say" id="phil"><span>Software isn’t an asset.</span> <span>It’s a dozen experiments.</span> <span>Keep one. <span class="rest">Drop the rest.</span></span></h2>
   <p>Agents made building cheap, so stop polishing one bet for months. Ship a dozen experiments tonight, see what people actually use, and drop the rest without regret. fleetd is built for that pace: a lead plans the work, agents build it in parallel, and every change is reviewed before it lands.</p>
 </section>
 
-<!-- Each section's clip: `pnpm site:showcase` in app/desktop records them (site/README.md). Keep each alt text (its
-     poster's) and the section's words true to its recording. -->
+<!-- Each section's clip or still: `pnpm site:showcase` in app/desktop records them (site/README.md). Keep each alt text
+     and the section's words true to its recording. -->
 <section class="w sec" aria-labelledby="lead">
   <div>
+    <div class="who"><span class="pb" data-bot="done"></span></div>
     <h2 id="lead">Ask the lead; it lands the PRs</h2>
     <p>The lead splits your request between agents, each PR gets its own reviewer, and the merge train lands them together.</p>
-    <a href="/docs/merge-train">Merge train</a>
+    <a class="more" href="/docs/merge-train">Merge train</a>
   </div>
   <figure class="shot" data-clip="lead">
     <picture>
-      <source data-light srcset="/showcase-lead-light-small.jpg 1400w, /showcase-lead-light.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" media="not all">
-      <img src="/showcase-lead-dark.jpg" srcset="/showcase-lead-dark-small.jpg 1400w, /showcase-lead-dark.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" width="2800" height="1800" fetchpriority="high" alt="storefront’s chat in the fleetd app. You asked to let shoppers save their cart and pick it up on the web or the iPhone app; the lead answers it is on it in three parts, each with its own writer and a reviewer for each PR, then that #231 is up with a reviewer on it. The panel lists ten agents at work on four orders, the three new writers and #231’s reviewer among them.">
+      <source data-light srcset="/showcase-lead-light-small.jpg 1400w, /showcase-lead-light.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" media="not all">
+      <img src="/showcase-lead-dark.jpg" srcset="/showcase-lead-dark-small.jpg 1400w, /showcase-lead-dark.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront’s chat in the fleetd app. You asked to let shoppers save their cart and pick it up on the web or the iPhone app; the lead answers it is on it in three parts, each with its own writer and a reviewer for each PR, then that #231 is up with a reviewer on it. The panel lists the agents at work, the three new writers and #231’s reviewer among them.">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1"></video>
     <button class="play" type="button">Pause</button>
@@ -247,39 +251,77 @@ figure{margin:0}
   <div>
     <h2 id="team">Your team in one chat</h2>
     <p>Everyone on the hub writes in the same project chat, under their own name. The lead answers all of you.</p>
-    <a href="/docs/people">People</a>
+    <a class="more" href="/docs/people">People</a>
   </div>
   <figure class="shot" data-clip="team">
     <picture>
-      <source data-light srcset="/showcase-team-light-small.jpg 1400w, /showcase-team-light.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" media="not all">
-      <img src="/showcase-team-dark.jpg" srcset="/showcase-team-dark-small.jpg 1400w, /showcase-team-dark.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="checkout’s chat in the fleetd app. Bob Okafor asked for the store’s VAT number on receipts, and the lead told him #84 did it. You, Sam, ask whether the app’s checkout can take Apple Pay; Alice Chen, under her name, adds to keep card entry as the fallback; the lead answers both: “Sam, Alice: one order for both.”">
+      <source data-light srcset="/showcase-team-light-small.jpg 1400w, /showcase-team-light.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" media="not all">
+      <img src="/showcase-team-dark.jpg" srcset="/showcase-team-dark-small.jpg 1400w, /showcase-team-dark.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="checkout’s chat in the fleetd app. Bob Okafor asked for the store’s VAT number on receipts, and the lead told him #84 did it. You, Sam, ask whether the app’s checkout can take Apple Pay; Alice Chen, under her name, adds to keep card entry as the fallback; the lead answers both: “Sam, Alice: one order for both.”">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1"></video>
     <button class="play" type="button">Pause</button>
   </figure>
+</section>
+
+<section class="w sec" aria-labelledby="dms">
+  <div>
+    <div class="who"><span class="pair"><span class="pb" data-bot="look-right"></span><span class="pb" data-bot="look-left"></span></span></div>
+    <h2 id="dms">Agents message each other, in the open</h2>
+    <p>When one agent learns something another needs, it tells it directly. Every message shows on the agent’s work and in the project’s log, with who read it and when.</p>
+    <a class="more" href="/docs/desktop-app#dms">Agents’ messages</a>
+  </div>
+  <div class="duo">
+    <figure class="shot">
+      <picture>
+        <source data-light srcset="/showcase-dms-light-small.jpg 400w, /showcase-dms-light.jpg 800w" sizes="(min-width: 1001px) 30vw, 50vw" media="not all">
+        <img src="/showcase-dms-dark.jpg" srcset="/showcase-dms-dark-small.jpg 400w, /showcase-dms-dark.jpg 800w" sizes="(min-width: 1001px) 30vw, 50vw" width="800" height="1112" loading="lazy" decoding="async" alt="One agent’s work in the fleetd app: it asks another agent whether #214 keeps an old export, waits, is woken by the answer, edits and tests, then tells three other agents what changed: two read it at their next step, and one that has finished will read it if it runs again.">
+      </picture>
+    </figure>
+    <figure class="shot">
+      <picture>
+        <source data-light srcset="/showcase-dmlog-light-small.jpg 400w, /showcase-dmlog-light.jpg 800w" sizes="(min-width: 1001px) 30vw, 50vw" media="not all">
+        <img src="/showcase-dmlog-dark.jpg" srcset="/showcase-dmlog-dark-small.jpg 400w, /showcase-dmlog-dark.jpg 800w" sizes="(min-width: 1001px) 30vw, 50vw" width="800" height="1112" loading="lazy" decoding="async" alt="The project’s log of agents’ messages, newest first: who sent each to whom, when each agent read it, and one that didn’t wake its agent because it had already finished.">
+      </picture>
+    </figure>
+  </div>
 </section>
 
 <section class="w sec" aria-labelledby="screens">
   <div>
+    <div class="who"><span class="pb" data-bot="needs"></span></div>
     <h2 id="screens">Watch an agent’s screen, and take over</h2>
     <p>Agents test in a real browser or iPhone simulator while you watch. When one needs a code or a login, take over, then hand back.</p>
-    <a href="/docs/browser-sessions">Screens</a>
+    <a class="more" href="/docs/browser-sessions">Screens</a>
   </div>
   <figure class="shot" data-clip="screens">
     <picture>
-      <source data-light srcset="/showcase-screens-light-small.jpg 1400w, /showcase-screens-light.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" media="not all">
-      <img src="/showcase-screens-dark.jpg" srcset="/showcase-screens-dark-small.jpg 1400w, /showcase-screens-dark.jpg 2800w" sizes="(min-width: 1001px) 66vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront in the fleetd app. The lead says the iPhone app’s sign-in texts a code to a test number, so its agent can’t go on alone, and asks you to take over its screen. The panel shows that screen live: an iPhone simulator on the app’s sign-in code page with the code 418093 typed in, its bar saying you’re in control, and Hand back under it.">
+      <source data-light srcset="/showcase-screens-light-small.jpg 1400w, /showcase-screens-light.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" media="not all">
+      <img src="/showcase-screens-dark.jpg" srcset="/showcase-screens-dark-small.jpg 1400w, /showcase-screens-dark.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront in the fleetd app. The lead says the iPhone app’s sign-in texts a code to a test number, so its agent can’t go on alone, and asks you to take over its screen. The panel shows that screen live: an iPhone simulator on the app’s sign-in code page with the code 418093 typed in, its bar saying you’re in control, and Hand back under it.">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1"></video>
     <button class="play" type="button">Pause</button>
   </figure>
 </section>
 
-<p class="w note">Each clip is the fleetd app on sample data, with the waits cut short.</p>
+<section class="w sec" aria-labelledby="cloud">
+  <div>
+    <h2 id="cloud">Cloud machines that sleep until there’s work</h2>
+    <p>When your own machines are full, work can go to a few machines on your own boat.dev account. They wake for it and go back to sleep when idle, within the budget you set.</p>
+    <a class="more" href="/docs/cloud-machines">Cloud machines</a>
+  </div>
+  <figure class="shot wide">
+    <picture>
+      <source data-light srcset="/showcase-cloud-light-small.jpg 730w, /showcase-cloud-light.jpg 1460w" sizes="(min-width: 1001px) 60vw, 100vw" media="not all">
+      <img src="/showcase-cloud-dark.jpg" srcset="/showcase-cloud-dark-small.jpg 730w, /showcase-cloud-dark.jpg 1460w" sizes="(min-width: 1001px) 60vw, 100vw" width="1460" height="696" loading="lazy" decoding="async" alt="Settings › Machines in the fleetd app: the hub’s own machines, buildbox and devbox, online; under them boat.dev, with $0.41 of a $3.00 day spent, boat-1 awake with two agents and boat-2 asleep.">
+    </picture>
+  </figure>
+</section>
+
+<p class="w note">Each clip and still is the fleetd app on sample data, with the waits cut short.</p>
 </main>
 
-<footer class="w end">
-  <span>fleetd · MIT</span>
+<footer class="w foot">
+  <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
   <nav aria-label="Footer">
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
@@ -287,78 +329,180 @@ figure{margin:0}
   </nav>
 </footer>
 
+<script src="/pebble.js"></script>
 <script>
-// The header's theme switch: the pressed button is the stored choice; a press stores it, and the CSS, the theme-color,
-// the posters and the clips follow (fleetdTheme, in the head).
-(function(){
-  var buttons=[].slice.call(document.querySelectorAll("[data-theme-set]"));
-  var show=function(){var t=fleetdTheme.get();buttons.forEach(function(b){b.setAttribute("aria-pressed",String(b.dataset.themeSet===t))})};
-  buttons.forEach(function(b){b.addEventListener("click",function(){fleetdTheme.set(b.dataset.themeSet);show()})});
-  // Another tab (this page or the docs) changed it.
-  addEventListener("storage",function(e){if(e.key==="starlight-theme"){fleetdTheme.apply();dispatchEvent(new Event("fleetdtheme"));show()}});
-  fleetdTheme.apply();
-  show();
-})();
-
-document.querySelectorAll("[data-copy]").forEach(function(b){
-  b.addEventListener("click",function(){
-    var t=document.getElementById(b.dataset.copy).textContent;
-    var done=function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy"},1600)};
-    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done)}
-    else{var r=document.createRange();r.selectNodeContents(document.getElementById(b.dataset.copy));var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand("copy");done()}catch(e){}}
-  });
-});
-
-// The philosophy's counter: set back to 7 once the page runs, and stepped up to 12 when the line first comes on screen.
-(function(){
-  var odo=document.querySelector(".odo");
-  if(!odo||matchMedia("(prefers-reduced-motion: reduce)").matches||!("IntersectionObserver" in window))return;
-  odo.classList.add("arm");
-  var io=new IntersectionObserver(function(es){
-    if(es.some(function(e){return e.isIntersecting})){io.disconnect();setTimeout(function(){odo.classList.add("go")},300)}
-  },{threshold:1});
-  io.observe(odo);
-})();
-
-// The clips. Each still is what everyone gets first. Without reduced motion, a clip loads once its frame is near the
-// screen, the small one on a small screen, and plays while it is on screen; with reduced motion, the still stays until
-// Play. Each follows the theme. The Vercel build fills fleetdMedia with each clip's URL on R2 (site/media.mjs); without
-// one, a clip is the repo's own file.
+"use strict";
+// Each clip's URL on R2, by name: the Vercel build fills it (site/media.mjs); empty, the clips are the repo's own files.
 var fleetdMedia={};
-(function(){
-  var calm=matchMedia("(prefers-reduced-motion: reduce)");
-  [].slice.call(document.querySelectorAll("[data-clip]")).forEach(function(box){
-    var video=box.querySelector("video"),button=box.querySelector(".play"),paused=calm.matches,near=false;
-    var source=function(){
-      // A frame under 1600 device pixels wide gets the half-size clip: as sharp there, at half the bytes.
-      var small=box.clientWidth*(window.devicePixelRatio||1)<1600;
-      // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
-      var webm=video.canPlayType('video/webm; codecs="vp9"')==="probably";
-      var name="showcase-"+box.dataset.clip+"-"+fleetdTheme.get()+(small?"-small":"")+(webm?".webm":".mp4");
-      var want=fleetdMedia[name]||"/"+name;
-      if(video.getAttribute("src")===want)return;
-      var at=video.currentTime||0;
-      video.src=want;
-      video.addEventListener("loadedmetadata",function(){video.currentTime=at},{once:true});
-    };
-    var start=function(){
-      if(paused||!near)return;
-      source();
-      video.play().catch(function(){});
-    };
-    var hold=function(){paused=true;video.pause();button.textContent="Play"};
-    if(paused){button.textContent="Play";box.classList.add("ready")}
-    video.addEventListener("playing",function(){box.classList.add("on")});
-    button.addEventListener("click",function(){
-      if(paused){paused=false;button.textContent="Pause";near=true;start()}else hold();
+(() => {
+  const calm = matchMedia("(prefers-reduced-motion: reduce)");
+
+  // ---- The bots, drawn by the app's own code (pebble.js). The hero's lives; every other one is drawn once, a still
+  // pose, and drawn again when the theme changes.
+  const { bringToLife, newRig, drawnAt, LARGE } = window.Pebble;
+  const heroHost = document.getElementById("hero-bot");
+  let hero = null;
+  let heroRig = null;
+  let heroState = "idle";
+  let heroBox = 0;
+  const canvasIn = (host) => {
+    host.textContent = "";
+    const c = document.createElement("canvas");
+    host.append(c);
+    return c;
+  };
+  const mountHero = () => {
+    const box = Math.round(heroHost.getBoundingClientRect().width);
+    if (hero && box === heroBox) return;
+    hero?.release();
+    heroBox = box;
+    heroRig = newRig(heroState, drawnAt(box), 11, true);
+    hero = bringToLife(canvasIn(heroHost), heroRig, box);
+  };
+  const mountStills = () => {
+    document.querySelectorAll("[data-bot]").forEach((host, n) => {
+      const kind = host.dataset.bot;
+      const box = Math.round(host.getBoundingClientRect().width);
+      const rig = newRig(kind.startsWith("look") ? "idle" : kind, drawnAt(box), 100 + n, box >= LARGE);
+      // Two agents in conversation: each turns its look toward the other (the rig's look channel, shared/bot.ts's GX).
+      if (kind === "look-right") rig.x[4] = 0.7;
+      if (kind === "look-left") rig.x[4] = -0.7;
+      bringToLife(canvasIn(host), rig, box).release();
     });
-    calm.addEventListener("change",function(){if(calm.matches){hold();box.classList.remove("on");box.classList.add("ready")}});
-    addEventListener("fleetdtheme",function(){if(video.getAttribute("src")){source();if(!paused)video.play().catch(function(){})}});
-    new IntersectionObserver(function(es){
-      near=es[es.length-1].isIntersecting;
-      if(near)start();else video.pause();
-    },{rootMargin:"200px 0px"}).observe(box);
+  };
+
+  // The hero shows itself early and often, on the rig's own springs: a glance within a second of load, then a change
+  // every 2.6 to 3.4 s through working, done, a glance and needs you. Off screen or in a hidden tab it waits where it
+  // is; with reduced motion it stays still in idle.
+  const glance = (side) => {
+    // The rig's own glance (shared/bot.ts's moment): a look aside that springs back at its end, with a blink as it turns.
+    const t = heroRig.t;
+    heroRig.gx = side * 0.95;
+    heroRig.gy = -0.12;
+    heroRig.glanceEnd = t + 1.1;
+    heroRig.blinks.push(t, t + 0.075);
+  };
+  const PLAN = [["working", 3.2], ["done", 3], ["glance", 2.6], ["needs", 3.4], ["working", 3], ["done", 2.8], ["glance", 2.6], ["needs", 3.2]];
+  let step = -1;
+  let side = 1;
+  let seen = true;
+  let timer;
+  const act = (what) => {
+    if (what === "glance") {
+      heroState = "idle";
+      hero.set("idle");
+      side = -side;
+      setTimeout(() => glance(side), 260);
+    } else {
+      heroState = what;
+      hero.set(what);
+    }
+  };
+  const next = () => {
+    if (calm.matches || document.hidden || !seen) { timer = setTimeout(next, 600); return; }
+    step = (step + 1) % PLAN.length;
+    act(PLAN[step][0]);
+    timer = setTimeout(next, PLAN[step][1] * 1000);
+  };
+  const begin = () => {
+    clearTimeout(timer);
+    if (calm.matches) return;
+    timer = setTimeout(() => {
+      if (calm.matches) return;
+      glance(-1);
+      timer = setTimeout(next, 1300);
+    }, 700);
+  };
+  new IntersectionObserver((es) => { seen = es[es.length - 1].isIntersecting; }).observe(heroHost);
+  calm.addEventListener("change", () => {
+    if (!calm.matches) return begin();
+    clearTimeout(timer);
+    heroState = "idle";
+    hero.set("idle");
   });
+  addEventListener("resize", mountHero);
+
+  // ---- Light or Dark, nothing else: the pressed button is the stored choice; a press stores it, and the CSS, the
+  // theme-color, the pictures, the clips and the bots follow (fleetdTheme, in the head).
+  const themeButtons = [...document.querySelectorAll("[data-theme-set]")];
+  const showTheme = () => { const t = fleetdTheme.get(); themeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
+  themeButtons.forEach((b) => b.addEventListener("click", () => { fleetdTheme.set(b.dataset.themeSet); showTheme(); }));
+  // Another tab (this page or the docs) changed it.
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); dispatchEvent(new Event("fleetdtheme")); showTheme(); } });
+  addEventListener("fleetdtheme", () => setTimeout(mountStills, 0));
+
+  // ---- Copy: the clipboard where the page may use it, else the command selected and copied the old way.
+  const said = document.getElementById("copied");
+  document.querySelectorAll("[data-copy]").forEach((b) => {
+    const line = document.getElementById(b.dataset.copy);
+    let undo;
+    const done = () => {
+      b.classList.add("done");
+      b.setAttribute("aria-label", "Copied");
+      said.textContent = "Copied";
+      clearTimeout(undo);
+      undo = setTimeout(() => { b.classList.remove("done"); b.setAttribute("aria-label", "Copy the install command"); said.textContent = ""; }, 1600);
+    };
+    const old = () => {
+      const r = document.createRange();
+      r.selectNodeContents(line);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      try { if (document.execCommand("copy")) done(); } catch (e) {}
+      sel.removeAllRanges();
+    };
+    b.addEventListener("click", () => {
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(line.textContent).then(done, old);
+      else old();
+    });
+  });
+
+  // ---- The clips. Each poster is what everyone gets first. Without reduced motion, a clip loads once its frame is near
+  // the screen, the small one on a small screen, and plays while it is on screen; with reduced motion, the poster stays
+  // until Play. Each follows the theme. The Vercel build fills fleetdMedia with each clip's URL on R2 (site/media.mjs);
+  // without one, a clip is the repo's own file.
+  document.querySelectorAll("[data-clip]").forEach((box) => {
+    const video = box.querySelector("video");
+    const button = box.querySelector(".play");
+    let paused = calm.matches;
+    let near = false;
+    const source = () => {
+      // A frame under 1600 device pixels wide gets the half-size clip: as sharp there, at half the bytes.
+      const small = box.clientWidth * (window.devicePixelRatio || 1) < 1600;
+      // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
+      const webm = video.canPlayType('video/webm; codecs="vp9"') === "probably";
+      const name = "showcase-" + box.dataset.clip + "-" + fleetdTheme.get() + (small ? "-small" : "") + (webm ? ".webm" : ".mp4");
+      const want = fleetdMedia[name] || "/" + name;
+      if (video.getAttribute("src") === want) return;
+      const at = video.currentTime || 0;
+      video.src = want;
+      video.addEventListener("loadedmetadata", () => { video.currentTime = at; }, { once: true });
+    };
+    const start = () => {
+      if (paused || !near) return;
+      source();
+      video.play().catch(() => {});
+    };
+    const hold = () => { paused = true; video.pause(); button.textContent = "Play"; };
+    if (paused) { button.textContent = "Play"; box.classList.add("ready"); }
+    video.addEventListener("playing", () => box.classList.add("on"));
+    button.addEventListener("click", () => {
+      if (paused) { paused = false; button.textContent = "Pause"; near = true; start(); } else hold();
+    });
+    calm.addEventListener("change", () => { if (calm.matches) { hold(); box.classList.remove("on"); box.classList.add("ready"); } });
+    addEventListener("fleetdtheme", () => { if (video.getAttribute("src")) { source(); if (!paused) video.play().catch(() => {}); } });
+    new IntersectionObserver((es) => {
+      near = es[es.length - 1].isIntersecting;
+      if (near) start(); else video.pause();
+    }, { rootMargin: "200px 0px" }).observe(box);
+  });
+
+  fleetdTheme.apply();
+  showTheme();
+  mountHero();
+  mountStills();
+  begin();
 })();
 </script>
 </body>

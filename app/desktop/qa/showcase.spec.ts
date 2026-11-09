@@ -9,6 +9,12 @@
 // - screens: an agent's live browser; cut to the iPhone's sign-in asking for you, Take over, the code, Hand back.
 // - navi: Ada, a Navi, with a lease renewal that waits on you; Send it, and it went.
 //
+// And the stills beside the sections without a clip, each a part of a registered screen (registry.ts) on its QA
+// fixture: site/showcase-<still>-<theme>.jpg, at 2x, with a -small twin at 1x.
+// - dms: an agent's work in the panel, its DMs to and from other agents among its steps (dms-relays).
+// - dmlog: the project's log of agents' DMs, who read each and when (dms-relays).
+// - cloud: Settings › Machines, the hub's own machines and the boat.dev cloud machines under them (machines-cloud).
+//
 // Each clip is one run of the app at a person's pace, from which it keeps its takes, a few seconds each, cut together
 // tight; what QA does between them (taking the phone over for the lead's clip, opening the phone for the screens') is
 // left out. Each clip loops: its last moments fade into the moments before its first take, so the end runs into the
@@ -29,6 +35,7 @@ import { DIGIT_MS, REQUEST, STEPS } from "../fixtures/showcase/index.ts";
 import { TEAM_REQUEST, TEAM_STEPS } from "../fixtures/showcase/more.ts";
 import { type Box, type Direction, direct, type Step } from "./camera.ts";
 import { appMain, desktopDir, fixtureMeta, fixturesDir, launch, scale, settle, setView, show } from "./harness.ts";
+import { screens } from "./registry.ts";
 
 const repo = path.resolve(desktopDir, "../..");
 const STOREFRONT = "devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
@@ -664,6 +671,45 @@ for (const clip of ["lead", "team", "screens", "navi"] as const) {
       const { app, page, settled, close } = await launch("showcase-order", appMain, { realClock: true });
       try {
         await record(app, page, settled, clip, theme);
+      } finally {
+        await close();
+      }
+    });
+  }
+}
+
+/**
+ * The stills: each a part of the window, in its CSS pixels, and the words that must be inside it, so a change to the
+ * screen's layout fails the run rather than cropping something else.
+ */
+const STILLS = [
+  { still: "dms", screen: "agents.work", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 250, width: 400, height: 556 }, holds: ["Will do. Does #214", "Tests pass in en-US"] },
+  { still: "dmlog", screen: "activity", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 214, width: 400, height: 556 }, holds: ["Receipt dates now print", "Which locale did you run"] },
+  { still: "cloud", screen: "settings.hub.machines", variant: "cloud", fixture: "machines-cloud", part: { x: 280, y: 424, width: 730, height: 348 }, holds: ["This hub's machines", "Asleep since"] },
+] as const;
+
+for (const { still, screen, variant, fixture, part, holds } of STILLS) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`showcase still ${still} ${theme}`, async () => {
+      const entry = screens.find((s) => s.id === screen && s.variant === variant && s.fixtures.some((f) => f === fixture));
+      if (!entry) throw new Error(`${screen}~${variant} × ${fixture} isn't registered in qa/registry.ts`);
+      const { app, page, settled, close } = await launch(fixture);
+      try {
+        await setView(app, page, "medium", theme);
+        const { open } = entry;
+        await show(page, entry.id, entry.route, open && ((p) => open(p, app)));
+        await settled();
+        await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
+        await settle(page);
+        for (const text of holds) {
+          const box = await page.getByText(text, { exact: false }).first().boundingBox();
+          const inside = box !== null && box.x >= part.x && box.y >= part.y && box.x + box.width <= part.x + part.width + 1 && box.y + box.height <= part.y + part.height + 1;
+          if (!inside) throw new Error(`"${text}" isn't inside ${still}'s part of the window (${JSON.stringify(box)}): move the part in STILLS`);
+        }
+        const shot = await page.screenshot({ clip: part, type: "jpeg", quality: 95, animations: "disabled", caret: "hide" });
+        const out = path.join(repo, "site", `showcase-${still}-${theme}`);
+        await poster(page, shot, part.width * 2, 0.85, `${out}.jpg`);
+        await poster(page, shot, part.width, 0.85, `${out}-small.jpg`);
       } finally {
         await close();
       }

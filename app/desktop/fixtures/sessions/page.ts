@@ -86,7 +86,7 @@ export const screensPage = (preview: Fixture): Fixture => {
     kind: "linux_desktop",
     taskId: "T10",
     machineId: "buildbox",
-    step: step("desktop", { action: "type", text: "cargo run --bin invoice-preview -- --month 2026-10" }, iso(14_000)),
+    step: step("desktop", { action: "type", text: "npm run invoice-preview -- --month 2026-10" }, iso(14_000)),
   });
   const android = row(BILLING, PAGE_SESSION.android, "screen-9e3c7a1f5d9b3e7c1a5f9d3b7e1c5a9f", "Android emulator opened by Sam", 11 * 60_000, {
     kind: "android",

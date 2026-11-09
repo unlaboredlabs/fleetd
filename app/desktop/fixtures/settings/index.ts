@@ -90,7 +90,7 @@ function memory(f: Fixture) {
       { text: "Likes plain, dense docs over marketing copy." },
       { text: "Name is Sam Rivera; lives in Lisbon." },
       { text: "Staff engineer at Acme, leads the payments platform." },
-      { text: "Ledgerline: a double-entry bookkeeping API in Rust, in beta with three customers." },
+      { text: "Ledgerline: a double-entry bookkeeping API in TypeScript, in beta with three customers." },
     ],
     skipped: [
       { text: "Concise. State first, then what you need from me.", why: "duplicate" },
