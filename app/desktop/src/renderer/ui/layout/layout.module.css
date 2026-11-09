@@ -173,6 +173,10 @@
   mask-image: linear-gradient(to bottom, #000 60%, transparent);
   pointer-events: none;
 }
+/* Without a GPU to blur on (tokens.css), its fade alone. */
+:root[data-compositing="software"] .under > .topBar::before {
+  backdrop-filter: none;
+}
 /* With the sidebar hidden, the top row starts after the traffic lights. */
 .noSidebar > .topBar {
   padding-inline-start: max(var(--space-3), var(--traffic-lights-inset));

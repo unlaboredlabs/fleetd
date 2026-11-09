@@ -17,20 +17,31 @@
   display: flex;
   flex-direction: column-reverse;
   border-radius: var(--corner);
-  /* The top row's glass (ui/layout .capsule): the page blurred through a tint, a hairline and rim inside its edge, a
-     soft lift. */
+  isolation: isolate;
+  box-shadow: var(--glass-lift);
+}
+/* The top row's glass (ui/layout .capsule): the page blurred through a tint, a hairline and rim inside its edge, and
+   the soft lift on the dock itself, off the blurred layer. A blurred layer is drawn again, blur and all, whenever its
+   surface meets a change, and with the lift on it that surface reached over the composer's words: every key press
+   blurred the capsule again. */
+.dock::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
   box-shadow:
     inset 0 0 0 1px var(--glass-edge),
-    inset 0 1px 0 var(--glass-rim),
-    var(--glass-lift);
+    inset 0 1px 0 var(--glass-rim);
+  pointer-events: none;
 }
 .dock[data-open] {
   width: 100%;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .dock {
+  .dock::before {
     background: var(--raised);
     backdrop-filter: none;
   }

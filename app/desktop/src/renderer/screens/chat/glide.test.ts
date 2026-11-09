@@ -5,8 +5,8 @@ import type { ChatItem } from "../../src/data/chat";
 
 const message = (key: string, author: ChatItem["author"]): Row => ({ kind: "message", key, item: { id: key, author } as ChatItem, run: true, end: true, head: false, history: false });
 // At the end: 1,000 px of conversation in a 600 px view, scrolled to the bottom, its last rows starting at 880 and 940.
-const was: Place = { height: 1000, top: 400, view: 600, width: 700, tail: [{ key: "z", start: 880 }, { key: "a", start: 940 }] };
-const grown = { height: 1060, view: 600, width: 700 };
+const was: Place = { height: 1000, top: 400, view: 600, width: 700, end: 992, tail: [{ key: "z", start: 880 }, { key: "a", start: 940 }] };
+const grown = { height: 1060, view: 600, width: 700, end: 1052 };
 const starts = new Map([["z", 880], ["a", 940]]);
 const at = (rows: readonly Row[], moved: Record<string, number> = {}) => anchorOf(was, rows, (k) => moved[k] ?? starts.get(k));
 const z = message("z", "human");
@@ -30,6 +30,8 @@ describe("the conversation making room", () => {
     // The window resized; the list shrank.
     expect(glideOf(was, { ...grown, width: 600 }, at([z, a]))).toBeUndefined();
     expect(glideOf(was, { ...grown, height: 980 }, at([z, a]))).toBeUndefined();
+    // Only the composer's island grew: the room after the rows, not the rows.
+    expect(glideOf(was, { ...grown, end: was.end }, at([z, a]))).toBeUndefined();
     // None of the rows that were last is left.
     expect(glideOf(was, grown, at([message("b", "lead")]))).toBeUndefined();
   });
