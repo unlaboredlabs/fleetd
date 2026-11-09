@@ -89,6 +89,9 @@ export class HostLink {
   /** The node let go of the host (its shutdown): the events end without an exit, and the session goes on. */
   detached = false;
   #socket: Bun.Socket<undefined> | undefined;
+  /** What the socket hasn't taken yet: Bun's sockets don't buffer, so a write past what the kernel takes at once goes
+   * when it drains (a long message, a pasted image, went cut otherwise). */
+  #out: Uint8Array | undefined;
   #buf = "";
   #handed: number[] = [];
   #acked = 0;
@@ -116,6 +119,7 @@ export class HostLink {
     const decoder = new TextDecoder();
     link.#socket = await dialSocket(dir, {
       data: (_s, chunk) => link.#data(decoder.decode(chunk, { stream: true })),
+      drain: () => link.#flush(),
       close: () => link.#gone(),
       error: () => link.#gone(),
     });
@@ -175,8 +179,17 @@ export class HostLink {
 
   #write(line: unknown): boolean {
     if (this.#ended || !this.#socket) return false;
-    this.#socket.write(`${JSON.stringify(line)}\n`);
+    const bytes = new TextEncoder().encode(`${JSON.stringify(line)}\n`);
+    this.#out = this.#out ? Buffer.concat([this.#out, bytes]) : bytes;
+    this.#flush();
     return true;
+  }
+
+  #flush(): void {
+    const out = this.#out;
+    if (!out || !this.#socket) return;
+    const wrote = this.#socket.write(out);
+    this.#out = wrote < 0 || wrote >= out.length ? undefined : out.subarray(wrote);
   }
 
   send(command: SessionCommand): boolean {
@@ -200,6 +213,7 @@ export class HostLink {
     const deadline = Date.now() + DRAIN_MS;
     while (this.applied < total && Date.now() < deadline) await Bun.sleep(10);
     this.#ack();
+    while (this.#out && Date.now() < deadline) await Bun.sleep(10);
     this.#socket?.end();
     await Promise.race([this.#closed, Bun.sleep(CLOSE_MS)]);
     this.#gone();

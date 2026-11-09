@@ -238,7 +238,7 @@ export class Desktops implements Screens {
   /** What stands in the way of the Mac's screen now (mac/index.ts `blocked`; a test's own). */
   macGate: () => Blocked | undefined = macBlocked;
   /** The Mac's own screen, for a session to read and drive (a test's own). */
-  openMacScreen: (scratch: string) => Screen = (scratch) => MacScreen.open(scratch);
+  openMacScreen: (scratch: string) => Screen = () => MacScreen.open();
 
   constructor(
     private readonly node: Node,
