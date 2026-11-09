@@ -19,6 +19,37 @@ const gitEnv = (extra: Record<string, string> = {}) => ({
   ...extra,
 });
 
+/** The git config key a checkout fleetd cloned with a GitHub token carries (a cloud machine's, D306): its remote calls
+ * authenticate with the latest token an order's launch brought (useToken). Every other checkout uses the machine's own
+ * git login. */
+export const TOKEN_MARK = "fleetd.githubToken";
+
+/** Per checkout root, the GitHub token its remote calls use: the newest an order's launch there brought. */
+const tokens = new Map<string, string>();
+
+/** Has git authenticate to github.com with `token` through its environment only, as actions/checkout does: never in
+ * its arguments, where the process list shows it, nor in the repo's config, where agents and boat's snapshots would
+ * keep it. */
+export const tokenEnv = (token: string): Record<string, string> => ({
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+  GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+});
+
+/** Has the checkout at `root`'s remote calls use `token` from now on, when fleetd cloned it with one (TOKEN_MARK). A
+ * placeholder the hub hands agents in place of a token taken back (`fleetd-github-…`) is never used: the last real one
+ * goes on until it ends. */
+export function useToken(root: string, token: string): void {
+  if (!token || token.startsWith("fleetd-")) return;
+  if (tryGit(root, ["config", "--bool", "--get", TOKEN_MARK])?.trim() === "true") tokens.set(root, token);
+}
+
+/** What a remote call in `dir` adds to git's environment: its checkout's token, when it has one. */
+export const remoteEnv = (dir: string): Record<string, string> => {
+  const token = tokens.get(dir);
+  return token ? tokenEnv(token) : {};
+};
+
 const failed = (args: string[], stderr: string) => new GitError(`git ${args.join(" ")} failed: ${stderr.trim()}`);
 
 /** `git -C dir args…`, its stdout; throws GitError with git's stderr. */
@@ -40,7 +71,7 @@ const tryGit = (dir: string, args: string[]) => {
 /** git that talks to a remote, in a process group of its own killed at `timeoutMs`. */
 export function gitRemote(dir: string, args: string[], timeoutMs: number): Promise<string> {
   const sshSet = process.env.GIT_SSH_COMMAND || process.env.GIT_SSH || tryGit(dir, ["config", "--get", "core.sshCommand"])?.trim();
-  const env = gitEnv(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" });
+  const env = gitEnv({ ...(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" }), ...remoteEnv(dir) });
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", dir, ...args], { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     let stdout = "";
@@ -287,8 +318,80 @@ export async function freshBase(root: string, name: string): Promise<Base> {
   throw new GitError(`can't reach ${r} and have no copy of ${tracking} (fetch failed: ${said})`);
 }
 
-/** A commit this checkout already has. */
-export const knownCommit = (root: string, sha: string) => refSha(root, sha);
+/** `sha` as a full commit id when this repo has that commit; undefined for anything but a hex commit id, or one it
+ * lacks. */
+export const knownCommit = (root: string, sha: string) => (/^[0-9a-fA-F]{7,64}$/.test(sha) ? refSha(root, sha) : undefined);
+
+/** The URL path segments a PR's number follows: GitHub's, Gitea's, GitLab's and Bitbucket's. */
+const PR_SEGMENTS = ["pull", "pulls", "merge_requests", "pull-requests"];
+
+/** A PR's number from its URL on any host: `…/pull/7`, `…/-/merge_requests/7`, `…/pull-requests/7`. */
+export function prNumber(url: string): number | undefined {
+  const segments = (url.split(/[?#]/)[0] ?? "").split("/");
+  for (let i = 0; i + 1 < segments.length; i++)
+    if (PR_SEGMENTS.includes(segments[i]!) && /^\d+$/.test(segments[i + 1]!)) return Number(segments[i + 1]);
+  return undefined;
+}
+
+/** `[user@]host[:port]/path[.git][/]` as `host/path`, lowercased; undefined without both. */
+function repoKey(rest: string): string | undefined {
+  const slash = rest.indexOf("/");
+  if (slash < 0) return undefined;
+  const host = (rest.slice(0, slash).split("@").pop() ?? "").split(":")[0] ?? "";
+  let path = rest.slice(slash + 1).replace(/^\/+|\/+$/g, "");
+  if (path.endsWith(".git")) path = path.slice(0, -4);
+  return host && path ? `${host}/${path}`.toLowerCase() : undefined;
+}
+
+/** The repo a PR belongs to, as `host/owner/name` in lowercase. */
+export function prRepo(url: string): string | undefined {
+  const at = url.indexOf("://");
+  if (at < 0) return undefined;
+  const segments = (url.slice(at + 3).split(/[?#]/)[0] ?? "").split("/");
+  const pr = segments.findIndex((s) => PR_SEGMENTS.includes(s));
+  if (pr < 0) return undefined;
+  const repo = segments.slice(0, pr);
+  if (repo[repo.length - 1] === "-") repo.pop();
+  return repoKey(repo.join("/"));
+}
+
+/** A remote's repo as `host/owner/name` in lowercase, from any of git's URL forms; undefined for a local path. */
+export function remoteRepo(url: string): string | undefined {
+  const at = url.indexOf("://");
+  if (at >= 0) return repoKey(url.slice(at + 3));
+  // scp-like `[user@]host:path`, which has a colon before any slash.
+  const colon = url.indexOf(":");
+  if (colon < 0 || url.slice(0, colon).includes("/")) return undefined;
+  return repoKey(`${url.slice(0, colon)}/${url.slice(colon + 1)}`);
+}
+
+/** The remote whose URL is `repo`'s, `origin` first, then `upstream`. */
+function prRemote(root: string, repo: string): string | undefined {
+  const rank = (r: string) => (r === "origin" ? 0 : r === "upstream" ? 1 : 2);
+  const remotes = (tryGit(root, ["remote"]) ?? "").split("\n").filter(Boolean).sort((a, b) => rank(a) - rank(b));
+  // As configured: `url.<base>.insteadOf` rewrites only where git connects.
+  return remotes.find((r) => remoteRepo(tryGit(root, ["config", "--get", `remote.${r}.url`])?.trim() ?? "") === repo);
+}
+
+/** The head commit of the PR at `url`, fetched from the remote the PR belongs to, from whichever of GitHub's, GitLab's
+ * or Bitbucket's PR refs it publishes, into the object store alone: no ref, no FETCH_HEAD, nothing of the human's
+ * moves. Throws GitError when no remote is the PR's repo. */
+export async function prHead(root: string, url: string): Promise<string> {
+  const n = prNumber(url);
+  if (n === undefined) throw new GitError(`no PR number in ${url}`);
+  const repo = prRepo(url);
+  if (!repo) throw new GitError(`no repo in ${url}`);
+  const r = prRemote(root, repo);
+  if (!r) throw new GitError(`no remote is ${repo}`);
+  const listed = await gitRemote(root, ["ls-remote", r, `refs/pull/${n}/head`, `refs/merge-requests/${n}/head`, `refs/pull-requests/${n}/from`], LS_REMOTE_TIMEOUT_MS);
+  const line = listed.split("\n").find((l) => l.includes("\t"));
+  if (!line) throw new GitError(`${r} publishes no ref for PR ${n}`);
+  const [sha, name] = line.split("\t").map((x) => x.trim()) as [string, string];
+  if (!refSha(root, sha)) await gitRemote(root, ["fetch", "--no-tags", "--no-write-fetch-head", r, name], FETCH_TIMEOUT_MS);
+  const head = refSha(root, sha);
+  if (!head) throw new GitError(`${name} fetched without its commit ${sha}`);
+  return head;
+}
 
 /** What is left of a lost worktree's branch, best first (worktree.rs `Source`). */
 export type Source =

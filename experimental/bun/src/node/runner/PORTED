@@ -1,2 +1,3 @@
 cli:`fleetd session-host`
+mod:`node/runner/process.rs`
 mod:`node/runner/scope.rs`

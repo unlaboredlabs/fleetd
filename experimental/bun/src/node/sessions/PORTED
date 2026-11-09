@@ -6,6 +6,10 @@ link:node→hub `session_reply` send
 link:node→hub `spans` send
 link:node→hub `thread_event` send
 loop:node loop `sessions::SessionService::start`
+mod:`node/sessions/health.rs`
+mod:`node/sessions/proc.rs`
+mod:`node/sessions/share.rs`
+mod:`node/store.rs`
 session:session call `answer`
 session:session call `changes`
 session:session call `claude_account_reseal`

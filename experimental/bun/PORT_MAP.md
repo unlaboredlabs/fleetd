@@ -451,6 +451,13 @@ link, sessions, runner, worktrees, PTY through the Rust session-host.
 - [x] `node/power/inhibit.rs` → `src/node/power` (the sleep inhibitor while agents run: logind's on Linux, an IOPMAssertion on macOS) <!-- mod:`node/power/inhibit.rs` -->
 - [x] `node/power/clock.rs` → `src/node/power` (time asleep, so the node notices a wake: CLOCK_BOOTTIME on Linux, mach clocks on macOS) <!-- mod:`node/power/clock.rs` -->
 - [x] `node/self_exe.rs` → `src/node/self_exe` (the session host pinned where an update can't replace it, for the sessions' fleetd tools) <!-- mod:`node/self_exe.rs` -->
+- [x] `node/build_slots.rs` → `src/node/build_slots` (the cargo wrapper first on every agent's PATH, so its builds take the machine's build slots) <!-- mod:`node/build_slots.rs` -->
+- [x] `node/sessions/share.rs` → `src/node/sessions` (each agent's share of the CPUs for builds and test runners, and its brief's "## This machine" note) <!-- mod:`node/sessions/share.rs` -->
+- [x] `node/sessions/proc.rs` → `src/node/sessions` (what a dead node's sessions left running, stopped at start, sparing re-adopted trees) <!-- mod:`node/sessions/proc.rs` -->
+- [x] `node/sessions/health.rs` → `src/node/sessions` (runner health corrected by real runs, re-probed every 15 s while unusable) <!-- mod:`node/sessions/health.rs` -->
+- [x] `node/store.rs` → `src/node/sessions` (steps older than 30 days pruned; the span outbox bounded with a gap span) <!-- mod:`node/store.rs` -->
+- [x] `node/worktree.rs` → `src/node/worktree` (token-marked checkouts fetch with their order's GITHUB_TOKEN; a review at its PR's head) <!-- mod:`node/worktree.rs` -->
+- [x] `node/runner/process.rs` → `src/node/runner` (processes a task left running (the host's `.left` record) ended with the task) <!-- mod:`node/runner/process.rs` -->
 
 ### Service start and HTTP layers
 

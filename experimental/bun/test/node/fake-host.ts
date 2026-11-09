@@ -2,7 +2,8 @@
 // <session id> -- <program> <args…>`. It registers in <dir> (host.json), serves <dir>/sock with the host's lines
 // ({"seq","event"} out, {"ack"} / {"command"} / "stop" in), and plays a claude that answers each Send with one run:
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
-// Bash first and ends its run once answered. Shutdown exits.
+// Bash first and ends its run once answered; one with `auth:` fails as a refused login. Shutdown exits. Its
+// environment goes to <dir>/env.json.
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -80,12 +81,16 @@ Bun.listen({
             emit({ RunEnded: { run_id, outcome: { Failed: { class: "network", message: "Connection error.", retries: 0 } }, usage: null } });
             continue;
           }
+          if (text.includes("auth:")) {
+            emit({ RunEnded: { run_id, outcome: { Failed: { class: "auth", message: "Failed to authenticate. API Error: 401 OAuth token has expired.\nmore", retries: 0 } }, usage: null } });
+            continue;
+          }
           if (text.includes("refuse-model:") && model !== "claude-opus-5-5") {
             emit({ RunEnded: { run_id, outcome: { Failed: { class: "invalid_request", message: `model ${model} not found`, apiStatus: 404, retries: 0, model } }, usage: null } });
             continue;
           }
           if (text.includes("spans:"))
-            emit({ Spans: [1, 2, 3].map((n) => ({ key: `${run_id}/${n}`, kind: "run", sessionId: session, runId: run_id, startMs: n, endMs: n + 1, status: "ok" })) });
+            emit({ Spans: [1, 2, 3].map((n) => ({ key: `${run_id}/${n}`, kind: "run", sessionId: session, runId: run_id, startMs: Date.now() + n, endMs: Date.now() + n + 1, status: "ok" })) });
           if (text.includes("monitor:")) {
             const at = new Date().toISOString();
             emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input: { description: "ci", timeout_ms: 600000 } } } });
@@ -115,4 +120,6 @@ Bun.listen({
     },
   },
 });
+// What the session's claude would have been started with, for tests to read.
+writeFileSync(join(dir, "env.json"), JSON.stringify(process.env));
 writeFileSync(join(dir, "host.json"), JSON.stringify({ protocol: 1, hostPid: process.pid, hostStart: null, pid: process.pid, start: null, marker: process.env.FLEETD_RUNNER_SESSION ?? "" }));

@@ -19,6 +19,7 @@ import { spawnOutside } from "../../update/service.ts";
 import { grant as grantCheck, lostGrant, pane } from "./checks.ts";
 import { GRANTS, type MacCheckId, type MacHealth, toolsDir } from "./common.ts";
 import { tcc } from "./tcc.ts";
+import { selfArgv } from "../util.ts";
 
 /** How often the node checks the Mac's setup again. */
 export const CHECK_EVERY = 30_000;
@@ -153,10 +154,6 @@ export function answer(home: string, ask: (id: MacCheckId) => void = (id) => tcc
 export const every = (fresh: Grants | undefined) =>
   fresh?.accessibility === true && fresh.screenRecording === true ? CHECK_EVERY : 2_000;
 
-/** This binary's own command line: the compiled one, or Bun with the entry it runs. */
-export function selfArgv(): string[] {
-  return Bun.main.startsWith("/$bunfs/") ? [process.execPath] : [process.execPath, Bun.main];
-}
 
 /** How long the fresh process may take to say its grants. */
 const FRESH_TIMEOUT = 15_000;

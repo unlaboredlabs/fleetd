@@ -3,7 +3,7 @@
 // `fleetd session-host` (FLEETD_NATIVE_BIN, else `fleetd` on PATH), which outlives the node.
 import { refreshOwnUnit } from "../cli/setup/units.ts";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { CAP } from "./wire.ts";
 import { runNodeAction } from "./actions/index.ts";
@@ -63,6 +63,17 @@ export const CAPABILITIES = [
 /** Ends the hold (node/hold.rs `clear`): every tool call waiting on it starts. */
 function clearHold(home: string): void {
   for (const f of ["hold", "hold.screens", "hold.update", "held"]) rmSync(join(home, "update", f), { recursive: true, force: true });
+}
+
+/** What a stopped node left that nothing uses now: the remote-screen forwarders and folders of its sessions (their
+ * screens went with it) and the Telegram state of an older node (D339). Stale pins are self_exe.ts's. */
+export function startupCleanups(home: string): void {
+  let sessions: string[] = [];
+  try {
+    sessions = readdirSync(join(home, "sessions"));
+  } catch {}
+  for (const id of sessions) for (const dir of ["device-remote", "device-work"]) rmSync(join(home, "sessions", id, dir), { recursive: true, force: true });
+  rmSync(join(home, "telegram"), { recursive: true, force: true });
 }
 
 export function machineFingerprint(): string | undefined {
@@ -220,6 +231,7 @@ export type RunningNode = { node: Node; sessions: SessionService; stop: () => Pr
 export async function startNode(home: string, config: NodeConfig, enrollToken?: string, exitWhenEnrolled = false): Promise<RunningNode> {
   // The hold the node before this one kept for its update ends with it: what it held goes on now.
   clearHold(home);
+  startupCleanups(home);
   const identity = loadOrCreateIdentity(home);
   const boxKey = loadOrCreateBoxKey(home);
   console.log(`${new Date().toISOString()} INFO fleetd node starting {"machineId":"${config.machineId}","hub":"${config.hub}"}`);
@@ -283,6 +295,9 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       if (exitWhenEnrolled) resolveDone(0);
     };
 
+  /** A frame's work that failed past its own handling: logged, and the node carries on. */
+  const logFailed = (what: string) => (error: unknown) => console.warn(`${new Date().toISOString()} WARN ${what} failed: ${String((error as Error)?.message ?? error)}`);
+
   const handle = (frame: HubFrame, ctx: LinkContext) => {
     const refused = relay.toolOnly ? refusedOnMac(frame) : undefined;
     if (refused) return ctx.send(refused);
@@ -292,20 +307,20 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
       case "lead_result":
         return relay.resolve(frame as unknown as LeadResultFrame);
       case "cmd_check":
-        void runCmdCheck(frame as unknown as CmdCheck, roots, home, ctx.signal).then((r) => ctx.send({ t: "cmd_result", ...r }));
+        void runCmdCheck(frame as unknown as CmdCheck, roots, home, ctx.signal).then((r) => ctx.send({ t: "cmd_result", ...r }), logFailed("cmd_check"));
         return;
       case "secret_deliver":
         return ctx.send({ t: "secret_result", ...deliverSecret(frame as unknown as SecretDeliver, secretsCtx) });
       case "gated_run":
         // Not the link's: an approved command runs to its end when the link drops, and the hub asks for its result.
-        void gated.run(frame as unknown as GatedRun, ctx.hubId, secretsCtx).then((r) => link.send({ t: "gated_result", ...r }));
+        void gated.run(frame as unknown as GatedRun, ctx.hubId, secretsCtx).then((r) => link.send({ t: "gated_result", ...r }), logFailed("gated_run"));
         return;
       case "gated_resume":
-        void gated.resume(frame as unknown as GatedResume, ctx.hubId).then((r) => ctx.send({ t: "gated_result", ...r }));
+        void gated.resume(frame as unknown as GatedResume, ctx.hubId).then((r) => ctx.send({ t: "gated_result", ...r }), logFailed("gated_resume"));
         return;
       case "node_action":
-        if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx);
-        if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx);
+        if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
+        if (frame.action === "screens") return void screensAction(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
         void runNodeAction(frame as unknown as NodeAction, {
           hold: () => sessions.hold(),
           unhostedMidStep: () => sessions.unhostedMidStep(),
@@ -317,11 +332,11 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
             logins: LOGINS,
             reprobe: () => sessions.reprobe(),
           },
-        }).then((r) => ctx.send({ t: "node_action_result", ...r }));
+        }).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
         return;
       case "session_call":
         // Not the link's: a call that started finishes even if the link drops, and only its reply is lost.
-        void sessions.handle(frame as never).then((reply) => link.send({ t: "session_reply", ...reply }));
+        void sessions.handle(frame as never).then((reply) => link.send({ t: "session_reply", ...reply }), logFailed("session_call"));
         return;
       case "spans_ack":
         return sessions.spansAcked(Number(frame.upto), frame.rewind === true);
@@ -339,7 +354,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     if (!frame.update) return ctx.send(failed(Object.assign(new Error(`the hub named no build to ${frame.action === "fetch" ? "fetch" : "update to"}`), { stage: "download" })));
     if (frame.action === "fetch") {
       ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: "fetching" });
-      return void runFetch(frame.update, home);
+      return void runFetch(frame.update, home).catch(logFailed("fetch"));
     }
     let answer: Awaited<ReturnType<typeof runUpdate>>;
     try {
@@ -412,12 +427,18 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     woke: (signal) => wakes.next(signal),
     signal: shutdown.signal,
   });
-  void fatal.then((refused) => {
-    if (refused) {
-      process.stderr.write(`fleetd: ${refused.message}\n`);
+  void fatal.then(
+    (refused) => {
+      if (refused) {
+        process.stderr.write(`fleetd: ${refused.message}\n`);
+        resolveDone(1);
+      } else resolveDone(0);
+    },
+    (error) => {
+      process.stderr.write(`fleetd: the link to the hub failed: ${String((error as Error)?.message ?? error)}\n`);
       resolveDone(1);
-    } else resolveDone(0);
-  });
+    },
+  );
   const stop = async () => {
     shutdown.abort();
     stopSocket();
@@ -427,9 +448,18 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   return { node, sessions, stop, done };
 }
 
+/** From here on one task's failure never takes the node down, as a tokio task's panic doesn't end the Rust node: it is
+ * logged and the node carries on. With every session's host under the node's unit, a node that exited would take each
+ * agent on the machine with it. */
+export function guard(): void {
+  process.on("unhandledRejection", (reason) => console.error("fleetd node: a task failed:", reason));
+  process.on("uncaughtException", (error) => console.error("fleetd node: a task failed:", error));
+}
+
 async function runNodeProcess(home: string, config: NodeConfig, enrollToken: string | undefined, exitWhenEnrolled: boolean): Promise<number> {
   // The last process the kernel kills when memory runs out.
   protect("node");
+  guard();
   let running: RunningNode;
   try {
     running = await startNode(home, config, enrollToken, exitWhenEnrolled);

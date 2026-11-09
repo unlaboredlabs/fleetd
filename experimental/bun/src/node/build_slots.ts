@@ -127,12 +127,13 @@ export function buildFirst(args: string[]): string[] | undefined {
 /** `'value'`, as the node's order_env quotes for a shell. */
 const quoted = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
 
-/** Writes the cargo wrapper, which runs `exe`, unless it already says the same; its path. */
-export function install(home: string, exe: string): string {
+/** Writes the cargo wrapper, which runs `exe` (fleetd's command line: the binary, or Bun with its entry), unless it
+ * already says the same; its path. */
+export function install(home: string, exe: string[]): string {
   const bin = binDir(home);
   mkdirSync(bin, { recursive: true, mode: 0o700 });
   const wrapper = join(bin, "cargo");
-  const script = `#!/bin/sh\n# fleetd's: an agent's cargo build waits its turn for one of the machine's build slots.\nexec ${quoted(exe)} ${COMMAND} ${quoted(home)} "$@"\n`;
+  const script = `#!/bin/sh\n# fleetd's: an agent's cargo build waits its turn for one of the machine's build slots.\nexec ${exe.map(quoted).join(" ")} ${COMMAND} ${quoted(home)} "$@"\n`;
   let old: string | undefined;
   try {
     old = readFileSync(wrapper, "utf8");
@@ -145,6 +146,24 @@ export function install(home: string, exe: string): string {
   }
   return wrapper;
 }
+
+/** The wrapper's folder first on `env`'s PATH (installed now), for an agent session's claude. Left as it is when the
+ * wrapper can't be written: builds then run without turns. */
+export function addToPath(home: string, exe: string[], env: Record<string, string>): void {
+  try {
+    install(home, exe);
+  } catch (error) {
+    console.warn(`${new Date().toISOString()} WARN agents' builds won't take turns: the cargo wrapper was not written: ${(error as Error).message}`);
+    return;
+  }
+  // None set: the node's own, which the session would otherwise have searched.
+  const path = env.PATH ?? process.env.PATH ?? "";
+  env.PATH = path ? `${binDir(home)}:${path}` : binDir(home);
+}
+
+/** What a worker's standing rules say about build turns. */
+export const briefLine = (slots: number) =>
+  `- Cargo builds, tests, checks and clippy runs take turns for this machine's ${slots} build slots, one each; a \`cargo test\` takes two (a lib's tests beside the lib) unless it builds only \`--lib\` of one package or only named targets (\`--test <name>\`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.\n`;
 
 /** The first `cargo` on `path` outside `skip`. */
 export function realCargo(path: string, skip: string): string | undefined {

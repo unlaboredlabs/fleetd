@@ -153,6 +153,29 @@ test("a session the hub places on another machine: sealed to it, started there, 
   await agentNode.local.call("session_end", {}, "t1");
   expect(agentNode.router.remotes.size).toBe(0);
   expect(runner.router.hosted.size).toBe(0);
+
+  // An agent's claude that exits takes its session on the other machine with it, not at the session's idle timeout.
+  await agentNode.local.call("session_start", { purpose: "look again" }, "t2");
+  expect([agentNode.router.remotes.size, runner.router.hosted.size]).toEqual([1, 1]);
+  agentNode.node.area("launch").ended("t2");
+  for (let i = 0; i < 200 && runner.router.hosted.size > 0; i++) await Bun.sleep(10);
+  expect([agentNode.router.remotes.size, runner.router.hosted.size]).toEqual([0, 0]);
+});
+
+test("an agent's claude that exits ends its screen on its own machine", async () => {
+  const tn = testNode("devbox");
+  const broker = startNodeBrowser(tn.node, new Broker(tn.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  startRoute(tn.node, new Router(tn.node, broker, new NodeBoxKey(crypto.getRandomValues(new Uint8Array(32)))));
+  cleanups.push(async () => {
+    await broker.shutdown();
+    tn.done();
+  });
+  await broker.open("t1", "look");
+  await broker.open("t2", "look too");
+  tn.node.area("launch").ended("t1");
+  for (let i = 0; i < 200 && broker.live("t1"); i++) await Bun.sleep(10);
+  expect(broker.live("t1")).toBeUndefined();
+  expect(broker.live("t2")).toBeDefined();
 });
 
 test("a hosted start's sealed secrets reach its broker, which scrubs its recording of them", async () => {

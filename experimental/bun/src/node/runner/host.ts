@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
+import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
 
 /** Bumped when the lines between a host and a node change incompatibly (host.rs PROTOCOL). */
 export const PROTOCOL = 1;
@@ -345,6 +346,33 @@ export async function stop(dir: string): Promise<void> {
   }
   if (registration) killTree(registration);
   rmSync(dir, { recursive: true, force: true });
+}
+
+/** Where the host in `dir` records the orphans its session leaves it: beside the dir, which the session's next host
+ * starts afresh, so the record holds every host's of the session until its task ends (endLeft). */
+export const leftFile = (dir: string) => `${dir}.left`;
+
+/** The session's task ended: SIGKILLs what its hosts recorded its tree left behind (by pid and start time, whatever
+ * scope or environment it has now) and everything those started, and forgets the record. Never between the session's
+ * turns, which may leave a browser or a server running on purpose. How many processes it ended. */
+export async function endLeft(dir: string): Promise<number> {
+  const file = leftFile(dir);
+  let text = "";
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {}
+  const roots: Proc[] = [];
+  for (const line of text.split("\n")) {
+    const [pid, start] = line.trim().split(" ").map(Number);
+    const p = pid !== undefined && pid > 1 ? statOf(pid) : undefined;
+    if (p && !p.zombie && p.start === start) roots.push(p);
+  }
+  const procs = roots.length ? table() : [];
+  const found = dedupe([...roots, ...roots.flatMap((r) => descendants(procs, r.pid))]);
+  signal(found, "SIGKILL");
+  await gone(found, STOP_WAIT_MS);
+  rmSync(file, { force: true });
+  return found.length;
 }
 
 /** Every pid whose environment carries `marker` (Linux). */

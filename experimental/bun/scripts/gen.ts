@@ -314,6 +314,13 @@ const MODULES_WITHOUT_A_WIRE: [rust: string, module: string, what: string][] = [
   ["node/power/inhibit.rs", "node/power", "the sleep inhibitor while agents run: logind's on Linux, an IOPMAssertion on macOS"],
   ["node/power/clock.rs", "node/power", "time asleep, so the node notices a wake: CLOCK_BOOTTIME on Linux, mach clocks on macOS"],
   ["node/self_exe.rs", "node/self_exe", "the session host pinned where an update can't replace it, for the sessions' fleetd tools"],
+  ["node/build_slots.rs", "node/build_slots", "the cargo wrapper first on every agent's PATH, so its builds take the machine's build slots"],
+  ["node/sessions/share.rs", "node/sessions", "each agent's share of the CPUs for builds and test runners, and its brief's \"## This machine\" note"],
+  ["node/sessions/proc.rs", "node/sessions", "what a dead node's sessions left running, stopped at start, sparing re-adopted trees"],
+  ["node/sessions/health.rs", "node/sessions", "runner health corrected by real runs, re-probed every 15 s while unusable"],
+  ["node/store.rs", "node/sessions", "steps older than 30 days pruned; the span outbox bounded with a gap span"],
+  ["node/worktree.rs", "node/worktree", "token-marked checkouts fetch with their order's GITHUB_TOKEN; a review at its PR's head"],
+  ["node/runner/process.rs", "node/runner", "processes a task left running (the host's `.left` record) ended with the task"],
 ];
 for (const [rust, module, what] of MODULES_WITHOUT_A_WIRE) {
   if (!existsSync(join(CRATE, rust))) throw new Error(`gen: crates/fleetd/src/${rust} is gone: update MODULES_WITHOUT_A_WIRE`);
