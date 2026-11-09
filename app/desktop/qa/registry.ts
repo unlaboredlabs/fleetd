@@ -121,7 +121,8 @@ export const fixtures = [
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
-  // status-rows with search blocked by a usage pause on buildbox: the top bar's reason with Resume (fixtures/topbar).
+  // status-rows with search blocked by a usage pause on buildbox: the reason with Resume, over the composer
+  // (fixtures/topbar).
   "topbar-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
@@ -547,7 +548,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
   },
-  // A red main is a warning in the top bar, in the hub's words, not a block (checkout's `ios sessions`).
+  // A red main is a warning over the composer, in the hub's words, not a block (checkout's `ios sessions`).
   {
     id: "chat",
     route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
@@ -558,14 +559,14 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-attention="warning"]')).toHaveText("ios sessions is red on main, fix in progress");
     },
   },
-  // A project blocked by its machine's usage pause: the reason in the top bar, with Resume (search, on buildbox).
+  // A project blocked by its machine's usage pause: the reason over the composer, with Resume (search, on buildbox).
   {
     id: "chat",
     route: "#/project/buildbox/558dc655-fbca-48f0-abf1-6977a0709ea9",
     fixtures: ["topbar-paused"],
     variant: "usage-paused",
     open: async (page) => {
-      const line = page.locator("header").locator('[data-attention="blocked"]');
+      const line = page.locator("[data-say]").locator('[data-attention="blocked"]');
       await expect(line).toContainText("Blocked: paused until Sun 23:40 UTC");
       await expect(line.getByRole("button", { name: /^Resume/u })).toBeVisible();
     },
@@ -614,7 +615,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Retry now" }).click();
       await expect(page.getByText(/Reconnecting…/u)).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry now" })).toBeDisabled();
-      await expect(page.locator("header").getByText(/^Offline, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Offline, as of/u)).toBeVisible();
     },
   },
   // Back online before the chat is read again: marked as last known, never as current; and when that read failed,
@@ -626,7 +627,7 @@ export const screens: readonly Screen[] = [
     variant: "reread",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Last known, as of/u)).toBeVisible();
       await expect(page.getByText("Earlier messages load once you’re connected.")).toHaveCount(0);
     },
   },
@@ -639,7 +640,7 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
       await expect(page.locator('[data-screen="chat"]').getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.locator("[data-say]").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
   // An agent in the strip's lanes opens in the panel's agents, where its work is (the chat doesn't draw it itself):
