@@ -2,7 +2,8 @@
 // `repo_clone`), with git's progress sent to the hub as `clone_progress` frames, and `gh repo list` (`gh_repo_list`).
 // git writes into a sibling that is renamed into place only when complete, so the destination existing always means
 // a whole clone. A GitHub token (a cloud machine's clone, D306) reaches git through its environment only.
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import type { ClonePhase } from "../../shared/contracts.ts";
 import type { CloneProgressFrame, GhRepo, GhRepos } from "../../shared/sessions.ts";
@@ -102,12 +103,12 @@ export async function clone(url: string, dest: string, addId: string, token: str
   }
   const id = [...addId].filter((c) => /[A-Za-z0-9]/.test(c)).slice(0, 40).join("");
   const partial = `${dest}${PARTIAL}${id}`;
-  rmSync(partial, { recursive: true, force: true });
+  await rm(partial, { recursive: true, force: true });
   try {
     await gitClone(url, partial, token, progress);
     if (token) {
       try {
-        git(partial, ["config", TOKEN_MARK, "true"]);
+        await git(partial, ["config", TOKEN_MARK, "true"]);
       } catch (error) {
         throw new Error(`cannot mark the clone: ${(error as Error).message}`);
       }
@@ -117,9 +118,9 @@ export async function clone(url: string, dest: string, addId: string, token: str
     } catch (error) {
       throw new Error(`cannot move the clone into ${dest}: ${(error as Error).message}`);
     }
-    if (token) useToken(dest, token);
+    if (token) await useToken(dest, token);
   } catch (error) {
-    rmSync(partial, { recursive: true, force: true });
+    await rm(partial, { recursive: true, force: true });
     throw error;
   }
 }

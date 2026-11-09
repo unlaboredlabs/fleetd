@@ -117,14 +117,14 @@ export function hubUrls(listenHost: string, port: number, configured: string | u
   return [...new Set(candidates.map(([, u]) => u))];
 }
 
-/** `tailscale ip -4`, only when a `tailscale` binary is on PATH. */
-function tailnetIp(): string | undefined {
+/** `tailscale ip -4`, only when a `tailscale` binary is on PATH; off the event loop, and given up on at 5 s. */
+async function tailnetIp(): Promise<string | undefined> {
   const bin = Bun.which("tailscale");
   if (!bin) return undefined;
   try {
-    const out = Bun.spawnSync([bin, "ip", "-4"], { stdin: "ignore", stderr: "ignore" });
-    return out.stdout
-      .toString()
+    const child = Bun.spawn([bin, "ip", "-4"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: 5000 });
+    const [out] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+    return out
       .split("\n")
       .map((l) => l.trim())
       .find((l) => isIP(l) === 4 && isTailnet(l));
@@ -184,7 +184,7 @@ export async function hubUrlsAt(hub: Hub): Promise<string[]> {
   const host = listen.host.replace(/^\[+|\]+$/g, "");
   const everywhere = isIP(host) !== 0 && isUnspecified(host);
   const configured = setup?.url !== undefined && !setup.url.includes("0.0.0.0") && !setup.url.includes("[::]") ? setup.url : undefined;
-  const [tailnet, lan] = everywhere ? [tailnetIp(), await lanIp()] : [undefined, undefined];
+  const [tailnet, lan] = everywhere ? await Promise.all([tailnetIp(), lanIp()]) : [undefined, undefined];
   return hubUrls(listen.host, listen.port, configured, tailnet, lan);
 }
 

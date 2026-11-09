@@ -3,9 +3,11 @@
 // goes to its checkout's pool when its worktree goes, and the next reader's new worktree takes the newest one by a
 // rename, so nothing is copied and no two worktrees build into one directory. The taker's tracked files are touched so
 // its own crates rebuild from its sources. A pool keeps at most `warmBuilds` (node.json, 2 by default); one that goes
-// is renamed out first (`.gone-…`), so a reader taking it at the same moment gets it whole or not at all.
+// is renamed out first (`.gone-…`), so a reader taking it at the same moment gets it whole or not at all. A target is
+// gigabytes over many files: its removal and the touch run off the event loop.
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, utimesSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, statSync } from "node:fs";
+import { lstat, rm, utimes } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { readConfig } from "../config.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
@@ -62,7 +64,7 @@ const givenAt = (target: string) => {
 };
 
 /** Takes `target` out of its pool and removes it; whether it went (a reader that took it first wins). */
-function evict(target: string): boolean {
+async function evict(target: string): Promise<boolean> {
   const gone = join(dirname(target), `${GONE}${basename(target)}`);
   try {
     renameSync(target, gone);
@@ -70,7 +72,7 @@ function evict(target: string): boolean {
     return false;
   }
   try {
-    rmSync(gone, { recursive: true, force: true });
+    await rm(gone, { recursive: true, force: true });
   } catch (error) {
     console.warn(`old warm build not removed: ${gone}: ${String(error)}`);
   }
@@ -78,30 +80,34 @@ function evict(target: string): boolean {
 }
 
 /** Prunes a pool to its newest `n`, dropping those older than MAX_AGE_MS and what an interrupted removal left. */
-export function prunePool(dir: string, n: number, now = Date.now()): number {
+export async function prunePool(dir: string, n: number, now = Date.now()): Promise<number> {
   let gone = 0;
   try {
     for (const name of readdirSync(dir)) {
       if (!name.startsWith(GONE)) continue;
-      rmSync(join(dir, name), { recursive: true, force: true });
+      await rm(join(dir, name), { recursive: true, force: true });
       gone++;
     }
   } catch {}
-  waiting(dir).forEach((target, i) => {
+  for (const [i, target] of waiting(dir).entries()) {
     const at = givenAt(target);
     const old = at !== undefined && now - at > MAX_AGE_MS;
-    if ((i >= n || old) && evict(target)) gone++;
-  });
+    if ((i >= n || old) && (await evict(target))) gone++;
+  }
   return gone;
 }
 
 /** The node's daily cleanup: every checkout's pool pruned to `n`. */
-export function prune(home: string, n: number): number {
+export async function prune(home: string, n: number): Promise<number> {
+  let names: string[];
   try {
-    return readdirSync(pools(home)).reduce((sum, p) => sum + prunePool(join(pools(home), p), n), 0);
+    names = readdirSync(pools(home));
   } catch {
     return 0;
   }
+  let gone = 0;
+  for (const p of names) gone += await prunePool(join(pools(home), p), n);
+  return gone;
 }
 
 const isDir = (p: string) => {
@@ -120,7 +126,7 @@ const isFile = (p: string) => {
 };
 
 /** Hands the `target/` of a reader's worktree, about to go, to its checkout's pool, dropping the oldest past `n`. */
-export function give(home: string, root: string, worktree: string, n: number): void {
+export async function give(home: string, root: string, worktree: string, n: number): Promise<void> {
   const target = join(worktree, "target");
   if (n === 0 || !isDir(target) || !isFile(join(worktree, "Cargo.lock"))) return;
   const dir = pool(home, root);
@@ -132,12 +138,12 @@ export function give(home: string, root: string, worktree: string, n: number): v
     console.warn(`warm build not handed on: ${target}: ${String(error)}`);
     return;
   }
-  for (const old of waiting(dir).slice(n)) evict(old);
+  for (const old of waiting(dir).slice(n)) await evict(old);
 }
 
 /** Gives a reader's new worktree without a `target/` the newest of its pool, and touches its tracked files so cargo
  * rebuilds its own crates from them. Whether it got one. */
-export function take(home: string, root: string, worktree: string): boolean {
+export async function take(home: string, root: string, worktree: string): Promise<boolean> {
   const target = join(worktree, "target");
   if (existsSync(target) || !isFile(join(worktree, "Cargo.lock"))) return false;
   // Another reader starting at the same time may take one first: the next is tried.
@@ -149,47 +155,55 @@ export function take(home: string, root: string, worktree: string): boolean {
       return false;
     }
   });
-  if (got) touch(worktree);
+  if (got) await touch(worktree);
   return got;
 }
 
-function touch(worktree: string): void {
+/** Files touched at once. */
+const TOUCH_BATCH = 64;
+
+async function touch(worktree: string): Promise<void> {
   let files: string;
   try {
-    files = git(worktree, ["ls-files", "-z"]);
+    files = await git(worktree, ["ls-files", "-z"]);
   } catch {
     return;
   }
   const now = new Date();
-  for (const file of files.split("\0").filter(Boolean)) {
-    const path = join(worktree, file);
-    try {
-      if (lstatSync(path).isFile()) utimesSync(path, now, now);
-    } catch {}
+  const paths = files.split("\0").filter(Boolean);
+  for (let i = 0; i < paths.length; i += TOUCH_BATCH) {
+    await Promise.all(
+      paths.slice(i, i + TOUCH_BATCH).map(async (file) => {
+        const path = join(worktree, file);
+        try {
+          if ((await lstat(path)).isFile()) await utimes(path, now, now);
+        } catch {}
+      }),
+    );
   }
 }
 
 /** Drops the warm targets of a checkout that is going. */
-export function dropPool(home: string, root: string): void {
-  rmSync(pool(home, root), { recursive: true, force: true });
+export async function dropPool(home: string, root: string): Promise<void> {
+  await rm(pool(home, root), { recursive: true, force: true });
 }
 
 const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
 /** What a reader's worktree at `cwd` is set up with: the project's commands when it has some, else an install for each
  * tracked lockfile in a directory the commits since `base` touched; time-boxed, and a failure starts it anyway. */
-export function readerSetup(project: WorktreeSetup | undefined, cwd: string, base: string): WorktreeSetup | undefined {
-  const own = project && (project.commands ?? []).length ? project : installs(cwd, base);
+export async function readerSetup(project: WorktreeSetup | undefined, cwd: string, base: string): Promise<WorktreeSetup | undefined> {
+  const own = project && (project.commands ?? []).length ? project : await installs(cwd, base);
   if (!own) return undefined;
   return { ...own, runAnyway: true, timeoutSec: Math.min(own.timeoutSec ?? 600, SETUP_LIMIT_SEC) };
 }
 
-function installs(cwd: string, base: string): WorktreeSetup | undefined {
+async function installs(cwd: string, base: string): Promise<WorktreeSetup | undefined> {
   let changed: string[];
   let tracked: string[];
   try {
-    changed = git(cwd, ["diff", "--name-only", `${base}...HEAD`]).split("\n").filter(Boolean);
-    tracked = git(cwd, ["ls-files", "-z"]).split("\0");
+    changed = (await git(cwd, ["diff", "--name-only", `${base}...HEAD`])).split("\n").filter(Boolean);
+    tracked = (await git(cwd, ["ls-files", "-z"])).split("\0");
   } catch {
     return undefined;
   }

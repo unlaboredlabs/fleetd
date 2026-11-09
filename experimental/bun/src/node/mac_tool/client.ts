@@ -2,12 +2,14 @@
 // comes to its node as the lead call `mac`, which this turns into sealed steps: `mac_where` names the Mac and its key,
 // each step goes with `mac_send`, and only this node opens the answers. A push snapshots the worktree as git sees it
 // (its own index, never the agent's) and sends only what the Mac lacks as a thin pack; a pull brings a file or a
-// folder (as a tar.gz) back into the worktree.
+// folder (as a tar.gz) back into the worktree. Its git and tar run off the event loop: a big worktree's snapshot never
+// stalls the node's link.
 //
 // While the session holds a simulator, its `agent-device` is the forwarder (./shim.ts), which runs each command there.
 //
 // TODO(bun): the action log of the session's runs, and following a background run to its end.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import { selfArgv } from "../util.ts";
@@ -37,60 +39,66 @@ type Mac = { machineId: string; key: Uint8Array };
 
 const WHO = { GIT_AUTHOR_NAME: "fleetd mac", GIT_AUTHOR_EMAIL: "mac@fleetd.invalid", GIT_COMMITTER_NAME: "fleetd mac", GIT_COMMITTER_EMAIL: "mac@fleetd.invalid" };
 
-function git(dir: string, args: string[], env: Record<string, string> = {}): string {
-  const out = Bun.spawnSync(["git", "-C", dir, ...args], { env: { ...process.env, ...env }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
-  if (out.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${out.stderr.toString().trim()}`);
-  return out.stdout.toString().trim();
+/** `argv`, awaited: its exit code, stdout and stderr. */
+async function run(argv: string[], opts: { env?: Record<string, string>; stdin?: Uint8Array; stdout?: Bun.BunFile } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+  const child = Bun.spawn(argv, {
+    env: { ...process.env, ...opts.env },
+    stdin: opts.stdin ?? "ignore",
+    stdout: opts.stdout ?? "pipe",
+    stderr: "pipe",
+  });
+  const out = child.stdout instanceof ReadableStream ? new Response(child.stdout).text() : Promise.resolve("");
+  const [stdout, stderr, code] = await Promise.all([out, new Response(child.stderr).text(), child.exited]);
+  return { code, stdout, stderr };
+}
+
+async function git(dir: string, args: string[], env: Record<string, string> = {}): Promise<string> {
+  const out = await run(["git", "-C", dir, ...args], { env });
+  if (out.code !== 0) throw new Error(`git ${args[0]} failed: ${out.stderr.trim()}`);
+  return out.stdout.trim();
 }
 
 /** The worktree's files as one commit, on its own index: the snapshot the Mac checks out (push.rs `snapshot`). */
-export function snapshot(worktree: string, scratch: string, parent?: string): string {
+export async function snapshot(worktree: string, scratch: string, parent?: string): Promise<string> {
   const index = join(scratch, "mac-push.index");
-  const real = git(worktree, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
+  const real = await git(worktree, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
   rmSync(index, { force: true });
   if (existsSync(real)) copyFileSync(real, index);
   const env = { GIT_INDEX_FILE: index };
   try {
-    git(worktree, ["add", "--all", "."], env);
-    const tree = git(worktree, ["write-tree"], env);
+    await git(worktree, ["add", "--all", "."], env);
+    const tree = await git(worktree, ["write-tree"], env);
     if (parent) {
       try {
-        if (git(worktree, ["rev-parse", `${parent}^{tree}`]) === tree) return parent;
+        if ((await git(worktree, ["rev-parse", `${parent}^{tree}`])) === tree) return parent;
       } catch {
         // Not a commit here.
       }
     }
-    return git(worktree, ["commit-tree", tree, "-m", "fleetd mac push", ...(parent ? ["-p", parent] : [])], WHO);
+    return await git(worktree, ["commit-tree", tree, "-m", "fleetd mac push", ...(parent ? ["-p", parent] : [])], WHO);
   } finally {
     rmSync(index, { force: true });
   }
 }
 
 /** Of the snapshots the Mac holds, those this worktree has too: what a pack may leave out. */
-export function known(worktree: string, haves: string[]): string[] {
-  return haves.filter((h) => {
-    if (!/^[0-9a-fA-F]{40,}$/.test(h)) return false;
-    try {
-      git(worktree, ["cat-file", "-e", `${h}^{commit}`]);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+export async function known(worktree: string, haves: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const h of haves) {
+    if (!/^[0-9a-fA-F]{40,}$/.test(h)) continue;
+    if (await git(worktree, ["cat-file", "-e", `${h}^{commit}`]).then(() => true, () => false)) out.push(h);
+  }
+  return out;
 }
 
 /** A thin pack of `snap` without what the Mac holds. */
-export function pack(worktree: string, scratch: string, snap: string, knownIds: string[]): string {
+export async function pack(worktree: string, scratch: string, snap: string, knownIds: string[]): Promise<string> {
   const path = join(scratch, "mac-push.pack");
   const revs = `${snap}\n${knownIds.map((k) => `^${k}\n`).join("")}`;
-  const out = Bun.spawnSync(["git", "-C", worktree, "pack-objects", "--revs", "--thin", "--stdout", "--quiet"], {
-    stdin: new TextEncoder().encode(revs),
-    stdout: Bun.file(path),
-    stderr: "pipe",
-  });
-  if (out.exitCode !== 0) {
+  const out = await run(["git", "-C", worktree, "pack-objects", "--revs", "--thin", "--stdout", "--quiet"], { stdin: new TextEncoder().encode(revs), stdout: Bun.file(path) });
+  if (out.code !== 0) {
     rmSync(path, { force: true });
-    throw new Error(`git pack-objects failed: ${out.stderr.toString().trim()}`);
+    throw new Error(`git pack-objects failed: ${out.stderr.trim()}`);
   }
   return path;
 }
@@ -124,27 +132,27 @@ function merge(from: string, to: string): void {
 }
 
 /** A pulled piece into place: a file as it is, a folder's tar.gz unpacked and merged, never with links or `..`. */
-export function place(part: string, dest: string, folder: boolean): void {
+export async function place(part: string, dest: string, folder: boolean): Promise<void> {
   mkdirSync(dirname(dest), { recursive: true });
   if (!folder) {
     if (existsSync(dest) && statSync(dest).isDirectory()) throw new Error(`${dest} is a folder`);
     return renameSync(part, dest);
   }
-  const listed = Bun.spawnSync(["tar", "-tvzf", part], { stdout: "pipe", stderr: "pipe" });
-  if (listed.exitCode !== 0) throw new Error("the folder's archive doesn't read");
-  const names = Bun.spawnSync(["tar", "-tzf", part], { stdout: "pipe" }).stdout.toString().split("\n").filter(Boolean);
-  const linked = listed.stdout.toString().split("\n").some((l) => l.startsWith("l") || l.startsWith("h"));
+  const listed = await run(["tar", "-tvzf", part]);
+  if (listed.code !== 0) throw new Error("the folder's archive doesn't read");
+  const names = (await run(["tar", "-tzf", part])).stdout.split("\n").filter(Boolean);
+  const linked = listed.stdout.split("\n").some((l) => l.startsWith("l") || l.startsWith("h"));
   const climbs = names.some((n) => n.startsWith("/") || n.split("/").includes(".."));
   if (linked || climbs) throw new Error("the folder's archive holds links or paths outside it");
   const unpack = mkdtempSync(join(dirname(dest), ".mac-pull-"));
   try {
-    const out = Bun.spawnSync(["tar", "-xzf", part, "-C", unpack, "--no-same-owner"], { stdout: "pipe", stderr: "pipe" });
-    if (out.exitCode !== 0) throw new Error(`tar failed: ${out.stderr.toString().trim()}`);
+    const out = await run(["tar", "-xzf", part, "-C", unpack, "--no-same-owner"]);
+    if (out.code !== 0) throw new Error(`tar failed: ${out.stderr.trim()}`);
     const top = readdirSync(unpack)[0];
     if (!top) throw new Error("the folder came back empty");
     merge(join(unpack, top), dest);
   } finally {
-    rmSync(unpack, { recursive: true, force: true });
+    await rm(unpack, { recursive: true, force: true });
   }
 }
 
@@ -268,8 +276,8 @@ export class MacClient {
     let snap: string;
     let knownIds: string[];
     try {
-      knownIds = known(worktree, have.snapshots);
-      snap = snapshot(worktree, scratch, knownIds[0]);
+      knownIds = await known(worktree, have.snapshots);
+      snap = await snapshot(worktree, scratch, knownIds[0]);
     } catch (e) {
       throw failed(`the worktree's snapshot wasn't made: ${(e as Error).message}`);
     }
@@ -278,7 +286,7 @@ export class MacClient {
     if (!knownIds.includes(snap)) {
       let path: string;
       try {
-        path = pack(worktree, scratch, snap, knownIds);
+        path = await pack(worktree, scratch, snap, knownIds);
       } catch (e) {
         throw failed(`the push's pack wasn't made: ${(e as Error).message}`);
       }
@@ -354,7 +362,7 @@ export class MacClient {
       closeSync(fd);
     }
     try {
-      place(part, dest, folder);
+      await place(part, dest, folder);
     } catch (e) {
       throw failed(`the pull wasn't placed: ${(e as Error).message}`);
     } finally {

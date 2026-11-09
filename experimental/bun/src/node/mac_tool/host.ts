@@ -25,6 +25,7 @@ import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, basename, isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { ToolError } from "../../shared/errors.ts";
+import { inTurn } from "../util.ts";
 import { type Activity, clipCommand, type JobActivity, type SimActivity } from "./activity.ts";
 import type { MacSims } from "../device/ios/sims.ts";
 import type { MacCaller, MacCallFrame, MacResultFrame, McpToolError } from "../../shared/screens_wire.ts";
@@ -81,10 +82,17 @@ const failed = (what: string, e: unknown) => new ToolError("failed", `${what}: $
 export type Agent = { dir: string; project: string; name: string };
 const repoOf = (a: Agent) => join(a.dir, "repo");
 
-function git(dir: string, args: string[], stdin?: Uint8Array): string {
-  const out = Bun.spawnSync(["git", "-C", dir, ...args], { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "pipe" });
-  if (out.exitCode !== 0) throw new ToolError("failed", `git ${args[0]} failed on the Mac: ${out.stderr.toString().trim()}`);
-  return out.stdout.toString();
+/** `argv`, awaited off the event loop: a checkout of a whole tree never stalls the Mac's link or its other jobs. */
+async function run(argv: string[], stdin?: Blob): Promise<{ code: number; stdout: string; stderr: string }> {
+  const child = Bun.spawn(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  return { code, stdout, stderr };
+}
+
+async function git(dir: string, args: string[]): Promise<string> {
+  const out = await run(["git", "-C", dir, ...args]);
+  if (out.code !== 0) throw new ToolError("failed", `git ${args[0]} failed on the Mac: ${out.stderr.trim()}`);
+  return out.stdout;
 }
 
 type Job = { command: string; background: boolean; startedMs: number; child: Subprocess; log: string; exit: number | undefined; followed: number };
@@ -230,7 +238,7 @@ export class Host {
     const none = new Uint8Array();
     switch (step.step) {
       case "have":
-        return [{ step: "have", snapshots: haves(this.mirror(agent.project), agent.name), raw: true }, none];
+        return [{ step: "have", snapshots: await haves(this.mirror(agent.project), agent.name), raw: true }, none];
       case "put": {
         const name = safePart(step.name);
         if (!name) throw refuse(`${step.name} can't name a file`);
@@ -244,7 +252,7 @@ export class Host {
           if (!name) throw refuse(`${step.pack} can't name a file`);
           pack = join(agent.dir, "in", name);
         }
-        return [checkout(this.mirror(agent.project), repoOf(agent), agent.name, step.snapshot, pack), none];
+        return [await checkout(this.mirror(agent.project), repoOf(agent), agent.name, step.snapshot, pack), none];
       }
       case "run":
         return [this.start(agent, step.args, step.env ?? [], step.background), none];
@@ -255,7 +263,7 @@ export class Host {
       case "kill":
         return [{ step: "kill", job: step.job, killed: this.kill(agent.name, step.job) }, none];
       case "get":
-        return get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false);
+        return await get(agent.dir, repoOf(agent), step.path, step.offset, step.raw ?? false);
       case "sim_start":
         if (!this.sims) {
           throw new ToolError(
@@ -458,17 +466,17 @@ function readFrom(path: string, offset: number, max: number): Uint8Array {
 }
 
 /** The snapshots of the project the Mac holds: the agent's own first, then the newest, at most HAVE_MAX. */
-export function haves(mirror: string, agent: string): string[] {
+export async function haves(mirror: string, agent: string): Promise<string[]> {
   if (!existsSync(mirror)) return [];
   let listed = "";
   try {
-    listed = git(mirror, ["for-each-ref", "--sort=-committerdate", "--format=%(objectname)", "refs/fleetd/"]);
+    listed = await git(mirror, ["for-each-ref", "--sort=-committerdate", "--format=%(objectname)", "refs/fleetd/"]);
   } catch {
     // An empty mirror.
   }
   const out: string[] = [];
   try {
-    const own = git(mirror, ["rev-parse", "--verify", "-q", `refs/fleetd/${agent}`]).trim();
+    const own = (await git(mirror, ["rev-parse", "--verify", "-q", `refs/fleetd/${agent}`])).trim();
     if (own) out.push(own);
   } catch {
     // No snapshot of its own yet.
@@ -497,56 +505,57 @@ export function put(path: string, offset: number, data: Uint8Array): Done {
 
 const snapshotId = (id: string) => (id.length === 40 || id.length === 64) && /^[0-9a-fA-F]+$/.test(id);
 
+/** Each mirror's checkouts, one after another, as when they ran on the event loop. */
+const mirrorTurns = new Map<string, Promise<unknown>>();
+
 /**
  * The agent's `repo/` becomes `snapshot`: the pack goes into the project's mirror first, the snapshot is kept there
  * under the agent's name, and the worktree is checked out at it. Files git ignores (builds, node_modules) stay.
  */
-export function checkout(mirror: string, repo: string, name: string, snapshot: string, pack: string | undefined): Done {
+export const checkout = (mirror: string, repo: string, name: string, snapshot: string, pack: string | undefined): Promise<Done> =>
+  inTurn(mirrorTurns, mirror, () => checkoutNow(mirror, repo, name, snapshot, pack));
+
+async function checkoutNow(mirror: string, repo: string, name: string, snapshot: string, pack: string | undefined): Promise<Done> {
   if (!snapshotId(snapshot)) throw refuse(`${snapshot} is not a commit id`);
   if (!existsSync(mirror)) {
     mkdirSync(mirror, { recursive: true });
-    git(mirror, ["init", "--quiet", "--bare"]);
+    await git(mirror, ["init", "--quiet", "--bare"]);
   }
   const commit = `${snapshot}^{commit}`;
-  const has = () => {
-    try {
-      git(mirror, ["cat-file", "-e", commit]);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const has = () => git(mirror, ["cat-file", "-e", commit]).then(
+    () => true,
+    () => false,
+  );
   // A checkout sent again after its answer was lost: its pack went into the mirror already.
-  if (pack !== undefined && !(!existsSync(pack) && has())) {
+  if (pack !== undefined && !(!existsSync(pack) && (await has()))) {
     if (!existsSync(pack)) throw refuse("the push's pack is missing", "run mac push again");
-    const data = Bun.file(pack);
-    const out = Bun.spawnSync(["git", "-C", mirror, "index-pack", "--stdin", "--fix-thin"], { stdin: data, stdout: "pipe", stderr: "pipe" });
+    const out = await run(["git", "-C", mirror, "index-pack", "--stdin", "--fix-thin"], Bun.file(pack));
     rmSync(pack, { force: true });
-    if (out.exitCode !== 0) {
-      throw new ToolError("failed", `the push's pack didn't index: ${out.stderr.toString().trim()}`, "run mac push again");
+    if (out.code !== 0) {
+      throw new ToolError("failed", `the push's pack didn't index: ${out.stderr.trim()}`, "run mac push again");
     }
   }
-  if (!has()) throw refuse("the Mac doesn't have that snapshot", "run mac push again");
-  git(mirror, ["update-ref", `refs/fleetd/${name}`, snapshot]);
+  if (!(await has())) throw refuse("the Mac doesn't have that snapshot", "run mac push again");
+  await git(mirror, ["update-ref", `refs/fleetd/${name}`, snapshot]);
   let fresh = !existsSync(join(repo, ".git"));
   if (!fresh) {
     try {
-      git(repo, ["rev-parse", "--git-dir"]);
+      await git(repo, ["rev-parse", "--git-dir"]);
     } catch {
       fresh = true;
     }
   }
   if (fresh) {
-    rmSync(repo, { recursive: true, force: true });
+    await rm(repo, { recursive: true, force: true });
     try {
-      git(mirror, ["worktree", "prune"]);
+      await git(mirror, ["worktree", "prune"]);
     } catch {
       // Nothing to prune.
     }
-    git(mirror, ["worktree", "add", "--force", "--detach", repo, snapshot]);
+    await git(mirror, ["worktree", "add", "--force", "--detach", repo, snapshot]);
   } else {
-    git(repo, ["checkout", "--quiet", "--force", "--detach", snapshot]);
-    git(repo, ["clean", "-fdq"]);
+    await git(repo, ["checkout", "--quiet", "--force", "--detach", snapshot]);
+    await git(repo, ["clean", "-fdq"]);
   }
   return { step: "checkout", folder: repo };
 }
@@ -573,7 +582,7 @@ export function inside(dir: string, repo: string, path: string): string {
 }
 
 /** One piece of a file in the agent's folder, or of a folder packed as a tar.gz (the first piece packs it). */
-export function get(dir: string, repo: string, path: string, offset: number, raw: boolean): [Done, Uint8Array] {
+export async function get(dir: string, repo: string, path: string, offset: number, raw: boolean): Promise<[Done, Uint8Array]> {
   const real = inside(dir, repo, path);
   const folder = statSync(real).isDirectory();
   let source = real;
@@ -582,8 +591,8 @@ export function get(dir: string, repo: string, path: string, offset: number, raw
     source = join(dir, "out", `pull-${tag}.tgz`);
     if (offset === 0) {
       // Links followed: what comes back holds files and folders only.
-      const out = Bun.spawnSync(["tar", "-czhf", source, "-C", dirname(real), basename(real)], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
-      if (out.exitCode !== 0) throw new ToolError("failed", `${path} wasn't packed: ${out.stderr.toString().trim()}`);
+      const out = await run(["tar", "-czhf", source, "-C", dirname(real), basename(real)]);
+      if (out.code !== 0) throw new ToolError("failed", `${path} wasn't packed: ${out.stderr.trim()}`);
     }
   }
   const total = existsSync(source) ? statSync(source).size : 0;

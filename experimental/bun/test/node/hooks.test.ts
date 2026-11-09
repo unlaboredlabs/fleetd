@@ -9,7 +9,7 @@ import { tempHome } from "../helpers.ts";
 const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
   spawnSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8", env: { ...process.env, ...env } });
 
-test("a writer's push goes only once the repo's pre-push check passed on its tree", () => {
+test("a writer's push goes only once the repo's pre-push check passed on its tree", async () => {
   const home = tempHome();
   try {
     const remote = join(home.dir, "remote.git");
@@ -22,7 +22,7 @@ test("a writer's push goes only once the repo's pre-push check passed on its tre
     git(repo, ["commit", "-q", "-m", "declare the check"]);
     git(repo, ["remote", "add", "origin", remote]);
     const env: Record<string, string> = {};
-    gate(repo, env);
+    await gate(repo, env);
     const refused = git(repo, ["push", "-q", "origin", "main"], env);
     expect(refused.status).not.toBe(0);
     expect(refused.stderr).toContain("fleetd: push refused: scripts/check.sh hasn't passed on main's tree at");
@@ -39,7 +39,7 @@ test("a writer's push goes only once the repo's pre-push check passed on its tre
   }
 });
 
-test("a writer's commits name its task where the repo keeps per-worktree config", () => {
+test("a writer's commits name its task where the repo keeps per-worktree config", async () => {
   const home = tempHome();
   try {
     const repo = join(home.dir, "repo");
@@ -48,9 +48,9 @@ test("a writer's commits name its task where the repo keeps per-worktree config"
     git(repo, ["commit", "-q", "--allow-empty", "-m", "init"]);
     const wt = join(home.dir, "wt");
     git(repo, ["worktree", "add", "-q", "-b", "fleetd/T42-x", wt]);
-    expect(trailerHooks(wt, "T42")).toBe(false);
+    expect(await trailerHooks(wt, "T42")).toBe(false);
     git(repo, ["config", "extensions.worktreeConfig", "true"]);
-    expect(trailerHooks(wt, branchTask("fleetd/T42-x")!)).toBe(true);
+    expect(await trailerHooks(wt, branchTask("fleetd/T42-x")!)).toBe(true);
     git(wt, ["commit", "-q", "--allow-empty", "-m", "work"]);
     expect(git(wt, ["log", "-1", "--format=%B"]).stdout).toContain("Fleetd-Task: T42");
     // The person's checkout keeps its hooks.

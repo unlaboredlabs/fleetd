@@ -30,21 +30,15 @@ export const HOOKS = [
 ];
 export const HOT_HOOKS = ["reference-transaction", "post-index-change"];
 
-const tryGit = (cwd: string, args: string[]) => {
-  try {
-    return git(cwd, args);
-  } catch {
-    return undefined;
-  }
-};
+const tryGit = (cwd: string, args: string[]) => git(cwd, args).catch(() => undefined);
 
 /** The repo's own hooks dir, seen from the worktree `cwd`. */
-export function ownHooksDir(cwd: string): string {
+export async function ownHooksDir(cwd: string): Promise<string> {
   for (const scope of ["--local", "--global", "--system"]) {
-    const dir = tryGit(cwd, ["config", "--includes", "--type=path", scope, "core.hooksPath"]);
+    const dir = await tryGit(cwd, ["config", "--includes", "--type=path", scope, "core.hooksPath"]);
     if (dir !== undefined) return join(cwd, dir.trim());
   }
-  return join(git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim(), "hooks");
+  return join((await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim(), "hooks");
 }
 
 const OWN_HOOK = `#!/bin/sh
@@ -72,11 +66,11 @@ const isFile = (path: string) => {
 
 /** In a linked worktree whose repo has `extensions.worktreeConfig` on, points the worktree's own hooks at a dir whose
  * `prepare-commit-msg` adds `Fleetd-Task: <task>`, every hook then running the repo's own. Whether they are set. */
-export function trailerHooks(cwd: string, task: string): boolean {
-  const path = (what: string) => git(cwd, ["rev-parse", "--path-format=absolute", what]).trim();
-  const gitDir = path("--git-dir");
-  if (gitDir === path("--git-common-dir")) throw new GitError(`${cwd} is not a linked worktree`);
-  if (tryGit(cwd, ["config", "--local", "--type=bool", "extensions.worktreeConfig"])?.trim() !== "true") return false;
+export async function trailerHooks(cwd: string, task: string): Promise<boolean> {
+  const path = async (what: string) => (await git(cwd, ["rev-parse", "--path-format=absolute", what])).trim();
+  const gitDir = await path("--git-dir");
+  if (gitDir === (await path("--git-common-dir"))) throw new GitError(`${cwd} is not a linked worktree`);
+  if ((await tryGit(cwd, ["config", "--local", "--type=bool", "extensions.worktreeConfig"]))?.trim() !== "true") return false;
   const dir = join(gitDir, "fleetd-hooks");
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
@@ -86,9 +80,9 @@ export function trailerHooks(cwd: string, task: string): boolean {
     join(dir, "prepare-commit-msg"),
     `#!/bin/sh\n# fleetd: each commit names its task, so its work is found from git alone.\ngit interpret-trailers --in-place --if-exists addIfDifferent --trailer ${quoted(`${TASK_TRAILER}: ${task}`)} "$1" || true\nexec ${own} prepare-commit-msg "$@"\n`,
   );
-  const theirs = ownHooksDir(cwd);
+  const theirs = await ownHooksDir(cwd);
   for (const name of [...HOOKS, ...HOT_HOOKS.filter((n) => isFile(join(theirs, n)))]) writeHook(join(dir, name), `#!/bin/sh\nexec ${own} ${name} "$@"\n`);
-  git(cwd, ["config", "--worktree", "core.hooksPath", dir]);
+  await git(cwd, ["config", "--worktree", "core.hooksPath", dir]);
   return true;
 }
 
@@ -144,8 +138,8 @@ export function addConfig(env: Env, key: string, value: string): void {
 
 /** Sets up the gate for the worktree `cwd` and adds to `env` what points its git there (`includeIf.gitdir`), never a
  * config file: the person's checkout and pushes keep their hooks as they are. */
-export function gate(cwd: string, env: Env): void {
-  const gitDir = realpathSync(git(cwd, ["rev-parse", "--absolute-git-dir"]).trim());
+export async function gate(cwd: string, env: Env): Promise<void> {
+  const gitDir = realpathSync((await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim());
   if (gitDir.includes("\n")) throw new GitError(`${gitDir} has a line break`);
   const dir = join(gitDir, DIR);
   const hooks = join(dir, "hooks");
@@ -156,8 +150,8 @@ export function gate(cwd: string, env: Env): void {
   writeHook(join(hooks, "pre-push"), GATE.replace("exec BENEATH", `exec ${beneath}`));
   // The hot hooks only where they run already: with fleetd's trailer hooks set, they are what the worktree's own config
   // points at.
-  const worktreeDir = tryGit(cwd, ["config", "--includes", "--type=path", "--worktree", "core.hooksPath"]);
-  const theirs = worktreeDir !== undefined ? (isAbsolute(worktreeDir.trim()) ? worktreeDir.trim() : join(cwd, worktreeDir.trim())) : ownHooksDir(cwd);
+  const worktreeDir = await tryGit(cwd, ["config", "--includes", "--type=path", "--worktree", "core.hooksPath"]);
+  const theirs = worktreeDir !== undefined ? (isAbsolute(worktreeDir.trim()) ? worktreeDir.trim() : join(cwd, worktreeDir.trim())) : await ownHooksDir(cwd);
   for (const name of [...HOOKS, "prepare-commit-msg", ...HOT_HOOKS.filter((n) => isFile(join(theirs, n)))]) {
     if (name === "pre-push") continue;
     writeHook(join(hooks, name), `#!/bin/sh\nexec ${beneath} ${name} "$@"\n`);
@@ -169,4 +163,4 @@ export function gate(cwd: string, env: Env): void {
 }
 
 /** Whether `cwd` holds a file the gate reads (tests). */
-export const gated = (cwd: string) => existsSync(join(realpathSync(git(cwd, ["rev-parse", "--absolute-git-dir"]).trim()), DIR, "hooks", "pre-push"));
+export const gated = async (cwd: string) => existsSync(join(realpathSync((await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim()), DIR, "hooks", "pre-push"));

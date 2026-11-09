@@ -1,9 +1,8 @@
 // Adding a project, the machine's half (crates/fleetd/src/node/repos.rs, cli/setup/detect.rs): find checkouts, look
 // at one. Clones and `gh repo list` are ../actions/clone.ts's.
-import { spawnSync } from "node:child_process";
 import { type Dirent, existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { defaultBranch } from "../worktree/index.ts";
+import { defaultBranch, git as runGit } from "../worktree/index.ts";
 
 const MAX_REPOS = 200;
 export const PARTIAL = ".fleetd-partial-";
@@ -110,8 +109,7 @@ export async function inspect(path: string): Promise<RepoFacts> {
   if (!existsSync(path)) return { exists: false, isGit: false, workflowFiles: [] };
   const git = join(path, ".git");
   if (!existsSync(git)) return { exists: true, isGit: false, workflowFiles: [] };
-  const out = spawnSync("git", ["-C", path, "remote", "get-url", "origin"], { encoding: "utf8" });
-  let remote = out.status === 0 ? out.stdout.trim() || undefined : undefined;
+  let remote = (await runGit(path, ["remote", "get-url", "origin"]).catch(() => "")).trim() || undefined;
   if (!remote) {
     try {
       remote = parseGitRemote(readFileSync(join(git, "config"), "utf8"));
