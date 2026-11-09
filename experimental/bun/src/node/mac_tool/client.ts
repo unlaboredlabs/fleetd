@@ -151,7 +151,11 @@ export function place(part: string, dest: string, folder: boolean): void {
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 export class MacClient {
-  constructor(private readonly node: Node) {}
+  constructor(
+    private readonly node: Node,
+    /** The command the forwarder runs: the node's pinned binary (mac_tool/index.ts `self`). */
+    private readonly self: () => string[] = selfArgv,
+  ) {}
 
   private async find(thread: string, cwd: string): Promise<Mac> {
     const r = await hubCall(this.node, "mac_where", {}, { threadId: thread, cwd, waitMs: SEND_WAIT });
@@ -193,7 +197,7 @@ export class MacClient {
   /** Puts the forwarding agent-device first on the session's PATH, as the session now holds a simulator. */
   private forward(thread: string): void {
     try {
-      installForwarder(this.node.home, thread, selfArgv());
+      installForwarder(this.node.home, thread, this.self());
     } catch (e) {
       throw failed(`agent-device wasn't put on your PATH: ${(e as Error).message}`);
     }

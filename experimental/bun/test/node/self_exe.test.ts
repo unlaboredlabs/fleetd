@@ -3,7 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pinFrom } from "../../src/node/self_exe.ts";
+import { pinFrom, pinSelf } from "../../src/node/self_exe.ts";
 import { tempHome } from "../helpers.ts";
 
 const cleanups: (() => void)[] = [];
@@ -61,4 +61,23 @@ test.if(process.platform === "linux" || process.platform === "darwin")("a gone n
   writeFileSync(helper, "");
   pinFrom(helper, home, 999999996, process.platform);
   expect(existsSync(used)).toBe(true);
+});
+
+test("a compiled node pins itself for agents' mac, apart from the session host's pins; from source it runs Bun with its entry", () => {
+  const dir = tempHome();
+  cleanups.push(dir.done);
+  const home = join(dir.dir, "node");
+  const installed = join(dir.dir, "fleetd");
+  writeFileSync(installed, "#!/bin/sh\necho bun build\n");
+  chmodSync(installed, 0o755);
+  expect(pinSelf(home, "/src/main.ts", "/usr/bin/bun")).toEqual(["/usr/bin/bun", "/src/main.ts"]);
+  const helper = pinFrom(installed, home, process.pid);
+  const [pinned, ...rest] = pinSelf(home, "/$bunfs/root/fleetd", installed);
+  expect(rest).toEqual([]);
+  expect(pinned).toBe(join(home, "bin", `fleetd-bun-${process.pid}`));
+  // An update renamed over the installed binary leaves the pin as it was, and the session host's pin stays.
+  writeFileSync(`${installed}.new`, "#!/bin/sh\necho newer\n");
+  renameSync(`${installed}.new`, installed);
+  expect(Bun.spawnSync([pinned!]).stdout.toString()).toBe("bun build\n");
+  expect(existsSync(helper)).toBe(true);
 });
