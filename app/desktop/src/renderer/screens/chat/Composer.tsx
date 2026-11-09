@@ -29,6 +29,7 @@ import { useDraft, useDrafts } from "./drafts";
 import { useSkillPicker } from "./SkillPicker";
 import type { ReplyTarget } from "./actions";
 import { replyText } from "./bubbles";
+import { hubName } from "../shell/model";
 import c from "./composer.module.css";
 
 const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
@@ -57,6 +58,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
+  // The hub restarting: what is sent waits for it, and the box says so.
+  const away = useData((d) => ((d.hub.phase === "connecting" || d.hub.phase === "retrying") && d.hub.restarting !== undefined ? hubName(d.hub.hub) : undefined));
   const { chat } = useDataLayer();
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -267,7 +270,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           ref={box}
           className={c.input}
           aria-label={`Message ${who ?? "the lead"}`}
-          placeholder={placeholder(working, who)}
+          placeholder={placeholder(working, who, away)}
           rows={1}
           value={draft.text}
           autoFocus={autoFocus}

@@ -176,6 +176,20 @@ export default defineGroup({
         f.appUpdate = state({ kind: "current" }, { ...RELEASE, cli: NEXT });
         return f;
       })(),
+      // W521: the hub row's word and its popover, found as the app opens (the hub's own automatic update, or one pressed
+      // in another window): a machine put back, then everything updated a few minutes ago.
+      (() => {
+        const f = withHub("put-back", "The hub updated by itself, and one machine didn't start the new build, so it was put back: Put back.", NEXT, { release: { ...RELEASE, cli: NEXT } });
+        const run = runOf(f, done, [{ state: "rolled_back", stage: "health", message: "Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again" }], done, true);
+        f.answer("hub_update_status", {}, { run });
+        return f;
+      })(),
+      (() => {
+        const f = withHub("updated", "The hub and its machines updated themselves a few minutes ago: Updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });
+        const run = { ...runOf(f, done, [done, done], done, true), finishedAt: "2026-10-19T10:24:00.000Z" };
+        f.answer("hub_update_status", {}, { run });
+        return f;
+      })(),
       everything("refused", "Update pressed with a key that isn't Admin everywhere: the hub's words and fix.", () => null),
       // W469: Update automatically on, on Hub › Updates and in the sheet: the last update it made, and the ready build it
       // installs next and when; and one holding back, its last update partial, with why and its next look.

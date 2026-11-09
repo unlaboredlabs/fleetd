@@ -251,6 +251,8 @@ export const fixtures = [
   "updates-run-left-over",
   "updates-auto-on",
   "updates-auto-held",
+  "updates-put-back",
+  "updates-updated",
   // Only-me projects (fixtures/only-me): Ada and Home first in the sidebar and Taxes archived, Ada asking to book a
   // table and following work it asked for.
   "only-me-chats",
@@ -321,7 +323,7 @@ const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
 };
 
-/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+/** Hub › Updates, as the palette's "Check for updates" opens it (the app menu runs the same command). */
 const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
@@ -1309,16 +1311,27 @@ export const screens: readonly Screen[] = [
       await page.locator("#project-panel").getByRole("tablist").first().waitFor();
     },
   },
-  // C1 and W38: updates. The sidebar's line above the connection for each state that has one, and the sheet the
-  // palette's "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't
-  // update, up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download), of
-  // the hub and its machines (up to date, version unknown, a newer build on the channel, older than this app, one
-  // machine behind), and of an Update run already going when the sheet opens (the hub restarting, the machines).
+  // C1, W38 and W521: updates. The hub row's word for each state that has one, and its popover's note; and Hub ›
+  // Updates as the palette's "Check for updates" opens it, for every state of this app (not checked yet, checking, a
+  // build that doesn't update, up to date, found, downloading to restart, ready, the deb's command, a failed check, a
+  // failed download), of the hub and its machines (up to date, version unknown, a newer build on the channel, older
+  // than this app, one machine behind), and of an Update run already going when it opens (the hub restarting, the
+  // machines).
   {
     id: "shell",
     route: "#/",
     fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-run-hub"],
     variant: "updates",
+  },
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-hub-ready", "updates-run-hub", "updates-put-back", "updates-updated"],
+    variant: "updates-popover",
+    open: async (page) => {
+      await page.locator("[data-hub-status]").first().click();
+      await page.locator("[data-update-note]").waitFor();
+    },
   },
   {
     id: "updates",
@@ -1361,7 +1374,7 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-updates-part="all"] [role="alert"], [data-updates-part="all"] [role="status"]').first().waitFor();
     },
   },
-  // W112: a run nothing in the hub drives any more, followed when the sheet opens: Start over, quiet beside it.
+  // W112: a run nothing in the hub drives any more, followed when Hub › Updates opens: Start over, quiet beside it.
   {
     id: "updates",
     route: "#/",

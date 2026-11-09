@@ -1,4 +1,4 @@
-// What the updates surfaces say: the sidebar's one line, the one "ready" notice, and the sheet: one overall state with
+// What the updates surfaces say: the hub row's line (quiet.ts makes it a word), and Hub › Updates: one overall state with
 // the Update button, one line per part it updates (the hub, each machine, Claude Code, this app) with Retry on a
 // failed one, and each part's steps behind Details. Pure, so every state is unit-tested; the components only lay it
 // out.
@@ -32,14 +32,7 @@ export interface PartLine {
   readonly label?: string;
 }
 
-/** "fleetd <version> is ready", once per version: what's new in a few plain lines, and Update. */
-export interface Notice {
-  readonly version: string;
-  readonly title: string;
-  readonly notes: Notes;
-}
-
-/** How many of what's new the notice and the sheet's head show; Details shows each part's in full. */
+/** How many of what's new the hub row's popover and the sheet's head show; Details shows each part's in full. */
 export const NOTES_SHOWN = 3;
 
 export type AppAction = "install" | "keep" | "check";
@@ -77,8 +70,6 @@ export interface HubPart extends PartRow {
 export interface UpdatesView {
   /** The sidebar's line; null when there is nothing to say. */
   readonly line: Line | null;
-  /** The quiet notice that a newer build is downloaded and ready; null when there is none, or while one runs. */
-  readonly notice: Notice | null;
   /** The sheet's lines: the hub, each machine, Claude Code (once a run has it), this app. */
   readonly lines: readonly PartLine[];
   readonly app: AppPart | null;
@@ -95,6 +86,14 @@ export interface UpdatesView {
   readonly startOver: { readonly note: string } | null;
   /** Update now, beside a run whose machines wait for their agents to finish their step: it stops the wait. */
   readonly updateNow: boolean;
+  /** The hub's run goes on, whoever started it: this window, another, or the hub's own automatic update. */
+  readonly running: boolean;
+  /** The build the shown run goes or went to, as people read it; null without one. */
+  readonly to: string | null;
+  /** The build the hub ran before the shown run, raw; null without one. */
+  readonly from: string | null;
+  /** When the shown run finished, ISO; null while it goes on or without one. */
+  readonly finishedAt: string | null;
 }
 
 /** How long a followed run goes unchanged before Start over shows beside it. A machine's own restart is back well
@@ -414,10 +413,6 @@ const appLineOf = (state: UpdatesState, flow: Flow, runGoing: boolean): LineSay 
 /** The version an app update found, if any. */
 const foundVersion = (app: AppUpdate): string | null => (app.kind === "available" || app.kind === "ready" || app.kind === "manual" ? app.version : null);
 
-/** The notice's version, without an Edge build's commit: a toast is also read aloud, where a hash says nothing. The
- * sheet names the build in full. */
-const noticeLabel = (version: string): string => versionLabel(version).replace(/ · [0-9a-f]{7,}$/u, "");
-
 /** What's new to the hub and to this app, together, the first few. */
 const whatsNew = (...of: readonly Notes[]): Notes => {
   const lines = [...new Set(of.flatMap((n) => n.lines))];
@@ -426,12 +421,15 @@ const whatsNew = (...of: readonly Notes[]): Notes => {
 
 /** How long a finished run still shows: across this app's own restart at its end, and a while after. */
 export const RESULT_SHOWN_MS = 15 * 60_000;
+/** One that didn't all come through: long enough for an admin who was away to read it. */
+export const FAILED_SHOWN_MS = 24 * 60 * 60_000;
 
 /** The run to show: one going on, one started in this window, or one that finished lately. */
 const shown = (run: UpdateRun | null, flow: Flow, now: number): UpdateRun | null => {
   if (run === null) return null;
   if (run.finishedAt === undefined || flow.phase !== "idle") return run;
-  return now - Date.parse(run.finishedAt) < RESULT_SHOWN_MS ? run : null;
+  const failed = run.parts.some((p) => p.state === "failed" || p.state === "rolled_back");
+  return now - Date.parse(run.finishedAt) < (failed ? FAILED_SHOWN_MS : RESULT_SHOWN_MS) ? run : null;
 };
 
 /** The parts whose update didn't go through, by name, for "Update failed: the hub". */
@@ -523,10 +521,6 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
               : `Updates the hub, then ${machinesWord}, each within 2 minutes (agents carry on through it), then this app, which restarts.`,
           notes: whatsNew(hubPart?.notes ?? NO_NOTES, app === null ? NO_NOTES : appPart(app).notes),
         };
-  // Only once a build is downloaded and checked, the hub's or this app's own: never for one still to fetch.
-  const readyVersion = hubReady ?? (app?.app.kind === "ready" ? app.app.version : null);
-  const notice: Notice | null =
-    readyVersion === null || update === null || runGoing ? null : { version: readyVersion, title: `fleetd ${noticeLabel(readyVersion)} is ready`, notes: update.notes };
 
   const lines: PartLine[] = [];
   if (hub.url !== null) {
@@ -610,7 +604,22 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
         }
       : null;
   const updateNow = drain !== null && !reconnecting;
-  return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going, startOver, updateNow };
+  return {
+    line,
+    lines,
+    app: app === null ? null : appPart(app),
+    hub: hubPart,
+    nodes,
+    update,
+    progress,
+    going,
+    startOver,
+    updateNow,
+    running: runGoing,
+    from: live?.parts.find((p) => p.part === "hub")?.from ?? null,
+    to: to === null ? null : versionLabel(to),
+    finishedAt: live?.finishedAt ?? null,
+  };
 };
 
 /**

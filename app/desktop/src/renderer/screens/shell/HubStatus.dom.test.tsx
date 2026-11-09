@@ -10,7 +10,7 @@ import { HubStatus } from "./HubStatus";
 import { parseHash } from "./routes";
 
 const fleetd = vi.hoisted(() => {
-  const f = { fixture: null as string | null, platform: "linux" };
+  const f = { fixture: null as string | null, platform: "linux", updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) } };
   (window as unknown as { fleetd: typeof f }).fleetd = f;
   return f;
 });
@@ -72,6 +72,21 @@ it("shows only the actions that apply to each state", () => {
     "Disconnect…",
   ]);
   expect(open({ phase: "unpaired" })).toEqual(["Pair with a hub"]);
+});
+
+it("keeps the hub's name through an update's restart, says it is updating, and calls it offline only after 2 minutes", () => {
+  const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms, updatingTo: "0.9.2" });
+  expect(open(away(1_000))).toEqual(["Settings › Hubs", "Disconnect…"]);
+  const chip = () => host.querySelector<HTMLElement>("[data-hub-status]");
+  expect(chip()?.dataset["tone"]).toBe("restarting");
+  expect(chip()?.textContent).toBe("devboxUpdating…");
+  expect(popover()).toContain("Updating fleetd…");
+  expect(popover()).not.toContain("Nothing is listening");
+  // Long: the line in the main area has Try now, and so does the popover.
+  expect(open(away(40_000))).toEqual(["Retry now", "Settings › Hubs", "Disconnect…"]);
+  expect(open(away(130_000))).toEqual(["Retry now", "Settings › Hubs", "Disconnect…"]);
+  expect(chip()?.textContent).toBe("Offline");
+  expect(popover()).toContain("Nothing is listening");
 });
 
 it("offers nothing to do on sample data", () => {
@@ -180,4 +195,15 @@ it("shows a member the machines online and down as plain text: Machines is for a
   const pop = document.querySelector("[aria-label='Hub'][role='dialog']");
   expect(pop?.querySelector("[data-opens='machines']")).toBeNull();
   expect(pop?.textContent).toContain("1 of 2 online");
+});
+
+it("keeps the hub's name through any other restart, quietly, and calls it offline once the screens stop holding", () => {
+  const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms });
+  open(away(1_000));
+  const chip = () => host.querySelector<HTMLElement>("[data-hub-status]");
+  expect(chip()?.textContent).toBe("devbox");
+  expect(popover()).toContain("Reconnecting…");
+  expect(popover()).not.toContain("Updating");
+  open(away(11_000));
+  expect(chip()?.textContent).toBe("Offline");
 });
