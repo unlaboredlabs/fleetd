@@ -14,7 +14,7 @@ import {
   toolOnly,
   TOOL_ONLY,
 } from "../src/node/agents_mac/index.ts";
-import { blocksSimulators, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run } from "../src/node/agents_mac/checks.ts";
+import { blocksSimulators, COMMAND_TIMEOUT, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run } from "../src/node/agents_mac/checks.ts";
 import { healthFile, type MacCheckId, toolsDir } from "../src/node/agents_mac/common.ts";
 import {
   answer,
@@ -344,7 +344,9 @@ test("grants: a restart once for a grant the running node lacks, forgotten once 
   expect(forgets(g(yes, yes), l)).toBe(false);
   expect(forgets(g(yes, no), undefined)).toBe(false);
 
-  // Off macOS this process has no grant to read: a fresh one with Screen Recording restarts the node, once.
+  // Off macOS this process has no grant to read: a fresh one with Screen Recording restarts the node, once. On a Mac it
+  // reads its own, and whether it restarts hangs on what the runner was granted: the restarts below are Linux's.
+  if (process.platform === "darwin") return;
   const home = scratch();
   let restarts = 0;
   const found = await takeUp(home, () => g(yes, yes), () => restarts++);
@@ -418,14 +420,16 @@ test("the Mac's commands run off the event loop and are stopped when they hang",
   expect(stopped.code).toBeUndefined();
   expect(stopped.out).toContain("stopped after");
   expect((await ranCommand("fleetd-no-such-program", [])).code).toBeUndefined();
-  // Off a Mac its commands are missing: the checks still read, and the loop ticks on meanwhile.
+  // Off a Mac its commands are missing; on one (mac.yml) they run, xcodebuild's among them: either way the checks
+  // read, and the loop ticks on meanwhile.
   let ticks = 0;
   const timer = setInterval(() => ticks++, 1);
   const h = run(await readMac(undefined, { kind: "installing" }));
   clearInterval(timer);
   expect(h.checks.map((c) => c.id)).toEqual(ALL);
   expect(ticks).toBeGreaterThan(0);
-});
+  // readMac's three rounds of commands, each within its own limit.
+}, 3 * COMMAND_TIMEOUT + 10_000);
 
 test("`fleetd node grants` is the CLI's", async () => {
   const home = scratch();
