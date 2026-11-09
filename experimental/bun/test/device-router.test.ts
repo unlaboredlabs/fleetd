@@ -19,6 +19,12 @@ function fakeBroker() {
       live.delete(thread);
       return { sessionId: "Bbrowser", kind: "browser", files: [] };
     },
+    // The broker's own dispatch (browser/index.ts `call`), for the two calls this fake takes.
+    async call(thread: string, frame: { call: { op: string } }) {
+      if (frame.call.op === "session_start") return { op: "session_start", ...(await broker.open(thread)) };
+      if (frame.call.op === "session_end") return { op: "session_end", ...(await broker.end(thread)) };
+      throw new Error(`the fake broker takes no ${frame.call.op}`);
+    },
   };
   return { broker: broker as unknown as Broker, live };
 }

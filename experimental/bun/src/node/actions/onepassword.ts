@@ -151,6 +151,16 @@ async function installNow(home: string): Promise<string> {
   return helper;
 }
 
+/** What the helper answered as an error, in plain words (never a value), and whether 1Password rate-limited it. */
+export class OnePasswordError extends Error {
+  constructor(
+    message: string,
+    readonly rateLimited = false,
+  ) {
+    super(message);
+  }
+}
+
 /** The SDK helper with one token: a process started on the first question, asked one line at a time. */
 export class OnePassword {
   #proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
@@ -208,8 +218,32 @@ export class OnePassword {
     } catch {
       throw new Error("the 1Password helper said nothing readable");
     }
-    if (typeof parsed.error === "string") throw new Error(`1Password: ${parsed.error}`);
+    if (typeof parsed.error === "string") throw new OnePasswordError(`1Password: ${parsed.error}`, parsed.rateLimited === true);
     return parsed;
+  }
+
+  /** A reference's value and its item's websites; an item without a website comes with no value (nothing fills it). */
+  async ask(reference: string): Promise<{ value: string; urls: string[] }> {
+    const parsed = await this.exchange({ ref: reference });
+    const urls = (Array.isArray(parsed.urls) ? parsed.urls : []).filter((u): u is string => typeof u === "string");
+    if (typeof parsed.value === "string") return { value: parsed.value, urls };
+    if (parsed.value === undefined && urls.length === 0) return { value: "", urls };
+    throw new OnePasswordError("1Password returned no value");
+  }
+
+  /** A field of an Identity, Passport, Driver License or Social Security item: for an approved secure input only. */
+  async identity(reference: string): Promise<{ value: string; urls: string[] }> {
+    const parsed = await this.exchange({ identity: reference });
+    if (typeof parsed.value === "string" && parsed.value) return { value: parsed.value, urls: [] };
+    throw new OnePasswordError("1Password returned no value");
+  }
+
+  /** A Credit Card item's details, as the helper reads them (browser/onepassword.ts shapes them). */
+  async card(reference: string): Promise<{ number: string; expiry: string; cvc: string; name: string }> {
+    const parsed = await this.exchange({ card: reference });
+    const card = (parsed.card ?? {}) as Record<string, unknown>;
+    const take = (key: string) => (typeof card[key] === "string" ? (card[key] as string) : "");
+    return { number: take("number"), expiry: take("expiry"), cvc: take("cvc"), name: take("name") };
   }
 
   /** The names of the vaults the token reads: a token's Test. */

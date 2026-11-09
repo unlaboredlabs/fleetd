@@ -33,6 +33,8 @@ export type CallContext = {
   runnerEnv(): Env;
   /** A frame on the link that is up, if any. */
   send(frame: NodeFrame): void;
+  /** Forgets a project's sign-ins: its browser ends, then its kept profile goes (sessions' `forgetSignins`). */
+  forgetSignins?(projectId: string): Promise<void>;
 };
 
 export const OPS = [
@@ -109,7 +111,8 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     }
     case "navi_signins_forget":
       ctx.projectRoot(call.projectId);
-      asInvalid(() => forgetSignins(home, call.projectId));
+      if (ctx.forgetSignins) await ctx.forgetSignins(call.projectId);
+      else asInvalid(() => forgetSignins(home, call.projectId));
       return { kind: "done" };
     case "claude_account_secret": {
       const fingerprint = asInvalid(() => applyAccount(home, call.account, call.set, ctx.boxKey));

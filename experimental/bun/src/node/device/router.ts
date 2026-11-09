@@ -148,14 +148,7 @@ export class Router {
   private async onBrowser(thread: string, frame: BrowserCallFrame): Promise<Answer> {
     const broker = this.browser;
     if (!broker) throw new ToolError("invalid", "this machine runs no browser sessions", "do without a browser and say so in your result");
-    switch (frame.call.op) {
-      case "session_start":
-        return { op: "session_start", ...(await broker.open(thread, String(frame.call.purpose ?? "a browser session"))) };
-      case "session_end":
-        return { op: "session_end", ...(await broker.end(thread)) };
-      default:
-        throw new ToolError("invalid", `${frame.call.op} isn't taken by the Bun node yet.`, "do without it and say so in your result");
-    }
+    return broker.call(thread, frame);
   }
 
   /** Ends the agent session's screen `id` if it is open here, whatever its kind; whether it was. */

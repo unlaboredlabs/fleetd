@@ -16,7 +16,8 @@
 // install of a PR's build into a person's Android screen) runs only sealed with the session's relay key, after the one
 // before it (node/device/work.ts). What was sealed to this node for a session goes once it ends, however it ended.
 //
-// TODO(bun): 1Password fills of a session hosted elsewhere.
+// A `fill_credential` of a session hosted elsewhere is read here, with this machine's token, and only the value goes,
+// sealed to the runner, which fills it under the same checks as a fill there (browser/credentials.ts).
 import { seal } from "../../shared/sealed_box.ts";
 import { ToolError } from "../../shared/errors.ts";
 import {
@@ -46,6 +47,9 @@ export const ROUTE_WAIT = 150_000;
 
 /** What the agent's node seals to the machine that will host its session: its secrets and the relay's key. */
 type Seal = { secrets: [string, string][]; relayKey: string };
+/** A value the agent's node read from its 1Password for a `fill_credential` of a session hosted elsewhere, sealed to
+ * the runner, which fills it into the item's own sites only. */
+type Fill = { value: string; urls: string[] };
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
@@ -58,7 +62,7 @@ type HostedSession = { relayKey: Uint8Array; secrets: [string, string][] | undef
 
 export class Router {
   /** This node's agents' sessions hosted elsewhere: their relay on the hub and its key. */
-  readonly remotes = new Map<string, { url: string; key: Uint8Array; sessionId?: string }>();
+  readonly remotes = new Map<string, { url: string; key: Uint8Array; sessionId?: string; runner?: string; sealTo?: string }>();
   readonly hosted = new Map<string, HostedSession>();
 
   constructor(
@@ -132,17 +136,23 @@ export class Router {
     const host = hostOf(frame);
     // iOS simulators are the agents' Mac's (`mac sim`): the hub isn't asked.
     if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
-    let routed = await this.ask(thread, frame);
+    // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
+    if (this.broker.staysHere(thread)) return this.here(thread, frame);
+    // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
+    const remote = this.remotes.get(thread);
+    const fill = op === "fill_credential" && remote?.runner && remote.sealTo ? await this.sealedFill(thread, String(frame.call.ref ?? ""), remote.runner, remote.sealTo) : undefined;
+    let routed = await this.ask(thread, frame, fill);
     if (!routed.here && !routed.answer && routed.sealTo) {
       if (host === "android") throw androidElsewhere();
       // Placed on another machine, which needs the session's secrets and relay key first: sealed to it. The agents'
       // Mac gets the relay key alone.
       const relayOnly = host === "mac" || routed.relayOnly === true;
       const { data, relayKey } = this.sealFor(thread, routed.sealTo, routed.runner, relayOnly);
-      routed = await this.ask(thread, frame, { runner: routed.runner, dataB64: data });
+      const placed = { runner: routed.runner, sealTo: routed.sealTo };
+      routed = await this.ask(thread, frame, { runner: placed.runner, dataB64: data });
       // The agent's driver reaches a browser or a desktop through the hub's relay, from this node's proxy; a Mac
       // screen is driven by its desktop actions alone.
-      if (routed.relay && host !== "mac") this.remotes.set(thread, { url: relayUrl(this.hubUrl(), routed.relay), key: relayKey });
+      if (routed.relay && host !== "mac") this.remotes.set(thread, { url: relayUrl(this.hubUrl(), routed.relay), key: relayKey, ...placed });
     }
     if (routed.here) return this.here(thread, frame);
     if (op === "session_end") this.remotes.delete(thread);
@@ -170,6 +180,23 @@ export class Router {
     if (!this.remotes.has(thread)) return;
     const end: BrowserCallFrame = { id: "ended", cwd: "/", call: { op: "session_end" } } as BrowserCallFrame;
     void this.route(thread, end).catch((e) => console.info(`hosted session not ended: ${(e as Error).message}`));
+  }
+
+  /** A `fill_credential` of a session hosted on `runner`: the reference read from this machine's 1Password and the value
+   * sealed to the runner alone. The value is masked in this agent's reports from now on, as a fill here is. */
+  private async sealedFill(thread: string, reference: string, runner: string, sealTo: string): Promise<{ runner: string; dataB64: string }> {
+    const credential = await this.broker.resolveCredential(thread, reference);
+    const plain = new TextEncoder().encode(JSON.stringify({ value: credential.value, urls: credential.urls } satisfies Fill));
+    let data: string;
+    try {
+      data = b64(seal(Buffer.from(sealTo, "base64"), plain));
+    } catch (e) {
+      throw new ToolError("failed", `the fill was not sealed to its runner: ${(e as Error).message}`);
+    } finally {
+      plain.fill(0);
+    }
+    this.broker.credentials.filled(thread, reference, credential.value);
+    return { runner, dataB64: data };
   }
 
   /** A call for a screen on this machine, of whichever kind (node/device's router); a browser's start with the
@@ -212,7 +239,14 @@ export class Router {
         }
         const relayKey = Buffer.from(opened.relayKey, "base64");
         if (relayKey.length !== 32) return refuse("the session's sealed relay key is not 32 bytes");
-        // TODO(bun): a person's screen on a project's kept profile (`navi`): the Bun broker keeps no profiles yet.
+        // Only the hub's own word opens a project's profile (a person's screen_open, D239): never anything sealed, which
+        // any node can make for any runner.
+        if (frame.navi !== undefined) {
+          const kind = frame.frame.call.kind;
+          const known = this.broker.sessionsArea()?.hasProject?.(frame.navi) ?? false;
+          if ((kind !== undefined && kind !== "browser") || !known) return refuse(`this machine has no project ${frame.navi} with a browser to open`);
+          this.broker.personScreen(key, frame.navi);
+        }
         const secrets = (Array.isArray(opened.secrets) ? opened.secrets : [])
           .filter((pair) => Array.isArray(pair) && pair.length === 2)
           .map(([name, value]) => [String(name), String(value)] as [string, string]);
@@ -225,12 +259,28 @@ export class Router {
           return { id, result };
         } catch (e) {
           this.hosted.delete(key);
+          this.broker.notNavi(key);
           throw e;
         }
       }
       if (op === "device") return await this.device(key, frame.frame);
+      // A fill comes with the value the agent's node read, sealed to this node: filled under the same checks as a fill
+      // here (the item's own sites, reads sealed after it).
+      if (op === "fill_credential" && frame.sealed) {
+        const plain = this.boxKey.open(Buffer.from(frame.sealed, "base64"));
+        let given: Fill | undefined;
+        try {
+          given = plain ? (JSON.parse(new TextDecoder().decode(plain)) as Fill) : undefined;
+        } catch {}
+        plain?.fill(0);
+        if (!given || typeof given.value !== "string" || !Array.isArray(given.urls)) return refuse("the fill's sealed value did not open on this machine");
+        return { id, result: await this.broker.call(key, frame.frame, given) };
+      }
       const result = await this.here(key, frame.frame);
-      if (op === "session_end") this.hosted.delete(key);
+      if (op === "session_end") {
+        this.hosted.delete(key);
+        this.broker.notNavi(key);
+      }
       return { id, result };
     } catch (e) {
       if (op === "session_end") this.hosted.delete(key);
@@ -323,7 +373,8 @@ export const router = (node: Node, given?: Router) =>
 export function start(node: Node, given?: Router): Router {
   const r = router(node, given);
   const agentOnly = () => new ToolError("forbidden", "A browser session belongs to an agent's session, and this call comes from none.");
-  for (const op of ["session_start", "session_end"]) {
+  // The browser calls beyond a start and an end route the same way: here when the session is here, else to its runner.
+  for (const op of ["session_start", "session_end", "fill_credential", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill"]) {
     // The call's own working directory (its frame's `cwd`, the agent's worktree): a desktop launches its apps there.
     node.area("local").on(op, async (thread, frame) => {
       try {

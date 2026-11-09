@@ -47,7 +47,7 @@ import { tilde } from "../runner/claude/setup.ts";
 import { HELPER, NO_HELPER } from "../runner/helper.ts";
 import * as setup from "../worktree/setup.ts";
 import * as hooks from "../worktree/hooks.ts";
-import type { LaunchArea } from "../api.ts";
+import type { LaunchArea, ScreenHooks } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
@@ -366,6 +366,8 @@ export class SessionService {
   onItemEnded: ((sessionId: string, item: ThreadItem) => void) | undefined;
   /** What the node's areas add to a lead's or a worker's launch (node.area("launch")). */
   launch: Pick<LaunchArea, "env" | "pluginDirs" | "ended"> | undefined;
+  /** What the node's screens are told of its sessions, and asked (node/browser's; Rust's browser `SessionHooks`). */
+  screens: ScreenHooks | undefined;
   /** Sessions whose worktree setup still runs: a send waits for it; true once the brief went to claude. */
   #settingUp = new Map<string, Promise<boolean>>();
   /** Ends a session's running setup (its command killed), and the run it is for: only that run's interrupt ends it. */
@@ -510,6 +512,7 @@ export class SessionService {
       sessionCwd: (sessionId) => this.sessionCwd(sessionId),
       runnerEnv: () => runnerEnv(this.config),
       send: (frame) => this.#outlet?.(frame),
+      forgetSignins: (projectId) => this.forgetSignins(projectId),
     };
   }
 
@@ -891,11 +894,7 @@ export class SessionService {
       if (removeFolder && project) rmSync(project.workspaceRoot, { recursive: true, force: true });
     }
     // A Navi's kept browser profile goes with it, before the project does.
-    try {
-      forgetSignins(this.home, projectId);
-    } catch (error) {
-      throw invalid((error as Error).message);
-    }
+    await this.forgetSignins(projectId);
     forgetProjectEnv(this.home, projectId);
     mcp.forgetSecrets(this.home, projectId);
     // What a Navi kept under the node's home before Navis became projects (D310): its own home.
@@ -903,6 +902,17 @@ export class SessionService {
     const frame = this.store.removeProject(projectId);
     if (frame) this.#machine(frame);
     return { kind: "done" };
+  }
+
+  /** Forgets a project's sign-ins (D221): its browser session ends and the profile it keeps goes. */
+  async forgetSignins(projectId: string): Promise<void> {
+    try {
+      if (this.screens) await this.screens.forgetSignins(projectId);
+      else forgetSignins(this.home, projectId);
+    } catch (error) {
+      const why = (error as Error).message;
+      throw invalid(why.includes("were not forgotten") ? why : `project ${projectId}'s browser sign-ins were not forgotten: ${why}`);
+    }
   }
 
   #folderMake(path: string, gitInit: boolean, dryRun: boolean): SessionOutput {
@@ -1333,6 +1343,8 @@ export class SessionService {
       for (const [k, v] of this.launch.env(id, env.PATH)) env[k] = v;
       for (const d of this.launch.pluginDirs()) if (!pluginDirs.includes(d)) pluginDirs.push(d);
     }
+    // Every project's lead keeps its browser's sign-ins between sessions, on the profile its project keeps (D221, D310).
+    if (role === "lead" || role === "assistant") this.screens?.launched(id, role, row.summary.projectId);
     const allowed = [...(row.local.allowedTools ?? [])];
     for (const t of claude.roleAllowed(role, row.summary.runtimeMode)) if (!allowed.includes(t)) allowed.push(t);
     return {
@@ -1365,7 +1377,11 @@ export class SessionService {
     let runId = startRun;
     let delta: { messageId: string; text: string } | undefined;
     let deltaTimer: ReturnType<typeof setTimeout> | undefined;
-    let masker = new Masker(live.secrets);
+    let secrets = live.secrets;
+    // The values filled into its browsers from 1Password: masked in what it reports from the fill on.
+    let filled: [string, string][] = [];
+    const maskerNow = () => (filled.length ? new Masker(secrets).and(Masker.thorough(filled)) : new Masker(secrets));
+    let masker = maskerNow();
     const flushDelta = (hold: boolean) => {
       if (!delta) return;
       const keep = hold ? masker.held(delta.text) : 0;
@@ -1381,6 +1397,11 @@ export class SessionService {
         if (live.link.detached) break;
         this.#exited(id, live, { code: null, signal: null, stderr_tail: "the runner stopped reporting on claude" });
         break;
+      }
+      const more = this.screens?.filledSince(id, filled.length);
+      if (more) {
+        filled = more;
+        masker = maskerNow();
       }
       const event = masker.empty ? raw : masker.value(raw);
       live.lastActive = Date.now();
@@ -1407,7 +1428,8 @@ export class SessionService {
           case "RunStarted": {
             const started = this.#resolve(live, body.run_id);
             runId = started;
-            masker = new Masker(this.#secrets(this.#session(id)));
+            secrets = this.#secrets(this.#session(id));
+            masker = maskerNow();
             this.#steers.delivered(started, false);
             this.update(id, (c) => {
               let run = c.runs.find((r) => r.id === started);
@@ -1706,6 +1728,8 @@ export class SessionService {
       if (live.closing || now - live.lastActive < this.#idleReapMs) continue;
       if ([...live.watching.values()].some((until) => until > now)) continue;
       if (this.store.session(id)?.summary.activeRunId) continue;
+      // A screen it holds waits for its next turn, until the screen's own idle limit ends it.
+      if (this.screens?.holdsScreen(id)) continue;
       console.log(`${nowIso()} INFO reaping an idle claude process {"sessionId":"${id}"}`);
       live.closing = true;
       live.link.send(shutdown(REAP_GRACE_MS));
