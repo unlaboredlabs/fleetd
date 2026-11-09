@@ -197,6 +197,27 @@ test("a hub on the channel's build only updates its nodes; a node that refuses s
   expect(u.retry("m9", false)).toEqual({ kind: "nothing_to_retry" });
 });
 
+test("an asleep cloud machine isn't told to run fleetd update, and doesn't make an update partial; an offline machine is", async () => {
+  const dir = join(home.dir, "cloud");
+  const fake = new Fake(dir, [{}, { liveSince: undefined, cloud: true }, { liveSince: undefined }]);
+  fake.version = NEW;
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => u.status()?.finishedAt !== undefined);
+  const run = u.status()!;
+  expect(run.parts.filter((p) => p.part === "node").map((p) => [p.machineId, p.state, p.message])).toEqual([
+    ["m0", "done", `runs ${NEW}`],
+    ["m1", "skipped", "asleep: it takes the hub's build when it wakes"],
+    ["m2", "skipped", "offline: press Update again once it's online, or run `fleetd update` on it"],
+  ]);
+  expect(signal(run).state).toBe("updated");
+  expect(lastAutoOf(run)).toMatchObject({ result: "partial", message: "m2: offline: press Update again once it's online, or run `fleetd update` on it" });
+  // Only cloud machines asleep: nothing missed.
+  const asleep = { ...run, parts: run.parts.filter((p) => p.machineId !== "m2") };
+  expect(lastAutoOf(asleep)).toMatchObject({ result: "done" });
+  expect(JSON.stringify(lastAutoOf(asleep))).not.toContain("fleetd update");
+});
+
 test("a node waits for its agents, at most the drain, and Update now doesn't wait", async () => {
   const dir = join(home.dir, "c");
   const fake = new Fake(dir, [{}]);

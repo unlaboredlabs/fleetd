@@ -96,6 +96,7 @@ impl UpdatePorts for HubPorts {
                     .cached_runner(&m.machine_id)
                     .and_then(|r| r.version),
                 busy: busy(&hub, &m.machine_id),
+                cloud: m.cloud == Some(true),
                 machine_id: m.machine_id,
                 name: m.name,
                 version: m.node_version,

@@ -87,6 +87,7 @@ export function hubPorts(hub: Hub): UpdatePorts {
             canInstallClaude: l.can(m.machineId, "claude_install"),
             agentsMac: l.can(m.machineId, "agents_mac"),
           };
+          if (m.cloud) facts.cloud = true;
           if (live !== undefined) facts.liveSince = live;
           if (typeof claude === "string") facts.claude = claude;
           const b = busy(hub, m.machineId);

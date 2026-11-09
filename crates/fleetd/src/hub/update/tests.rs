@@ -130,6 +130,7 @@ impl Fake {
             claude: Some("2.1.310 (Claude Code)".into()),
             can_install_claude: can_update,
             agents_mac: false,
+            cloud: false,
             busy: None,
         });
         if let Some(answer) = answer {
@@ -147,6 +148,15 @@ impl Fake {
                 n.agents_mac = true;
                 n.can_install_claude = false;
                 n.claude = None;
+            }
+        }
+        self
+    }
+
+    fn cloud(self, name: &str) -> Self {
+        for n in self.nodes.lock().unwrap().iter_mut() {
+            if n.machine_id.as_str() == name {
+                n.cloud = true;
             }
         }
         self
@@ -981,6 +991,56 @@ async fn the_agents_macs_update_never_asks_for_claude_code_there() {
     );
     assert!(!said.contains("by hand"));
     assert_eq!(fake.claude_asked.lock().unwrap().clone(), ["builder"]);
+}
+
+/// A cloud machine asleep when the update starts takes the hub's build as it wakes: it isn't told to run `fleetd update`
+/// and doesn't make the update partial. An ordinary machine offline then still is.
+#[tokio::test]
+async fn an_asleep_cloud_machine_isnt_told_to_run_fleetd_update() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Fake::new(home.path(), b"new")
+        .node("boat-1", OLD, false, true, None)
+        .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("nas", OLD, false, true, None)
+        .cloud("boat-1");
+    *fake.running.lock().unwrap() = NEW.into();
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(None, true).unwrap();
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    let said = |m: &str| node_part(&run, m).message.unwrap().as_str().to_owned();
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
+    assert_eq!(state(&run, Some("boat-1")).0, UpdateState::Skipped);
+    assert_eq!(
+        said("boat-1"),
+        "asleep: it takes the hub's build when it wakes"
+    );
+    assert_eq!(said("nas"), super::OFFLINE);
+    assert_eq!(signal(&run).state, HubUpdatePhase::Updated);
+    let last = super::last_auto(&run);
+    assert_eq!(
+        last.result,
+        fleetd_contracts::mcp::AutoUpdateResult::Partial
+    );
+    assert_eq!(
+        last.message.as_ref().map(|m| m.as_str().to_owned()),
+        Some(format!("nas: {}", super::OFFLINE))
+    );
+    // Only the cloud machine asleep: nothing missed.
+    let mut asleep = run.clone();
+    asleep.parts = List::new(
+        run.parts
+            .iter()
+            .filter(|p| p.machine_id.as_ref().is_none_or(|m| m.as_str() != "nas"))
+            .cloned()
+            .collect(),
+    )
+    .unwrap();
+    let last = super::last_auto(&asleep);
+    assert_eq!(
+        (last.result, last.message),
+        (fleetd_contracts::mcp::AutoUpdateResult::Done, None)
+    );
 }
 
 /// Ahead of any update the hub downloads the newest build, checks it and keeps it, and asks its nodes to fetch it; the

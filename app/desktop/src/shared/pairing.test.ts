@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareVersions, hubOrigin, isEdge, normalizeCode, olderNodes, protocolFit, readAppPair } from "./pairing";
+import { CLOUD_CATCH_UP_MS, compareVersions, hubOrigin, isEdge, normalizeCode, olderNodes, protocolFit, readAppPair, stuckCloud } from "./pairing";
 
 describe("normalizeCode", () => {
   it("takes any case, spacing and hyphens, and Crockford look-alikes, as the hub does", () => {
@@ -97,5 +97,20 @@ describe("versions", () => {
       { name: "spare", nodeVersion: "0.0.0" },
     ];
     expect(olderNodes(machines, "0.5.0")).toEqual(["buildbox"]);
+  });
+
+  it("leaves cloud machines to their wake, naming one only when it is awake and still behind after its catch-up", () => {
+    const now = Date.parse("2026-11-09T10:00:00.000Z");
+    const ago = (ms: number) => new Date(now - ms).toISOString();
+    const machines = [
+      { name: "buildbox", nodeVersion: "0.4.9", status: "offline" },
+      { name: "boat-1", nodeVersion: "0.4.9", status: "offline", cloud: true },
+      { name: "boat-2", nodeVersion: "0.4.9", status: "online", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS - 1) },
+      { name: "boat-3", nodeVersion: "0.4.9", status: "degraded", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS) },
+      { name: "boat-4", nodeVersion: "0.5.0", status: "online", cloud: true, linkedSince: ago(CLOUD_CATCH_UP_MS) },
+      { name: "boat-5", nodeVersion: "0.4.9", status: "online", cloud: true },
+    ];
+    expect(olderNodes(machines, "0.5.0")).toEqual(["buildbox"]);
+    expect(stuckCloud(machines, "0.5.0", now)).toEqual(["boat-3"]);
   });
 });
