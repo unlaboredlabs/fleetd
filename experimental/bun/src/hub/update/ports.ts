@@ -5,10 +5,14 @@ import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
 import { link } from "../link/index.ts";
+import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
+import { isoMs } from "../store/time.ts";
 import { start as startWatcher } from "../../update/finish.ts";
 import { baseUrl, cliAsset, HttpFeed, installedExe, runningBinary } from "../../update/index.ts";
 import { isHubService, services } from "../../update/service.ts";
+import { versionLabel } from "../../update/version.ts";
+import type { HubUpdateData } from "../../shared/contracts.ts";
 import type { NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
 
 /** The Claude Code version this fleetd was tested with (node/runner/claude/version.rs `TESTED`). */
@@ -108,5 +112,38 @@ export function hubPorts(hub: Hub): UpdatePorts {
         throw new Error(words(e));
       }
     },
+    announce(update) {
+      try {
+        events(hub).append({
+          at: isoMs(hub.clock.now()),
+          type: "hub.update",
+          summary: updateSummary(update),
+          data: update,
+        });
+      } catch (e) {
+        console.warn(`hub.update: ${words(e)}`);
+      }
+    },
   };
+}
+
+/** The `hub.update` event's line: the hub row's Updating… / Updated / Put back, in a sentence. */
+export function updateSummary(update: HubUpdateData): string {
+  const to = update.to !== undefined ? versionLabel(update.to) : "the newest build";
+  switch (update.state) {
+    case "updating": {
+      if (update.hub === "restarting") return `Updating fleetd to ${to}: the hub restarts`;
+      const restarting = update.machines.filter((m) => m.state === "restarting").length;
+      if (restarting === 0) return `Updating fleetd to ${to}`;
+      return restarting === 1 ? `Updating fleetd to ${to}: 1 machine restarts` : `Updating fleetd to ${to}: ${restarting} machines restart`;
+    }
+    case "updated":
+      return `Updated fleetd to ${to}`;
+    case "put_back":
+      return `fleetd ${to} didn't come up healthy, so ${versionLabel(update.from)} was put back`;
+    case "current":
+      return `fleetd already runs ${to}`;
+    default:
+      return "fleetd didn't update";
+  }
 }
