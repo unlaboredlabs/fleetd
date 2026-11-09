@@ -72,7 +72,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     : { enabled: false },
   ios: {
     bundleIdentifier: appId,
-    // iOS 18's appearances; every icon is rendered from fleetd's mark (site/icon.svg) by `npm run icons`.
+    // iOS's light, dark and tinted appearances; every icon is rendered from its masters (app/icon/) by `npm run icons`.
     icon: { light: "./assets/icon.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" },
     ...(build === undefined ? {} : { buildNumber: build }),
     supportsTablet: true,
@@ -88,7 +88,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     package: appId,
     ...(build === undefined ? {} : { versionCode: Number(build) }),
     adaptiveIcon: {
-      backgroundColor: "#1b1c1f",
+      backgroundColor: "#f7f3ec",
       foregroundImage: "./assets/android-icon-foreground.png",
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",

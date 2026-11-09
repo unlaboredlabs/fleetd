@@ -8,6 +8,6 @@
   fill: var(--accent-fill);
 }
 
-.markChevrons {
-  stroke: var(--on-accent);
+.markBody {
+  fill: var(--on-accent);
 }
