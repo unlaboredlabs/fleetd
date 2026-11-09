@@ -1,8 +1,9 @@
 // A chat's or a person's avatar: its picture once one was given (project_avatar_set, person_avatar_set), in a circle as
-// iOS draws a contact's, else for a project its bot (Being, in the state the project is in), which has no circle, else
-// its initials in a circle on a soft top-to-bottom gradient of a color picked from its name, as chat apps draw a
-// person's. A picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it shows
-// at once on the next launch; one not seen before fades in over the bot, which then goes, so it never moves unseen.
+// iOS draws a contact's, else for a project its bot (Being, in its color and the state the project is in), which has no
+// circle, else its initials in a circle on a soft top-to-bottom gradient of a color picked from its name, as chat apps
+// draw a person's. A picture is read from the hub once (Session.picture) and kept in the cache folder by its id, so it
+// shows at once on the next launch; one not seen before fades in over the bot, which then goes, so it never moves
+// unseen.
 import { File, Paths } from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
@@ -21,9 +22,9 @@ const lighter = (hex: string, amount: number): string => {
   return `rgb(${String(mix((n >> 16) & 255))},${String(mix((n >> 8) & 255))},${String(mix(n & 255))})`;
 };
 
-/** Whose picture: a project's summary has these, or a person (hub_info's me). */
+/** Whose picture: a project's summary has these (and its bot's color), or a person (hub_info's me). */
 export type Pictured =
-  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined }
+  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly avatarColor?: string | undefined }
   | { readonly personId: string; readonly avatar?: string | undefined };
 
 const fileOf = (avatar: string): File => new File(Paths.cache, `avatar-${avatar}.jpg`);
@@ -113,6 +114,7 @@ export function Avatar({
   const box = { width: size, height: size, borderRadius: size / 2 };
   const project = picture !== undefined && "machineId" in picture ? `${picture.machineId}/${picture.projectId}` : undefined;
   const state = useBot(project);
+  const color = picture !== undefined && "machineId" in picture ? picture.avatarColor : undefined;
   const drawn = bot ?? state;
   // The picture that has come in over the bot, which goes from under it.
   const [covers, setCovers] = useState<string | undefined>(undefined);
@@ -120,7 +122,7 @@ export function Avatar({
     const uri = shown.uri;
     return (
       <View accessible={false} style={{ width: size, height: size }}>
-        {uri !== undefined && covers === uri ? null : <Being state={drawn} size={size} />}
+        {uri !== undefined && covers === uri ? null : <Being state={drawn} size={size} color={color} />}
         {uri === undefined ? null : (
           <View style={[StyleSheet.absoluteFill, styles.base, box]}>
             <Picture key={uri} uri={uri} fade={shown.fresh} onShown={() => setCovers(uri)} />

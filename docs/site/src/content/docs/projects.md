@@ -122,7 +122,8 @@ right-click menu. Its **Project** page has these, in order:
 
 | Setting | Does |
 |---|---|
-| Icon | The circle its chat shows in the sidebar, the chat and on the phone. Pick one of nine glass faces and one of twelve colors: the large icon shows what the pointer is over, and a pick takes effect at once everywhere. One nobody picked is made from its id. Or **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the icon back. |
+| Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the project is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
+| Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the project. On the phone it's in the project's info, under **Edit** on its icon. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Only me | Who sees and uses it. See [Only me](#only-me). |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and its own setup if it has one. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Setup**: what runs in each new worktree (called **Default setup** once a repo has its own). See [Setup commands](#setup). |
@@ -653,9 +654,9 @@ A new project is `project_add {create: true, title, machineId?, gitInit?, onlyMe
 {machineId, projectId, title?, onlyMe?}` renames it or changes [Only me](#only-me); `project_archive {machineId,
 projectId, archived?}` archives it or brings it back. A project summary says `onlyMe`, its `owner`, `createdBy` (the id and name of the key that made it)
 and, once archived, `archivedAt`; for one more release a former Navi's also says `kind: "assistant"`, which older apps
-read, and the `navi_*` tools still answer as aliases. A project's icon is `project_icon_set {machineId, projectId,
-icon: {face, color}}`, a built-in face and color that replaces any picture; a summary's `icon` says which it wears
-(one made from its id until someone picks). Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
+read, and the `navi_*` tools still answer as aliases. Its bot's color is `project_settings_set {machineId, projectId,
+avatarColor}`, one of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage` and `teal`; a summary's `avatarColor`
+says which it wears, and has none for slate. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
 crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and
 `project_avatar_get {machineId, projectId}`; a summary's `avatar` names the one it has.
 

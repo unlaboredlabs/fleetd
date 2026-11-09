@@ -1,5 +1,5 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// picture (Picture.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
+// picture (Picture.tsx), its bot's color (BotColor.tsx), its name, Only me, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx),
 // its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it. Its memory refresh is on its
@@ -28,6 +28,7 @@ import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
 import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import { PictureSetting } from "./Picture";
+import { BotColorSetting } from "./BotColor";
 import {
   countAfter,
   ENV_MAX,
@@ -147,6 +148,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
     <>
       <SettingsSection title="Project">
         <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
+        <BotColorSetting project={summary ?? { ...ref, title: settings.title }} />
         <NameSetting settings={settings} />
         <OnlyMeSetting settings={settings} onlyMe={isOnlyMe(summary)} />
       </SettingsSection>

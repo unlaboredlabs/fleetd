@@ -1,0 +1,35 @@
+/* Settings › Projects › Color (BotColor.tsx): a row of round swatches, each the bot's body in the theme, the picked one
+   ringed in the text color with a gap of the group's own fill. */
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--light);
+  cursor: pointer;
+  transition: box-shadow 120ms ease-out;
+}
+:root[data-theme="dark"] .swatch {
+  background: var(--dark);
+}
+.swatch[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--group),
+    0 0 0 4px var(--text);
+}
+.swatch:hover:not([aria-checked="true"]) {
+  box-shadow:
+    0 0 0 2px var(--group),
+    0 0 0 4px var(--border);
+}
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}

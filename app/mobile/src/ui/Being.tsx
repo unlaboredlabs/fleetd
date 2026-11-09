@@ -1,16 +1,16 @@
 // A project's bot, as the desktop draws it (its shared/bot.ts and ui/primitives/Bot.tsx): one character for every
-// project without a picture, whose motion says its state, in react-native-svg. It has no circle: its body alone, one
-// calm slate (PEBBLE), cropped to fill its box (CROP), is the picture. Its hops and slumps reach a little past the box,
-// so it's drawn on a canvas REACH larger on each side, never clipped. Its rig lives in a shared value and steps on the
-// UI thread, in a frame callback that runs only while beingLife.ts says it moves (a live state on screen, a moment, a
-// change settling); each frame poses the body and draws both eyes from the rig's springs. A new `state` blends from
-// wherever it is. At rest nothing runs.
+// project without a picture, whose motion says its state, in react-native-svg. It has no circle: its body alone, in
+// calm slate or the color picked for its project (BOT_PAINT), cropped to fill its box (CROP), is the picture. Its hops
+// and slumps reach a little past the box, so it's drawn on a canvas REACH larger on each side, never clipped. Its rig
+// lives in a shared value and steps on the UI thread, in a frame callback that runs only while beingLife.ts says it
+// moves (a live state on screen, a moment, a change settling); each frame poses the body and draws both eyes from the
+// rig's springs. A new `state` blends from wherever it is. At rest nothing runs.
 import { NavigationContext } from "@react-navigation/native";
 import { useContext, useEffect, useId, useRef, useState, type ComponentRef } from "react";
 import { Dimensions, View } from "react-native";
 import Animated, { useAnimatedProps, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import Svg, { Defs, FeGaussianBlur, Filter, G, Path, type GProps, type PathProps } from "react-native-svg";
-import { advanceRig, BODY, CROP, DIMMED, drawnAt, frameOf, LARGE, moment, newRig, PEBBLE, setRigState, type BotState, type Frame, type Rig } from "../desktop";
+import { advanceRig, BODY, CROP, DIMMED, drawnAt, frameOf, LARGE, moment, newRig, paintOf, setRigState, type BotState, type Frame, type Rig } from "../desktop";
 import { useTheme } from "../theme";
 import { bringToLife, type Life } from "./beingLife";
 import { useReduceMotion } from "./motion";
@@ -23,13 +23,13 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 const REACH = 8;
 const VIEW = `${String(CROP.x - REACH)} ${String(CROP.y - REACH)} ${String(CROP.w + 2 * REACH)} ${String(CROP.w + 2 * REACH)}`;
 
-export function Being({ state, size }: { state: BotState; size: number }) {
+export function Being({ state, size, color }: { state: BotState; size: number; color?: string | undefined }) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const nav = useContext(NavigationContext);
   const id = useId().replace(/[^\w-]/g, "");
   const ref = useRef<ComponentRef<typeof View>>(null);
-  const p = PEBBLE[t.dark ? "dark" : "light"];
+  const p = paintOf(color, t.dark);
   // The rig lives as long as the bot at its size; its first frame is drawn settled in the state it arrives in. Its
   // small-size rules go by the size its body is drawn at, its life on its own by its box.
   const [first] = useState(() => newRig(state, drawnAt(size), Math.floor(Math.random() * 2 ** 31), size >= LARGE));

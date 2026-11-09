@@ -12,7 +12,7 @@
 // strings and touches no DOM. Drawn as an SVG, each frame's new transform and paths left the renderer style and paint
 // garbage that only a major GC frees: three bots in live states held 60 MB more of it after 10 s idle (`pnpm perf`'s
 // idle memory went from 347 to 412 MB), and writing only what changed didn't lower that, only how soon it got there.
-import { advanceRig, BODY, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, PEBBLE, random, setRigState, traceEyes, type BotState, type Rig } from "../../../shared/bot";
+import { advanceRig, BODY, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, traceEyes, type BotState, type Rig } from "../../../shared/bot";
 
 interface Member {
   readonly rig: Rig;
@@ -21,6 +21,8 @@ interface Member {
   readonly ctx: CanvasRenderingContext2D | null;
   /** Its box's side, in CSS px. */
   readonly box: number;
+  /** Its project's color (BOT_PAINT); none: slate. */
+  color: string | undefined;
   seen: boolean;
 }
 
@@ -50,7 +52,7 @@ let body: Path2D | undefined;
 /** The eye being traced, reused frame to frame. */
 const outline: number[] = [];
 
-/** Draws `m`'s frame on its canvas, in the theme's paint and at the display's pixel ratio. */
+/** Draws `m`'s frame on its canvas, in its color's paint for the theme and at the display's pixel ratio. */
 const draw = (m: Member): void => {
   const c = m.ctx;
   if (c === null) return;
@@ -66,7 +68,7 @@ const draw = (m: Member): void => {
   const [a, b, cc, d, e, f] = bodyOf(m.rig);
   c.setTransform(k, 0, 0, k, k * (CROP.w * PAD - CROP.x), k * (CROP.w * PAD - CROP.y));
   c.transform(a, b, cc, d, e, f);
-  const paint = dark ? PEBBLE.dark : PEBBLE.light;
+  const paint = paintOf(m.color, dark);
   c.fillStyle = paint.body;
   c.fill((body ??= new Path2D(BODY)));
   c.beginPath();
@@ -188,17 +190,21 @@ const stop = (): void => {
 export interface Living {
   /** Moves it to a new state, blending from where it is. */
   readonly set: (state: BotState) => void;
+  /** Paints it in another color, at once. */
+  readonly paint: (color: string | undefined) => void;
   readonly release: () => void;
 }
 
-/** Brings the bot on `canvas` (Bot.tsx's), in a `box` px box, to life on `rig`, drawn at once, until it's released. */
-export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number): Living => {
+/** Brings the bot on `canvas` (Bot.tsx's), in a `box` px box and `color`, to life on `rig`, drawn at once, until it's
+ * released. */
+export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number, color?: string): Living => {
   const m: Member = {
     rig,
     canvas,
     // A DOM without canvases (jsdom) has no Path2D either, and its getContext only complains.
     ctx: typeof Path2D === "function" ? canvas.getContext("2d") : null,
     box,
+    color,
     // Without an observer, as if always seen.
     seen: typeof IntersectionObserver !== "function",
   };
@@ -217,6 +223,10 @@ export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number): L
     set: (state) => {
       setRigState(rig, state, calm());
       wake();
+    },
+    paint: (next) => {
+      m.color = next;
+      draw(m);
     },
     release: () => {
       seeing?.disconnect();

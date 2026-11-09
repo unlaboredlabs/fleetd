@@ -442,6 +442,21 @@
       ],
       "type": "string"
     },
+    "BotColor": {
+      "description": "The colors a project's bot comes in (shared/bot.ts BOT_PAINT), slate its default.",
+      "enum": [
+        "slate",
+        "mono",
+        "blue",
+        "lilac",
+        "coral",
+        "amber",
+        "sage",
+        "teal"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "BoxPublicKey": {
       "type": "string"
     },
@@ -2201,6 +2216,10 @@
         "avatar": {
           "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
           "type": "string"
+        },
+        "avatarColor": {
+          "$ref": "#/$defs/BotColor",
+          "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default."
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",

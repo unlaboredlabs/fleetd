@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setOnlyMe, setPicture, setProfile, withPart } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setOnlyMe, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -56,6 +56,16 @@ describe("Rename, Only me and Archive", () => {
     expect(calls("project_settings_set").at(-1)?.input).toEqual({ machineId: "devbox", projectId: "ada", onlyMe: false });
     hub.fail("project_settings_set", "forbidden", "Only its owner can share it.");
     await expect(off).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
+  });
+
+  it("gives its bot a color by its settings, and a project keeps it in its summary", async () => {
+    const { hub, session, calls } = setup();
+    const set = setBotColor(session, SHOP, "sage");
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, avatarColor: "sage" });
+    hub.answer("project_settings_set", { settings: {} });
+    await expect(set).resolves.toEqual({ ok: true, value: null });
+    hub.link.frame({ t: "snapshot", cursor: 2, attention: [], machines: [], projects: [ADA, { ...SHOP, avatarColor: "sage" }], chats: [] });
+    expect(session.state.projects?.["devbox/shop"]?.avatarColor).toBe("sage");
   });
 
   it("archives any project and brings it back, by the project's archive tool", async () => {
