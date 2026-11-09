@@ -10,7 +10,7 @@ import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/clie
 import { memoryPins, Pins, type PinStore } from "./pins";
 import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
-import { cachedOf, parseCached, withCached, type Cached } from "./cache";
+import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 const CHAT_PAGE = 50;
@@ -47,6 +47,9 @@ export interface CacheStore {
   save(cached: Cached): void;
 }
 
+/** An open chat at its newest end. */
+const NEWEST: OpenAt = { offset: 0, rows: 0, oldestSeq: undefined };
+
 /** How long after a change what the cache keeps is written: a burst of events writes once. */
 const CACHE_SAVE_MS = 1000;
 
@@ -66,6 +69,10 @@ export class Session {
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
   #open: Key | null = null;
+  /** Where the open chat is scrolled to, kept with it when the app goes behind (cache.ts OpenChat). */
+  #openAt: OpenAt = NEWEST;
+  /** The chat open when the app was last closed, until it opens again: where it was scrolled to. */
+  #reopen: { readonly key: Key; readonly at: OpenAt } | undefined;
   #registered = false;
   readonly #key: string;
   readonly #push: PushDeps | undefined;
@@ -89,6 +96,8 @@ export class Session {
     const empty = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     const cached = options.cache === undefined ? null : parseCached(options.cache.load(), options.hub);
     this.#state = cached === null ? empty : withCached(empty, cached);
+    const open = cached?.open;
+    if (open !== undefined && this.#state.projects?.[open.key] !== undefined) this.#reopen = { key: open.key, at: { offset: open.offset, rows: open.rows, oldestSeq: open.oldestSeq } };
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
     this.#pins = new Pins((tool, input) => this.#client.call(tool, input), options.pins ?? memoryPins(), (key) => this.#state.projects?.[key] !== undefined);
   }
@@ -197,6 +206,8 @@ export class Session {
   }
 
   openChat(key: Key | null): void {
+    if (key !== this.#open) this.#openAt = key !== null && key === this.#reopen?.key ? this.#reopen.at : NEWEST;
+    this.#reopen = undefined;
     this.#open = key;
     this.#push?.onScreen?.(key);
     this.#client.chat(key === null ? null : refOf(key));
@@ -204,6 +215,16 @@ export class Session {
     this.#dispatch({ t: "chat_open", key });
     void this.#loadLatest(key);
     void this.readScreens(key);
+  }
+
+  /** The chat open when the app was last closed, and where: App.tsx opens it again over the list. */
+  get reopen(): { readonly key: Key; readonly at: OpenAt } | undefined {
+    return this.#reopen;
+  }
+
+  /** Where the open chat is scrolled to now (Chat.tsx), for the cache: it opens there again after the app is closed. */
+  scrolledTo(key: Key, at: Partial<OpenAt>): void {
+    if (key === this.#open) this.#openAt = { ...this.#openAt, ...at };
   }
 
   async loadOlder(key: Key): Promise<void> {
@@ -254,6 +275,21 @@ export class Session {
   }
 
   readonly #previews = new Map<string, Promise<Typed<"attachment_get">>>();
+  /** The previews read so far, for keptPreview. */
+  readonly #previewsRead = new Map<string, AttachmentGetOutput>();
+
+  /**
+   * A picture's preview at once, when it was read already or is on disk: a bubble draws it in its first frame rather
+   * than as a stand-in that preview() replaces a frame later.
+   */
+  keptPreview(attachmentId: string): AttachmentGetOutput | undefined {
+    const known = this.#previewsRead.get(attachmentId);
+    if (known !== undefined) return known;
+    const kept = this.#previewStore?.load(this.#hub, attachmentId) ?? null;
+    if (kept === null) return undefined;
+    this.#previewsRead.set(attachmentId, kept);
+    return kept;
+  }
 
   /**
    * A picture as its bubble shows it: its preview, at most PREVIEW_SIDE.phone pixels a side, read once and kept on
@@ -263,7 +299,7 @@ export class Session {
   preview(key: Key, attachmentId: string): Promise<Typed<"attachment_get">> {
     const known = this.#previews.get(attachmentId);
     if (known !== undefined) return known;
-    const kept = this.#previewStore?.load(this.#hub, attachmentId) ?? null;
+    const kept = this.keptPreview(attachmentId) ?? null;
     const read: Promise<Typed<"attachment_get">> =
       kept !== null
         ? Promise.resolve({ ok: true, output: kept })
@@ -273,8 +309,9 @@ export class Session {
           });
     this.#previews.set(attachmentId, read);
     void read.then((r) => {
-      if (!r.ok) this.#previews.delete(attachmentId);
-      else if (r.output.preview !== true && !this.#files.has(attachmentId)) this.#files.set(attachmentId, Promise.resolve(r));
+      if (!r.ok) return void this.#previews.delete(attachmentId);
+      this.#previewsRead.set(attachmentId, r.output);
+      if (r.output.preview !== true && !this.#files.has(attachmentId)) this.#files.set(attachmentId, Promise.resolve(r));
     });
     return read;
   }
@@ -535,7 +572,7 @@ export class Session {
   #saveNow(): void {
     if (this.#saveTimer !== null) clearTimeout(this.#saveTimer);
     this.#saveTimer = null;
-    this.#cache?.save(cachedOf(this.#hub, this.#state));
+    this.#cache?.save(cachedOf(this.#hub, this.#state, this.#open === null ? undefined : { key: this.#open, at: this.#openAt }));
   }
 
   #notify(): void {

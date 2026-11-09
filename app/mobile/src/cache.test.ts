@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cachedOf, parseCached, withCached, type Cached } from "./cache";
-import type { ChatSend, HumanRequest } from "./desktop";
+import { cachedOf, openChatOf, parseCached, withCached, type Cached } from "./cache";
+import { emptyChat, type ChatMessage, type ChatSend, type HumanRequest } from "./desktop";
 import { initial } from "./store";
 
 const HUB = "http://devbox:4790";
@@ -44,5 +44,22 @@ describe("the cache", () => {
     expect(kept).toMatchObject({ me: "p_1", meName: "Sam", meAvatar: "0123456789abcdef", meRole: "owner" });
     if (kept === null) throw new Error("not read back");
     expect(withCached(initial(hub), kept)).toMatchObject({ meAvatar: "0123456789abcdef", meRole: "owner" });
+  });
+
+  it("keeps the open chat, from a screen before what showed to its newest, and where it was scrolled to", () => {
+    const m = (seq: number): ChatMessage => ({ messageId: `m${String(seq)}`, projectRef: REF, seq, author: "lead", text: `line ${String(seq)}`, attachments: [], createdAt: "2026-10-28T10:00:00Z", state: "final" });
+    const chat = { ...emptyChat, messages: Array.from({ length: 200 }, (_, i) => m(i + 1)), loaded: true };
+    const at = { offset: 1840, rows: 24, oldestSeq: 150 };
+    const s = { ...initial(hub), projects: { "m1/navi": { machineId: "m1", projectId: "navi", title: "Navi" } as never }, chats: { "m1/navi": chat } };
+    const kept = parseCached(JSON.parse(JSON.stringify(cachedOf(HUB, s, { key: "m1/navi", at }))) as unknown, HUB) as Cached;
+    expect(kept.open).toMatchObject({ key: "m1/navi", offset: 1840, rows: 24, oldestSeq: 150, hasOlder: true });
+    expect(kept.open?.messages.map((x) => x.seq)).toEqual(Array.from({ length: 81 }, (_, i) => i + 120));
+    // Opened as it was, until its latest page starts it over.
+    expect(withCached(initial(hub), kept).chats["m1/navi"]).toMatchObject({ cached: true, loaded: false, hasOlder: true });
+    // Scrolled further back than it keeps: it opens at its newest end.
+    expect(openChatOf("m1/navi", { ...chat, messages: Array.from({ length: 900 }, (_, i) => m(i + 1)) }, { offset: 90_000, rows: 700, oldestSeq: 10 })).toMatchObject({ offset: 0, rows: 0 });
+    // None open, or one with nothing in it: none kept.
+    expect(cachedOf(HUB, s).open).toBeUndefined();
+    expect(openChatOf("m1/navi", emptyChat, at)).toBeUndefined();
   });
 });

@@ -9,7 +9,7 @@
 // Settings, a stack with a large title of its own, and a chat is pushed over the list, which a swipe from the edge
 // takes back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat
 // answers it.
-import { createNavigationContainerRef, NavigationContainer, useNavigation } from "@react-navigation/native";
+import { createNavigationContainerRef, NavigationContainer, useNavigation, type InitialState } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { requireOptionalNativeModule } from "expo";
 import * as SplashScreen from "expo-splash-screen";
@@ -156,9 +156,7 @@ export default function App() {
             />
           </NavigationContainer>
         ) : (
-          <NavigationContainer ref={nav} theme={theme}>
-            <Hub key={`${paired.hub} ${paired.key}`} paired={paired} onForget={forget} opened={opened} onOpened={() => setOpened(null)} />
-          </NavigationContainer>
+          <Hub key={`${paired.hub} ${paired.key}`} paired={paired} onForget={forget} opened={opened} onOpened={() => setOpened(null)} />
         )}
       </View>
     </SafeAreaProvider>
@@ -200,8 +198,8 @@ let taps = 0;
  * Opens where a tapped notification goes, an approval's chat at its card, a screen's live view over its chat (push.ts
  * chatAt), over the chats list and nothing else (tapped.ts): false while not known yet.
  */
-const go = (route: Route, state: Pick<State, "requests" | "projects">): boolean => {
-  const at = chatAt(route, state.requests);
+const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "projects">): boolean => {
+  const at = chatAt(route, state.requests, state.requestsRead);
   if (at === undefined) return false;
   if (at === null || tapGoesNowhere(state.projects, at)) return true;
   // A screen that won't let go (an edited skill's "Discard changes?") keeps the stack as it is.
@@ -212,6 +210,10 @@ const go = (route: Route, state: Pick<State, "requests" | "projects">): boolean 
 function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget: (why?: string) => void; opened: ShortcutLink | null; onOpened: () => void }) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
+  const t = useTheme();
+  const theme = useMemo(() => navigationTheme(t), [t]);
+  // Read once, as the navigator starts: a tapped notification's chat replaces it (tryPending).
+  const [reopened] = useState(() => reopenedState(session.reopen));
   // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);
   // Open Approvals' link, which waits for the navigator too.
@@ -233,7 +235,7 @@ function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget:
     tryPending();
     return nav.addListener("state", tryPending);
   }, [tryPending]);
-  useEffect(tryPending, [state.requests, tryPending]);
+  useEffect(tryPending, [state.requests, state.requestsRead, tryPending]);
   useEffect(() => {
     if (opened === null) return;
     if (opened.t === "chat") pending.current = { t: "chat", key: opened.key };
@@ -300,11 +302,28 @@ function Hub({ paired, onForget, opened, onOpened }: { paired: Paired; onForget:
   return (
     <SessionContext.Provider value={session}>
       <HubContext.Provider value={value}>
-        <Root />
+        <NavigationContainer ref={nav} theme={theme} {...(reopened === undefined ? {} : { initialState: reopened })}>
+          <Root />
+        </NavigationContainer>
       </HubContext.Provider>
     </SessionContext.Provider>
   );
 }
+
+/**
+ * The chat that was open when the app was last closed, over the chats list, where it was scrolled to: the app opens
+ * where it was left, as Messages does, rather than on the list.
+ */
+const reopenedState = (reopen: Session["reopen"]): InitialState | undefined =>
+  reopen === undefined
+    ? undefined
+    : {
+        index: 1,
+        routes: [
+          { name: "Home", params: undefined },
+          { name: "Chat", params: { key: reopen.key, at: { offset: reopen.at.offset, rows: reopen.at.rows } } },
+        ],
+      };
 
 const RootStack = createNativeStackNavigator<RootParams>();
 
