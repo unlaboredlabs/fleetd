@@ -4,8 +4,10 @@ export default defineConfig({
   testDir: ".",
   globalSetup: "./setup.ts",
   globalTeardown: "./report.ts",
-  // Each test launches its own app; Electron windows are heavy, so not one per core.
-  workers: process.env.CI ? 3 : 4,
+  // Each test launches its own app; Electron windows are heavy, so not one per core. GitHub's macOS VM has 3 vCPUs:
+  // three apps at once ran its load average to 20 and stalled pages for up to 10 s, past the waits' deadlines, where
+  // two held it to 10 and finish a shard about as fast.
+  workers: process.env.CI ? (process.platform === "darwin" ? 2 : 3) : 4,
   timeout: 120_000,
   forbidOnly: Boolean(process.env.CI),
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
