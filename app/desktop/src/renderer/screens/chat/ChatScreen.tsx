@@ -1,13 +1,13 @@
-// A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
-// fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
-// gated command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass
-// island over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, a
-// line saying what the lead is doing (TurnLine), the live strip as a capsule, and a capsule saying what needs you (what
-// the lead waits on you for, a block, what there is to look at, a red main), shown only when something does. The
-// conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its picture
-// and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings); an empty
-// chat asks what to do. It opens where you stopped reading, under a "New" divider. Your own (Only me) project with no
-// repo has its name in the box and everyday starters, not a codebase's.
+// A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead, fleet
+// activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a gated
+// command), and the composer, which has the cursor as soon as the chat opens. The composer floats as a glass island
+// over the conversation, which runs on behind it and keeps clear of it at its end; in a band just over it, the live
+// strip as a capsule (its first item a line saying what the lead is doing, TurnLine), and a capsule saying what needs
+// you (what the lead waits on you for, a block, what there is to look at, a red main), shown only when something does.
+// The conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its
+// picture and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings);
+// an empty chat asks what to do. It opens where you stopped reading, under a "New" divider. Your own (Only me) project
+// with no repo has its name in the box and everyday starters, not a codebase's.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
@@ -105,6 +105,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   if (next !== kept) setKept(next);
   const rows = next.rows;
   const items = view?.items;
+  // The lead's turn line: the live strip's first item while agents run, else on its own in the band.
+  const turnLine = <TurnLine project={project} writing={items?.at(-1)?.state === "streaming"} />;
   const older = view?.hasOlder === true;
   const openItems = useData((d) => d.chatStates[key]?.openItems);
   const waiting = useMemo(
@@ -352,12 +354,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           // the conversation by design (data-floats, for the QA checks).
           <div ref={island} className={s.island} data-floats="">
             <div className={s.band} data-band="">
-              <TurnLine project={project} writing={items?.at(-1)?.state === "streaming"} />
               {strip ? (
                 <Boundary part="the live strip">
-                  <LiveStrip project={project} />
+                  <LiveStrip project={project} lead={turnLine} />
                 </Boundary>
-              ) : null}
+              ) : (
+                turnLine
+              )}
               <span className={s.say} data-say="">
                 {view?.held === true ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
                 <AttentionLine

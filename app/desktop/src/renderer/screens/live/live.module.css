@@ -1,7 +1,8 @@
 /*
- * The live strip, a glass capsule floating in the band over the chat's composer island: one slim row, as wide as what
- * it says. Opened (by a click, never by hovering, so the conversation never moves under a passing pointer), it takes
- * the band's width and its lanes grow it upward into a glass card over the conversation, which doesn't move. Motion
+ * The live strip, a glass capsule floating in the band over the chat's composer island: one slim row as wide as the
+ * island, its edges on the pill's, that never changes width (the lead's turn line is its first item, TurnLine). Opened
+ * (by a click, never by hovering, so the conversation never moves under a passing pointer), its lanes grow it upward
+ * into a glass card over the conversation, which doesn't move. Motion
  * only on a change, never a loop (the app draws no frames while nothing changes): a dot pulses once as it appears or
  * its agent's state changes, then holds still, and a new now-line rolls in; with reduced motion, neither.
  */
@@ -10,9 +11,9 @@
   /* Half the row's height: round ends, as the top row's capsules have. */
   --corner: 14px;
   position: relative;
-  flex: 0 1 auto;
+  /* The band's whole width; Latest ↓ (scrolled up) takes its room at the end. */
+  flex: 1 1 auto;
   min-width: 0;
-  max-width: 100%;
   /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
   display: flex;
   flex-direction: column-reverse;
@@ -25,9 +26,6 @@
     inset 0 0 0 1px var(--glass-edge),
     inset 0 1px 0 var(--glass-rim),
     var(--glass-lift);
-}
-.dock[data-open] {
-  width: 100%;
 }
 @media (prefers-reduced-transparency: reduce) {
   .dock {

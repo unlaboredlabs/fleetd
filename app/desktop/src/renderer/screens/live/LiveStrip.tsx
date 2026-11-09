@@ -4,9 +4,11 @@
 // busiest agent is doing. A click on the row (or Enter on it) opens the lanes above it, one row per agent, and a
 // second click, a press outside it or Escape closes them; an agent (its row, or the now-line) opens in the panel's
 // agents, where its live work and steer box are. At its end, quiet until pointed at, "8 DMs between agents" opens
-// Activity's log of them: the only trace of agents' DMs in the lead chat. Nothing is drawn when no agent is shown.
+// Activity's log of them: the only trace of agents' DMs in the lead chat. The lead's turn line (`lead`, chat/TurnLine)
+// is its first item, so the capsule always spans the band, its edges on the composer's, and never resizes. With no
+// agent shown, nothing is drawn but the turn line, on its own in the band.
 import { ChevronUp } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useData } from "../../src/data/react";
 import { RoleTag, StateGlyph, Text, Truncate, cx, roleTint, type GlyphState } from "../../ui";
 import { useDmTotal } from "../dms/hooks";
@@ -22,13 +24,13 @@ const MAX_DOTS = 12;
 
 const agentHref = (project: ProjectRef, laneId: string | null): string => toHash(panelRoute(project, { tab: "agents", agent: laneId }));
 
-export function LiveStrip({ project }: { project: ProjectRef }) {
+export function LiveStrip({ project, lead }: { project: ProjectRef; lead?: ReactNode }) {
   const strip = useData(selectStrip(project));
-  if (strip === undefined || strip.agents === 0) return null;
-  return <Dock project={project} strip={strip} />;
+  if (strip === undefined || strip.agents === 0) return lead ?? null;
+  return <Dock project={project} strip={strip} lead={lead} />;
 }
 
-function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
+function Dock({ project, strip, lead }: { project: ProjectRef; strip: Strip; lead: ReactNode }) {
   const headline = stripHeadline(strip);
   const lanesId = useId();
   const [open, setOpen] = useState(false);
@@ -57,7 +59,8 @@ function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
       }}
     >
       {/* The row comes first, so Tab goes from the toggle to the lanes; the tray draws the lanes above it. */}
-      <div className={s.strip}>
+      <div className={s.strip} data-strip="">
+        {lead}
         <button type="button" className={s.toggle} aria-expanded={open} aria-controls={open ? lanesId : undefined} onClick={() => setOpen((o) => !o)}>
           <Dots lanes={strip.lanes} />
           <span className={s.headline}>

@@ -151,65 +151,73 @@ ol {
 }
 
 /*
- * Words being made (the lead thinking, an agent's line): a narrow band of 2 px dither, in the colour of the surface
- * they sit on (`--sweep-bg`), steps across them on the app's beat (ui/lib/beat) and rests, so a few letters at a time
- * read as half-rendered. No gradient and no glide. Without a beat (the window hidden, reduced motion) it isn't there.
- * The element carrying [data-sweep] takes the beat as data-step while it shows (useBeatRef). ui/DESIGN.md.
+ * Words being made (the lead thinking, an agent's line): a narrow band of 2 px dither steps across them on the app's
+ * beat (ui/lib/beat) and rests, so a few letters at a time read as half-rendered. No gradient and no glide. The band
+ * is a mask on the words themselves, so it hides every other pixel of the letters and nothing else: whatever they sit
+ * on (the page, a selected row, the strip's glass) shows through unchanged, and empty room past the words stays
+ * empty. Without a beat (the window hidden, reduced motion) it isn't there. The element carrying [data-sweep] takes the
+ * beat as data-step while it shows (useBeatRef). ui/DESIGN.md.
  */
 [data-sweep] {
   position: relative;
   overflow: hidden;
 }
-[data-sweep]::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 22%;
-  pointer-events: none;
-  background: repeating-conic-gradient(var(--sweep-bg, var(--bg)) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
-  transform: translateX(-110%);
+/* The band's left edge, as a share of the words' width; it is 22% wide. */
+:root[data-beat] [data-sweep][data-step] {
+  mask-image:
+    linear-gradient(
+      to right,
+      #000 var(--sweep-at),
+      transparent var(--sweep-at),
+      transparent calc(var(--sweep-at) + 22%),
+      #000 calc(var(--sweep-at) + 22%)
+    ),
+    repeating-conic-gradient(transparent 0 25%, #000 0 50%);
+  mask-size:
+    100% 100%,
+    2px 2px;
 }
-:root[data-beat] [data-sweep][data-step="0"]::after {
-  transform: translateX(-110%);
+:root[data-beat] [data-sweep][data-step="0"] {
+  --sweep-at: -24.2%;
 }
-:root[data-beat] [data-sweep][data-step="1"]::after {
-  transform: translateX(-65%);
+:root[data-beat] [data-sweep][data-step="1"] {
+  --sweep-at: -14.3%;
 }
-:root[data-beat] [data-sweep][data-step="2"]::after {
-  transform: translateX(-19%);
+:root[data-beat] [data-sweep][data-step="2"] {
+  --sweep-at: -4.18%;
 }
-:root[data-beat] [data-sweep][data-step="3"]::after {
-  transform: translateX(26%);
+:root[data-beat] [data-sweep][data-step="3"] {
+  --sweep-at: 5.72%;
 }
-:root[data-beat] [data-sweep][data-step="4"]::after {
-  transform: translateX(72%);
+:root[data-beat] [data-sweep][data-step="4"] {
+  --sweep-at: 15.84%;
 }
-:root[data-beat] [data-sweep][data-step="5"]::after {
-  transform: translateX(117%);
+:root[data-beat] [data-sweep][data-step="5"] {
+  --sweep-at: 25.74%;
 }
-:root[data-beat] [data-sweep][data-step="6"]::after {
-  transform: translateX(162%);
+:root[data-beat] [data-sweep][data-step="6"] {
+  --sweep-at: 35.64%;
 }
-:root[data-beat] [data-sweep][data-step="7"]::after {
-  transform: translateX(208%);
+:root[data-beat] [data-sweep][data-step="7"] {
+  --sweep-at: 45.76%;
 }
-:root[data-beat] [data-sweep][data-step="8"]::after {
-  transform: translateX(253%);
+:root[data-beat] [data-sweep][data-step="8"] {
+  --sweep-at: 55.66%;
 }
-:root[data-beat] [data-sweep][data-step="9"]::after {
-  transform: translateX(298%);
+:root[data-beat] [data-sweep][data-step="9"] {
+  --sweep-at: 65.56%;
 }
-:root[data-beat] [data-sweep][data-step="10"]::after {
-  transform: translateX(344%);
+:root[data-beat] [data-sweep][data-step="10"] {
+  --sweep-at: 75.68%;
 }
-:root[data-beat] [data-sweep][data-step="11"]::after {
-  transform: translateX(389%);
+:root[data-beat] [data-sweep][data-step="11"] {
+  --sweep-at: 85.58%;
 }
-:root[data-beat] [data-sweep][data-step="12"]::after {
-  transform: translateX(435%);
+:root[data-beat] [data-sweep][data-step="12"] {
+  --sweep-at: 95.7%;
 }
-:root[data-beat] [data-sweep][data-step="13"]::after {
-  transform: translateX(480%);
+:root[data-beat] [data-sweep][data-step="13"] {
+  --sweep-at: 105.6%;
 }
 
 /* A row leaving a list (ui/lib/leaving): one quick fade where it stood, then it goes and the gap closes. Inert while

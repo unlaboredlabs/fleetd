@@ -217,7 +217,6 @@ section + section .group {
   justify-content: center;
   width: 100%;
   min-width: 0;
-  --sweep-bg: var(--bg);
 }
 
 /* The agent asks you to take over: its reason in words, the one control beside it. A faint wash of the warning
