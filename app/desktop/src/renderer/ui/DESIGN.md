@@ -65,7 +65,8 @@ breaks a rule changes this page in the same PR and says why.
       place: 700, 53). One additive transform on the rows, so a burst sums. The bubble fades in over its first
       `--dur-enter` 100 ms (`--ease-out`), a reply's bubbles 50 ms apart; it never moves or scales on its own. A
       streamed reply enters once, as the lead starts writing. The list runs on behind the glass island to the
-      window's edge. Scrolled up, nothing glides.
+      window's edge. The island growing with your words doesn't glide: the last message moves up with the pill in
+      the same frame. Scrolled up, nothing glides.
   - Never scale text.
 - **Loops step on one beat, never on CSS animations.** While something live is on screen, `ui/lib/beat` advances
   every 120 ms (24 beats) and hands each loop the beat to write onto its own elements, so every loop steps together

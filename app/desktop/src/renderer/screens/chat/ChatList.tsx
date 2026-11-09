@@ -337,8 +337,8 @@ export function ChatList(props: {
   const { latestSlot } = props;
 
   // The composer's island growing or shrinking with its words changes the room at the end. At the end, the end stays in
-  // view: the last row rides up with the island (glide.ts sees the list grow and glides on its growing spring; with
-  // reduced motion it is there at once). Scrolled up, nothing moves.
+  // view: the last row moves up with the island in the same frame, as the pill grows (glide.ts doesn't glide for room
+  // added after the rows). Scrolled up, nothing moves.
   const { inset } = props;
   const insetWas = useRef(inset);
   useLayoutEffect(() => {

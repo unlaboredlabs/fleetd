@@ -373,7 +373,10 @@ export async function settle(page: Page) {
 // can't see: it would come out empty, or Chromium's dark canvas in the dark theme. Page shots drop the page's
 // data-vibrancy, so the sidebar paints its --sidebar tone: how it looks with Reduce transparency and on Linux. The
 // native window shot (platform.spec.ts) never comes through here, so it shows the real material.
+// Shots also show the glass as a GPU draws it: under Xvfb Chromium composites in software, where the page's glass goes
+// solid (tokens.css data-compositing), and a screen's look is judged as it is on a Mac.
 async function opaqueSidebar(page: Page) {
+  await page.evaluate(() => delete document.documentElement.dataset["compositing"]);
   if (process.platform !== "darwin") return;
   await page.evaluate(() => delete document.documentElement.dataset["vibrancy"]);
 }

@@ -17,6 +17,8 @@ export interface FleetdApi {
   readonly fixture: string | null;
   /** The window draws a translucent sidebar (macOS vibrancy): the page leaves the sidebar's background clear. */
   readonly vibrancy: boolean;
+  /** Chromium composites without a GPU, so every backdrop blur is drawn on the CPU each frame: the page's glass goes solid. */
+  readonly softwareCompositing: boolean;
   /** The app's version, for an error card's Copy details. */
   readonly version: string;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */

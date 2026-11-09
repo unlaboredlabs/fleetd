@@ -12,6 +12,7 @@ import "./styles.css";
 
 document.documentElement.dataset["platform"] = window.fleetd.platform;
 if (window.fleetd.vibrancy) document.documentElement.dataset["vibrancy"] = "";
+if (window.fleetd.softwareCompositing) document.documentElement.dataset["compositing"] = "software";
 // Before the first render, so the first paint is already in the right theme.
 applyTheme();
 // The window's own material (the translucent sidebar, menus, dialogs) follows the OS unless told the app's choice.
