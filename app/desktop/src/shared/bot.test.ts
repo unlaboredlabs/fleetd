@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceRig, BOT_STATES, DIM, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PAINT, setRigState, STEP, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, PAINT, PEBBLE, setRigState, STEP, UP, type BotState, type Rig } from "./bot";
 
 const run = (r: Rig, seconds: number, calm = false, each?: (r: Rig) => void) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
@@ -21,7 +21,7 @@ const largestStep = (r: Rig, seconds: number): number => {
 
 describe("the bot", () => {
   it("paints one palette, light and dark, as hex", () => {
-    for (const p of [PAINT.light, PAINT.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
+    for (const p of [PAINT.light, PAINT.dark, PEBBLE.light, PEBBLE.dark]) for (const v of Object.values(p)) if (typeof v === "string") expect(v).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("draws every state as a body and two closed eyes", () => {
@@ -83,15 +83,20 @@ describe("the bot", () => {
     for (let i = 0; i < x.length; i++) expect(r.x[i]).toBeCloseTo(x[i] ?? 0, 2);
   });
 
-  it("sizes itself for lists: larger eyes, 0.8 of the body's motion, no glow, a closed eye never a hole", () => {
-    const small = newRig("needs", 20, 1);
-    const large = newRig("needs", 64, 1);
+  it("sizes itself for lists by the size it's drawn at: larger eyes, 0.8 of the body's motion, no glow, a closed eye never a hole", () => {
+    // Its box shows only the body, so a 16 px box draws it as a 20 px circle would, and a 36 px one above the line.
+    expect(drawnAt(16)).toBe(20);
+    expect(drawnAt(CROP.w)).toBe(100);
+    const small = newRig("needs", drawnAt(16), 1);
+    const large = newRig("needs", drawnAt(64), 1);
     expect(small.eyeK).toBeCloseTo(1.2);
     expect(large.eyeK).toBe(1);
     expect(small.B).toBeCloseTo(0.8);
     expect(frameOf(small).glow).toBe(0);
     expect(frameOf(large).glow).toBeGreaterThan(0.9);
-    // Shut: at 20 px its line is still 1 px thick (5 units of the box).
+    expect(newRig("needs", drawnAt(36), 1).glow).toBe(true);
+    expect(newRig("needs", drawnAt(28), 1).glow).toBe(false);
+    // Shut: in a 16 px box its line is still 1 px thick (5 units of the drawing).
     small.bk = 1;
     const ys = [...frameOf(small).eyes[0].matchAll(/ ([-\d.]+)(?=C|Z)/g)].map((m) => Number(m[1]));
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThanOrEqual(4.5);

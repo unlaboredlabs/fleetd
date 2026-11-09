@@ -72,7 +72,9 @@ breaks a rule changes this page in the same PR and says why.
   it's on screen, the window is visible and it moves: idle bots in a list take turns for a blink or a glance, one every
   1.6 to 3.6 s, and only a bot in a live state keeps moving. While you type every bot holds still (its clock stops) until
   1.2 s after the last key, so a key press never waits on its frame. With reduced motion each state settles into its
-  still pose. Below 44 px it uses larger eyes, 0.8 of the body motion and no glow.
+  still pose. It has no circle: the body alone, in one calm slate, is the picture, cropped to fill its box, and its hops
+  and slumps reach past it, so nothing that holds it clips it (pictures and initials stay round). Below 44 px as drawn
+  (a 36 px box draws it at 45) it uses larger eyes, 0.8 of the body motion and no glow.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
   writing.
   - Waiting, queued, paused, done and failed are still.
