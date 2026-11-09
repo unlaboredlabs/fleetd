@@ -22,6 +22,7 @@ use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::prim::NonEmpty;
 
 use super::jobs::Jobs;
+use super::queue::{Queue, Turn};
 use super::{
     Answer, Done, Envelope, MacToolConfig, PIECE, PULL_MAX, PUSH_MAX, SKEW_MS, Step, now_ms,
     safe_part, seal_answer, split_raw,
@@ -78,6 +79,8 @@ pub struct Sims {
     pub home: PathBuf,
     pub simulators: Arc<crate::node::device::ios::Simulators>,
     held: Mutex<HashMap<String, Held>>,
+    /// The agents waiting for one, in the order they asked (locked after `held`).
+    queue: Mutex<Queue>,
 }
 
 impl Sims {
@@ -86,7 +89,12 @@ impl Sims {
             home,
             simulators,
             held: Mutex::default(),
+            queue: Mutex::default(),
         }
+    }
+
+    fn queue(&self) -> std::sync::MutexGuard<'_, Queue> {
+        self.queue.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -187,8 +195,15 @@ impl Host {
     }
 
     /// The agent's simulator: its own again while it holds one, else within the budget a clone from the warm pool, or
-    /// with `device` a simulator of that device type (`mac sim start --device`).
-    async fn sim_start(&self, agent: &Agent, device: Option<&str>) -> Result<Done, McpToolError> {
+    /// with `device` a simulator of that device type (`mac sim start --device`). Simulators go to agents in the order
+    /// they asked ([`super::queue`]): one that `wait`s and isn't first, or finds none free, hears its place in line;
+    /// one that doesn't wait is told why there is none, as before the line.
+    async fn sim_start(
+        &self,
+        agent: &Agent,
+        device: Option<&str>,
+        wait: bool,
+    ) -> Result<Done, McpToolError> {
         let sims = self.sims.as_ref().ok_or_else(|| {
             McpToolError::new(
                 ErrorCode::Failed,
@@ -199,6 +214,7 @@ impl Host {
         // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen, and the
         // agent's installs and launches hang behind it.
         if let Some(check) = crate::node::agents_mac::checks::blocks_simulators(&sims.home) {
+            sims.queue().leave(&agent.name);
             let command = check.command.as_ref().map_or("", |c| c.as_str());
             return Err(McpToolError::new(
                 ErrorCode::Failed,
@@ -211,23 +227,86 @@ impl Host {
         }
         {
             let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queue = sims.queue();
             if let Some(h) = held.get_mut(&agent.name) {
+                queue.leave(&agent.name);
                 return held_again(h, device);
             }
-            let budget = self.sim_budget();
-            if held.len() >= budget as usize {
-                return Err(McpToolError::new(
-                    ErrorCode::Failed,
-                    format!("All {budget} of the Mac's iOS simulators are in use by other agents."),
-                )
-                .with_fix("try mac sim start again in a few minutes, or carry on without one"));
+            let budget = self.sim_budget() as usize;
+            let in_use = held.len();
+            match queue.turn(&agent.name, wait, in_use, budget, Instant::now()) {
+                Turn::Now => {}
+                Turn::Wait { full: true, .. } if !wait => {
+                    return Err(McpToolError::new(
+                        ErrorCode::Failed,
+                        format!(
+                            "All {budget} of the Mac's iOS simulators are in use by other agents."
+                        ),
+                    )
+                    .with_fix(
+                        "mac sim start without --no-wait waits its turn, or carry on without one",
+                    ));
+                }
+                Turn::Wait { place, .. } if !wait => {
+                    return Err(McpToolError::new(
+                        ErrorCode::Failed,
+                        format!(
+                            "{} agents are waiting for the Mac's iOS simulators, and get theirs first.",
+                            place - 1
+                        ),
+                    )
+                    .with_fix("mac sim start without --no-wait waits its turn, or carry on without one"));
+                }
+                Turn::Wait { place, full } => {
+                    let free = budget.saturating_sub(in_use);
+                    return Ok(Done::SimQueued {
+                        place: place as u32,
+                        secs: (!full && place <= free)
+                            .then(|| sims.simulators.ready_in(place))
+                            .flatten(),
+                        why: if full {
+                            format!(
+                                "all {budget} of the Mac's iOS simulators are in use by other agents"
+                            )
+                        } else {
+                            "the agents ahead of you get theirs first".to_owned()
+                        },
+                    });
+                }
             }
         }
-        let (lent, device) = match device {
-            Some(wanted) => sims.simulators.lend_type(wanted).await?,
-            None => sims.simulators.lend()?,
+        let lent = match device {
+            Some(wanted) => sims.simulators.lend_type(wanted).await,
+            None => sims.simulators.lend_or_wait(),
+        };
+        let (lent, device) = match lent {
+            Ok(Ok(lent)) => lent,
+            // First in line, and the pool is booting the clone that is the agent's.
+            Ok(Err(waiting)) if wait && waiting.retry_in.is_none() => {
+                return Ok(Done::SimQueued {
+                    place: 1,
+                    secs: Some(waiting.secs),
+                    why: match waiting.failing {
+                        None => "yours is booting".to_owned(),
+                        Some(why) => {
+                            format!("the last boot failed ({why}); yours is booting again")
+                        }
+                    },
+                });
+            }
+            Ok(Err(waiting)) => {
+                if wait {
+                    sims.queue().leave(&agent.name);
+                }
+                return Err(crate::node::device::ios::sim_waiting(&waiting));
+            }
+            Err(error) => {
+                sims.queue().leave(&agent.name);
+                return Err(error);
+            }
         };
         let mut held = sims.held.lock().unwrap_or_else(|e| e.into_inner());
+        sims.queue().leave(&agent.name);
         // Another `mac sim start` of the agent's got one meanwhile: that one stays, this goes (dropped: deleted).
         if let Some(h) = held.get_mut(&agent.name) {
             return held_again(h, None);
@@ -256,9 +335,12 @@ impl Host {
         Ok(Done::SimStart { udid, device })
     }
 
-    /// The agent's simulator goes: deleted with its clone.
+    /// The agent's simulator goes: deleted with its clone. Waiting for one, it leaves the line.
     fn sim_end(&self, agent: &str) -> bool {
         let gone = self.held().and_then(|mut h| h.remove(agent));
+        if let Some(sims) = &self.sims {
+            sims.queue().leave(agent);
+        }
         if let (Some(_), Some(sims)) = (&gone, &self.sims) {
             crate::node::device::agent_device::release(&sims.home, &sim_key(agent));
             tracing::info!(agent, "an agent's simulator ended");
@@ -514,7 +596,9 @@ impl Host {
                 let repo = agent.repo();
                 return blocking(move || get(&dir, &repo, &path, offset, raw)).await;
             }
-            Step::SimStart { device } => self.sim_start(agent, device.as_deref()).await?,
+            Step::SimStart { device, wait } => {
+                self.sim_start(agent, device.as_deref(), wait).await?
+            }
             Step::SimEnd => Done::SimEnd {
                 ended: self.sim_end(&agent.name),
             },
