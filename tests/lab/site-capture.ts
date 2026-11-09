@@ -162,7 +162,7 @@ function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
     });
     fs.writeFileSync(file, text);
   }
-  execFileSync("cargo", ["run", "-q", "--locked", "-p", "docsgen"], { cwd: REPO, stdio: "inherit" });
+  execFileSync("bun", ["run", "docs"], { cwd: path.join(REPO, "fleetd"), stdio: "inherit" });
   log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s)`);
 }
 
@@ -187,7 +187,7 @@ function assertPublishable(name: string, text: string) {
 // ---- The run ----
 
 async function main() {
-  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
+  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (bun run compile in fleetd/)`);
   const transcripts = setupBlocks(setupTranscripts());
   for (const [name, text] of Object.entries(transcripts)) assertPublishable(`capture:${name}`, text);
   // Everything checked: now the docs change.
@@ -202,7 +202,7 @@ const setupBlocks = ({ init, add }: ReturnType<typeof setupTranscripts>) => ({
 });
 
 async function docsOnly() {
-  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
+  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (bun run compile in fleetd/)`);
   fillDocs(docsBlocks(setupBlocks(setupTranscripts())));
 }
 

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { type Body, descendants, type Lab, type NodeOptions, type ProcInfo, REPO, realClaude, sleep, stillRuns } from "../harness.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const FIXTURES = path.join(REPO, "crates/fleetd/src/node/runner/fixtures");
+export const FIXTURES = path.join(REPO, "fleetd/test/fixtures/runner");
 /** The standing machine the scenarios restart with overrides; lab-a keeps the real defaults throughout. */
 export const MACHINE = "lab-b";
 

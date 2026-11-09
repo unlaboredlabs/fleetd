@@ -1,4 +1,0 @@
-loop:hub loop `steer::run_sweep`
-tool:`agent_messages`
-tool:`steer_send`
-tool:`steer_withdraw`

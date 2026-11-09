@@ -1,3 +1,0 @@
-http:GET `/healthz`
-service:hub HTTP layer `counted`
-service:hub HTTP layer `gzip`

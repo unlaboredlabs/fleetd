@@ -1,5 +1,5 @@
 // An offline stand-in for `claude`, for the factory lab (CI has no claude and no network). It speaks the stream-json
-// fleetd's node speaks, in the shapes recorded in crates/fleetd/src/node/runner/fixtures at version.rs TESTED, and
+// fleetd's node speaks, in the shapes recorded in fleetd/test/fixtures/runner at version.rs TESTED, and
 // does no model call: each user message is one turn that runs the message's `lab-run: <shell>` lines in its cwd, one
 // Bash tool call each, and replies `lab-ok`; a `lab-slow: <ms>` line waits that long before each call after the first, as
 // a slow runner between tool calls. A lab that wants replies of its own (the phone lab's chats) writes replies.json in
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 type Msg = Record<string, any>;
 
-const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../crates/fleetd/src/node/runner/fixtures");
+const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../fleetd/test/fixtures/runner");
 const recorded = (file: string) =>
   fs
     .readFileSync(path.join(FIXTURES, file), "utf8")

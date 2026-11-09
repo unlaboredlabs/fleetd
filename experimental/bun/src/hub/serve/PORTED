@@ -1,2 +1,0 @@
-cli:`fleetd hub start`
-service:the hub lowers its own OOM score at start

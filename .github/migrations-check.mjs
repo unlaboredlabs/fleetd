@@ -6,7 +6,7 @@
 // <head> is HEAD (CI's merge commit) unless named: scripts/check.sh names its worktree merged onto origin/main.
 import { execFileSync } from "node:child_process";
 
-const DIR = "crates/fleetd/src/hub/store/migrations/";
+const DIR = "fleetd/src/hub/store/migrations/";
 const [base, head = "HEAD"] = process.argv.slice(2);
 if (!base) throw new Error("usage: node .github/migrations-check.mjs <base commit> [<head>]");
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).split("\n").filter((line) => line !== "");

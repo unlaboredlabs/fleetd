@@ -1,5 +1,0 @@
-loop:hub loop `time.start`
-tool:`thread_window`
-tool:`time_breakdown`
-tool:`time_insights`
-tool:`time_spans`

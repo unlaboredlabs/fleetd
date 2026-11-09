@@ -1,0 +1,24 @@
+{
+  "name": "fleetd-bun",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "bun scripts/gen.ts",
+    "gen:check": "bun scripts/gen.ts --check",
+    "typecheck": "tsc-rs -p tsconfig.json",
+    "test": "bun test",
+    "compile": "bun build --compile --minify --bytecode --sourcemap --root . src/main.ts src/hub/store/read-worker.ts src/hub/projects/avatar-worker.ts --outfile dist/fleetd",
+    "smoke": "bun scripts/smoke.ts",
+    "helper": "bun scripts/helper.ts",
+    "check": "bun run gen:check && bun run typecheck && bun test && bun run compile && bun run smoke"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "@types/ssh2": "^1.15.6",
+    "tsc-rs": "0.8.0"
+  },
+  "dependencies": {
+    "acorn": "8.19.0",
+    "ssh2": "1.16.0"
+  }
+}

@@ -31,27 +31,19 @@ set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${GITHUB_SHA:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
-if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-linux-* fleetd-darwin-* fleetd-bun-*; fi
+if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
 shopt -s nullglob
-# Each CLI build also goes up packed, <asset>.lzma (`xz --format=lzma`, about a third of the size), which hubs and nodes
-# download instead once the SHA256SUMS list it (src/update). The darwin builds are signed by now; what unpacks is them.
-# The Bun flavour's builds (fleetd-bun-*, built with the Rust ones, bun-build.sh) go up plain only: Bun has no LZMA
-# decoder, and they carry the same version, so release.json's cliVersion is theirs too.
-packing=()
-for bin in fleetd-linux-x64 fleetd-darwin-arm64 fleetd-darwin-x64; do
-  if [ -f "$bin" ]; then
-    xz --format=lzma -9e -c "$bin" > "$bin.lzma" &
-    packing+=("$!")
-  fi
-done
-for pid in ${packing[@]+"${packing[@]}"}; do wait "$pid"; done
+# The CLI's builds are fleetd-bun-<os>-<arch> (bun-build.sh), plain: the Bun build has no LZMA decoder. The Rust
+# builds (fleetd-<os>-<arch> and their .lzma) are no longer built; like any asset a run doesn't build, the last ones
+# stay on the release with their SHA256SUMS lines (sums below), so installs from before the switch still find and
+# check them.
 assets=(fleetd-*)
 if [ ${#assets[@]} -eq 0 ]; then
   echo "nothing was built; the release stays as it is"
   exit 0
 fi
 cli_built=false
-if [ -n "$(compgen -G 'fleetd-linux-*')" ]; then cli_built=true; fi
+if [ -n "$(compgen -G 'fleetd-bun-linux-*')" ]; then cli_built=true; fi
 
 if [ "$CHANNEL" = edge ]; then tag=edge; else tag="${GITHUB_REF_NAME:?}"; fi
 # One line for whoever updates from before the Electron app (see the retired zip above).

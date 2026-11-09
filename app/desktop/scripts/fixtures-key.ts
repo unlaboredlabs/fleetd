@@ -9,7 +9,7 @@ import path from "node:path";
 
 const APP = path.resolve(import.meta.dirname, "..");
 const FIXTURES = path.join(APP, "fixtures");
-const SCHEMA = path.resolve(APP, "../../crates/fleetd-contracts/schema");
+const SCHEMA = path.resolve(APP, "src/shared/contracts/schema");
 
 const filesUnder = (dir: string) =>
   fs

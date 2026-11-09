@@ -1,0 +1,99 @@
+# fleetd itself (fleetd/: the hub, the node and the CLI, in TypeScript on Bun): its generated files and the docs pages
+# made from the code, the hub migrations, the type check with tsc-rs, its tests, the `bun build --compile` binary run end
+# to end, and the factory lab's scenarios on that binary. Only when something it reads changed (.github/fleetd-scope.sh);
+# otherwise it reports success at once, so it reports on every PR and a check that never comes never holds one. Main
+# always runs it in full. One of .fleetd/train.json's fastChecks, so the train waits for it on each PR and batch.
+name: fleetd
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to a PR cancels its running run. Runs on main and on the merge train's batch PR (<prefix>train/batch) are
+# never cancelled: each gets a group of its own.
+concurrency:
+  group: >-
+    ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
+    && format('{0}-{1}', github.workflow, github.run_id)
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
+
+permissions:
+  contents: read
+
+jobs:
+  fleetd:
+    # Its name is a fast check in .fleetd/train.json: rename both in one PR.
+    name: fleetd
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: fleetd
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: ${{ github.workspace }}
+        run: .github/fleetd-scope.sh
+      - uses: oven-sh/setup-bun@v2
+        if: steps.scope.outputs.run == 'true'
+        with:
+          bun-version: 1.4.3
+      - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      # tsc-rs comes from npm, pinned in bun.lock (its native binary is the @tsc-rs/<platform> package).
+      - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.run == 'true'
+      - name: Hub migrations only add new files, after the base's
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        # Against the merge commit's own first parent, the base it was built on (the train's batch PR's too): a fresh
+        # fetch of the base branch could hold migrations main landed after the merge, which the PR seems to remove.
+        run: node .github/migrations-check.mjs HEAD^1
+      - name: Generated files are current (migrations, docs pages, setup steps)
+        if: steps.scope.outputs.run == 'true'
+        run: bun run gen:check
+      - name: Type check (tsc-rs)
+        if: steps.scope.outputs.run == 'true'
+        run: bun run typecheck
+      - run: bun test
+        if: steps.scope.outputs.run == 'true'
+      - run: bun run compile
+        if: steps.scope.outputs.run == 'true'
+      - name: The binary end to end
+        if: steps.scope.outputs.run == 'true'
+        run: bun run smoke
+      - name: Binary size
+        if: steps.scope.outputs.run == 'true'
+        run: ls -l dist/fleetd
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+        if: steps.scope.outputs.run == 'true'
+        working-directory: ${{ github.workspace }}
+      - name: Lab scenarios on a project that isn't fleetd
+        id: lab
+        if: steps.scope.outputs.run == 'true'
+        working-directory: ${{ github.workspace }}
+        # tests/lab/factory on the compiled binary: a hub and a node on a generated Python repo with a local ssh-style
+        # origin, and an offline stand-in for claude. No network, GitHub or claude login.
+        run: npm run factory --prefix tests/lab
+        env:
+          FLEETD_BIN: ${{ github.workspace }}/fleetd/dist/fleetd
+          FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory
+      - if: failure() && steps.lab.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-factory-logs
+          path: ${{ runner.temp }}/factory/*/logs/
+          if-no-files-found: ignore
+          retention-days: 14

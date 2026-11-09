@@ -1,4 +1,0 @@
-browser:browser call `desktop`
-hb:heartbeat `load.desktop`
-loop:node loop `desktop::Desktops::start`
-mod:`node/desktop/session.rs`

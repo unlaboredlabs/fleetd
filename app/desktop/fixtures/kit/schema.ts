@@ -1,5 +1,5 @@
-// Every payload in a fixture is checked against the hub's own JSON Schemas (crates/fleetd-contracts/schema, drift-
-// checked in Rust CI), so a hand-made or stress-generated answer can't drift from what a real hub sends.
+// Every payload in a fixture is checked against the hub's own JSON Schemas (src/shared/contracts/schema, which the
+// hub decodes its calls with), so a hand-made or stress-generated answer can't drift from what a real hub sends.
 import fs from "node:fs";
 import path from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -7,7 +7,7 @@ import type { ErrorObject, ValidateFunction } from "ajv";
 import type { Fixture } from "./fixture.ts";
 import { isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
 
-const SCHEMA_DIR = path.resolve(import.meta.dirname, "../../../../crates/fleetd-contracts/schema");
+const SCHEMA_DIR = path.resolve(import.meta.dirname, "../../src/shared/contracts/schema");
 
 type Doc = { $defs: Record<string, JsonValue> } & JsonObject;
 const load = (file: string) => JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, file), "utf8")) as Doc;

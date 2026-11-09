@@ -1,4 +1,0 @@
-# The shipped musl build's jemalloc (crates/fleetd/src/main.rs) gives freed pages back at once, from 4 arenas. Its
-# defaults keep them about 10 s, and only purge an arena that allocates again, so an idle hub held what a burst used.
-[env]
-X86_64_UNKNOWN_LINUX_MUSL_JEMALLOC_SYS_WITH_MALLOC_CONF = "narenas:4,dirty_decay_ms:0,muzzy_decay_ms:0"

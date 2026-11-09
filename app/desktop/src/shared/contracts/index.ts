@@ -1,5 +1,5 @@
-// The /app protocol's types, generated from crates/fleetd-contracts (see generated/contracts.ts), plus the typed
-// views the app uses: a call map keyed by tool, and hub events narrowed by type.
+// The /app protocol's types (./contracts.ts, the hub's wire contract, with its JSON Schemas in ./schema), plus the
+// typed views the app uses: a call map keyed by tool, and hub events narrowed by type.
 import type { HubError } from "../hub";
 import type {
   HubEvent,
@@ -7,10 +7,10 @@ import type {
   HubEventType,
   KnownHubEventType,
   ToolMap,
-} from "./generated/contracts";
+} from "./contracts";
 
-export type * from "./generated/contracts";
-export * from "./generated/contracts";
+export type * from "./contracts";
+export * from "./contracts";
 
 export type ToolName = keyof ToolMap;
 export type ToolInput<T extends ToolName> = ToolMap[T]["input"];
