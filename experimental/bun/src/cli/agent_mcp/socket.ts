@@ -78,15 +78,43 @@ function decodeResultFrame(line: string): Record<string, unknown> | undefined {
   return frame;
 }
 
-/** One frame out, one frame back over the node's socket. The node answers within ~35 s; `timeoutMs` is a backstop.
- * Throws (a string) why the node could not be asked or did not answer. */
-export function sendToNode(socket: string, frame: unknown, timeoutMs: number): Promise<Record<string, unknown>> {
+/** How long a call waits for the node's socket to listen again: a node restarting for an update is back within
+ * seconds. Nothing was sent yet, so retrying the connect can't run a call twice. */
+const CONNECT_WAIT_MS = 20_000;
+const CONNECT_RETRY_MS = 250;
+/** Why a call failed when no node listened within CONNECT_WAIT_MS. */
+export const NODE_RESTARTING = "fleetd is restarting; try again";
+
+/** One frame out, one frame back over the node's socket, retrying the connect every CONNECT_RETRY_MS for up to
+ * `connectWaitMs` while no node listens. The node answers within ~65 s; `timeoutMs` is a backstop. Throws (a string)
+ * why the node could not be asked or did not answer. */
+export async function sendToNode(
+  socket: string,
+  frame: unknown,
+  timeoutMs: number,
+  connectWaitMs = CONNECT_WAIT_MS,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + connectWaitMs;
+  for (;;) {
+    const answer = await sendOnce(socket, frame, timeoutMs);
+    if (answer !== DOWN) return answer;
+    const left = deadline - Date.now();
+    if (left <= 0)
+      throw `${NODE_RESTARTING} (no fleetd node is listening at ${socket}; set FLEETD_NODE_SOCK if it is elsewhere)`;
+    await Bun.sleep(Math.min(CONNECT_RETRY_MS, left));
+  }
+}
+
+/** No node listens at the socket: nothing was sent. */
+const DOWN = Symbol("down");
+
+function sendOnce(socket: string, frame: unknown, timeoutMs: number): Promise<Record<string, unknown> | typeof DOWN> {
   return new Promise((resolve, reject) => {
     let connected = false;
     let buffer = "";
     let settled = false;
     const conn = connect(socket);
-    const finish = (error: string | undefined, answer?: Record<string, unknown>) => {
+    const finish = (error: string | undefined, answer?: Record<string, unknown> | typeof DOWN) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -116,13 +144,8 @@ export function sendToNode(socket: string, frame: unknown, timeoutMs: number): P
     conn.on("end", () => finish("the fleetd node closed the connection without answering — try again shortly"));
     conn.on("close", () => finish("the fleetd node closed the connection without answering — try again shortly"));
     conn.on("error", (error: NodeJS.ErrnoException) => {
-      if (!connected && (error.code === "ENOENT" || error.code === "ECONNREFUSED")) {
-        finish(
-          `fleetd hub unreachable: no fleetd node is listening at ${socket} (set FLEETD_NODE_SOCK if it is elsewhere) — tell the human the node is down and carry on`,
-        );
-      } else {
-        finish(`cannot reach the fleetd node at ${socket}: ${osError(error)}`);
-      }
+      if (!connected && (error.code === "ENOENT" || error.code === "ECONNREFUSED")) finish(undefined, DOWN);
+      else finish(`cannot reach the fleetd node at ${socket}: ${osError(error)}`);
     });
   });
 }

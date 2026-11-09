@@ -1,13 +1,14 @@
 // The simulators agents hold on the agents' Mac (crates/fleetd/src/node/mac_tool/host.rs `sim_start`, `sim_end`,
 // `end_idle_sims`, `sim_env`): `mac sim start` lends an agent a clone from the warm pool (or one of the device type it
-// named), within the Mac's budget of simulators at once; `mac sim end`, or 30 minutes without a step, gives it back and
-// deletes it. While an agent holds one, its jobs' agent-device and plain simctl are pointed at it.
+// named), within the Mac's budget of simulators at once and in the order agents asked (node/mac_tool/queue.ts); `mac
+// sim end`, or 30 minutes without a step, gives it back and deletes it. While an agent holds one, its jobs' agent-device and plain simctl are pointed at it.
 import { join } from "node:path";
 import { ToolError } from "../../../shared/errors.ts";
 import { simBudget } from "../../mac_tool/protocol.ts";
+import { Queue } from "../../mac_tool/queue.ts";
 import { release, sessionDir } from "../agent_device.ts";
 import { blocksSimulators } from "../../agents_mac/checks.ts";
-import type { Simulators } from "./index.ts";
+import { simWaiting, type Simulators } from "./index.ts";
 import type { Lent } from "./pool.ts";
 import { iosEnv, setDir, writeConfig } from "./wrapper.ts";
 
@@ -18,6 +19,9 @@ export const SIM_IDLE = 30 * 60_000;
 export const simKey = (agent: string) => `mac-${agent}`;
 
 type Held = { lent: Lent; device: string; project: string; sinceMs: number; used: number };
+type Started = { step: "sim_start"; udid: string; device: string };
+type Queued = { step: "sim_queued"; place: number; secs: number | null; why: string };
+const WAIT_FIX = "mac sim start without --no-wait waits its turn, or carry on without one";
 
 /** The Mac's memory (`sysctl -n hw.memsize`); 16 GB when it can't be read. */
 export function memBytes(): number {
@@ -33,6 +37,8 @@ export function memBytes(): number {
 
 export class MacSims {
   readonly held = new Map<string, Held>();
+  /** The agents waiting for one, in the order they asked. */
+  readonly queue = new Queue();
 
   constructor(
     /** The node's home: the wrapper's config for each agent, the golden's set. */
@@ -50,12 +56,15 @@ export class MacSims {
 
   /**
    * The agent's simulator: its own again while it holds one, else within the budget a clone from the warm pool, or with
-   * `device` a simulator of that device type (`mac sim start --device`).
+   * `device` a simulator of that device type (`mac sim start --device`). Simulators go to agents in the order they
+   * asked (queue.ts): one that `wait`s and isn't first, or finds none free, hears its place in line; one that doesn't
+   * wait is told why there is none, as before the line.
    */
-  async start(agent: { name: string; project: string }, device?: string): Promise<{ step: "sim_start"; udid: string; device: string }> {
+  async start(agent: { name: string; project: string }, device?: string, wait = false): Promise<Started | Queued> {
     // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen.
     const blocked = blocksSimulators(this.home);
     if (blocked) {
+      this.queue.leave(agent.name);
       throw new ToolError(
         "failed",
         `The agents' Mac can't run iOS simulators yet: ${blocked.message}`,
@@ -63,16 +72,48 @@ export class MacSims {
       );
     }
     const mine = this.held.get(agent.name);
-    if (mine) return heldAgain(mine, device);
-    const budget = this.budget();
-    if (this.held.size >= budget) {
-      throw new ToolError(
-        "failed",
-        `All ${budget} of the Mac's iOS simulators are in use by other agents.`,
-        "try mac sim start again in a few minutes, or carry on without one",
-      );
+    if (mine) {
+      this.queue.leave(agent.name);
+      return heldAgain(mine, device);
     }
-    const [lent, named] = device !== undefined ? await this.simulators.lendType(device) : this.simulators.lend();
+    const budget = this.budget();
+    const inUse = this.held.size;
+    const turn = this.queue.turn(agent.name, wait, inUse, budget, Date.now());
+    if (!turn.now) {
+      const { place, full } = turn;
+      if (!wait && full) throw new ToolError("failed", `All ${budget} of the Mac's iOS simulators are in use by other agents.`, WAIT_FIX);
+      if (!wait) throw new ToolError("failed", `${place - 1} agents are waiting for the Mac's iOS simulators, and get theirs first.`, WAIT_FIX);
+      const free = Math.max(budget - inUse, 0);
+      return {
+        step: "sim_queued",
+        place,
+        secs: !full && place <= free ? (this.simulators.readyIn(place) ?? null) : null,
+        why: full ? `all ${budget} of the Mac's iOS simulators are in use by other agents` : "the agents ahead of you get theirs first",
+      };
+    }
+    let taken: Awaited<ReturnType<Simulators["lendType"]>>;
+    try {
+      taken = device !== undefined ? await this.simulators.lendType(device) : this.simulators.lendOrWait();
+    } catch (e) {
+      this.queue.leave(agent.name);
+      throw e;
+    }
+    if ("waiting" in taken) {
+      const { waiting } = taken;
+      // First in line, and the pool is booting the clone that is the agent's.
+      if (wait && waiting.retryIn === undefined) {
+        return {
+          step: "sim_queued",
+          place: 1,
+          secs: waiting.secs,
+          why: waiting.failing === undefined ? "yours is booting" : `the last boot failed (${waiting.failing}); yours is booting again`,
+        };
+      }
+      if (wait) this.queue.leave(agent.name);
+      throw simWaiting(waiting);
+    }
+    const [lent, named] = taken.lent;
+    this.queue.leave(agent.name);
     // Another `mac sim start` of the agent's got one meanwhile: that one stays, this goes.
     const meanwhile = this.held.get(agent.name);
     if (meanwhile) {
@@ -90,8 +131,9 @@ export class MacSims {
     return { step: "sim_start", udid: lent.udid, device: named };
   }
 
-  /** The agent's simulator goes: deleted with its clone. Whether it held one. */
+  /** The agent's simulator goes: deleted with its clone. Waiting for one, it leaves the line. Whether it held one. */
   end(agent: string): boolean {
+    this.queue.leave(agent);
     const held = this.held.get(agent);
     if (!held) return false;
     this.held.delete(agent);
@@ -138,7 +180,7 @@ export class MacSims {
 }
 
 /** The simulator the agent holds, asked for again: the same one, unless it named another device type. */
-function heldAgain(h: Held, device?: string): { step: "sim_start"; udid: string; device: string } {
+function heldAgain(h: Held, device?: string): Started {
   if (device !== undefined && !h.device.startsWith(`${device} on `)) {
     throw new ToolError("invalid", `You hold a ${h.device} simulator already.`, `mac sim end, then mac sim start --device "${device}"`);
   }

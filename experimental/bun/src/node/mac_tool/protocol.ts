@@ -30,7 +30,9 @@ export type Step =
   | { step: "ps" }
   | { step: "kill"; job: number }
   | { step: "get"; path: string; offset: number; raw?: boolean }
-  | { step: "sim_start"; device?: string }
+  /** `device`: a device type of the agent's choosing; absent, the golden's. `wait`: none free, the agent joins the line
+   * (queue.ts) and hears its place; an older node sends none. */
+  | { step: "sim_start"; device?: string; wait?: boolean }
   | { step: "sim_end" };
 
 export type Done =
@@ -43,6 +45,7 @@ export type Done =
   | { step: "kill"; job: number; killed: boolean }
   | { step: "get"; dataB64: string; total: number; folder: boolean }
   | { step: "sim_start"; udid: string; device: string }
+  | { step: "sim_queued"; place: number; secs?: number | null; why: string }
   | { step: "sim_end"; ended: boolean };
 
 /** What goes inside the sealed box. */

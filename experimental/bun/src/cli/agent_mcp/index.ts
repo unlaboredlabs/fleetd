@@ -9,7 +9,7 @@ import { VERSION } from "../../shared/version.ts";
 import { checkArguments } from "./check.ts";
 import { at, isObject, rustJson } from "./json.ts";
 import { browserResult, errorResult, toolResult } from "./results.ts";
-import { callerCwd, nodeSocketPath, osError, sendToNode } from "./socket.ts";
+import { callerCwd, NODE_RESTARTING, nodeSocketPath, osError, sendToNode } from "./socket.ts";
 import { ALIASES, toolList, toolsFor, SNAPSHOT, type Role } from "./tools.ts";
 
 export { SERVER_NAME } from "./tools.ts";
@@ -17,7 +17,7 @@ export { SERVER_NAME } from "./tools.ts";
 const PROTOCOL_VERSION = "2025-06-18";
 /** contracts' artifacts.rs `ARTIFACT_TEXT_CAP`, in UTF-16 units as the app counts. */
 const ARTIFACT_TEXT_CAP = 2_000_000;
-const NODE_TIMEOUT_MS = 60_000;
+const NODE_TIMEOUT_MS = 90_000;
 
 type Call = Record<string, unknown>;
 const BROWSER_OPS = new Set(SNAPSHOT.tools.filter((t) => t.browser).map((t) => t.op));
@@ -109,6 +109,7 @@ async function toolCall(role: Role, params: unknown, deps: LeadDeps) {
   try {
     answer = await sendCall(call, deps);
   } catch (unreachable) {
+    if (String(unreachable).startsWith(NODE_RESTARTING)) return errorResult(String(unreachable));
     return errorResult(`${unreachable}. Carry on without this call and say so in your result.`);
   }
   return isObject(answer.result) && "op" in answer.result ? browserResult(answer) : toolResult(answer);
