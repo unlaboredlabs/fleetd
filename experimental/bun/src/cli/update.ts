@@ -112,7 +112,7 @@ async function waitForAgents(deadlineMs: number) {
   for (;;) {
     let steps = 0;
     try {
-      const answer = await sendToNode(socket, { t: "hold" }, 10_000);
+      const answer = await sendToNode(socket, { t: "hold" }, 10_000, 0);
       steps = typeof answer.steps === "number" ? answer.steps : 0;
     } catch {}
     if (steps === 0) return;

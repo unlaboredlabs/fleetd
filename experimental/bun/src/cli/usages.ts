@@ -351,13 +351,18 @@ export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's s
   mac ps                           your jobs
   mac kill <job>                   ends a job
   mac pull <path> [to]             a file or folder from your folder on the Mac into your worktree
-  mac sim start [--device <type>]  an iOS simulator of your own on the Mac, booted (a plain iPhone; --device "iPad
+  mac sim start [--device <type>] [--no-wait]
+                                   an iOS simulator of your own on the Mac, booted (a plain iPhone; --device "iPad
                                    Pro 13-inch (M5)" another type, as xcrun simctl list devicetypes names it, booted
-                                   from nothing: a minute or two). From then on agent-device drives it, running on
+                                   from nothing: a minute or two). While none is free it waits its turn: agents get
+                                   simulators in the order they asked, it prints its place as it changes ("2nd in
+                                   line, about 90 s") and returns once yours is booted, so run it with your longest
+                                   timeout; cut off, run it again within 2 minutes to keep your place. --no-wait
+                                   says why there is none instead. From then on agent-device drives it, running on
                                    the Mac (its files land in your folder there: mac pull them). In
                                    mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
                                    simctl needs: xcrun simctl --set "$FLEETD_MAC_SIM_SET" <command> "$FLEETD_MAC_SIM"
-  mac sim end                      ends it (30 minutes with no mac command ends it too)
+  mac sim end                      ends it, or leaves the line (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own
 $FLEETD_MAC_DERIVED_DATA, and $FLEETD_MAC_CACHE is shared by every agent; pod (CocoaPods) and the Mac's other
