@@ -73,6 +73,10 @@ build of fleetd, or a channel it couldn't read.
 A machine installs the build it downloaded and checked when the update started, even if the channel has a newer one
 by the time its agents let it restart: edge often does. The next update brings everything to that newer build.
 
+The app names a machine that runs an older fleetd than the hub, with `fleetd update` to run on it, only once it has
+been linked 12 minutes and is still behind: never while the hub's update of it is on its way. It clears as soon as the
+machine links on the hub's build.
+
 `fleetd update` on a machine holds its own node's agents and waits for their step, 2 minutes at most;
 `fleetd update --now` doesn't wait.
 
