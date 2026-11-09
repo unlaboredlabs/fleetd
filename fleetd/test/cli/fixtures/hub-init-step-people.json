@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "\nInvite people · optional\n  Each person gets their own sign-in, chats and projects; you choose who is an admin.\n<QR>\n  1. Invite someone\n     The invite is a link and a code, for one person, good for 7 days. Send it to them yourself.\n     On the hub:\n       fleetd invite --name <name>\n       --role admin for another admin.\n<QR>\n  In the app: Settings › Hub › People.\n–  Invite people optional · fleetd init --step people\n\nRun fleetd init --step people again when you've done it; it keeps what's done.\n"
+}

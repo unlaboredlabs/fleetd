@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "✗ no single Navi 'nope' on devbox\n  Fix: fleetd navi list --archived --machine devbox shows their ids\n"
+}

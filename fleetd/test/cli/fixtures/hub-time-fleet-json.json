@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "{\"breakdown\":{\"agentMs\":0,\"byCategory\":[],\"ciChecks\":[],\"coverage\":{\"complete\":true,\"gaps\":[]},\"humanWait\":{\"n\":0,\"totalMs\":0},\"next\":\"time_insights reads the same spans for findings; time_spans lists them.\",\"repeated\":[],\"retentionDays\":30,\"storedBytes\":102400,\"topCommands\":[],\"wallMs\":0},\"insights\":{\"insights\":[],\"next\":\"time_spans with rule lists every span a finding links to.\"}}\n",
+  "stderr": ""
+}

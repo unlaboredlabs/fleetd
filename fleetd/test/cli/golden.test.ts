@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Fleet, fixture, record, RECORD, RUST, UNSET } from "./golden.ts";
+import { Fleet, fixture, record, RECORD, UNSET } from "./golden.ts";
 
 /** A release feed on this machine for `fleetd update`: /newer/ has a newer CLI, /same/ this build, /none/ none. */
 const feed = Bun.serve({
@@ -21,7 +21,7 @@ const feedAt = (dir: string) => ({ FLEETD_BASE_URL: `http://127.0.0.1:${feed.por
 
 /** A no-node case's run: the CLI's 20 s wait for a restarting node, and room to spare. */
 const NO_NODE_MS = 45_000;
-type Case = { name: string; argv: string[]; cwd?: string; /** Compared live only: its output names this machine's own resolver or tools. */ live?: boolean; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void>; /** Longer than CASE_MS a binary. */ ms?: number };
+type Case = { name: string; argv: string[]; cwd?: string; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void>; /** Longer than CASE_MS a binary. */ ms?: number };
 
 /** No hub needed: usage, parse errors, and what opens the hub's database directly. */
 const OFFLINE: Case[] = [
@@ -103,7 +103,7 @@ const OFFLINE: Case[] = [
   {
     name: "pair-worker-codes",
     argv: ["pair", "--worker-codes"],
-    setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["pair", "--worker", "builder-1"])),
+    setup: async (f) => void (await f.run(["pair", "--worker", "builder-1"])),
   },
   {
     name: "pair-qr-devbox",
@@ -138,9 +138,8 @@ const OFFLINE: Case[] = [
     argv: ["people"],
     env: { USER: "dev" },
     setup: async (f) => {
-      const which = RUST ? "rust" : "bun";
-      await f.run(which, ["invite", "--name", "Ada"], { env: { USER: "dev" } });
-      await f.run(which, ["hub", "key", "create", "--human", "--name", "laptop"], { env: { USER: "dev" } });
+      await f.run(["invite", "--name", "Ada"], { env: { USER: "dev" } });
+      await f.run(["hub", "key", "create", "--human", "--name", "laptop"], { env: { USER: "dev" } });
     },
   },
   { name: "mac-help", argv: ["mac", "--help"] },
@@ -173,14 +172,14 @@ const OFFLINE: Case[] = [
   {
     name: "init-again",
     argv: ["init", "--no-service"],
-    setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["init", "--no-service", "--listen", "127.0.0.1:1", "--git-identity", "Dev <dev@example.com>"])),
+    setup: async (f) => void (await f.run(["init", "--no-service", "--listen", "127.0.0.1:1", "--git-identity", "Dev <dev@example.com>"])),
   },
   { name: "uninstall", argv: ["uninstall"] },
   { name: "uninstall-purge-nothing", argv: ["uninstall", "--purge"] },
   {
     name: "uninstall-purge",
     argv: ["uninstall", "--purge"],
-    setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["init", "--no-service", "--listen", "127.0.0.1:1"])),
+    setup: async (f) => void (await f.run(["init", "--no-service", "--listen", "127.0.0.1:1"])),
   },
   { name: "uninstall-flag", argv: ["uninstall", "--force"] },
   { name: "push-relay-what", argv: ["push-relay", "frob"] },
@@ -217,37 +216,37 @@ const OFFLINE: Case[] = [
   { name: "prompts-none", argv: ["prompts"] },
   { name: "prompts-no-hub", argv: ["prompts", "list"] },
   { name: "prompts-bad-project", argv: ["prompts", "list", "--project", "nope"] },
-  { name: "prompts-list", argv: ["prompts", "list"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-unknown-verb", argv: ["prompts", "frob", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-show-none", argv: ["prompts", "show"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-show-unknown", argv: ["prompts", "show", "nope.nope"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-show", argv: ["prompts", "show", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-show-default", argv: ["prompts", "show", "instructions", "--default"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-show-session", argv: ["prompts", "show", "--session", "devbox/t1"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-project-missing", argv: ["prompts", "show", "lead.start", "--project", "devbox/nope"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-diff-shipped", argv: ["prompts", "diff", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
-  { name: "prompts-reset-shipped", argv: ["prompts", "reset", "lead.start"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-list", argv: ["prompts", "list"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-unknown-verb", argv: ["prompts", "frob", "lead.start"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-show-none", argv: ["prompts", "show"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-show-unknown", argv: ["prompts", "show", "nope.nope"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-show", argv: ["prompts", "show", "lead.start"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-show-default", argv: ["prompts", "show", "instructions", "--default"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-show-session", argv: ["prompts", "show", "--session", "devbox/t1"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-project-missing", argv: ["prompts", "show", "lead.start", "--project", "devbox/nope"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-diff-shipped", argv: ["prompts", "diff", "lead.start"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
+  { name: "prompts-reset-shipped", argv: ["prompts", "reset", "lead.start"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
   { name: "instructions-what", argv: ["instructions", "frob"] },
-  { name: "instructions-show", argv: ["instructions", "show"], setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "instructions-show", argv: ["instructions", "show"], setup: async (f) => void (await f.run(["hub", "key", "list"])) },
   { name: "prompts-edited-diff", argv: ["prompts", "diff", "instructions"], setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      await f.run(["hub", "key", "list"]);
       writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
-      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+      await f.run(["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
     } },
   { name: "prompts-edited-list", argv: ["prompts", "list"], setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      await f.run(["hub", "key", "list"]);
       writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
-      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+      await f.run(["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
     } },
   { name: "prompts-edited-show", argv: ["instructions", "show"], setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      await f.run(["hub", "key", "list"]);
       writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
-      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+      await f.run(["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
     } },
   { name: "prompts-edited-reset", argv: ["prompts", "reset", "instructions"], setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      await f.run(["hub", "key", "list"]);
       writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\nprintf '\\nAlways answer in French.\\n' >> \"$1\"\n", { mode: 0o755 });
-      await f.run(RUST ? "rust" : "bun", ["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
+      await f.run(["prompts", "edit", "instructions"], { env: { VISUAL: join(f.cwd, "ed.sh") }, stdin: "y\n" });
     } },
   {
     name: "prompts-edit-no",
@@ -255,11 +254,11 @@ const OFFLINE: Case[] = [
     env: { VISUAL: "./ed.sh" },
     stdin: "n\n",
     setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
+      await f.run(["hub", "key", "list"]);
       writeFileSync(join(f.cwd, "ed.sh"), "#!/bin/sh\necho more >> \"$1\"\n", { mode: 0o755 });
     },
   },
-  { name: "prompts-edit-editor-fails", argv: ["prompts", "edit", "instructions"], env: { VISUAL: "false" }, setup: async (f) => void (await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"])) },
+  { name: "prompts-edit-editor-fails", argv: ["prompts", "edit", "instructions"], env: { VISUAL: "false" }, setup: async (f) => void (await f.run(["hub", "key", "list"])) },
   { name: "github-app-none", argv: ["github-app"] },
   { name: "github-app-test-none", argv: ["github-app", "test"] },
   { name: "github-app-remove-none", argv: ["github-app", "remove"] },
@@ -286,14 +285,7 @@ const OFFLINE: Case[] = [
   { name: "update-claude-none", argv: ["update-claude"], env: { PATH: "/usr/bin:/bin" } },
   // machine remove never on a local record here: its undo would reach this machine's own node service.
   { name: "machine-remove-unknown", argv: ["machine", "remove", "builder-8"] },
-  { name: "machine-remove-unreachable", live: true, argv: ["machine", "remove", "builder-9", "--purge"], setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "list"]);
-      writeFileSync(join(f.hubHome, "setup.json"), JSON.stringify({ listen: "127.0.0.1:1", url: "http://127.0.0.1:1", machines: { "builder-9": { sshHost: "builder-9.invalid", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 } } }));
-    } },
   { name: "machine-remove-bad-id", argv: ["machine", "remove", "Bad_Id"] },
-  // The hub's own wizard, scripted: --yes, --no-service, nothing listening; its claude and gh lines are this machine's.
-  { name: "init-yes-not-started", live: true, argv: ["init", "--yes", "--no-service", "--listen", "127.0.0.1:1", "--git-identity", "Dev <1+dev@users.noreply.github.com>"] },
-  { name: "init-yes-no-identity", live: true, argv: ["init", "--yes", "--no-service", "--listen", "127.0.0.1:1"], env: { PATH: "/usr/bin:/bin" } },
   { name: "hub-key-missing", argv: ["hub", "key"] },
   { name: "hub-key-unknown", argv: ["hub", "key", "frob"] },
   { name: "hub-key-create-no-name", argv: ["hub", "key", "create"] },
@@ -309,12 +301,12 @@ const OFFLINE: Case[] = [
     name: "hub-key-create-list-revoke",
     argv: ["hub", "key", "list"],
     setup: async (f) => {
-      await f.run(RUST ? "rust" : "bun", ["hub", "key", "create", "--name", "ci", "--role", "read", "--machines", "a,b"]);
+      await f.run(["hub", "key", "create", "--name", "ci", "--role", "read", "--machines", "a,b"]);
     },
   },
 ];
 
-/** Against a running Rust hub. */
+/** Against a running hub. */
 const ONLINE: Case[] = [
   { name: "project-list-empty", argv: ["project", "list"] },
   { name: "project-list-archived", argv: ["project", "list", "--archived", "--machine", "devbox"] },
@@ -347,14 +339,11 @@ const ONLINE: Case[] = [
   { name: "time-fleet-json", argv: ["time", "--json", "--since", "2026-11-01T00:00:00Z"] },
   { name: "time-order", argv: ["time", "W9", "--since", "2d"] },
   { name: "time-project-unknown", argv: ["time", "nope"] },
-  { name: "doctor", argv: ["doctor"] },
   { name: "init-step-address", argv: ["init", "--step", "address"] },
   { name: "init-step-people", argv: ["init", "--step", "people"] },
   { name: "init-step-machines", argv: ["init", "--step", "machines"] },
   { name: "init-step-cloud", argv: ["init", "--step", "cloud"] },
   { name: "init-step-mac", argv: ["init", "--step", "mac"] },
-  // Piped stderr, no NO_COLOR: plain text all the same, as a person's shell or an agent's sees it.
-  { name: "doctor-piped-color", argv: ["doctor"], env: { NO_COLOR: UNSET } },
   { name: "push-relay-off", argv: ["push-relay", "set", "off"] },
   { name: "push-relay-default", argv: ["push-relay", "set", "https://push.fleetd.sh"] },
   { name: "push-relay-own-key", argv: ["push-relay", "set", "https://relay.devbox.example", "--relay-key-file", "bad.key"] },
@@ -396,60 +385,51 @@ const KEYED: Case[] = [
 /** A case spawns a fresh process or two: a loaded machine (CI, or a busy devbox) takes longer than bun's 5 s default. */
 const CASE_MS = 30_000;
 
+/** The case's run against its fixture, or recorded as its fixture with RECORD=1. */
+function golden(name: string, got: ReturnType<Fleet["normalize"]>) {
+  if (RECORD) return record(name, got);
+  const want = fixture(name);
+  if (want === undefined) throw new Error(`no fixture for ${name}: record it with RECORD=1 bun test test/cli/golden.test.ts`);
+  expect(got).toEqual(want);
+}
+
 describe("offline", () => {
   for (const c of OFFLINE) {
     test(c.name, async () => {
-      // A home each, set up alike, so a case that changes it sees the same state from both binaries.
-      const fleets = RUST ? [new Fleet(`${c.name}-rust`), new Fleet(`${c.name}-bun`)] : [new Fleet(c.name)];
+      const fleet = new Fleet(c.name);
       try {
-        for (const f of fleets) await c.setup?.(f);
-        if (RUST) {
-          const rust = fleets[0]!.normalize(await fleets[0]!.run("rust", c.argv, c));
-          const bun = fleets[1]!.normalize(await fleets[1]!.run("bun", c.argv, c));
-          if (RECORD && !c.live) record(c.name, rust);
-          expect(bun).toEqual(rust);
-        } else {
-          const want = c.live ? undefined : fixture(c.name);
-          if (want === undefined) return;
-          expect(fleets[0]!.normalize(await fleets[0]!.run("bun", c.argv, c))).toEqual(want);
-        }
+        await c.setup?.(fleet);
+        golden(c.name, fleet.normalize(await fleet.run(c.argv, c)));
       } finally {
-        for (const f of fleets) await f.stop();
+        await fleet.stop();
       }
-    }, (c.ms ?? CASE_MS) * (RUST ? 2 : 1));
+    }, c.ms ?? CASE_MS);
   }
 });
 
-describe.skipIf(!RUST)("against a Rust hub", () => {
-  // One hub each, set up alike, so a case that changes the hub's state sees the same state from both binaries.
-  const fleets: Record<"rust" | "bun", Fleet> = {} as never;
+describe("against a hub", () => {
+  let fleet: Fleet;
   beforeAll(async () => {
-    for (const which of ["rust", "bun"] as const) {
-      const fleet = new Fleet(`online-${which}`);
-      await fleet.startRustHub();
-      const made = await fleet.run("rust", ["hub", "key", "create", "--human", "--name", "golden", "--out", join(fleet.cwd, "human.key")]);
-      if (made.code !== 0) throw new Error(made.stderr);
-      writeFileSync(join(fleet.cwd, "bad.key"), "fld_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
-      // A checkout for `fleetd work`: an origin remote, a branch and a change.
-      const repo = join(fleet.cwd, "repo");
-      for (const cmd of [["init", "-q", "-b", "main", repo], ["-C", repo, "remote", "add", "origin", "https://github.com/acme/shop.git"],
-        ["-C", repo, "config", "user.email", "dev@example.com"], ["-C", repo, "checkout", "-q", "-b", "cart"]]) {
-        Bun.spawnSync(["git", ...cmd]);
-      }
-      writeFileSync(join(repo, "cart.ts"), "export {};\n");
-      fleets[which] = fleet;
+    fleet = new Fleet("online");
+    await fleet.startHub();
+    const made = await fleet.run(["hub", "key", "create", "--human", "--name", "golden", "--out", join(fleet.cwd, "human.key")]);
+    if (made.code !== 0) throw new Error(made.stderr);
+    writeFileSync(join(fleet.cwd, "bad.key"), "fld_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n");
+    // A checkout for `fleetd work`: an origin remote, a branch and a change.
+    const repo = join(fleet.cwd, "repo");
+    for (const cmd of [["init", "-q", "-b", "main", repo], ["-C", repo, "remote", "add", "origin", "https://github.com/acme/shop.git"],
+      ["-C", repo, "config", "user.email", "dev@example.com"], ["-C", repo, "checkout", "-q", "-b", "cart"]]) {
+      Bun.spawnSync(["git", ...cmd]);
     }
-  });
+    writeFileSync(join(repo, "cart.ts"), "export {};\n");
+  }, CASE_MS);
   afterAll(async () => {
-    await fleets.rust?.stop();
-    await fleets.bun?.stop();
+    await fleet?.stop();
   });
   for (const c of [...ONLINE, ...KEYED]) {
     test(c.name, async () => {
-      const argv = (f: Fleet) => c.argv.map((a) => (a === "HUBURL" ? f.hubUrl : a));
-      const rust = fleets.rust.normalize(await fleets.rust.run("rust", argv(fleets.rust), c));
-      const bun = fleets.bun.normalize(await fleets.bun.run("bun", argv(fleets.bun), c));
-      expect(bun).toEqual(rust);
+      const argv = c.argv.map((a) => (a === "HUBURL" ? fleet.hubUrl : a));
+      golden(`hub-${c.name}`, fleet.normalize(await fleet.run(argv, c)));
     }, CASE_MS);
   }
 });

@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "0 in flight on github.com/acme/shop main\nwarning: no project bound to github.com/acme/shop yet; agents' work may be missing\n",
+  "stderr": ""
+}

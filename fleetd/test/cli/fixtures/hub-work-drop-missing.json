@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd work: There is no claim C99.\n  fix: work_list lists the claims in flight.\n"
+}

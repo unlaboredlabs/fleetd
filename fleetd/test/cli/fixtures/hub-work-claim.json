@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "claimed C1\nwarning: no project bound to github.com/acme/shop yet; agents' work may be missing\nnext: Call work_done with claimId C1 when it lands or you drop it.\n",
+  "stderr": ""
+}

@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "phone notifications go through https://push.fleetd.sh, the default relay\n",
+  "stderr": ""
+}

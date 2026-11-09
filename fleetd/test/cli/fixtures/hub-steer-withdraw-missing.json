@@ -1,0 +1,5 @@
+{
+  "code": 3,
+  "stdout": "",
+  "stderr": "fleetd steer: No steer S77.\n  fix: Call orders_board to see open orders and their agents.\n"
+}

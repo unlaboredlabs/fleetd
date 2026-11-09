@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "✓ Fleet cap set to 12 (the machines fit 0): queued agents start as slots allow.\n",
+  "stderr": ""
+}

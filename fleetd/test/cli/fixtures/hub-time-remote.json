@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "fleet since LOCALTIME\nwall 0s  agent time 0s  coverage complete\n\nagent time  0s\n\nfindings: none\n",
+  "stderr": ""
+}

@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "",
+  "stderr": "\nWhere the hub listens · required\n  Your devices and machines reach the hub at this address; a tailnet keeps it off the internet.\n<QR>\n  1. Pick the address\n     Your tailnet keeps it private, and plain HTTP is fine there. HTTPS (Tailscale Serve) is optional.\n     Tailscale admin: https://login.tailscale.com/admin/machines\n     Hub address:\n       http://HUB\n       Only this machine can reach the hub: phones and other machines can't join. To change that, on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>.\n<QR>\n  Test: Reach the hub at its address.\n✓  Where the hub listens The hub answers at http://HUB/healthz\n\nNext: fleetd init lists what's left; the app's Settings › Hub › Setup has the same steps.\n"
+}
