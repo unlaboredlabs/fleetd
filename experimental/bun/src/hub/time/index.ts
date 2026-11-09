@@ -5,7 +5,9 @@
 import type { Hub } from "../api/hub.ts";
 import { parseMs } from "../store/time.ts";
 import { type Ack, closePrefix, gap, ingestFrame, type SpansFrame, writeHub } from "./ingest.ts";
+import { LIVE_CI_MS } from "./reads.ts";
 import { cursor, type NewSpan, prune, write } from "./store.ts";
+import { saveUpkeep, upkeep, type UpkeepJob } from "./upkeep.ts";
 
 /** Node batches waiting for the writer; past this a batch is not acked and the node resends it on reconnect. */
 export const NODE_BATCHES = 64;
@@ -16,6 +18,10 @@ const HUB_BATCH = 500;
 /** Clock offsets are the minimum over this window of heartbeats. */
 const OFFSET_WINDOW_MS = 10 * 60 * 1000;
 const PRUNE_EVERY_MS = 3_600_000;
+/** How often the upkeep looks for hours to build, when none were left over. */
+const UPKEEP_EVERY_MS = 10_000;
+/** How often the stored bytes are measured again. */
+const BYTES_EVERY_MS = 600_000;
 
 /** What the hub's areas send the writer: a span, or "close every open hub span under `prefix` at `endMs`". */
 export type HubMsg = { span: NewSpan } | { close: string; endMs: number };
@@ -149,6 +155,38 @@ export class Time {
     }, PRUNE_EVERY_MS);
     stop.addEventListener("abort", () => clearInterval(timer), { once: true });
   }
+}
+
+/**
+ * The digests' upkeep (upkeep.ts) until the hub stops: at start, then every UPKEEP_EVERY_MS, straight away again
+ * while history is left to build. Running orders' segments are worked out twice per LIVE_CI_MS, so a read finds them.
+ */
+export function startUpkeep(hub: Hub): void {
+  const t = time(hub);
+  const stop = hub.shutdown.signal;
+  let ciAt = Number.NEGATIVE_INFINITY;
+  let bytesAt = Number.NEGATIVE_INFINITY;
+  let timer: ReturnType<typeof setTimeout>;
+  const tick = async () => {
+    let more = false;
+    try {
+      const now = t.nowMs();
+      const job: UpkeepJob = { now, ci: now - ciAt >= LIVE_CI_MS / 2, bytes: now - bytesAt >= BYTES_EVERY_MS };
+      const readers = hub.db.readers();
+      const got = readers ? await readers.upkeep(job) : upkeep(hub.db.conn, job);
+      if (stop.aborted) return;
+      hub.db.transaction((c) => saveUpkeep(c, got, t.nowMs()));
+      if (job.ci) ciAt = now;
+      if (job.bytes) bytesAt = now;
+      more = got.more;
+    } catch (error) {
+      if (stop.aborted) return;
+      console.warn("time: upkeep failed:", error);
+    }
+    timer = setTimeout(tick, more ? 0 : UPKEEP_EVERY_MS);
+  };
+  timer = setTimeout(tick, 0);
+  stop.addEventListener("abort", () => clearTimeout(timer), { once: true });
 }
 
 export const time = (hub: Hub) => hub.area("time", (h) => new Time(h));
