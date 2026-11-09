@@ -857,36 +857,54 @@ span.changeUndo {
 }
 
 /*
- * The lead's turn line (TurnLine.tsx), first in the island's band, its left edge on the pill's: one line, 20 px tall,
- * centred on the agents' capsule after it. It is as wide as what it says (TurnLine measures it), so the capsule glides
- * aside as it changes; beside the capsule it takes at most a little over half the band, and the capsule gives way to
- * it. Gone, it has no width and gives back the band's gap. Over the conversation scrolled up, a soft patch of the
- * ground keeps it legible.
+ * The lead's turn line (TurnLine.tsx): the live strip's first item while agents run (live.module.css), else first in
+ * the island's band on its own, its left edge on the pill's: one line, 20 px tall. It is as wide as what it says
+ * (TurnLine measures it and sets it at once); what follows it slides to its new place and its words are cut by a clip
+ * sliding with it, all on transforms (TurnLine slide). Beside others it takes at most a little over half the row.
+ * Gone, it has no width and gives back the row's gap (--turn-gap). On its own over the conversation scrolled up, a
+ * soft patch of the ground keeps it legible; in the strip, the capsule's glass does.
  */
 .turnLine {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
+  --turn-gap: var(--space-1-5);
+  position: relative;
+  /* In a crowded row it gives way with what follows it, down to its glyph; its words ellipsize. */
+  flex: 0 1 auto;
   box-sizing: border-box;
   width: 0;
+  min-width: 0;
   max-width: 100%;
   height: 20px;
-  margin: 0 calc(-1 * var(--space-1-5)) 4px 0;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
+  margin: 0 0 4px 0;
   pointer-events: none;
-  transition:
-    width 200ms var(--ease-out),
-    margin 200ms var(--ease-out),
-    background-color 200ms var(--ease-out),
-    box-shadow 200ms var(--ease-out);
+}
+:global([data-strip]) > .turnLine {
+  --turn-gap: var(--space-3);
+  margin-bottom: 0;
 }
 .turnLine:not(:last-child) {
   max-width: 55%;
 }
 .turnLine[data-turn] {
-  margin-right: 0;
+  min-width: 14px;
+}
+/* The words' clip, as wide as the line, with room around it for the patch's soft edge; TurnLine sizes and slides it
+   while the line changes width. */
+.turnClip {
+  position: absolute;
+  box-sizing: content-box;
+  inset: -10px 0 -10px -10px;
+  padding: 10px 0 10px 10px;
+  overflow: hidden;
+}
+.turnRow {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  height: 20px;
+  border-radius: var(--radius-sm);
+}
+:global([data-band]) > .turnLine[data-turn] .turnRow {
   background: var(--bg);
   box-shadow: 0 0 6px 4px var(--bg);
 }
@@ -898,7 +916,7 @@ span.changeUndo {
   opacity: 0;
   transition: opacity 200ms var(--ease-out);
 }
-.turnLine[data-turn] > .turnGlyph {
+.turnLine[data-turn] .turnGlyph {
   opacity: 1;
 }
 .turnWords {
@@ -922,7 +940,9 @@ span.changeUndo {
   line-height: 20px;
   animation: turnIn 200ms var(--ease-out) both;
 }
+/* Leaving, it keeps the room it had, though the line may be narrower now: the clip cuts it as it slides. */
 .turnLayer[data-leaving] {
+  max-width: none;
   animation: turnOut 200ms var(--ease-out) both;
 }
 .turnSizer {
@@ -953,7 +973,6 @@ span.changeUndo {
   color: var(--quiet);
 }
 .turnNow {
-  --sweep-bg: var(--bg);
   display: inline-block;
   max-width: 100%;
   vertical-align: top;
