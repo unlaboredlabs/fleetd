@@ -147,7 +147,8 @@ export function VaultItem() {
               ) : null,
           }),
     });
-  });
+    // `edit` reads the item.
+  }, [navigation, t.accent, canEdit, item]);
 
   if (item === undefined) {
     return (
