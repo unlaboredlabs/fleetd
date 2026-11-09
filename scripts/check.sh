@@ -193,7 +193,7 @@ if wanted fleetd "${fleetd_paths[@]}"; then
   head=$(merged) || { echo "check.sh: couldn't merge the worktree onto origin/main; checking HEAD's migrations" >&2; head=HEAD; }
   step fleetd node .github/migrations-check.mjs origin/main "$head"
   step fleetd in_fleetd bun run typecheck
-  step fleetd in_fleetd bun test
+  step fleetd in_fleetd bun test --parallel=4
 fi
 
 if $site_wanted; then
