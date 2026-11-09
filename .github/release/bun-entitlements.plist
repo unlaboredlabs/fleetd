@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Bun build of the CLI under the hardened runtime (macos-sign.sh sign with MACOS_ENTITLEMENTS): JavaScriptCore's
+     JIT needs writable executable memory, which the hardened runtime refuses without these, and bun:ffi loads libraries
+     library validation would refuse. Signed with these, the Rust build's Developer ID and identifier (sh.fleetd.cli),
+     a Mac keeps its Screen Recording and Accessibility grants when it switches flavour; build-release.yml checks. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

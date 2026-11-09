@@ -99,12 +99,13 @@ running by hand:
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--now]
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--flavour <f>] [--now]
              replace this fleetd with the latest release, then restart its hub at once and its
              node once its agents finish the step they're on (10 min at most; --now doesn't wait):
              what they were running carries on by itself. The app's Update button does this for
              the hub and every node; this is for a machine without the app. --channel edge (the
-             newest build of main) or stable; default: the channel this build came from
+             newest build of main) or stable; default: the channel this build came from.
+             --flavour rust or bun switches this machine to that implementation's build
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -287,6 +288,7 @@ async fn update_command(argv: &[String]) -> u8 {
         options: &[
             ("check", args::Kind::Bool),
             ("channel", args::Kind::Str),
+            ("flavour", args::Kind::Str),
             ("now", args::Kind::Bool),
         ],
         positionals: false,
@@ -301,6 +303,7 @@ async fn update_command(argv: &[String]) -> u8 {
     match update::run(update::UpdateArgs {
         check: v.flag("check"),
         channel: v.string("channel"),
+        flavour: v.string("flavour"),
         now: v.flag("now"),
     })
     .await

@@ -1,7 +1,10 @@
-// `fleetd update [--check] [--channel edge|stable] [--now]` (crates/fleetd/src/cli/update.rs), on src/update: replaces
-// this binary with the latest build of a release channel, then restarts the hub and node services that run it: the
-// hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 10 minutes at most;
-// `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
+// `fleetd update [--check] [--channel edge|stable] [--flavour rust|bun] [--now]` (crates/fleetd/src/cli/update.rs), on
+// src/update: replaces this binary with the latest build of a release channel, then restarts the hub and node services
+// that run it: the hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 10
+// minutes at most; `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
+//
+// `--flavour rust` switches the machine back to the release's Rust build, at the same path; the Rust build's
+// `--flavour bun` switches it here. A Bun update brings the Rust session host beside it along (updateHelper).
 //
 // Not here: replacing the pre-Electron GPUI app (the Rust CLI's App migration), which no Bun-built machine has.
 import { spawnSync } from "node:child_process";
@@ -19,13 +22,18 @@ import { hubInfo, versionShown } from "./versions.ts";
 const WAIT_POLL_MS = 2000;
 
 export async function updateCommand(argv: string[]): Promise<number> {
-  const v = parse(argv, { options: { check: "bool", channel: "str", now: "bool" }, positionals: false });
+  const v = parse(argv, { options: { check: "bool", channel: "str", flavour: "str", now: "bool" }, positionals: false });
   if (v instanceof ArgError) {
     process.stderr.write(`fleetd: ${v.message}\n\n${usageText()}`);
     return 2;
   }
   try {
-    await run({ check: v.flag("check"), ...(v.str("channel") === undefined ? {} : { channel: v.str("channel")! }), now: v.flag("now") });
+    await run({
+      check: v.flag("check"),
+      ...(v.str("channel") === undefined ? {} : { channel: v.str("channel")! }),
+      ...(v.str("flavour") === undefined ? {} : { flavour: v.str("flavour")! }),
+      now: v.flag("now"),
+    });
     return 0;
   } catch (error) {
     process.stderr.write(`fleetd: ${(error as Error).message}\n`);
@@ -44,35 +52,45 @@ async function askHub(): Promise<string | undefined> {
   }
 }
 
-export async function run(args: { check: boolean; channel?: string; now: boolean }): Promise<void> {
-  const { HttpFeed, baseUrl, channelOf, cliAsset, installedExe, parseChannel, release, verifiedTo } = await import("../update/index.ts");
+export async function run(args: { check: boolean; channel?: string; flavour?: string; now: boolean }): Promise<void> {
+  const { FLAVOUR, HttpFeed, assetOf, baseUrl, channelOf, checkedTo, installedExe, parseChannel, parseFlavour, release, sums, updateHelper } = await import(
+    "../update/index.ts"
+  );
   const { isHubService, services: servicesOf } = await import("../update/service.ts");
   const current = VERSION;
   const releaseBuild = process.env.FLEETD_VERSION !== undefined;
   const named = args.channel ?? process.env.FLEETD_CHANNEL;
   const channel = named !== undefined ? parseChannel(named) : channelOf(current, releaseBuild);
+  const flavour = args.flavour !== undefined ? parseFlavour(args.flavour) : FLAVOUR;
+  const switching = flavour !== FLAVOUR;
   const feed = new HttpFeed(baseUrl(channel));
   const rel = await release(feed);
-  const cliLatest = rel.cliVersion !== undefined && rel.cliVersion !== current ? rel.cliVersion : undefined;
+  // A switch installs the other flavour's build of the newest release, even one of this version.
+  const cliLatest = rel.cliVersion !== undefined && (switching || rel.cliVersion !== current) ? rel.cliVersion : undefined;
   const exe = installedExe();
   const services = servicesOf(exe);
   const hub = services.some(isHubService) ? await askHub() : undefined;
   // An earlier update installed this binary, and the hub still runs the one before.
   const pending = hub !== undefined && cliLatest === undefined && hub !== current && hub !== "0.0.0" ? hub : undefined;
-  if (cliLatest !== undefined) console.log(`fleetd ${versionShown(current)} -> ${versionShown(cliLatest)} (${channel})`);
+  if (cliLatest !== undefined && switching) console.log(`fleetd ${versionShown(current)} (${FLAVOUR}) -> ${versionShown(cliLatest)} (${flavour}) (${channel})`);
+  else if (cliLatest !== undefined) console.log(`fleetd ${versionShown(current)} -> ${versionShown(cliLatest)} (${channel})`);
   else if (rel.cliVersion !== undefined) console.log(`fleetd ${versionShown(current)} is up to date (${channel})`);
   else console.log(`the ${channel} channel has no fleetd CLI build yet`);
   if (pending !== undefined) console.log(`the hub still runs ${versionShown(pending)}; a restart moves it to ${versionShown(current)}`);
   const restartDue = services.length > 0 && (cliLatest !== undefined || pending !== undefined);
   if (args.check || !restartDue) {
-    if (args.check && cliLatest !== undefined) console.log("run `fleetd update` to install");
+    if (args.check && switching) console.log(`run \`fleetd update --flavour ${flavour}\` to install`);
+    else if (args.check && cliLatest !== undefined) console.log("run `fleetd update` to install");
     else if (args.check && pending !== undefined) console.log("run `fleetd update` to restart it");
     return;
   }
   if (cliLatest !== undefined) {
     if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
     try {
-      await verifiedTo(feed, cliAsset(), exe);
+      const s = await sums(feed);
+      // Staying on Bun: its session host moves with it first. Back to Rust: the Rust build needs none.
+      if (flavour === "bun") await updateHelper(feed, s, exe);
+      await checkedTo(feed, s, assetOf(flavour), exe);
     } catch (error) {
       throw new Error(`replacing ${exe}: ${(error as Error).message}`);
     }
