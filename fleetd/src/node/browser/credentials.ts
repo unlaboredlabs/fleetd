@@ -5,16 +5,20 @@
 // - `filledFieldRefusal`: the proxy asks it, for each of the driver's DOM writes, whether it is to a field filled here.
 // What a sealed session refuses outright is guard.ts's: an allowlist of what agent-browser sends, narrower once sealed.
 //
-// A fill reads the reference with the session's vault (onepassword.ts: the project's OP_SERVICE_ACCOUNT_TOKEN, else its
-// person's, a cache per session, backoff on rate limits), checks that the page and the field's form are on the item's
-// own website, seals the session (its scrubber learns the value, agent-browser's policy file denies its reads, and the
-// proxy runs only agent-browser's own script shapes), then types the value over the node's own connection and submits,
-// in one step (`fill`). The value never passes the proxy, and every answer to the driver is scrubbed of it.
+// A fill takes a vault login's field from the hub, sealed to this node for the page it's on (vault.ts), or reads a
+// 1Password reference with the session's vault (onepassword.ts: the project's OP_SERVICE_ACCOUNT_TOKEN, else its
+// person's, a cache per session, backoff on rate limits; for one release, and only for a reference the vault doesn't
+// hold yet). It checks that the page and the field's form are on the item's own website, seals the session (its
+// scrubber learns the value, agent-browser's policy file denies its reads, and the proxy runs only agent-browser's own
+// script shapes), then types the value over the node's own connection and submits, in one step (`fill`). The value
+// never passes the proxy, and every answer to the driver is scrubbed of it.
 import { ToolError } from "../../shared/errors.ts";
 import { writePolicy } from "./agent_browser.ts";
 import type { Broker } from "./index.ts";
 import { Cache, CredError, type Credential, hostOf, isOtp, originAllowed, TOKEN_ENV, type Vault, type VaultFor, vaultFor } from "./onepassword.ts";
 import { PAUSED, type Session } from "./session.ts";
+import { maskName, notInVault, onSites, vaultFill, vaultFilled } from "./vault.ts";
+import { isHostKey } from "../device/work.ts";
 
 /** A session's vault, made with the token at its first fill, and what it resolved. */
 export type SessionVault = { vault: Vault; cache: Cache };
@@ -99,92 +103,140 @@ export function scrubbed(session: Session, error: ToolError): ToolError {
   return new ToolError(error.code, scrub.text(error.message), error.fix === undefined ? undefined : scrub.text(error.fix));
 }
 
-/** The fill_credential call's fields, as agent-mcp sends them. */
+/** The fill_credential call's fields, as agent-mcp sends them: a vault login's `item` and `field`, or a 1Password
+ * `ref`. */
 export type FillCredentialCall = { item?: unknown; field?: unknown; ref?: unknown; target?: unknown; submit?: unknown };
 
-/**
- * The call's 1Password reference, by contracts browser.rs `FillCredentialCall::source`'s rule: `item` and `field`, or
- * `ref`, never a mix. A vault login (`item`) is refused until this node fills from the vault.
- */
-export function referenceOf(call: FillCredentialCall): string {
-  const item = call.item !== undefined;
-  const field = call.field !== undefined;
-  const ref = typeof call.ref === "string" && call.ref !== "";
-  if (item && field && !ref) {
-    throw new ToolError(
-      "failed",
-      "Filling a vault item needs a newer fleetd node on this machine.",
-      "fill with ref: op://… meanwhile, or ask the person to update fleetd",
-    );
-  }
-  if (ref && !item && !field) return call.ref as string;
-  throw new ToolError("invalid", item && !field ? "item goes with its field: username, password or otp" : "give item and field, or ref", "call fill_credential again");
+const LOGIN_FIELDS = ["username", "password", "otp"] as const;
+type LoginField = (typeof LOGIN_FIELDS)[number];
+
+/** The vault field an `op://` reference names, for its one-release alias: its last segment, or a one-time code. */
+export function refField(reference: string): LoginField | undefined {
+  if (isOtp(reference)) return "otp";
+  const last = reference.split("?")[0]!.split("/").at(-1)?.toLowerCase();
+  return last === "username" || last === "password" ? last : undefined;
 }
 
+/** What a fill types and where it may: the value, the sites it fills on, how it's masked and named, and the vault's
+ * audit row when it came from the vault. */
+type Source = { value: string; allowed: (url: string) => boolean; sites: string[]; mask: string; said: string; otp: boolean; auditId?: number };
+
 /**
- * An agent's `fill_credential` in its live session, with the value the agent's machine read from its 1Password
- * (`given`) for a session hosted here, or else read here; either way only into the item's own sites, and sealed from
- * the driver's reads after it.
+ * An agent's `fill_credential` in its live session: a vault login's field (`item`, `field`), sealed to this node by the
+ * hub for this page; or a 1Password reference (`ref`), which for one release fills the vault item imported from it and
+ * else reads 1Password, with the value the agent's machine read (`given`) for a session hosted here, or else read here.
+ * Either way only into the item's own sites, and sealed from the driver's reads after it.
  */
 export async function fillCredential(broker: Broker, thread: string, call: FillCredentialCall, given?: Credential): Promise<{ message: string }> {
   const started = performance.now();
-  const reference = referenceOf(call);
+  const reference = typeof call.ref === "string" ? call.ref : "";
+  const item = typeof call.item === "string" && call.item ? call.item : undefined;
+  const field = typeof call.field === "string" ? call.field : undefined;
   const target = String(call.target ?? "");
   const submit = call.submit !== false;
   const session = broker.live(thread);
   if (!session) throw new ToolError("not_found", "No browser session is open.", "start one with session_start, open the site's login page, then fill");
   if (session.control() === "human") throw new ToolError("invalid", PAUSED, "fill once they hand it back");
-  const args = { ref: reference, target, submit };
+  const args = item !== undefined ? { item, field, target, submit } : { ref: reference, target, submit };
   const failed = (error: ToolError) => {
     const out = scrubbed(session, error);
     session.stepAt("fill_credential", args, false, out.message, Math.round(performance.now() - started));
     return out;
   };
-  let credential: Credential;
-  if (given) credential = given;
-  else {
-    let vault: SessionVault;
-    try {
-      vault = broker.vault(session);
-    } catch (e) {
-      throw failed(e as ToolError);
+  if (item !== undefined || field !== undefined) {
+    if (item === undefined || !LOGIN_FIELDS.includes(field as LoginField) || reference) {
+      throw failed(new ToolError("invalid", "Give item and field (username, password or otp), or ref.", "list the logins this session may use with vault_items"));
     }
+  } else if (!reference) {
+    throw failed(new ToolError("invalid", "Give item and field (username, password or otp), or ref.", "list the logins this session may use with vault_items"));
+  }
+  const page = (await pageUrl(session)) ?? "";
+  let source: Source | undefined;
+  const vaultField = item !== undefined ? (field as LoginField) : refField(reference);
+  if (!given && vaultField !== undefined) {
     try {
-      credential = await vault.cache.get(vault.vault, reference);
+      const got = await vaultFill(broker, session, { ...(item !== undefined ? { item } : { ref: reference }), field: vaultField, page });
+      const sites = got.plain.sites;
+      source = {
+        value: got.plain.value ?? "",
+        allowed: (url) => onSites(url, sites),
+        sites,
+        mask: maskName(got.label, vaultField),
+        said: `the vault's ${got.label} (${vaultField === "otp" ? "a one-time code" : vaultField})`,
+        otp: vaultField === "otp",
+        auditId: got.auditId,
+      };
     } catch (e) {
-      throw failed(unread(reference, e));
+      // For one release a reference not yet imported reads 1Password, on the machine holding the token: here, or the
+      // agent's own for a session hosted here (it asks again with the value sealed, session_route).
+      if (item !== undefined || !notInVault(e) || isHostKey(thread)) throw failed(e instanceof ToolError ? e : new ToolError("failed", (e as Error).message));
     }
   }
-  const sites = credential.urls.map(hostOf).filter((h): h is string => h !== undefined);
-  if (sites.length === 0) {
+  if (!source) {
+    let credential: Credential;
+    if (given) credential = given;
+    else {
+      let vault: SessionVault;
+      try {
+        vault = broker.vault(session);
+      } catch (e) {
+        throw failed(e as ToolError);
+      }
+      try {
+        credential = await vault.cache.get(vault.vault, reference);
+      } catch (e) {
+        throw failed(unread(reference, e));
+      }
+    }
+    const urls = credential.urls;
+    source = {
+      value: credential.value,
+      allowed: (url) => originAllowed(url, urls),
+      sites: urls.map(hostOf).filter((h): h is string => h !== undefined),
+      mask: reference,
+      said: reference,
+      otp: isOtp(reference),
+    };
+  }
+  const report = (ok: boolean, typed: boolean, said: string) =>
+    source.auditId === undefined ? Promise.resolve() : vaultFilled(broker, session, source.auditId, ok, typed, said);
+  if (source.sites.length === 0) {
+    await report(false, false, "the item has no website");
     throw failed(
       new ToolError(
         "forbidden",
-        `The 1Password item of ${reference} has no website, so it fills nowhere.`,
-        "ask your lead: a person must add the login page's address to the item in 1Password",
+        source.auditId === undefined
+          ? `The 1Password item of ${reference} has no website, so it fills nowhere.`
+          : `${source.said} has no website, so it fills nowhere.`,
+        source.auditId === undefined
+          ? "ask your lead: a person must add the login page's address to the item in 1Password"
+          : "ask your lead: a person must add the login page's site to the item in Settings › Vault",
       ),
     );
   }
-  const allowed = (url: string) => originAllowed(url, credential.urls);
-  const page = (await pageUrl(session)) ?? "";
-  if (!allowed(page)) {
+  if (!source.allowed(page)) {
+    await report(false, false, `refused: the page is on ${hostOf(page) ?? "no website"}`);
     throw failed(
       new ToolError(
         "forbidden",
-        `${reference} is for ${sites.join(", ")}; this page is on ${hostOf(page) ?? "no website"}.`,
+        `${source.said} is for ${source.sites.join(", ")}; this page is on ${hostOf(page) ?? "no website"}.`,
         "open the item's own login page first, then fill",
       ),
     );
   }
+  if (!source.value) {
+    await report(false, false, "the item holds no value for that field");
+    throw failed(new ToolError("failed", `${source.said} holds no value.`, "ask your lead: a person must add it in Settings › Vault"));
+  }
   // Sealed before the value is anywhere near the page: from here every answer to the driver is scrubbed of it, and its
   // reads are refused.
-  seal(broker, session, reference, credential.value);
-  const otp = isOtp(reference);
+  seal(broker, session, source.mask, source.value);
   try {
-    await fill(session, target, credential.value, submit, allowed);
+    await fill(session, target, source.value, submit, source.allowed);
   } catch (e) {
     const error = e as FillError;
     if (!error.typed) session.credentialsFilled -= 1;
+    await report(false, error.typed, `${target} was not filled: ${error.message}`);
     throw failed(
       new ToolError(
         "invalid",
@@ -193,7 +245,8 @@ export async function fillCredential(broker: Broker, thread: string, call: FillC
       ),
     );
   }
-  const message = `Filled ${target} from ${reference}${otp ? " (a one-time code)" : ""}${submit ? " and submitted its form" : ""}. This browser session now refuses reading filled values back (agent-browser eval and get value among them) and runs only agent-browser's own scripts; snapshots, clicks, typing and scrolling work as before.`;
+  await report(true, true, `filled ${target}${submit ? " and submitted its form" : ""}`);
+  const message = `Filled ${target} from ${source.said}${source.otp && source.auditId === undefined ? " (a one-time code)" : ""}${submit ? " and submitted its form" : ""}. This browser session now refuses reading filled values back (agent-browser eval and get value among them) and runs only agent-browser's own scripts; snapshots, clicks, typing and scrolling work as before.`;
   // The page as the fill left it, in the DOM trace; the agent's next command records the one its submit loads.
   session.queueCapture(session.stepAt("fill_credential", args, true, message, Math.round(performance.now() - started)));
   broker.filledMeta(session);

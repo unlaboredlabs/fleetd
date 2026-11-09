@@ -1,25 +1,31 @@
-// Settings › Projects › Project › Repos: the git repos a project holds (ProjectSummary.repos), each with its remote, base
+// Settings › Projects › Project › Code: the git repos a project holds (ProjectSummary.repos), each with its remote, base
 // branch, checkout, and its own setup when it has one, read with project_settings_get and `repo`; then the
-// project's setup (SetupSetting.tsx), which a repo without its own runs. Add repo takes a
+// project's Setup in its own section (SetupSetting.tsx), which a repo without its own runs. Add a repo (the plus) takes a
 // checkout on the project's machine or a GitHub repo to clone there (project_repo_add); Remove takes one out
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
+import { GitBranch } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Button, Dialog, Input, Text } from "../../ui";
 import type { ProjectRepo, ProjectSettings as Settings, ProjectSummary } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
-import { Setting, useProjects } from "./parts";
+import { AddButton, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { DefaultSetup } from "./SetupSetting";
 import { addInput, applied, checkoutPath, isOwn, sourceProblem } from "./repoModel";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
 
-export function RepoSetting({ settings }: { settings: Settings }) {
+/**
+ * A project's Code section: its repos, a plus to add one, then what `children` adds (its environment variables); and
+ * its Setup, in a section of its own under it.
+ */
+export function RepoSection({ settings, children }: { settings: Settings; children?: ReactNode }) {
   const projects = useProjects() ?? [];
   const repos = projects.find((p) => p.machineId === settings.machineId && p.projectId === settings.projectId)?.repos ?? [];
   const [echo, setEcho] = useState<Echo | null>(null);
+  const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProjectRepo | null>(null);
   // The repos with setup of their own: only then is the project's the default, and only those rows say their setup.
   const [own, setOwn] = useState<ReadonlySet<string>>(new Set());
@@ -35,27 +41,33 @@ export function RepoSetting({ settings }: { settings: Settings }) {
     [],
   );
   return (
-    <Setting reveal="projects.repos" label="Repos" help="The git repos the project holds, and the setup new worktrees run.">
-      {repos.length === 0 ? (
-        <Text size="sm" tone="quiet">
-          No repo, a plain folder.
-        </Text>
-      ) : (
-        <div role="list" aria-label="Repos" className={s.repoList}>
-          {repos.map((repo) => (
-            <RepoRow key={repo.repoId} repo={repo} settings={settings} projects={projects} onOwn={owns} onRemove={isOwn(repo, settings) ? null : () => setRemoving(repo)} />
-          ))}
-        </div>
-      )}
-      <AddRepo settings={settings} onDone={setEcho} />
+    <>
+      <SettingsSection title="Code">
+        <SettingsRow
+          reveal="projects.repos"
+          title="Repos"
+          line={repos.length === 0 ? "No repo, a plain folder." : "The git repos the project holds."}
+          control={adding ? undefined : <AddButton label="Add a repo" onClick={() => setAdding(true)} />}
+        >
+          {repos.length === 0 ? null : (
+            <SettingsList label="Repos">
+              {repos.map((repo) => (
+                <RepoRow key={repo.repoId} repo={repo} settings={settings} projects={projects} onOwn={owns} onRemove={isOwn(repo, settings) ? null : () => setRemoving(repo)} />
+              ))}
+            </SettingsList>
+          )}
+          {adding ? <AddRepo settings={settings} onCancel={() => setAdding(false)} onDone={setEcho} /> : null}
+          {echo ? (
+            <div role={echo.ok ? "status" : "alert"}>
+              <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
+                {echo.text}
+              </Text>
+            </div>
+          ) : null}
+        </SettingsRow>
+        {children}
+      </SettingsSection>
       <DefaultSetup settings={settings} isDefault={repos.some((r) => own.has(r.name))} />
-      {echo ? (
-        <div role={echo.ok ? "status" : "alert"}>
-          <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
-            {echo.text}
-          </Text>
-        </div>
-      ) : null}
       <RemoveRepoDialog
         repo={removing}
         settings={settings}
@@ -66,12 +78,12 @@ export function RepoSetting({ settings }: { settings: Settings }) {
           setEcho({ ok: true, text });
         }}
       />
-    </Setting>
+    </>
   );
 }
 
 /** A path on the project's machine or a GitHub repo, and an optional name; a clone shows here once it lands. */
-function AddRepo({ settings, onDone }: { settings: Settings; onDone: (echo: Echo) => void }) {
+function AddRepo({ settings, onCancel, onDone }: { settings: Settings; onCancel: () => void; onDone: (echo: Echo) => void }) {
   const hubCall = useHubCall();
   const live = useLive();
   const machine = useData((d) => d.machines[settings.machineId]?.name) ?? settings.machineId;
@@ -96,21 +108,31 @@ function AddRepo({ settings, onDone }: { settings: Settings; onDone: (echo: Echo
       },
     );
   };
+  // Add repo says why it can't be used yet, under its fields.
+  const why = !live ? "Connect to the hub to add a repo." : (problem ?? (input === null ? `Type a checkout on ${machine}, or a GitHub URL.` : `Added to the project on ${machine}.`));
   return (
-    <>
+    <div className={s.addRepo} role="group" aria-label="Add a repo">
       <div className={s.inline}>
-        <Input aria-label="Repo to add" placeholder={`A checkout on ${machine}, or a GitHub URL`} value={source} onChange={(e) => setSource(e.target.value)} />
+        <Input
+          aria-label="Repo to add"
+          className={s.grow}
+          autoFocus
+          placeholder={`A checkout on ${machine}, or a GitHub URL`}
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+        />
         <Input aria-label="Repo name" placeholder="Name (optional)" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-        <Button disabled={!live || busy || input === null} onClick={add}>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" disabled={!live || busy || input === null} onClick={add}>
           {busy ? "Adding…" : "Add repo"}
         </Button>
       </div>
-      {problem ? (
-        <Text size="xs" tone="quiet">
-          {problem}
-        </Text>
-      ) : null}
-    </>
+      <Text size="sm" tone="quiet">
+        {why}
+      </Text>
+    </div>
   );
 }
 
@@ -185,15 +207,18 @@ function RepoRow({
   const { setup } = applied(settings, own.data?.settings);
   useEffect(() => onOwn(repo.name, setup.own), [onOwn, repo.name, setup.own]);
   return (
-    <div role="listitem" aria-label={repo.name} className={s.repoRow}>
-      <div className={s.inline}>
-        <Text strong>{repo.name}</Text>
-        {onRemove ? (
-          <Button size="sm" onClick={onRemove}>
+    <SettingsListRow
+      label={repo.name}
+      icon={<GitBranch />}
+      name={repo.name}
+      controls={
+        onRemove ? (
+          <Button variant="ghost" onClick={onRemove}>
             Remove…
           </Button>
-        ) : null}
-      </div>
+        ) : undefined
+      }
+    >
       <dl className={s.repoFacts}>
         <Fact label="Remote">{repo.repoKey ? <Text size="sm" mono>{repoName(repo.repoKey)}</Text> : <Quiet>None</Quiet>}</Fact>
         <Fact label="Base branch">{repo.base ? <Text size="sm" mono>{repo.base}</Text> : <Quiet>Not known yet</Quiet>}</Fact>
@@ -215,7 +240,7 @@ function RepoRow({
           </Fact>
         ) : null}
       </dl>
-    </div>
+    </SettingsListRow>
   );
 }
 

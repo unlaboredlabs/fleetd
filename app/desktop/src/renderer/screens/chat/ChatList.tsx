@@ -5,10 +5,9 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Button, cx, StateGlyph, Text, useBeatRef, VirtualList } from "../../ui";
+import { Button, cx, Text, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { leadDid, leadDoing, leadTurnSince, leadTurnUntil, sentenceCase, turnLine, workedFor } from "./activity";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
@@ -20,7 +19,6 @@ import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { KeptWorktrees } from "./KeptWorktrees";
 import { SkillSavedLine } from "./SkillSaved";
-import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { TOP_BAR } from "../../../shared/frame";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
@@ -107,77 +105,6 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** The lead's activity changes with its frames; the line takes a new value at most once a second. */
-const ACTIVITY_EVERY_MS = 1000;
-
-/**
- * The turn line after the lead's reply. While its turn runs: a live glyph (thinking walks its ring, anything else is
- * grain), what it does now in plain words at full strength under the dither scan (base.css), and how long the turn has
- * run, faint, counting; under it, quietly, what the turn did so far. Once over: the done glyph and how long it worked.
- * The words change at most once a second; the count is apart from them, so a screen reader isn't told each tick.
- */
-function LeadActivity({ project }: { project: ProjectRef }) {
-  const key = projectKey(project);
-  const now = useData((st) => {
-    const doing = leadDoing(st, key);
-    return doing === undefined ? undefined : `${doing}\n${leadDid(st, key)}`;
-  });
-  const since = useData((st) => leadTurnSince(st, key));
-  const until = useData((st) => leadTurnUntil(st, key));
-  const skew = useData((st) => st.live.skewMs ?? 0);
-  const [shown, setShown] = useState(now);
-  const at = useRef(0);
-  useEffect(() => {
-    if (now === shown) return;
-    const timer = setTimeout(
-      () => {
-        at.current = Date.now();
-        setShown(now);
-      },
-      Math.max(0, at.current + ACTIVITY_EVERY_MS - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [now, shown]);
-  // The count and the beat stop while the line is out of view, the count too while the window is hidden (useNow).
-  const [onScreen, box] = useOnScreen();
-  const running = shown !== undefined && since !== undefined && until === undefined;
-  const clock = useNow(running && onScreen) + skew;
-  // The scan over what it does now steps on the app's beat while on screen, as its glyph does.
-  const scan = useBeatRef<HTMLSpanElement>(shown !== undefined && onScreen);
-  if (shown === undefined) {
-    const line = turnLine({ since, until }, undefined, clock);
-    if (line?.words === undefined) return null;
-    return (
-      <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="done" role="status">
-        <StateGlyph state="done" size="sm" />
-        <Text size="xs" tone="quiet">
-          {line.words}
-        </Text>
-      </div>
-    );
-  }
-  const [doing = "working", did = ""] = shown.split("\n");
-  const thinking = doing === "thinking" || doing === "planning";
-  return (
-    <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="running" role="status">
-      <StateGlyph state={thinking ? "thinking" : "working"} size="sm" still={!onScreen} />
-      <span ref={scan} className={s.turnNow} data-sweep="">
-        <InlineText size="xs" text={sentenceCase(doing)} />
-      </span>
-      {running ? (
-        <span className={s.turnTime} aria-hidden>
-          {workedFor(clock - since)}
-        </span>
-      ) : null}
-      {did === "" ? null : (
-        <span className={s.turnDid}>
-          <InlineText size="xs" tone="quiet" text={sentenceCase(did)} />
-        </span>
-      )}
-    </div>
-  );
-}
-
 const RowView = memo(function RowView(props: {
   row: Row;
   project: ProjectRef;
@@ -258,8 +185,6 @@ const RowView = memo(function RowView(props: {
       );
     case "inline":
       return <Inline item={r.item} enter={props.enter} />;
-    case "activity":
-      return <LeadActivity project={project} />;
     case "time":
       return (
         <div className={s.clock} role="separator">

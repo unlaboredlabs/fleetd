@@ -1,10 +1,12 @@
 // The chat as rows: day dividers, a quiet time where the conversation picked up again after a pause, messages as
 // bubbles grouped by author (a run from one author within a few minutes draws as one stack; an agent's names it once),
 // event one-liners (fleetd's own messages among them), inline items, where you stopped reading, and the top of the
-// history. The live strip isn't a row: it floats over the composer (live/LiveStrip.tsx).
+// history. The live strip isn't a row: it floats over the composer (live/LiveStrip.tsx), and neither is what the lead
+// is doing, a line beside it (TurnLine.tsx), so nothing in the list moves for either.
 import type { ChatItem } from "../../src/data/chat";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
+import { workedFor } from "../../../shared/turnWords";
 
 export type Row =
   /**
@@ -33,18 +35,15 @@ export type Row =
       readonly reply?: { readonly quote: string; readonly body: string; readonly target: string | undefined } | undefined;
       /** The lead's asks in it that you answered: the button's words, by bubble key. */
       readonly answered?: Readonly<Record<string, string>> | undefined;
+      /** The reply a turn ended with: how long the turn took ("Worked for 4s"), a quiet stamp beside it. */
+      readonly worked?: string | undefined;
     }
   /** Above the first message from before the chat existed. */
   | { readonly kind: "history"; readonly key: string }
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   /** Above the first message you hadn't seen when the chat opened. */
-  | { readonly kind: "new"; readonly key: "new" }
-  /**
-   * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
-   * (under the reply it ended with).
-   */
-  | { readonly kind: "activity"; readonly key: "activity" };
+  | { readonly kind: "new"; readonly key: "new" };
 
 export type TopState = "more" | "loading" | "start" | "held" | "reread";
 
@@ -58,6 +57,8 @@ export const heldLabel = (offline: boolean, asOf: string | undefined): string =>
 const GROUP_MS = 5 * 60_000;
 /** A pause this long on one day puts the time over the message that ends it, as a messaging app does. */
 const PAUSE_MS = 60 * 60_000;
+/** A turn's reply is written just before it ends; the hub may stamp the two a moment apart either way. */
+const REPLY_SLACK_MS = 2_000;
 
 /**
  * Another person's message, in a project chat the team shares: the person who wrote it, when the hub names one and
@@ -162,13 +163,11 @@ export interface RowsInput {
   readonly held?: boolean;
   /** No fresh connection (ChatView.offline). */
   readonly offline?: boolean;
-  /** The lead's turn runs: its activity line shows after the newest item. */
-  readonly activity?: boolean;
   /**
-   * The lead's last turn is over and began at this time (epoch ms): "Worked for" shows after its reply, the lead's
-   * newest message when it was written during that turn.
+   * The lead's latest finished turn, epoch ms at each end: "Worked for" goes beside its reply, the lead's newest
+   * message written during it, and stays there while the next turn runs.
    */
-  readonly workedSince?: number | undefined;
+  readonly worked?: { readonly since: number; readonly until: number } | undefined;
   /** The newest seq you had seen when the chat opened, when there was more since (data/seen.ts). */
   readonly seenSeq?: number | undefined;
   /** The person this app acts as (hub_info's me): someone else's messages show their name. */
@@ -192,16 +191,13 @@ export function chatRows(i: RowsInput): Row[] {
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
   let inHistory = false;
-  // Not under a reply still streaming, which says "Still writing" itself.
-  const activity = i.activity === true && i.items.at(-1)?.state !== "streaming";
-  const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message");
-  const replyAt = i.items[reply];
-  const worked =
-    i.activity !== true &&
-    i.workedSince !== undefined &&
-    replyAt !== undefined &&
-    replyAt.state !== "streaming" &&
-    Date.parse(replyAt.at) >= i.workedSince;
+  const turn = i.worked;
+  const inTurn = (item: ChatItem) => {
+    const at = Date.parse(item.at);
+    return turn !== undefined && at >= turn.since && at <= turn.until + REPLY_SLACK_MS;
+  };
+  const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message" && item.state !== "streaming" && inTurn(item));
+  const worked = turn === undefined ? undefined : `Worked for ${workedFor(turn.until - turn.since)}`;
   const day = (iso: string, d: string) => {
     if (d === lastDay) return;
     out.push({ kind: "day", key: `day:${d}`, label: dayLabel(iso, i.nowMs, i.timeZone) });
@@ -241,12 +237,10 @@ export function chatRows(i: RowsInput): Row[] {
     else {
       const run =
         prev === undefined || prev.kind !== "message" || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && theirs, history: false, ...(by === undefined ? {} : { by }), ...extras(i.items, n) });
+      out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && theirs, history: false, ...(by === undefined ? {} : { by }), ...extras(i.items, n), ...(n === reply ? { worked } : {}) });
     }
     prev = item;
-    if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
   });
-  if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
   // A bubble ends its stack unless the next row is the next bubble of the same run.
   out.forEach((r, n) => {
     const next = out[n + 1];

@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -64,12 +64,14 @@ import { StatusBarTap } from "../ui/StatusBarTap";
 import { arrivedReplies, bubbleActions, bubbleLabel, spokenText } from "../spoken";
 import { ApprovalCard, ApprovalOutcomeLine } from "./ApprovalCard";
 import { ArtifactCard } from "./artifacts/ArtifactCard";
+import { ImportCard } from "./vault/ImportCard";
+import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
 import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
 import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
-import { TurnLine } from "./TurnLine";
+import { TURN_LINE_HEIGHT, TurnLine } from "./TurnLine";
 import { useNow } from "./time";
 
 /**
@@ -133,7 +135,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const lastAtOpen = useRef<number | undefined>(undefined);
   if (lastAtOpen.current === undefined && chatState !== undefined) lastAtOpen.current = chatState.lastSeq;
   const unreadFrom = readAtOpen !== undefined && (lastAtOpen.current ?? 0) > readAtOpen ? readAtOpen : undefined;
-  const rows = useMemo(() => threadRows(items, working, unreadFrom), [items, working, unreadFrom]);
+  const worked = state.turnWorked[chatKey];
+  const rows = useMemo(() => threadRows(items, worked, unreadFrom), [items, worked, unreadFrom]);
   const newestFirst = useMemo(() => [...rows].reverse(), [rows]);
   // An ask's buttons answer only while nothing of yours came after it.
   const lastHuman = items.findLastIndex((i) => i.author === "human");
@@ -450,11 +453,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         lit={row.t === "item" && row.item.message?.messageId !== undefined && row.item.message.messageId === lit}
         enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
         reduce={reduce}
-        still={row.t === "turn" && awayFrom !== null}
         onLayout={at === streamAt ? measureStream : row.t === "item" && hitId !== undefined && row.item.message?.messageId === hitId ? measureHit : undefined}
       />
     ),
-    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom, streamAt, measureStream, hitId, measureHit],
+    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, streamAt, measureStream, hitId, measureHit],
   );
 
   // An artifact link in a message opens it as its card does.
@@ -514,7 +516,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               ListHeaderComponent={
                 <View>
                   <ScreenCards chatKey={chatKey} />
-                  <View style={{ height: composerHeight + space.xs }} />
+                  {/* The composer's room and the turn line's over it, always: the thread never moves for the line. */}
+                  <View style={{ height: composerHeight + TURN_BAND }} />
                 </View>
               }
               {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} code={(project?.repos?.length ?? 0) > 0} onPick={(s) => send(s)} /> })}
@@ -581,6 +584,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               ) : null}
             </View>
           )}
+          {/* What the lead is doing, on one line over the composer's left edge, in the room the thread keeps for it. */}
+          <View pointerEvents="none" style={[styles.turnBand, { bottom: composerHeight - space.sm + TURN_GAP }]}>
+            <TurnLine chatKey={chatKey} writing={items.at(-1)?.state === "streaming"} still={!focused} />
+          </View>
           <EdgeEffect
             list={listTag}
             edge="top"
@@ -607,6 +614,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     </View>
   );
 }
+
+/** The turn line's gap over the composer's glass (the composer's own top inset is space.sm). */
+const TURN_GAP = 6;
+/** The room the thread keeps over the composer for the turn line, whether it shows or not: the newest message ends 10 pt over it. */
+const TURN_BAND = TURN_LINE_HEIGHT + space.sm;
 
 const stopId = (): string => `stop-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
@@ -697,17 +709,15 @@ interface RowProps {
   readonly lit: boolean;
   readonly enter: { at: number; step: number } | undefined;
   readonly reduce: boolean;
-  /** The turn line, scrolled away from: it holds still. */
-  readonly still: boolean;
   /** The reply streaming in, or the message the chat lands on: its height. */
   readonly onLayout: ((e: LayoutChangeEvent) => void) | undefined;
 }
 
 /** Draws again only when its own row changed: the thread's rows are made anew with each streamed word. */
 const sameProps = (a: RowProps, b: RowProps): boolean =>
-  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.still === b.still && a.onLayout === b.onLayout && sameRow(a.row, b.row);
+  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.onLayout === b.onLayout && sameRow(a.row, b.row);
 
-const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce, still, onLayout }: RowProps) {
+const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce, onLayout }: RowProps) {
   const t = useTheme();
   const now = useNow();
   // Entering only as it mounts soon after it came: a row scrolled back to later shows still.
@@ -727,14 +737,7 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
       </View>
     );
   }
-  if (row.t === "turn") {
-    return (
-      <Animated.View entering={bubbleIn(false, 0, reduce)}>
-        <TurnLine chatKey={chatKey} still={still} />
-      </Animated.View>
-    );
-  }
-  const item = <ItemView item={row.item} side={row.side} first={row.first} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const item = <ItemView item={row.item} side={row.side} first={row.first} worked={row.worked} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
   const body =
     row.side === "center" ? (
       item
@@ -784,6 +787,7 @@ function ItemView({
   item,
   side,
   first,
+  worked,
   chatKey,
   title,
   canAnswer,
@@ -792,6 +796,8 @@ function ItemView({
   item: ChatItem;
   side: "me" | "them" | "center";
   first: boolean;
+  /** The reply a turn ended with: how long it took, a stamp beside its last bubble. */
+  worked?: string | undefined;
   chatKey: Key;
   title: string;
   canAnswer: boolean;
@@ -812,6 +818,15 @@ function ItemView({
   }
   const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
+  const vaultImport = (item.message as { vaultImport?: VaultImportCard } | undefined)?.vaultImport;
+  if (vaultImport !== undefined)
+    return vaultImport.state === "open" ? (
+      <View style={[styles.card, styles.groupGap]}>
+        <ImportCard card={vaultImport} />
+      </View>
+    ) : (
+      <ImportCard card={vaultImport} />
+    );
   const published = item.message?.artifact;
   if (published !== undefined) return <ArtifactCard published={published} when={bubbleTime(item.at, now)} onPress={() => actions.openArtifact(published.name, published.version)} />;
   if (side === "center") return <Event text={item.text} />;
@@ -887,27 +902,62 @@ function ItemView({
 
   const parts = bubbles(item);
   const streaming = item.state === "streaming";
-  // Nothing written yet: the turn line under it says what the lead does.
+  // Nothing written yet: the turn line over the composer says what the lead does.
   if (parts.length === 0 && files.length === 0 && streaming) return null;
   return (
     <View style={[styles.them, gap]}>
       {first && item.author === "agent" ? <Text style={[type.caption, styles.by, { color: t.secondary }]}>{item.message?.by ?? "Agent"}</Text> : null}
-      {parts.map((b, i) => (
-        <BubbleView
-          key={i}
-          bubble={b}
-          canAnswer={canAnswer}
-          chatKey={chatKey}
-          actions={actions}
-          target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
-          fit={!streaming}
-          when={when}
-          said={said}
-        />
-      ))}
+      {parts.map((b, i) => {
+        const view = (
+          <BubbleView
+            bubble={b}
+            canAnswer={canAnswer}
+            chatKey={chatKey}
+            actions={actions}
+            target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
+            fit={!streaming}
+            when={when}
+            said={said}
+          />
+        );
+        // Each bubble in the same wrapper, stamped or not: the stamp coming or going (as a turn ends) never remounts a
+        // bubble, which would draw it at full width again until its words measure.
+        return (
+          <Stamped key={i} words={i === parts.length - 1 ? worked : undefined} wide={b.kind !== "text"}>
+            {view}
+          </Stamped>
+        );
+      })}
       {files.map((b, i) => (
         <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
       ))}
+    </View>
+  );
+}
+
+/**
+ * A lead's bubble, and once its turn is over "Worked for 4s" beside its foot, quiet, in the room the thread keeps right
+ * of the lead's bubbles: out of the row's layout, so nothing moves as it comes. It takes one line where the bubble leaves
+ * room, two beside a wide one. As wide as a text bubble; a card (`wide`) keeps the row's width, as it would without it.
+ */
+function Stamped({ words, wide, children }: { words: string | undefined; wide: boolean; children: ReactNode }) {
+  const t = useTheme();
+  const reduce = useReduceMotion();
+  const { width } = useWindowDimensions();
+  const [room, setRoom] = useState<number>();
+  return (
+    <View style={wide ? styles.stampedWide : styles.stamped} onLayout={(e) => setRoom(width - 2 * metrics.margin - e.nativeEvent.layout.x - e.nativeEvent.layout.width - space.sm)}>
+      {children}
+      {words === undefined || room === undefined ? null : (
+        <Animated.Text
+          entering={FadeIn.duration(reduce ? 0 : dur.swap).easing(ease.out)}
+          style={[type.caption, styles.stamp, { color: t.tertiary, maxWidth: room }]}
+          numberOfLines={2}
+          maxFontSizeMultiplier={1.3}
+        >
+          {words}
+        </Animated.Text>
+      )}
     </View>
   );
 }
@@ -1318,6 +1368,9 @@ const styles = StyleSheet.create({
   note: { marginTop: 3, marginRight: 4, textAlign: "right", flexShrink: 1 },
   noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
   them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
+  stamp: { position: "absolute", left: "100%", bottom: 9, marginLeft: space.sm },
+  stamped: { alignSelf: "flex-start" },
+  stampedWide: { alignSelf: "stretch", alignItems: "flex-start" },
   // In line with the words in the bubble under it.
   by: { marginLeft: metrics.padX, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },
@@ -1344,6 +1397,8 @@ const styles = StyleSheet.create({
   topFade: { position: "absolute", top: 0, left: 0, right: 0 },
   bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0 },
   dock: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },
+  // Clear of the scroll-down button on the right.
+  turnBand: { position: "absolute", left: space.md, right: space.md + 44 + space.sm },
   down: { position: "absolute", right: space.md },
   downButton: { width: 44, height: 44, borderRadius: 22 },
   downHit: { flex: 1, alignItems: "center", justifyContent: "center" },

@@ -87,6 +87,10 @@ const SYMBOLS = {
   reload: ["arrow.clockwise", "refresh"],
   paperplane: ["paperplane.fill", "send"],
   archive: ["archivebox", "archive"],
+  trash: ["trash", "delete"],
+  trashFill: ["trash.fill", "delete"],
+  edit: ["pencil", "edit"],
+  eye: ["eye", "visibility"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

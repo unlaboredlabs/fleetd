@@ -109,6 +109,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     ["expo-image-picker", { photosPermission: "fleetd sends the photos you pick to a chat on your hub.", cameraPermission: "fleetd takes photos you send in a chat.", microphonePermission: false }],
     // The share extension before the notification one: plugins edit the Xcode project last to first, so the share
     // extension's product joins the embedding phase the notification extension made.
+    // The vault's values show and copy only after Face ID (or the phone's passcode).
+    ["expo-local-authentication", { faceIDPermission: "fleetd asks for Face ID before it shows or copies a password, card or secret from your vault." }],
     "./plugins/share-extension",
     "./plugins/notification-service",
     // Shortcuts' actions, in the app's own target.

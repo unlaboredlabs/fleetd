@@ -10,17 +10,15 @@ import type { GithubApp, GithubAppGetOutput, GithubAppTestOutput, GithubInstalla
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
-import { Button, Field, Input, Segmented, Separator, Text } from "../../ui";
+import { Button, Field, Input, Segmented, Text } from "../../ui";
 import { useNow } from "../live";
 import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PagePart } from "../settings/parts";
+import { GroupNote, SettingsRow, SettingsSection } from "../settings/parts";
 import { ConfirmRemove } from "../settings/claudeParts";
-import { Part } from "../setup/Guide";
 import { when } from "../live/when";
 import { dayWords, listWords } from "./words";
 import s from "./github.module.css";
-import settings from "../settings/settings.module.css";
 
 const noInput = {};
 
@@ -67,34 +65,31 @@ export function AdminGithub() {
     const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
-      <PagePart title="GitHub" reveal="admin.github" intro={intro}>
-        <Text tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</Text>
-      </PagePart>
+      <SettingsSection title="GitHub" reveal="admin.github" intro={intro}>
+        <GroupNote tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</GroupNote>
+      </SettingsSection>
     );
   }
   const app = read.data.app;
   return (
-    <PagePart title="GitHub" reveal="admin.github" intro={intro}>
-      {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
-      <Separator />
+    <>
+      <SettingsSection title="GitHub" reveal="admin.github" intro={intro}>
+        {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
+      </SettingsSection>
       <Create info={read.data} />
-    </PagePart>
+    </>
   );
 }
 
 function NoApp({ removed }: { removed: string | null }) {
   return (
-    <section aria-label="GitHub App" className={s.status}>
-      <Text strong>No App yet</Text>
-      <Text size="sm" tone="quiet">
-        Until there is one, the hub uses gh as it is logged in on the hub&rsquo;s machine. Create the App below.
-      </Text>
+    <SettingsRow title="No App yet" label="GitHub App" line="Until there is one, the hub uses gh as it is logged in on the hub’s machine. Create the App below.">
       {removed === null ? null : (
         <div role="status">
           <Text size="sm">{removed}</Text>
         </div>
       )}
-    </section>
+    </SettingsRow>
   );
 }
 
@@ -132,18 +127,16 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
   const last: Tested | null = app.lastTest === undefined ? null : testWords(app.lastTest, nowMs);
   const installs = app.installations ?? [];
   return (
-    <section aria-label="GitHub App" className={s.status}>
-      <div className={s.head}>
-        <div className={settings.stack}>
-          <Text strong>{app.name}</Text>
-          <Text size="xs" tone="quiet">
-            {`Owned by ${app.owner}. Created ${dayWords(app.createdAt)}. Its keys are sealed on the hub.`}
-          </Text>
-        </div>
+    <SettingsRow
+      title={app.name}
+      label="GitHub App"
+      line={`Owned by ${app.owner}. Created ${dayWords(app.createdAt)}. Its keys are sealed on the hub.`}
+      control={
         <Button size="sm" disabled={testing} onClick={test}>
           {testing ? "Testing…" : "Test"}
         </Button>
-      </div>
+      }
+    >
       {installs.length === 0 ? (
         <Text size="sm">Not installed yet: install it on the repositories fleetd works on, then Test.</Text>
       ) : (
@@ -188,7 +181,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
           onClose={() => setRemoving(false)}
         />
       ) : null}
-    </section>
+    </SettingsRow>
   );
 }
 
@@ -236,96 +229,102 @@ function Create({ info }: { info: GithubAppGetOutput }) {
     refetch(["github_app_get"]);
   };
   const fresh = info.app === undefined;
-  const steps = (
-    <>
-      <Part n={1} title="Where it lives">
-        <div className={s.fields}>
-        <Segmented<Owner>
-          label="Owner"
-          options={[
-            { value: "me", label: "My account" },
-            { value: "org", label: "An organization" },
-          ]}
-          value={owner}
-          disabled={waiting}
-          onChange={setOwner}
-        />
-        {owner === "org" ? (
-          <Field label="Organization" error={orgIssue}>
-            <Input mono aria-label="Organization" value={org} disabled={waiting} autoComplete="off" spellCheck={false} placeholder="acme" onChange={(e) => setOrg(e.target.value)} />
-          </Field>
-        ) : null}
-        <Field label="Name" error={nameIssue}>
-          <Input aria-label="Name" value={name} disabled={waiting} autoComplete="off" spellCheck={false} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Text size="xs" tone="quiet">
-          App names are unique on GitHub: if this one is taken, GitHub asks for another on its form.
-        </Text>
-        </div>
-      </Part>
-      <Part n={2} title="What it asks for, on each repository you install it on">
-        <ul className={s.list} aria-label="Permissions">
-          {info.permissions.map(([key, level]) => (
-            <li key={key}>
-              <Text size="sm">{`${PERMISSION_WORDS[key] ?? key} (${level})`}</Text>
-            </li>
-          ))}
-          <li>
-            <Text size="sm" tone="quiet">
-              Webhooks: off. The hub polls GitHub, as the merge train already does.
-            </Text>
-          </li>
-        </ul>
-      </Part>
-      <Part n={3} title="Create it on GitHub">
-        <Text size="sm" tone="quiet">
-          GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the hub, and you come back here
-          to install it.
-        </Text>
-        <div className={s.links}>
-          <Button variant="primary" disabled={waiting || !ready} onClick={() => void create()}>
-            {waiting ? "Waiting for GitHub…" : fresh ? "Create GitHub App" : "Create a new App"}
-          </Button>
-          {waiting ? (
-            <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-        {problem === null ? null : (
-          <div role="alert">
-            <Text size="sm" tone="danger">
-              {problem}
-            </Text>
-          </div>
-        )}
-        {made === null ? null : (
-          <div role="status">
-            <Text size="sm" tone="success">
-              {made}
-            </Text>
-          </div>
-        )}
-      </Part>
-    </>
-  );
   const [open, setOpen] = useState(fresh);
+  // Why Create can't be pressed yet, when the fields don't already say.
+  const why = waiting || ready ? undefined : name.trim() === "" ? "Name it first, above." : owner === "org" && org.trim() === "" ? "Name the organization first, above." : "Fix what's marked above first.";
   return (
-    <section aria-label="Create the App" className={s.guide}>
-      <details className={s.fold} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary>
-          <Text size="sm" strong={fresh}>
-            {fresh ? "Create the App" : "Replace it with a new App"}
-          </Text>
-          <Text size="xs" tone="quiet">
-            {fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the hub; delete the old one on GitHub."}
-          </Text>
-        </summary>
-        {steps}
-      </details>
-      <Text size="xs" tone="quiet">
-        No desktop app at hand? On the hub&rsquo;s machine, <code>fleetd github-app create</code> does the same from a terminal.
-      </Text>
-    </section>
+    <SettingsSection
+      title={fresh ? "Create the App" : "Replace it with a new App"}
+      intro={fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the hub; delete the old one on GitHub."}
+      aside={
+        fresh ? undefined : (
+          <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? "Hide steps" : "Show steps"}
+          </Button>
+        )
+      }
+    >
+      {open || fresh ? (
+        <>
+          <SettingsRow
+            title="Where it lives"
+            control={
+              <Segmented<Owner>
+                label="Owner"
+                options={[
+                  { value: "me", label: "My account" },
+                  { value: "org", label: "An organization" },
+                ]}
+                value={owner}
+                disabled={waiting}
+                onChange={setOwner}
+              />
+            }
+          >
+            <div className={s.fields}>
+              {owner === "org" ? (
+                <Field label="Organization" error={orgIssue}>
+                  <Input mono aria-label="Organization" value={org} disabled={waiting} autoComplete="off" spellCheck={false} placeholder="acme" onChange={(e) => setOrg(e.target.value)} />
+                </Field>
+              ) : null}
+              <Field label="Name" error={nameIssue} description="App names are unique on GitHub: if this one is taken, GitHub asks for another on its form.">
+                <Input aria-label="Name" value={name} disabled={waiting} autoComplete="off" spellCheck={false} onChange={(e) => setName(e.target.value)} />
+              </Field>
+            </div>
+          </SettingsRow>
+          <SettingsRow title="What it asks for" line="On each repository you install it on.">
+            <ul className={s.list} aria-label="Permissions">
+              {info.permissions.map(([key, level]) => (
+                <li key={key}>
+                  <Text size="sm">{`${PERMISSION_WORDS[key] ?? key} (${level})`}</Text>
+                </li>
+              ))}
+              <li>
+                <Text size="sm" tone="quiet">
+                  Webhooks: off. The hub polls GitHub, as the merge train already does.
+                </Text>
+              </li>
+            </ul>
+          </SettingsRow>
+          <SettingsRow
+            title="Create it on GitHub"
+            line={
+              why ??
+              "GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the hub, and you come back here to install it."
+            }
+            control={
+              <>
+                {waiting ? (
+                  <Button size="sm" variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
+                    Cancel
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="primary" disabled={waiting || !ready} onClick={() => void create()}>
+                  {waiting ? "Waiting for GitHub…" : fresh ? "Create GitHub App" : "Create a new App"}
+                </Button>
+              </>
+            }
+          >
+            {problem === null ? null : (
+              <div role="alert">
+                <Text size="sm" tone="danger">
+                  {problem}
+                </Text>
+              </div>
+            )}
+            {made === null ? null : (
+              <div role="status">
+                <Text size="sm" tone="success">
+                  {made}
+                </Text>
+              </div>
+            )}
+          </SettingsRow>
+          <GroupNote>
+            No desktop app at hand? On the hub&rsquo;s machine, <code>fleetd github-app create</code> does the same from a terminal.
+          </GroupNote>
+        </>
+      ) : null}
+    </SettingsSection>
   );
 }

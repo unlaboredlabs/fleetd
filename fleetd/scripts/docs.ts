@@ -609,7 +609,11 @@ function example(role: Role, tool: string): Json {
     session_start: { purpose: "Check that signup works on the staging site" },
     session_end: {},
     request_takeover: { reason: "Solve the captcha on the signup page, then hand the browser back" },
-    fill_credential: { ref: "op://Staging/Shop admin/password", target: "input[name=password]" },
+    fill_credential: { item: "Shop admin", field: "password", target: "input[name=password]" },
+    fill_address: { item: "Home", part: "shipping" },
+    vault_items: { site: "shop.example.com" },
+    vault_import_search: { query: "shop.example.com", kinds: ["login"] },
+    vault_import_propose: { refs: ["op://Staging/Shop admin"], why: "The staging shop's admin login, to check the new checkout" },
     purchase_request: {
       shop: { domain: "hotel.example.com", name: "Hotel Example" },
       total: { amount: "129.90", currency: "EUR" },

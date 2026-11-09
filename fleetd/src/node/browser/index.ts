@@ -8,8 +8,9 @@
 // agent's commands and each fill, session.ts); once it ends the recording goes to the hub, tried again each minute
 // until it does.
 //
-// What a session may do beyond driving: fill a login from 1Password (credentials.ts), pay at a checkout with an
-// approved card (cards.ts), and take a value only the person may type (secure_input.ts). From the first fill on, the
+// What a session may do beyond driving: fill a login from the vault or 1Password (credentials.ts, vault.ts), an address
+// from the vault (address.ts), pay at a checkout with its card (cards.ts), and take a value only the person may type
+// (secure_input.ts). From the first fill on, the
 // session is sealed: every answer to the agent is scrubbed of the values, and the proxy lets through a narrower list.
 //
 // A lead (a project with no repo, as a Navi's did, or one with repos whose browser the hub places here) runs its
@@ -34,15 +35,18 @@ import {
   VERSION as AGENT_BROWSER_VERSION,
   writePolicy,
 } from "./agent_browser.ts";
+import { type FillAddressCall, fillAddress } from "./address.ts";
 import { purchaseFill, purchaseRequest, WAIT_ON_PERSON_MS } from "./cards.ts";
 import { Credentials, type FillCredentialCall, fillCredential, filledFieldRefusal, outgoing, remoteVault, type SessionVault, unread } from "./credentials.ts";
 import type { Credential } from "./onepassword.ts";
+import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
 import { Proxy } from "./proxy.ts";
 import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting } from "./secure_input.ts";
 import { HEIGHT, Session, WIDTH } from "./session.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "./node.ts";
 import type { ScreenHooks, SessionsArea } from "../api.ts";
+import { CAP_VAULT_FILL } from "../../shared/node_link.ts";
 import type { SecretDeliver, SecretResult } from "../wire.ts";
 
 /** What a session's recording says without ffmpeg. */
@@ -438,6 +442,12 @@ export class Broker {
     if (dir && meta) writeMeta(dir, { ...meta, credentialsFilled: session.credentialsFilled });
   }
 
+  /** This node's box key, which the hub seals vault values to (loaded at its first use). */
+  boxKey(): NodeBoxKey {
+    return (this.#boxKey ??= loadOrCreateBoxKey(this.home));
+  }
+  #boxKey: NodeBoxKey | undefined;
+
   /** The session's 1Password vault: the one made at its first fill, or a new one with the token from its secrets. */
   vault(session: Session): SessionVault {
     return this.credentials.vaultBy(session.id, () => this.ownSecrets(session.threadId));
@@ -466,6 +476,8 @@ export class Broker {
         return { op: "request_takeover", ...(await this.requestTakeover(thread, String(call.reason ?? ""))) };
       case "fill_credential":
         return { op: "fill_credential", ...(await fillCredential(this, thread, call as FillCredentialCall, given)) };
+      case "fill_address":
+        return { op: "fill_address", ...(await fillAddress(this, thread, call as FillAddressCall)) };
       case "purchase_request":
         return { op: "purchase_request", ...(await purchaseRequest(this, thread, call)) };
       case "purchase_fill":
@@ -759,7 +771,7 @@ export function start(node: Node, given?: Broker): Broker {
   // As the Rust node lists them for its sessions (node/link.rs `hello`): live view and takeover, hosting a session for
   // an agent elsewhere (sealed to this node), and ending a screen whose task ended. The agents' Mac lists them too
   // (agents_mac `toolOnly` keeps them): its own screen is a session it hosts for agents on other machines.
-  node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END]);
+  node.area("caps").contribute(() => [CAP_BROWSER, CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_SESSION_END, CAP_VAULT_FILL]);
   // An agent's claude drives its browser through agent-browser, at this node's proxy (Rust's `SessionHooks::env`
   // and `plugin_dirs`), through the node core's launch area.
   if ((node.config as { agentsMac?: boolean }).agentsMac !== true) {

@@ -14,7 +14,7 @@ import { Button, Field, InlineCode, Input, Text } from "../../ui";
 import { sealedLine } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, useMachines } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PagePart, Setting } from "./parts";
+import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 /** 1Password's page that makes a service account (hub/setup's ONEPASSWORD_NEW). */
@@ -50,25 +50,25 @@ export function OnePasswordSettings() {
   const live = useLive();
   const read = useToolQuery("onepassword_get", noInput, { enabled: live });
   return (
-    <PagePart
+    <SettingsSection
       title="1Password"
       reveal="onepassword"
       intro="The logins your agents sign in to sites with, in the orders you start and your Only-me projects. They name a 1Password item and fleetd types the value in; no agent ever sees it."
     >
       {!live ? (
-        <Text tone="quiet">Not connected. Connect to a hub to set up 1Password.</Text>
+        <GroupNote>Not connected. Connect to a hub to set up 1Password.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <Text tone="quiet">This hub reads 1Password only with a project&apos;s OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.</Text>
+        <GroupNote>This hub reads 1Password only with a project&apos;s OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.</GroupNote>
       ) : read.error instanceof CallError && read.error.error.code === "forbidden" ? (
-        <Text tone="quiet">This device&apos;s key belongs to no person, so it has no 1Password of its own. Pair the app as yourself to set it up.</Text>
+        <GroupNote>This device&apos;s key belongs to no person, so it has no 1Password of its own. Pair the app as yourself to set it up.</GroupNote>
       ) : read.isLoadingError ? (
-        <Text tone="danger">{errorText(read.error)}</Text>
+        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : (
         <ServiceAccount token={read.data.token} />
       )}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -132,32 +132,34 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       <Field label="Token" description="Shown once in 1Password when you make the service account.">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} placeholder="ops_…" onChange={(e) => setValue(e.target.value)} />
       </Field>
-      <div className={s.inline}>
-        <Button variant="primary" disabled={busy || value.trim() === ""} onClick={() => void save()}>
-          {busy ? "Saving…" : "Save and test"}
-        </Button>
-        {replacing ? (
-          <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setValue(""), setProblem(null))}>
-            Cancel
-          </Button>
-        ) : null}
-      </div>
+      {/* Save shows once there is a token to save. */}
+      {value.trim() === "" && !busy && !replacing ? null : (
+        <div className={s.inline}>
+          {value.trim() === "" && !busy ? null : (
+            <Button variant="primary" disabled={busy} onClick={() => void save()}>
+              {busy ? "Saving…" : "Save and test"}
+            </Button>
+          )}
+          {replacing ? (
+            <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setValue(""), setProblem(null))}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      )}
     </>
   );
+  const help = "Kept encrypted on the hub's machines. A project's own 1Password token wins over it.";
   const shown = tried ?? (token?.lastTest === undefined ? undefined : { test: token.lastTest });
   const verdict = shown === undefined ? null : "error" in shown ? { ok: false, text: shown.error } : vaultsLine(shown.test, nowMs);
   return (
-    <Setting
+    <SettingsRow
       reveal="onepassword.token"
-      label="Service account"
-      help="Kept encrypted on the hub's machines. A project's own 1Password token wins over it."
-    >
-      {token === undefined ? (
-        form
-      ) : (
-        <>
-          <div className={s.inline}>
-            <Text size="sm">{`Saved. ${sealedLine(token.sealedOn)}`}</Text>
+      title="Service account"
+      line={token === undefined ? help : `Saved. ${sealedLine(token.sealedOn)} A project's own 1Password token wins over it.`}
+      control={
+        token === undefined ? undefined : (
+          <>
             <TestButton testing={testing} onTest={() => void test()} />
             {replacing ? null : (
               <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
@@ -167,7 +169,14 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
             <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
               Remove
             </Button>
-          </div>
+          </>
+        )
+      }
+    >
+      {token === undefined ? (
+        form
+      ) : (
+        <>
           <MissingOn sealedOn={token.sealedOn} machines={machines.ids} there="agents there fill no logins with it" />
           {verdict === null ? null : (
             <div role={verdict.ok ? "status" : "alert"}>
@@ -189,6 +198,6 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
           onClose={() => setRemoving(false)}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }

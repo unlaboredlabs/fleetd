@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents wait for 5 GB of disk each above the free-space floor; load and memory never hold them back. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `agents`, `decisions_search`, `report`, `ask_lead`, `brief_read`, `agent_message`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`. Every other call is refused. |
+| Calls a task's agent may make | `agents`, `decisions_search`, `report`, `ask_lead`, `brief_read`, `agent_message`, `wait_ci`, `review_read`, `chat_file`, `publish_artifact`, `artifact_read`, `session_start`, `desktop`, `session_end`, `request_takeover`, `fill_credential`, `fill_address`, `vault_items`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -84,7 +84,11 @@ Every lead gets these.
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
-| [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
+| [`fill_credential`](#fill_credential) | Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. | No |
+| [`fill_address`](#fill_address) | Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. | No |
+| [`vault_items`](#vault_items) | The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). | No |
+| [`vault_import_search`](#vault_import_search) | Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, vaults and sites, never a value. | No |
+| [`vault_import_propose`](#vault_import_propose) | Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope where they go (the person's own by default). | The person taps Import on the card in chat. |
 | [`purchase_request`](#purchase_request) | A lead's call: record a payment at the checkout open in your browser session, with the card the person picked for you. | No |
 | [`purchase_fill`](#purchase_fill) | A lead's call: fill a purchase's card into the checkout's card fields (the shop's page and its payment provider's frames, such as Stripe's) without seeing it: requestId is what purchase_request returned. | No |
 | [`request_secure_input`](#request_secure_input) | A lead's call: when a page needs something only the person may give and you must never see (a passport or ID number, a code texted to them), ask for it here, on that page: site is its domain and name, target the field's CSS selector (in the page or one of its frames), label what it is in their words ("Passport number"), why one line. | The person enters the value in a sealed field; a 1Password field fills with no ask. |
@@ -1045,7 +1049,7 @@ Ask a person to take your browser over, for what only they can do: a captcha, a 
 
 ### fill_credential
 
-Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.
+Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). ref (a 1Password reference, op://&lt;vault>/&lt;item>/&lt;field>) instead of item and field works for one release. Never ask anyone for a password: a login that isn't in the vault, the person adds in Settings › Vault.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1061,8 +1065,98 @@ Fill a login field of your browser session from 1Password without seeing the val
 {
   "name": "fill_credential",
   "arguments": {
-    "ref": "op://Staging/Shop admin/password",
+    "field": "password",
+    "item": "Shop admin",
     "target": "input[name=password]"
+  }
+}
+```
+
+### fill_address
+
+Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `item` | string | no | The address, by id or label; absent: the only one visible, or the one labelled "Home". |
+| `part` | string | no | Which of the form's addresses, when it has two. One of `shipping`, `billing`. |
+| `target` | string | no | A CSS selector inside the form to fill; absent: the page's address form. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "fill_address",
+  "arguments": {
+    "item": "Home",
+    "part": "shipping"
+  }
+}
+```
+
+### vault_items
+
+The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | no |  |
+| `site` | string | no | A host: `amazon.com`. At most 253 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "vault_items",
+  "arguments": {
+    "site": "shop.example.com"
+  }
+}
+```
+
+### vault_import_search
+
+Search the person's 1Password for logins, cards and addresses to import into fleetd's vault: titles, kinds, vaults and sites, never a value. query matches a title or a site; kinds narrows. Then propose the ones needed with vault_import_propose.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `kinds` | string[] | no |  |
+| `query` | string | yes | One line. At most 200 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "vault_import_search",
+  "arguments": {
+    "kinds": [
+      "login"
+    ],
+    "query": "shop.example.com"
+  }
+}
+```
+
+### vault_import_propose
+
+Propose importing 1Password items into fleetd's vault: refs from vault_import_search, why one line, scope where they go (the person's own by default). The chat shows an import card; the person ticks and taps Import, and fleetd reads the items sealed, so you never see them. Once imported, fill them from the vault.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `refs` | string[] | yes | At most 50 items. |
+| `scope` | string | no | Where they go; absent: the person's own. One of `person` (One person's: used by work they started, their Only me projects, and projects it's shared with), `project` (One project's (`machineId`, `projectId`): its leads and agents use it), `order` (One order's variable (`workstreamId` too): that order's agents. Gone when the order closes), `hub` (Everyone's on the hub, every project's work; only admins change it. Never a variable). |
+| `why` | string | yes | One line. At most 500 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** The person taps Import on the card in chat.
+
+```json
+{
+  "name": "vault_import_propose",
+  "arguments": {
+    "refs": [
+      "op://Staging/Shop admin"
+    ],
+    "why": "The staging shop's admin login, to check the new checkout"
   }
 }
 ```
@@ -1199,7 +1293,9 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop) or the agents' Mac's screen (kind mac), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a kept project profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
-| [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
+| [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. | No |
+| [`fill_address`](#fill_address-task) | Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. | No |
+| [`vault_items`](#vault_items-task) | The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). | No |
 
 ### agents (task)
 
@@ -1510,7 +1606,7 @@ Ask a person to take your browser over, for what only they can do: a captcha, a 
 
 ### fill_credential (task)
 
-Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.
+Fill a login field of your browser session from fleetd's vault without seeing the value: item is the login (its label or id, as vault_items lists it), field username, password or otp (a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). ref (a 1Password reference, op://&lt;vault>/&lt;item>/&lt;field>) instead of item and field works for one release. Never ask anyone for a password: a login that isn't in the vault, the person adds in Settings › Vault.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1526,8 +1622,51 @@ Fill a login field of your browser session from 1Password without seeing the val
 {
   "name": "fill_credential",
   "arguments": {
-    "ref": "op://Staging/Shop admin/password",
+    "field": "password",
+    "item": "Shop admin",
     "target": "input[name=password]"
+  }
+}
+```
+
+### fill_address (task)
+
+Fill a vault address into the address form of your browser session's page without seeing it: item is the address (its label or id; absent, the only one you may use, or the one labelled Home), part shipping or billing when the form has both, target a CSS selector inside the form when the page has several. It fills only at a checkout recorded in this session (purchase_request), on the address's own sites, or on a site where its owner has a vault login. Check the form after it and fill what it still asks; from the fill on the session refuses reading values back.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `item` | string | no | The address, by id or label; absent: the only one visible, or the one labelled "Home". |
+| `part` | string | no | Which of the form's addresses, when it has two. One of `shipping`, `billing`. |
+| `target` | string | no | A CSS selector inside the form to fill; absent: the page's address form. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "fill_address",
+  "arguments": {
+    "item": "Home",
+    "part": "shipping"
+  }
+}
+```
+
+### vault_items (task)
+
+The vault items your session may use: logins (label, sites, fields present), addresses, cards (label only) and the variables already in your environment (their names). site narrows to a host's logins, kind to one kind. Never a value: fill with fill_credential, fill_address or purchase_fill.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | no |  |
+| `site` | string | no | A host: `amazon.com`. At most 253 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "vault_items",
+  "arguments": {
+    "site": "shop.example.com"
   }
 }
 ```

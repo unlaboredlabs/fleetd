@@ -2,25 +2,27 @@
 // (claude_accounts_get and github_app_get answer an admin with everyone's), any usage pause on their account included. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
 // offers comes from model.ts; the hub checks it all again. A removed person's Only-me projects, archived with them,
-// are listed below by name alone, each with Delete (people_list `left`; nobody else opens them). Then Invite someone
-// and the invites still open (Invites.tsx), then every hub link minted here, which acts as its person
-// (hubLinks/AllLinks.tsx).
+// are listed below by name alone, each with Delete (people_list `left`; nobody else opens them). Invite someone is the
+// plus beside the page's line (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke.
+// Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
+import { FolderArchive, Mail, User } from "lucide-react";
 import { useState } from "react";
-import type { HubRole, LeftProject, PeopleListOutput, Person } from "../../../shared/contracts";
+import type { HubRole, Invite, LeftProject, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead } from "../settings/parts";
+import { AddButton, PageHead, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
+import { useReveal } from "../settings/search";
 import { openUpdates } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
-import { Invites } from "./Invites";
+import { invitedBy, InviteSection, OpenInvite } from "./Invites";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { RemoveProjectDialog } from "../projects/RemoveProjectDialog";
 import { pauseLine } from "../settings/claudeModel";
-import { accountsLine, devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
+import { accountsLine, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -45,10 +47,25 @@ export function NeedsUpdate() {
 export function People({ me }: { me: Person | undefined }) {
   const live = useLive();
   const read = usePeople();
+  const [inviting, setInviting] = useState(false);
+  const inviteRef = useReveal<HTMLSpanElement>("hub.invite");
+  const canInvite = live && !lacksPeople(read.error);
   return (
     <div className={s.scroll} data-screen="settings.hub.people">
       <div className={s.column}>
-        <PageHead title="People">Who is on this hub.</PageHead>
+        <PageHead
+          title="People"
+          aside={
+            canInvite && !inviting ? (
+              <span ref={inviteRef}>
+                <AddButton label="Invite someone" onClick={() => setInviting(true)} />
+              </span>
+            ) : undefined
+          }
+        >
+          Who is on this hub.
+        </PageHead>
+        {canInvite && inviting ? <InviteSection /> : null}
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
         ) : lacksPeople(read.error) ? (
@@ -60,7 +77,6 @@ export function People({ me }: { me: Person | undefined }) {
         ) : (
           <PeopleList list={read.data} me={me} />
         )}
-        {live && !lacksPeople(read.error) ? <Invites me={me} /> : null}
         <AllLinks />
       </div>
     </div>
@@ -84,13 +100,36 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
     const pause = pauseLine({ kind: "person", personId }, usage.data?.machines ?? [], nowMs);
     return { line, pause };
   };
+  // Someone invited who hasn't joined is one row, their invite's in it; an invite for someone already here (one more
+  // device) waits below.
+  const open = openInvites(list.invites);
+  const inviteOf = (row: PersonRow) => (row.invited ? open.find((i) => i.person.personId === row.person.personId) : undefined);
+  const others = open.filter((i) => !rows.some((r) => r.invited && r.person.personId === i.person.personId));
   return (
     <>
-      <div className={a.list} role="list" aria-label="People">
-        {rows.map((row) => (
-          <PersonLine key={row.person.personId} row={row} accounts={accounts(row.person.personId)} onRemove={() => setRemoving(row)} />
-        ))}
-      </div>
+      <SettingsSection reveal="hub.invites">
+        <SettingsList label="People">
+          {rows.map((row) => (
+            <PersonLine
+              key={row.person.personId}
+              row={row}
+              me={me}
+              invite={inviteOf(row)}
+              accounts={accounts(row.person.personId)}
+              onRemove={() => setRemoving(row)}
+            />
+          ))}
+        </SettingsList>
+      </SettingsSection>
+      {others.length === 0 ? null : (
+        <SettingsSection title="Waiting to join" intro="Invites for one more device of someone already here.">
+          <SettingsList label="Open invites">
+            {others.map((i) => (
+              <OpenInvite key={i.inviteId} invite={i} role={list.people.find((p) => p.personId === i.person.personId)?.role} me={me} />
+            ))}
+          </SettingsList>
+        </SettingsSection>
+      )}
       <RemoveDialog row={removing} onClose={() => setRemoving(null)} />
       <LeftProjects left={list.left ?? []} />
     </>
@@ -104,111 +143,133 @@ function LeftProjects({ left }: { left: ReadonlyArray<LeftProject> }) {
   const [deleting, setDeleting] = useState<LeftProject | null>(null);
   if (left.length === 0) return null;
   return (
-    <section className={a.section} aria-labelledby="people-left">
-      <Text strong id="people-left">
-        Left by removed people
-      </Text>
-      <Text size="xs" tone="quiet">
-        Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them.
-      </Text>
-      <div className={a.list} role="list" aria-label="Left by removed people">
+    <SettingsSection
+      title="Left by removed people"
+      intro="Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them."
+    >
+      <SettingsList label="Left by removed people">
         {left.map((p) => (
-          <div key={`${p.machineId}/${p.projectId}`} className={a.row} role="listitem" aria-label={p.title}>
-            <div className={a.who}>
-              <Text strong>{p.title}</Text>
-              <Text size="xs" tone="quiet">{`${p.owner.name}'s`}</Text>
-            </div>
-            <div className={a.controls}>
-              <Button size="sm" variant="ghost" disabled={!live} onClick={() => setDeleting(p)}>
+          <SettingsListRow
+            key={`${p.machineId}/${p.projectId}`}
+            label={p.title}
+            icon={<FolderArchive />}
+            name={p.title}
+            controls={
+              <Button variant="ghost" disabled={!live} onClick={() => setDeleting(p)}>
                 Delete
               </Button>
-            </div>
-          </div>
+            }
+          >
+            <Text size="sm" tone="quiet">{`${p.owner.name}'s`}</Text>
+          </SettingsListRow>
         ))}
-      </div>
+      </SettingsList>
       <RemoveProjectDialog
         project={deleting === null ? null : { machineId: deleting.machineId, projectId: deleting.projectId, title: deleting.title, path: deleting.path }}
         onClose={() => setDeleting(null)}
         onRemoved={() => refetch(["people_list"])}
       />
-    </section>
+    </SettingsSection>
   );
 }
 
-function PersonLine({ row, accounts, onRemove }: { row: PersonRow; accounts: { line: string | null; pause: string | null }; onRemove: () => void }) {
+function PersonLine({
+  row,
+  me,
+  invite,
+  accounts,
+  onRemove,
+}: {
+  row: PersonRow;
+  me: Person | undefined;
+  invite: Invite | undefined;
+  accounts: { line: string | null; pause: string | null };
+  onRemove: () => void;
+}) {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // Days-grained, so the time the page opened is close enough.
+  const [now] = useState(() => Date.now());
   const p = row.person;
-  const setRole = (role: HubRole) => {
-    if (role === p.role) return;
+  const run = (tool: "person_set" | "invite_revoke", input: { personId: string; role: HubRole } | { inviteId: string }, failed: string) => {
     setBusy(true);
     setError(undefined);
-    call("person_set", { personId: p.personId, role })
+    call(tool, input)
       .then(() => refetch(["people_list", "hub_info"]))
-      .catch((e: unknown) => setError(errorText(e)))
+      .catch((e: unknown) => setError(`${failed}: ${errorText(e)}`))
       .finally(() => setBusy(false));
+  };
+  const setRole = (role: HubRole) => {
+    if (role !== p.role) run("person_set", { personId: p.personId, role }, "Not changed");
   };
   const devices = row.devices.map((d) => d.name).join(", ");
   return (
-    <div className={a.row} role="listitem" aria-label={p.name}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong>{p.name}</Text>
-          {row.you ? (
-            <Text size="xs" tone="quiet">
-              you
-            </Text>
+    <SettingsListRow
+      label={p.name}
+      icon={row.invited ? <Mail /> : <User />}
+      name={p.name}
+      meta={row.you ? "you" : undefined}
+      controls={
+        <>
+          {row.roles.length === 0 ? (
+            <Text tone="quiet">{roleWord(p.role)}</Text>
+          ) : (
+            <Select
+              aria-label={`${p.name}'s role`}
+              className={a.role}
+              value={p.role}
+              options={row.roles.map((r) => ({ value: r, label: roleWord(r) }))}
+              disabled={!live || busy}
+              onValueChange={setRole}
+            />
+          )}
+          {invite !== undefined && row.removable ? (
+            <Button variant="ghost" disabled={!live || busy} onClick={() => run("invite_revoke", { inviteId: invite.inviteId }, "Not revoked")}>
+              Revoke
+            </Button>
+          ) : row.removable ? (
+            <Button variant="ghost" disabled={!live || busy} onClick={onRemove}>
+              Remove
+            </Button>
           ) : null}
-        </div>
-        <Text size="xs" tone="quiet">
-          {row.invited ? "Invited, not joined yet" : devices === "" ? devicesLine(0) : `${devicesLine(row.devices.length)}: ${devices}`}
+        </>
+      }
+    >
+      <Text size="sm" tone="quiet">
+        {invite !== undefined
+          ? `Invited ${invitedBy(invite, me)}. ${expiresLine(invite.expiresAt, now)}.`
+          : row.invited
+            ? "Invited, not joined yet"
+            : devices === ""
+              ? devicesLine(0)
+              : `${devicesLine(row.devices.length)}: ${devices}`}
+      </Text>
+      {accounts.line === null || row.invited ? null : (
+        <Text size="sm" tone="quiet" data-accounts>
+          {accounts.line}
         </Text>
-        {accounts.line === null || row.invited ? null : (
-          <Text size="xs" tone="quiet" data-accounts>
-            {accounts.line}
+      )}
+      {accounts.pause === null ? null : (
+        <Text size="sm" tone="warning">
+          <HubText>{accounts.pause}</HubText>
+        </Text>
+      )}
+      {row.why ? (
+        <Text size="sm" tone="quiet">
+          {row.why}
+        </Text>
+      ) : null}
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="sm" tone="danger">
+            {error}
           </Text>
-        )}
-        {accounts.pause === null ? null : (
-          <Text size="xs" tone="warning">
-            <HubText>{accounts.pause}</HubText>
-          </Text>
-        )}
-        {row.why ? (
-          <Text size="xs" tone="quiet">
-            {row.why}
-          </Text>
-        ) : null}
-        {error === undefined ? null : (
-          <p role="alert" className={s.alertLine}>
-            <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
-          </p>
-        )}
-      </div>
-      <div className={a.controls}>
-        {row.roles.length === 0 ? (
-          <Text size="sm" tone="quiet">
-            {roleWord(p.role)}
-          </Text>
-        ) : (
-          <Select
-            aria-label={`${p.name}'s role`}
-            className={a.role}
-            value={p.role}
-            options={row.roles.map((r) => ({ value: r, label: roleWord(r) }))}
-            disabled={!live || busy}
-            onValueChange={setRole}
-          />
-        )}
-        {row.removable ? (
-          <Button size="sm" variant="ghost" disabled={!live || busy} onClick={onRemove}>
-            Remove
-          </Button>
-        ) : null}
-      </div>
-    </div>
+        </p>
+      )}
+    </SettingsListRow>
   );
 }
 

@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 import type { SkillOrigin } from "./desktop";
 import type { Paired } from "./hub/pair";
 import type { AgentMessage } from "./screens/dms/model";
+import type { VaultItemSummary, VaultKind } from "./screens/vault/types";
 import type { Filter } from "./lists";
 import type { Session } from "./session";
 import type { Key, State } from "./store";
@@ -93,6 +94,18 @@ export type ChatInfoParams = {
   /** Its agents' DMs to each other, newest first (screens/dms), and one of them with who got it when. */
   Dms: { key: Key };
   Dm: { key: Key; message: AgentMessage };
+} & VaultParams;
+/**
+ * The Vault's screens (screens/vault), in Settings for the person's own and the hub's items, and in a project's screen
+ * for its own (`key`). `item` is the row's metadata, shown while the item is read again; never a value.
+ */
+export type VaultParams = {
+  Vault: { key?: Key } | undefined;
+  VaultItem: { itemId: string; item?: VaultItemSummary; key?: Key };
+  /** A new item of `kind`, or `item` changed. */
+  VaultEdit: { kind: VaultKind; item?: VaultItemSummary; key?: Key };
+  /** Items picked from the person's 1Password, brought into the vault. */
+  VaultImport: { key?: Key } | undefined;
 };
 /** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
 export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;
@@ -100,7 +113,7 @@ export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps
 export type SettingsParams = {
   Settings: undefined;
   ImportMemory: undefined;
-};
+} & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;
 export type PairParams = {

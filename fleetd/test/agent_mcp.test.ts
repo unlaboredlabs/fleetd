@@ -66,7 +66,7 @@ describe("agent-mcp", () => {
   test("a worker sees only report, ask_lead, its brief, agents, CI, decisions, reviews, images, artifacts and browser", () => {
     expect(names("worker")).toEqual([
       "agents", "decisions_search", "report", "ask_lead", "brief_read", "agent_message", "wait_ci", "review_read", "chat_file", "publish_artifact",
-      "artifact_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential",
+      "artifact_read", "session_start", "desktop", "session_end", "request_takeover", "fill_credential", "fill_address", "vault_items",
     ]);
     const lead = names("lead");
     for (const tool of [

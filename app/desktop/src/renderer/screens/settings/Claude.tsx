@@ -13,7 +13,7 @@ import { Button, Field, InlineCode, Input, Radio, RadioGroup, Text } from "../..
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PagePart, Setting } from "./parts";
+import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -22,21 +22,21 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <PagePart title="Claude" reveal="claude" intro="What your work runs on.">
+    <SettingsSection title="Claude" reveal="claude" intro="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
       {!live ? (
-        <Text tone="quiet">Not connected. Connect to a hub to choose your Claude account.</Text>
+        <GroupNote>Not connected. Connect to a hub to choose your Claude account.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to choose your own account.</Text>
+        <GroupNote>This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to choose your own account.</GroupNote>
       ) : read.isLoadingError ? (
-        <Text tone="danger">{errorText(read.error)}</Text>
+        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : read.data.me === undefined ? (
-        <Text tone="quiet">This device&apos;s key belongs to no person, so it has no Claude account of its own. Pair the app as yourself to choose one.</Text>
+        <GroupNote>This device&apos;s key belongs to no person, so it has no Claude account of its own. Pair the app as yourself to choose one.</GroupNote>
       ) : (
         <Mine data={read.data} me={read.data.me} />
       )}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -51,29 +51,28 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
   const offer = me.mayUseHubApi || me.choice === "hub_api";
   return (
     <>
-      <Setting label="In use" help="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
-        {refused === null ? (
-          <>
-            <Text>
+      {refused === null ? (
+        <SettingsRow
+          title="In use"
+          line={
+            <>
               <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>
-            </Text>
-            {!offer && data.hubApi !== undefined ? (
-              <Text size="sm" tone="quiet">
-                The hub&apos;s API key is kept for leads and unrequested work.
-              </Text>
-            ) : null}
-          </>
-        ) : (
-          <div className={s.notice} role="status">
-            <div className={s.stack}>
-              <Text strong>{CONNECT}</Text>
-              <Text size="sm" tone="quiet">
-                <HubText>{refused.fix}</HubText>
-              </Text>
-            </div>
-          </div>
-        )}
-      </Setting>
+              {!offer && data.hubApi !== undefined ? " The hub's API key is kept for leads and unrequested work." : null}
+            </>
+          }
+        />
+      ) : (
+        <SettingsRow
+          title="In use"
+          lineTone="warning"
+          line={
+            <span role="status">
+              {`${CONNECT}. `}
+              <HubText>{refused.fix}</HubText>
+            </span>
+          }
+        />
+      )}
       {offer ? <Choice me={me} /> : null}
       <Subscription me={me} />
     </>
@@ -102,7 +101,7 @@ function Choice({ me }: { me: PersonClaude }) {
     );
   };
   return (
-    <Setting label="Runs on" help="Switch any time: agents started from then on use it; a running one keeps its account.">
+    <SettingsRow title="Runs on" line="Switch any time: agents started from then on use it; a running one keeps its account.">
       <RadioGroup className={s.radios} value={shown ?? ""} onValueChange={pick} disabled={busy} aria-label="Runs on">
         <Radio
           value="subscription"
@@ -117,7 +116,7 @@ function Choice({ me }: { me: PersonClaude }) {
         />
       </RadioGroup>
       <Problem text={problem} />
-    </Setting>
+    </SettingsRow>
   );
 }
 
@@ -172,26 +171,30 @@ function Subscription({ me }: { me: PersonClaude }) {
       <Field label="Token" description="Valid for a year.">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
       </Field>
-      <div className={s.inline}>
-        <Button variant="primary" disabled={busy || token.trim() === ""} onClick={connect}>
-          {busy ? "Connecting…" : "Connect and test"}
-        </Button>
-        {replacing ? (
-          <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setToken(""), setProblem(null))}>
-            Cancel
-          </Button>
-        ) : null}
-      </div>
+      {/* Connect shows once there is a token to connect. */}
+      {token.trim() === "" && !busy && !replacing ? null : (
+        <div className={s.inline}>
+          {token.trim() === "" && !busy ? null : (
+            <Button variant="primary" disabled={busy} onClick={connect}>
+              {busy ? "Connecting…" : "Connect and test"}
+            </Button>
+          )}
+          {replacing ? (
+            <Button variant="ghost" disabled={busy} onClick={() => (setReplacing(false), setToken(""), setProblem(null))}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      )}
     </>
   );
   return (
-    <Setting label="Your subscription" help={help}>
-      {sub === undefined ? (
-        form
-      ) : (
-        <>
-          <div className={s.inline}>
-            <Text size="sm">{`Connected. ${sealedLine(sub.sealedOn)}`}</Text>
+    <SettingsRow
+      title="Your subscription"
+      line={sub === undefined ? help : `Connected. ${sealedLine(sub.sealedOn)}`}
+      control={
+        sub === undefined ? undefined : (
+          <>
             <TestButton testing={testing} onTest={runTest} />
             {replacing ? null : (
               <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
@@ -201,7 +204,14 @@ function Subscription({ me }: { me: PersonClaude }) {
             <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
               Disconnect
             </Button>
-          </div>
+          </>
+        )
+      }
+    >
+      {sub === undefined ? (
+        form
+      ) : (
+        <>
           <MissingOn sealedOn={sub.sealedOn} machines={machines.ids} />
           <TestResult tried={tried ?? (sub.lastTest === undefined ? undefined : { test: sub.lastTest })} nowMs={nowMs} />
           {replacing ? form : null}
@@ -217,6 +227,6 @@ function Subscription({ me }: { me: PersonClaude }) {
           onClose={() => setRemoving(false)}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }

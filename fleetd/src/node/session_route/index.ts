@@ -16,8 +16,10 @@
 // install of a PR's build into a person's Android screen) runs only sealed with the session's relay key, after the one
 // before it (node/device/work.ts). What was sealed to this node for a session goes once it ends, however it ended.
 //
-// A `fill_credential` of a session hosted elsewhere is read here, with this machine's token, and only the value goes,
-// sealed to the runner, which fills it under the same checks as a fill there (browser/credentials.ts).
+// A vault fill of a session hosted elsewhere is the runner's to ask the hub for (browser/vault.ts): the value is sealed
+// to the runner alone and never touches this machine. A `fill_credential` of a 1Password reference the vault doesn't
+// hold yet (one release) is read here, with this machine's token, and only the value goes, sealed to the runner, which
+// fills it under the same checks as a fill there (browser/credentials.ts).
 import { seal } from "../../shared/sealed_box.ts";
 import { ToolError } from "../../shared/errors.ts";
 import {
@@ -33,12 +35,20 @@ import type { SessionsArea } from "../api.ts";
 import { Masker } from "../mask.ts";
 import { type DeviceCall, type DeviceDone, isHostKey, openCall, sealDone } from "../device/work.ts";
 import { type Broker, broker as brokerOf, drivesBrowser } from "../browser/index.ts";
-import { type FillCredentialCall, referenceOf } from "../browser/credentials.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { hostOf, router as screens } from "../device/router.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
+import { notInVault } from "../browser/vault.ts";
 import { dial, relayUrl } from "./relay.ts";
+
+/** Whether a runner refused a `fill_credential` reference because its vault doesn't hold it (or, a runner from
+ * before the vault, because it has no 1Password token): read here then, and sent sealed. */
+const notInVaultThere = (routed: SessionRouteResult) => {
+  const error = routed.answer?.error as { code?: string; reason?: string; message?: string } | undefined;
+  if (!error) return false;
+  return notInVault(new ToolError("failed", error.message ?? "", undefined, error.reason)) || /no 1Password service account token/.test(error.message ?? "");
+};
 
 /** A step's output past this goes cut. */
 const STEP_OUTPUT = 64 * 1024;
@@ -139,13 +149,14 @@ export class Router {
     if (host === "ios") throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
     // A lead's runs here, on its project's kept profile: another machine hasn't that profile.
     if (this.broker.staysHere(thread)) return this.here(thread, frame);
-    // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
+    // A fill of a session hosted elsewhere: its runner asks the hub's vault itself. Only a 1Password reference the vault
+    // doesn't hold yet (one release) is read here, with this machine's token, and only the value goes, sealed.
     const remote = this.remotes.get(thread);
-    const fill =
-      op === "fill_credential" && remote?.runner && remote.sealTo
-        ? await this.sealedFill(thread, referenceOf(frame.call as FillCredentialCall), remote.runner, remote.sealTo)
-        : undefined;
-    let routed = await this.ask(thread, frame, fill);
+    const ref = op === "fill_credential" && typeof frame.call.ref === "string" && frame.call.ref ? frame.call.ref : undefined;
+    let routed = await this.ask(thread, frame);
+    if (ref && remote?.runner && remote.sealTo && notInVaultThere(routed)) {
+      routed = await this.ask(thread, frame, await this.sealedFill(thread, ref, remote.runner, remote.sealTo));
+    }
     if (!routed.here && !routed.answer && routed.sealTo) {
       if (host === "android") throw androidElsewhere();
       // Placed on another machine, which needs the session's secrets and relay key first: sealed to it. The agents'
@@ -170,7 +181,7 @@ export class Router {
       }
       if (!answer.error) throw androidElsewhere();
     }
-    if (answer.error) throw new ToolError(answer.error.code, answer.error.message, answer.error.fix);
+    if (answer.error) throw new ToolError(answer.error.code, answer.error.message, answer.error.fix, (answer.error as { reason?: string }).reason);
     const result = { ...(answer.result ?? {}) };
     // The agent's own address for it, as its AGENT_BROWSER_CDP names it: never the runner's.
     if (op === "session_start" && this.remotes.has(thread)) result.cdp = this.broker.proxy.url(thread);
@@ -381,7 +392,7 @@ export function start(node: Node, given?: Router): Router {
   const r = router(node, given);
   const agentOnly = () => new ToolError("forbidden", "A browser session belongs to an agent's session, and this call comes from none.");
   // The browser calls beyond a start and an end route the same way: here when the session is here, else to its runner.
-  for (const op of ["session_start", "session_end", "fill_credential", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill"]) {
+  for (const op of ["session_start", "session_end", "fill_credential", "fill_address", "purchase_request", "purchase_fill", "request_secure_input", "secure_input_fill"]) {
     // The call's own working directory (its frame's `cwd`, the agent's worktree): a desktop launches its apps there.
     node.area("local").on(op, async (thread, frame) => {
       try {

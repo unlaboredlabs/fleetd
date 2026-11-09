@@ -8,12 +8,11 @@ import type { GithubAccount, GithubAppGetOutput } from "../../../shared/contract
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Text } from "../../ui";
+import { Button } from "../../ui";
 import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PagePart, Setting } from "./parts";
-import s from "./settings.module.css";
+import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 
 const noInput = {};
 
@@ -21,21 +20,21 @@ export function GithubSettings() {
   const live = useLive();
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   return (
-    <PagePart title="GitHub" reveal="github" intro="Your pull requests open as this account.">
+    <SettingsSection title="GitHub" reveal="github" intro="Your pull requests open as this account.">
       {!live ? (
-        <Text tone="quiet">Not connected. Connect to a hub to connect your GitHub.</Text>
+        <GroupNote>Not connected. Connect to a hub to connect your GitHub.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <Text tone="quiet">This hub opens PRs with each machine&apos;s own gh login. Update fleetd on the hub to connect your own GitHub.</Text>
+        <GroupNote>This hub opens PRs with each machine&apos;s own gh login. Update fleetd on the hub to connect your own GitHub.</GroupNote>
       ) : read.isLoadingError ? (
-        <Text tone="danger">{errorText(read.error)}</Text>
+        <GroupNote tone="danger">{errorText(read.error)}</GroupNote>
       ) : read.data === undefined ? (
-        <Text tone="quiet">Loading…</Text>
+        <GroupNote>Loading…</GroupNote>
       ) : read.data.app === undefined ? (
-        <Text tone="quiet">This hub has no GitHub App yet, so agents open PRs with each machine&apos;s own gh login. An admin creates it in Settings › Hub accounts.</Text>
+        <GroupNote>This hub has no GitHub App yet, so agents open PRs with each machine&apos;s own gh login. An admin creates it in Settings › Hub accounts.</GroupNote>
       ) : (
         <Account info={read.data} />
       )}
-    </PagePart>
+    </SettingsSection>
   );
 }
 
@@ -60,44 +59,38 @@ function Account({ info }: { info: GithubAppGetOutput }) {
     refetch(["github_app_get"]);
   };
   return (
-    <Setting reveal="github.account" label="Your GitHub" help={`Signed in through the hub's App, ${info.app?.name ?? ""}. The hub keeps the token and renews it; it is never shown.`}>
-      {me === undefined ? (
-        <div className={s.notice} role="status">
-          <div className={s.stack}>
-            <Text strong>Not connected</Text>
-            <Text size="sm" tone="quiet">
-              Connect before your first pull request. Until then, work that opens one can&apos;t start.
-            </Text>
-          </div>
-        </div>
-      ) : lapsed ? (
-        <div className={s.notice} role="alert">
-          <div className={s.stack}>
-            <Text strong>{`GitHub no longer takes your connection as ${me.login}`}</Text>
-            <Text size="sm" tone="quiet">
-              It was revoked on GitHub, or unused for six months. Connect again to open pull requests.
-            </Text>
-          </div>
-        </div>
-      ) : (
-        <Text>{`Connected as ${me.login} since ${dayWords(me.connectedAt)}.`}</Text>
-      )}
-      <span className={s.inline}>
-        {me === undefined || lapsed ? (
-          <Button variant="primary" disabled={waiting} onClick={() => void connect()}>
-            {waiting ? "Waiting for GitHub…" : lapsed ? "Connect again" : "Connect GitHub"}
-          </Button>
+    <SettingsRow
+      reveal="github.account"
+      title="Your GitHub"
+      lineTone={me !== undefined && lapsed ? "warning" : "quiet"}
+      line={
+        me === undefined ? (
+          <span role="status">Not connected. Connect before your first pull request. Until then, work that opens one can&apos;t start.</span>
+        ) : lapsed ? (
+          <span role="alert">{`GitHub no longer takes your connection as ${me.login}. It was revoked on GitHub, or unused for six months. Connect again to open pull requests.`}</span>
         ) : (
-          <Button variant="ghost" onClick={() => setRemoving(true)}>
-            Disconnect
-          </Button>
-        )}
-        {waiting ? (
-          <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
-            Cancel
-          </Button>
-        ) : null}
-      </span>
+          `Connected as ${me.login} since ${dayWords(me.connectedAt)}. Signed in through the hub's App, ${info.app?.name ?? ""}; the hub keeps the token and renews it, and never shows it.`
+        )
+      }
+      control={
+        <>
+          {waiting ? (
+            <Button variant="ghost" onClick={() => void window.fleetd.github.cancel()}>
+              Cancel
+            </Button>
+          ) : null}
+          {me === undefined || lapsed ? (
+            <Button variant="primary" disabled={waiting} onClick={() => void connect()}>
+              {waiting ? "Waiting for GitHub…" : lapsed ? "Connect again" : "Connect GitHub"}
+            </Button>
+          ) : (
+            <Button variant="ghost" onClick={() => setRemoving(true)}>
+              Disconnect
+            </Button>
+          )}
+        </>
+      }
+    >
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove
@@ -108,6 +101,6 @@ function Account({ info }: { info: GithubAppGetOutput }) {
           onClose={() => setRemoving(false)}
         />
       ) : null}
-    </Setting>
+    </SettingsRow>
   );
 }

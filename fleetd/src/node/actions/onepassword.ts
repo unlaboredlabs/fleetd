@@ -10,7 +10,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import helperScript from "./onepassword_helper.mjs" with { type: "text" };
-import type { OnePasswordCard } from "../../shared/contracts.ts";
+import type { OnePasswordCard, VaultImportedFields, VaultKind } from "../../shared/contracts.ts";
+import { expiry } from "../browser/onepassword.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import type { Vars } from "../secrets/env.ts";
@@ -256,12 +257,111 @@ export class OnePassword {
     );
   }
 
+  /** The items a vault import may take whose title or website has `query` in it: overviews, never a value. */
+  async search(query: string): Promise<Overview[]> {
+    const parsed = await this.exchange({ search: query });
+    return (Array.isArray(parsed.items) ? parsed.items : []).filter(
+      (i): i is Overview => !!i && typeof i.ref === "string" && typeof i.title === "string" && typeof i.category === "string" && typeof i.vault === "string",
+    );
+  }
+
+  /** One item's fields, for an import the person confirmed: sealed to the hub at once (vault_import_read). */
+  async read(reference: string): Promise<ReadItem> {
+    const parsed = await this.exchange({ read: reference });
+    const item = (parsed.item ?? {}) as ReadItem;
+    if (typeof item.title !== "string" || typeof item.category !== "string") throw new OnePasswordError("1Password returned no item");
+    return { ...item, sites: Array.isArray(item.sites) ? item.sites.filter((u) => typeof u === "string") : [], fields: Array.isArray(item.fields) ? item.fields : [] };
+  }
+
   close(): void {
     try {
       this.#proc?.kill("SIGKILL");
     } catch {}
     this.#proc = undefined;
   }
+}
+
+/** An item the helper's search found: its reference, title, category, vault and websites. */
+export type Overview = { ref: string; title: string; category: string; vault: string; sites?: string[] };
+/** An item the helper read for import: every field as 1Password keeps it. */
+export type ReadItem = {
+  title: string;
+  category: string;
+  sites: string[];
+  notes?: string;
+  fields: { id?: string; title?: string; type?: string; value?: string; details?: Record<string, unknown> }[];
+};
+
+/** What a 1Password category becomes in fleetd's vault; none for those it doesn't import. */
+export function importKind(category: string): VaultKind | undefined {
+  if (category === "Login" || category === "Password") return "login";
+  if (category === "CreditCard") return "card";
+  if (category === "Identity") return "address";
+  return undefined;
+}
+
+const text = (v: unknown) => (typeof v === "string" ? v : "");
+const hostOfSite = (url: string) => {
+  try {
+    return new URL(url.includes("://") ? url : `https://${url}`).hostname.toLowerCase() || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** An item read for import as the vault takes it (vault.rs `VaultImportedFields`): its title, its websites' hosts,
+ * and the fields of its kind. Empty fields are left out. */
+export function importedFields(item: ReadItem): VaultImportedFields {
+  const fields = item.fields;
+  const by = (ids: string[], types: string[], titles: RegExp) =>
+    text(
+      (fields.find((f) => ids.includes(text(f.id))) ?? fields.find((f) => types.includes(text(f.type))) ?? fields.find((f) => titles.test(text(f.title))))
+        ?.value,
+    );
+  const some = <T extends Record<string, string>>(o: T): T | undefined => {
+    const kept = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "")) as T;
+    return Object.keys(kept).length ? kept : undefined;
+  };
+  const sites = [...new Set(item.sites.map(hostOfSite).filter((h): h is string => h !== undefined))];
+  const out: VaultImportedFields = { title: item.title, ...(sites.length ? { sites } : {}) };
+  const kind = importKind(item.category);
+  if (kind === "login") {
+    const login = some({
+      username: by(["username"], [], /user ?name|e-?mail|login/i),
+      password: by(["password"], [], /password/i),
+      totp: by([], ["Totp"], /one-time|otp|totp/i),
+      notes: text(item.notes),
+    });
+    if (login) out.login = login;
+  } else if (kind === "card") {
+    const expires = expiry(by(["expiry"], ["MonthYear"], /expir/i));
+    const card = some({
+      number: by(["ccnum", "number"], ["CreditCardNumber"], /number/i).replace(/[^0-9]/g, ""),
+      month: expires?.[0] ?? "",
+      year: expires?.[1] ?? "",
+      cvc: by(["cvv"], [], /verification|cvv|cvc|security code/i),
+      name: by(["cardholder"], [], /cardholder|name on card/i),
+    });
+    if (card) out.card = card;
+  } else if (kind === "address") {
+    const at = fields.find((f) => text(f.type) === "Address")?.details ?? {};
+    const street = text(at.street).split("\n");
+    const name = [by(["firstname"], [], /first name/i), by(["lastname"], [], /last name/i)].filter(Boolean).join(" ");
+    const address = some({
+      name,
+      organization: by(["company"], [], /company|organi[sz]ation/i),
+      line1: street[0] ?? "",
+      line2: street.slice(1).join(", "),
+      city: text(at.city),
+      region: text(at.state),
+      postalCode: text(at.zip),
+      country: text(at.country).toUpperCase(),
+      phone: by(["defphone", "cellphone", "homephone"], ["Phone"], /phone/i),
+      email: by(["email"], ["Email"], /e-?mail/i),
+    });
+    if (address) out.address = address;
+  }
+  return out;
 }
 
 /** A byte stream's lines, without their line ends. */

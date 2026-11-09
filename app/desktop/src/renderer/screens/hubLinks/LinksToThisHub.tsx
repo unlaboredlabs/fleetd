@@ -3,7 +3,7 @@
 // hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that project's
 // Linked hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
 // hub_info says who they are: everyone's is on Settings › Hub › People.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { HubLinkMintOutput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
@@ -13,7 +13,7 @@ import { HubText } from "../projects/HubText";
 import { useHubRole } from "../admin/role";
 import { isArchived } from "../projects/model";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { Setting } from "../settings/parts";
+import { AddButton, SettingsList, SettingsRow } from "../settings/parts";
 import { IssuedRow, lacksLinks, LinksNeedUpdate } from "./parts";
 import { labelProblem, mine, pasteText, sortIssued, urlProblem } from "./model";
 import s from "../settings/settings.module.css";
@@ -23,18 +23,6 @@ const noInput = {};
 
 /** `label`: with several hubs, which hub the links are to ("Links to Acme"). */
 export function LinksToThisHub({ label = "Links to this hub" }: { label?: string } = {}) {
-  return (
-    <Setting
-      reveal="hubs.links"
-      label={label}
-      help="Lets your project on another hub work here as you. Paste it into that project’s Linked hubs."
-    >
-      <LinksBody />
-    </Setting>
-  );
-}
-
-function LinksBody() {
   const live = useLive();
   const { me, pending } = useHubRole();
   const read = useToolQuery("hub_links_get", noInput, { enabled: live });
@@ -42,33 +30,32 @@ function LinksBody() {
   const [made, setMade] = useState<HubLinkMintOutput | null>(null);
   // Day-grained lines, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
-  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
-  if (lacksLinks(read.error)) return <LinksNeedUpdate />;
-  if (read.error) return <Text tone="danger">{`Couldn’t read your links: ${errorText(read.error)}`}</Text>;
+  const row = (control: ReactNode, body: ReactNode) => (
+    <SettingsRow reveal="hubs.links" title={label} line="Lets your project on another hub work here as you. Paste it into that project’s Linked hubs." control={control}>
+      {body}
+    </SettingsRow>
+  );
+  if (!live) return row(undefined, <Text tone="quiet">Connect to a hub to see and change this.</Text>);
+  if (lacksLinks(read.error)) return row(undefined, <LinksNeedUpdate />);
+  if (read.error) return row(undefined, <Text tone="danger">{`Couldn’t read your links: ${errorText(read.error)}`}</Text>);
   // Until hub_info names this person, nothing: for an admin, hub_links_get holds everyone's links.
-  if (read.data === undefined || pending) return <Text tone="quiet">Loading…</Text>;
+  if (read.data === undefined || pending) return row(undefined, <Text tone="quiet">Loading…</Text>);
   const links = sortIssued(mine(read.data.issued, me?.personId));
   const start = () => {
     setMade(null);
     setMaking(true);
   };
-  return (
+  return row(
+    making ? undefined : <AddButton label="Make a link key" onClick={start} />,
     <>
-      {links.length === 0 && !making && made === null ? (
-        <div className={s.inline}>
-          <Text tone="quiet">No links to this hub yet.</Text>
-          <Button size="sm" onClick={start}>
-            Make a link key
-          </Button>
-        </div>
-      ) : null}
+      {links.length === 0 && !making && made === null ? <Text tone="quiet">No links to this hub yet.</Text> : null}
       {made === null ? null : <MadeKey made={made} />}
       {links.length === 0 ? null : (
-        <div className={a.list} role="list" aria-label="Your links to this hub">
+        <SettingsList label="Your links to this hub">
           {links.map((l) => (
             <IssuedRow key={l.linkId} link={l} now={now} />
           ))}
-        </div>
+        </SettingsList>
       )}
       {making ? (
         <MintForm
@@ -78,14 +65,8 @@ function LinksBody() {
             setMade(out);
           }}
         />
-      ) : links.length === 0 && made === null ? null : (
-        <span>
-          <Button size="sm" onClick={start}>
-            Make a link key
-          </Button>
-        </span>
-      )}
-    </>
+      ) : null}
+    </>,
   );
 }
 
@@ -180,8 +161,8 @@ function MadeKey({ made }: { made: HubLinkMintOutput }) {
   const address = known ?? (typed.trim() !== "" && typedBad === undefined ? typed.trim().replace(/\/+$/u, "") : undefined);
   const text = address === undefined ? made.key : pasteText(address, made.key);
   return (
-    <section className={a.created} aria-label={`Link key for ${made.link.label}`}>
-      <Text strong>{`Link key for ${made.link.label}`}</Text>
+    <section className={s.stack} aria-label={`Link key for ${made.link.label}`}>
+      <Text>{`Link key for ${made.link.label}`}</Text>
       <div className={a.link}>
         <Text as="code" mono size="sm">
           {made.key}

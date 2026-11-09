@@ -1,6 +1,6 @@
 /*
- * Settings → Projects → Instructions & memory: each file a group of entry cards under its cap meter. Cards size to their text (no fixed heights,
- * as everywhere in Settings) and wrap long entries rather than clip them.
+ * Memory (Your memory, a project's Instructions & memory): each file a section, its cap meter and entries the rows of
+ * its soft group. Entries size to their text (no fixed heights, as everywhere in Settings) and wrap rather than clip.
  */
 
 .search {
@@ -10,27 +10,15 @@
   max-width: 420px;
 }
 
-.group {
+/* A file's search and Edit as text, at its label's right end. */
+.tools {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
 }
-.group + .group {
-  margin-top: var(--space-4);
-}
-.groupHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-.title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
+.tools input[type="search"] {
+  width: 240px;
 }
 
 .meter {
@@ -38,6 +26,10 @@
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
+}
+/* The file's meter, first in its group, in line with the entries' words. */
+.inGroup {
+  padding: var(--space-3) var(--space-4) var(--space-1);
 }
 .track {
   height: 4px;
@@ -55,29 +47,23 @@
   background: var(--danger);
 }
 
+/* The file's entries, rows of its group: no lines between them. */
 .entries {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) 0;
   list-style: none;
 }
 .heading {
-  padding: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4) var(--space-1);
 }
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--raised);
-}
-.card[data-editing] {
-  border-color: var(--accent);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
 }
 .cardBody {
   display: flex;
@@ -97,27 +83,7 @@
   gap: var(--space-1);
 }
 
-/* Import memory: two numbered steps, the export prompt in a card (the one thing apart from the page) with Copy prompt
- * under a hairline, then the paste box. */
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.promptCard {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--raised);
-}
-.promptBody {
-  padding: var(--space-3) var(--space-3) var(--space-2);
-}
+/* Import memory: the export prompt, its first lines, under its step; and what an import left out. */
 .promptText {
   display: -webkit-box;
   overflow: hidden;
@@ -125,10 +91,6 @@
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 6;
-}
-.promptFoot {
-  padding: var(--space-1) var(--space-3);
-  border-top: 1px solid var(--hairline);
 }
 .leftOut {
   display: flex;

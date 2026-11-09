@@ -4,14 +4,14 @@
 // Settings › Hub › Every project edits the one for every project (HubInstructions), which only owners and admins change
 // (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
-import { Button, Field, Text, Textarea } from "../../ui";
+import { Button, Text, Textarea } from "../../ui";
 import { INSTRUCTIONS, type ProjectRef, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Memory } from "./Memory";
 import { MemoryRefreshSetting } from "./Projects";
-import { NoProject, PageHead, PagePart, scopeName, useProjects } from "./parts";
+import { GroupNote, NoProject, PageHead, scopeName, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
 
@@ -104,14 +104,17 @@ function Editor({ t, label, placeholder, whose }: { t: TextState; label: string;
         placeholder={t.ready ? placeholder : "Loading…"}
         onChange={(e) => t.edit(e.target.value)}
       />
-      <div className={s.actions}>
-        <Button variant="primary" disabled={!t.ready || !t.dirty || t.busy} onClick={() => t.save(whose)}>
-          {t.busy ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" disabled={!t.dirty} onClick={t.discard}>
-          Discard changes
-        </Button>
-      </div>
+      {/* Save shows once there is a change to save. */}
+      {t.dirty || t.busy ? (
+        <div className={s.actions}>
+          <Button variant="primary" disabled={!t.ready || !t.dirty || t.busy} onClick={() => t.save(whose)}>
+            {t.busy ? "Saving…" : "Save"}
+          </Button>
+          <Button variant="ghost" disabled={!t.dirty} onClick={t.discard}>
+            Discard changes
+          </Button>
+        </div>
+      ) : null}
       <div role="status">
         {t.echo ? (
           <Text size="xs" tone={t.echo.ok ? "quiet" : "danger"}>
@@ -136,14 +139,12 @@ function LoadProblem({ t }: { t: TextState }) {
 /** Settings › Hub › Every project: the instructions every project's agents get, before a project's own. */
 export function HubInstructions() {
   const t = useText(null, "global");
-  if (!t.live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
+  if (!t.live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
   return (
-    <div className={s.stack}>
+    <SettingsRow title="Every project" line="Added to every agent's first message on this hub, the lead's too, before a project's own.">
       <LoadProblem t={t} />
-      <Field label="Every project" description="Added to every agent's first message on this hub, the lead's too, before a project's own.">
-        <Editor t={t} label="Instructions for every project" placeholder="e.g. Keep pull requests under 400 changed lines." whose="for every project" />
-      </Field>
-    </div>
+      <Editor t={t} label="Instructions for every project" placeholder="e.g. Keep pull requests under 400 changed lines." whose="for every project" />
+    </SettingsRow>
   );
 }
 
@@ -166,18 +167,22 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
         <PageHead title="Instructions & memory">What {name ?? "a project"}&apos;s agents are told, and what its leads remember.</PageHead>
-        <PagePart title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too.">
-          {!t.live ? (
-            <Text tone="quiet">Not connected. Connect to a hub to add instructions for its agents.</Text>
-          ) : project === null ? (
-            <NoProject />
-          ) : (
-            <div className={s.stack}>
-              <LoadProblem t={t} />
-              <Editor t={t} label={`Instructions for ${name ?? "this project"}`} placeholder="e.g. Use pnpm, not npm." whose={`for ${name ?? "this project"}`} />
-            </div>
-          )}
-        </PagePart>
+        {!t.live ? (
+          <SettingsSection title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too.">
+            <GroupNote>Not connected. Connect to a hub to add instructions for its agents.</GroupNote>
+          </SettingsSection>
+        ) : (
+          <SettingsSection title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too." bare>
+            {project === null ? (
+              <NoProject />
+            ) : (
+              <>
+                <LoadProblem t={t} />
+                <Editor t={t} label={`Instructions for ${name ?? "this project"}`} placeholder="e.g. Use pnpm, not npm." whose={`for ${name ?? "this project"}`} />
+              </>
+            )}
+          </SettingsSection>
+        )}
         <Memory project={project} />
         {project === null ? null : <Refresh projectRef={project.ref} />}
       </div>
@@ -190,5 +195,9 @@ function Refresh({ projectRef }: { projectRef: ProjectRef }) {
   const read = useToolQuery("project_settings_get", { machineId: projectRef.machineId, projectId: projectRef.projectId });
   const jobs = useToolQuery("automation_list", { projectRef });
   const settings = read.data?.settings;
-  return settings === undefined ? null : <MemoryRefreshSetting settings={settings} job={jobs.data?.memoryRefresh} />;
+  return settings === undefined ? null : (
+    <SettingsSection title="Memory refresh">
+      <MemoryRefreshSetting settings={settings} job={jobs.data?.memoryRefresh} />
+    </SettingsSection>
+  );
 }

@@ -3,8 +3,9 @@
 // - `purchaseRequest`: on the checkout page, the node checks the page is on the shop's domain and opens the purchase
 //   on the hub, which asks the person (or, from D310 on, records it approved). The session waits for them without
 //   idling out.
-// - `purchaseFill`: once approved, the node claims the purchase on the hub (once, within its window), reads the Navi's
-//   Credit Card item from 1Password with the session's token, seals the session as a login fill does (credentials.ts),
+// - `purchaseFill`: once approved, the node claims the purchase on the hub (once, within its window), opens the vault
+//   card the claim carries sealed to this node (`sealedCard`; for one release a 1Password Credit Card item, read with
+//   the session's token), seals the session as a login fill does (credentials.ts),
 //   then types each detail into its field: in the shop's page, its own frames, and frames of the payment providers
 //   checkouts embed (Stripe, Adyen, Braintree, ...; cross-origin, so the node attaches to them itself). Each filled
 //   field shows dots and a blur. The details pass only the node's own connection to the browser.
@@ -13,6 +14,7 @@ import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
 import type { Broker } from "./index.ts";
 import { type Card, hostOf } from "./onepassword.ts";
 import { PAUSED, type Session } from "./session.ts";
+import { openCard } from "./vault.ts";
 
 /** The longest a session waits on a person (a purchase's approval, a takeover) before it may idle out again. */
 export const WAIT_ON_PERSON_MS = 2 * 60 * 60_000;
@@ -45,8 +47,10 @@ export function onDomain(host: string, domain: string): boolean {
 /** Whether a card may fill in a frame on `host`: a payment provider's, or one `extra` names (tests). */
 export const paymentFrame = (host: string, extra: string[] = []) => [...PAYMENT_FRAMES, ...extra].some((p) => onDomain(host, p));
 
-/** How a card is named to the person: its item and its vault, `Visa (Personal)` (purchase.rs `NaviCard::label`). */
+/** How a card is named to the person: its item and its vault, `Visa (Personal)` (purchase.rs `NaviCard::label`); a
+ * vault card, whose label the claim doesn't carry, as the vault's card. */
 export function cardLabel(reference: string): string {
+  if (reference.startsWith("vault:")) return "the vault's card";
   const rest = reference.replace(/^(op:\/\/)+/, "");
   const at = rest.indexOf("/");
   return at < 0 ? rest : `${rest.slice(at + 1)} (${rest.slice(0, at)})`;
@@ -131,7 +135,7 @@ export async function purchaseFill(broker: Broker, thread: string, call: Record<
   // Claimed: from here the hub hears how it went, so an untyped fill may be tried again.
   let outcome: { ok: true; filled: string } | { ok: false; error: CardError };
   try {
-    outcome = { ok: true, filled: await fillClaimed(broker, session, String(claimed.domain ?? ""), String(claimed.card ?? "")) };
+    outcome = { ok: true, filled: await fillClaimed(broker, session, String(claimed.domain ?? ""), String(claimed.card ?? ""), claimed.sealedCard) };
   } catch (e) {
     outcome = { ok: false, error: e instanceof CardError ? e : notTyped((e as Error).message) };
   }
@@ -165,29 +169,41 @@ export async function purchaseFill(broker: Broker, thread: string, call: Record<
   return { message: session.scrub().text(message) };
 }
 
-/** Reads the claimed purchase's card and types it in. Its result: what it filled, in words. */
-async function fillClaimed(broker: Broker, session: Session, domain: string, reference: string): Promise<string> {
+/** Reads the claimed purchase's card and types it in: a vault card as the claim carries it sealed to this node, a
+ * 1Password one (for one release) read with the session's token. Its result: what it filled, in words. */
+async function fillClaimed(broker: Broker, session: Session, domain: string, reference: string, sealedCard: unknown): Promise<string> {
   const page = (await pageUrl(session)) ?? "";
   const host = hostOf(page) ?? "";
   if (!onDomain(host, domain)) throw notTyped(`the page is on ${host || "no website"}, not the approved shop's ${domain}`);
   let card: Card;
+  // How the card's details are masked: `***vault:card/number***`, or by the 1Password reference.
+  const masked = reference.startsWith("vault:") ? "vault:card/" : `${reference} `;
   try {
-    const vault = broker.vault(session);
-    if (!vault.vault.card) throw new Error(`${reference} can't be read as a card here`);
-    card = await vault.vault.card(reference).catch((e: Error) => {
-      throw notTyped(`${reference} was not read: ${e.message.replace(/\.+$/, "")}`);
-    });
+    if (sealedCard !== undefined && sealedCard !== null) card = openCard(broker, sealedCard);
+    else if (reference.startsWith("vault:")) throw notTyped("the hub sent no card for this vault card");
+    else {
+      const vault = broker.vault(session);
+      if (!vault.vault.card) throw new Error(`${reference} can't be read as a card here`);
+      card = await vault.vault.card(reference).catch((e: Error) => {
+        throw notTyped(`${reference} was not read: ${e.message.replace(/\.+$/, "")}`);
+      });
+    }
   } catch (e) {
     throw e instanceof CardError ? e : notTyped((e as Error).message.replace(/\.+$/, ""));
   }
+  return typeCard(broker, session, domain, card, masked);
+}
+
+/** Types a card in, sealed first. */
+async function typeCard(broker: Broker, session: Session, domain: string, card: Card, masked: string): Promise<string> {
   // Sealed before any of it is near the page: from here every answer to the driver, and the agent's transcript, is
   // scrubbed of each form of it, and its reads are refused.
   for (const [name, value] of secretForms(card)) {
-    const named = `${reference} ${name}`;
+    const named = `${masked}${name}`;
     session.addSecret(named, value);
     broker.credentials.filled(session.threadId, named, value);
   }
-  seal(broker, session, `${reference} number`, card.number);
+  seal(broker, session, `${masked}number`, card.number);
   const allowed = (url: string) => {
     const h = hostOf(url);
     return h !== undefined && (onDomain(h, domain) || paymentFrame(h, broker.extraPaymentFrames));

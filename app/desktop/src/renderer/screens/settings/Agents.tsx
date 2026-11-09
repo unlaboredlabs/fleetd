@@ -7,7 +7,7 @@ import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData } from "../../src/data/react";
-import { Button, Separator, Text, textClass } from "../../ui";
+import { Button, Text } from "../../ui";
 import {
   appliedLine,
   changeLine,
@@ -28,12 +28,12 @@ import { errorText, useHubCall, useLive } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { parseScope, projectRefOf } from "./editor";
 import { AllowedProfiles } from "./Profiles";
-import { NoProject, PageHead, Setting } from "./parts";
+import { GroupNote, NoProject, PageHead, SettingsRow, SettingsSection } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
-import { revealNext, useReveal } from "./search";
+import { revealNext } from "./search";
 import s from "./settings.module.css";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
@@ -217,23 +217,21 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   const serial = serialNote(value);
 
   return (
-    <div className={s.agentsPanel}>
-      <div className={s.agentsHead}>
-        <span id={`${id}-label`} className={textClass({ strong: true })}>
-          {props.title ?? "Max agents"}
-        </span>
-        <Text tabular strong>{`${value}`}</Text>
-      </div>
-      <div className={s.agentsSource}>
-        <Text size="xs" tone="quiet">
-          {sourceLine(props.slots, a)}
-        </Text>
-        {a.own ? (
-          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(a.cap)}>
-            Use the default
-          </Button>
-        ) : null}
-      </div>
+    <SettingsRow
+      title={props.title ?? "Max agents"}
+      titleId={`${id}-label`}
+      line={sourceLine(props.slots, a)}
+      control={
+        <>
+          {a.own ? (
+            <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(a.cap)}>
+              Use the default
+            </Button>
+          ) : null}
+          <Text tabular>{`${value}`}</Text>
+        </>
+      }
+    >
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
       <MachineHolds note={machineHolds(a, value, props.projectRef.machineId)} machineId={props.projectRef.machineId} />
       <ResultLine
@@ -257,7 +255,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           {serial}
         </Text>
       ) : null}
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -293,9 +291,9 @@ function MachineHolds(props: { note: string | null; machineId: string }) {
 export function MachineCap({ machineId }: { machineId: string }) {
   const slots = useSlots();
   const live = useLive();
-  if (!live || !slots) return <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>;
+  if (!live || !slots) return <GroupNote>{live ? "Loading…" : "Connect to a hub to see and change this."}</GroupNote>;
   const m = machineAgents(slots).find((x) => x.machineId === machineId);
-  if (m === undefined) return <Text tone="quiet">It hasn&apos;t reported yet.</Text>;
+  if (m === undefined) return <GroupNote>It hasn&apos;t reported yet.</GroupNote>;
   return <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />;
 }
 
@@ -318,23 +316,21 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
   );
   const id = `agents-machine-${m.machineId}`;
   return (
-    <div className={s.agentsPanel}>
-      <div className={s.agentsHead}>
-        <span id={`${id}-label`} className={textClass({ strong: true })}>
-          {`Agents on ${m.machineId} at once`}
-        </span>
-        <Text tabular strong>{`${state.value}`}</Text>
-      </div>
-      <div className={s.agentsSource}>
-        <Text size="xs" tone="quiet">
-          {m.source}
-        </Text>
-        {m.set ? (
-          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(m.auto)}>
-            Use auto
-          </Button>
-        ) : null}
-      </div>
+    <SettingsRow
+      title={`Agents on ${m.machineId} at once`}
+      titleId={`${id}-label`}
+      line={m.source}
+      control={
+        <>
+          {m.set ? (
+            <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(m.auto)}>
+              Use auto
+            </Button>
+          ) : null}
+          <Text tabular>{`${state.value}`}</Text>
+        </>
+      }
+    >
       <CapSlider id={id} max={top} disabled={!live || top <= 1} state={state} />
       <ResultLine
         id={id}
@@ -342,7 +338,7 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
         idle={`${m.running} ${m.running === 1 ? "agent" : "agents"} running now.`}
         done={(d) => appliedLine(d.follow ? `${m.machineId}, auto` : m.machineId, d.from, d.to)}
       />
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -355,7 +351,6 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
   const scope = route.for ? parseScope(route.for) : null;
   const ref = scope ? projectRefOf(scope) : undefined;
   useFocusProjectSlider(live && slots !== undefined && ref !== undefined);
-  const perProject = useReveal<HTMLElement>("agents.project");
   useEffect(() => {
     replaceRoute({ tab: "agents", for: route.for });
   }, [route.for]);
@@ -364,24 +359,26 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
       <div className={s.column}>
         <PageHead title="Agents" />
         {!live ? (
-          <Text tone="quiet">Connect to a hub to see and change this.</Text>
+          <SettingsSection>
+            <GroupNote>Connect to a hub to see and change this.</GroupNote>
+          </SettingsSection>
         ) : ref === undefined || scope === null ? (
           <NoProject />
         ) : (
           <>
-            <section ref={perProject} className={s.agentsList} aria-label="Max agents" tabIndex={-1}>
-              {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <Text tone="quiet">Loading…</Text>}
-            </section>
-            <Separator />
-            <Setting
-              reveal="agents.profiles"
-              label="Allowed profiles"
-              help="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Settings › Hub › Every project › Profiles."
-            >
-              <AllowedProfiles projectRef={ref} />
-            </Setting>
-            <Separator />
-            <ProjectSkills scope={scope} />
+            <SettingsSection reveal="agents.project">
+              {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <GroupNote>Loading…</GroupNote>}
+              <SettingsRow
+                reveal="agents.profiles"
+                title="Allowed profiles"
+                line="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Settings › Hub › Every project › Profiles."
+              >
+                <AllowedProfiles projectRef={ref} />
+              </SettingsRow>
+            </SettingsSection>
+            <SettingsSection>
+              <ProjectSkills scope={scope} />
+            </SettingsSection>
           </>
         )}
       </div>

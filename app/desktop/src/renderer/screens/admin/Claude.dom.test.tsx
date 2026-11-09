@@ -187,7 +187,7 @@ const type = async (label: string, value: string) => {
 };
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 const section = (label: string) => {
-  const el = host.querySelector<HTMLElement>(`section[aria-label='${label}']`);
+  const el = host.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
   if (el === null) throw new Error(`no section ${label}`);
   return el;
 };
@@ -227,7 +227,7 @@ it("shows where the key is, the members switch and the owner's subscription; eac
   expect(key.textContent).not.toContain("The hub owner's subscription");
   // Everyone's account is on People now.
   expect(host.querySelector("[role='list'][aria-label='Claude accounts']")).toBeNull();
-  const toggle = section("Members").querySelector<HTMLElement>("[role='switch']");
+  const toggle = section("Members may use the hub's API key").querySelector<HTMLElement>("[role='switch']");
   if (toggle === null) throw new Error("no switch");
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   await click(toggle);

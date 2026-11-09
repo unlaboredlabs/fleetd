@@ -134,6 +134,15 @@ export function Switch({
   );
 }
 
+/** A switch with no words of its own: its row's title names it (pass `aria-label`, or label it with `htmlFor`). */
+export function Toggle({ className, ...rest }: Omit<ComponentProps<typeof SwitchPrimitive.Root>, "children">) {
+  return (
+    <SwitchPrimitive.Root className={cx(s.switch, s.bare, className)} {...rest}>
+      <SwitchPrimitive.Thumb className={s.thumb} />
+    </SwitchPrimitive.Root>
+  );
+}
+
 export function RadioGroup({ className, ...rest }: ComponentProps<typeof RadioPrimitive.Root>) {
   return <RadioPrimitive.Root className={cx(s.radioGroup, className)} {...rest} />;
 }

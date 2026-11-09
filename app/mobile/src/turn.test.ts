@@ -67,5 +67,14 @@ describe("what the store keeps for it", () => {
     expect(s.turnSince[KEY]).toBe(Date.parse("2026-10-28T10:00:00Z"));
     s = event(s, waiting(3, "2026-10-28T10:01:00Z", false));
     expect(s.turnSince[KEY]).toBeUndefined();
+    // How long it took, for its reply's stamp: kept while the next turn runs.
+    expect(s.turnWorked[KEY]).toEqual({ since: Date.parse("2026-10-28T10:00:00Z"), until: Date.parse("2026-10-28T10:01:00Z") });
+    s = event(s, waiting(4, "2026-10-28T10:02:00Z", true));
+    expect(s.turnWorked[KEY]?.until).toBe(Date.parse("2026-10-28T10:01:00Z"));
+  });
+
+  it("knows no length for a turn whose start it didn't see", () => {
+    const s = event(initial(live), waiting(1, "2026-10-28T10:01:00Z", false));
+    expect(s.turnWorked[KEY]).toBeUndefined();
   });
 });

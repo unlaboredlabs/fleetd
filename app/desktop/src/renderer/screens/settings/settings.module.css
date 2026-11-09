@@ -12,7 +12,7 @@
   min-width: 0;
 }
 
-/* ---- General and Instructions: one readable column ---- */
+/* ---- Every page: one readable column of sections (layout A, groups.module.css) ---- */
 .scroll {
   flex: 1;
   min-height: 0;
@@ -22,20 +22,9 @@
 .column {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  max-width: calc(var(--measure) + 160px);
-  padding: var(--space-6) var(--space-6) var(--space-8);
-}
-.setting {
-  display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
-  gap: var(--space-2) var(--space-6);
-  align-items: start;
-}
-@media (max-width: 860px) {
-  .setting {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  gap: 28px;
+  max-width: 760px;
+  padding: var(--space-4) var(--space-6) 56px;
 }
 .settingLabel,
 .stack {
@@ -54,9 +43,28 @@
   gap: var(--space-2);
   min-width: 0;
 }
+/* A row's line over something under it (a project's folder under its name's line). */
+.lineBlock {
+  display: block;
+}
+.nameField {
+  width: 220px;
+}
+/* The field that takes the room a row's fields leave. */
+.grow {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+/* Add a repo, under the project's repos. */
+.addRepo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
 /* A field for a few digits. */
 .narrow {
-  max-width: 8rem;
+  width: 6rem;
 }
 .radios {
   flex-direction: row;
@@ -69,7 +77,8 @@
   gap: var(--space-2);
   min-width: 0;
 }
-/* A page's description, and its page-wide control beside it. */
+/* A page's description, and its page-wide control beside it (People's plus): in line with the groups' words, close
+   over the first. */
 .pageIntro {
   display: flex;
   flex-wrap: wrap;
@@ -77,31 +86,8 @@
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
   min-width: 0;
-}
-/* One part of a page that gathers several: a heading, then its options as the page spaces them. */
-.part {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  min-width: 0;
-  scroll-margin-top: var(--space-4);
-}
-.part:focus {
-  outline: none;
-}
-.partTitle {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-.partHead {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
+  margin-bottom: -12px;
+  padding: 0 var(--space-3) 0 var(--space-4);
 }
 .detail {
   display: flex;
@@ -114,22 +100,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-width: 0;
-}
-.notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-md);
-}
-.noticeText {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  flex: 1 1 320px;
   min-width: 0;
 }
 .panel {
@@ -261,26 +231,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.orphans {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.orphan {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-md);
-}
-.orphanHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
 .orphanText {
   margin: 0;
   max-height: 200px;
@@ -295,45 +245,10 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Max agents ---- */
-.agentsPanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.agentsRow {
-  max-width: 520px;
-}
 .alertLine {
   margin: 0;
 }
-.profiles {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding-left: var(--space-4);
-}
-.agentsHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-/* Where a project's max comes from, and the way back to the default when it is its own. */
-.agentsSource {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-/* The number never gives way to a long project name, which wraps beside it instead. */
-.agentsHead > :last-child {
-  flex: none;
-}
+/* ---- Max agents: its slider ---- */
 .slider {
   position: relative;
   display: flex;
@@ -382,70 +297,6 @@
   padding: 0 var(--space-6);
 }
 
-/* A list of rows that open what they name (Projects, a set's prompts): rows between hairlines, each lit on hover,
-   deeper while pressed, with the focus ring and a trailing chevron. A row reaches a step past the column on each side,
-   so its text stays in line with the heading above. */
-.openList {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.openItem {
-  border-top: 1px solid var(--hairline);
-}
-.openItem:last-child {
-  border-bottom: 1px solid var(--hairline);
-}
-.openRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: calc(100% + 2 * var(--space-2));
-  margin-inline: calc(-1 * var(--space-2));
-  padding: var(--space-3) var(--space-2);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: background-color var(--dur-quick);
-}
-.openRow:hover {
-  background: var(--hover);
-}
-.openRow:active {
-  background: var(--selected);
-}
-.openRow:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.openText {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.openChevron {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--faint);
-  transition: color var(--dur-quick);
-}
-.openRow:hover .openChevron,
-.openRow:focus-visible .openChevron {
-  color: var(--quiet);
-}
-.promptGroups {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
 .sidebarNote {
   padding: 0 var(--space-2);
 }
@@ -458,67 +309,12 @@
   gap: var(--space-1-5);
   min-width: 0;
 }
-.agentsList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
 /* A secret's value, typed or pasted over any number of lines, shows as dots (Chromium's text-security). */
 .secretValue {
   -webkit-text-security: disc;
 }
-/* Hub › Machines' roles: a machine a row, rows apart by space and a hairline (DESIGN.md), no cards. */
-.machineList {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.machineRow {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: 640px;
-  padding: var(--space-4) 0;
-}
-.machineRow + .machineRow {
-  border-top: 1px solid var(--hairline);
-}
-.machineControls {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1-5);
-  min-width: 0;
-}
 .machineCap {
   width: 112px;
-}
-/* Hub › Machines › Screens: a switch per kind, two a row, each with its line from the machine's node under it. */
-.screenKinds {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3) var(--space-4);
-}
-/* Settings → Projects → Repos: a repo a row, rows apart by a hairline as machines are, its facts a label and a value. */
-.repoList {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.repoRow {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-3) 0;
-}
-.repoRow:first-child {
-  padding-top: 0;
-}
-.repoRow + .repoRow {
-  border-top: 1px solid var(--hairline);
 }
 .repoFacts {
   display: grid;
@@ -532,33 +328,6 @@
   min-width: 0;
 }
 
-/* ---- A project's integrations: one row each, hairlines between, no boxes ---- */
-.integrations {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.integration {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-  min-width: 0;
-  padding: var(--space-3) 0;
-}
-.integration + .integration {
-  border-top: 1px solid var(--hairline);
-}
-.integration:first-child {
-  padding-top: 0;
-}
-.integrationHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-}
 /* What a test found: one line per policy, the label in a column of its own. */
 .policy {
   display: grid;
@@ -584,12 +353,6 @@
 }
 /* Your devices › Pair a phone: the QR, always dark on white so a camera reads it in either theme, and beside it the
    address and code for typing. */
-.pairing {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: 720px;
-}
 .pairPhone {
   display: flex;
   flex-wrap: wrap;
@@ -616,26 +379,6 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- A project's purchases ---- */
-.purchases {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-width: 720px;
-}
-.purchase {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0 var(--space-3);
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--hairline);
-}
-.purchase:first-child {
-  border-top: none;
-}
 .purchaseAmount {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -645,33 +388,4 @@
 .modes {
   flex-direction: column;
   gap: var(--space-3);
-}
-.approvedLog {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.approvedRow {
-  display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-  gap: var(--space-3);
-  align-items: baseline;
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--hairline);
-}
-.approvedRow:first-child {
-  border-top: none;
-  padding-top: 0;
-}
-.approvedAt {
-  white-space: nowrap;
-}
-.approvedText {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }

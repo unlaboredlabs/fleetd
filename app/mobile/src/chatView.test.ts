@@ -140,7 +140,7 @@ describe("threadRows", () => {
       item("d", "lead", "2026-10-28T10:20:00Z"),
       item("e", "lead", "2026-10-28T11:00:00Z"),
       item("f", "lead", "2026-10-29T08:00:00Z"),
-    ], false, undefined, { timeZone: "UTC" });
+    ], undefined, undefined, { timeZone: "UTC" });
     expect(rows.map((r) => (r.t === "item" ? `${r.id}:${r.side}:${r.first ? "F" : "-"}` : r.t))).toEqual([
       "day",
       "a:me:F",
@@ -162,12 +162,17 @@ describe("threadRows", () => {
     expect(rows.flatMap((r) => (r.t === "item" ? [`${r.side}:${String(r.first)}`] : []))).toEqual(["them:true", "them:true", "center:true"]);
   });
 
-  it("ends with the turn line while the lead works, under its reply as it streams too, as the desktop's", () => {
-    const sent = [item("a", "human", "2026-10-28T10:00:00Z")];
-    expect(threadRows(sent, true).at(-1)).toEqual({ t: "turn", id: "turn" });
-    expect(threadRows(sent, false).at(-1)?.t).toBe("item");
-    const streaming = threadRows([...sent, item("b", "lead", "2026-10-28T10:00:01Z", { state: "streaming" })], true);
-    expect(streaming.slice(-2).map((r) => r.t)).toEqual(["item", "turn"]);
+  it("stamps how long the lead worked on the reply its turn ended with, and keeps it there, as the desktop's", () => {
+    const worked = { since: Date.parse("2026-10-28T10:00:00Z"), until: Date.parse("2026-10-28T10:00:04Z") };
+    const stamps = (rows: ThreadRow[]) => rows.flatMap((r) => (r.t === "item" && r.worked !== undefined ? [`${r.id}: ${r.worked}`] : []));
+    const turn = [item("a", "human", "2026-10-28T10:00:00Z"), item("b", "lead", "2026-10-28T10:00:03Z")];
+    expect(stamps(threadRows(turn, worked))).toEqual(["b: Worked for 4s"]);
+    // Asked again, and the next turn's reply streaming: the stamp stays with the reply it is about.
+    const next = [...turn, item("c", "human", "2026-10-28T10:01:00Z"), item("d", "lead", "2026-10-28T10:01:05Z", { state: "streaming" })];
+    expect(stamps(threadRows(next, worked))).toEqual(["b: Worked for 4s"]);
+    // What the lead is doing is never a row; no turn seen to its end, no stamp.
+    expect(threadRows(next).map((r) => r.t)).toEqual(["day", "item", "item", "item", "item"]);
+    expect(stamps(threadRows(next))).toEqual([]);
   });
 });
 
@@ -269,14 +274,14 @@ describe("the unread bar", () => {
   });
 
   it("goes before the first message from the other side after what was read, and starts a burst there", () => {
-    const rows = threadRows([item("a", 1, "lead"), item("b", 2, "human"), item("c", 3, "lead"), item("d", 4, "lead")], false, 1);
+    const rows = threadRows([item("a", 1, "lead"), item("b", 2, "human"), item("c", 3, "lead"), item("d", 4, "lead")], undefined, 1);
     expect(rows.map((r) => (r.t === "item" ? r.id : r.t))).toEqual(["day", "a", "b", "unread", "c", "d"]);
     const c = rows.find((r) => r.t === "item" && r.id === "c");
     expect(c?.t === "item" && c.first).toBe(true);
   });
 
   it("isn't there when everything was read, or nothing was known", () => {
-    expect(threadRows([item("a", 1, "lead")], false, 1).some((r) => r.t === "unread")).toBe(false);
+    expect(threadRows([item("a", 1, "lead")], undefined, 1).some((r) => r.t === "unread")).toBe(false);
     expect(threadRows([item("a", 1, "lead")]).some((r) => r.t === "unread")).toBe(false);
   });
 });
@@ -293,15 +298,14 @@ describe("sameRow", () => {
     createdAt: `2026-10-28T10:0${String(seq)}:00Z`,
   });
   const page = (messages: ChatMessage[]) => ({ messages, moreAfter: false, moreBefore: false, state: { projectRef: ref, lastSeq: messages.length, leadWorking: true, needsYou: false } });
-  const rowsOf = (chat: Chat) => threadRows(chatItems(chat, []), true);
+  const rowsOf = (chat: Chat) => threadRows(chatItems(chat, []));
 
   it("redraws only the streaming bubble when a word comes", () => {
     const chat = applyHistory(emptyChat, page([msg(1, "human", "Hi"), msg(2, "lead", "Hello."), msg(3, "human", "Status?"), msg(4, "lead", "Wor", "streaming")]), "latest");
     const before = rowsOf(chat);
     const after = rowsOf(applyDelta(chat, { projectRef: ref, messageId: "m4", offset: 3, append: "king on it", seq: 4 }, Date.now()));
     expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
-    // The turn line under it, last, draws nothing again either.
-    expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false, true]);
+    expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false]);
   });
 
   it("doesn't redraw the bubble above a new one in its burst", () => {
@@ -408,13 +412,12 @@ describe("seenSeq", () => {
 describe("streamingAt", () => {
   const row = (id: string, state: ChatMessage["state"]): ThreadRow => ({ t: "item", id, item: item(id, "lead", "2026-10-28T10:00:00Z", { message: { ...message(id), state } }), side: "them", first: true });
 
-  it("finds the reply streaming in at the newest end, under the turn line", () => {
-    expect(streamingAt([{ t: "turn", id: "turn" }, row("a", "streaming"), row("b", "final")])).toBe(1);
-    expect(streamingAt([row("a", "streaming")])).toBe(0);
+  it("finds the reply streaming in at the newest end", () => {
+    expect(streamingAt([row("a", "streaming"), row("b", "final")])).toBe(0);
   });
 
   it("is none once it's final, or when something came after it", () => {
-    expect(streamingAt([{ t: "turn", id: "turn" }, row("a", "final")])).toBeUndefined();
+    expect(streamingAt([row("a", "final")])).toBeUndefined();
     expect(streamingAt([row("b", "final"), row("a", "streaming")])).toBeUndefined();
     expect(streamingAt([])).toBeUndefined();
   });
@@ -423,7 +426,7 @@ describe("streamingAt", () => {
 describe("threadRows' day lines, kept per message", () => {
   it("still splits days by the clock's zone, asked again in another", () => {
     const items = [item("a", "lead", "2026-10-28T22:30:00Z"), item("b", "lead", "2026-10-29T01:30:00Z")];
-    const days = (timeZone: string) => threadRows(items, false, undefined, { timeZone }).filter((r) => r.t === "day").length;
+    const days = (timeZone: string) => threadRows(items, undefined, undefined, { timeZone }).filter((r) => r.t === "day").length;
     expect(days("UTC")).toBe(2);
     expect(days("America/New_York")).toBe(1);
     expect(days("UTC")).toBe(2);

@@ -83,8 +83,8 @@ export const fixtures = [
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
-  // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
-  // once it's over, how long it worked (fixtures/lead).
+  // The lead mid-turn: the line in the composer's band counts up and says what it does now and what the turn did; and
+  // once it's over, its reply's stamp says how long it worked (fixtures/lead).
   "lead-planning",
   "lead-long",
   "lead-counting",
@@ -499,8 +499,9 @@ export const screens: readonly Screen[] = [
       await expect(box).toHaveValue("1 yes, 2 literal");
     },
   },
-  // The lead at work: under its reply, how long it has worked, what it is doing now and what its turn did so far;
-  // lead-long wraps, lead-counting only counts; lead-worked: the turn is over, and the line says how long it took.
+  // The lead at work: on one line in the composer's band, what it is doing now, what its turn did so far and how long
+  // it has worked; lead-long ellipsizes, lead-counting only counts; lead-worked: the turn is over, and its reply wears
+  // how long it took.
   { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
   // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to
   // what it was.
@@ -990,7 +991,7 @@ export const screens: readonly Screen[] = [
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
     fixtures: ["only-me-links"],
     open: async (page) => {
-      await page.getByRole("region", { name: "Archive" }).scrollIntoViewIfNeeded();
+      await page.getByRole("region", { name: "Archive", exact: true }).scrollIntoViewIfNeeded();
       await page.getByRole("region", { name: "Delete project" }).waitFor();
     },
   },
@@ -2319,7 +2320,7 @@ export const screens: readonly Screen[] = [
     variant: "created",
     open: async (page) => {
       await page.getByRole("button", { name: "Invite someone" }).click();
-      await page.getByLabel("Name").fill("Eve Park");
+      await page.getByRole("textbox", { name: "Name" }).fill("Eve Park");
       await page.getByRole("button", { name: "Create invite link" }).click();
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
@@ -2699,7 +2700,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Edit “No npm here: use pnpm.”" }).click();
       await page.getByRole("textbox", { name: "Edit the entry in MEMORY.md" }).fill("No npm here: use pnpm, and pin its version.");
-      await page.getByRole("region", { name: "deploys (deploys.md)" }).getByRole("button", { name: "Edit as text" }).click();
+      await page.getByRole("region", { name: "deploys", exact: true }).getByRole("button", { name: "Edit as text" }).click();
       await expect(page.getByRole("textbox", { name: "All of deploys.md" })).toBeVisible();
     },
   },

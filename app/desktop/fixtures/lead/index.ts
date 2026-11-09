@@ -1,8 +1,8 @@
-// The lead at work in storefront's chat: its reply is in, its turn still runs, and the quiet line under the reply
-// says how long it has worked, what it is doing now (its live lane's open call) and what the turn did so far (the
-// hub's events since the lead started working). lead-planning is the usual case; lead-long has a long file name and
-// many events, to wrap; lead-counting has worked over an hour with nothing more known. lead-worked: the turn is over,
-// and the line under the reply says how long it took. lead-memory: the night's memory refresh line, after the lead's
+// The lead at work in storefront's chat: its reply is in, its turn still runs, and the line in the composer's band
+// says what it is doing now (its live lane's open call), what the turn did so far (the hub's events since the lead
+// started working) and how long it has worked. lead-planning is the usual case; lead-long has a long file name and
+// many events, to ellipsize; lead-counting has worked over an hour with nothing more known. lead-worked: the turn is
+// over, and the reply wears how long it took. lead-memory: the night's memory refresh line, after the lead's
 // reply, with the changes it made to MEMORY.md and a topic file. lead-worktrees: the night's cleanup line for the
 // worktrees it kept, before the memory refresh's.
 import { Fixture } from "../kit/fixture.ts";
@@ -215,7 +215,7 @@ export default defineGroup({
       { orders: 0, agents: 0, startS: 4_330, replyS: 4_300 },
     ),
     leadAtWork(
-      Fixture.from(base("typical"), "lead-worked", "storefront's lead finished its turn: under its reply, how long it worked."),
+      Fixture.from(base("typical"), "lead-worked", "storefront's lead finished its turn: beside its reply, how long it worked."),
       { orders: 1, agents: 3, startS: 460, replyS: 250, endS: 240 },
     ),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),

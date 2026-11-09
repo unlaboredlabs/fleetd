@@ -1,13 +1,14 @@
 // Update automatically, its switch and its status lines, on Hub › Updates: the hub's
 // owners and admins turn it on or off; a member, whom the hub doesn't tell, is told whom to ask.
 import { useState } from "react";
-import { Switch, Text, toast } from "../../ui";
+import { Text, toast } from "../../ui";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { useHubRole } from "../admin/role";
 import { useNow } from "../live/clock";
 import { adminNames, adminWho } from "../sessions/pickScreen";
 import { autoStatus, autoWords } from "./auto";
 import { setAutoUpdates, useAutoUpdates, useReady } from "./flow";
+import { SettingsRow, SettingsSection, SwitchRow } from "../settings/parts";
 import { Line } from "./UpdatesSheet";
 import s from "./updates.module.css";
 
@@ -39,33 +40,25 @@ export function AutoUpdates() {
     if (refused !== null) toast({ title: "Automatic updates didn't change", description: refused, tone: "danger" });
   };
   return (
-    <div className={s.auto} data-auto-updates={auto.settings.auto ? "on" : "off"}>
-      <Switch
-        label="Update automatically"
-        description={autoWords(auto.settings.drainMinutes)}
-        checked={auto.settings.auto}
-        disabled={saving}
-        onCheckedChange={(on) => void turn(on)}
-      />
-      <ul className={s.status} aria-label="Automatic updates">
-        {autoStatus(auto, ready, now).map((line) => (
-          <li key={line.key} data-auto-status={line.key}>
-            {line.label === null ? null : (
-              <Text size="xs" tone={line.labelTone}>
-                {line.label}
+    <SettingsSection data={{ "data-auto-updates": auto.settings.auto ? "on" : "off" }}>
+      <SwitchRow title="Update automatically" line={autoWords(auto.settings.drainMinutes)} checked={auto.settings.auto} disabled={saving} onCheckedChange={(on) => void turn(on)} />
+      {autoStatus(auto, ready, now).map((line) => {
+        const says = (
+          <span className={s.tabular}>
+            {line.state === null ? null : (
+              <Text size="sm" tone={line.state.tone}>
+                {`${line.state.text} `}
               </Text>
             )}
-            <Text size="xs" tone="quiet" tabular>
-              {line.state === null ? null : (
-                <Text size="xs" tone={line.state.tone} strong>
-                  {`${line.state.text} `}
-                </Text>
-              )}
-              <Line text={line.text} />
-            </Text>
-          </li>
-        ))}
-      </ul>
-    </div>
+            <Line text={line.text} />
+          </span>
+        );
+        return line.label === null ? (
+          <SettingsRow key={line.key} title={says} label={line.text} data={{ "data-auto-status": line.key }} />
+        ) : (
+          <SettingsRow key={line.key} title={<Text tone={line.labelTone}>{line.label}</Text>} label={line.label} line={says} data={{ "data-auto-status": line.key }} />
+        );
+      })}
+    </SettingsSection>
   );
 }

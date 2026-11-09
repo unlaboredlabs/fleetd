@@ -1,0 +1,238 @@
+/*
+ * Settings' layout A, soft groups (DESIGN.md, Settings; parts.tsx): a quiet label over each section, the section one soft
+ * rounded group, and rows with no lines between them. Every row sizes to its content.
+ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  scroll-margin-top: var(--space-4);
+}
+.section:focus {
+  outline: none;
+}
+
+/* The quiet label, a line under it, and the section's plus at its right end; in line with the rows' words. */
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+  padding: 0 var(--space-4) var(--space-2);
+}
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.label {
+  margin: 0;
+}
+.head .add {
+  margin: 0 calc(-1 * var(--space-1)) -2px 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-group);
+  background: var(--group);
+}
+/* What a section holds that isn't rows: no fill, its words in line with the label. */
+.bare {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+
+/* A row: its title and quiet line on the left, its one control at the right end; what it holds under them. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-6);
+  min-width: 0;
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  scroll-margin-top: var(--space-4);
+}
+.row:focus {
+  outline: none;
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rowText label {
+  cursor: default;
+}
+.control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.below {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-top: var(--space-3);
+}
+.below:empty {
+  display: none;
+}
+/* A narrow window: the control goes under its words rather than squeezing them. */
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+  .row > .control {
+    justify-content: flex-start;
+  }
+}
+
+/* A list's rows in their group: a glyph, the name and its lines, its controls at the right end. */
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-1) 0;
+}
+.listRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+  min-width: 0;
+  padding: 10px var(--space-4);
+}
+.listRow > .control {
+  flex-wrap: nowrap;
+}
+.withIcon {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+/* On the name's line, however many lines follow it. */
+.icon {
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--quiet);
+}
+.icon > svg {
+  width: 18px;
+  height: 18px;
+}
+.name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+/* A list inside a row: its rows in line with the row's words. */
+.below .list {
+  padding: 0;
+}
+.below .listRow {
+  padding-inline: 0;
+}
+
+/* A row that opens what it names: the name's link covers the row, which lights on hover, deepens while pressed and
+   takes the focus ring. Its controls sit above the link. */
+.opens {
+  margin-inline: var(--space-1);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-lg);
+  transition: background-color var(--dur-quick);
+}
+.opens:has(.opener:hover) {
+  background: var(--hover);
+}
+.opens:has(.opener:active) {
+  background: var(--selected);
+}
+.opens:has(.opener:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.opens > .control {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.opens > .control > * {
+  pointer-events: auto;
+}
+.opener {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+}
+.opener::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+.opener:focus-visible {
+  outline: none;
+}
+.chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+  transition: color var(--dur-quick);
+}
+.opens:has(.opener:hover) .chevron,
+.opens:has(.opener:focus-visible) .chevron {
+  color: var(--quiet);
+}
+
+/* Add: a plus, no frame. */
+.add {
+  color: var(--text);
+}
+.add > svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Danger: one red pill, white words. */
+.danger {
+  padding-inline: 14px;
+  border-radius: 999px;
+  background: var(--danger-fill);
+  color: #fff;
+}
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-fill) 88%, black);
+}
+
+.note {
+  padding: var(--space-3) var(--space-4);
+}
+.note:empty {
+  display: none;
+}
