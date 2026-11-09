@@ -14,7 +14,6 @@ import {
   ftruncateSync,
   mkdirSync,
   openSync,
-  readdirSync,
   readSync,
   realpathSync,
   rmSync,
@@ -22,6 +21,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
+import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, basename, isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { ToolError } from "../../shared/errors.ts";
@@ -382,9 +382,7 @@ export class Host {
 
   /** What agents do on the Mac now, for the menu bar: the simulators they hold and the jobs they run, oldest first. */
   activity(): Activity {
-    const simulators: SimActivity[] = [...(this.sims?.held ?? [])]
-      .map(([agent, held]) => ({ agent, projectId: held.project, device: held.device, sinceMs: held.sinceMs }))
-      .sort((a, b) => a.sinceMs - b.sinceMs || (a.agent < b.agent ? -1 : a.agent > b.agent ? 1 : 0));
+    const simulators: SimActivity[] = this.sims?.activity() ?? [];
     const jobs: JobActivity[] = [...this.jobs]
       .flatMap(([agent, mine]) =>
         [...mine.jobs]
@@ -402,11 +400,12 @@ export class Host {
 }
 
 /** Removes the agents' folders under `root` nothing touched for `days` (by their `.used`), with their snapshots in the
- * mirrors; folders whose names start with a dot (the mirrors, the shared cache) stay. */
-export function sweep(root: string, days: number, now = Date.now()): string[] {
+ * mirrors; folders whose names start with a dot (the mirrors, the shared cache) stay. Off the event loop throughout
+ * (Rust runs it in `spawn_blocking`): a big folder's removal or a mirror's `git gc` never stalls the node's link. */
+export async function sweep(root: string, days: number, now = Date.now()): Promise<string[]> {
   let names: string[];
   try {
-    names = readdirSync(root);
+    names = await readdir(root);
   } catch {
     return [];
   }
@@ -416,28 +415,28 @@ export function sweep(root: string, days: number, now = Date.now()): string[] {
     if (name.startsWith(".")) continue;
     let used: number;
     try {
-      used = statSync(join(root, name, ".used")).mtimeMs;
+      used = (await stat(join(root, name, ".used"))).mtimeMs;
     } catch {
       continue;
     }
     if (used < old) {
-      rmSync(join(root, name), { recursive: true, force: true });
+      await rm(join(root, name), { recursive: true, force: true });
       gone.push(name);
     }
   }
   if (gone.length === 0) return gone;
   let mirrors: string[];
   try {
-    mirrors = readdirSync(join(root, ".mirrors"));
+    mirrors = await readdir(join(root, ".mirrors"));
   } catch {
     return gone;
   }
   for (const mirror of mirrors) {
     const dir = join(root, ".mirrors", mirror);
-    const run = (args: string[]) => Bun.spawnSync(["git", "-C", dir, ...args], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-    for (const name of gone) run(["update-ref", "-d", `refs/fleetd/${name}`]);
-    run(["worktree", "prune"]);
-    run(["gc", "--auto", "--quiet"]);
+    const run = (args: string[]) => Bun.spawn(["git", "-C", dir, ...args], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited;
+    for (const name of gone) await run(["update-ref", "-d", `refs/fleetd/${name}`]);
+    await run(["worktree", "prune"]);
+    await run(["gc", "--auto", "--quiet"]);
   }
   return gone;
 }

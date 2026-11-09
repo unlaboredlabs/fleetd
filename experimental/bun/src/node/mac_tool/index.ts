@@ -8,11 +8,11 @@ import { type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
 import { MacSims, SIM_IDLE } from "../device/ios/sims.ts";
-import { selfArgv } from "../util.ts";
+import { pinSelf } from "../self_exe.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient } from "./client.ts";
 import { FOLDER_DAYS, Host, sweep } from "./host.ts";
-import { installShim, launchEnv } from "./shim.ts";
+import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
@@ -26,7 +26,9 @@ function worktreeOf(cwd: string): string {
 
 export const host = (node: Node, given?: Host) =>
   node.area("mac_tool.host", (n) => given ?? new Host(`${n.home}/mac`, loadOrCreateBoxKey(n.home)));
-export const client = (node: Node) => node.area("mac_tool.client", (n) => new MacClient(n));
+export const client = (node: Node) => node.area("mac_tool.client", (n) => new MacClient(n, () => self(n)));
+/** The command agents' `mac` and agent-device forwarder run: this node's own binary, pinned once per node. */
+export const self = (node: Node) => node.area("mac_tool.self", (n) => pinSelf(n.home));
 
 export function start(node: Node): void {
   if (isAgentsMac(node)) {
@@ -46,7 +48,9 @@ export function start(node: Node): void {
   }
   // Every agent session here gets `mac` first on its PATH, and the forwarding agent-device while it holds a simulator.
   try {
-    installShim(node.home, selfArgv());
+    installShim(node.home, self(node));
+    // Sessions holding a simulator kept their forwarder across the restart; the pin it ran was the node before's.
+    refreshForwarders(node.home, self(node));
   } catch (e) {
     console.warn(`${new Date().toISOString()} WARN the agents' \`mac\` command was not written {"error":${JSON.stringify(String(e))}}`);
   }
@@ -87,12 +91,14 @@ const housekeeping = new WeakMap<Host, Timer[]>();
 /** The Mac's own upkeep while the node runs (host.rs `Host::start`): old agents' folders swept now and every
  * SWEEP_EVERY, and what agents do on it written for the menu bar whenever it changes (activity.rs). */
 function startHousekeeping(node: Node, h: Host): void {
+  // One sweep at a time: a slow one (a big build's folder, a mirror's gc) is never started again under itself.
+  let sweeping = false;
   const clean = () => {
-    try {
-      sweep(h.root, FOLDER_DAYS);
-    } catch (e) {
-      console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`);
-    }
+    if (sweeping) return;
+    sweeping = true;
+    sweep(h.root, FOLDER_DAYS)
+      .catch((e) => console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`))
+      .finally(() => (sweeping = false));
   };
   let last: Activity | undefined;
   const write = () => (last = writeActivity(node.home, h.activity(), last));

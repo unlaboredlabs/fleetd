@@ -6,26 +6,33 @@
 // filesystem), and its sessions use that for as long as the node runs. The next start removes the pins of nodes that
 // are gone, but not one a running process was started from (a re-adopted session's host, a Rust node's pin among
 // them): those sessions keep starting their fleetd tools from it.
-import { copyFileSync, linkSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync } from "node:fs";
+//
+// The Bun build pins itself the same way, as `fleetd-bun-<pid>`: agents' `mac` and the forwarding agent-device run it
+// (mac_tool/shim.ts), so an update between its rename and the node's restart can't put a new binary on the old node's
+// socket. Run from source, the node has nothing of its own to pin, and they run Bun with its entry.
+import { constants, copyFileSync, existsSync, linkSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { mkdirPrivate } from "./config.ts";
 
 const DIR = "bin";
+/** The session host's pins. */
 const PREFIX = "fleetd-agent-";
+/** The Bun build's own. */
+const SELF_PREFIX = "fleetd-bun-";
 
-/** Links (on macOS, or across filesystems, copies) `exe` to `<home>/bin/fleetd-agent-<pid>`, and removes the pins of
+/** Links (on macOS, or across filesystems, copies) `exe` to `<home>/bin/<prefix><pid>`, and removes the pins of
  * processes that are gone. */
-export function pinFrom(exe: string, home: string, pid: number, platform: NodeJS.Platform = process.platform): string {
+export function pinFrom(exe: string, home: string, pid: number, platform: NodeJS.Platform = process.platform, prefix = PREFIX): string {
   const dir = join(home, DIR);
   mkdirPrivate(dir);
-  sweep(dir, pid);
+  sweep(dir, pid, prefix);
   // The file itself, not a symlink to it (an installed `fleetd` is often one), which the update would retarget.
   let source = exe;
   try {
     source = realpathSync(exe);
   } catch {}
-  const target = join(dir, `${PREFIX}${pid}`);
-  const tmp = join(dir, `.${PREFIX}${pid}.tmp`);
+  const target = join(dir, `${prefix}${pid}`);
+  const tmp = join(dir, `.${prefix}${pid}.tmp`);
   rmSync(tmp, { force: true });
   let linked = false;
   if (platform !== "darwin") {
@@ -34,7 +41,8 @@ export function pinFrom(exe: string, home: string, pid: number, platform: NodeJS
       linked = true;
     } catch {}
   }
-  if (!linked) copyFileSync(source, tmp);
+  // A clone where the filesystem makes one (APFS), as cheap as a link; else a copy.
+  if (!linked) copyFileSync(source, tmp, constants.COPYFILE_FICLONE);
   renameSync(tmp, target);
   return target;
 }
@@ -52,8 +60,23 @@ export function pin(home: string, exe: string | undefined): string | undefined {
   }
 }
 
+/** This node's own command line for agents' commands: its pinned binary when it is a compiled build, else Bun with
+ * its entry (run from source); the running binary itself when it can't be pinned. */
+export function pinSelf(home: string, main: string = Bun.main, exe: string = process.execPath): string[] {
+  if (!main.startsWith("/$bunfs/")) return [exe, main];
+  // Linux names a binary replaced under a running process `<path> (deleted)`; /proc still opens it.
+  const running = exe.replace(/ \(deleted\)$/, "");
+  const source = existsSync(running) || process.platform !== "linux" ? running : "/proc/self/exe";
+  try {
+    return [pinFrom(source, home, process.pid, process.platform, SELF_PREFIX)];
+  } catch (e) {
+    console.warn(`${new Date().toISOString()} WARN the node's binary was not pinned for agents' mac command {"error":${JSON.stringify(String(e))}}`);
+    return [running];
+  }
+}
+
 /** Removes the pins of processes that no longer run, unless a running process was started from one; never `pid`'s. */
-function sweep(dir: string, pid: number): void {
+function sweep(dir: string, pid: number, prefix: string): void {
   let names: string[];
   try {
     names = readdirSync(dir);
@@ -62,8 +85,8 @@ function sweep(dir: string, pid: number): void {
   }
   const running = runningExes();
   for (const name of names) {
-    if (!name.startsWith(PREFIX)) continue;
-    const other = Number(name.slice(PREFIX.length));
+    if (!name.startsWith(prefix)) continue;
+    const other = Number(name.slice(prefix.length));
     if (!Number.isInteger(other) || other <= 0) continue;
     const path = join(dir, name);
     if (other === pid || alive(other) || running.has(path)) continue;

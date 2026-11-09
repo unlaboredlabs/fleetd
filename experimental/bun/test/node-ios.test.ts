@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { binDir as androidBin, entry, LENT, sessionDir, VERSION } from "../src/node/device/agent_device.ts";
 import { blocksSimulators } from "../src/node/agents_mac/checks.ts";
 import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
-import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
+import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Pool, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
 import { MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
 import { builtXctestrun, installWrapper, iosEnv, runnerDir, setDir, writeConfig, wrapperScript } from "../src/node/device/ios/wrapper.ts";
@@ -434,4 +434,38 @@ test("the Mac's heartbeat carries its simulators' state for the doctor", async (
   cleanups.push(() => stop(failed.node));
   await until(() => !JSON.parse(readFileSync(join(failed.node.home, "device/ios/state.json"), "utf8")).preparing);
   expect((await hbOf(failed))?.state).toBe("unavailable");
+});
+
+test("a node that stops while a clone still starts its runner throws that clone away, its agent-device daemon first", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  const golden = writeGolden(home.dir, xctestrun);
+  const { xcrun, log } = fakeXcrun(home.dir);
+  // The clone's daemon, as agent-device registers it while `prepare ios-runner` runs.
+  const daemon = Bun.spawn(["sleep", "30"]);
+  cleanups.push(() => daemon.kill());
+  let udid = "";
+  let cloneHome = "";
+  let release = () => {};
+  const pool = new Pool(new Simctl(setDir(home.dir), xcrun), home.dir, golden, 1, async (_home, lent) => {
+    const state = join(lent.home, "state");
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(state, "daemon.json"), JSON.stringify({ pid: daemon.pid, stateDir: state }));
+    [udid, cloneHome] = [lent.udid, lent.home];
+    await new Promise<void>((r) => (release = r));
+  });
+  pool.refill();
+  await until(() => udid !== "");
+  expect(pool.warm()).toBe(0);
+  await pool.drain();
+  await daemon.exited;
+  expect(daemon.signalCode).toBe("SIGTERM");
+  expect(readFileSync(log, "utf8")).toContain(`shutdown ${udid}`);
+  expect(readFileSync(log, "utf8")).toContain(`delete ${udid}`);
+  expect(existsSync(cloneHome)).toBe(false);
+  release();
+  await until(() => pool.warm() === 0);
 });

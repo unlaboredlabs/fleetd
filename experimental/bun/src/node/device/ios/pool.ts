@@ -405,6 +405,8 @@ export const startRunner: RunnerStarter = async (home, lent) => {
 /** Booted clones waiting for an agent: taking one costs no boot, and the pool clones and boots another behind it. */
 export class Pool {
   private readonly warmClones: Lent[] = [];
+  /** Clones still booting or starting their runner: a drain throws them away too, daemon and all. */
+  private readonly booting = new Set<Lent>();
   private filling = false;
   /** Drained (the node stops): a boot still under way deletes its clone instead of keeping it. */
   private closed = false;
@@ -423,19 +425,26 @@ export class Pool {
   private async boot(): Promise<Lent> {
     const udid = await this.simctl.cloneDevice(this.golden.udid, `fleetd-${shortId()}`);
     const lent = new Lent(udid, cloneHome(this.home, udid), this.simctl);
+    this.booting.add(lent);
     try {
-      await this.simctl.boot(udid, BOOT_TIMEOUT);
-    } catch (e) {
-      void lent.discard();
-      throw e;
+      try {
+        await this.simctl.boot(udid, BOOT_TIMEOUT);
+      } catch (e) {
+        void lent.discard();
+        throw e;
+      }
+      try {
+        await this.runner(this.home, lent);
+        lent.runner = true;
+      } catch (e) {
+        console.warn(`iOS clone ${udid}: runner did not start ahead; its agent's first command starts it: ${(e as Error).message}`);
+      }
+      // Drained while its runner started: the daemon that came up after the clone was thrown away goes too.
+      if (this.closed) await stopDaemon(join(lent.home, "state"));
+      return lent;
+    } finally {
+      this.booting.delete(lent);
     }
-    try {
-      await this.runner(this.home, lent);
-      lent.runner = true;
-    } catch (e) {
-      console.warn(`iOS clone ${udid}: runner did not start ahead; its agent's first command starts it: ${(e as Error).message}`);
-    }
-    return lent;
   }
 
   /**
@@ -515,10 +524,13 @@ export class Pool {
     return this.refills.lastError;
   }
 
-  /** Deletes every waiting clone. */
+  /** Deletes every waiting clone, and those still booting: each one's agent-device daemon (with the XCTest runner it
+   * starts) is stopped first, so none outlives the node. */
   drain(): Promise<void> {
     this.closed = true;
-    return Promise.all(this.warmClones.splice(0).map((l) => l.discard())).then(() => {});
+    const all = [...this.warmClones.splice(0), ...this.booting];
+    this.booting.clear();
+    return Promise.all(all.map((l) => l.discard())).then(() => {});
   }
 }
 

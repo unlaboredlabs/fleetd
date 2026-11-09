@@ -3,7 +3,7 @@
 // `fleetd mac`; while the session holds a simulator on the Mac, a forwarding `agent-device` in
 // `<home>/sessions/<thread>/device-remote` runs each command there (`fleetd mac agent-device`). Both folders go first
 // on the session's PATH, the forwarder's before `mac`'s, ahead of the Android wrapper's agent-device (node/device).
-import { chmodSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { mkdirPrivate } from "../config.ts";
 import { writeAtomic } from "../secrets/files.ts";
@@ -39,6 +39,24 @@ export function installForwarder(home: string, thread: string, self: string[]): 
   const bin = join(dir, "agent-device");
   writeAtomic(bin, forwarder(self));
   chmodSync(bin, 0o700);
+}
+
+/** At the node's start, every forwarder a session kept across the restart (sessions outlive the node) runs `self`, this
+ * node's pin, again: the pin it named went with the node before. Returns how many were rewritten. */
+export function refreshForwarders(home: string, self: string[]): number {
+  let threads: string[];
+  try {
+    threads = readdirSync(join(home, "sessions"));
+  } catch {
+    return 0;
+  }
+  let rewritten = 0;
+  for (const thread of threads) {
+    if (!existsSync(join(forwarderDir(home, thread), "agent-device"))) continue;
+    installForwarder(home, thread, self);
+    rewritten++;
+  }
+  return rewritten;
 }
 
 /** Takes the forwarder off the session's PATH (`mac sim end`): agent-device is this machine's own again. */
