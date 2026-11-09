@@ -30,6 +30,7 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * The sidebar and the aside slide in from the window's edge as their toggle opens them and out to it as it closes
  * them (useSlide): the frame lays out once, at the toggle, and only their transform moves after it, so the chat
  * beside never lays out again mid-way. Anything else that brings or takes one (another screen) swaps it at once.
+ * `sidebarEdge` sits on the sidebar's right edge, over the top row too, while the sidebar shows.
  */
 export function AppFrame(props: {
   topBar: ReactNode;
@@ -37,6 +38,8 @@ export function AppFrame(props: {
   sidebarTop?: ReactNode;
   /** Whether the sidebar's toggle has it open: a change of it slides the sidebar; without it, any change does. */
   sidebarOpen?: boolean;
+  /** On the sidebar's right edge while it shows: what resizes it. */
+  sidebarEdge?: ReactNode;
   aside?: ReactNode;
   /** Whether the aside's toggle has it open, as `sidebarOpen`. */
   asideOpen?: boolean;
@@ -54,12 +57,14 @@ export function AppFrame(props: {
       <TitleSlot.Provider value={slot}>
         <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.translucent && s.translucent, props.className)}>
           {side.kept === null ? null : (
-            <div className={s.side} {...side.attrs}>
+            <div id="sidebar" className={s.side} {...side.attrs}>
               <div className={s.sideTop}>{side.kept[1]}</div>
               {side.kept[0]}
             </div>
           )}
           {props.topBar}
+          {/* After the top row: a control under a drag box that comes after it loses its click (base.css). */}
+          {props.sidebar && props.sidebarEdge ? <div className={s.sideEdge}>{props.sidebarEdge}</div> : null}
           <main className={s.main}>{props.children}</main>
           {aside.kept === null ? null : (
             <div className={s.aside} {...aside.attrs}>

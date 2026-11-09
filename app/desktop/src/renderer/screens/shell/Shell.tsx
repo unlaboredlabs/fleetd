@@ -5,7 +5,7 @@
 // hubs the screen is on its route's hub, inside that hub's scope, and each hub has a watcher
 // (HubWatch) always mounted: its sidebar rows, its notifications and its share of the Dock badge.
 import { PanelLeft, Search } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
@@ -30,6 +30,8 @@ import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { NewButton, Sidebar } from "./Sidebar";
 import { shownRows, useCollapsedHubs, useHeldRows, useSidebar } from "./sidebarState";
+import { useSidebarWidth } from "./sidebarWidth";
+import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
@@ -128,6 +130,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const [collapsed, toggleHub] = useCollapsedHubs();
   const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1);
   const modHeld = useModHeld();
+  const [sidebarPx, setSidebarPx] = useSidebarWidth();
 
   useMainProcess();
   useMenuState();
@@ -294,6 +297,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   // Settings' pages are in its sidebar, so it shows whatever the toggle says.
   const settings = shown.id === "settings";
   const showSidebar = chrome && (settings || !sidebar.hidden);
+  // Its width is the frame's variable: a drag moves it on the root alone, and only its end renders the frame again.
+  const root = useRef<HTMLDivElement>(null);
 
   const top = (
     <TopBar
@@ -308,7 +313,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   );
 
   return (
-    <div className={s.root} data-screen="shell">
+    <div ref={root} className={s.root} data-screen="shell" style={{ "--sidebar-w": `${String(sidebarPx)}px` } as CSSProperties}>
       <AppFrame
         translucent
         topBar={top}
@@ -323,6 +328,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
           )
         }
         sidebarOpen={!sidebar.hidden}
+        sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={
           !chrome ? undefined : settings ? (
             <Boundary key={shown.id} part="the sidebar">
@@ -341,7 +347,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             </Boundary>
           ) : undefined
         }
-        aside={chrome && panel.shown ? <PanelSlot panel={panel} /> : undefined}
+        aside={chrome && panel.shown ? <PanelSlot panel={panel} sidebarPx={showSidebar ? sidebarPx : 0} /> : undefined}
         asideOpen={panel.open}
       >
         <div className={s.column}>

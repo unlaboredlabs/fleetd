@@ -156,7 +156,7 @@ function Harness() {
   const panel = useProjectPanel(useRoute());
   return (
     <TooltipProvider>
-      <AppFrame topBar={<header />} corner={<PanelToggle panel={panel} />} aside={panel.shown ? <PanelSlot panel={panel} /> : undefined} asideOpen={panel.open}>
+      <AppFrame topBar={<header />} corner={<PanelToggle panel={panel} />} aside={panel.shown ? <PanelSlot panel={panel} sidebarPx={240} /> : undefined} asideOpen={panel.open}>
         <p>chat</p>
       </AppFrame>
     </TooltipProvider>

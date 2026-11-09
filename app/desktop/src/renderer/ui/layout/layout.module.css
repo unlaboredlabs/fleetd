@@ -85,6 +85,14 @@
   min-height: 0;
   background: var(--sidebar);
 }
+/* The sidebar's right edge, a line with no width of its own: what it holds (a resize edge) sits over it. */
+.sideEdge {
+  grid-area: side;
+  justify-self: end;
+  position: relative;
+  z-index: 2;
+  width: 0;
+}
 /* The sidebar's first row: the traffic lights on macOS, then its own controls. Part of the drag region. */
 .sideTop {
   flex: none;

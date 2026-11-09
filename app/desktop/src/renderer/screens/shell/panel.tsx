@@ -6,24 +6,13 @@
 // project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
 // reads from the hub.
 import { PanelRight } from "lucide-react";
-import {
-  lazy,
-  memo,
-  Suspense,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from "react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { display } from "../../../shared/shortcuts";
 import { Boundary } from "../../src/Boundary";
 import { Button } from "../../ui";
 import { navigate } from "./navigation";
-import { keyedWidth, shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
+import { ResizeEdge } from "./ResizeEdge";
+import { shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
 import { hasItem, listView, panelRoute, type PanelView, type ProjectKey, type Screen } from "./routes";
 import { usePanel } from "./sidebarState";
 import s from "./shell.module.css";
@@ -89,16 +78,17 @@ export function PanelToggle({ panel }: { panel: ProjectPanelState }) {
 }
 
 /**
- * The panel itself, while it shows. Esc inside it goes back from an agent or a PR to the list, then closes it and
+ * The panel itself, while it shows, its max leaving room for the sidebar as wide as it is (`sidebarPx`, 0 without one).
+ * Esc inside it goes back from an agent or a PR to the list, then closes it and
  * returns focus to the toggle; menus and dialogs in it take their own Esc first.
  */
-export function PanelSlot({ panel }: { panel: ProjectPanelState }) {
+export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; sidebarPx: number }) {
   const { project, view, shown } = panel;
   const aside = useRef<HTMLElement>(null);
   const [wide, setWide] = useState(false);
   const mode: PanelMode = wide ? "wide" : "normal";
   const [widths, setWidth] = usePanelWidths();
-  const bounds = widthBounds(mode, useWindowWidth());
+  const bounds = widthBounds(mode, useWindowWidth(), sidebarPx);
   const width = shownWidth(widths[mode], bounds);
 
   if (!shown || project === null) return null;
@@ -126,93 +116,22 @@ export function PanelSlot({ panel }: { panel: ProjectPanelState }) {
       style={{ "--panel-size": `${String(width)}px` } as CSSProperties}
       onKeyDown={onKeyDown}
     >
-      <ResizeHandle panel={aside} width={width} min={bounds.min} max={bounds.max} onSet={(w) => setWidth(mode, w)} />
+      <ResizeEdge
+        edge="left"
+        label="Resize the panel"
+        controls="project-panel"
+        target={aside}
+        variable="--panel-size"
+        width={width}
+        min={bounds.min}
+        max={bounds.max}
+        onSet={(w) => setWidth(mode, w)}
+      />
       <Boundary key="panel" part="the panel">
         <Suspense fallback={<div className={s.panelLoading} aria-busy="true" />}>
           <ProjectPanel project={project} view={view} onWide={setWide} />
         </Suspense>
       </Boundary>
     </aside>
-  );
-}
-
-/**
- * The panel's left edge, a vertical separator: drag it, or focus it and use Left (wider), Right (narrower), Home and
- * End; Shift moves four steps. A double-click (or Enter) puts it back to its default. A drag moves the width on the
- * element itself and sets it once, as it ends, so nothing in the panel renders again per frame.
- */
-function ResizeHandle({ panel, width, min, max, onSet }: { panel: RefObject<HTMLElement | null>; width: number; min: number; max: number; onSet: (width: number | null) => void }) {
-  const drag = useRef<{ x: number; from: number; now: number } | null>(null);
-  const [dragging, setDragging] = useState(false);
-
-  const live = (px: number) => {
-    panel.current?.style.setProperty("--panel-size", `${String(px)}px`);
-  };
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, from: width, now: width };
-    setDragging(true);
-  };
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (d === null) return;
-    d.now = Math.round(Math.min(Math.max(d.from + d.x - e.clientX, min), max));
-    live(d.now);
-    e.currentTarget.setAttribute("aria-valuenow", String(d.now));
-  };
-  const end = (e: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (d === null) return;
-    drag.current = null;
-    setDragging(false);
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    if (d.now !== d.from) onSet(d.now);
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      onSet(null);
-      return;
-    }
-    const next = keyedWidth(e.key, e.shiftKey, width, { min, max, initial: width });
-    if (next === null) return;
-    e.preventDefault();
-    // Saved even when it is the width already shown: the default follows the window, what you chose doesn't.
-    onSet(next);
-  };
-
-  // A drag the window lost (a blur mid-drag) leaves no stray cursor behind.
-  useEffect(() => {
-    if (!dragging) return;
-    document.documentElement.dataset["panelResizing"] = "";
-    return () => {
-      delete document.documentElement.dataset["panelResizing"];
-    };
-  }, [dragging]);
-
-  return (
-    <div
-      className={s.resize}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the panel"
-      aria-controls="project-panel"
-      aria-valuenow={width}
-      aria-valuemin={min}
-      aria-valuemax={max}
-      aria-valuetext={`${String(width)} pixels wide`}
-      title="Drag to resize; double-click to reset"
-      tabIndex={0}
-      data-dragging={dragging ? "" : undefined}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onLostPointerCapture={end}
-      onDoubleClick={() => onSet(null)}
-      onKeyDown={onKeyDown}
-    />
   );
 }
