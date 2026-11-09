@@ -11,6 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
+import { addUi, closeAddProject } from "../projects/store";
 import { ImportMemory, NO_ONLY_ME, NO_PROJECT_TEXT } from "./ImportMemory";
 import { YourMemory } from "./Memory";
 
@@ -27,6 +28,7 @@ beforeEach(() => {
   copied.length = 0;
 });
 afterEach(() => {
+  closeAddProject();
   act(() => root.unmount());
   host.remove();
 });
@@ -226,7 +228,7 @@ it.each([
   expect(status()).toBe(`${NO_PROJECT_TEXT} Make a project with Only me on, then import again.`);
   expect(status()).not.toMatch(/Navi/u);
   act(() => button("Make a project with Only me on").click());
-  expect(window.location.hash).toBe("#/projects/add");
+  expect(addUi()).toMatchObject({ open: true, onlyMe: true });
   // What was pasted stays for after.
   expect(box.value).toBe("[2024-03-02] - Keep answers short.");
 });

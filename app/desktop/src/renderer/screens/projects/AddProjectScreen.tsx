@@ -1,12 +1,17 @@
-// "New project…" (#/projects/add): one sheet that starts a new project in a folder the hub makes, clones a GitHub repo
-// onto a worker, or adds a folder already on one. One field (name a new project, paste a URL, type a path, or filter),
-// the repos the hub found, the machine it goes to, and Only me (on for a project with no repo); then the clone's progress, the ready state with what the
-// lead will need (a new project opens at once), or the error and its fix. Up/Down pick, Enter adds, Esc closes (a
-// clone carries on). With several hubs a line above the field says which hub it adds to, and picks another.
+// New project: a modal over whatever is on screen (ProjectsHost mounts it; the chat, its scroll and the panel behind
+// stay as they were). One field: type a name for a new, empty project, or find a repo to add, one of the checkouts on
+// your machines or of your GitHub repos, or paste a URL or a folder's path. Below it the list, grouped by where each
+// repo is (repos already a project only once the field matches them), and a footer that says in one line what the
+// button will do, with Only me beside it. Then the clone's progress, the ready state with what the lead will need (a new
+// project opens at once), or the error and its fix. Type to filter, Up/Down pick, Enter adds, Esc closes (a clone
+// carries on). Cloud machines and the agents' Mac are never offered: no project lives there (projectHome). With
+// several hubs a line beside the title says which hub it adds to, and picks another.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Checkbox, Dot, Input, Select, Sheet, Switch, Text, Truncate, copyText, cx } from "../../ui";
-import { clonePath, discovery as discoveryOf, newPath, onlyMeFirst, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
+import { Dialog as D } from "radix-ui";
+import { Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Button, Checkbox, Dot, Select, Text, Truncate, copyText, cx } from "../../ui";
+import { clonePath, discovery as discoveryOf, newPath, onlyMeFirst, orList, plan, projectHome, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { navigate } from "../shell/navigation";
@@ -24,8 +29,6 @@ import {
   setGitInit,
   setOnlyMe,
   setText,
-  sheetHidden,
-  sheetShown,
   startAdd,
   useAddUi,
   type AddUi,
@@ -33,44 +36,70 @@ import {
 } from "./store";
 import s from "./projects.module.css";
 
-/** The add screen. Its root carries data-screen="projects.add"; the state inside, "projects.add.<state>". */
+/** The modal. Its content carries data-screen="projects.add"; the state inside, "projects.add.<state>". */
 export function AddProjectScreen() {
   const pick = usePick();
   const phase = pick.ui.add.phase;
   const data = useDataLayer();
+  const field = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    sheetShown();
-    // New checkouts on disk raise no event: look again each time the sheet opens.
+    // New checkouts on disk raise no event: look again each time it opens.
     void data.queryClient.invalidateQueries({ queryKey: callKey("project_discover", allRepos) });
-    return sheetHidden;
   }, [data]);
 
   const title =
     phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : phase.kind === "unlisted" ? `${phase.what} isn't on the hub yet` : "New project";
 
   return (
-    <Sheet
+    <D.Root
       open
       onOpenChange={(open) => {
         if (!open) closeAddProject();
       }}
-      title={title}
-      footer={phase.kind === "pick" ? <PickFooter pick={pick} /> : phase.kind === "ready" ? <ReadyFooter ready={phase.ready} /> : phase.kind === "failed" ? <FailedFooter failure={phase.failure} /> : phase.kind === "unlisted" ? <UnlistedFooter phase={phase} /> : <WorkingFooter />}
     >
-      <div className={s.root} data-screen="projects.add">
-        {phase.kind === "pick" ? <Pick pick={pick} /> : null}
-        {phase.kind === "working" ? <Working job={phase.job} /> : null}
-        {phase.kind === "ready" ? <ReadyView ready={phase.ready} /> : null}
-        {phase.kind === "failed" ? <FailedView failure={phase.failure} /> : null}
-        {phase.kind === "unlisted" ? (
-          <div data-screen="projects.add.unlisted">
-            <Text tone="quiet">
-              The connection dropped before the add finished, and the hub doesn&apos;t list {phase.what} yet. If the clone was still running, it appears in the sidebar when it finishes. Machines shows any error.
-            </Text>
+      <D.Portal>
+        <D.Overlay className={s.backdrop} />
+        <D.Content
+          className={cx(s.modal, phase.kind !== "pick" && s.fit)}
+          data-screen="projects.add"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => {
+            // Typing starts at once; a state with no field takes the default (its first button).
+            if (field.current === null) return;
+            e.preventDefault();
+            field.current.focus();
+          }}
+        >
+          <div className={s.head}>
+            <D.Title className={s.title} data-text="wrap">
+              {title}
+            </D.Title>
+            {phase.kind === "pick" ? <HubPick /> : null}
           </div>
-        ) : null}
-      </div>
-    </Sheet>
+          {phase.kind === "pick" ? (
+            <Pick pick={pick} field={field} />
+          ) : (
+            <>
+              <div className={s.body}>
+                {phase.kind === "working" ? <Working job={phase.job} /> : null}
+                {phase.kind === "ready" ? <ReadyView ready={phase.ready} /> : null}
+                {phase.kind === "failed" ? <FailedView failure={phase.failure} /> : null}
+                {phase.kind === "unlisted" ? (
+                  <div data-screen="projects.add.unlisted">
+                    <Text tone="quiet">
+                      The connection dropped before the add finished, and the hub doesn&apos;t list {phase.what} yet. If the clone was still running, it appears in the sidebar when it finishes. Machines shows any error.
+                    </Text>
+                  </div>
+                ) : null}
+              </div>
+              <div className={s.foot}>
+                {phase.kind === "ready" ? <ReadyFooter ready={phase.ready} /> : phase.kind === "failed" ? <FailedFooter failure={phase.failure} /> : phase.kind === "unlisted" ? <UnlistedFooter phase={phase} /> : <WorkingFooter />}
+              </div>
+            </>
+          )}
+        </D.Content>
+      </D.Portal>
+    </D.Root>
   );
 }
 
@@ -85,15 +114,18 @@ const useDiscovery = (): Discovery | null => {
   const machines = useData((s) => s.machines);
   return useMemo(() => {
     const name = (id: string) => machines[id]?.name ?? id;
+    const homes = Object.values(machines)
+      .filter(projectHome)
+      .map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }));
     if (query.data !== undefined) {
-      const d = discoveryOf(query.data, name);
+      const d = discoveryOf(query.data, name, (id) => projectHome(machines[id]));
       if (d.workers.length > 0) return d;
-      return { ...d, workers: Object.values(machines).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" })) };
+      return { ...d, workers: homes };
     }
     if (query.error === null) return null;
     const e: { message: string; fix?: string | undefined } = query.error instanceof CallError ? query.error.error : { message: query.error.message };
     return {
-      workers: Object.values(machines).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" })),
+      workers: homes,
       found: [],
       problems: [e.fix ? { message: e.message, fix: e.fix } : { message: e.message }],
     };
@@ -158,11 +190,12 @@ const submit = (p: Plan, pick: Pick_) => {
   if (r) startAdd(r.request, r.path);
 };
 
-/** What submitting reads of the pick: the machine it goes to, what the hub found, and the sheet's own state. */
+/** What submitting reads of the pick: the machine it goes to, what the hub found, and the modal's own state. */
 type Pick_ = Pick<PickData, "to" | "d" | "ui">;
 
-function Pick({ pick }: { pick: PickData }) {
+function Pick({ pick, field }: { pick: PickData; field: RefObject<HTMLInputElement | null> }) {
   const { ui, d, rows, selected, select, planFor } = pick;
+  const go = () => submit(planFor(rows[selected]), pick);
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (rows.length === 0 && e.key !== "Enter") return;
     if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) {
@@ -173,38 +206,42 @@ function Pick({ pick }: { pick: PickData }) {
       select((selected - 1 + rows.length) % rows.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      submit(planFor(rows[selected]), pick);
+      go();
     }
   };
 
   return (
     <>
-      <HubPick />
-      <Input
-        autoFocus
-        aria-label="New project name, GitHub URL, folder path, or filter"
-        placeholder="Name a new project, paste a GitHub URL, or type a folder's path"
-        value={ui.text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKey}
-      />
+      <div className={s.field}>
+        <input
+          ref={field}
+          className={s.input}
+          spellCheck={false}
+          aria-label="New project name, GitHub URL, folder path, or filter"
+          placeholder="Name a new project, or find a repo"
+          value={ui.text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKey}
+        />
+      </div>
       {ui.note ? <NoteLine note={ui.note} /> : null}
-      <div data-screen={d === null ? "projects.add.loading" : rows.length === 0 && ui.text.trim() === "" ? "projects.add.empty" : "projects.add.pick"}>
+      <div className={s.list} data-screen={d === null ? "projects.add.loading" : rows.length === 0 && ui.text.trim() === "" ? "projects.add.empty" : "projects.add.pick"}>
         {d === null ? (
-          <Text tone="quiet" className={cx(s.note)}>
+          <Text as="p" tone="quiet" className={cx(s.quietLine)}>
             Looking for repos on your machines and on GitHub…
           </Text>
         ) : (
-          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} pick={pick} planFor={planFor} />
+          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} go={go} />
         )}
       </div>
+      <PickFooter pick={pick} go={go} />
     </>
   );
 }
 
 /**
- * With several hubs, which one the project goes to: the hub on screen, or another picked here (the sheet opens again
- * on that hub). With one hub, nothing.
+ * With several hubs, which one the project goes to: the hub on screen, or another picked here (the modal stays open,
+ * over that hub's home). With one hub, nothing.
  */
 function HubPick() {
   const hubs = useHubs();
@@ -215,68 +252,68 @@ function HubPick() {
       <Text size="sm" tone="quiet">
         Adds to
       </Text>
-      <Select aria-label="Hub" value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={(at) => navigate({ id: "projects.add", at })} />
+      <Select aria-label="Hub" className={s.inlineSelect} value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={(at) => navigate({ id: "projects.add", at })} />
     </div>
   );
 }
 
 function NoteLine({ note }: { note: Note }) {
   return (
-    <Text size="sm" tone={note.problem ? "warning" : "quiet"} className={cx(s.note)}>
+    <Text as="p" size="sm" tone={note.problem ? "warning" : "quiet"} className={cx(s.noteLine)}>
       {note.text}
     </Text>
   );
 }
 
-const groupOf = (r: Row, found: ReadonlyArray<Found>, name: (id: string) => string): string => {
-  if (r.kind === "clone") return "Paste";
-  if (r.kind === "folder") return "Folder";
-  if (r.kind === "new") return "New";
+/** This computer as the person knows it: "This Mac" on a Mac. */
+const THIS_COMPUTER = window.fleetd.platform === "darwin" ? "This Mac" : "This computer";
+
+/** A row's group: none for what the field itself makes (a new project, a pasted URL or path), else where it is. */
+const groupOf = (r: Row, found: ReadonlyArray<Found>, name: (id: string) => string, local: string | undefined): string | null => {
+  if (r.kind !== "found") return null;
   const f = found[r.index];
-  return f?.source.kind === "checkout" ? `On ${name(f.source.machineId)}` : "GitHub";
+  if (f?.project !== undefined) return "Already projects";
+  if (f?.source.kind !== "checkout") return "GitHub";
+  return f.source.machineId === local ? `${THIS_COMPUTER} · ${name(f.source.machineId)}` : name(f.source.machineId);
 };
 
-function List(props: {
-  d: Discovery;
-  rows: ReadonlyArray<Row>;
-  selected: number;
-  select: (n: number) => void;
-  text: string;
-  pick: Pick_;
-  planFor: (r: Row) => Plan;
-}) {
-  const { d, rows, selected, select, text, pick, planFor } = props;
+function List(props: { d: Discovery; rows: ReadonlyArray<Row>; selected: number; select: (n: number) => void; text: string; go: () => void }) {
+  const { d, rows, selected, select, text, go } = props;
   const name = (id: string) => d.workers.find((w) => w.machineId === id)?.name ?? id;
+  const local = localMachine()?.machineId;
   if (rows.length === 0) {
     const hint = otherHost(text);
-    if (hint) return <Text tone="warning" className={cx(s.note)}>{hint}</Text>;
-    if (text.trim() !== "") {
-      return (
-        <Text tone="quiet" className={cx(s.note)}>
-          Nothing matches. Paste a GitHub URL, or type a folder's full path on one of your machines.
-        </Text>
-      );
-    }
+    if (hint) return <Text as="p" tone="warning" className={cx(s.quietLine)}>{hint}</Text>;
     return <Empty d={d} />;
   }
+  const groups: Array<{ label: string | null; items: Array<[Row, number]> }> = [];
+  rows.forEach((r, i) => {
+    const label = groupOf(r, d.found, name, local);
+    const last = groups.at(-1);
+    if (last !== undefined && last.label === label) last.items.push([r, i]);
+    else groups.push({ label, items: [[r, i]] });
+  });
   return (
     <>
-      <div className={s.list} role="listbox" aria-label="Repos">
-        {rows.map((r, i) => {
-          const group = groupOf(r, d.found, name);
-          const first = i === 0 || groupOf(rows[i - 1] as Row, d.found, name) !== group;
-          return (
-            <div key={rowKey(r, d.found)}>
-              {first ? (
-                <Text as="div" size="xs" tone="quiet" strong className={cx(s.group)}>
-                  {group}
-                </Text>
-              ) : null}
-              <RowView row={r} d={d} planFor={planFor} selected={i === selected} onPick={() => select(i)} onGo={() => submit(planFor(r), pick)} />
-            </div>
-          );
-        })}
+      <div role="listbox" aria-label="Repos">
+        {groups.map((g, n) => (
+          <div role="group" key={`${g.label ?? ""}:${String(n)}`} {...(g.label === null ? {} : { "aria-label": g.label })}>
+            {g.label === null ? null : (
+              <Text as="div" size="xs" tone="quiet" className={cx(s.group)} aria-hidden>
+                {g.label}
+              </Text>
+            )}
+            {g.items.map(([r, i]) => (
+              <RowView key={rowKey(r, d.found)} row={r} d={d} selected={i === selected} onPick={() => select(i)} onGo={go} />
+            ))}
+          </div>
+        ))}
       </div>
+      {rows.length === 1 && rows[0]?.kind === "new" && d.found.length > 0 ? (
+        <Text as="p" size="sm" tone="quiet" className={cx(s.quietLine)}>
+          No repo matches. To add one, paste its GitHub URL or type its folder&apos;s full path.
+        </Text>
+      ) : null}
       <Problems d={d} />
     </>
   );
@@ -289,71 +326,55 @@ const rowKey = (r: Row, found: ReadonlyArray<Found>): string => {
   return f?.source.kind === "checkout" ? `co:${f.source.machineId}:${f.source.path}` : `gh:${f?.name ?? r.index}`;
 };
 
-function RowView(props: { row: Row; d: Discovery; planFor: (r: Row) => Plan; selected: boolean; onPick: () => void; onGo: () => void }) {
+/** One line: the name, then a quiet detail. What the button does is the footer's to say. */
+function RowView(props: { row: Row; d: Discovery; selected: boolean; onPick: () => void; onGo: () => void }) {
   const { row, d } = props;
-  const ref = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (props.selected) ref.current?.scrollIntoView({ block: "nearest" });
   }, [props.selected]);
   let title: string;
-  let sub = "";
-  let mono = false;
-  let side = "";
-  let added = false;
+  let detail = "";
+  let quiet = false;
   if (row.kind === "clone") {
-    title = `Clone ${row.repo}`;
-    sub = "from GitHub";
+    title = row.repo;
+    detail = "from GitHub";
   } else if (row.kind === "new") {
-    title = row.name === "" ? "New project" : `New project ${row.name}`;
-    const p = props.planFor(row);
-    const on = p.kind === "new" && p.machineId !== undefined ? (d.workers.find((w) => w.machineId === p.machineId)?.name ?? p.machineId) : null;
-    sub = row.name === "" ? "Type its name above: an empty folder, no repo needed" : on === null ? "no machine is online" : `an empty folder on ${on}, no repo needed`;
+    title = `New project “${row.name}”`;
+    detail = "an empty folder, no repo needed";
   } else if (row.kind === "folder") {
     title = row.path;
-    mono = true;
-    const p = props.planFor(row);
-    const on = p.kind === "folder" ? (d.workers.find((w) => w.machineId === p.machineId)?.name ?? p.machineId) : null;
-    sub = on === null ? "no machine is online" : `a folder on ${on}`;
   } else {
     const f = d.found[row.index];
     title = f?.name ?? "";
-    if (f?.source.kind === "checkout") {
-      sub = tilde(f.source.path);
-      mono = true;
-    } else if (f?.private) sub = "private";
-    side = f?.detail ?? "";
-    added = f?.project !== undefined;
+    quiet = f?.project !== undefined;
+    if (quiet) detail = "opens its chat";
+    // A checkout's remote (its path is the footer's to say); a GitHub repo's description.
+    else if (f?.source.kind === "checkout") detail = f.detail;
+    else detail = [f?.private ? "private" : "", f?.detail ?? ""].filter((x) => x !== "").join(" · ");
   }
   return (
-    <button
+    // The field keeps focus: the rows are its listbox's options, picked by pointer or by Up/Down there.
+    <div
       ref={ref}
-      type="button"
       role="option"
       aria-selected={props.selected}
-      className={s.row}
+      className={cx(s.row, quiet && s.added)}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={props.onPick}
       onDoubleClick={props.onGo}
     >
+      {row.kind === "new" ? <Plus className={s.rowIcon} aria-hidden /> : null}
       {/* Repo and folder names are the names on disk and on GitHub, shown as they are (samp: machine text). */}
-      <span className={s.rowMain}>
-        <Truncate expand="none" as="samp" className={cx(s.name)}>
-          {title}
+      <Truncate expand="none" as="samp" className={cx(s.name)}>
+        {title}
+      </Truncate>
+      {detail ? (
+        <Truncate expand="none" size="sm" tone="quiet" className={cx(s.detail)}>
+          {detail}
         </Truncate>
-        {sub ? (
-          <Truncate expand="none" size="sm" tone="quiet" mono={mono} {...(mono ? { as: "samp" } : {})}>
-            {sub}
-          </Truncate>
-        ) : null}
-      </span>
-      <span className={s.rowSide}>
-        {side ? (
-          <Truncate expand="none" size="xs" tone="quiet">
-            {side}
-          </Truncate>
-        ) : null}
-        {added ? <span className={s.tag}>Added</span> : null}
-      </span>
-    </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -374,148 +395,137 @@ function Problems({ d }: { d: Discovery }) {
 }
 
 function Empty({ d }: { d: Discovery }) {
-  const local = localMachine();
   // gh's own trouble, when the hub reports one, is listed below with its fix.
   const gh =
     d.ghOn !== undefined
-      ? `gh on ${d.ghOn} listed nothing for you or your orgs.`
+      ? `gh on ${d.ghOn} listed nothing new for you or your orgs.`
       : d.problems.length === 0
         ? "GitHub repos aren't listed: gh isn't logged in on the hub or a machine (run gh auth login there)."
         : "";
   return (
     <div className={s.empty}>
-      <Text strong>No repos found on {orList(d.workers.map((w) => w.name))}.</Text>
-      <Text tone="quiet">Looked for git checkouts in ~/src, ~/code, ~/projects and ~/dev, two folders deep. {gh}</Text>
-      <Text tone="quiet">
-        {local
-          ? "Paste a GitHub URL above, type a folder's full path, Browse… for a folder on this computer, or type a name to start a new project."
-          : "Paste a GitHub URL above, type a folder's full path on one of your machines, or type a name to start a new project."}
+      <Text size="sm" tone="quiet">
+        No repos to add on {orList(d.workers.map((w) => w.name))}: fleetd looked for git checkouts in ~/src, ~/code, ~/projects and ~/dev, two folders deep. {gh} Paste a GitHub URL or type a folder&apos;s full path to add one.
       </Text>
       <Problems d={d} />
     </div>
   );
 }
 
-function MachinePicker({ workers, chosen, best }: { workers: ReadonlyArray<Worker>; chosen: string | undefined; best: string | undefined }) {
-  return (
-    <div className={s.machines} role="group" aria-label="Machine">
-      {workers.map((w) => (
-        <Button
-          key={w.machineId}
-          className={s.machine}
-          aria-pressed={chosen === w.machineId}
-          disabled={!w.online}
-          onClick={() => pickMachine(w.machineId)}
-          title={w.online ? undefined : `${w.name} is offline`}
-        >
-          {w.online ? (best === w.machineId ? `${w.name} · suggested` : w.name) : `${w.name} · offline`}
-        </Button>
-      ))}
-    </div>
-  );
+/**
+ * What the button will do, in one sentence, or what keeps it from doing it (the button is off only then). A sentence
+ * that ends `on` a machine ends on its name, or on a picker when more than one machine is online.
+ */
+interface Summary {
+  readonly words: ReactNode;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly on?: string;
 }
 
-function PickFooter({ pick }: { pick: PickData }) {
-  const { d, rows, selected, to, planFor, ui } = pick;
-  const p = planFor(rows[selected]);
-  const local = localMachine();
-  const workers = d?.workers ?? [];
-  let where = "";
-  let note = "";
-  let label = "Add project";
-  let enabled = d !== null;
-  let picker = false;
-  let folder: string | null = null;
-  const nameOf = (id: string) => workers.find((w) => w.machineId === id)?.name ?? id;
+const At = ({ path }: { path: string }) => (
+  <samp className={s.path} title={path}>
+    {tilde(path)}
+  </samp>
+);
+
+const summaryOf = (p: Plan, pick: PickData): Summary => {
+  const { d, to, ui } = pick;
   switch (p.kind) {
     case "clone": {
-      label = "Clone and add";
-      picker = true;
-      if (to) {
-        const path = clonePath(to, p.repo);
-        if (path) where = `${tilde(path)} on ${to.name}`;
-        else note = `Into its clone folder on ${to.name}.`;
-      } else {
-        note = "No machine is online to clone onto.";
-        enabled = false;
-      }
-      break;
+      if (!to) return { words: "No machine is online to clone onto: start a node on one of your machines.", label: "Clone", enabled: false };
+      const path = clonePath(to, p.repo);
+      return { words: path ? <>Clones {p.repo} into <At path={path} /> on</> : <>Clones {p.repo} into its clone folder on</>, label: "Clone", enabled: true, on: to.machineId };
     }
     case "folder":
-      if (p.fixed) {
-        where = `${tilde(p.path)} on ${nameOf(p.machineId)}`;
-        note = "Added as it is: nothing is cloned.";
-      } else {
-        picker = true;
-        enabled = p.path.startsWith("/");
-        if (enabled) where = `${p.path} on ${nameOf(p.machineId)}`;
-        else note = "Type the full path, starting with /.";
-      }
-      break;
+      if (p.fixed) return { words: <>Adds <At path={p.path} /> as it is, nothing cloned, on</>, label: "Add project", enabled: true, on: p.machineId };
+      if (!p.path.startsWith("/")) return { words: "Type the folder's full path, starting with /.", label: "Add project", enabled: false };
+      return { words: <>Adds <At path={p.path} /> as it is on</>, label: "Add project", enabled: true, on: p.machineId };
     case "new": {
-      label = "Create project";
-      picker = true;
-      const on = workers.find((w) => w.machineId === p.machineId);
-      folder = newFolder(p, d, ui);
-      if (p.name.trim() === "") note = "Type the new project's name above.";
-      else if (p.machineId === undefined) note = "No machine is online to make its folder on.";
-      else if (on !== undefined && on.projectsRoot === undefined) note = `Update fleetd on ${on.name} to create a project there.`;
-      else if (!folder?.trim().startsWith("/")) note = "Type the folder's full path, starting with /.";
-      enabled = note === "";
-      if (on !== undefined && on.projectsRoot === undefined) folder = null;
-      break;
+      if (p.machineId === undefined) return { words: "No machine is online to make its folder on: start a node on one of your machines.", label: "Create", enabled: false };
+      const on = d?.workers.find((w) => w.machineId === p.machineId);
+      if (on !== undefined && on.projectsRoot === undefined) {
+        const others = (d?.workers ?? []).some((w) => w.online && w.machineId !== on.machineId);
+        return others
+          ? { words: `Update fleetd on ${on.name} to create a project there, or pick another machine:`, label: "Create", enabled: false, on: p.machineId }
+          : { words: `Update fleetd on ${on.name} to create a project there.`, label: "Create", enabled: false };
+      }
+      const folder = newFolder(p, d, ui) ?? "";
+      const full = folder.trim().startsWith("/");
+      return {
+        words: (
+          <>
+            {full ? "Creates an empty folder" : "Type the folder's full path, starting with /:"}
+            <input
+              className={s.folder}
+              spellCheck={false}
+              aria-label="Folder"
+              value={folder}
+              size={Math.max(16, Math.min(folder.length, 44))}
+              onChange={(e) => setFolder(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                submit(p, pick);
+              }}
+            />
+            on
+          </>
+        ),
+        label: "Create",
+        enabled: full,
+        on: p.machineId,
+      };
     }
     case "open":
-      label = "Open project";
-      note = `Already a project on ${nameOf(p.project.machineId)}.`;
-      break;
+      return { words: "Already a project: opens its chat, on", label: "Open", enabled: true, on: p.project.machineId };
     case "nothing":
-      enabled = false;
-      break;
+      return { words: d === null ? "" : "Type a name, paste a GitHub URL, or type a folder's path.", label: "Create", enabled: false };
   }
+};
+
+function PickFooter({ pick, go }: { pick: PickData; go: () => void }) {
+  const { d, rows, selected, planFor, ui } = pick;
+  const p = planFor(rows[selected]);
+  const sum = summaryOf(p, pick);
+  const adds = p.kind === "new" || p.kind === "folder" || p.kind === "clone";
+  const onlyMe = adds && onlyMeOf(p, ui);
+  // A checkout or a project is where it is; anything else goes to the machine picked.
+  const online = (d?.workers ?? []).filter((w) => w.online);
+  const picks = sum.on !== undefined && online.length > 1 && (p.kind === "clone" || p.kind === "new" || (p.kind === "folder" && !p.fixed)) && online.some((w) => w.machineId === sum.on);
   return (
-    <div className={s.footer} {...(p.kind === "new" ? { "data-screen": "projects.add.new" } : {})}>
-      {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={p.kind === "folder" || p.kind === "new" ? p.machineId : to?.machineId} best={d?.best} /> : null}
-      {p.kind === "new" && folder !== null && p.name.trim() !== "" ? <NewFolder folder={folder} gitInit={ui.gitInit === true} /> : null}
-      {p.kind === "new" || p.kind === "folder" || p.kind === "clone" ? (
-        <Switch
-          label="Only me"
-          description="Only you see and use it: its chat, its agents and its settings. Off, everyone on this hub can."
-          checked={onlyMeOf(p, ui)}
-          onCheckedChange={setOnlyMe}
-        />
-      ) : null}
-      {note ? (
-        <Text size="sm" tone="quiet">
-          {note}
-        </Text>
-      ) : null}
+    <div className={s.foot} {...(p.kind === "new" ? { "data-screen": "projects.add.new" } : {})}>
+      <Text as="div" size="sm" tone="quiet" className={cx(s.summary)}>
+        {sum.words}
+        {sum.on === undefined ? null : picks ? (
+          <Select aria-label="Machine" className={s.inlineSelect} value={sum.on} options={online.map((w) => ({ value: w.machineId, label: w.name }))} onValueChange={pickMachine} />
+        ) : (
+          <> {nameOf(pick, sum.on)}.</>
+        )}
+        {sum.enabled && adds ? <span>{onlyMe ? "Only you will see it." : "Everyone on this hub can use it."}</span> : null}
+      </Text>
       <div className={s.actions}>
-        <span className={s.where}>
-          {where ? (
-            <Truncate size="sm" tone="quiet" mono as="samp">
-              {where}
-            </Truncate>
-          ) : null}
-        </span>
-        {local ? <BrowseButton /> : null}
-        <Button variant="primary" disabled={!enabled} onClick={() => submit(p, pick)}>
-          {label}
+        {adds ? (
+          <Checkbox
+            label="Only me"
+            title="Only you see and use it: its chat, its agents and its settings. Off, everyone on this hub can."
+            checked={onlyMe}
+            onCheckedChange={(on) => setOnlyMe(on === true)}
+          />
+        ) : null}
+        {p.kind === "new" && sum.enabled ? <Checkbox label="Start a git repo" checked={ui.gitInit === true} onCheckedChange={(on) => setGitInit(on === true)} /> : null}
+        <span className={s.spacer} />
+        {localMachine() ? <BrowseButton /> : null}
+        <Button onClick={closeAddProject}>Cancel</Button>
+        <Button variant="primary" disabled={!sum.enabled} onClick={go}>
+          {sum.label}
         </Button>
       </div>
     </div>
   );
 }
 
-/** Where a new project's folder goes, editable, and whether it starts as a git repo. */
-function NewFolder({ folder, gitInit }: { folder: string; gitInit: boolean }) {
-  return (
-    <div className={s.newFolder}>
-      <Input mono aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value)} />
-      <Checkbox label="Start a git repo in it" checked={gitInit} onCheckedChange={(on) => setGitInit(on === true)} />
-    </div>
-  );
-}
+const nameOf = (pick: PickData, id: string): string => pick.d?.workers.find((w) => w.machineId === id)?.name ?? id;
 
 function BrowseButton() {
   return (
@@ -569,15 +579,21 @@ function Working({ job }: { job: Job }) {
           );
         })}
       </div>
-      <Text size="sm" tone="quiet">
-        Hide this and carry on; the add keeps going, and a note says when it's ready.
-      </Text>
     </div>
   );
 }
 
 function WorkingFooter() {
-  return <Button onClick={closeAddProject}>Hide</Button>;
+  return (
+    <div className={s.actions}>
+      <Text size="sm" tone="quiet" className={cx(s.spacer)}>
+        Hide this and carry on: the add keeps going, and a note says when it&apos;s ready.
+      </Text>
+      <Button variant="primary" onClick={closeAddProject}>
+        Hide
+      </Button>
+    </div>
+  );
 }
 
 function ReadyView({ ready }: { ready: Ready }) {
@@ -613,17 +629,18 @@ function ReadyView({ ready }: { ready: Ready }) {
 
 function ReadyFooter({ ready }: { ready: Ready }) {
   return (
-    <div className={s.footer}>
-      <Text size="sm" tone="quiet">
+    <>
+      <Text as="div" size="sm" tone="quiet" className={cx(s.summary)}>
         Open its chat and tell the lead what you want.
       </Text>
       <div className={s.actions}>
+        <span className={s.spacer} />
         <Button onClick={addAnother}>Add another</Button>
         <Button variant="primary" onClick={() => openProject(ready.project.machineId, ready.project.projectId)}>
           Open chat
         </Button>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -659,7 +676,8 @@ function FailedView({ failure }: { failure: Failure }) {
 function FailedFooter({ failure }: { failure: Failure }) {
   const a = failure.action;
   return (
-    <>
+    <div className={s.actions}>
+      <span className={s.spacer} />
       <Button onClick={back}>Back</Button>
       {a ? (
         <Button
@@ -672,18 +690,19 @@ function FailedFooter({ failure }: { failure: Failure }) {
           {a.kind === "use_existing" ? "Add the existing folder" : "Open project"}
         </Button>
       ) : null}
-    </>
+    </div>
   );
 }
 
 /** Done is the way out; sending the add again is a secondary retry, since the first may still be cloning. */
 function UnlistedFooter({ phase }: { phase: Extract<Phase, { kind: "unlisted" }> }) {
   return (
-    <>
+    <div className={s.actions}>
+      <span className={s.spacer} />
       <Button onClick={() => startAdd(phase.request, phase.path)}>Retry the add</Button>
       <Button variant="primary" onClick={closeAddProject}>
         Done
       </Button>
-    </>
+    </div>
   );
 }

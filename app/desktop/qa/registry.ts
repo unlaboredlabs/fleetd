@@ -1742,9 +1742,9 @@ export const screens: readonly Screen[] = [
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
   { id: "setup", route: "#/setup/mac", fixtures: ["setup-fresh"], variant: "mac" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
-  // F8: Add project (the pick list, its empty and loading states, gh and machine problems).
+  // F8: New project, a modal over the chat (the pick list, its empty and loading states, gh and machine problems).
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
-  // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
+  // The modal's later states, reached by adding from the pick list (fixtures/projects answers project_add).
   {
     id: "projects.add.cloning",
     route: "#/projects/add",
@@ -1780,8 +1780,8 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
-  // W123: a new, empty project. A name that matches nothing offers it; the footer shows the folder the hub will make,
-  // editable, and git init; a machine whose node is too old says to update it.
+  // W123: a new, empty project. A name offers it; the footer's one line names the folder the hub will make, editable,
+  // and the machine; a machine whose node is too old says to update it.
   {
     id: "projects.add.new",
     route: "#/projects/add",
@@ -1800,8 +1800,9 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "New project name, GitHub URL, folder path, or filter" }).fill("Field notes");
-      await page.getByRole("group", { name: "Machine" }).getByRole("button", { name: /^buildbox/u }).click();
-      await page.getByText(/^Update fleetd on buildbox/u).waitFor();
+      await page.getByRole("combobox", { name: "Machine" }).click();
+      await page.getByRole("option", { name: "buildbox", exact: true }).click();
+      await page.getByText(/Update fleetd on buildbox/u).waitFor();
     },
   },
   // The folder the hub would make already holds files: refused, nothing added.
