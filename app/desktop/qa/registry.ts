@@ -659,13 +659,13 @@ export const screens: readonly Screen[] = [
     },
   },
   // The lead chat (lead-chat-spec.md).
-  // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
+  // UX-1 [5]: a row that wants you (reply, approve, secret, blocked) ends in the warning's dot, and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/", fixtures: ["sidebar-reasons"], variant: "sidebar" },
-  // Settings' entry in the sidebar: for the hub's owner it counts the setup steps left; a member's says nothing.
+  // Your name at the sidebar's foot: the hub's owner's is marked while setup steps are left; a member's never is.
   { id: "shell", route: "#/", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
-  // Several hubs: each hub's projects under its name, and each hub's connection on its own row; Acme offline waits on
-  // its own while Personal works on.
+  // Several hubs: each hub's projects under its name, your name marked while Acme is offline, which waits on its own
+  // while Personal works on.
   { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
   {
     id: "shell",
@@ -1329,7 +1329,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["updates-hub-ready", "updates-run-hub", "updates-put-back", "updates-updated"],
     variant: "updates-popover",
     open: async (page) => {
-      await page.locator("[data-hub-status]").first().click();
+      await page.locator("[data-opens='you']").click();
       await page.locator("[data-update-note]").waitFor();
     },
   },
@@ -1466,10 +1466,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical"],
     variant: "settings-back",
     open: async (page) => {
-      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u }).click();
+      await page.locator("[data-opens='you']").click();
+      await page.getByRole("dialog", { name: "You" }).getByRole("button", { name: /^Settings/u }).click();
       await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
       await page.getByRole("button", { name: "Back" }).click();
-      await expect(page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u })).toBeFocused();
+      await expect(page.locator("[data-opens='you']")).toBeFocused();
     },
   },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a

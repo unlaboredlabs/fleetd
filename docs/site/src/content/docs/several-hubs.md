@@ -63,11 +63,11 @@ owner or admin are listed.
 
 ## When a hub is out of reach {#offline}
 
-Each hub has its own row at the bottom of the sidebar, with its name and, when it isn't connected, its state:
-Offline, Reconnecting or Key refused. Click the row for why and for Retry now.
+While a hub is out of reach, a small mark shows on your picture at the bottom of the sidebar, its tooltip naming the
+hub. Click your name for a card per hub with its state (Offline, Reconnecting or Key refused), why, and Retry now.
 
 A hub that's out of reach only affects its own group. Its projects show as they were last seen, marked "as of 09:02",
-and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its row says
+and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its card says
 "Key refused", and Settings › Hubs has **Pair again**.
 
 The app reaches each hub directly, over your tailnet or HTTPS. A hub that only your company network reaches is out of

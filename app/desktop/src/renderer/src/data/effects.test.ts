@@ -83,8 +83,8 @@ describe("event effects", () => {
     }
   });
 
-  it("your sidebar order moved on another desktop: this one reads it again, and nothing else", () => {
-    expect(effectsOf(e("sidebar.order"))).toEqual({ invalidate: [{ tool: "sidebar_order_get" }], resync: false });
+  it("your pins changed on another device: this sidebar reads them again, and nothing else", () => {
+    expect(effectsOf(e("chat.pins"))).toEqual({ invalidate: [{ tool: "chat_pins_get" }], resync: false });
   });
 
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {

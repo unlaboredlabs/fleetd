@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// Reordering the sidebar (W214): a project dragged, or moved with ⌥↑ / ⌥↓, takes its new place in the one list, says
-// so to a screen reader, and the hub keeps the order for you (sidebar_order_set). A press that doesn't move is still a click; Esc puts a lifted row back.
+// Reordering the sidebar's pinned chats (W214, W530): a pinned one dragged, or moved with ⌥↑ / ⌥↓, takes its new place
+// in the one list, gliding on the sidebar's spring, says so to a screen reader, and the hub keeps your pins in that order
+// (chat_pins_set). A chat with new activity climbs to its place on the same spring. A press that doesn't move is still a click; Esc puts a lifted row back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,10 +9,12 @@ import type { ProjectSummary } from "../../../shared/contracts";
 import { createDataLayer, type DataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { DWELL_MS, SETTLE_MS } from "../../ui/lib/reorder";
+import { DWELL_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, SPRING } from "./Sidebar";
+
+const SETTLE_MS = SPRING.ms;
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -43,6 +46,10 @@ const row = (title: string, extra: Partial<ProjectSummary> = {}): SidebarProject
   running: 0,
   want: undefined,
   unread: false,
+  line: "",
+  at: "2026-10-26T09:00:00.000Z",
+  // Only pinned chats lift.
+  pinned: true,
 });
 
 const ROWS = [row("api"), row("docs"), row("web")];
@@ -66,7 +73,6 @@ const mount = (rows: SidebarProject[] = ROWS) => {
             collapsed={new Set()}
             onToggleHub={() => undefined}
             factory={false}
-            admin={false}
             go={(s) => went.push(s)}
           />
         </DataProvider>
@@ -89,7 +95,7 @@ beforeEach(() => {
   went = [];
   calls = [];
   layer = createDataLayer({
-    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { order: [] } })),
+    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { pins: [] } })),
     subscribe: () => () => undefined,
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -123,15 +129,15 @@ const section = (label: string): HTMLElement => {
   if (found === undefined) throw new Error(`no ${label} section`);
   return found;
 };
-const titles = (label: string) => [...section(label).querySelectorAll("[data-reorder-row]")].map((r) => r.querySelector("[class*=sidebarLabel]")?.textContent);
+const titles = (label: string) => [...section(label).querySelectorAll("[data-reorder-row]")].map((r) => r.querySelector("[class*=name]")?.textContent);
 const button = (title: string): HTMLElement => {
   const found = [...host.querySelectorAll<HTMLElement>("[data-reorder-row] button")].find((b) => b.textContent.startsWith(title));
   if (found === undefined) throw new Error(`no ${title}`);
   return found;
 };
-const saved = () => calls.filter((c) => c.tool === "sidebar_order_set").map((c) => (c.input as { order: { projectId: string }[] }).order.map((r) => r.projectId));
+const saved = () => calls.filter((c) => c.tool === "chat_pins_set").map((c) => (c.input as { pins: { projectId: string }[] }).pins.map((r) => r.projectId));
 const rows = (label: string) => [...section(label).querySelectorAll<HTMLElement>("[data-reorder-row]")];
-const nameOf = (r: HTMLElement) => r.querySelector("[class*=sidebarLabel]")?.textContent ?? "";
+const nameOf = (r: HTMLElement) => r.querySelector("[class*=name]")?.textContent ?? "";
 /** Where each row of a section is on screen now, by name. */
 const onScreen = (label: string) => new Map(rows(label).map((r) => [nameOf(r), slot(r) + translated(r)]));
 /** Each row's path from here: where its first frame draws it and where it ends, the same for a row that stays. */
@@ -232,7 +238,7 @@ describe("letting go", () => {
     // One render: the new order, each row drawn where it was, then gliding home over the settle's time.
     glidesFrom("Projects", was, ["docs", "api", "web"]);
     const api = rows("Projects")[1];
-    expect(api?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-out)`);
+    expect(api?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-spring)`);
     expect(api?.style.transform).toBe("");
     // Raised until it lands; the others no longer make way.
     expect(api?.hasAttribute("data-lifted")).toBe(true);
@@ -511,5 +517,41 @@ describe("the keyboard", () => {
     expect(titles("Projects")).toEqual(["api", "web", "docs"]);
     expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 3 of 3");
+  });
+});
+
+describe("a chat with new activity", () => {
+  const unpinned = (title: string, at: string) => ({ ...row(title), pinned: false, at });
+
+  it("climbs to its place on the spring, drawn over the rows it passes, which make way below it", async () => {
+    mount([unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
+    const was = onScreen("Projects");
+    // web gets a message: its row is newest now.
+    mount([unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
+    glidesFrom("Projects", was, ["web", "api", "docs"]);
+    const [web, api] = rows("Projects");
+    expect(web?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-spring)`);
+    expect(web?.dataset["gliding"]).toBe("up");
+    expect(api?.dataset["gliding"]).toBe("down");
+    await settle(SETTLE_MS + 20);
+    expect(rows("Projects").map((r) => [r.style.transform, r.dataset["gliding"]])).toEqual([
+      ["", undefined],
+      ["", undefined],
+      ["", undefined],
+    ]);
+    // Nothing was saved: activity is no order of yours.
+    expect(saved()).toEqual([]);
+  });
+
+  it("can't be dragged or moved with the keyboard: only a pinned chat can", async () => {
+    mount([unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
+    await drag("api", ROW + 6);
+    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+    act(() => button("docs").focus());
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true })));
+    await settle();
+    expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(saved()).toEqual([]);
   });
 });

@@ -91,7 +91,7 @@ const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, number> =
  * their places over `ms`, all in this frame: a row with nowhere to go, or new, just sits in its place. Returns the
  * rows gliding.
  */
-const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>, ms: number): HTMLElement[] => {
+const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>, ms: number, ease: string): HTMLElement[] => {
   // No row was on screen (the list's first rows, as the app opens): none has a place to glide from, and reading theirs
   // would lay out the whole window in the middle of its first paint.
   if (from.size === 0) return [];
@@ -99,6 +99,7 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>
   for (const el of els.values()) {
     el.style.transition = "none";
     el.style.transform = "";
+    delete el.dataset["gliding"];
   }
   const now = onScreen(els);
   const gliding: HTMLElement[] = [];
@@ -107,6 +108,8 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>
     const by = was === undefined ? 0 : was - (now.get(key) ?? was);
     if (ms > 0 && Math.abs(by) >= 0.5) {
       el.style.transform = `translateY(${String(by)}px)`;
+      // Which way it goes, so a list can draw the rows going up over the ones they pass (data-gliding="up").
+      el.dataset["gliding"] = by > 0 ? "up" : "down";
       gliding.push(el);
     } else el.style.transition = "";
   }
@@ -114,7 +117,7 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>
   // Drawn where they were, then let go: the transition runs from there.
   void gliding[0]?.getBoundingClientRect();
   for (const el of gliding) {
-    el.style.transition = `transform ${String(ms)}ms var(--ease-out)`;
+    el.style.transition = `transform ${String(ms)}ms ${ease}`;
     el.style.transform = "";
   }
   return gliding;
@@ -127,6 +130,8 @@ export interface ReorderOptions<K extends string> {
   readonly onMove: (order: K[], key: K, from: number, to: number) => void;
   /** The row's name, for the announcement. */
   readonly name: (key: K) => string;
+  /** How the rows glide to new places: SETTLE_MS on --ease-out unless a list says (the sidebar's spring). */
+  readonly settle?: { readonly ms: number; readonly ease: string } | undefined;
 }
 
 interface Press<K> {
@@ -241,12 +246,16 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     const from = first.current;
     if (lifted || from === null) return;
     first.current = null;
-    const wait = reduced() ? 0 : SETTLE_MS;
-    const gliding = glide(els.current, from, wait);
+    const settle = latest.current.settle;
+    const wait = reduced() ? 0 : (settle?.ms ?? SETTLE_MS);
+    const gliding = glide(els.current, from, wait, settle?.ease ?? "var(--ease-out)");
     const n = ++glides.current;
     const landed = () => {
       if (glides.current !== n) return;
-      for (const el of gliding) el.style.transition = "";
+      for (const el of gliding) {
+        el.style.transition = "";
+        delete el.dataset["gliding"];
+      }
       setLanding(null);
     };
     if (wait === 0) landed();

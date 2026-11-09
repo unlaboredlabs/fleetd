@@ -34,8 +34,8 @@ export const hasRepos = (p: Pick<ProjectSummary, "repos"> | undefined): boolean 
 export const isArchived = (p: Pick<ProjectSummary, "archivedAt">): boolean => p.archivedAt !== undefined;
 
 /**
- * The sidebar's rows: archived ones left out, Only-me projects first, each part in the order it came. Your own order
- * (shell/yourOrder.ts) goes over this, so it decides only where a row it doesn't name yet goes.
+ * The sidebar's rows: archived ones left out, Only-me projects first, each part in the order it came. The sidebar's
+ * order (shell/pins.ts: your pins, then by activity) goes over this.
  */
 export const sidebarOrder = <R extends { readonly project: ProjectSummary }>(rows: ReadonlyArray<R>): R[] => {
   const shown = rows.filter((r) => !isArchived(r.project));

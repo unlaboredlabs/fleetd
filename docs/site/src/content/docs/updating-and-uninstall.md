@@ -12,7 +12,7 @@ Keep fleetd up to date, or remove it.
 The hub looks for a newer build on its channel every 2 minutes. When it finds one, it downloads it ahead, checks it
 against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. Each downloads the build packed, about
 a third of its size, and checks it once unpacked; a cut-off download goes on from where it stopped. Nothing is installed
-yet. For owners and admins, the hub's row at the bottom of the sidebar then ends in **Update**; a click shows what's new
+yet. For owners and admins, **Update** then shows under your name at the bottom of the sidebar; a click shows what's new
 in a few lines and **Update now**. Members see nothing until an update runs.
 
 Click **Update now**. Since the build is already downloaded and checked, an update only swaps it in and restarts, in
@@ -49,11 +49,11 @@ seconds of restart fails, and the agent tries it again. Each part shows as updat
 the new build.
 
 While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
-goes once the hub is back. For an update, the hub's row keeps its name and says **Updating…**; past 10 seconds the
+goes once the hub is back. For an update, your name at the bottom of the sidebar says **Updating…**; past 10 seconds the
 screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**, and once it
 is, counts the machines coming back; past 2 minutes it is shown as offline. Any other restart or stop says nothing of
-updates and is shown as offline once it passes 10 seconds. Back on the new build, the row says **Updated** for 15
-minutes, and a click shows what's new. When a part didn't take the new build, the row says **Put back**: a click says
+updates and is shown as offline once it passes 10 seconds. Back on the new build, it says **Updated** for 15
+minutes, and a click shows what's new. When a part didn't take the new build, it says **Put back**: a click says
 which and why, with **Try again** for owners and admins.
 
 The 2 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 10}`; `0` doesn't wait),
@@ -143,7 +143,7 @@ The app checks for updates when it opens, every 10 minutes and when you come bac
 in the background; a newer build than one already downloaded replaces it. It downloads only the parts that changed since
 the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
 as it keeps the previous download to compare with). It has its own line on Settings › Hub › Updates, and its own
-**Update and restart** in Settings › General. Once it is downloaded, the hub's row ends in **Update** for everyone, and
+**Update and restart** in Settings › General. Once it is downloaded, **Update** shows under your name for everyone, and
 a click offers **Restart to update**. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.

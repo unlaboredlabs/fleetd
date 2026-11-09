@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// Your sidebar order through the data layer (W214): the order the hub keeps for you puts the sidebar's rows in it,
-// new ones after; a move from another desktop (sidebar.order) moves them live. Quick moves in a row each show at once,
-// go to the hub one at a time (only the newest of those made meanwhile), and a read older than the last of them,
-// such as the refetch your own earlier move's event made, never puts a row back. A row dropped in the sidebar stays
-// put through the hub's answer and its echo (W219).
+// Your pins through the data layer (W530): the chats the hub keeps pinned for you (chat_pins, the phone's too) go on
+// top in their order, every other one after by its newest activity; a change on another device (chat.pins) moves them
+// live. Quick changes in a row each show at once, go to the hub one at a time (only the newest of those made
+// meanwhile), and a read older than the last of them, such as the refetch your own earlier change's event made, never
+// puts a row back. A pinned row dropped in the sidebar stays put through the hub's answer and its echo (W219).
 import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,10 +12,11 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type DataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { SETTLE_MS } from "../../ui/lib/reorder";
 import { useSidebarProjects } from "./data";
-import { Sidebar } from "./Sidebar";
-import { saveOrder } from "./yourOrder";
+import { Sidebar, SPRING } from "./Sidebar";
+
+const SETTLE_MS = SPRING.ms;
+import { savePins } from "./pins";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -28,12 +29,12 @@ vi.hoisted(() => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const project = (title: string, kind?: "assistant"): ProjectSummary => ({
+const project = (title: string, kind?: "assistant", at = "09:00"): ProjectSummary => ({
   machineId: "devbox",
   projectId: title,
   title,
   workspaceRoot: `/srv/${title}`,
-  lastActivityAt: "2026-10-26T09:00:00.000Z",
+  lastActivityAt: `2026-10-26T${at}:00.000Z`,
   threads: { failed: 0, idle: 0, running: 0, waiting: 0 },
   ...(kind === undefined ? {} : { kind }),
 });
@@ -61,19 +62,19 @@ beforeEach(() => {
   seq = 10;
   const hub: HubApi = {
     call: (tool, input) => {
-      if (tool === "sidebar_order_get") {
-        const answer = { ok: true as const, output: { order: stored } };
+      if (tool === "chat_pins_get") {
+        const answer = { ok: true as const, output: { pins: stored, set: true } };
         if (!holdReads) return Promise.resolve(answer);
         return new Promise((done) => heldReads.push(() => done(answer)));
       }
-      if (tool === "sidebar_order_set") {
-        const order = (input as { order: ProjectRef[] }).order;
+      if (tool === "chat_pins_set") {
+        const order = (input as { pins: ProjectRef[] }).pins;
         return new Promise((done) =>
           sets.push({
             order,
             land: () => {
               stored = order;
-              done({ ok: true, output: { order } });
+              done({ ok: true, output: { pins: order } });
             },
           }),
         );
@@ -122,25 +123,26 @@ const mount = async (projects: ProjectSummary[]) => {
   await settle();
 };
 
-/** The hub announces your order changed (your own set, or another desktop's); the layer reads it again. */
+/** The hub announces your pins changed (your own set, or another device's); the layer reads them again. */
 const announced = async () => {
-  act(() => listener({ t: "event", event: { seq: seq++, at: "2026-10-26T09:01:00.000Z", type: "sidebar.order", summary: "", data: { personId: "p_abcd2345" } } }));
+  act(() => listener({ t: "event", event: { seq: seq++, at: "2026-10-26T09:01:00.000Z", type: "chat.pins", summary: "", data: { personId: "p_abcd2345" } } }));
   // Events' refetches go out together, 100 ms after the first.
   await settle(120);
 };
 
-const PROJECTS = [project("Ada", "assistant"), project("Home", "assistant"), project("api"), project("docs"), project("web"), project("new")];
+const PROJECTS = [project("Ada", "assistant"), project("Home", "assistant", "09:03"), project("api", undefined, "09:02"), project("docs", undefined, "09:04"), project("web"), project("new", undefined, "09:05")];
 
-describe("the order the hub keeps for you", () => {
-  it("puts the sidebar's rows in it, each section on its own, the new ones after, and follows another desktop's move live", async () => {
-    stored = refs("Home", "Ada", "web", "api", "docs");
+describe("your pins and the chats' activity", () => {
+  it("puts your pinned chats on top in your order, the rest newest first, and follows another device's change live", async () => {
+    stored = refs("web", "Ada");
     await mount(PROJECTS);
-    expect(shown()).toEqual(["Home", "Ada", "web", "api", "docs", "new"]);
+    // Unpinned: newest activity first (new, docs, Home, api), then by title when two are as new.
+    expect(shown()).toEqual(["web", "Ada", "new", "docs", "Home", "api"]);
 
-    // Moved on another desktop.
-    stored = refs("Ada", "Home", "docs", "new", "web", "api");
+    // Changed on the phone.
+    stored = refs("api");
     await announced();
-    expect(shown()).toEqual(["Ada", "Home", "docs", "new", "web", "api"]);
+    expect(shown()).toEqual(["api", "new", "docs", "Home", "Ada", "web"]);
   });
 });
 
@@ -149,10 +151,10 @@ describe("quick moves in a row", () => {
     await mount([project("a"), project("b"), project("c")]);
     expect(shown()).toEqual(["a", "b", "c"]);
 
-    act(() => void saveOrder(layer, refs("c", "a", "b")));
+    act(() => void savePins(layer, refs("c", "a", "b")));
     expect(shown()).toEqual(["c", "a", "b"]);
-    act(() => void saveOrder(layer, refs("b", "c", "a")));
-    act(() => void saveOrder(layer, refs("a", "c", "b")));
+    act(() => void savePins(layer, refs("b", "c", "a")));
+    act(() => void savePins(layer, refs("a", "c", "b")));
     expect(shown()).toEqual(["a", "c", "b"]);
     // One set on its way at a time.
     expect(sets.map((s) => s.order)).toEqual([refs("c", "a", "b")]);
@@ -196,7 +198,6 @@ function Bar() {
       collapsed={new Set()}
       onToggleHub={() => undefined}
       factory={false}
-      admin={false}
       go={() => undefined}
     />
   );
@@ -209,6 +210,8 @@ describe("a row dropped in the sidebar", () => {
   afterEach(() => layout.mockReset());
 
   it("stays put through the hub's answer, a read from before it and the hub's echo", async () => {
+    // Only pinned rows lift.
+    stored = refs("a", "b", "c");
     layout.mockImplementation(function (this: HTMLElement) {
       const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
       const by = Number(/translateY\((-?[\d.]+)px\)/.exec(this.style.transform)?.[1] ?? 0);
@@ -229,7 +232,7 @@ describe("a row dropped in the sidebar", () => {
     });
     await settle();
     const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
-    const titles = () => rows().map((r) => r.querySelector("[class*=sidebarLabel]")?.textContent);
+    const titles = () => rows().map((r) => r.querySelector("[class*=name]")?.textContent);
     expect(titles()).toEqual(["a", "b", "c"]);
 
     // a dragged past b and let go.
@@ -271,7 +274,7 @@ describe("the rows around a row dragged in the sidebar", () => {
   const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
   afterEach(() => layout.mockReset());
   const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
-  const nameOf = (r: HTMLElement) => r.querySelector("[class*=sidebarLabel]")?.textContent ?? "";
+  const nameOf = (r: HTMLElement) => r.querySelector("[class*=name]")?.textContent ?? "";
   const titles = () => rows().map(nameOf);
   const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
   const slot = (el: HTMLElement) => (el.parentElement === null ? 0 : [...el.parentElement.children].indexOf(el) * ROW);
@@ -284,6 +287,7 @@ describe("the rows around a row dragged in the sidebar", () => {
    * on #868's parent (the row above jumping up, W219) doesn't show.
    */
   const drag = async (name: string, dy: number, watch: string, passed: string) => {
+    stored = refs("a", "b", "c", "d");
     // Where each row was drawn at the last read of the layout: a transition set after it starts there.
     const drawn = new Map<HTMLElement, number>();
     layout.mockImplementation(function (this: HTMLElement) {

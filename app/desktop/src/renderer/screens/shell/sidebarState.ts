@@ -1,7 +1,7 @@
 // Whether the sidebar (and the panel beside the chat) shows. Below NARROW_PX each hides itself so the chat keeps its
 // width in a small window; its toggle still shows it there, until the window is narrowed again. Above it, each shows
 // as you last left it.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
 
 export const NARROW_PX = 1000;
@@ -137,3 +137,26 @@ export const shownRows = <P extends { readonly hub: string }>(
   collapsed: ReadonlySet<string>,
   several: boolean,
 ): ReadonlyArray<P> => (several ? rows.filter((p) => !collapsed.has(p.hub)) : rows);
+
+/**
+ * The sidebar's rows held where they are while the pointer is over its list (Sidebar.tsx): a chat with new activity
+ * keeps its place until the pointer leaves, then glides to it, so a row never moves under a click. Row keys, in the
+ * order they were on show; null while nothing holds them.
+ */
+let held: readonly string[] | null = null;
+const holders = new Set<() => void>();
+
+export const holdRows = (keys: readonly string[] | null): void => {
+  if (held === keys) return;
+  held = keys;
+  for (const h of holders) h();
+};
+
+export const useHeldRows = (): readonly string[] | null =>
+  useSyncExternalStore(
+    (onChange) => {
+      holders.add(onChange);
+      return () => void holders.delete(onChange);
+    },
+    () => held,
+  );
