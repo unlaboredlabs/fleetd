@@ -1,11 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
 import { AGENT_BROWSER_METHODS, cssPlain, refusal, revealingSelector } from "../src/node/browser/guard.ts";
 import { Broker, start } from "../src/node/browser/index.ts";
-import { findFfmpeg, VideoSink } from "../src/node/browser/record.ts";
+import { findFfmpeg, readMeta, recordingsDir, VideoSink } from "../src/node/browser/record.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
 import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
 import { tempHome } from "./helpers.ts";
@@ -471,4 +472,29 @@ test("a sealed session's DOM write whose check fails is refused, never let throu
   expect(browser.got.some((m) => m.method === "DOM.setFileInputFiles")).toBe(false);
   expect(await d.call(52, "Page.reload", {}, "driver-s")).toEqual({ id: 52, result: { echo: "Page.reload" } });
   d.ws.close();
+});
+
+test("the minute's sweep leaves a session that is still ending alone: it goes once, as its end sends it", async () => {
+  let release: () => void = () => {};
+  const closing = new Promise<void>((r) => (release = r));
+  const { broker, link, local, node } = nodeWith(async () => ({ cdp: new Cdp(fakeBrowser()), close: () => closing }));
+  const calls: { op: string; args: Record<string, unknown> }[] = [];
+  link.answer = async (op, args) => {
+    calls.push({ op, args });
+    return op === "browser_recording_part" ? { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length } : {};
+  };
+  const started = (await local.call("session_start", { purpose: "look" }, "t8")) as { sessionId: string };
+  const dir = join(recordingsDir(node.home), started.sessionId);
+  // Its end waits on the browser's close; meanwhile the sweep runs, its clock past the time a new folder is spared.
+  const ending = local.call("session_end", {}, "t8");
+  for (let i = 0; i < 100 && broker.live("t8"); i++) await Bun.sleep(5);
+  await broker.housekeep(Date.now() + 10 * 60_000);
+  expect(readMeta(dir)?.endedAt).toBeUndefined();
+  expect(calls.filter((c) => c.op === "browser_session" && c.args.state !== "live")).toEqual([]);
+  release();
+  await ending;
+  for (let i = 0; i < 200 && existsSync(dir); i++) await Bun.sleep(10);
+  const states = calls.filter((c) => c.op === "browser_session").map((c) => c.args.state);
+  expect(states).toEqual(["live", "uploading", "recorded"]);
+  expect(String(calls.find((c) => c.args.state === "recorded")?.args.note)).not.toContain("the node stopped");
 });

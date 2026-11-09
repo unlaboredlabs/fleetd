@@ -268,9 +268,11 @@ export class Broker {
     return this.sessions.size;
   }
 
-  /** A hosted session's secrets for its start (session_route), to scrub its recording with: taken once by `open`. */
-  secretsFor(thread: string, secrets: [string, string][]): void {
-    this.pendingSecrets.set(thread, secrets);
+  /** The session's secrets for its start (session_route), to scrub its recording with: taken once by `open`; none
+   * (`undefined`) drops what a start refused before it left. */
+  secretsFor(thread: string, secrets: [string, string][] | undefined): void {
+    if (secrets) this.pendingSecrets.set(thread, secrets);
+    else this.pendingSecrets.delete(thread);
   }
   private readonly pendingSecrets = new Map<string, [string, string][]>();
 
@@ -386,6 +388,21 @@ export class Broker {
     const open = this.sessions.get(thread);
     if (!open) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
     this.sessions.delete(thread);
+    const { session } = open;
+    // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until it is.
+    this.ending.add(session.id);
+    try {
+      return await this.close(open);
+    } finally {
+      this.ending.delete(session.id);
+    }
+  }
+
+  /** Sessions out of the map whose end is still under way (their video, their DOM captures): not yet a recording to
+   * send, nor one a stopped node left. */
+  private readonly ending = new Set<string>();
+
+  private async close(open: Open): Promise<{ sessionId: string; kind: "browser"; files: { file: string; bytes: number }[]; note?: string }> {
     const { session } = open;
     // Every step's DOM capture queued so far lands first, while the page is still there.
     await session.flushCaptures();
@@ -597,7 +614,7 @@ export class Broker {
       if (open.session.control() !== "human" && open.session.idleFor(now) >= idle) await this.end(thread).catch(() => {});
     }
     // One a stopped node left unended (this one's or a Rust node's) is ended with a note, and goes too.
-    const live = [...this.sessions.values()].map((o) => o.session.id);
+    const live = [...this.sessions.values()].map((o) => o.session.id).concat([...this.ending]);
     for (const dir of waitingIn(recordingsDir(this.node.home), live, now)) {
       const meta = readMeta(dir);
       if (!meta?.endedAt) continue;

@@ -21,8 +21,6 @@ export const FILE_MAX = 64 << 20;
 export const OUTPUT_MAX = 1 << 20;
 /** How long a command may run on the screen's node. */
 export const RUN_WAIT = 100_000;
-/** What the screen's node answers, with exit code 75, while the screen's runner is still starting. */
-export const RUNNER_STARTING = "fleetd: the screen's XCTest runner is still starting; the command waits for it.\n";
 
 const ONLY = "fleetd runs only agent-device commands that drive the screen on another machine";
 
@@ -104,21 +102,6 @@ export type Parsed = { command: string; args: string[]; roles: Role[] };
 
 /** A negative number stands where a positional argument does (`swipe 10 -20 …`), not a flag. */
 const isFlag = (arg: string) => arg.startsWith("-") && !/^[0-9]/.test(arg.slice(1));
-
-/**
- * Refuses `install` and `reinstall` for an iOS screen (D299): an app installed in a simulator runs as the Mac's own
- * user, outside the iOS sandbox. An Android screen takes them.
- */
-export function noInstall(args: string[]): void {
-  const command = args[0];
-  if (command === "install" || command === "reinstall") {
-    throw new ToolError(
-      "forbidden",
-      `\`agent-device ${command}\` doesn't run on an iOS screen on another machine: an app installed there runs as the Mac's own user, outside the iOS sandbox, so fleetd takes no apps from other machines until the shared Mac.`,
-      "drive the apps already on the screen, and say in your result that your build couldn't be installed",
-    );
-  }
-}
 
 /** Reads an agent-device command against the commands and flags a screen on another machine runs: refused with the
  * reason when it names anything else. */
@@ -560,12 +543,6 @@ export class Work {
       return [...args];
     }
     return args.map((arg, i) => (parsed.roles[i] === "plain" ? arg : join(this.dir, arg)));
-  }
-
-  /** A checked command held back unrun, with exit code 75 and `stderr`: the files sent for it go, as a run's do. */
-  heldBack(stderr: string): Ran {
-    rmSync(join(this.dir, "in"), { recursive: true, force: true });
-    return { stdout: "", stderr, exitCode: 75, files: [] };
   }
 
   /** A command's output, cut short, with this folder's own path left out: the files in it go by their names alone. */

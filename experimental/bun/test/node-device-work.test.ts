@@ -3,7 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FILE_MAX, noInstall, openCall, openDone, parse, PIECE, RUNNER_STARTING, sealCall, sealDone, Work } from "../src/node/device/work.ts";
+import { openCall, openDone, parse, PIECE, sealCall, sealDone, Work } from "../src/node/device/work.ts";
 import { tempHome } from "./helpers.ts";
 
 const cleanups: (() => void)[] = [];
@@ -128,17 +128,6 @@ test("a step opens only with its session's key, under its own count and way", ()
   expect(openCall(key, 3, done.dataB64)).toBeUndefined();
 });
 
-test("a command held back drops its files so they never pile up", () => {
-  const work = new Work(scratch(), KEY);
-  const piece = Buffer.alloc(PIECE, 7).toString("base64");
-  for (let i = 0; i < FILE_MAX / PIECE + 2; i++) {
-    work.put("1-app.zip", 0, piece);
-    const held = work.heldBack(RUNNER_STARTING);
-    expect([held.exitCode, held.stderr]).toEqual([75, RUNNER_STARTING]);
-    expect(existsSync(join(work.dir, "in"))).toBe(false);
-  }
-});
-
 test("a file goes in and a file comes back on the screen's node", async () => {
   const dir = scratch();
   const work = new Work(dir, KEY);
@@ -159,10 +148,6 @@ test("a file goes in and a file comes back on the screen's node", async () => {
   work.put("1-app.zip", PIECE, app.subarray(PIECE).toString("base64"));
   const install = ["install", "in/1-app.zip"];
   work.check(install);
-  // An install is an Android screen's alone: an iOS one refuses it first (D299).
-  expect(() => noInstall(install)).toThrow("outside the iOS sandbox");
-  expect(() => noInstall(["reinstall", "sh.fleetd.app", "in/1-app.zip"])).toThrow("outside the iOS sandbox");
-  noInstall(["uninstall", "sh.fleetd.app"]);
   for (const bad of [
     ["install", "in/2-other.zip"],
     ["install", "/Users/me/App.zip"],
