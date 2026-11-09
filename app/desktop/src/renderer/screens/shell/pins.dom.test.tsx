@@ -197,6 +197,8 @@ function Bar() {
       jumpHints={false}
       collapsed={new Set()}
       onToggleHub={() => undefined}
+      folded={new Set()}
+      onToggleSection={() => undefined}
       factory={false}
       go={() => undefined}
     />

@@ -124,6 +124,30 @@
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
 }
+/* A lifted row over one of your sections: an arrow and the section's name, cut short before the chat's own is. */
+.into {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 50%;
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.into > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--quiet);
+}
+.into > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .jump {
   min-width: 1ch;
   color: var(--accent);
@@ -640,4 +664,74 @@
 }
 .pinCell[data-unread] .pinTitle {
   font-weight: var(--weight-strong);
+}
+
+/* One of your sections: a quiet label over its chats, its words in line with their pictures, 12 px under the row above
+   and 2 px over its first chat. No line, no count: a click folds it to one line, which then says how many chats it
+   holds, with a dot at the rows' own far end while one of them waits on you or has a new message. */
+.sectionSlot {
+  margin-top: 10px;
+}
+.sectionSlot:first-child {
+  margin-top: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 14px 0 var(--space-2);
+  border: none;
+  border-radius: 12px;
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-xs);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-snap),
+    background-color var(--dur-quick) var(--ease-snap);
+}
+.sectionHead:hover {
+  color: var(--text);
+}
+.sectionHead:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* 12/16, whatever the text's own size brings. */
+.sectionHead > .sectionName {
+  line-height: var(--leading-xs);
+}
+/* The chevron shows on a folded label, and under the pointer or the keyboard on an open one. */
+.sectionHead > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.sectionHead:hover > svg,
+.sectionHead:focus-visible > svg,
+.sectionHead[aria-expanded="false"] > svg {
+  opacity: 1;
+}
+.sectionCount {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.sectionHead > .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+}
+/* A chat held over the section would join it: the label takes the rows' shade. */
+.sectionHead[data-taking] {
+  background: var(--hover);
+  color: var(--text);
 }

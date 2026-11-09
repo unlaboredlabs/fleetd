@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { ContextMenu as C } from "radix-ui";
 import { useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
 import { copyText } from "../lib/clipboard";
@@ -69,7 +69,7 @@ function Items({ menu }: { menu: () => ReactNode }) {
 export interface ContextMenuProps {
   /** The element the menu is on: one element that takes a ref and spreads its props (a row, a link, a button). */
   children: ReactElement;
-  /** Its items: ContextMenuItem, ContextMenuCopy and ContextMenuSeparator. */
+  /** Its items: ContextMenuItem, ContextMenuCopy, ContextMenuSub and ContextMenuSeparator. */
   menu: () => ReactNode;
   disabled?: boolean;
 }
@@ -180,7 +180,27 @@ export function ContextMenuCopy({ text, ...rest }: Omit<ComponentProps<typeof Co
   );
 }
 
-/** An item that opens more items beside it (React's tapbacks). */
+/** Items of which one is the choice now (ContextMenuRadioItem), ticked. */
+export function ContextMenuRadioGroup(props: ComponentProps<typeof C.RadioGroup>) {
+  return <C.RadioGroup {...props} />;
+}
+
+export function ContextMenuRadioItem({ className, children, ...rest }: ComponentProps<typeof C.RadioItem>) {
+  return (
+    <C.RadioItem className={cx(s.item, className)} {...rest}>
+      <span className={s.indicator}>
+        <C.ItemIndicator>
+          <Check />
+        </C.ItemIndicator>
+      </span>
+      <span className={s.itemLabel} data-text="wrap">
+        {children}
+      </span>
+    </C.RadioItem>
+  );
+}
+
+/** An item that opens more items beside it (React's tapbacks, the sidebar's Move to section). */
 export function ContextMenuSub({ label, icon, children }: { label: ReactNode; icon?: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (

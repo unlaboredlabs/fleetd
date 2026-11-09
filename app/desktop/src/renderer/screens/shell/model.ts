@@ -31,6 +31,8 @@ export interface SidebarProject extends ProjectRow {
   readonly at: string;
   /** You pinned it (pins.ts): on top, in your order, whatever moves. */
   readonly pinned: boolean;
+  /** The section of yours it is in, by its id (sections.ts); undefined in none. A pinned one keeps it. */
+  readonly section?: string | undefined;
 }
 
 /** The parts of an open request (requests_list) the marks count. */
@@ -60,6 +62,8 @@ export interface MarksIn {
   readonly lastAt?: Readonly<Record<string, string | undefined>> | undefined;
   /** Your pinned chats, by "machineId/projectId". */
   readonly pins?: readonly string[] | undefined;
+  /** Your sections of chats, in your order (sections.ts). */
+  readonly sections?: ReadonlyArray<{ readonly id: string; readonly chats: ReadonlyArray<ProjectKey> }> | undefined;
 }
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
@@ -86,6 +90,9 @@ const wantOf = ({ key, needsYou }: ProjectRow, marks: MarksIn): Want | undefined
 /** Undefined until the projects loaded (startup, and after every link drop): not "no projects". */
 export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: MarksIn = {}): ReadonlyArray<SidebarProject> | undefined => {
   const open = marks.open == null ? null : projectId(marks.open);
+  // A chat is in the first section that names it, as the hub keeps it.
+  const section = new Map<string, string>();
+  for (const s of marks.sections ?? []) for (const c of s.chats) if (!section.has(projectId(c))) section.set(projectId(c), s.id);
   return rows?.map((r): SidebarProject => {
     const seen = marks.seen?.[r.key];
     const unread = r.key !== open && r.lastSeq !== undefined && seen !== undefined && r.lastSeq > seen;
@@ -93,7 +100,7 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
     const at = latest !== undefined && latest.at !== "" ? latest.at : (marks.lastAt?.[r.key] ?? r.project.lastActivityAt);
     const by = latest?.person;
     const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || by.name === "" ? "You: " : `${by.name.split(/\s+/u)[0] ?? by.name}: `;
-    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key), line: `${who}${latest?.text ?? ""}`, at, pinned: marks.pins?.includes(r.key) === true };
+    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key), line: `${who}${latest?.text ?? ""}`, at, pinned: marks.pins?.includes(r.key) === true, section: section.get(r.key) };
   });
 };
 

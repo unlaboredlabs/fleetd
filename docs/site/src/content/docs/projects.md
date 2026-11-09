@@ -255,6 +255,27 @@ on the hub, as every project with a repo is by default.
 Your sidebar lists projects newest first, your pinned ones on top; pin one from its right-click menu. ⌘1–9 (Ctrl on
 Linux and Windows) open the first nine.
 
+### Sections {#sections}
+
+Sections group your chats in the sidebar under names of your own. Right-click a chat and pick **Move to section**: it
+lists your sections with a tick on the chat's own, **No section**, and **New section…**, which asks for a name. Or drag
+a chat onto a section's label or onto one of its chats; while you hold it there, the chat says which section it would
+join. A section is made with its first chat and goes away with its last.
+
+Under the pins, the chats in no section come first, with no label. Then each section sits under its quiet label, in
+your order, its chats newest first. Click a label to fold the section to one line: its name, how many chats it holds,
+and a dot when one of them waits on you or has a new message. ⌘1–9 skip the chats of a folded section. Which sections
+are folded is kept on this computer. Right-click a label for **Rename…**, **Move up**, **Move down** and **Remove
+section**, which puts its chats back on top and deletes none of them. A pinned chat shows among the pins only, and
+keeps its section for when you unpin it. With [several hubs](/docs/several-hubs), each hub's group has its own pins,
+chats in no section, and sections.
+
+Your sections are yours: the hub keeps them, in your order, for each person, so they're the same on each of your
+computers and on [your phone](/docs/mobile#sections). A teammate's sections never change your list, and each hub keeps
+its own. A name is up to 40 characters, no two sections share one, and you can have up to 50. A project that's deleted
+leaves its section by itself; an archived one keeps its place. A change shows at once; if the hub refuses it, the list
+goes back and a notice says why.
+
 ### Archive {#archive}
 
 **Archive**, in a project's right-click menu or at the end of its settings, takes it out of the sidebar and stops its

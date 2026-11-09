@@ -74,6 +74,8 @@ const mount = (rows: SidebarProject[] = ROWS) => {
             jumpHints={false}
             collapsed={new Set()}
             onToggleHub={() => undefined}
+            folded={new Set()}
+            onToggleSection={() => undefined}
             factory={false}
             go={(s) => went.push(s)}
           />

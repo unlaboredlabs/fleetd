@@ -95,6 +95,10 @@ describe("event effects", () => {
     expect(effectsOf(e("chat.pins"))).toEqual({ invalidate: [{ tool: "chat_pins_get" }], resync: false });
   });
 
+  it("your sections changed on another device: this sidebar reads them again, and nothing else", () => {
+    expect(effectsOf(e("chat.sections"))).toEqual({ invalidate: [{ tool: "chat_sections_get" }], resync: false });
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // A repo removed from a project can bring its checkout back as a project of its own.

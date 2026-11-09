@@ -14,7 +14,8 @@
 // cell back along the reading order; ⌥← / ⌥→ move it one cell, ⌥↑ / ⌥↓ a row. A list may let a row out (`out`, the
 // sidebar's pins and its other chats): dragged past the list's top or bottom it rides the pointer there, the others
 // close up behind it, and let go there, it goes where `out` takes it (pinned, unpinned), or back if it stays. A
-// list whose order isn't yours (`fixed`) lifts a row only to let it out.
+// list whose order isn't yours (`fixed`) lifts a row only to let it out, or to let it go on something inside the list
+// (`onto`, the sidebar's sections).
 //
 // Pure helpers first, so the arithmetic is unit-tested; the hook is the pointer and keyboard glue.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
@@ -192,6 +193,11 @@ export interface ReorderOptions<K extends string> {
   readonly fixed?: boolean | undefined;
   /** How far out a row may go (top and bottom, on screen): past them it is away, and let go there it goes back. */
   readonly within?: (() => readonly [number, number]) | undefined;
+  /**
+   * A fixed list's lifted row may be let go on something inside the list (the sidebar's sections): `over` names what
+   * the pointer at `at` (on screen) is on, null for nothing, and `drop` takes the row there.
+   */
+  readonly onto?: { readonly over: (key: K, at: Point) => string | null; readonly drop: (key: K, target: string) => void } | undefined;
 }
 
 interface Press<K> {
@@ -222,6 +228,8 @@ interface Press<K> {
   out: Way | null;
   /** Past `within`: let go now, it goes back. */
   away: boolean;
+  /** Over something of the list's that takes it (ReorderOptions.onto): let go now, it goes there. */
+  onto: string | null;
   /** The row's top and bottom on screen at the press. */
   home: readonly [number, number];
   /** Puts the lifted row under the pointer. */
@@ -252,6 +260,8 @@ interface Moving<K> {
   readonly slots?: readonly Point[];
   /** It is past the list's top or bottom, on its way out (ReorderOptions.out). */
   readonly out?: Way | null;
+  /** What it is over that takes it (ReorderOptions.onto). */
+  readonly onto?: string | null;
 }
 
 export interface Reorder<K extends string> {
@@ -276,6 +286,8 @@ export interface Reorder<K extends string> {
   readonly leaving: Way | null;
   /** A row is lifted. */
   readonly lifted: boolean;
+  /** What a lifted row is over, of the things that take it (ReorderOptions.onto); null over none. */
+  readonly onto: string | null;
 }
 
 export function useReorder<K extends string>(options: ReorderOptions<K>): Reorder<K> {
@@ -414,6 +426,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     // Let go outside, it goes where `out` takes it, or back; let go away, back.
     if (p.away) return;
     if (p.out !== null) latest.current.out?.(p.key, p.out, { x: p.x, y: p.y });
+    else if (p.onto !== null) latest.current.onto?.drop(p.key, p.onto);
     else commit(p.key, p.over);
   };
 
@@ -438,6 +451,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       edges: [0, 0],
       out: null,
       away: false,
+      onto: null,
       home: [0, 0],
       place: () => undefined,
       y: e.clientY,
@@ -465,13 +479,15 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       const leaving: Way | null =
         latest.current.out === undefined || away ? null : p.y < p.edges[0] - scrolled ? "up" : p.y > p.edges[1] - scrolled ? "down" : null;
       const fixed = latest.current.fixed === true;
+      const onto = !fixed || away || leaving !== null ? null : (latest.current.onto?.over(key, { x: p.x, y: p.y }) ?? null);
       const aim = (over: number) => {
         const to = away ? p.from : leaving !== null ? hi : fixed ? p.from : over;
-        if (to === p.over && leaving === p.out && away === p.away) return;
+        if (to === p.over && leaving === p.out && away === p.away && onto === p.onto) return;
         p.over = to;
         p.out = leaving;
         p.away = away;
-        setMoving((m) => (m === null ? m : { ...m, over: to, out: leaving }));
+        p.onto = onto;
+        setMoving((m) => (m === null ? m : { ...m, over: to, out: leaving, onto }));
       };
       if (own !== undefined) {
         // A grid's cell: both ways, kept inside the grid, and over the cell its centre is nearest.
@@ -659,5 +675,5 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     };
   };
 
-  return { shown, row, list: moving === null ? {} : { "data-reorder": "" }, status, leaving: moving?.out ?? null, lifted: moving !== null };
+  return { shown, row, list: moving === null ? {} : { "data-reorder": "" }, status, leaving: moving?.out ?? null, lifted: moving !== null, onto: moving?.onto ?? null };
 }
