@@ -9,5 +9,5 @@ export const ADA_ROUTE = `#/project/${ADA.machineId}/${ADA.projectId}`;
 /** Taxes' chat: an archived project, still open. */
 export const TAXES_ROUTE = `#/project/${TAXES.machineId}/${TAXES.projectId}`;
 
-/** Home's chat: only-me-files' files both ways. */
+/** Home's chat: only-me-files' files both ways, only-me-pictures' pictures. */
 export const HOME_ROUTE = `#/project/${HOME.machineId}/${HOME.projectId}`;

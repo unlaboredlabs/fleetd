@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
@@ -98,6 +98,9 @@ const api: FleetdApi = {
   files: {
     open: (hub, request) => ipcRenderer.invoke(IPC.fileOpen, hub, request) as Promise<OpenOutcome>,
     save: (hub, request) => ipcRenderer.invoke(IPC.fileSave, hub, request) as Promise<OpenOutcome>,
+    download: (hub, request) => ipcRenderer.invoke(IPC.fileDownload, hub, request) as Promise<DownloadOutcome>,
+    show: (path) => ipcRenderer.invoke(IPC.fileShow, path) as Promise<OpenOutcome>,
+    copyImage: (hub, request) => ipcRenderer.invoke(IPC.fileCopyImage, hub, request) as Promise<OpenOutcome>,
   },
   hubs: {
     initial: initialHubs,

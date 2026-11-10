@@ -4,7 +4,9 @@
 // skills it learned (Skills, with weekly-invoices' history). only-me-links: Ada's Linked hubs and Sam's links to this
 // hub (hubLinks/); only-me-links-none: neither yet. only-me-files: files both ways in Home's chat: the person sends a
 // lease (.docx) and a bank export (.csv), and Home sends back the trip as a PDF and the receipts as a CSV, each a card
-// that opens or saves.
+// that opens or saves. only-me-pictures: pictures both ways there: the person sends two screenshots side by side, and
+// Home answers with a picture of its own, each with a download button and Save image… and Copy image on right-click.
+import fs from "node:fs";
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -355,11 +357,37 @@ const files = (from: Fixture): Fixture => {
   return f;
 };
 
+const shot = (name: string) => fs.readFileSync(new URL(`../sessions/media/${name}.jpg`, import.meta.url));
+
+const pictures = (from: Fixture): Fixture => {
+  const f = Fixture.from(from, "only-me-pictures", "Only me: pictures both ways in Home's chat, two screenshots in and a picture out, each one saved in a click.");
+  const applied = shot("checkoutApplied");
+  const block = { v: 1, kind: "image", attachmentId: "F21", caption: "The checkout with the code applied" };
+  const intro = "The code works on the lamp. Here's the checkout with it applied.";
+  const text = `${intro}\n\n\`\`\`fleetd-block\n${JSON.stringify(block)}\n\`\`\``;
+  writeChat(f, HOME, [
+    {
+      author: "human",
+      text: "The lamp and what the shop wants at checkout. Does the autumn code still work on it?",
+      attachments: [
+        { name: "lamp.jpg", mime: "image/jpeg", data: shot("product") },
+        { name: "checkout.jpg", mime: "image/jpeg", data: shot("checkout") },
+      ],
+      minutesAgo: 9,
+    },
+    { author: "lead", text, parts: [{ start: 0, end: intro.length }, { start: intro.length + 2, end: text.length, block }], minutesAgo: 2 },
+  ]);
+  // After the chat, which drops the project's earlier files as it is written.
+  f.answer("attachment_get", { projectRef: { ...HOME }, attachmentId: "F21" }, { attachmentId: "F21", name: "checkout-with-code.jpg", mime: "image/jpeg", bytes: applied.length, dataB64: applied.toString("base64") });
+  f.answer(PROJECT_TOOLS.asks, { navi: { ...HOME } }, { navi: { ...HOME }, asks: [], next: "This project has asked no other project for anything yet." });
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
     const linked = links(made);
-    return [made, linked, linksNone(linked), files(made)];
+    return [made, linked, linksNone(linked), files(made), pictures(made)];
   },
 });
 

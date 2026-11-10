@@ -138,6 +138,12 @@ export const IPC = {
   fileOpen: "file:open",
   /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's file from the hub and saves it where the person picks. */
   fileSave: "file:save",
+  /** invoke(HubId, FileRequest) → DownloadOutcome. Main reads a chat's file from the hub and saves it to the Downloads folder, without asking. */
+  fileDownload: "file:download",
+  /** invoke(path) → OpenOutcome. Shows a file fileDownload saved in its folder; main refuses any other path. */
+  fileShow: "file:show",
+  /** invoke(HubId, FileRequest) → OpenOutcome. Main reads a chat's picture from the hub and puts it on the clipboard. */
+  fileCopyImage: "file:copy-image",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

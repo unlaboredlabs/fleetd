@@ -49,6 +49,8 @@ export interface HubError {
 
 export type CallOutcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
 export type OpenOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
+/** A file saved to the Downloads folder: where it is, and the name it got (a number added when its own was taken). */
+export type DownloadOutcome = { readonly ok: true; readonly path: string; readonly name: string } | { readonly ok: false; readonly message: string };
 export type ConnectOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** main → renderer, on IPC.hubFrame. After a `state` with phase `live`, a `snapshot` always precedes events. */

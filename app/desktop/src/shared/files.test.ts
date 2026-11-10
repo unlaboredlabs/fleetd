@@ -1,6 +1,6 @@
 // What a chat takes, by a file's name and whether its bytes are text, and the name a file is opened or saved under.
 import { expect, it } from "vitest";
-import { glyphOf, kindOf, mimeOfFile, openedFileName, safeFileName } from "./files";
+import { glyphOf, kindOf, mimeOfFile, numberedName, openedFileName, safeFileName } from "./files";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -37,4 +37,11 @@ it("opens code a computer would run when opened as text", () => {
   expect(openedFileName("run.command", "text/plain")).toBe("run.command.txt");
   // Saving keeps the name the person sees in the dialog.
   expect(safeFileName("tool.py", "text/plain")).toBe("tool.py");
+});
+
+it("numbers a download whose name is taken before its extension", () => {
+  expect(numberedName("pebble.png", 0)).toBe("pebble.png");
+  expect(numberedName("pebble.png", 1)).toBe("pebble (1).png");
+  expect(numberedName("shot.final.png", 12)).toBe("shot.final (12).png");
+  expect(numberedName("notes", 2)).toBe("notes (2)");
 });

@@ -1,5 +1,6 @@
 // Checklists, and an image or clip already on the hub (attachment_get, its preview read once the bubble is on screen). In the chat
-// an image opens large in the viewer when clicked; a clip plays where it is.
+// an image opens large in the viewer when clicked, and saves or copies from its own button and menu (../picture.tsx); a
+// clip plays where it is.
 import { Check, Circle } from "lucide-react";
 import type { AttachmentBlock, ChecklistBlock } from "../../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../../shared/transfer";
@@ -8,6 +9,7 @@ import { useSeen } from "../../live";
 import { cx, Text } from "../../../ui";
 import { useBubbleActions } from "../actions";
 import { useOpenImage } from "../ImageViewer";
+import { Picture } from "../picture";
 import b from "./blocks.module.css";
 
 export function Checklist({ list }: { list: ChecklistBlock }) {
@@ -53,12 +55,16 @@ export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }
         </div>
       ) : clip && data?.mime.startsWith("video/") === true ? (
         <video className={b.mediaItem} src={src} controls preload="metadata" />
-      ) : clip || open === undefined ? (
-        <img className={b.mediaItem} src={src} alt={alt} />
       ) : (
-        <button type="button" className={b.mediaOpen} onClick={() => open(media.attachmentId)} aria-label={alt === "" ? "Open image" : `Open ${alt}`}>
-          <img className={b.mediaItem} src={src} alt={alt} />
-        </button>
+        <Picture project={project} file={{ attachmentId: media.attachmentId, name: data?.name }}>
+          {clip || open === undefined ? (
+            <img className={b.mediaItem} src={src} alt={alt} />
+          ) : (
+            <button type="button" className={b.mediaOpen} onClick={() => open(media.attachmentId)} aria-label={alt === "" ? "Open image" : `Open ${alt}`}>
+              <img className={b.mediaItem} src={src} alt={alt} />
+            </button>
+          )}
+        </Picture>
       )}
       {media.caption !== undefined ? (
         <figcaption>

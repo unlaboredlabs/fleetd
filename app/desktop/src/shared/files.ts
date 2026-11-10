@@ -103,3 +103,13 @@ export const openedFileName = (name: string, mime: string): string => {
   const safe = safeFileName(name, mime);
   return RUNS_WHEN_OPENED.has(extensionOf(safe)) ? `${safe}.txt` : safe;
 };
+
+/**
+ * The name a download is kept under when `name` is taken, as a browser numbers a second one: `pebble (1).png`. The
+ * number goes before the extension; 0 is the name itself.
+ */
+export const numberedName = (name: string, n: number): string => {
+  if (n === 0) return name;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? `${name.slice(0, dot)} (${String(n)})${name.slice(dot)}` : `${name} (${String(n)})`;
+};

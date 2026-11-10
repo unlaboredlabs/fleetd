@@ -18,7 +18,7 @@ import { authorizer, copyVaultField, revealVaultItem, saveVaultItem, unlockVault
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
-import { openFile, saveFile } from "./files";
+import { copyImage, downloadFile, openFile, saveFile, showDownloaded } from "./files";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest } from "./hub/fixture";
 import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
@@ -243,6 +243,9 @@ export const registerIpc = (
   });
   handle(IPC.fileOpen, (_event, id, request) => openFile(call(id), request));
   handle(IPC.fileSave, (event, id, request) => saveFile(call(id), request, event.sender));
+  handle(IPC.fileDownload, (_event, id, request) => downloadFile(call(id), request));
+  handle(IPC.fileShow, (_event, path) => showDownloaded(path));
+  handle(IPC.fileCopyImage, (_event, id, request) => copyImage(call(id), request));
   handle(IPC.appReady, () => frame.opener.ready());
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
   // macOS shows it on the Dock icon; Linux only where the launcher supports badges (Unity), and ignores it elsewhere.
