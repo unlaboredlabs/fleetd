@@ -112,7 +112,7 @@ export function healthFrom(
   }
   if (!node()) return of("unavailable", "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH.", "brew install node", false);
   if (state.failed) {
-    return of("unavailable", `Making the golden iOS simulator failed: ${state.failed}. The next ios session_start tries again.`, undefined, true);
+    return of("unavailable", `Making the golden iOS simulator failed: ${state.failed}. The next mac sim start tries again.`, undefined, true);
   }
   return of("preparing", `Xcode with ${x.ok}; the node makes its golden iOS simulator next.`, undefined, true);
 }

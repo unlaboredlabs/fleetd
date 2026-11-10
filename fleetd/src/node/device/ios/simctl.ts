@@ -6,6 +6,13 @@ import { join } from "node:path";
 
 /** A simctl call that hangs (a wedged CoreSimulator) is given up after this; a boot waits longer. */
 export const CALL = 60_000;
+/**
+ * How long a call waits while CoreSimulator may still be starting. The first simctl call since the Mac started has
+ * launchd start CoreSimulator's service, which readies every installed runtime before it answers: seconds on a Mac in
+ * use, past CALL on a cold one (GitHub's 3-vCPU Mac VM, Nov 2026: `list` given up at 60 s, answered 3 s later). So
+ * until simctl has answered once, a call gets this rather than its own bound.
+ */
+export const COLD_START = 300_000;
 
 export type DeviceType = { identifier: string; name: string; productFamily?: string; bundlePath?: string };
 /** An iOS runtime Xcode has installed, with the device types it runs. */
@@ -117,9 +124,13 @@ export const recordingStarted = (line: string) => line.toLowerCase().includes("r
 
 /** The node's simctl, on its device set. `xcrun` is Xcode's, or a test's stand-in. */
 export class Simctl {
+  /** Whether simctl has answered here: CoreSimulator is up, and a call gets its own bound. */
+  private answered = false;
+
   constructor(
     readonly set: string,
     readonly xcrun = "xcrun",
+    private readonly coldStart = COLD_START,
   ) {}
 
   /** `xcrun simctl --set <set> <args>`'s argv. */
@@ -127,7 +138,10 @@ export class Simctl {
     return [this.xcrun, "simctl", "--set", this.set, ...args];
   }
 
-  /** Runs a call to its end and returns what it printed; its error says what simctl said. */
+  /**
+   * Runs a call to its end and returns what it printed; its error says what simctl said. Given up after `within`, or
+   * after `coldStart` when that is longer and simctl hasn't answered yet.
+   */
   async run(args: string[], within = CALL): Promise<string> {
     try {
       mkdirSync(this.set, { recursive: true });
@@ -141,15 +155,21 @@ export class Simctl {
     } catch (e) {
       throw new Error(`cannot run xcrun simctl: ${(e as Error).message}`);
     }
+    const bound = this.answered ? within : Math.max(within, this.coldStart);
+    const started = performance.now();
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, within);
+    }, bound);
     try {
       const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-      if (timedOut) throw new Error(`simctl ${what} did not finish in ${Math.round(within / 1000)} s`);
+      if (timedOut) throw new Error(`simctl ${what} did not finish in ${Math.round(bound / 1000)} s`);
       if (code !== 0) throw new Error(`simctl ${what} failed: ${[...stderr.trim()].slice(0, 300).join("")}`);
+      if (!this.answered) {
+        this.answered = true;
+        console.info(`CoreSimulator answered its first simctl call (${what}): ${Math.round(performance.now() - started)} ms`);
+      }
       return stdout;
     } finally {
       clearTimeout(timer);

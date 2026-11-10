@@ -63,13 +63,15 @@ jobs:
         run: bun test test/node-ios-sim.test.ts --timeout 4800000
         env:
           FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
-      # What agent-device's daemons did (the golden's runner build, the pool's runner start) and why a golden failed.
+      # What agent-device's daemons did (the golden's runner build, the pool's runner start), why a golden failed, and
+      # CoreSimulator's own log (its service's start, which the first simctl call waits for).
       - if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: ios-simulators-agent-device
           path: |
             ~/.agent-device/logs/
+            ~/Library/Logs/CoreSimulator/CoreSimulator.log
             ${{ runner.temp }}/fleetd-test-ios/device/ios/state.json
           if-no-files-found: ignore
           retention-days: 14
