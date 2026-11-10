@@ -22,6 +22,8 @@ interface Saving<T> {
 export interface Ahead<T> {
   /** Your newest change on `layer`'s hub while the read numbered `readNo` is from before it; undefined otherwise. */
   readonly useAhead: (layer: DataLayer, readNo: number | undefined) => T | undefined;
+  /** The same, as it is now, for a change made on top of it. */
+  readonly now: (layer: DataLayer, readNo: number | undefined) => T | undefined;
   /**
    * Saves `value` on `layer`'s hub. The sidebar takes it at once. Changes made while one is on its way go after it,
    * only the newest of them; a refusal puts the hub's list back and says why.
@@ -44,6 +46,8 @@ export const ahead = <T>(o: {
     else savings.set(layer, next);
     for (const w of watchers.get(layer) ?? []) w();
   };
+  const aheadOf = (saving: Saving<T> | undefined, readNo: number | undefined): T | undefined =>
+    saving !== undefined && (saving.mark === undefined || readNo === undefined || readNo <= saving.mark) ? saving.want : undefined;
   const useAhead = (layer: DataLayer, readNo: number | undefined): T | undefined => {
     const saving = useSyncExternalStore(
       useCallback(
@@ -56,7 +60,7 @@ export const ahead = <T>(o: {
       ),
       () => savings.get(layer),
     );
-    return saving !== undefined && (saving.mark === undefined || readNo === undefined || readNo <= saving.mark) ? saving.want : undefined;
+    return aheadOf(saving, readNo);
   };
   const save = async (layer: DataLayer, value: T): Promise<void> => {
     const was = savings.get(layer);
@@ -79,7 +83,7 @@ export const ahead = <T>(o: {
       }
     }
   };
-  return { useAhead, save };
+  return { useAhead, now: (layer, readNo) => aheadOf(savings.get(layer), readNo), save };
 };
 
 /** What was last read of a list, kept per hub under `name` in this computer's storage. */

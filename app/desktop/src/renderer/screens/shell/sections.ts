@@ -4,13 +4,15 @@
 // Move to section › New section…) and goes with its last; a pinned chat keeps its section and shows among the pins
 // only. A change shows at once and goes to the hub as the whole list (ahead.ts); one the hub refuses is taken back, with
 // why. Another device's change (chat.sections, which only your devices see) arrives live. The last sections read are
-// kept on this computer too, only so a launch shows them before the hub answers. Which sections are folded is this
-// computer's alone (sidebarState.ts). The list's lines and each change to the sections are pure, so they are
-// unit-tested.
+// kept on this computer too, only so a launch shows them before the hub answers: a change is never made to those, but
+// to the hub's own list, read first (changeSections), since the list sent replaces the hub's. Which sections are
+// folded is this computer's alone (sidebarState.ts). The list's lines and each change to the sections are pure, so
+// they are unit-tested.
 import { useEffect, useState } from "react";
 import type { ChatSection, ProjectRef } from "../../../shared/contracts";
-import { callKey, type DataLayer } from "../../src/data/queries";
+import { CallError, callKey, type DataLayer } from "../../src/data/queries";
 import { useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
+import { toast } from "../../ui";
 import { ahead, keptPerHub } from "./ahead";
 import { projectId } from "./model";
 
@@ -123,14 +125,19 @@ const isSection = (s: unknown): s is ChatSection =>
 
 const before = keptPerHub("fleetd.sidebarSections", (raw): readonly ChatSection[] | undefined => (Array.isArray(raw) ? raw.filter(isSection) : undefined));
 
+const READ = callKey("chat_sections_get", NONE);
+const REFUSED = "Couldn’t save your sections";
+/** Why the hub didn't answer, in words for the person: its own, but a hub from before sections has no such tool. */
+const why = (error: { readonly code: string; readonly message: string }): string =>
+  error.code === "not_found" ? "This hub doesn’t keep sections yet. Update it to use them." : error.message;
+
 const saved = ahead<readonly ChatSection[]>({
   send: async (layer, sections) => {
     const out = await layer.call("chat_sections_set", { sections: [...sections] });
-    // A list the hub won't keep, in its own words; a hub from before sections has no such tool.
-    return out.ok ? undefined : out.error.code === "not_found" ? "This hub doesn’t keep sections yet. Update it to use them." : out.error.message;
+    return out.ok ? undefined : why(out.error);
   },
-  read: callKey("chat_sections_get", NONE),
-  refused: "Couldn’t save your sections",
+  read: READ,
+  refused: REFUSED,
 });
 
 /** This hub's sections for you, in your order: your changes still on their way, else the hub's, else the ones kept from before. */
@@ -147,7 +154,34 @@ export const useSections = (): readonly ChatSection[] | undefined => {
 };
 
 /**
- * Saves `sections` on `layer`'s hub, the whole list. The sidebar takes them at once. Changes made while one is on its
- * way go after it, only the newest of them; a refusal puts the hub's sections back and says why.
+ * Your sections on `layer`'s hub as they are now: your changes still on their way, else the hub's own answer. None
+ * while it hasn't answered, or couldn't the last time it was asked.
  */
-export const saveSections = (layer: DataLayer, sections: readonly ChatSection[]): Promise<void> => saved.save(layer, sections);
+const held = (layer: DataLayer): readonly ChatSection[] | undefined => {
+  const read = layer.queryClient.getQueryState<{ sections: ChatSection[] }>(READ);
+  return saved.now(layer, layer.readOf("chat_sections_get", NONE)) ?? (read?.status === "success" ? read.data?.sections : undefined);
+};
+
+/**
+ * Changes your sections on `layer`'s hub: `change` gets them as they are there and returns them changed (the same list
+ * for no change), and the whole list is saved. The sidebar takes it at once. Changes made while one is on its way go
+ * after it, only the newest of them; a refusal puts the hub's sections back and says why. A hub that hasn't answered
+ * with your sections yet is asked first, so the list sent never lacks a section made on another device; if it can't
+ * say, nothing is sent, and the person hears why as for a refusal.
+ */
+export const changeSections = async (layer: DataLayer, change: (sections: readonly ChatSection[]) => readonly ChatSection[]): Promise<void> => {
+  if (held(layer) === undefined) {
+    try {
+      // Asked now (or the read on its way waited for), with no retries of its own.
+      await layer.queryClient.query({ ...layer.toolQuery("chat_sections_get", NONE), staleTime: 0, retry: false });
+    } catch (e) {
+      toast({ title: REFUSED, description: e instanceof CallError ? why(e.error) : "The hub didn’t answer with your sections.", tone: "danger" });
+      return;
+    }
+  }
+  // Read again after the wait: a change made meanwhile is under this one.
+  const now = held(layer);
+  if (now === undefined) return;
+  const next = change(now);
+  if (next !== now) await saved.save(layer, next);
+};
