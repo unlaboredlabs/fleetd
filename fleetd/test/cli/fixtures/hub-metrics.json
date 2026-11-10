@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "fleet: last 7 days, 2026-11-03 to 2026-11-09 (UTC)\n\nmerged per day       0.0  0 in 7 days · was 0.0\norder to merged        —  no merged PR belongs to an order\nyour minutes per PR    —  not counted yet\nthrough fleetd         —  nothing merged\n\nby route                         n  lines\n  through fleetd                 0\n  made by fleetd, merged by you  0\n  merged outside fleetd          0\n  pushed straight                0\n\nNo merges in this range.\n\nread from: no repos yet (merges are read from the merge train's repos)\n",
+  "stdout": "fleet: last 7 days, DATE to DATE (UTC)\n\nmerged per day       0.0  0 in 7 days · was 0.0\norder to merged        —  no merged PR belongs to an order\nyour minutes per PR    —  not counted yet\nthrough fleetd         —  nothing merged\n\nby route                         n  lines\n  through fleetd                 0\n  made by fleetd, merged by you  0\n  merged outside fleetd          0\n  pushed straight                0\n\nNo merges in this range.\n\nread from: no repos yet (merges are read from the merge train's repos)\n",
   "stderr": ""
 }
