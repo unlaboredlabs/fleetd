@@ -103,6 +103,8 @@ const NAME = "[class*=name], [class*=pinTitle]";
  * after it starts there. A row's whole path in a glide is from that place to its own: no frame anywhere else.
  */
 let drawn: Map<HTMLElement, number>;
+/** And each row's clip and mask then: what a glide's first frame shows of it. */
+let cutThen: Map<HTMLElement, readonly [string, string]>;
 
 beforeEach(() => {
   went = [];
@@ -122,8 +124,12 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   drawn = new Map();
+  cutThen = new Map();
   layout.mockImplementation(function (this: HTMLElement) {
-    for (const r of host.querySelectorAll<HTMLElement>("[data-reorder-row]")) drawn.set(r, slot(r) + translated(r));
+    for (const r of host.querySelectorAll<HTMLElement>("[data-reorder-row]")) {
+      drawn.set(r, slot(r) + translated(r));
+      cutThen.set(r, [r.style.clipPath, r.style.mask]);
+    }
     const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
     return DOMRect.fromRect({ x: 0, y: at * ROW + translated(this), width: 200, height: ROW });
   });
@@ -170,7 +176,32 @@ const glidesFrom = (label: string, was: ReadonlyMap<string, number>, order: stri
   expect(titles(label)).toEqual(order);
   expect(Object.fromEntries(paths(label))).toEqual(Object.fromEntries(order.map((name, i) => [name, { from: was.get(name) ?? i * ROW, to: i * ROW }])));
 };
+/**
+ * What a clip and a mask show of their row: down to `bottom` px under the row's top (10000: all of it), but for
+ * `holes`, each the full width of a row, from its top to its bottom. None: the row is whole.
+ */
+const shows = ([clip, mask]: readonly [string, string] = ["", ""]) => {
+  if (clip === "" && mask === "") return null;
+  // Open far past its top and sides, and cut that far up from the row's lower edge.
+  const cut = /^inset\(-10000px -10000px (-?[\d.]+)px\)$/u.exec(clip);
+  expect(cut).not.toBeNull();
+  // All of the row, less each hole.
+  const [all, ...layers] = mask.split(", linear-gradient");
+  expect(all).toBe("linear-gradient(#000, #000) no-clip subtract");
+  const holes = layers.map((layer) => /^\(#000, #000\) 0px (-?[\d.]+)px \/ 200px ([\d.]+)px no-repeat no-clip add$/u.exec(layer));
+  expect(holes).not.toContain(null);
+  return { bottom: ROW - Number(cut?.[1]), holes: holes.map((m) => [Number(m?.[1]), Number(m?.[1]) + Number(m?.[2])]) };
+};
+/** A row's clip and mask as they are. */
+const cutNow = (r: HTMLElement) => [r.style.clipPath, r.style.mask] as const;
+/** Each row's cut over a glide: in its first frame, and where it ends. */
+const cutsOf = (label: string) => Object.fromEntries(rows(label).map((r) => [nameOf(r), [shows(cutThen.get(r)), shows(cutNow(r))]]));
 const announced = (label: string) => section(label).querySelector("[role='status']")?.textContent;
+/** The window asking for reduced motion, until the spy is restored. */
+const reducedMotion = () =>
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query) => ({ matches: query.includes("reduce"), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false }) as MediaQueryList,
+  );
 
 const pointer = (target: EventTarget, type: string, y: number, x = 0) =>
   act(() => {
@@ -257,6 +288,8 @@ describe("letting go", () => {
     glidesFrom("Projects", was, ["docs", "api", "web"]);
     const api = rows("Projects")[1];
     expect(api?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-spring)`);
+    // A pin rides raised over the ones it passes, with its own shade: none of them is cut.
+    expect(cutsOf("Projects")).toEqual({ docs: [null, null], api: [null, null], web: [null, null] });
     expect(api?.style.transform).toBe("");
     // Raised until it lands; the others no longer make way.
     expect(api?.hasAttribute("data-lifted")).toBe(true);
@@ -282,9 +315,7 @@ describe("letting go", () => {
   });
 
   it("with reduced motion, lands at once: nothing glides", () => {
-    const media = vi.spyOn(window, "matchMedia").mockImplementation(
-      (query) => ({ matches: query.includes("reduce"), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false }) as MediaQueryList,
-    );
+    const media = reducedMotion();
     try {
       lift();
       pointer(window, "pointerup", ROW / 2 + ROW + 6);
@@ -821,6 +852,146 @@ describe("a chat with new activity", () => {
     ]);
     // Nothing was saved: activity is no order of yours.
     expect(saved()).toEqual([]);
+  });
+
+  it("cuts the rows it passes where it is over them, so no frame draws its words on theirs, whatever is behind", async () => {
+    mount([unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
+    mount([unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
+    // web starts two rows down, right under docs' first place and a row under api's, and ends over both. Each hole
+    // is where web is, seen from the row it is cut out of, and goes with it on the same spring.
+    expect(cutsOf("Projects")).toEqual({
+      web: [null, null],
+      api: [
+        { bottom: 10000, holes: [[2 * ROW, 3 * ROW]] },
+        { bottom: 10000, holes: [[-ROW, 0]] },
+      ],
+      docs: [
+        { bottom: 10000, holes: [[ROW, 2 * ROW]] },
+        { bottom: 10000, holes: [[-2 * ROW, -ROW]] },
+      ],
+    });
+    const over = `${String(SETTLE_MS)}ms var(--ease-spring)`;
+    const cut = `clip-path ${over}, mask-position ${over}`;
+    expect(rows("Projects").map((r) => r.style.transition)).toEqual([`transform ${over}`, `transform ${over}, ${cut}`, `transform ${over}, ${cut}`]);
+    await settle(SETTLE_MS + 20);
+    expect(rows("Projects").map((r) => [...cutNow(r), r.style.transition])).toEqual([
+      ["", "", ""],
+      ["", "", ""],
+      ["", "", ""],
+    ]);
+  });
+
+  it("cuts one of two climbing at once where the other, drawn over it, crosses it, and the rows under both", () => {
+    mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("misc", "09:02"), unpinned("web", "09:01")]);
+    const was = onScreen("Projects");
+    // web and misc both get a message, web's the newer: web goes up three rows and passes misc, which goes up one.
+    mount([unpinned("web", "09:06"), unpinned("misc", "09:05"), unpinned("api", "09:04"), unpinned("docs", "09:03")]);
+    glidesFrom("Projects", was, ["web", "misc", "api", "docs"]);
+    expect(rows("Projects").map((r) => r.dataset["gliding"])).toEqual(["up", "up", "down", "down"]);
+    // misc is the lower of the two going up, so the page draws it over web: web is cut where misc is. api and docs
+    // are under both, whose holes lie on each other half way.
+    expect(cutsOf("Projects")).toEqual({
+      web: [
+        { bottom: 10000, holes: [[-ROW, 0]] },
+        { bottom: 10000, holes: [[ROW, 2 * ROW]] },
+      ],
+      misc: [null, null],
+      api: [
+        { bottom: 10000, holes: [[3 * ROW, 4 * ROW], [2 * ROW, 3 * ROW]] },
+        { bottom: 10000, holes: [[-2 * ROW, -ROW], [-ROW, 0]] },
+      ],
+      docs: [
+        { bottom: 10000, holes: [[2 * ROW, 3 * ROW], [ROW, 2 * ROW]] },
+        { bottom: 10000, holes: [[-3 * ROW, -2 * ROW], [-2 * ROW, -ROW]] },
+      ],
+    });
+  });
+
+  it("leaves a row let go whole, over the others: one going up with it is cut where it is", async () => {
+    // With a pin, so no place for a first one comes and goes over the list.
+    mount([row("pin"), unpinned("api", "09:03"), unpinned("docs", "09:02"), unpinned("web", "09:01")]);
+    // api is carried two rows down when web gets a message: api goes back, now to the place under web's.
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", 2 * ROW + ROW / 2);
+    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("api");
+    expect(Object.fromEntries(onScreen("Projects"))).toEqual({ pin: 0, api: 2 * ROW, docs: ROW, web: 2 * ROW });
+    mount([row("pin"), unpinned("web", "09:04"), unpinned("api", "09:03"), unpinned("docs", "09:02")]);
+    expect(Object.fromEntries(paths("Projects"))).toEqual({ pin: { from: 0, to: 0 }, web: { from: 2 * ROW, to: 0 }, api: { from: 2 * ROW, to: ROW }, docs: { from: ROW, to: 2 * ROW } });
+    const [, web, api, docs] = rows("Projects");
+    expect([web, api, docs].map((r) => [r?.dataset["gliding"], r?.hasAttribute("data-lifted")])).toEqual([
+      ["up", false],
+      ["up", true],
+      ["down", false],
+    ]);
+    // api starts where web does and ends under it; docs is under both.
+    expect(cutsOf("Projects")).toEqual({
+      pin: [null, null],
+      web: [
+        { bottom: 10000, holes: [[0, ROW]] },
+        { bottom: 10000, holes: [[ROW, 2 * ROW]] },
+      ],
+      api: [null, null],
+      docs: [
+        { bottom: 10000, holes: [[ROW, 2 * ROW], [ROW, 2 * ROW]] },
+        { bottom: 10000, holes: [[-2 * ROW, -ROW], [-ROW, 0]] },
+      ],
+    });
+    pointer(window, "pointerup", 2 * ROW + ROW / 2);
+    await settle(SETTLE_MS + 20);
+    expect(rows("Projects").map((r) => [...cutNow(r), r.hasAttribute("data-lifted")])).toEqual([
+      ["", "", false],
+      ["", "", false],
+      ["", "", false],
+      ["", "", false],
+    ]);
+  });
+
+  it("uncovers a row the list has only now got as the rows under it make room: none of them is drawn on it", async () => {
+    mount([unpinned("api", "09:04"), unpinned("web", "09:01")]);
+    const was = onScreen("Projects");
+    // A section unfolding, or a chat that is new: docs and misc come between api and web.
+    mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("misc", "09:02"), unpinned("web", "09:01")]);
+    glidesFrom("Projects", was, ["api", "docs", "misc", "web"]);
+    // web starts where docs is: nothing of docs or misc shows yet. Its upper edge uncovers them on its way down, and
+    // web itself is a hole in each, as any row drawn over another is.
+    expect(cutsOf("Projects")).toEqual({
+      api: [null, null],
+      docs: [
+        { bottom: 0, holes: [[0, ROW]] },
+        { bottom: 2 * ROW, holes: [[2 * ROW, 3 * ROW]] },
+      ],
+      misc: [
+        { bottom: -ROW, holes: [[-ROW, 0]] },
+        { bottom: ROW, holes: [[ROW, 2 * ROW]] },
+      ],
+      web: [null, null],
+    });
+    const over = `${String(SETTLE_MS)}ms var(--ease-spring)`;
+    const cut = `clip-path ${over}, mask-position ${over}`;
+    expect(rows("Projects").map((r) => r.style.transition)).toEqual(["", cut, cut, `transform ${over}`]);
+    await settle(SETTLE_MS + 20);
+    expect(rows("Projects").map((r) => [...cutNow(r), r.style.transition])).toEqual([
+      ["", "", ""],
+      ["", "", ""],
+      ["", "", ""],
+      ["", "", ""],
+    ]);
+  });
+
+  it("with reduced motion, shows a new row at once: nothing glides, so nothing is cut", () => {
+    const media = reducedMotion();
+    try {
+      mount([unpinned("api", "09:04"), unpinned("web", "09:01")]);
+      mount([unpinned("api", "09:04"), unpinned("docs", "09:03"), unpinned("web", "09:01")]);
+      expect(rows("Projects").map((r) => [r.style.transform, ...cutNow(r), r.style.transition])).toEqual([
+        ["", "", "", ""],
+        ["", "", "", ""],
+        ["", "", "", ""],
+      ]);
+    } finally {
+      media.mockRestore();
+    }
   });
 
   it("can't be dragged or moved with the keyboard: only a pinned chat can", async () => {

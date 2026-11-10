@@ -1465,6 +1465,39 @@ export const screens: readonly Screen[] = [
       await page.emulateMedia({ reducedMotion: "reduce" });
       expect(rising).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
       await nav.getByRole("button", { name: "Clients", expanded: false }).click();
+      // The unfold puts Clients' rows back where Later's label and rows are, which glide down to make room. Each new
+      // row shows only down to their upper edge, from the glide's first frame to its last, where it shows whole: none
+      // is drawn under them (W585: Later's rows were drawn on Clients' for the glide's first 150 ms).
+      await nav.getByRole("button", { name: "Clients", expanded: true }).click();
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const unfold = await page.evaluate(async () => {
+        document.querySelector<HTMLElement>('nav[aria-label="Sidebar"] [data-section="s1"] button')?.click();
+        await new Promise((rendered) => setTimeout(rendered, 0));
+        const glides = document.getAnimations().filter((a) => a.effect instanceof KeyframeEffect && a.effect.target?.matches("[data-reorder-row]") === true);
+        const at = (time: number) => {
+          for (const a of glides) {
+            a.pause();
+            a.currentTime = time;
+          }
+          const fresh = [...document.querySelectorAll('nav[aria-label="Sidebar"] [data-section="s1"]:not([class*="sectionSlot"])')];
+          return {
+            // How far down the page each new row shows: its clip's lower edge, an inset from the row's own.
+            shown: fresh.map((el) => el.getBoundingClientRect().bottom - parseFloat(/^inset\(\S+ \S+ (\S+)\)$/u.exec(getComputedStyle(el).clipPath)?.[1] ?? "")),
+            ends: fresh.map((el) => el.getBoundingClientRect().bottom),
+            // The first row making room: Later's label.
+            cover: document.querySelector('nav[aria-label="Sidebar"] [data-gliding="down"]')?.getBoundingClientRect().top ?? Number.NaN,
+          };
+        };
+        return { start: at(0), end: at(360) };
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(unfold.start.shown).toHaveLength(3);
+      expect(unfold.end.cover - unfold.start.cover).toBeGreaterThan(80);
+      for (const y of unfold.start.shown) expect(y).toBeLessThanOrEqual(unfold.start.cover);
+      unfold.end.shown.forEach((y, i) => {
+        expect(y).toBeLessThanOrEqual(unfold.end.cover);
+        expect(y).toBeGreaterThanOrEqual(unfold.end.ends[i] ?? Number.NaN);
+      });
       await nav.getByRole("button", { name: "Later", expanded: true }).click();
       const folded = nav.getByRole("button", { name: "Later", expanded: false });
       await expect(folded).toHaveAccessibleDescription("2 chats, one waits on you");

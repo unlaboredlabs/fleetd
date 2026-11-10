@@ -57,7 +57,9 @@
 }
 /* The tone only where the sidebar paints it. On macOS the sidebar is the window's own material (layout.module.css),
    which no colour of the page's matches: there the tone was a dark box around every row going up, a whole block of
-   them under a section folding (W585). */
+   them under a section folding (W585). What keeps the words apart there, and everywhere, is the glide's own cut
+   (ui/lib/reorder, cuts): of two rows that cross, the one drawn under is masked where the other is, and a section's
+   rows unfolding are clipped under the rows making room for them. */
 :root:not([data-vibrancy]) .rows > [data-gliding="up"] {
   background: var(--sidebar);
 }
@@ -580,7 +582,9 @@
 .pins[data-unpinning] > [data-lifted] .pinCell > * {
   opacity: 0.6;
 }
+/* Over the rows going up too (z-index 1, above), wherever it is in the list: it lands whole. */
 .rows > [data-lifted] {
+  z-index: 2;
   border-radius: var(--row-round);
 }
 /* With nothing pinned, the first pin's place while a chat is dragged: a slim, quiet capsule over the list, shaded as
