@@ -1448,6 +1448,23 @@ export const screens: readonly Screen[] = [
     variant: "section-folded",
     open: async (page) => {
       const nav = page.getByRole("navigation", { name: "Sidebar" });
+      // A fold takes the rows under it up, and on macOS the sidebar under them is the window's own material
+      // (data-vibrancy), which no tone of the page's matches: none of them paints one on its way (W585: each was a
+      // dark box until it landed). Clients' fold moves Later's label, docs and search, read here while they glide.
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const rising = await page.evaluate(async () => {
+        const root = document.documentElement;
+        const mac = "vibrancy" in root.dataset;
+        root.dataset["vibrancy"] = "";
+        document.querySelector<HTMLElement>('nav[aria-label="Sidebar"] [data-section="s1"] button')?.click();
+        await new Promise((rendered) => setTimeout(rendered, 0));
+        const fills = [...document.querySelectorAll('nav[aria-label="Sidebar"] [data-gliding="up"]')].map((el) => getComputedStyle(el).backgroundColor);
+        if (!mac) delete root.dataset["vibrancy"];
+        return fills;
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(rising).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+      await nav.getByRole("button", { name: "Clients", expanded: false }).click();
       await nav.getByRole("button", { name: "Later", expanded: true }).click();
       const folded = nav.getByRole("button", { name: "Later", expanded: false });
       await expect(folded).toHaveAccessibleDescription("2 chats, one waits on you");

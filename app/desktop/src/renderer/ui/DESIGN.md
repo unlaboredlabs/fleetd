@@ -124,8 +124,9 @@ breaks a rule changes this page in the same PR and says why.
 - **The sidebar's one kinetic moment:** a chat with new activity glides to its place on `--ease-spring` over
   `--dur-spring` (360 ms), a critically damped spring sampled into `linear()`: from rest, settling without overshoot.
   A row climbing passes over the rows it overtakes on the sidebar's own tone (`data-gliding="up"`), so no two lines of
-  words cross. Nothing moves while the pointer is over the list; what changed takes its place once it leaves. A
-  pin dragged or moved with the keyboard lands on the same spring.
+  words cross; over the window's material on macOS, which no tone of the page's matches, it paints none. Nothing moves
+  while the pointer is over the list; what changed takes its place once it leaves. A pin dragged or moved with the
+  keyboard lands on the same spring.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade (a chat bubble 200 ms on `--ease-snap`,
   your send 140 ms, the list taking its new place at once). Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
