@@ -57,6 +57,10 @@ fleetd invite --person p_abcd2345
 | `fleetd invite revoke <inviteId>` | Takes back an invite. A person it invited who never joined goes with it |
 | `fleetd hub key revoke <keyId>` | Signs out one device, and revokes the hub links made on it |
 
+You change your own name yourself, whatever your role: under Settings › You › General in the desktop app, or by
+tapping your name at the top of Settings on the phone. Every open app shows the new name at once, on the messages
+you wrote before too.
+
 A person signs out one of their other devices (a lost phone, an old computer) under Settings › You › Your devices in
 the desktop app: **Sign out** on its row, then confirm, and its key stops working at once, and so does every
 [hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out

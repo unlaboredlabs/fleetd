@@ -316,6 +316,11 @@
 .machineCap {
   width: 112px;
 }
+/* Your name, at its row's right end: room for a full name, and no wider than a narrow window. */
+.nameField {
+  width: 240px;
+  max-width: 100%;
+}
 .repoFacts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

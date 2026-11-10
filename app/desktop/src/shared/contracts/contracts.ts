@@ -5511,6 +5511,17 @@ export type PersonGithub = {
 
 export type PersonId = string;
 
+export type PersonNameSetInput = {
+  /** Cleaned as an invite's is: trimmed, control characters dropped. Empty after that is refused. */
+  name: string;
+};
+
+export type PersonNameSetOutput = {
+  next?: string;
+  person: Person;
+  truncated?: boolean;
+};
+
 /**
  * Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist
  * changes.
@@ -9853,6 +9864,7 @@ export interface ToolMap {
   people_list: { input: PeopleListInput; output: PeopleListOutput };
   person_avatar_get: { input: PersonAvatarGetInput; output: ProjectAvatarGetOutput };
   person_avatar_set: { input: PersonAvatarSetInput; output: PersonAvatarSetOutput };
+  person_name_set: { input: PersonNameSetInput; output: PersonNameSetOutput };
   person_remove: { input: PersonRemoveInput; output: PersonRemoveOutput };
   person_set: { input: PersonSetInput; output: PersonSetOutput };
   pr_diff: { input: PrDiffInput; output: PrDiffOutput };

@@ -1,6 +1,6 @@
 // The app's people tools: people_list for everyone; invite_create,
 // invite_revoke, person_set and person_remove for an owner's or admin's device; device_revoke for a person's own
-// devices, or anyone's for an owner or admin.
+// devices, or anyone's for an owner or admin. A person's own picture and name are avatar.ts's and name.ts's.
 import type { AgentKeyInfo, Grant, HubRole, LeftProject, Person, Role } from "../../shared/contracts.ts";
 import { internalError, ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
@@ -12,6 +12,7 @@ import { deepLink } from "../pair/urls.ts";
 import { store } from "../store/hub_store.ts";
 import * as avatar from "./avatar.ts";
 import { announce, change, forgetPerson } from "./events.ts";
+import * as name from "./name.ts";
 import { administers, cleanName } from "./roles.ts";
 import { people, refOf } from "./store.ts";
 
@@ -246,4 +247,5 @@ export function register(tools: Registry): void {
     return { device: after };
   });
   avatar.register(tools);
+  name.register(tools);
 }

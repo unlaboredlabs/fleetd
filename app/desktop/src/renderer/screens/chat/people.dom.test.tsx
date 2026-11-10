@@ -64,14 +64,14 @@ const MESSAGES = [
   msg(3, { author: "lead", text: "Sam, Priya: both in one order." }),
 ];
 
-/** The chat with MESSAGES, on a hub whose hub_info names `me` (a hub from before people names no one). */
-const mount = async (me: typeof SAM | undefined) => {
+/** The chat with MESSAGES, on a hub whose hub_info names `me` (a hub from before people names no one) and lists `people`. */
+const mount = async (me: typeof SAM | undefined, people: ReadonlyArray<typeof SAM> = []) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const page = { messages: MESSAGES, moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, leadWorking: false, lastSeq: 3 } };
   const info = { busy: [], ...(me === undefined ? {} : { me: { ...me, role: "member", createdAt: AT } }) };
   const hub: HubApi = {
     call: (tool) => {
-      const output = tool === "chat_history" ? page : tool === "hub_info" ? info : tool === "requests_list" ? { requests: [] } : {};
+      const output = tool === "chat_history" ? page : tool === "hub_info" ? info : tool === "people_list" ? { people } : tool === "requests_list" ? { requests: [] } : {};
       return Promise.resolve({ ok: true, output } as never);
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -108,6 +108,12 @@ const shown = () =>
 it("names another person over their message and draws it as theirs; yours stay yours", async () => {
   await mount(SAM);
   await vi.waitFor(() => expect(shown()).toEqual(["-:mine", "Priya Nair:theirs", "-:theirs"]));
+});
+
+it("names a person who changed their name by the new one, over what they wrote before", async () => {
+  await mount(SAM, [SAM, { ...PRIYA, name: "Priya Shah" }]);
+  await vi.waitFor(() => expect(shown()).toEqual(["-:mine", "Priya Shah:theirs", "-:theirs"]));
+  expect(host.textContent).not.toContain("Priya Nair");
 });
 
 it("reads every human message as yours on a hub from before people", async () => {

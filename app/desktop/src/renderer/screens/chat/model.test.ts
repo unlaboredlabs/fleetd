@@ -89,6 +89,26 @@ describe("the chat's rows", () => {
     expect(authorLabel(items[1] as ChatItem)).toBe("You");
   });
 
+  it("name a person by the name they go by now, and by the message's own once the hub no longer lists them", () => {
+    const by = (personId: string, name: string) =>
+      ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "", createdAt: at(19, 9), state: "final", person: { personId, name } }) as ChatMessage;
+    // Priya wrote the first as Priya Nair and changed her name since; Lee has left the hub.
+    const items = [
+      item("a", "human", at(19, 9), { message: by("P2", "Priya Nair") }),
+      item("b", "human", at(19, 9, 1), { message: by("P2", "Priya Shah") }),
+      item("c", "human", at(19, 9, 2), { message: by("P3", "Lee Park") }),
+    ];
+    const names = new Map([
+      ["P1", "Sam Ortiz"],
+      ["P2", "Priya Shah"],
+    ]);
+    const heads = (r: readonly Row[]) => r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? (x.by ?? "-") : "-"}`] : []));
+    // Both of Priya's are one run under her new name; without the hub's list each keeps the name it was written under.
+    expect(heads(rows(items, { me: "P1", names }))).toEqual(["a:Priya Shah", "b:-", "c:Lee Park"]);
+    expect(heads(rows(items, { me: "P1" }))).toEqual(["a:Priya Nair", "b:Priya Shah", "c:Lee Park"]);
+    expect(authorLabel(items[0] as ChatItem, "P1", names)).toBe("Priya Shah");
+  });
+
   it("mark where you stopped reading, at the first message from someone else since", () => {
     const seq = (id: string, author: ChatItem["author"], n: number, m = n, over: Partial<ChatItem> = {}) =>
       item(id, author, at(19, 9, m), { ...over, message: { seq: n } as ChatItem["message"] });

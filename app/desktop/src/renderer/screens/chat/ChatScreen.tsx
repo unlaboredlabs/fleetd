@@ -36,6 +36,7 @@ import { navigate } from "../shell/navigation";
 import { usePanelHandle } from "../shell/panel";
 import { useCommands } from "../palette";
 import { display } from "../../../shared/shortcuts";
+import { usePersonNames } from "../admin/names";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
 
@@ -75,6 +76,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const [arrived, setArrived] = useState<Arrivals>();
   // Whose messages are yours: in a chat the team shares, someone else's show their name.
   const me = useHubRole().me?.personId;
+  const names = usePersonNames();
   if (view !== undefined && (arrived?.items !== view.items || arrived.live !== live)) {
     // Stamped as it comes in: a row mounted much later shows still.
     // eslint-disable-next-line react-hooks/purity
@@ -93,11 +95,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             worked,
             seenSeq,
             me,
+            names,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, worked, seenSeq, me],
+    [view, worked, seenSeq, me, names],
   );
   // Rows that say what they said keep their object, so a streamed word draws its own row and not the whole list.
   const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});

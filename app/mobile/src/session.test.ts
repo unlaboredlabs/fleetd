@@ -105,6 +105,19 @@ describe("Session", () => {
     expect(member.hub.sentOf("call").filter((c) => c.tool === "hub_update_status")).toEqual([]);
   });
 
+  it("reads who the person is again when the hub's people change: a new name shows without a restart", async () => {
+    const { hub, session } = setup();
+    const sam = { personId: "p_sam", role: "member", createdAt: AT };
+    hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", me: { ...sam, name: "Sam Rivera" } });
+    await flush();
+    expect(session.state.meName).toBe("Sam Rivera");
+    // Renamed here or on the desktop: the hub says so to every open app.
+    hub.link.frame({ t: "event", seq: 2, type: "people.changed", at: AT, summary: "Sam Rivera changed their name to Sam R. Rivera", data: { change: "renamed" } });
+    hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", me: { ...sam, name: "Sam R. Rivera" } });
+    await flush();
+    expect(session.state).toMatchObject({ me: "p_sam", meName: "Sam R. Rivera", meRole: "member" });
+  });
+
   it("previews each chat from its newest messages, read after the snapshot and kept by events", async () => {
     const { hub, session } = setup();
     const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history");

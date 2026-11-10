@@ -55,6 +55,18 @@ describe("sidebar projects", () => {
     ]);
   });
 
+  it("says who wrote a row's newest line by the name they go by now", () => {
+    const latest = {
+      "devbox/web": { text: "looks good", at: "2026-11-08T10:30:00.000Z", person: { id: "p_ada", name: "Ada Lovelace" } },
+      "devbox/docs": { text: "on it", at: "2026-11-08T10:00:00.000Z", person: { id: "p_gone", name: "Lee Park" } },
+    };
+    const lines = (names?: ReadonlyMap<string, string>) =>
+      (toSidebar([row("web"), row("docs")], { latest, me: "p_me", ...(names === undefined ? {} : { names }) }) ?? []).map((p) => p.line);
+    // Ada changed her name after she wrote it; Lee has left the hub, so the line keeps the name it was written under.
+    expect(lines(new Map([["p_ada", "Countess Lovelace"]]))).toEqual(["Countess: looks good", "Lee: on it"]);
+    expect(lines()).toEqual(["Ada: looks good", "Lee: on it"]);
+  });
+
   it("says why each project wants you: a secret or approval first, then a reply, then blocked", () => {
     const ref = (projectId: string) => ({ machineId: "devbox", projectId });
     const marks: MarksIn = {

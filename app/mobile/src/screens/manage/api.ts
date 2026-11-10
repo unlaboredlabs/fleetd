@@ -1,7 +1,8 @@
 // The hub calls behind a project's screens, each as the desktop makes it: New Project (project_discover, then the
 // desktop's add flow over project_add, a new folder or a repo, with Only me), its screen's reads (agents_list,
 // orders_board, checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title), Only me
-// (its onlyMe), Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), Agent
+// (its onlyMe), Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), the
+// person's own picture and name (person_avatar_set, person_name_set), Agent
 // Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
 // by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
@@ -86,6 +87,15 @@ export const setMyPicture = async (hub: Hub, bytes: Uint8Array, mime: Attachment
 export const removeMyPicture = async (hub: Hub): Promise<Result<null>> => {
   const r = await hub.call("person_avatar_set", {});
   return r.ok ? { ok: true, value: null } : r;
+};
+
+/**
+ * The person's own name, as typed: the hub trims it, drops control characters and refuses an empty one, and answers
+ * with the name it kept. Its people.changed brings it to every open app, this one's Settings and chats list too.
+ */
+export const setMyName = async (hub: Hub, name: string): Promise<Result<string>> => {
+  const r = await hub.call("person_name_set", { name });
+  return r.ok ? { ok: true, value: r.output.person.name } : r;
 };
 
 /** Its picture taken away: its bot shows again. */
