@@ -200,10 +200,32 @@ test("the doctor says where the Mac's simulators stand", () => {
   expect(healthFrom({}, undefined, { preparing: false }, xcode)?.health.state).toBe("wanted");
   expect(healthFrom({}, undefined, { preparing: false }, () => ({ err: "no Xcode" }))).toBeUndefined();
   expect(healthFrom({ enabled: true }, undefined, { preparing: false }, xcode, () => false)?.health.fix).toBe("brew install node");
+  // A golden that failed is made again by the next `mac sim start` (Simulators' pool), and the doctor says so.
   expect(healthFrom({ enabled: true }, undefined, { preparing: false, failed: "boom" }, xcode, () => true)).toMatchObject({
-    health: { state: "unavailable", message: expect.stringContaining("boom") },
+    health: { state: "unavailable", message: "Making the golden iOS simulator failed: boom. The next mac sim start tries again." },
     placeable: true,
   });
+});
+
+test("simctl's calls wait out CoreSimulator's cold start until it has answered once, then each has its own bound", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  // A stand-in xcrun that answers after `wait`'s seconds, as simctl does while CoreSimulator's service starts, or never.
+  const xcrun = join(home.dir, "xcrun");
+  const wait = join(home.dir, "wait");
+  writeFileSync(xcrun, `#!/bin/sh\nw=$(cat '${wait}')\n[ "$w" = hang ] && exec sleep 60\nsleep "$w"\necho '{"devices":{}}'\n`);
+  chmodSync(xcrun, 0o755);
+  const simctl = new Simctl(setDir(home.dir), xcrun, 2_000);
+
+  // A start that outlasts the cold start's bound is given up, and the error names the bound it waited.
+  writeFileSync(wait, "hang");
+  await expect(simctl.run(["list", "devices", "-j"], 100)).rejects.toThrow("simctl list did not finish in 2 s");
+  // The first answer may take longer than a call's own bound.
+  writeFileSync(wait, "0.5");
+  expect(await simctl.run(["list", "devices", "-j"], 100)).toContain("devices");
+  // CoreSimulator is up: a call that hangs now is given up at its own bound.
+  writeFileSync(wait, "hang");
+  await expect(simctl.run(["list", "devices", "-j"], 1_000)).rejects.toThrow("simctl list did not finish in 1 s");
 });
 
 /** agent-device's pinned install, its entry a stand-in. */
