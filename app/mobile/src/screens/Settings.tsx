@@ -7,12 +7,12 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { linkTone, linkWords as statusOf } from "../chatsBar";
 import type { HubRole } from "../desktop";
 import { useHub, type RootParams, type SettingsParams } from "../hubContext";
-import { atRest, kept, left, MY_NAME_MAX, refused, shownName, toSave, typed, type NameEdit } from "../myName";
+import { atRest, MY_NAME_MAX, NameField, shownName, type NameEdit } from "../myName";
 import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
@@ -161,34 +161,37 @@ export function Settings() {
 /**
  * The person's name, changed in place as a contact's is: Done or leaving the field saves it (person_name_set). The hub's
  * cleaned name shows once kept; what it refuses (an empty name) shows under the field in its words, in the role's place,
- * with what was typed kept. The hub's people.changed brings the name back as every open app has it.
+ * with what was typed kept. The hub's people.changed brings the name back as every open app has it. Back with the
+ * keyboard still up takes the screen away before the field hears it was left, so going away saves what was typed too;
+ * with no field left to say why the hub refused that, an alert does.
  */
 function MyName({ saved, role }: { saved: string; role: string | undefined }) {
   const t = useTheme();
   const { session } = useHub();
   const [edit, setEdit] = useState<NameEdit>(atRest);
+  // One for the field's life: the session never changes while paired.
+  const [field] = useState(
+    () =>
+      new NameField(saved, {
+        save: async (name) => {
+          const r = await setMyName(session, name);
+          if (r.ok) haptics.success();
+          else haptics.warning();
+          return r.ok ? { ok: true, name: r.value } : { ok: false, error: errorWords(r.error) };
+        },
+        show: setEdit,
+        lost: (error) => Alert.alert("Couldn't change your name", error),
+      }),
+  );
   // The hub's name changed (ours kept, or a change made on another device): the field shows it.
-  const [shown, setShown] = useState(saved);
-  if (shown !== saved) {
-    setShown(saved);
-    setEdit(atRest);
-  }
-  const leave = () => {
-    const name = toSave(edit, saved);
-    setEdit(left(edit, saved));
-    if (name === undefined) return;
-    void setMyName(session, name).then((r) => {
-      if (r.ok) haptics.success();
-      else haptics.warning();
-      setEdit((now) => (r.ok ? kept(r.value) : refused(now, errorWords(r.error))));
-    });
-  };
+  useEffect(() => field.named(saved), [field, saved]);
+  useEffect(() => () => field.gone(), [field]);
   return (
     <View style={styles.meText}>
       <TextInput
         value={shownName(edit, saved)}
-        onChangeText={(text) => setEdit((now) => typed(now, text))}
-        onBlur={leave}
+        onChangeText={(text) => field.typed(text)}
+        onBlur={() => field.left()}
         editable={!edit.busy}
         maxLength={MY_NAME_MAX}
         placeholder={saved}

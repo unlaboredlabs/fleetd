@@ -46,8 +46,8 @@ The key stays in the phone's secure storage (the Keychain on iOS, the Keystore o
 avatar at the top of Chats, shows you, the hub, its address and version, and this phone. Tap your picture at its top
 to choose a photo of yourself from Photos, moved and scaled in a circle, or remove it: it shows in place of your initial
 at the top of Chats, on every phone of yours (`person_avatar_set`; the hub keeps a small JPEG of the circle, without
-the photo's metadata, and `person_avatar_get` reads it). Tap your name beside it to change it: **Done**, or tapping
-away, saves it for everyone on the hub (`person_name_set`). **Disconnect**, at its end, asks
+the photo's metadata, and `person_avatar_get` reads it). Tap your name beside it to change it: **Done**, tapping
+away or going back saves it for everyone on the hub (`person_name_set`). **Disconnect**, at its end, asks
 first, then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If
 the hub can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under
 Settings › You › Your devices in the desktop app.
