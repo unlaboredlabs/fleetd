@@ -221,7 +221,7 @@ const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
 export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
-  /** `worked`: the reply a turn ended with, how long the turn took ("Worked for 4s"), a quiet stamp beside it. */
+  /** `worked`: the reply a turn ended with, how long the turn took ("Worked for 4s"), a quiet stamp under it. */
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
