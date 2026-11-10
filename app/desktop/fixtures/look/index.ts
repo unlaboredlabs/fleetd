@@ -35,7 +35,7 @@ const two = (base: Fixture): Fixture => {
       minutesAgo: 24,
     },
     { author: "lead", text: "#14's writer suggests trying #14: the checkout's buttons read differently in German and Dutch", minutesAgo: 12 },
-    // The conversation went on since, so both are above what is on screen.
+    // The conversation went on since, so both are above what is on screen, in all but the tallest window.
     ...LATER.map(([author, text], i) => ({ author, text, minutesAgo: 10 - i / 2 })),
   ]);
   const flag = (i: number, reason: string, minutesAgo: number) => {
