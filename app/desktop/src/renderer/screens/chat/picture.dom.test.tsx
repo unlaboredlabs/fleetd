@@ -239,3 +239,37 @@ it("has the same button and menu in the viewer, for the picture it shows, and st
   expect(save).toHaveBeenCalledExactlyOnceWith(expect.any(String), { projectRef: PROJECT, attachmentId: "F4" });
   expect(viewer()).not.toBeNull();
 });
+
+it("closes the viewer at the first Esc after a save or a copy, and the confirmation stays", async () => {
+  await mount(mine);
+  const viewer = () => document.querySelector<HTMLElement>("[data-viewer]");
+  const esc = async (on: Element | null = document.activeElement) => {
+    act(() => {
+      (on ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+    await settle();
+  };
+  // The toast is drawn after the viewer, and the page would give it the key.
+  await click(button("Open checkout.png", host));
+  await click(button("Save checkout.png", viewer() ?? undefined));
+  expect(said("Saved pebble.png to Downloads")).toBe(true);
+  await esc();
+  expect(viewer()).toBeNull();
+  expect(said("Saved pebble.png to Downloads")).toBe(true);
+  // In the image's menu, Esc is the menu's: the viewer stays.
+  await click(button("Open checkout.png", host));
+  rightClick(viewer()?.querySelector("img"));
+  expect(items()).toEqual(["Save image…", "Copy image"]);
+  await esc(document.querySelector("[role='menu']"));
+  expect(items()).toEqual([]);
+  expect(viewer()).not.toBeNull();
+  rightClick(viewer()?.querySelector("img"));
+  await choose("Copy image");
+  expect(said("Image copied")).toBe(true);
+  await esc();
+  expect(viewer()).toBeNull();
+  expect(said("Image copied")).toBe(true);
+  // With the viewer gone the key is the page's again, and dismisses the newest toast as it always did.
+  await esc();
+  expect(said("Image copied")).toBe(false);
+});

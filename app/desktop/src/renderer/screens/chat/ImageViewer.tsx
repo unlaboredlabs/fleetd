@@ -3,7 +3,7 @@
 // download button beside the X and the image's right-click menu save or copy it, as in the message (picture.tsx).
 import { Dialog as D } from "radix-ui";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
-import { createContext, useContext, type KeyboardEvent, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, type KeyboardEvent, type MouseEvent } from "react";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Text, Tooltip } from "../../ui";
@@ -17,6 +17,9 @@ export const ImageViewerContext = createContext<((attachmentId: string) => void)
 
 export const useOpenImage = (): ((attachmentId: string) => void) | undefined => useContext(ImageViewerContext);
 
+// The image's menu is drawn outside the viewer but is the viewer's child to React: its keys and clicks are its own.
+const inMenu = (e: { readonly target: EventTarget | null }) => e.target instanceof Element && e.target.closest("[role='menu']") !== null;
+
 export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef; shots: readonly Shot[]; at: string; onAt: (at: string | undefined) => void }) {
   const n = shots.findIndex((s) => s.attachmentId === at);
   const shot = shots[n];
@@ -29,8 +32,18 @@ export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef;
   const label = shot?.caption ?? shot?.name ?? data?.name ?? "Image";
   const name = shot?.name ?? data?.name;
   const picture = usePicture(project, { attachmentId: at, name });
-  // The image's menu is drawn outside the viewer but is the viewer's child to React: its keys and clicks are its own.
-  const inMenu = (e: KeyboardEvent | MouseEvent) => e.target instanceof Element && e.target.closest("[role='menu']") !== null;
+  // Esc closes the viewer at the first press. The page gives it to the layer drawn last, which after a save is the
+  // toast saying so and with the keyboard on the download button is its tooltip: each would take a press and leave the
+  // viewer open. So the viewer hears it before the page's layers do; the toast stays, with its way to show the file.
+  useEffect(() => {
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || inMenu(e)) return;
+      e.stopPropagation();
+      onAt(undefined);
+    };
+    window.addEventListener("keydown", esc, { capture: true });
+    return () => window.removeEventListener("keydown", esc, { capture: true });
+  }, [onAt]);
   const onKeyDown = (e: KeyboardEvent) => {
     const to = e.key === "ArrowLeft" ? before : e.key === "ArrowRight" ? after : undefined;
     if (to === undefined || inMenu(e)) return;
