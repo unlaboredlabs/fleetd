@@ -140,6 +140,7 @@ async function create(hub: Hub, caller: Caller, input: { name: string; machineId
     navis.remove(hub.db.conn, r);
     throw failed ?? new ToolError("failed", `every free folder name for ${name} on ${m} is taken`, "Give it another name");
   }
+  checker.startNew(hub.db.conn, r);
   // In the cache now, so navi_list shows it before the node's report of it arrives.
   if (!store(hub).projectGet(r)) {
     store(hub).projectsUpsertMany(m, [

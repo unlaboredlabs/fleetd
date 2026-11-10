@@ -479,7 +479,10 @@ describe("Settings → Projects", () => {
     expect(log?.querySelectorAll('[role="listitem"]')).toHaveLength(2);
     expect(log?.textContent).toContain("Checker: you asked to tell Sam that Saturday works");
     expect(log?.textContent).toContain("YOLO: nothing asks");
-    const yolo = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"))?.querySelector<HTMLElement>('[role="radio"]');
+    const yoloChoice = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"));
+    // YOLO says it is what a new project starts in, and how to be asked instead.
+    expect(yoloChoice?.textContent).toContain("A new project starts in this mode; pick one of the others to be asked.");
+    const yolo = yoloChoice?.querySelector<HTMLElement>('[role="radio"]');
     if (!yolo) throw new Error("no YOLO choice");
     await click(yolo);
     await settle();

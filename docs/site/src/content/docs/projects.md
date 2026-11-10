@@ -372,16 +372,20 @@ writes what you can, installs what it needs, starts agents and works with repos,
 command that would wipe the machine or your home folder (`rm -rf ~`, `rm -rf /`, `mkfs`, `dd` onto a disk, a fork
 bomb) is refused, with why.
 
-What reaches outside asks first: a send, reply, forward, share or invite through an
-[integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm or Submit on a
-site (`confirm_step`), and a message to another project's lead (`project_message`), whose card is headed "Message the
-lead of Shop" and shows the exact text. The project's **Approvals** setting decides who approves them (decision D263):
+What reaches outside goes by the project's **Approvals** setting (decision D263): a send, reply, forward, share or
+invite through an [integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm
+or Submit on a site (`confirm_step`), and a message to another project's lead (`project_message`), whose card is
+headed "Message the lead of Shop" and shows the exact text.
+
+A new project starts in **YOLO**, where none of these asks you. Pick **Checker decides** or **Ask me about
+everything** to be asked. A project made before YOLO became the starting mode keeps the mode it had: the one you
+picked, or **Checker decides** if you never picked one.
 
 | Mode | What happens |
 |---|---|
-| **Checker decides** (default) | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
+| **Checker decides** | A fresh model judges each risky action first. **Go** runs it and puts one quiet line in the chat: "Let through without asking you: send_message on gmail, to sam@example.org. The checker's reason: you asked to tell Sam that Saturday works". **Ask** brings the approval card, with the checker's reason on it. **Block** refuses it and tells you why, on a card with **Approve anyway**. |
 | **Ask me about everything** | Every risky action waits for you on a card. No checker runs. |
-| **YOLO** | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
+| **YOLO** (a new project starts here) | No checker runs and nothing asks, not even for the cases fleetd's own rules ask about below (a recipient only an email named, a public share, a link carrying data). The floors still hold. Nothing shows in the chat; each action is still in the log below. |
 
 A card shows in the chat with **Approve** and **Deny**, and the sidebar marks the project *approve* until you answer.
 **Approve** runs the tool with exactly the input shown; **Deny** tells the lead you said no, with your reason if you

@@ -127,6 +127,9 @@ test("navi_create makes an Only me project in a free folder under its node's hom
   expect(calls.map((c) => c.op === "project_upsert" && c.workspaceRoot)).toEqual(["navi/home-2", "navi/home-3"]);
   const r = { machineId: "devbox", projectId: made.navi.projectId };
   expect(navis.of(hub.db.conn, r)).toMatchObject({ createdBy: { keyId: "key_phone", name: "phone" }, owner: "p-ada" });
+  // A new project starts in YOLO; the one that was there has no stored mode, so it still asks its checker.
+  expect((await ok(ada, "project_approvals", r)).approvals.mode).toBe("yolo");
+  expect((await ok(key("read"), "project_approvals", { machineId: "devbox", projectId: "old" })).approvals.mode).toBe("checker");
   const added = events(hub).page(0).events.find((e) => e.type === "project.added");
   expect(added).toMatchObject({ summary: "Home made on devbox", projectId: r.projectId, data: { title: "Home", created: true } });
   // Every free folder taken: the mark goes, and nothing is left behind.
