@@ -58,8 +58,14 @@ let went: Screen[];
 let calls: { tool: string; input: unknown }[];
 
 const mount = (projects: SidebarProject[], jumpHints = false) => {
+  // The hub's pins are the rows': the Shell takes the rows' from the hub (pins.ts), and a change is made to the hub's.
+  let pins: unknown = projects.filter((p) => p.pinned).map((p) => ({ machineId: p.project.machineId, projectId: p.project.projectId }));
   const hub: HubApi = {
-    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: {} })),
+    call: (tool, input) => {
+      calls.push({ tool, input });
+      if (tool === "chat_pins_set") pins = (input as { pins: unknown }).pins;
+      return Promise.resolve({ ok: true, output: tool === "chat_pins_get" || tool === "chat_pins_set" ? { pins, set: true } : {} });
+    },
     subscribe: () => () => undefined,
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -259,9 +265,10 @@ describe("one list", () => {
     rightClick(button("storefront"));
     await choose("Pin to top");
     expect(calls).toContainEqual({ tool: "chat_pins_set", input: { pins: [{ machineId: "devbox", projectId: "home" }, { machineId: "devbox", projectId: "storefront" }] } });
+    // The hub's list without it: the chat just pinned stays.
     rightClick(button("Home"));
     await choose("Unpin");
-    expect(calls.filter((c) => c.tool === "chat_pins_set").at(-1)).toEqual({ tool: "chat_pins_set", input: { pins: [] } });
+    expect(calls.filter((c) => c.tool === "chat_pins_set").at(-1)).toEqual({ tool: "chat_pins_set", input: { pins: [{ machineId: "devbox", projectId: "storefront" }] } });
   });
 
   it("a project's menu renames it after asking for the name, and archives it at once with Undo", async () => {

@@ -550,7 +550,7 @@ describe("Pinned chats", () => {
     hub.link.frame(snapshot);
     hub.answer("chat_pins_get", { pins: [], set: true });
     await flush();
-    void session.setPins([KEY]);
+    void session.changePins(() => [KEY]);
     expect(store.saved()).toEqual([KEY]);
     expect(pinCalls(hub, "chat_pins_set").at(-1)?.input).toEqual({ pins: [REF] });
   });
@@ -591,7 +591,7 @@ describe("Sections", () => {
     hub.link.frame(snapshot);
     hub.answer("chat_sections_get", { sections: [] });
     await flush();
-    void session.setSections([{ id: "s1", name: "Work", chats: [KEY] }]);
+    void session.changeSections(() => [{ id: "s1", name: "Work", chats: [KEY] }]);
     expect(store.saved()).toEqual([{ id: "s1", name: "Work", chats: [KEY] }]);
     expect(sectionCalls(hub, "chat_sections_set").at(-1)?.input).toEqual({ sections: [work] });
     hub.fail("chat_sections_set", "invalid", "A section needs a name.");

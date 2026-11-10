@@ -211,14 +211,14 @@ export class Session {
     else this.wake();
   }
 
-  /** The pinned chats as they are now (pinned, unpinned or moved here): this phone's copy at once, then the hub. */
-  setPins(keys: readonly Key[]): Promise<void> {
-    return this.#pins.set(keys);
+  /** A chat pinned, unpinned or moved here (`how`: the pins, changed): this phone's copy at once, then the hub, on its own list (pins.ts). */
+  changePins(how: (keys: readonly Key[]) => readonly Key[]): Promise<void> {
+    return this.#pins.change(how);
   }
 
-  /** The person's sections as they are now (a chat moved, one named, moved or removed here): this phone's copy at once, then the hub. */
-  setSections(sections: readonly Section[]): Promise<void> {
-    return this.#sections.set(sections);
+  /** A chat moved, a section named, moved or removed here (`how`: the sections, changed): this phone's copy at once, then the hub, on its own list (sections.ts). */
+  changeSections(how: (sections: readonly Section[]) => readonly Section[]): Promise<void> {
+    return this.#sections.change(how);
   }
 
   /** A change to the sections the hub refused was taken back: its words, for the list to say. */

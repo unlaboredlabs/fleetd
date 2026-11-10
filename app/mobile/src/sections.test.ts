@@ -196,6 +196,14 @@ const fakeCalls = () => {
 const hubWork = { id: "s1", name: "Work", chats: [ref("m1/api"), ref("m1/site")] };
 const hubHome = { id: "s2", name: "Home", chats: [ref("m1/garden")] };
 
+/** Sections that have read `onHub` from the hub: this phone's copy is the hub's own list. */
+const readSections = async (hub: ReturnType<typeof fakeCalls>, store = memorySections(), onHub: readonly unknown[] = [], onRefused?: (words: string) => void) => {
+  const sections = new Sections(hub.call, store, onRefused);
+  void sections.read();
+  await hub.next("chat_sections_get", { output: { sections: onHub } });
+  return sections;
+};
+
 describe("Sections", () => {
   it("shows the hub's sections, in the person's order", async () => {
     const hub = fakeCalls();
@@ -220,10 +228,10 @@ describe("Sections", () => {
   it("shows a change at once and sends one set at a time, the newest last", async () => {
     const hub = fakeCalls();
     const store = memorySections();
-    const sections = new Sections(hub.call, store);
-    void sections.set([home]);
-    void sections.set([work, home]);
-    void sections.set([work]);
+    const sections = await readSections(hub, store);
+    void sections.change(() => [home]);
+    void sections.change(() => [work, home]);
+    void sections.change(() => [work]);
     expect(store.saved()).toEqual([work]);
     expect(store.pending()).toBe(true);
     // The first is on its way; the two after it go as one, the newest.
@@ -238,18 +246,18 @@ describe("Sections", () => {
   it("takes the list as the hub stored it: a name trimmed, a chat it no longer has left out", async () => {
     const hub = fakeCalls();
     const store = memorySections();
-    const sections = new Sections(hub.call, store);
-    void sections.set([{ id: "s1", name: "Work", chats: ["m1/api", "m1/deleted"] }, home]);
+    const sections = await readSections(hub, store);
+    void sections.change(() => [{ id: "s1", name: "Work", chats: ["m1/api", "m1/deleted"] }, home]);
     await hub.next("chat_sections_set", { output: { sections: [{ ...hubWork, chats: [ref("m1/api")] }, hubHome] } });
     expect(store.saved()).toEqual([{ ...work, chats: ["m1/api"] }, home]);
   });
 
   it("takes back a change the hub refuses, with the hub's list and its words", async () => {
     const hub = fakeCalls();
-    const store = memorySections([work]);
+    const store = memorySections();
     const said: string[] = [];
-    const sections = new Sections(hub.call, store, (words) => said.push(words));
-    void sections.set([work, { ...home, name: "Work" }]);
+    const sections = await readSections(hub, store, [hubWork], (words) => said.push(words));
+    void sections.change((now) => [...now, { ...home, name: "Work" }]);
     expect(store.saved()).toHaveLength(2);
     await hub.next("chat_sections_set", { error: { code: "invalid", message: "Two sections are named “Work”." } });
     expect(said).toEqual(["Two sections are named “Work”."]);
@@ -265,7 +273,9 @@ describe("Sections", () => {
     const store = memorySections();
     const said: string[] = [];
     const sections = new Sections(hub.call, store, (words) => said.push(words));
-    void sections.set([work]);
+    void sections.change(() => [work]);
+    // Asked what it has first: it has no such tool, and the set is refused in its words.
+    await hub.next("chat_sections_get", { error: { code: "not_found" } });
     await hub.next("chat_sections_set", { error: { code: "not_found", message: "No tool chat_sections_set." } });
     expect(said).toEqual(["This hub doesn't keep sections yet. Update it to use them."]);
     expect(store.pending()).toBe(false);
@@ -277,8 +287,8 @@ describe("Sections", () => {
     const hub = fakeCalls();
     const store = memorySections();
     const said: string[] = [];
-    const sections = new Sections(hub.call, store, (words) => said.push(words));
-    void sections.set([work]);
+    const sections = await readSections(hub, store, [], (words) => said.push(words));
+    void sections.change(() => [work]);
     await hub.next("chat_sections_set", { error: { code: "offline" } });
     expect(store.saved()).toEqual([work]);
     expect(store.pending()).toBe(true);
@@ -289,18 +299,100 @@ describe("Sections", () => {
     expect(store.pending()).toBe(false);
     expect(hub.calls).toHaveLength(0);
   });
+});
 
-  it("ignores a read that was on its way when a change was made here", async () => {
+describe("A change to the sections before the hub has said what they are", () => {
+  const toWork = (key: string) => (now: readonly Section[]) => moveChat(now, key, "s1");
+
+  it("waits for the read on its way and is made on the hub's list, so a section made on another phone stays", async () => {
     const hub = fakeCalls();
-    const store = memorySections();
+    // What this phone kept: Home was made on the person's other phone since.
+    const store = memorySections([work]);
+    const sections = new Sections(hub.call, store);
+    // Launch: the snapshot's read is on its way.
+    void sections.read();
+    void sections.change(toWork("m1/docs"));
+    // Shown at once on what this phone has; nothing sent yet.
+    expect(store.saved()).toEqual([{ ...work, chats: ["m1/api", "m1/site", "m1/docs"] }]);
+    expect(hub.calls.map((c) => c.tool)).toEqual(["chat_sections_get"]);
+    await hub.next("chat_sections_get", { output: { sections: [hubWork, hubHome] } });
+    expect(store.saved()).toEqual([{ ...work, chats: ["m1/api", "m1/site", "m1/docs"] }, home]);
+    const sent = { sections: [{ ...hubWork, chats: [...hubWork.chats, ref("m1/docs")] }, hubHome] };
+    expect(await hub.next("chat_sections_set", { output: sent })).toEqual(sent);
+    expect(store.pending()).toBe(false);
+    expect(hub.calls).toHaveLength(0);
+  });
+
+  it("asks the hub itself when no read is on its way, and makes each change that waited, in order", async () => {
+    const hub = fakeCalls();
+    const store = memorySections([work]);
+    const sections = new Sections(hub.call, store);
+    void sections.change(toWork("m1/docs"));
+    void sections.change((now) => renameSection(now, "s1", "Job"));
+    expect(store.saved()).toEqual([{ id: "s1", name: "Job", chats: ["m1/api", "m1/site", "m1/docs"] }]);
+    // One read for both.
+    expect(hub.calls.map((c) => c.tool)).toEqual(["chat_sections_get"]);
+    await hub.next("chat_sections_get", { output: { sections: [hubHome, hubWork] } });
+    const sent = { sections: [hubHome, { id: "s1", name: "Job", chats: [...hubWork.chats, ref("m1/docs")] }] };
+    expect(await hub.next("chat_sections_set", { output: sent })).toEqual(sent);
+    expect(store.saved()).toEqual([home, { id: "s1", name: "Job", chats: ["m1/api", "m1/site", "m1/docs"] }]);
+    expect(hub.calls).toHaveLength(0);
+  });
+
+  it("asks again after a read the hub didn't answer, rather than send this phone's copy", async () => {
+    const hub = fakeCalls();
+    const store = memorySections([work]);
     const sections = new Sections(hub.call, store);
     void sections.read();
-    void sections.set([work]);
-    // The read's answer, from before the change.
-    await hub.next("chat_sections_get", { output: { sections: [hubHome] } });
-    expect(store.saved()).toEqual([work]);
-    await hub.next("chat_sections_set", { output: { sections: [hubWork] } });
-    expect(store.saved()).toEqual([work]);
+    await hub.next("chat_sections_get", { error: { code: "timeout" } });
+    void sections.change(toWork("m1/docs"));
+    await hub.next("chat_sections_get", { output: { sections: [hubWork, hubHome] } });
+    const sent = { sections: [{ ...hubWork, chats: [...hubWork.chats, ref("m1/docs")] }, hubHome] };
+    expect(await hub.next("chat_sections_set", { output: sent })).toEqual(sent);
+  });
+
+  it("waits for the read a new link or another device's change started, and only for the newest", async () => {
+    const hub = fakeCalls();
+    const store = memorySections();
+    const sections = await readSections(hub, store, [hubWork]);
+    // Back from a drop: the snapshot's read; then the other phone's new section is announced, and read too.
+    void sections.read();
+    void sections.read();
+    void sections.change(toWork("m1/docs"));
+    // The older read's answer, from before the other phone's section, is not the one.
+    await hub.next("chat_sections_get", { output: { sections: [hubWork] } });
+    expect(hub.calls.map((c) => c.tool)).toEqual(["chat_sections_get"]);
+    await hub.next("chat_sections_get", { output: { sections: [hubWork, hubHome] } });
+    const sent = { sections: [{ ...hubWork, chats: [...hubWork.chats, ref("m1/docs")] }, hubHome] };
+    expect(await hub.next("chat_sections_set", { output: sent })).toEqual(sent);
+  });
+
+  it("is sent as changed here once the hub's list is this phone's: after a set it took", async () => {
+    const hub = fakeCalls();
+    const store = memorySections();
+    const sections = await readSections(hub, store, [hubWork]);
+    void sections.change((now) => [...now, home]);
+    await hub.next("chat_sections_set", { output: { sections: [hubWork, hubHome] } });
+    void sections.change((now) => removeSection(now, "s1"));
+    expect(await hub.next("chat_sections_set", { output: { sections: [hubHome] } })).toEqual({ sections: [hubHome] });
+    expect(hub.calls).toHaveLength(0);
+  });
+
+  it("waits as one made offline when the hub can't be reached, for the next live link", async () => {
+    const hub = fakeCalls();
+    const store = memorySections([work]);
+    const said: string[] = [];
+    const sections = new Sections(hub.call, store, (words) => said.push(words));
+    void sections.change(toWork("m1/docs"));
+    await hub.next("chat_sections_get", { error: { code: "offline" } });
+    expect(store.saved()).toEqual([{ ...work, chats: ["m1/api", "m1/site", "m1/docs"] }]);
+    expect(store.pending()).toBe(true);
+    expect(said).toEqual([]);
+    expect(hub.calls).toHaveLength(0);
+    void sections.read();
+    const sent = { sections: [{ ...hubWork, chats: [...hubWork.chats, ref("m1/docs")] }] };
+    expect(await hub.next("chat_sections_set", { output: sent })).toEqual(sent);
+    expect(store.pending()).toBe(false);
   });
 });
 

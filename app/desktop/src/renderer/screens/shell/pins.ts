@@ -3,10 +3,11 @@
 // W232): the same as on your phone and each of your desktops, at most CHAT_PINS_MAX. You pin or unpin from a row's
 // menu, and drag a pinned row (or move it with ⌥↑ / ⌥↓) among the pinned ones. Another device's change (chat.pins,
 // which only your devices see) moves them live. The last pins read are kept on this computer too, only so a launch
-// shows them before the hub answers.
+// shows them before the hub answers: a change is never made to those, but to the hub's own list, read first
+// (changePins), since the list sent replaces the hub's.
 import { useEffect, useMemo, useState } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
-import { callKey, type DataLayer } from "../../src/data/queries";
+import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
 import { ahead, keptPerHub } from "./ahead";
 import { projectId } from "./model";
@@ -43,12 +44,13 @@ export const arranged = <R extends { readonly key: string; readonly at: string; 
 
 const kept = keptPerHub(KEPT, (raw): readonly string[] | undefined => (Array.isArray(raw) ? raw.filter((k): k is string => typeof k === "string") : undefined));
 
-const saved = ahead<ProjectRef[]>({
-  send: async (layer, pins) => {
-    const out = await layer.call("chat_pins_set", { pins });
+const saved = ahead({
+  send: async (layer, pins: readonly ProjectRef[]) => {
+    const out = await layer.call("chat_pins_set", { pins: [...pins] });
     return out.ok ? undefined : out.error.message;
   },
-  read: callKey("chat_pins_get", NONE),
+  read: "chat_pins_get",
+  list: (answer): readonly ProjectRef[] => answer.pins,
   refused: "Couldn’t save your pins",
 });
 
@@ -68,7 +70,30 @@ export const usePins = (): readonly string[] | undefined => {
 };
 
 /**
- * Saves `pins` on `layer`'s hub. The sidebar takes them at once. Changes made while one is on its way go after it, only
- * the newest of them; a refusal puts the hub's pins back and says why.
+ * Changes your pins on `layer`'s hub: `change` gets them as they are there and returns them changed (the same list for
+ * no change), and the whole list is saved. The sidebar takes it at once. Changes made while one is on its way go after
+ * it, only the newest of them; a refusal puts the hub's pins back and says why. A hub that hasn't answered with your
+ * pins yet is asked first, so the list sent never lacks a chat pinned on another device; if it can't say, nothing is
+ * sent, and the person hears why as for a refusal (ahead.ts).
  */
-export const savePins = (layer: DataLayer, pins: ProjectRef[]): Promise<void> => saved.save(layer, pins);
+export const changePins = (layer: DataLayer, change: (pins: readonly ProjectRef[]) => readonly ProjectRef[]): Promise<void> => saved.change(layer, change);
+
+/** `keys` with `key` pinned too, before `before` (last when that one isn't pinned, or none is named): the same list when it is pinned already. */
+export const pinnedAt = (keys: readonly string[], key: string, before?: string): readonly string[] => {
+  if (keys.includes(key)) return keys;
+  const at = before === undefined ? -1 : keys.indexOf(before);
+  return at === -1 ? [...keys, key] : [...keys.slice(0, at), key, ...keys.slice(at)];
+};
+
+/** `keys` without `key`: the same list when it isn't pinned. */
+export const unpinned = (keys: readonly string[], key: string): readonly string[] => (keys.includes(key) ? keys.filter((k) => k !== key) : keys);
+
+/**
+ * `keys` in the order `order` names them, one it doesn't name (pinned on another device since) after those: the same
+ * list when that is their order already.
+ */
+export const inOrder = (keys: readonly string[], order: readonly string[]): readonly string[] => {
+  const at = new Map(order.map((k, i) => [k, i]));
+  const next = [...keys].sort((a, b) => (at.get(a) ?? order.length) - (at.get(b) ?? order.length));
+  return next.every((k, i) => k === keys[i]) ? keys : next;
+};

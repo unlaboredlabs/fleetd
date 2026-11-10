@@ -7,8 +7,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectSummary } from "../../../shared/contracts";
-import { createDataLayer, type DataLayer } from "../../src/data/queries";
+import type { ProjectRef, ProjectSummary } from "../../../shared/contracts";
+import { callKey, createDataLayer, type DataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { DWELL_MS } from "../../ui/lib/reorder";
@@ -61,9 +61,15 @@ let root: Root;
 let went: Screen[];
 let calls: { tool: string; input: unknown }[];
 let layer: DataLayer;
+let pins: ProjectRef[];
 
-/** The sidebar with `rows`; again with other rows, the same sidebar drawing them (its state kept). */
+/**
+ * The sidebar with `rows`; again with other rows, the same sidebar drawing them (its state kept). The hub's pins are
+ * the rows', already read: the Shell takes the rows' from the hub (pins.ts), and a change is made to the hub's list.
+ */
 const mount = (rows: SidebarProject[] = ROWS) => {
+  pins = rows.filter((p) => p.pinned).map((p) => ({ machineId: p.project.machineId, projectId: p.project.projectId }));
+  layer.queryClient.setQueryData(callKey("chat_pins_get", {}), { pins, set: true });
   act(() =>
     root.render(
       <UiProvider>
@@ -102,7 +108,11 @@ beforeEach(() => {
   went = [];
   calls = [];
   layer = createDataLayer({
-    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { pins: [] } })),
+    call: (tool, input) => {
+      calls.push({ tool, input });
+      if (tool === "chat_pins_set") pins = (input as { pins: ProjectRef[] }).pins;
+      return Promise.resolve({ ok: true, output: { pins, set: true } });
+    },
     subscribe: () => () => undefined,
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -651,8 +661,9 @@ describe("pinning and unpinning by drag", () => {
     await carry("web", -10);
     expect(saved()).toEqual([["web", "api"]]);
     calls.length = 0;
+    // Made to the hub's list, which has web by now.
     await carry("misc", GAP - 10);
-    expect(saved()).toEqual([["api", "misc"]]);
+    expect(saved()).toEqual([["web", "api", "misc"]]);
   });
 
   it("pins the first one with no pins yet", async () => {
@@ -760,10 +771,10 @@ describe("pinning and unpinning by drag", () => {
     await carry("api", GAP + 3 * ROW + 40);
     expect(saved()).toEqual([]);
     expect(titles("Projects")).toEqual(["api", "web", "misc"]);
-    // Inside it, the same drags pin and unpin.
+    // Inside it, the same drags pin and unpin: api leaves the hub's list, where misc is by now.
     await carry("misc", 10);
     await carry("api", GAP + 2 * ROW);
-    expect(saved()).toEqual([["misc", "api"], []]);
+    expect(saved()).toEqual([["misc", "api"], ["misc"]]);
   });
 
   it("pins no tenth chat: it goes back, and says why", async () => {
