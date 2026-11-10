@@ -1481,8 +1481,8 @@ export const screens: readonly Screen[] = [
           }
           const fresh = [...document.querySelectorAll('nav[aria-label="Sidebar"] [data-section="s1"]:not([class*="sectionSlot"])')];
           return {
-            // How far down the page each new row shows: its clip's lower edge.
-            shown: fresh.map((el) => el.getBoundingClientRect().top + parseFloat(getComputedStyle(el).clipPath.split(", ")[3]?.split(" ")[1] ?? "")),
+            // How far down the page each new row shows: its clip's lower edge, an inset from the row's own.
+            shown: fresh.map((el) => el.getBoundingClientRect().bottom - parseFloat(/^inset\(\S+ \S+ (\S+)\)$/u.exec(getComputedStyle(el).clipPath)?.[1] ?? "")),
             ends: fresh.map((el) => el.getBoundingClientRect().bottom),
             // The first row making room: Later's label.
             cover: document.querySelector('nav[aria-label="Sidebar"] [data-gliding="down"]')?.getBoundingClientRect().top ?? Number.NaN,

@@ -102,8 +102,8 @@ breaks a rule changes this page in the same PR and says why.
   - An ending wipes its shape in once, cell by cell, and only when it happens while you look (`lib/arrival`): not on
     first showing, and not when a virtual list mounts a row on scroll.
   - A glyph morphs, cell by cell, when its state changes.
-- **Only `transform` and `opacity` change**, so nothing reflows (and the clip of a sidebar row mid-glide, below, which
-  only repaints it). Closing a menu, popover or dialog is instant. A row leaving a list fades in place for 140 ms
+- **Only `transform` and `opacity` change**, so nothing reflows (and the clip and mask of a sidebar row mid-glide,
+  below, which only repaint it). Closing a menu, popover or dialog is instant. A row leaving a list fades in place for 140 ms
   (`lib/leaving`), then the gap closes.
 - **The sidebar and the panel slide** from the window's edge as their toggle opens or closes them, already at their
   own width, as a transition, so a toggle mid-way turns back from where it is. The sidebar comes in over `--dur-base`
@@ -126,12 +126,13 @@ breaks a rule changes this page in the same PR and says why.
   `--dur-spring` (360 ms), a critically damped spring sampled into `linear()`: from rest, settling without overshoot.
   A row climbing passes over the rows it overtakes on the sidebar's own tone (`data-gliding="up"`); over the window's
   material on macOS, which no tone of the page's matches, it paints none. No frame draws two rows' words on each other
-  either way, because the glide clips what is under (`lib/reorder`, `cuts`): each row a climbing one passes is cut
-  where the climber is, and a section's rows unfolding (or a new chat) show only down to the upper edge of the rows
-  going down to make room, the space above those kept. The clips run on the glide's own spring and time, so they stay
-  on their rows, and are gone when it lands; nothing fades and a row at rest is never clipped. Nothing moves while the
-  pointer is over the list; what changed takes its place once it leaves. A pin dragged or moved with the keyboard
-  lands on the same spring.
+  either way, because the glide cuts what is under (`lib/reorder`, `cuts`): of any two rows that cross, the one drawn
+  under is masked where the other is (a row let go is over every other, a climbing one over the rest, and of two alike
+  the lower in the list), however many cross in one place; and a section's rows unfolding (or a new chat) are clipped
+  under the upper edge of the rows going down to make room, the space above those kept. The cuts run on the glide's
+  own spring and time, so they stay on their rows, and are gone when it lands; nothing fades and a row at rest is never
+  cut. Nothing moves while the pointer is over the list; what changed takes its place once it leaves. A pin dragged
+  or moved with the keyboard lands on the same spring.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade (a chat bubble 200 ms on `--ease-snap`,
   your send 140 ms, the list taking its new place at once). Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).

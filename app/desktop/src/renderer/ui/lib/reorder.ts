@@ -8,7 +8,7 @@
 // moment, so a row picked up near an edge of a scrolled list doesn't set it moving. Esc puts it back. So does a list
 // that changes under it (a move from another desktop, a row added or gone): rows go by key, never by an index from
 // before. A click that didn't move is still a click. Only transform changes, on the rows' wrappers, so nothing lays out
-// mid-drag; a glide in a column also moves the clips that keep one row's words off another's (cuts). With reduced
+// mid-drag; a glide in a column also moves the cuts that keep one row's words off another's (cuts). With reduced
 // motion the rows still move with the pointer but nothing glides. Each move is announced
 // (`status`, for a role="status" region). A grid (`grid`, the sidebar's pinned chats) works the same in two dimensions:
 // the lifted cell rides the pointer both ways, drops on the cell nearest its centre, and the cells it passes slide one
@@ -135,60 +135,69 @@ const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, Box> =>
     }),
   );
 
-/** A row of a glide: its box at rest, how far off it the glide starts, and whether the list has only now got it. */
+/**
+ * A row of a glide: its box at rest, how far off it the glide starts, whether the list has only now got it, and
+ * whether it is the lifted one.
+ */
 interface Glider {
   readonly el: HTMLElement;
   readonly at: Box;
   readonly dx: number;
   readonly dy: number;
   readonly fresh: boolean;
+  readonly lifted: boolean;
 }
 
 /** Far past any row's edge: a clip that reaches there cuts nothing off that side. */
 const FAR = 10000;
 
-/**
- * A clip that shows an element down to `bottom` (px under its top) but for `holes` (boxes from its top left). Always
- * a polygon, with as many corners for as many holes, so one turns into another over a transition.
- */
-const clip = (bottom: number, holes: readonly Box[]): string => {
-  const corner = (x: number, y: number) => `${String(x)}px ${String(y)}px`;
-  const far = corner(-FAR, -FAR);
-  // Each hole is reached from the far corner and left for it again: the way there and back holds nothing.
-  const cut = holes.flatMap((b) => [far, corner(b.x, b.y), corner(b.x + b.w, b.y), corner(b.x + b.w, b.y + b.h), corner(b.x, b.y + b.h), corner(b.x, b.y)]);
-  return `polygon(evenodd, ${[far, corner(FAR, -FAR), corner(FAR, bottom), corner(-FAR, bottom), ...cut].join(", ")})`;
-};
+/** What a glide shows of a row, as its style: clipped under a lower edge, and masked where other rows are. */
+type Cut = Pick<CSSStyleDeclaration, "clipPath" | "mask">;
 
 /**
- * What a column's rows hide of one another while they glide, as each one's clip at the start and at the end, so no
+ * A row `h` px tall shown down to `bottom` (px under its top) but for `holes` (boxes from its top left). The holes are
+ * a mask, not the clip's own shape, so two that lie on each other still hide what is under both: one layer that is
+ * all of the row, less a layer for each hole, each going its own way over a transition. The lower edge is the clip's:
+ * a mask's layer big enough to reach past a row's edges is drawn soft.
+ */
+const cut = (h: number, bottom: number, holes: readonly Box[]): Cut => ({
+  clipPath: `inset(${String(-FAR)}px ${String(-FAR)}px ${String(h - bottom)}px)`,
+  mask: ["linear-gradient(#000, #000) no-clip subtract", ...holes.map((b) => `linear-gradient(#000, #000) ${String(b.x)}px ${String(b.y)}px / ${String(b.w)}px ${String(b.h)}px no-repeat no-clip add`)].join(", "),
+});
+
+/**
+ * What a column's rows hide of one another while they glide, as each one's cut at the start and at the end, so no
  * frame draws two rows' words on each other, whatever is behind them (the sidebar on macOS is the window's own
  * material, which no fill of the page's can stand in for):
- * - a row going up is over the rows it passes, and each of those is cut where it is;
+ * - of two rows that cross, the one drawn under is cut where the other is. The lifted row is over every other, a row
+ *   going up over the rest, and of two alike the lower in the list, as the page draws them (base.css and the
+ *   sidebar's z-index, then the order of the rows);
  * - a new row is uncovered by the rows going down to make room for it: cut under their upper edge, the space they
  *   keep above them included.
- * Every row moves on the one curve, so a clip that goes straight from its start to its end stays on the row it is of.
+ * Every row moves on the one curve, so a cut that goes straight from its start to its end stays on the rows it is of.
  */
-const cuts = (rows: readonly Glider[]): Map<HTMLElement, readonly [string, string]> => {
+const cuts = (rows: readonly Glider[]): Map<HTMLElement, readonly [Cut, Cut]> => {
   const column = [...rows].sort((a, b) => a.at.y - b.at.y);
-  const ups = column.filter((r) => r.dy > 0);
-  const out = new Map<HTMLElement, readonly [string, string]>();
+  const height = (r: Glider): number => (r.lifted ? 2 : r.dy > 0 ? 1 : 0);
+  const out = new Map<HTMLElement, readonly [Cut, Cut]>();
   column.forEach((row, i) => {
-    if (row.dy > 0) return;
     // A new row's cover: the first row under it going down, and where the row over that one ends, from this row's top.
     const first = row.fresh ? column.findIndex((r, j) => j > i && r.dy < 0) : -1;
     const [cover, above] = [column[first], column[first - 1]];
     const edge = above === undefined ? FAR : above.at.y + above.at.h - row.at.y;
     // Only a cover that starts over this row has anything of it to show.
     const [from, to] = cover !== undefined && edge + cover.dy < row.at.h ? [edge + cover.dy, edge] : [FAR, FAR];
-    // Each row going up, from this row's top left, at the start and at the end: the ones that cross it on the way.
-    const passing = ups.flatMap((up) => {
-      const end = { x: up.at.x - row.at.x, y: up.at.y - row.at.y, w: up.at.w, h: up.at.h };
-      const start = { ...end, x: end.x + up.dx - row.dx, y: end.y + up.dy - row.dy };
-      return Math.min(start.y, end.y) < row.at.h && Math.max(start.y, end.y) + up.at.h > 0 ? [[start, end] as const] : [];
+    // Each row drawn over this one, from this row's top left, at the start and at the end: the ones that cross it on
+    // the way. Two that go the same way by as much never do.
+    const passing = column.flatMap((over, j) => {
+      if (j === i || (over.dx === row.dx && over.dy === row.dy) || height(over) < height(row) || (height(over) === height(row) && j < i)) return [];
+      const end = { x: over.at.x - row.at.x, y: over.at.y - row.at.y, w: over.at.w, h: over.at.h };
+      const start = { ...end, x: end.x + over.dx - row.dx, y: end.y + over.dy - row.dy };
+      return Math.min(start.y, end.y) < row.at.h && Math.max(start.y, end.y) + over.at.h > 0 ? [[start, end] as const] : [];
     });
     if (from === FAR && passing.length === 0) return;
     const [starts, ends] = [passing.map(([start]) => start), passing.map(([, end]) => end)];
-    out.set(row.el, [clip(from, starts), clip(to, ends)]);
+    out.set(row.el, [cut(row.at.h, from, starts), cut(row.at.h, to, ends)]);
   });
   return out;
 };
@@ -196,7 +205,7 @@ const cuts = (rows: readonly Glider[]): Map<HTMLElement, readonly [string, strin
 /**
  * The rows put back where they were on screen (`from`, as onScreen read them before the DOM changed) and let glide to
  * their places over `ms`, all in this frame: a row with nowhere to go, or new, just sits in its place. In a `column`
- * no two of them are drawn on each other on the way (cuts). Returns the rows it set going, clipped ones too.
+ * no two of them are drawn on each other on the way (cuts). Returns the rows it set going, cut ones too.
  */
 const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, Point>, ms: number, ease: string, column: boolean): HTMLElement[] => {
   // No row was on screen (the list's first rows, as the app opens): none has a place to glide from, and reading theirs
@@ -207,6 +216,7 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, Point>,
     el.style.transition = "none";
     el.style.transform = "";
     el.style.clipPath = "";
+    el.style.mask = "";
     delete el.dataset["gliding"];
   }
   const now = onScreen(els);
@@ -224,11 +234,11 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, Point>,
       el.dataset["gliding"] = by > 0 || (by === 0 && bx > 0) ? "up" : "down";
       gliding.push(el);
     } else el.style.transition = "";
-    if (at !== undefined) rows.push({ el, at, dx: goes ? bx : 0, dy: goes ? by : 0, fresh: was === undefined });
+    if (at !== undefined) rows.push({ el, at, dx: goes ? bx : 0, dy: goes ? by : 0, fresh: was === undefined, lifted: el.hasAttribute("data-lifted") });
   }
   if (gliding.length === 0) return gliding;
-  const clips = column ? cuts(rows) : new Map<HTMLElement, readonly [string, string]>();
-  for (const [el, [start]] of clips) el.style.clipPath = start;
+  const cut = column ? cuts(rows) : new Map<HTMLElement, readonly [Cut, Cut]>();
+  for (const [el, [start]] of cut) Object.assign(el.style, start);
   // Drawn where they were, then let go: the transition runs from there.
   void gliding[0]?.getBoundingClientRect();
   const over = `${String(ms)}ms ${ease}`;
@@ -236,11 +246,11 @@ const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, Point>,
     el.style.transition = `transform ${over}`;
     el.style.transform = "";
   }
-  for (const [el, [, end]] of clips) {
-    el.style.transition = el.style.transition === "" ? `clip-path ${over}` : `${el.style.transition}, clip-path ${over}`;
-    el.style.clipPath = end;
+  for (const [el, [, end]] of cut) {
+    el.style.transition = `${el.style.transition === "" ? "" : `${el.style.transition}, `}clip-path ${over}, mask-position ${over}`;
+    Object.assign(el.style, end);
   }
-  return [...new Set([...gliding, ...clips.keys()])];
+  return [...new Set([...gliding, ...cut.keys()])];
 };
 
 /** Which way a row leaves its list: past its top or its bottom. */
@@ -426,6 +436,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       for (const el of gliding) {
         el.style.transition = "";
         el.style.clipPath = "";
+        el.style.mask = "";
         delete el.dataset["gliding"];
       }
       setLanding(null);
