@@ -1212,9 +1212,9 @@ export const screens: readonly Screen[] = [
   },
   // W580: the list's sizes. The pinned names are 13/18 in the text's colour, each in a 24 px capsule: medium at rest,
   // semibold with the dot inside the capsule for inventory, which waits on you, and docs, with its new reply. The
-  // rows are 56 px capsules, their names 14/20 semibold, each 40 px picture as far from the row's top as from its
-  // end. "Rewrite the pricing…" is cut short under its picture: under the pointer its capsule takes the shade, and
-  // its tooltip has the name whole.
+  // rows are 56 px rounded boxes, never pills (W584: the radius token's 10 px), their names 14/20 semibold, each
+  // 40 px picture as far from the row's top as from its end. "Rewrite the pricing…" is cut short under its picture:
+  // under the pointer its capsule takes the shade, and its tooltip has the name whole.
   {
     id: "shell",
     route: "#/",
@@ -1247,7 +1247,7 @@ export const screens: readonly Screen[] = [
       const picture = await row.locator('[class*="avatar"]').first().boundingBox();
       if (box === null || picture === null) throw new Error("the first row isn't on screen");
       expect(box.height).toBe(56);
-      expect(await row.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("28px");
+      expect(await row.evaluate((el) => getComputedStyle(el).borderRadius)).toBe("10px");
       expect([picture.width, picture.height]).toEqual([40, 40]);
       expect(picture.x - box.x).toBe(picture.y - box.y);
       expect(await type(row.locator('[class*="name"]').first())).toEqual({ fontSize: "14px", fontWeight: "600", lineHeight: "20px", color: text });
