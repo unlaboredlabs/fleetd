@@ -19,11 +19,12 @@ const ICON_DEFS = `
 const centred = (k: number, x: number, y: number, inner: string): string => `<g transform="translate(${String(x - 50 * k)} ${String(y - 54.6 * k)}) scale(${String(k)})">${inner}</g>`;
 
 /**
- * The profile picture: the app icon's Pebble on the landing page's dark paper, whole and big in the circle X cuts (72%
- * of its width, clear of the edge all round). Its eyes are a touch larger than the app draws them (1.12), so they hold
- * at 32 px.
+ * The profile picture: the app icon's Pebble on the landing page's dark paper, whole in the circle X cuts, with room
+ * all round it. Pebble is 60% of the picture's width; X zooms an uploaded picture about 5%, so it shows at 64% of the
+ * circle. At 70% it crowded the profile's ring, and under 56% it is a dot at 32 px. Its eyes are a touch larger than
+ * the app draws them (1.12), so they hold at 32 px.
  */
-export const avatar = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs>${ICON_DEFS}</defs><rect width="1024" height="1024" fill="${PAPER}"/>${centred(10.4, 512, 512, pebble({ body: "url(#slate)", eye: "url(#eye)", eyes: 1.12 }))}</svg>`;
+export const avatar = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs>${ICON_DEFS}</defs><rect width="1024" height="1024" fill="${PAPER}"/>${centred(9, 512, 512, pebble({ body: "url(#slate)", eye: "url(#eye)", eyes: 1.12 }))}</svg>`;
 
 /** The banner's ground: a shade under the landing page's paper, so a light has somewhere to fall. */
 const GROUND = "#101011";

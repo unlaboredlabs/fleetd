@@ -21,8 +21,8 @@ bun site/brand/x/build.ts
 
 ## What X does to them
 
-- The profile picture is cut to a circle and shown as small as 32 px, so it is one shape, big, with nothing near the
-  corners.
+- The profile picture is cut to a circle, zoomed about 5% on upload, and shown as small as 32 px, so it is one shape
+  with room all round it: Pebble is 60% of the file's width, which X shows at 64% of the circle.
 - The banner's lower left is under the profile picture. On a phone its top is under the clock and the round buttons,
   and about 100 px of each side is cut. The banner carries nothing that must be read: X sets the name right under it.
 
