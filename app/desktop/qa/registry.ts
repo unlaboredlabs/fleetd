@@ -350,6 +350,18 @@ const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
 };
 
+/**
+ * The window stops being the one in front, as when you switch to another app: nothing in it counts as looked at from
+ * here on. A test's window otherwise has the focus (on Linux's offscreen display too), so what changes after a
+ * moment's look changes under a run slow enough.
+ */
+const inBackground = async (page: Page) => {
+  await page.evaluate(() => {
+    document.hasFocus = () => false;
+    window.dispatchEvent(new Event("blur"));
+  });
+};
+
 /** Hub › Updates, as the palette's "Check for updates" opens it (the app menu runs the same command). */
 const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
@@ -703,7 +715,21 @@ export const screens: readonly Screen[] = [
   // UX [7]: offline, the chat and the project list from the disk cache, marked offline as of the cache's time, with
   // the banner's Retry now; then a message typed offline joins the one already queued, each with Edit and Dismiss.
   { id: "chat", route: CHAT, fixtures: ["offline-held"], variant: "offline" },
-  { id: "chat", route: CHAT, fixtures: ["look-two"], variant: "look", check: bandIsOneRow("strip", "say") },
+  // What there is to look at, in a window in the background. In one in front, a flagged message is seen once it has
+  // been in view for a second (screens/chat/looked.ts), and the line leaves: at 1920×1200 this whole conversation is in
+  // view, as are the flagged two at every size while a shot walks the list. Linux is through each in under a second;
+  // a macOS runner isn't, so its large dark shot had lost the line.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["look-two"],
+    variant: "look",
+    open: async (page) => {
+      await expect(page.locator("[data-say]").getByRole("button", { name: "Show" })).toBeVisible();
+      await inBackground(page);
+    },
+    check: bandIsOneRow("strip", "say"),
+  },
   {
     id: "chat.composer",
     route: CHAT,
