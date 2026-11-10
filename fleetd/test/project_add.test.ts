@@ -3,8 +3,10 @@
 // remove, project_remove's gates, and an order's variables.
 import { expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
+import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/index.ts";
+import { start as startNavi } from "../src/hub/navi/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { start as startLoops } from "../src/hub/projects/loops.ts";
 import { addingGh } from "../src/hub/projects/discover.ts";
@@ -86,6 +88,8 @@ function gh(k: ReturnType<typeof kit>, paths: Record<string, unknown>) {
 const operate = key("operate");
 const person = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
 const added = (k: ReturnType<typeof kit>) => events(k.hub).page(0, ["project.added"]).events;
+/** The approval mode `project_approvals` reports for a project on devbox, read by Ada (an Only me project is its owner's). */
+const mode = async (k: ReturnType<typeof kit>, projectId: unknown) => (await k.ok(person, "project_approvals", { machineId: "devbox", projectId })).approvals.mode;
 
 test("a new project gets a folder under the projects root and no repo", async () => {
   const k = kit();
@@ -110,6 +114,8 @@ test("a new project gets a folder under the projects root and no repo", async ()
   expect(store(k.hub).projectGet(r)?.title).toBe("Field Notes");
   // A plain folder is Only me, the caller's.
   expect(k.hub.db.conn.query("SELECT only_me, owner_person FROM project_settings").get()).toEqual({ only_me: 1, owner_person: "p-ada" });
+  // A new project starts in YOLO.
+  expect(await mode(k, out.projectId)).toBe("yolo");
   const event = added(k).at(-1);
   expect(event?.summary).toBe(`Field Notes added on devbox: ${FOLDER_NEEDS}`);
   expect(event?.data).toMatchObject({ title: "Field Notes", path, created: true });
@@ -129,6 +135,8 @@ test("a folder given is made there, git init runs only when asked, and a full on
   expect(site.inspect.leadNeeds).toStartWith("no GitHub remote");
   expect(n.calls.find((c) => c.op === "project_upsert")).toMatchObject({ title: "site" });
   expect(repos.of(k.hub.db.conn, { machineId: "devbox", projectId: site.projectId })).toHaveLength(1);
+  // With a repo and an agent's key too: any new project starts in YOLO.
+  expect(await mode(k, site.projectId)).toBe("yolo");
   // A name with nothing to keep still gets a folder.
   expect((await k.ok(operate, "project_add", { create: true, title: "✨" })).path).toBe(`${ROOT}/project`);
   expect(await k.refused(operate, "project_add", { machineId: "devbox", create: true, path: `${ROOT}/full` })).toBe("invalid");
@@ -184,6 +192,7 @@ test("a checkout on GitHub is inspected through gh, bound to its repo and base, 
   // A repo folder is not Only me unless asked.
   expect(k.hub.db.conn.query("SELECT only_me FROM project_settings").get()).toEqual({ only_me: 0 });
   await settle();
+  expect(await mode(k, out.projectId)).toBe("yolo");
   // The same directory again is the same project; only a title other than its folder's name renames it.
   const again = await k.ok(operate, "project_add", { machineId: "devbox", path: "/home/me/src/shop" });
   expect([again.projectId, again.created]).toEqual([out.projectId, false]);
@@ -238,6 +247,74 @@ test("a clone streams its progress, then lands as a project with its addId", asy
   const landed = added(k);
   expect(landed).toHaveLength(1);
   expect(landed[0]?.data).toMatchObject({ addId: out.addId, title: "shop", path: "/home/me/src/shop", created: true });
+  expect(await mode(k, landed[0]?.projectId)).toBe("yolo");
+});
+
+test("a project that was there before keeps its mode: the one stored, or the checker with none stored", async () => {
+  const k = kit();
+  const n = await node(k, ["repos", "folder_make"]);
+  gh(k, {});
+  // Two projects from before new ones started in YOLO: one never set (no row), one set to ask.
+  for (const projectId of ["old", "careful"]) {
+    n.event({ type: "project_upserted", projectId, title: projectId, workspaceRoot: `/home/me/${projectId}`, updatedAt: AT });
+    n.made.set(`/home/me/${projectId}`, false);
+  }
+  await settle();
+  await k.ok(person, "project_approvals_set", { machineId: "devbox", projectId: "careful", mode: "ask" });
+  const stored = () => k.hub.db.conn.query("SELECT project_id, mode FROM navi_approvals ORDER BY project_id").all();
+  expect([await mode(k, "old"), await mode(k, "careful")]).toEqual(["checker", "ask"]);
+  expect(stored()).toEqual([{ project_id: "careful", mode: "ask" }]);
+  // Added again, renamed, and reported again by its node: each is the same project, in the mode it had.
+  for (const projectId of ["old", "careful"]) {
+    const again = await k.ok(person, "project_add", { machineId: "devbox", path: `/home/me/${projectId}`, title: `${projectId} 2` });
+    expect([again.projectId, again.created]).toEqual([projectId, false]);
+  }
+  n.event({ type: "snapshot", projects: ["old", "careful"].map((projectId) => ({ projectId, title: projectId, workspaceRoot: `/home/me/${projectId}`, updatedAt: AT })), sessions: [] });
+  await settle();
+  expect([await mode(k, "old"), await mode(k, "careful")]).toEqual(["checker", "ask"]);
+  expect(stored()).toEqual([{ project_id: "careful", mode: "ask" }]);
+  // A new one beside them starts in YOLO, and a person's change of it holds when it is added again.
+  const fresh = await k.ok(person, "project_add", { machineId: "devbox", create: true, title: "Fresh" });
+  expect(await mode(k, fresh.projectId)).toBe("yolo");
+  await k.ok(person, "project_approvals_set", { machineId: "devbox", projectId: fresh.projectId, mode: "checker" });
+  await settle();
+  expect((await k.ok(person, "project_add", { machineId: "devbox", path: fresh.path, title: "Fresher" })).created).toBe(false);
+  expect(await mode(k, fresh.projectId)).toBe("checker");
+});
+
+test("a new project's lead sends without asking, and is still refused or asked what every mode refuses or asks", async () => {
+  const k = kit();
+  const n = await node(k, ["repos", "folder_make"]);
+  gh(k, {});
+  const out = await k.ok(person, "project_add", { machineId: "devbox", create: true, title: "Fresh" });
+  startNavi(k.hub);
+  try {
+    k.hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', ?, 't-lead', '', 1)", [out.projectId]);
+    const a = approvals(k.hub);
+    /** The lead's prompt for `toolName`: the node's answer to it, or the card it became. */
+    const prompt = async (requestId: string, toolName: string, input: unknown) => {
+      const data = { permission: { requestId, toolName, summary: "", input } };
+      await onThreadEvent(a, { seq: 1, at: AT, type: "thread.waiting", machineId: "devbox", projectId: out.projectId, threadId: "t-lead", summary: "", data });
+      await checksDone(a);
+      const answer = n.calls.find((c) => c.op === "answer" && c.requestId === requestId);
+      const card = a.listQuiet({ states: ["open"] }).find((q) => q.permission?.requestId === requestId);
+      return answer?.op === "answer" ? [answer.decision.behavior, "message" in answer.decision ? answer.decision.message : undefined] : ["card", card?.permission?.preview?.action];
+    };
+    // YOLO: a send and a first visit to a site run, with no card and no checker.
+    expect(await prompt("p-1", "mcp__mail__send_message", { to: ["sam@example.org"], body: "Saturday works" })).toEqual(["allow", undefined]);
+    expect(await prompt("p-2", "WebFetch", { url: "https://example.org/x" })).toEqual(["allow", undefined]);
+    expect(k.hub.db.conn.query("SELECT COUNT(*) AS n FROM navi_auto_approved").get()).toEqual({ n: 2 });
+    // The floors: a money move, by a tool or by a link, and a credential in what goes out.
+    const MONEY = "Blocked by fleetd: an assistant never moves money between accounts, even with your approval.";
+    expect(await prompt("p-3", "mcp__bank__transfer_funds", { to: "sam", amount: 5 })).toEqual(["deny", expect.stringContaining(MONEY)]);
+    expect(await prompt("p-4", "WebFetch", { url: "https://bank.example/transfer?amount=50&to=sam" })).toEqual(["deny", expect.stringContaining(MONEY)]);
+    const leak = { to: ["sam@example.org"], body: `the key is sk-ant-api03-${"a".repeat(48)}` };
+    expect(await prompt("p-5", "mcp__mail__send_message", leak)).toEqual(["deny", expect.stringContaining("what looks like a password, key or token")]);
+    // Spending through a server's tool still asks the person.
+    expect(await prompt("p-6", "mcp__shop__create_order", { item: "tea" })).toEqual(["card", "spend"]);
+  } finally {
+    k.hub.shutdown.abort();
+  }
 });
 
 test("a clone that fails says why, with git's fix", async () => {

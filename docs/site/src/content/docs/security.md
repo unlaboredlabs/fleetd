@@ -155,7 +155,8 @@ The [vault](/docs/vault) keeps logins, cards, addresses and variables encrypted 
 Every project's lead runs on its machine with the person's access and no sandbox (decision `projects.one-model`,
 D310). It runs in Claude Code's `manual` permission mode, allowed unasked what a full-access lead does: it reads and
 runs commands as you would, starts agents and works with repos. Only three things reach the person, by the project's
-[approval mode](/docs/projects#approvals):
+[approval mode](/docs/projects#approvals) (a new project starts in YOLO, where none of them asks; pick Checker decides
+or Ask me about everything to be asked):
 
 - A send through an [integration](/docs/integrations) (a server saved with `integration`); its reads run unasked. A
   server saved without `integration` runs every tool unasked, as it does for the project's agents, who never get an

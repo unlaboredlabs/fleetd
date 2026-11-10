@@ -1,6 +1,6 @@
-// A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words, the
-// checker's model and effort as the phone shows them (the desktop app no longer picks them), and each auto-approved
-// action as a log row.
+// A project's approvals (project_approvals, W239), as pure functions: the three modes in the person's words (a new
+// project starts in YOLO, W588; one made before keeps the mode it had), the checker's model and effort as the phone
+// shows them (the desktop app no longer picks them), and each auto-approved action as a log row.
 import type { AutoApproved, NaviApprovalMode, NaviApprovals, ProfileModel } from "../../../shared/contracts";
 import { EFFORT_WORD } from "./profilesModel";
 
@@ -14,7 +14,7 @@ export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly la
   {
     mode: "yolo",
     label: "YOLO",
-    description: "Nothing asks. The limits below still hold, and each action shows in the log.",
+    description: "Nothing asks. A new project starts in this mode; pick one of the others to be asked. The limits below still hold, and each action shows in the log.",
   },
 ];
 

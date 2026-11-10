@@ -87,7 +87,7 @@ const colors = (base: Fixture): Fixture => {
   f.answer("project_settings_get", ref, {
     settings: { ...ref, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
   });
-  f.answer(PROJECT_TOOLS.approvals, ref, { approvals: { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] });
+  f.answer(PROJECT_TOOLS.approvals, ref, { approvals: { mode: "yolo", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] });
   f.answer(PROJECT_TOOLS.purchases, ref, { purchases: [] });
   projectSections(f, ref);
   return f;

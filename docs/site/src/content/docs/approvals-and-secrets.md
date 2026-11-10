@@ -39,8 +39,8 @@ back. If an answer doesn't go through, the item says why in one line; click Retr
 ## Approve an integration call {#integrations}
 
 A call through a project's [integrations](/docs/integrations) that you didn't mark as a read goes by the project's
-[approval mode](/docs/projects#approvals): its checker lets what you asked for through and asks you about the rest, or
-every call asks, or none does. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
+[approval mode](/docs/projects#approvals): none asks (YOLO, which a new project starts in), or its checker lets what
+you asked for through and asks you about the rest, or every call asks. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
 when it had one. Approve sends exactly that, once. Moving money, trading and creating accounts are refused even if
 approved. See [The approval card](/docs/integrations#card).
 
