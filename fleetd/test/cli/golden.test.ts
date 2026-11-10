@@ -19,6 +19,9 @@ const feed = Bun.serve({
 });
 const feedAt = (dir: string) => ({ FLEETD_BASE_URL: `http://127.0.0.1:${feed.port}/${dir}` });
 
+/** A day inside the 30 days timelines are kept, whatever today is: `fleetd time --since` answers the same each day. */
+const WEEK_AGO = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+
 /** A no-node case's run: the CLI's 20 s wait for a restarting node, and room to spare. */
 const NO_NODE_MS = 45_000;
 type Case = { name: string; argv: string[]; cwd?: string; env?: Record<string, string>; stdin?: string; setup?: (f: Fleet) => Promise<void>; /** Longer than CASE_MS a binary. */ ms?: number };
@@ -335,8 +338,8 @@ const ONLINE: Case[] = [
   { name: "machine-set-bad-roles", argv: ["machine", "set", "devbox", "--roles", "agents,cats"] },
   { name: "machine-set-bad-sessions", argv: ["machine", "set", "devbox", "--max-sessions", "65"] },
   { name: "machine-set-unknown", argv: ["machine", "set", "devbox", "--max-agents", "4"] },
-  { name: "time-fleet", argv: ["time", "--since", "2026-11-01"] },
-  { name: "time-fleet-json", argv: ["time", "--json", "--since", "2026-11-01T00:00:00Z"] },
+  { name: "time-fleet", argv: ["time", "--since", WEEK_AGO] },
+  { name: "time-fleet-json", argv: ["time", "--json", "--since", `${WEEK_AGO}T00:00:00Z`] },
   { name: "time-order", argv: ["time", "W9", "--since", "2d"] },
   { name: "time-project-unknown", argv: ["time", "nope"] },
   { name: "init-step-address", argv: ["init", "--step", "address"] },

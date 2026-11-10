@@ -2,6 +2,7 @@
 // stamps from the train's events, replays, the person's touches, metrics_get's figures by calendar day in a zone, its
 // bounds and grants, the prune, and reviews and comments on the git host (host_acts.rs).
 import { afterEach, expect, test } from "bun:test";
+import { sinceOf } from "../src/cli/metrics.ts";
 import * as compute from "../src/hub/metrics/compute.ts";
 import { BACKFILL_MS, type HostAct, type HostActs, HostReadError, read as readActs } from "../src/hub/metrics/host_acts.ts";
 import * as human from "../src/hub/metrics/human.ts";
@@ -501,4 +502,12 @@ test("reviews and comments on the git host are estimated touches on their PRs", 
   expect(failed).toBeInstanceOf(HostReadError);
   expect((failed as HostReadError).why).toBe("gh is signed out");
   expect(store.reviewsCursor(h.db.conn, REPO)).toBe(now + 2 * HOUR);
+});
+
+test("`fleetd metrics --days N` starts at the midnight that opens the last N days in the viewer's zone, today included", () => {
+  // The golden cases print the run's own dates as DATE: the range is asserted here, on a clock of its own.
+  expect(sinceOf(7, Date.UTC(2026, 10, 10, 0, 12), "UTC")).toBe("2026-11-04T00:00:00.000Z");
+  expect(sinceOf(1, Date.UTC(2026, 10, 10, 0, 12), "UTC")).toBe("2026-11-10T00:00:00.000Z");
+  // Across a year's end, on a day Berlin has already started.
+  expect(sinceOf(7, Date.UTC(2027, 0, 3, 23, 30), "Europe/Berlin")).toBe("2026-12-28T23:00:00.000Z");
 });

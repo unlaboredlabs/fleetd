@@ -1,7 +1,8 @@
 // Golden tests: the CLI's stdout, stderr and exit code for each case, compared with what it printed when the case was
 // recorded (test/cli/fixtures, `RECORD=1 bun test test/cli/golden.test.ts`), after what differs run to run (keys, ids,
-// times, the scratch home, ports) is replaced by a placeholder. The hub cases run against a hub started on a fresh home.
-// Every call gets FLEETD_HOME and the hub URL of a scratch home under $TMPDIR: nothing reads ~/.fleetd or a live hub.
+// times, dates, the scratch home, ports) is replaced by a placeholder. The hub cases run against a hub started on a
+// fresh home. Every call gets FLEETD_HOME and the hub URL of a scratch home under $TMPDIR: nothing reads ~/.fleetd or
+// a live hub.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -120,6 +121,8 @@ export function normalize(text: string, fleet: Fleet): string {
     .replace(/\b[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}\b/g, "CODE")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "TIME")
     .replace(/\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}\b/g, "LOCALTIME")
+    // A calendar day on its own (`fleetd metrics`' range and day list): the run's own date, another one each day.
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, "DATE")
     .replace(/\b\d{2}:\d{2} UTC\b/g, "HH:MM UTC");
 }
 
