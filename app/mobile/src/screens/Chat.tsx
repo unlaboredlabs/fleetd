@@ -41,6 +41,7 @@ import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot, useJustDone } from "../ui/botState";
 import { bubble as metrics, jumbo } from "../bubble";
+import { lead } from "../stamp";
 import { Bubble, Jumbo } from "../ui/Bubble";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -796,7 +797,7 @@ function ItemView({
   item: ChatItem;
   side: "me" | "them" | "center";
   first: boolean;
-  /** The reply a turn ended with: how long it took, a stamp beside its last bubble. */
+  /** The reply a turn ended with: how long it took, a caption under its last bubble. */
   worked?: string | undefined;
   chatKey: Key;
   title: string;
@@ -907,58 +908,39 @@ function ItemView({
   return (
     <View style={[styles.them, gap]}>
       {first && item.author === "agent" ? <Text style={[type.caption, styles.by, { color: t.secondary }]}>{item.message?.by ?? "Agent"}</Text> : null}
-      {parts.map((b, i) => {
-        const view = (
-          <BubbleView
-            bubble={b}
-            canAnswer={canAnswer}
-            chatKey={chatKey}
-            actions={actions}
-            target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
-            fit={!streaming}
-            when={when}
-            said={said}
-          />
-        );
-        // Each bubble in the same wrapper, stamped or not: the stamp coming or going (as a turn ends) never remounts a
-        // bubble, which would draw it at full width again until its words measure.
-        return (
-          <Stamped key={i} words={i === parts.length - 1 ? worked : undefined} wide={b.kind !== "text"}>
-            {view}
-          </Stamped>
-        );
-      })}
+      {parts.map((b, i) => (
+        <BubbleView
+          key={i}
+          bubble={b}
+          canAnswer={canAnswer}
+          chatKey={chatKey}
+          actions={actions}
+          target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
+          fit={!streaming}
+          when={when}
+          said={said}
+        />
+      ))}
       {files.map((b, i) => (
         <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
       ))}
+      {worked === undefined ? null : <Stamp words={worked} />}
     </View>
   );
 }
 
 /**
- * A lead's bubble, and once its turn is over "Worked for 4s" beside its foot, quiet, in the room the thread keeps right
- * of the lead's bubbles: out of the row's layout, so nothing moves as it comes. It takes one line where the bubble leaves
- * room, two beside a wide one. As wide as a text bubble; a card (`wide`) keeps the row's width, as it would without it.
+ * "Worked for 4s" under the reply a turn ended with, a quiet caption in the row's flow (../stamp.ts): in from the
+ * bubble's corner as a send's note is, on one line wherever the label fits the row, wrapping inside it at a text size
+ * where it doesn't.
  */
-function Stamped({ words, wide, children }: { words: string | undefined; wide: boolean; children: ReactNode }) {
+function Stamp({ words }: { words: string }) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { width } = useWindowDimensions();
-  const [room, setRoom] = useState<number>();
   return (
-    <View style={wide ? styles.stampedWide : styles.stamped} onLayout={(e) => setRoom(width - 2 * metrics.margin - e.nativeEvent.layout.x - e.nativeEvent.layout.width - space.sm)}>
-      {children}
-      {words === undefined || room === undefined ? null : (
-        <Animated.Text
-          entering={FadeIn.duration(reduce ? 0 : dur.swap).easing(ease.out)}
-          style={[type.caption, styles.stamp, { color: t.tertiary, maxWidth: room }]}
-          numberOfLines={2}
-          maxFontSizeMultiplier={1.3}
-        >
-          {words}
-        </Animated.Text>
-      )}
-    </View>
+    <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.swap).easing(ease.out)} style={[type.caption, styles.stamp, { color: t.tertiary }]}>
+      {words}
+    </Animated.Text>
   );
 }
 
@@ -1367,10 +1349,8 @@ const styles = StyleSheet.create({
   wait: { position: "absolute", right: "100%", bottom: 5, paddingRight: space.sm },
   note: { marginTop: 3, marginRight: 4, textAlign: "right", flexShrink: 1 },
   noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
-  them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
-  stamp: { position: "absolute", left: "100%", bottom: 9, marginLeft: space.sm },
-  stamped: { alignSelf: "flex-start" },
-  stampedWide: { alignSelf: "stretch", alignItems: "flex-start" },
+  them: lead.row,
+  stamp: lead.stamp,
   // In line with the words in the bubble under it.
   by: { marginLeft: metrics.padX, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },
