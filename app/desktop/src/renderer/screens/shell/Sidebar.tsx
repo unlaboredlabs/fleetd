@@ -35,10 +35,10 @@ import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
 import { HubText } from "../projects/HubText";
-import { routeOf, type SidebarProject } from "./model";
+import { projectId, routeOf, type SidebarProject } from "./model";
 import type { Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
-import { PINS_MAX, savePins } from "./pins";
+import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
@@ -287,16 +287,22 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
   );
 }
 
-/** Saves `layer`'s pins as `keys` (row keys) name them, from `rows`. */
-const pin = (layer: DataLayer, rows: ReadonlyArray<Placed>, keys: readonly string[]) => {
+/**
+ * Changes `layer`'s pins: `how` gets the hub's own (pins.ts), those of `rows`, as row keys, and returns them changed
+ * (the same list for no change). The ones on show may not be the hub's yet.
+ */
+const pin = (layer: DataLayer, rows: ReadonlyArray<Placed>, how: (keys: readonly string[]) => readonly string[]) => {
   const byKey = new Map(rows.map((p) => [p.key, p]));
-  void savePins(
-    layer,
-    keys.flatMap((k) => {
-      const p = byKey.get(k);
-      return p === undefined ? [] : [routeOf(p)];
-    }),
-  );
+  void changePins(layer, (now) => {
+    const keys = now.map(projectId).filter((k) => byKey.has(k));
+    const next = how(keys);
+    return next === keys
+      ? now
+      : next.flatMap((k) => {
+          const p = byKey.get(k);
+          return p === undefined ? [] : [routeOf(p)];
+        });
+  });
 };
 
 /**
@@ -383,12 +389,12 @@ function ProjectGroup(props: {
   const pins = useReorder({
     keys: pinned,
     name,
-    onMove: (order) => pin(layer, rows ?? [], order),
+    onMove: (order) => pin(layer, rows ?? [], (keys) => inOrder(keys, order)),
     settle: SPRING,
     grid: { columns: PIN_COLUMNS },
     within,
     out: (key, way) => {
-      if (way === "down") pin(layer, rows ?? [], pinned.filter((k) => k !== key));
+      if (way === "down") pin(layer, rows ?? [], (keys) => unpinned(keys, key));
     },
   });
   const pinOn = (key: string, at: number) => {
@@ -396,7 +402,9 @@ function ProjectGroup(props: {
       toast({ title: `Up to ${String(PINS_MAX)} chats can be pinned`, description: "Unpin one to pin this one." });
       return;
     }
-    pin(layer, rows ?? [], [...pinned.slice(0, at), key, ...pinned.slice(at)]);
+    // Before the pin that stands there now, wherever the hub's list has it.
+    const before = pinned[at];
+    pin(layer, rows ?? [], (keys) => pinnedAt(keys, key, before));
   };
   // The labels are among the rows' keys, so they glide and close up with them; only a chat lifts.
   const list = useRef<HTMLDivElement>(null);
@@ -437,7 +445,7 @@ function ProjectGroup(props: {
         <ContextMenuItem onSelect={() => openRow(p)}>Open</ContextMenuItem>
         <ContextMenuItem
           onSelect={() => {
-            if (p.pinned) return pin(layer, rows ?? [], pinned.filter((k) => k !== p.key));
+            if (p.pinned) return pin(layer, rows ?? [], (keys) => unpinned(keys, p.key));
             pinOn(p.key, pinned.length);
           }}
         >

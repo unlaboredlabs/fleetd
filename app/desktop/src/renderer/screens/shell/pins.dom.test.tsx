@@ -3,7 +3,9 @@
 // top in their order, every other one after by its newest activity; a change on another device (chat.pins) moves them
 // live. Quick changes in a row each show at once, go to the hub one at a time (only the newest of those made
 // meanwhile), and a read older than the last of them, such as the refetch your own earlier change's event made, never
-// puts a row back. A pinned row dropped in the sidebar stays put through the hub's answer and its echo (W219).
+// puts a row back. A pinned row dropped in the sidebar stays put through the hub's answer and its echo (W219). A pin
+// made before the hub has said what your pins are waits for its list and is made to that, never to the copy kept on
+// this computer (W582).
 import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +18,7 @@ import { useSidebarProjects } from "./data";
 import { Sidebar, SPRING } from "./Sidebar";
 
 const SETTLE_MS = SPRING.ms;
-import { savePins } from "./pins";
+import { changePins } from "./pins";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -52,9 +54,13 @@ let sets: { order: ProjectRef[]; land: () => void }[];
 /** Hold reads of the order until the test lets them answer, with what the hub kept when they were asked. */
 let holdReads: boolean;
 let heldReads: (() => void)[];
+/** Why the hub can't say what your pins are, if it can't. */
+let unread: { code: string; message: string } | undefined;
 let seq: number;
 
 beforeEach(() => {
+  window.localStorage.clear();
+  unread = undefined;
   stored = [];
   sets = [];
   holdReads = false;
@@ -63,7 +69,7 @@ beforeEach(() => {
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "chat_pins_get") {
-        const answer = { ok: true as const, output: { pins: stored, set: true } };
+        const answer = unread === undefined ? { ok: true as const, output: { pins: stored, set: true } } : { ok: false as const, error: unread };
         if (!holdReads) return Promise.resolve(answer);
         return new Promise((done) => heldReads.push(() => done(answer)));
       }
@@ -151,10 +157,10 @@ describe("quick moves in a row", () => {
     await mount([project("a"), project("b"), project("c")]);
     expect(shown()).toEqual(["a", "b", "c"]);
 
-    act(() => void savePins(layer, refs("c", "a", "b")));
+    act(() => void changePins(layer, () => refs("c", "a", "b")));
     expect(shown()).toEqual(["c", "a", "b"]);
-    act(() => void savePins(layer, refs("b", "c", "a")));
-    act(() => void savePins(layer, refs("a", "c", "b")));
+    act(() => void changePins(layer, () => refs("b", "c", "a")));
+    act(() => void changePins(layer, () => refs("a", "c", "b")));
     expect(shown()).toEqual(["a", "c", "b"]);
     // One set on its way at a time.
     expect(sets.map((s) => s.order)).toEqual([refs("c", "a", "b")]);
@@ -269,6 +275,82 @@ describe("a row dropped in the sidebar", () => {
     expect(titles()).toEqual(["b", "a", "c"]);
     expect(changes.takeRecords()).toEqual([]);
     changes.disconnect();
+  });
+});
+
+describe("a pin made before the hub has said what your pins are", () => {
+  /** The pins last read on this computer, shown until the hub answers. */
+  const keptFromBefore = (...ids: string[]) => window.localStorage.setItem("fleetd.sidebarPins", JSON.stringify({ [layer.hub]: ids.map((id) => `devbox/${id}`) }));
+  const mountBar = async () => {
+    act(() =>
+      root.render(
+        <UiProvider>
+          <DataProvider layer={layer}>
+            <Bar />
+          </DataProvider>
+        </UiProvider>,
+      ),
+    );
+    act(() => {
+      listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+      listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [project("a"), project("b"), project("c"), project("d")] } });
+    });
+    await settle();
+  };
+  const pinned = () => [...host.querySelectorAll("[class*=pinTitle]")].map((p) => p.textContent);
+  /** A row's menu, opened, and the item chosen. */
+  const choose = async (title: string, item: string) => {
+    const row = [...host.querySelectorAll<HTMLElement>("[data-reorder-row] > button")].find((b) => b.querySelector("[class*=name], [class*=pinTitle]")?.textContent === title);
+    if (row === undefined) throw new Error(`no chat ${title}`);
+    act(() => void row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })));
+    const found = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === item);
+    if (found === undefined) throw new Error(`no ${item} for ${title}`);
+    act(() => found.click());
+    await settle();
+  };
+
+  it("waits for the hub's list and is made to it, so a chat pinned on another device stays", async () => {
+    keptFromBefore("a");
+    // b was pinned on your phone since.
+    stored = refs("a", "b");
+    holdReads = true;
+    await mountBar();
+    expect(pinned()).toEqual(["a"]);
+    await choose("c", "Pin to top");
+    await choose("d", "Pin to top");
+    expect(sets).toEqual([]);
+
+    holdReads = false;
+    act(() => heldReads.splice(0).forEach((answer) => answer()));
+    await settle();
+    // Both pins, on top of the hub's list: one after the other, each the whole list.
+    expect(sets.map((s) => s.order)).toEqual([refs("a", "b", "c")]);
+    act(() => sets[0]?.land());
+    await settle();
+    expect(sets.map((s) => s.order)).toEqual([refs("a", "b", "c"), refs("a", "b", "c", "d")]);
+    expect(pinned()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("sends nothing when the hub can't say, and says why", async () => {
+    keptFromBefore("a");
+    stored = refs("a", "b");
+    unread = { code: "forbidden", message: "This device is no longer signed in." };
+    await mountBar();
+    expect(pinned()).toEqual(["a"]);
+    await choose("c", "Pin to top");
+    expect(sets).toEqual([]);
+    expect(pinned()).toEqual(["a"]);
+    expect(document.body.textContent).toContain("Couldn’t save your pins");
+    expect(document.body.textContent).toContain("This device is no longer signed in.");
+    // Nor an unpin, or a move.
+    await choose("a", "Unpin");
+    expect(sets).toEqual([]);
+    expect(pinned()).toEqual(["a"]);
+
+    // Asked again at the next change: once it answers, the change is made to its list.
+    unread = undefined;
+    await choose("c", "Pin to top");
+    expect(sets.map((s) => s.order)).toEqual([refs("a", "b", "c")]);
   });
 });
 

@@ -178,8 +178,9 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
   const pin = (row: ChatRow) => {
-    const next = togglePin(pins, row.key, !row.pinned);
-    if (next !== null) return void session.setPins(next);
+    const on = !row.pinned;
+    // To the hub's own pins, which the ones on show may not be yet (pins.ts).
+    if (togglePin(pins, row.key, on) !== null) return void session.changePins((keys) => togglePin(keys, row.key, on) ?? keys);
     haptics.warning();
     Alert.alert(`You can pin up to ${String(MAX_PINNED)} chats`, "Unpin one to pin this one.");
   };

@@ -2,7 +2,7 @@
 // own menu (Rename…, Move Up, Move Down, Remove Section), and Move to Section… in a chat's hold menu, which asks where
 // in iOS's action sheet: each section with a ✓ on the chat's own, No Section, and New Section…, named in iOS's own
 // prompt. Android has neither, so it asks in the app's drawn menu and a small prompt of its own. A change shows at once
-// and goes to the hub (Session.setSections); a name the hub would refuse never leaves the prompt.
+// and goes to the hub (Session.changeSections); a name the hub would refuse never leaves the prompt.
 import { useRef, useState } from "react";
 import { AccessibilityInfo, ActionSheetIOS, Alert, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import type { ChatRow } from "../lists";
@@ -62,10 +62,11 @@ export function useSectionMenus(session: Session, sections: readonly Section[]) 
   const [picking, setPicking] = useState<ChatRow | null>(null);
   const [naming, setNaming] = useState<Naming | null>(null);
 
-  const save = (next: readonly Section[]) => {
-    if (next === latest.current) return;
+  // A change is made to the hub's own list (sections.ts), which the one on show may not be yet.
+  const change = (how: (now: readonly Section[]) => readonly Section[]) => {
+    if (how(latest.current) === latest.current) return;
     haptics.select();
-    void session.setSections(next);
+    void session.changeSections(how);
   };
 
   const askName = (o: Naming) => {
@@ -97,12 +98,16 @@ export function useSectionMenus(session: Session, sections: readonly Section[]) 
       haptics.warning();
       return Alert.alert(`You can have up to ${String(SECTIONS_MAX)} sections`, "Remove one to make another.");
     }
-    askName({ title: "New Section", message: `A name for a section with ${row.project.title} in it.`, value: "", button: "Create", onName: (name) => save(addSection(latest.current, newSectionId(), name, row.key)) });
+    const onName = (name: string) => {
+      const id = newSectionId();
+      change((now) => addSection(now, id, name, row.key));
+    };
+    askName({ title: "New Section", message: `A name for a section with ${row.project.title} in it.`, value: "", button: "Create", onName });
   };
 
   const choose = (row: ChatRow, to: SectionChoice["to"]) => {
     if (to.t === "new") return newSection(row);
-    save(moveChat(latest.current, row.key, to.t === "none" ? null : to.id));
+    change((now) => moveChat(now, row.key, to.t === "none" ? null : to.id));
   };
 
   const move = (row: ChatRow) => {
@@ -119,13 +124,13 @@ export function useSectionMenus(session: Session, sections: readonly Section[]) 
   const moveItem = (row: ChatRow): MenuItem => ({ label: "Move to Section…", icon: "folder", presents: true, onPress: () => move(row) });
 
   const act = (section: Section, action: LabelAction, shown: readonly string[]) => {
-    if (action === "rename") return askName({ title: "Rename Section", value: section.name, button: "Rename", except: section.id, onName: (name) => save(renameSection(latest.current, section.id, name)) });
+    if (action === "rename") return askName({ title: "Rename Section", value: section.name, button: "Rename", except: section.id, onName: (name) => change((now) => renameSection(now, section.id, name)) });
     if (action === "remove") {
       // Folded is this phone's note about a section that is no more.
       dispatchPrefs({ t: "fold", id: section.id, on: false });
-      return save(removeSection(latest.current, section.id));
+      return change((now) => removeSection(now, section.id));
     }
-    save(moveSection(latest.current, section.id, action === "up" ? -1 : 1, shown));
+    change((now) => moveSection(now, section.id, action === "up" ? -1 : 1, shown));
   };
 
   const labelItems = (section: Section, shown: readonly string[]): readonly MenuItem[] => labelActions(section.id, shown).map((a) => ({ ...LABEL_ITEMS[a], onPress: () => act(section, a, shown) }));

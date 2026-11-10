@@ -1,9 +1,11 @@
 // A list the hub keeps for you, changed here (your pins, pins.ts; your sections, sections.ts): the sidebar takes your
 // change at once, the hub gets the whole list, one set at a time, and a refusal puts the hub's back and says why. The
-// last list read is kept on this computer too, per hub, only so a launch shows it before the hub answers.
-import type { QueryKey } from "@tanstack/react-query";
+// last list read is kept on this computer too, per hub, only so a launch shows it before the hub answers: a change is
+// never made to that copy, but to the hub's own list, read first (change), since the list sent replaces the hub's.
 import { useCallback, useSyncExternalStore } from "react";
-import type { DataLayer } from "../../src/data/queries";
+import type { ToolInput, ToolOutput } from "../../../shared/contracts";
+import type { HubError } from "../../../shared/hub";
+import { CallError, callKey, type DataLayer } from "../../src/data/queries";
 import { toast } from "../../ui";
 
 /**
@@ -22,23 +24,30 @@ interface Saving<T> {
 export interface Ahead<T> {
   /** Your newest change on `layer`'s hub while the read numbered `readNo` is from before it; undefined otherwise. */
   readonly useAhead: (layer: DataLayer, readNo: number | undefined) => T | undefined;
-  /** The same, as it is now, for a change made on top of it. */
-  readonly now: (layer: DataLayer, readNo: number | undefined) => T | undefined;
   /**
-   * Saves `value` on `layer`'s hub. The sidebar takes it at once. Changes made while one is on its way go after it,
-   * only the newest of them; a refusal puts the hub's list back and says why.
+   * Changes the list on `layer`'s hub: `how` gets it as it is there and returns it changed (the same list for no
+   * change), and the whole list is saved. The sidebar takes it at once. Changes made while one is on its way go after
+   * it, only the newest of them; a refusal puts the hub's list back and says why. A hub that hasn't answered with the
+   * list yet, or couldn't the last time it was asked, is asked first, so the list sent never lacks what another device
+   * put in it; if it can't say, nothing is sent, and the person hears why as for a refusal.
    */
-  readonly save: (layer: DataLayer, value: T) => Promise<void>;
+  readonly change: (layer: DataLayer, how: (now: T) => T) => Promise<void>;
 }
 
-export const ahead = <T>(o: {
+export const ahead = <T, R extends "chat_pins_get" | "chat_sections_get">(o: {
   /** Sends the list to the hub: undefined once the hub took it, else why it didn't, in words for the person. */
   readonly send: (layer: DataLayer, value: T) => Promise<string | undefined>;
-  /** The list's read, asked again after a refusal. */
-  readonly read: QueryKey;
+  /** The list's read, which takes nothing: asked again after a refusal, and first by a change made before it answered. */
+  readonly read: R;
+  /** The list in the read's answer. */
+  readonly list: (answer: ToolOutput<R>) => T;
   /** What a refusal's toast says first: "Couldn’t save your pins". */
   readonly refused: string;
+  /** Why the hub didn't answer the read, in words for the person: its own unless this says otherwise. */
+  readonly why?: (error: HubError) => string;
 }): Ahead<T> => {
+  const none = {} as ToolInput<R>;
+  const read = callKey(o.read, none);
   const savings = new WeakMap<DataLayer, Saving<T>>();
   const watchers = new WeakMap<DataLayer, Set<() => void>>();
   const set = (layer: DataLayer, next: Saving<T> | undefined) => {
@@ -72,7 +81,7 @@ export const ahead = <T>(o: {
       const why = await o.send(layer, sent);
       if (why !== undefined) {
         set(layer, undefined);
-        void layer.queryClient.invalidateQueries({ queryKey: o.read });
+        void layer.queryClient.invalidateQueries({ queryKey: read });
         toast({ title: o.refused, description: why, tone: "danger" });
         return;
       }
@@ -83,7 +92,31 @@ export const ahead = <T>(o: {
       }
     }
   };
-  return { useAhead, now: (layer, readNo) => aheadOf(savings.get(layer), readNo), save };
+  /**
+   * The list on `layer`'s hub as it is now: your changes still on their way, else the hub's own answer. None while it
+   * hasn't answered, or couldn't the last time it was asked.
+   */
+  const held = (layer: DataLayer): T | undefined => {
+    const answer = layer.queryClient.getQueryState<ToolOutput<R>>(read);
+    return aheadOf(savings.get(layer), layer.readOf(o.read, none)) ?? (answer?.status === "success" && answer.data !== undefined ? o.list(answer.data) : undefined);
+  };
+  const change = async (layer: DataLayer, how: (now: T) => T): Promise<void> => {
+    if (held(layer) === undefined) {
+      try {
+        // Asked now (or the read on its way waited for), with no retries of its own.
+        await layer.queryClient.query({ ...layer.toolQuery(o.read, none), staleTime: 0, retry: false });
+      } catch (e) {
+        toast({ title: o.refused, description: e instanceof CallError ? (o.why?.(e.error) ?? e.error.message) : "The hub didn’t answer.", tone: "danger" });
+        return;
+      }
+    }
+    // Read again after the wait: a change made meanwhile is under this one.
+    const now = held(layer);
+    if (now === undefined) return;
+    const next = how(now);
+    if (next !== now) await save(layer, next);
+  };
+  return { useAhead, change };
 };
 
 /** What was last read of a list, kept per hub under `name` in this computer's storage. */
