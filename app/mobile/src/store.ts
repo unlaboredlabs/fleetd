@@ -113,7 +113,7 @@ export interface State {
   readonly leadActivity: Readonly<Record<string, Activity>>;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
-  /** Each lead's latest turn seen to its end (hub epoch ms at each end): its reply's "Worked for" stamp (chatView.ts). */
+  /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
   readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number }>>;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;

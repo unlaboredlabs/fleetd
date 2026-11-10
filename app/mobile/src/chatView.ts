@@ -221,7 +221,7 @@ const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
 export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
-  /** `worked`: the reply a turn ended with, how long the turn took ("Worked for 4s"), a quiet stamp under it. */
+  /** `worked`: the reply a turn ended with, how long the turn took ("4m 12s"), shown with its time (ui/Reveal.tsx). */
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
@@ -279,7 +279,7 @@ export const threadRows = (
     worked === undefined
       ? -1
       : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
-  const stamp = worked === undefined ? undefined : `Worked for ${workedFor(worked.until - worked.since)}`;
+  const stamp = worked === undefined ? undefined : workedFor(worked.until - worked.since);
   let prev: ChatItem | undefined;
   let prevDay = 0;
   const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
