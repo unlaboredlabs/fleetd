@@ -2,11 +2,13 @@
 // make room while the other side's keep their place; let go and it all goes back. The drag runs on the UI thread. It
 // starts only leftward and away from the screen's left edge, so iOS's swipe back from that edge stays iOS's, and a
 // mostly vertical drag stays the thread's scroll. The time column is as wide as the times at the person's text size.
+// The reply a turn ended with has how long the turn took under its time: there is no room for it beside a bubble, and
+// in the row it would move the thread as the turn ends.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from "react-native-reanimated";
-import { revealOf, revealWidth, TIME_SCALE } from "../reveal";
+import { revealOf, revealWidth, TIME_SCALE, timeColumn, timeLine } from "../reveal";
 import { type, useTheme } from "../theme";
 import { quick } from "./motion";
 
@@ -48,8 +50,11 @@ export function RevealArea({ margin, children }: { margin: number; children: Rea
   );
 }
 
-/** A message's row: its time waits past the screen's right edge; yours slides left with it, theirs stays. */
-export function Revealed({ mine, time, children }: { mine: boolean; time: string; children: ReactNode }) {
+/**
+ * A message's row: its time waits past the screen's right edge; yours slides left with it, theirs stays. `worked`: how
+ * long the turn it ended took ("4m 12s"), under the time.
+ */
+export function Revealed({ mine, time, worked, children }: { mine: boolean; time: string; worked?: string | undefined; children: ReactNode }) {
   const t = useTheme();
   const area = useContext(Shown);
   const shown = area?.shown;
@@ -57,10 +62,15 @@ export function Revealed({ mine, time, children }: { mine: boolean; time: string
   return (
     <View>
       <Animated.View style={mine ? slide : undefined}>{children}</Animated.View>
-      <Animated.View style={[styles.time, { marginLeft: area?.margin ?? 0, width: area?.width ?? 0 }, slide]} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+      <Animated.View style={[timeColumn(area?.margin ?? 0, area?.width ?? 0), slide]} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
         <Text style={[type.caption, styles.timeText, { color: t.secondary }]} maxFontSizeMultiplier={TIME_SCALE} numberOfLines={1}>
           {time}
         </Text>
+        {worked === undefined ? null : (
+          <Text style={[type.caption, styles.timeText, { color: t.tertiary }]} maxFontSizeMultiplier={TIME_SCALE} numberOfLines={1}>
+            {worked}
+          </Text>
+        )}
       </Animated.View>
     </View>
   );
@@ -68,7 +78,5 @@ export function Revealed({ mine, time, children }: { mine: boolean; time: string
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  // Past the row's right end and the thread's margin: off the screen until the thread slides.
-  time: { position: "absolute", top: 0, bottom: 0, left: "100%", justifyContent: "center" },
-  timeText: { fontVariant: ["tabular-nums"], paddingLeft: 6 },
+  timeText: { ...timeLine, fontVariant: ["tabular-nums"] },
 });

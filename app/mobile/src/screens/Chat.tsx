@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ListViewToken } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,7 +41,6 @@ import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot, useJustDone } from "../ui/botState";
 import { bubble as metrics, jumbo } from "../bubble";
-import { lead } from "../stamp";
 import { Bubble, Jumbo } from "../ui/Bubble";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -738,12 +737,12 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
       </View>
     );
   }
-  const item = <ItemView item={row.item} side={row.side} first={row.first} worked={row.worked} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const item = <ItemView item={row.item} side={row.side} first={row.first} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
   const body =
     row.side === "center" ? (
       item
     ) : (
-      <Revealed mine={row.side === "me"} time={bubbleTime(row.item.at, now)}>
+      <Revealed mine={row.side === "me"} time={bubbleTime(row.item.at, now)} worked={row.worked}>
         {item}
       </Revealed>
     );
@@ -788,7 +787,6 @@ function ItemView({
   item,
   side,
   first,
-  worked,
   chatKey,
   title,
   canAnswer,
@@ -797,8 +795,6 @@ function ItemView({
   item: ChatItem;
   side: "me" | "them" | "center";
   first: boolean;
-  /** The reply a turn ended with: how long it took, a caption under its last bubble. */
-  worked?: string | undefined;
   chatKey: Key;
   title: string;
   canAnswer: boolean;
@@ -924,23 +920,7 @@ function ItemView({
       {files.map((b, i) => (
         <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
       ))}
-      {worked === undefined ? null : <Stamp words={worked} />}
     </View>
-  );
-}
-
-/**
- * "Worked for 4s" under the reply a turn ended with, a quiet caption in the row's flow (../stamp.ts): in from the
- * bubble's corner as a send's note is, on one line wherever the label fits the row, wrapping inside it at a text size
- * where it doesn't.
- */
-function Stamp({ words }: { words: string }) {
-  const t = useTheme();
-  const reduce = useReduceMotion();
-  return (
-    <Animated.Text entering={FadeIn.duration(reduce ? 0 : dur.swap).easing(ease.out)} style={[type.caption, styles.stamp, { color: t.tertiary }]}>
-      {words}
-    </Animated.Text>
   );
 }
 
@@ -1349,8 +1329,7 @@ const styles = StyleSheet.create({
   wait: { position: "absolute", right: "100%", bottom: 5, paddingRight: space.sm },
   note: { marginTop: 3, marginRight: 4, textAlign: "right", flexShrink: 1 },
   noteRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: space.sm, maxWidth: "100%" },
-  them: lead.row,
-  stamp: lead.stamp,
+  them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
   // In line with the words in the bubble under it.
   by: { marginLeft: metrics.padX, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },

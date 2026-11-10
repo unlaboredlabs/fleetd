@@ -166,10 +166,10 @@ describe("threadRows", () => {
     const worked = { since: Date.parse("2026-10-28T10:00:00Z"), until: Date.parse("2026-10-28T10:00:04Z") };
     const stamps = (rows: ThreadRow[]) => rows.flatMap((r) => (r.t === "item" && r.worked !== undefined ? [`${r.id}: ${r.worked}`] : []));
     const turn = [item("a", "human", "2026-10-28T10:00:00Z"), item("b", "lead", "2026-10-28T10:00:03Z")];
-    expect(stamps(threadRows(turn, worked))).toEqual(["b: Worked for 4s"]);
+    expect(stamps(threadRows(turn, worked))).toEqual(["b: 4s"]);
     // Asked again, and the next turn's reply streaming: the stamp stays with the reply it is about.
     const next = [...turn, item("c", "human", "2026-10-28T10:01:00Z"), item("d", "lead", "2026-10-28T10:01:05Z", { state: "streaming" })];
-    expect(stamps(threadRows(next, worked))).toEqual(["b: Worked for 4s"]);
+    expect(stamps(threadRows(next, worked))).toEqual(["b: 4s"]);
     // What the lead is doing is never a row; no turn seen to its end, no stamp.
     expect(threadRows(next).map((r) => r.t)).toEqual(["day", "item", "item", "item", "item"]);
     expect(stamps(threadRows(next))).toEqual([]);

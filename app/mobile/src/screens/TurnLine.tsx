@@ -3,9 +3,9 @@
 // walks its ring, anything else is grain), what the lead does now in the desktop's words under its dither scan, and how
 // long the turn has run, faint, counting. Writing the reply is a step like any other, so the line holds through it. A
 // new wording crossfades in place, rising a few points, and stays at least DWELL_MS, so a passing step doesn't flicker;
-// the count ticks without fading. Once the turn ends the line says "Worked for 4s" a moment (the reply keeps it as a
-// stamp, chatView.ts), then fades. VoiceOver hears it turn from thinking to working and back, never each tick. Off
-// screen (`still`) the glyph holds still, and the scan and the count stop.
+// the count ticks without fading. Once the turn ends the line says "Worked for 4s" a moment (the reply keeps the time
+// it took with its own, a drag left away: ui/Reveal.tsx), then fades. VoiceOver hears it turn from thinking to working
+// and back, never each tick. Off screen (`still`) the glyph holds still, and the scan and the count stop.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
@@ -25,7 +25,7 @@ export const TURN_LINE_HEIGHT = 20;
 const DWELL_MS = 380;
 /** The line waits this long before it goes, so a turn starting again right away turns it into its words instead. */
 const GRACE_MS = 450;
-/** How long "Worked for" stays over the composer once the turn is over; the reply's stamp keeps it after. */
+/** How long "Worked for" stays over the composer once the turn is over; the reply's time column keeps it after. */
 const HOLD_MS = 3_000;
 
 interface Words {
