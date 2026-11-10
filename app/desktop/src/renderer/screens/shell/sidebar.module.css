@@ -1,12 +1,13 @@
 /* The sidebar (Sidebar.tsx, You.tsx): chats as rows of picture, name and newest line, and you at the foot. No labels,
-   no borders, no cards: rows are set apart by space alone, the one you have open by a soft fill, a capsule as the top
-   bar's pill is (W580). Names are the one strong voice; everything under them is quiet until something is new. The
-   theme's tokens for every colour, so its neutral accent and both themes follow. */
+   no borders, no cards: rows are set apart by space alone, the one you have open by a soft fill, a rounded box, never
+   a pill (W584); only a pin's name sits in a capsule, as the top bar's pill is (W580). Names are the one strong voice;
+   everything under them is quiet until something is new. The theme's tokens for every colour, so its neutral accent
+   and both themes follow. */
 
 .sidebar {
-  /* A row's rounding, half its 56 px: a capsule. A pin's, lifted or focused, and the pins' own when a chat is dragged
-     over them. */
-  --row-round: 28px;
+  /* A row's rounding, a box's corners as your own row's at the foot are, in every state of it (under the pointer,
+     open, focused, lifted, gliding). A pin's, lifted or focused, and the pins' own when a chat is dragged over them. */
+  --row-round: var(--radius-lg);
   --pin-round: 24px;
   display: flex;
   flex-direction: column;
@@ -56,8 +57,8 @@
   background: var(--sidebar);
 }
 
-/* A chat's row: a 56 px capsule, its 40 px picture 8 px in, so the picture's round sits concentric in the row's end;
-   the far end's words stop a little short of its curve. */
+/* A chat's row: a 56 px rounded box, its 40 px picture 8 px in from its top, its bottom and its end; the far end's
+   words stop a little short of its edge. */
 .row {
   display: flex;
   align-items: center;
