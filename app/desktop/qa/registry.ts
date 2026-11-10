@@ -3420,6 +3420,38 @@ export const screens: readonly Screen[] = [
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  // Your name, an owner's and a member's alike: at rest, while typing a new one, saved on Enter as the hub kept it, and
+  // an empty one refused in the hub's words under the row's title.
+  { id: "settings.general", route: "#/settings/general", fixtures: ["admin-owner", "admin-member"], variant: "name" },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["admin-member"],
+    variant: "name-editing",
+    open: (page) => page.getByRole("textbox", { name: "Name" }).fill("Bob Okafor Jr."),
+  },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["admin-member"],
+    variant: "name-saved",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("Bob Okafor Jr.");
+      await page.getByRole("textbox", { name: "Name" }).press("Enter");
+      await page.getByRole("textbox", { name: "Name" }).and(page.locator(":enabled:not(:focus)")).waitFor();
+    },
+  },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["admin-member"],
+    variant: "name-refused",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("");
+      await page.getByRole("textbox", { name: "Name" }).press("Enter");
+      await page.getByRole("alert").filter({ hasText: "The name is empty." }).waitFor();
+    },
+  },
   // Notifications: the kinds, sound, the Dock badge, then the test's two answers: sent (with where to allow fleetd
   // if nothing showed) and a system that shows none.
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical"], variant: "notifications" },

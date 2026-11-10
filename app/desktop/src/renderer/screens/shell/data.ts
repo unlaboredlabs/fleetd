@@ -10,6 +10,7 @@ import { selectShownProjects } from "../../src/data/selectors";
 import { sidebarOrder } from "../projects/model";
 import { projectId, toSidebar, type SidebarProject } from "./model";
 import type { ProjectKey } from "./routes";
+import { usePersonNames } from "../admin/names";
 import { useHubRole } from "../admin/role";
 import { useFollowLatest, useLatest } from "./latest";
 import { arranged, usePins } from "./pins";
@@ -51,6 +52,7 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   // Then the ones in none of your sections, then each section's (sections.ts).
   const sections = useSections();
   const me = useHubRole().me?.personId;
+  const names = usePersonNames();
   const openKey = open === null ? null : projectId(open);
   // The open chat is seen as it grows; a project seen for the first time starts read, not as a backlog of unread.
   useEffect(() => {
@@ -63,7 +65,7 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     markSeen(marks);
   }, [rows, openKey, seen, hub]);
   return useMemo(() => {
-    const shown = toSidebar(rows, { requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me });
+    const shown = toSidebar(rows, { requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me, names });
     return shown === undefined
       ? undefined
       : arranged(
@@ -72,6 +74,6 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
           undefined,
           sections?.map((s) => s.id),
         );
-  }, [rows, requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me]);
+  }, [rows, requests, blocked, warnings, seen, open, latest, lastAt, pins, sections, me, names]);
 };
 

@@ -1,7 +1,7 @@
-// Settings › You › General: Appearance and time in the app, then Notifications (Notifications.tsx) and Version: this
-// app's version and channel with Check for updates, and one read-only line on whether the hub and its machines are up
-// to date (updates/model.ts hubStanding). Updating them takes admin on every machine, so it is on Hub › Machines, and
-// only owners and admins get the way there.
+// Settings › You › General: your name (Name.tsx), Appearance and time in the app, then Notifications
+// (Notifications.tsx) and Version: this app's version and channel with Check for updates, and one read-only line on
+// whether the hub and its machines are up to date (updates/model.ts hubStanding). Updating them takes admin on every
+// machine, so it is on Hub › Machines, and only owners and admins get the way there.
 import { useEffect, useState } from "react";
 import { isEdge } from "../../../shared/pairing";
 import { Button, Segmented, THEME_MODES, useTheme } from "../../ui";
@@ -12,6 +12,7 @@ import { useUpdatesView } from "../updates/hooks";
 import { hubStanding, type AppPart } from "../updates/model";
 import { runApp } from "../updates/UpdatesHost";
 import { Command, Line, Notes, Raw } from "../updates/UpdatesSheet";
+import { YourName } from "./Name";
 import { Notifications } from "./Notifications";
 import { GroupNote, PageHead, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import s from "./settings.module.css";
@@ -23,6 +24,7 @@ export function General() {
       <div className={s.column}>
         <PageHead title="General" />
         <SettingsSection>
+          <YourName />
           <SettingsRow
             reveal="general.appearance"
             title="Appearance"

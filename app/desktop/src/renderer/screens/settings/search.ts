@@ -54,6 +54,7 @@ const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ k
 /** Every option, in the sidebar's order. The Hub group's are found only by its owners and admins (optionsFor). */
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
+  { key: "general.name", label: "Name", tab: "general", keywords: ["your name", "rename", "display name", "profile", "account", "who you are"] },
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
   { key: "general.presence", label: "Time in the app", tab: "general", keywords: ["presence", "focus", "activity", "privacy", "minutes", "tracking"] },
   { key: "notifications", label: "Notifications", tab: "general", keywords: ["alerts", "mute"] },

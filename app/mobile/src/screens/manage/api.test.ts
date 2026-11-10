@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setOnlyMe, setPicture, setProfile, withPart } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setOnlyMe, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -324,6 +324,24 @@ describe("Its picture", () => {
     expect(calls("project_avatar_set").at(-1)?.input).toEqual(REF);
     hub.answer("project_avatar_set", { project: SHOP });
     await expect(removed).resolves.toEqual({ ok: true, value: SHOP });
+  });
+});
+
+describe("Your name", () => {
+  it("sends the name as typed, and gives back the one the hub kept", async () => {
+    const { hub, session, calls } = setup();
+    const set = setMyName(session, "  Ada Lovelace ");
+    expect(calls("person_name_set").at(-1)?.input).toEqual({ name: "  Ada Lovelace " });
+    hub.answer("person_name_set", { person: { personId: "p_ada", name: "Ada Lovelace", role: "member", createdAt: AT } });
+    await expect(set).resolves.toEqual({ ok: true, value: "Ada Lovelace" });
+  });
+
+  it("gives back the hub's refusal of an empty one, in its words", async () => {
+    const { hub, session, calls } = setup();
+    const set = setMyName(session, "");
+    expect(calls("person_name_set").at(-1)?.input).toEqual({ name: "" });
+    hub.fail("person_name_set", "invalid", "The name is empty.");
+    await expect(set).resolves.toMatchObject({ ok: false, error: { code: "invalid", message: "The name is empty." } });
   });
 });
 

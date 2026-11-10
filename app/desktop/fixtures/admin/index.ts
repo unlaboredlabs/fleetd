@@ -5,7 +5,7 @@
 // for leads, with no subscription of his own.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { asText, type JsonObject } from "../kit/json.ts";
 import { profilesList } from "../settings/profiles.ts";
 
 const AT = "2026-10-12T09:00:00.000Z";
@@ -128,6 +128,10 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   f.answer("onepassword_test", undefined, { test: { ...vaults, at: f.now } });
   f.answer("usage_status", undefined, usageStatus);
   f.answer("people_list", undefined, people(me));
+  // Settings › You › General, Name: the hub keeps a name as typed, trimmed, and refuses an empty one in its own words.
+  const renamed = `${asText(me["name"])} Jr.`;
+  f.answer("person_name_set", { name: renamed }, { person: { ...me, name: renamed } });
+  f.fail("person_name_set", { name: "" }, { code: "invalid", message: "The name is empty.", fix: "Type the name you go by." });
   const eve = person("p_eeeeeeee", "Eve Park", "member", f.now);
   f.answer("invite_create", undefined, {
     invite: { inviteId: "inv_bbbbbbbb", person: ref(eve), state: "open", createdAt: f.now, expiresAt: "2026-10-26T10:30:00.000Z", createdBy: ref(me) },

@@ -12063,6 +12063,12 @@
         "person_avatar_set.output": {
           "$ref": "#/$defs/PersonAvatarSetOutput"
         },
+        "person_name_set.input": {
+          "$ref": "#/$defs/PersonNameSetInput"
+        },
+        "person_name_set.output": {
+          "$ref": "#/$defs/PersonNameSetOutput"
+        },
         "person_remove.input": {
           "$ref": "#/$defs/PersonRemoveInput"
         },
@@ -12875,6 +12881,8 @@
         "person_avatar_get.output",
         "person_avatar_set.input",
         "person_avatar_set.output",
+        "person_name_set.input",
+        "person_name_set.output",
         "person_remove.input",
         "person_remove.output",
         "person_set.input",
@@ -15833,6 +15841,37 @@
     "PersonId": {
       "pattern": "^p_[a-z2-7]{8}$",
       "type": "string"
+    },
+    "PersonNameSetInput": {
+      "properties": {
+        "name": {
+          "description": "Cleaned as an invite's is: trimmed, control characters dropped. Empty after that is refused.",
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PersonNameSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/Person"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person"
+      ],
+      "type": "object"
     },
     "PersonRef": {
       "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",

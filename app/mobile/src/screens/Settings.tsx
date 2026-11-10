@@ -1,24 +1,25 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
-// their name, their role on the hub), which a tap offers to give or take away a photo; then the hub (how the link is,
-// its address and version), for an admin Restart Hub and its update, the Vault (screens/vault) on a hub that has one, Import Memory,
-// this phone (its notifications, name and app), and Disconnect, which asks first.
+// which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
+// (how the link is, its address and version), for an admin Restart Hub and its update, the Vault (screens/vault) on a
+// hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
-import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, Alert, AppState, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { linkTone, linkWords as statusOf } from "../chatsBar";
 import type { HubRole } from "../desktop";
 import { useHub, type RootParams, type SettingsParams } from "../hubContext";
+import { atRest, kept, left, MY_NAME_MAX, refused, shownName, toSave, typed, type NameEdit } from "../myName";
 import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { shortVersion } from "../updates";
-import { removeMyPicture } from "./manage/api";
+import { removeMyPicture, setMyName } from "./manage/api";
 import { errorWords } from "./manage/parts";
 import { fromLibrary } from "./manage/pick";
 import { RestartHub } from "./RestartHub";
@@ -96,33 +97,27 @@ export function Settings() {
       Alert.alert("Your photo", undefined, [{ text: "Choose Photo", onPress: choosePhoto }, ...(has ? [{ text: "Remove Photo", style: "destructive" as const, onPress: removePhoto }] : []), { text: "Cancel", style: "cancel" }]);
     }
   };
-  const profile = (pressed: boolean) => (
-    <View style={[styles.me, pressed && { backgroundColor: t.fillQuiet }]}>
-      <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />
-      <View style={styles.meText}>
-        <Text style={[styles.name, { color: t.label }]} numberOfLines={1}>
-          {name}
-        </Text>
-        {role === undefined ? null : (
-          <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={1}>
-            {role}
-          </Text>
-        )}
-      </View>
-    </View>
-  );
+  const picture = <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />;
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <View style={[styles.card, { backgroundColor: t.cell }]}>
-        {me === undefined ? (
-          <View accessible accessibilityLabel={name}>
-            {profile(false)}
-          </View>
+      <View style={[styles.card, styles.me, { backgroundColor: t.cell }]}>
+        {me === undefined || state.meName === undefined ? (
+          <>
+            {picture}
+            <View style={styles.meText} accessible accessibilityLabel={name}>
+              <Text style={[styles.name, { color: t.label }]} numberOfLines={1}>
+                {name}
+              </Text>
+            </View>
+          </>
         ) : (
-          <Pressable accessibilityRole="button" accessibilityLabel={role === undefined ? name : `${name}, ${role}`} accessibilityHint="Chooses or removes your photo." onPress={onMe}>
-            {({ pressed }) => profile(pressed)}
-          </Pressable>
+          <>
+            <Pressable accessibilityRole="button" accessibilityLabel="Your photo" accessibilityHint="Chooses or removes your photo." hitSlop={8} onPress={onMe} style={({ pressed }) => pressed && styles.pressed}>
+              {picture}
+            </Pressable>
+            <MyName saved={state.meName} role={role} />
+          </>
         )}
       </View>
       <ListSection header="Hub">
@@ -163,9 +158,69 @@ export function Settings() {
   );
 }
 
+/**
+ * The person's name, changed in place as a contact's is: Done or leaving the field saves it (person_name_set). The hub's
+ * cleaned name shows once kept; what it refuses (an empty name) shows under the field in its words, in the role's place,
+ * with what was typed kept. The hub's people.changed brings the name back as every open app has it.
+ */
+function MyName({ saved, role }: { saved: string; role: string | undefined }) {
+  const t = useTheme();
+  const { session } = useHub();
+  const [edit, setEdit] = useState<NameEdit>(atRest);
+  // The hub's name changed (ours kept, or a change made on another device): the field shows it.
+  const [shown, setShown] = useState(saved);
+  if (shown !== saved) {
+    setShown(saved);
+    setEdit(atRest);
+  }
+  const leave = () => {
+    const name = toSave(edit, saved);
+    setEdit(left(edit, saved));
+    if (name === undefined) return;
+    void setMyName(session, name).then((r) => {
+      if (r.ok) haptics.success();
+      else haptics.warning();
+      setEdit((now) => (r.ok ? kept(r.value) : refused(now, errorWords(r.error))));
+    });
+  };
+  return (
+    <View style={styles.meText}>
+      <TextInput
+        value={shownName(edit, saved)}
+        onChangeText={(text) => setEdit((now) => typed(now, text))}
+        onBlur={leave}
+        editable={!edit.busy}
+        maxLength={MY_NAME_MAX}
+        placeholder={saved}
+        placeholderTextColor={t.tertiary}
+        selectionColor={t.accent}
+        autoCapitalize="words"
+        autoCorrect={false}
+        returnKeyType="done"
+        clearButtonMode="while-editing"
+        accessibilityLabel="Your name"
+        accessibilityHint="Changes what your teammates and the leads call you."
+        style={[styles.nameField, { color: t.label }]}
+      />
+      {edit.error !== null ? (
+        <Text style={[type.subhead, { color: t.danger }]} accessibilityRole="alert">
+          {edit.error}
+        </Text>
+      ) : role === undefined ? null : (
+        <Text style={[type.subhead, { color: t.secondary }]} numberOfLines={1}>
+          {role}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   card: { marginHorizontal: space.lg, marginTop: space.sm, borderRadius: shape.group, borderCurve: "continuous", overflow: "hidden" },
   me: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: space.lg, paddingVertical: 14 },
   meText: { flex: 1, gap: 2 },
   name: { fontSize: 20, lineHeight: 25, fontWeight: "600", letterSpacing: -0.2 },
+  // The name as a field: its line's height without a line height, which iOS would set a field's text low by.
+  nameField: { fontSize: 20, fontWeight: "600", letterSpacing: -0.2, height: 25, padding: 0 },
+  pressed: { opacity: 0.6 },
 });

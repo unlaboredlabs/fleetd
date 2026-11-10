@@ -58,6 +58,8 @@ export interface MarksIn {
   readonly latest?: Readonly<Record<string, { readonly text: string; readonly at: string; readonly person?: { readonly id: string; readonly name: string } | undefined }>> | undefined;
   /** Who you are on this hub (hub_info's me): your own lines say "You:", a teammate's their first name. */
   readonly me?: string | undefined;
+  /** The names the hub's people go by now, by person id (admin/names.ts): a teammate's line says the current one. */
+  readonly names?: ReadonlyMap<string, string> | undefined;
   /** When each chat's newest message, of any kind, was written, by "machineId/projectId": the order before a line is known. */
   readonly lastAt?: Readonly<Record<string, string | undefined>> | undefined;
   /** Your pinned chats, by "machineId/projectId". */
@@ -99,7 +101,8 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
     const latest = marks.latest?.[r.key];
     const at = latest !== undefined && latest.at !== "" ? latest.at : (marks.lastAt?.[r.key] ?? r.project.lastActivityAt);
     const by = latest?.person;
-    const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || by.name === "" ? "You: " : `${by.name.split(/\s+/u)[0] ?? by.name}: `;
+    const name = by === undefined ? "" : (marks.names?.get(by.id) ?? by.name);
+    const who = by === undefined || latest?.text === "" ? "" : by.id === "" || by.id === marks.me || name === "" ? "You: " : `${name.split(/\s+/u)[0] ?? name}: `;
     return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key), line: `${who}${latest?.text ?? ""}`, at, pinned: marks.pins?.includes(r.key) === true, section: section.get(r.key) };
   });
 };

@@ -21,19 +21,20 @@ export function register(tools: Registry): void {
   tools.add("person_avatar_get", (hub, _caller, input) => get(hub, input.personId));
 }
 
-/** The caller's own person, still on the hub. */
-function me(hub: Hub, caller: Caller): Person {
+/** The caller's own person, still on the hub; anyone else (an agent, a lead, a key of no one) is refused as `refusal` says. */
+export function me(hub: Hub, caller: Caller, refusal: { message: string; fix: string }): Person {
   const person = isHuman(caller) && caller.person !== undefined ? people(hub).get(caller.person.personId) : undefined;
   if (person && person.removedAt === undefined) return person;
-  throw new ToolError(
-    "forbidden",
-    "Only a person sets their own picture, from one of their own devices.",
-    "Tap your picture in the phone app's Settings.",
-  );
+  throw new ToolError("forbidden", refusal.message, refusal.fix);
 }
 
+const NOT_YOURS = {
+  message: "Only a person sets their own picture, from one of their own devices.",
+  fix: "Tap your picture in the phone app's Settings.",
+};
+
 async function set(hub: Hub, caller: Caller, input: PersonAvatarSetInput): Promise<{ person: Person }> {
-  const person = me(hub, caller);
+  const person = me(hub, caller, NOT_YOURS);
   const id = person.personId;
   if (input.attachmentId !== undefined) {
     const { bytes } = await take(hub, caller, input.attachmentId);

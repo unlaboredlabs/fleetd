@@ -7,6 +7,7 @@ import type { ChatItem } from "../../src/data/chat";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
 import { workedFor } from "../../../shared/turnWords";
+import { nameNow, type PersonNames } from "../admin/names";
 
 export type Row =
   /**
@@ -62,11 +63,12 @@ const REPLY_SLACK_MS = 2_000;
 
 /**
  * Another person's message, in a project chat the team shares: the person who wrote it, when the hub names one and
- * it isn't `me`, the person this app acts as. Undefined for yours, and on a hub from before people.
+ * it isn't `me`, the person this app acts as, under the name they go by now (`names`; the message's own, the one they
+ * had then, when the hub no longer lists them). Undefined for yours, and on a hub from before people.
  */
-export const otherPerson = (item: ChatItem, me: string | undefined): string | undefined => {
+export const otherPerson = (item: ChatItem, me: string | undefined, names?: PersonNames): string | undefined => {
   const person = item.author === "human" ? item.message?.person : undefined;
-  return person !== undefined && me !== undefined && person.personId !== me ? person.name : undefined;
+  return person !== undefined && me !== undefined && person.personId !== me ? nameNow(person, names) : undefined;
 };
 
 /** Yours: a human message no other person wrote. On a hub from before people, every human message. */
@@ -76,9 +78,9 @@ export const isMine = (item: ChatItem, me: string | undefined): boolean => item.
 export const isMineRow = (r: Row): boolean => r.kind === "message" && r.item.author === "human" && r.by === undefined;
 
 /** Who a message's header names: another person by their name, an agent by the key that wrote it. */
-export const authorLabel = (item: ChatItem, me?: string): string =>
+export const authorLabel = (item: ChatItem, me?: string, names?: PersonNames): string =>
   item.author === "human"
-    ? (otherPerson(item, me) ?? "You")
+    ? (otherPerson(item, me, names) ?? "You")
     : item.author === "agent"
       ? `Agent · ${item.message?.by ?? "unnamed"}`
       : item.author === "lead"
@@ -172,6 +174,8 @@ export interface RowsInput {
   readonly seenSeq?: number | undefined;
   /** The person this app acts as (hub_info's me): someone else's messages show their name. */
   readonly me?: string | undefined;
+  /** The names the hub's people go by now (admin/names.ts): a message someone wrote under an older name shows this one. */
+  readonly names?: PersonNames | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -226,17 +230,17 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "new", key: "new" });
       prev = undefined;
     }
-    const by = otherPerson(item, i.me);
+    const by = otherPerson(item, i.me, i.names);
     const theirs = !isMine(item, i.me);
-    const label = authorLabel(item, i.me);
+    const label = authorLabel(item, i.me, i.names);
     if (history && item.author !== "system") {
-      const run = prev === undefined || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      const run = prev === undefined || authorLabel(prev, i.me, i.names) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
       out.push({ kind: "message", key: item.id, item, run, end: true, head: run && theirs, history: true, ...(by === undefined ? {} : { by }) });
     } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
     else {
       const run =
-        prev === undefined || prev.kind !== "message" || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+        prev === undefined || prev.kind !== "message" || authorLabel(prev, i.me, i.names) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
       out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && theirs, history: false, ...(by === undefined ? {} : { by }), ...extras(i.items, n), ...(n === reply ? { worked } : {}) });
     }
     prev = item;
