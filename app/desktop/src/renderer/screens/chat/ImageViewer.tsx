@@ -1,11 +1,13 @@
 // A chat image, large: fit to the window over a dim backdrop, its caption under it. Esc, a click beside it or the X
-// closes it; with more than one image in the message, ← and → (or the buttons at the edges) step between them.
+// closes it; with more than one image in the message, ← and → (or the buttons at the edges) step between them. The
+// download button beside the X and the image's right-click menu save or copy it, as in the message (picture.tsx).
 import { Dialog as D } from "radix-ui";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { createContext, useContext, type KeyboardEvent, type MouseEvent } from "react";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import { useToolQuery } from "../../src/data/react";
-import { Button, Text } from "../../ui";
+import { Button, Text, Tooltip } from "../../ui";
+import { PictureMenu, usePicture } from "./picture";
 import { stepShot, type Shot } from "./shots";
 import type { ProjectRef } from "./slots";
 import v from "./viewer.module.css";
@@ -25,15 +27,19 @@ export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef;
   const before = stepShot(shots, at, -1);
   const after = stepShot(shots, at, 1);
   const label = shot?.caption ?? shot?.name ?? data?.name ?? "Image";
+  const name = shot?.name ?? data?.name;
+  const picture = usePicture(project, { attachmentId: at, name });
+  // The image's menu is drawn outside the viewer but is the viewer's child to React: its keys and clicks are its own.
+  const inMenu = (e: KeyboardEvent | MouseEvent) => e.target instanceof Element && e.target.closest("[role='menu']") !== null;
   const onKeyDown = (e: KeyboardEvent) => {
     const to = e.key === "ArrowLeft" ? before : e.key === "ArrowRight" ? after : undefined;
-    if (to === undefined) return;
+    if (to === undefined || inMenu(e)) return;
     e.preventDefault();
     onAt(to);
   };
   // A click anywhere but the image, its caption or a button closes it, as a click on the backdrop would.
   const onClick = (e: MouseEvent) => {
-    if (e.target instanceof Element && e.target.closest("img, button, figcaption") === null) onAt(undefined);
+    if (e.target instanceof Element && e.target.closest("img, button, figcaption") === null && !inMenu(e)) onAt(undefined);
   };
   return (
     <D.Root open onOpenChange={(open) => !open && onAt(undefined)}>
@@ -46,7 +52,9 @@ export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef;
                 {quick.isError ? "Couldn’t load this." : "Loading…"}
               </Text>
             ) : (
-              <img key={at} className={v.image} src={`data:${data.mime};base64,${data.dataB64}`} alt={label} />
+              <PictureMenu actions={picture}>
+                <img key={at} className={v.image} src={`data:${data.mime};base64,${data.dataB64}`} alt={label} />
+              </PictureMenu>
             )}
             {shot?.caption !== undefined || shots.length > 1 ? (
               <figcaption className={v.caption}>
@@ -60,6 +68,12 @@ export function ImageViewer({ project, shots, at, onAt }: { project: ProjectRef;
               <X />
             </Button>
           </D.Close>
+          {/* After the X, which the viewer opens with the focus on. */}
+          <Tooltip content="Save to Downloads" side="bottom">
+            <Button className={v.save} variant="quiet" iconOnly aria-label={name === undefined ? "Save image" : `Save ${name}`} disabled={picture.busy} onClick={() => void picture.download()}>
+              <Download />
+            </Button>
+          </Tooltip>
           {before !== undefined ? (
             <Button className={v.before} variant="quiet" iconOnly aria-label="Previous image" onClick={() => onAt(before)}>
               <ChevronLeft />

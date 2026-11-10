@@ -54,6 +54,12 @@
   top: var(--space-3);
   right: var(--space-3);
 }
+/* Beside the X, a button's width and a gap from it. */
+.save {
+  position: absolute;
+  top: var(--space-3);
+  right: calc(var(--space-3) + var(--control) + var(--space-1));
+}
 .before,
 .after {
   position: absolute;

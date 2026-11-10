@@ -1,16 +1,17 @@
 // A chat's file opened or saved on this computer: main reads it from the hub itself (attachment_get, in pieces that
 // resume after a drop: shared/transfer.ts), so its bytes never cross to the page, and keeps it under a name of its type
-// (shared/files.ts), so opening it never runs it.
+// (shared/files.ts), so opening it never runs it. A picture is saved the same way, straight to the Downloads folder, or
+// copied to the clipboard.
 
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BrowserWindow, dialog, shell, type WebContents } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, shell, type WebContents } from "electron";
 
-import { openedFileName, safeFileName } from "../shared/files";
+import { numberedName, openedFileName, safeFileName } from "../shared/files";
 import { readFile, type Wait } from "../shared/transfer";
-import type { CallOutcome, OpenOutcome } from "../shared/hub";
+import type { CallOutcome, DownloadOutcome, OpenOutcome } from "../shared/hub";
 import type { FileRequest } from "../shared/ipc";
 
 type Call = (tool: string, input: unknown) => Promise<CallOutcome>;
@@ -55,5 +56,65 @@ export const saveFile = async (call: Call, request: FileRequest, sender: WebCont
     return { ok: true };
   } catch (error) {
     return { ok: false, message: `The file couldn't be saved: ${String(error)}` };
+  }
+};
+
+/** What this run saved to the Downloads folder: the only paths the page may ask to see in their folder. */
+const downloaded = new Set<string>();
+
+/**
+ * Saves the file straight to the Downloads folder under its name, without asking: the hub's own bytes, and a number
+ * added to the name when it is taken, so nothing there is ever written over.
+ */
+export const downloadFile = async (call: Call, request: FileRequest, dir = app.getPath("downloads"), wait?: Wait): Promise<DownloadOutcome> => {
+  const got = await read(call, request, wait);
+  if (!got.ok) return got;
+  try {
+    await mkdir(dir, { recursive: true });
+    for (let n = 0; ; n++) {
+      const name = numberedName(got.name, n);
+      const path = join(dir, name);
+      try {
+        // Fails on a name that is taken, even one taken since the last look.
+        await writeFile(path, got.bytes, { flag: "wx" });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+        // A write that stopped part way (a full disk) leaves no half of a file behind.
+        await rm(path, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      downloaded.add(path);
+      return { ok: true, path, name };
+    }
+  } catch (error) {
+    return { ok: false, message: `The file couldn't be saved: ${String(error)}` };
+  }
+};
+
+/** Shows a file downloadFile saved in its folder; any other path is refused. */
+export const showDownloaded = (path: string): OpenOutcome => {
+  if (!downloaded.has(path)) return { ok: false, message: "fleetd didn't save that file." };
+  shell.showItemInFolder(path);
+  return { ok: true };
+};
+
+/**
+ * Puts the picture on the clipboard as a PNG of its own pixels, which is what apps paste. A PNG goes as it is; a JPEG is
+ * decoded here first. A kind main can't decode (WebP and GIF, outside macOS) says so.
+ */
+export const copyImage = async (call: Call, request: FileRequest): Promise<OpenOutcome> => {
+  const got = await read(call, request);
+  if (!got.ok) return got;
+  try {
+    let png = got.bytes;
+    if (got.mime !== "image/png") {
+      const image = nativeImage.createFromBuffer(got.bytes);
+      if (image.isEmpty()) return { ok: false, message: `This kind of image (${got.mime}) can't be copied. Save it instead.` };
+      png = image.toPNG();
+    }
+    await clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(png)], { type: "image/png" }) })]);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: `The image couldn't be copied: ${String(error)}` };
   }
 };

@@ -278,6 +278,8 @@ export const fixtures = [
   // Files both ways in an Only-me project's chat (fixtures/only-me): a lease and a bank export in, a trip PDF and
   // receipts out.
   "only-me-files",
+  // Pictures both ways there (fixtures/only-me): two screenshots in, a picture out.
+  "only-me-pictures",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
   // The showcase with storefront, billing and Ada pinned: the sidebar's pinned grid (W565).
@@ -1099,6 +1101,48 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await expect(page.getByRole("button", { name: "Save lisbon-itinerary.pdf" })).toBeVisible();
       await expect(page.getByText("Word document · 47 KB")).toBeVisible();
+    },
+  },
+  // A picture under the pointer: its download button in its corner, which saves it to Downloads in one click.
+  {
+    id: "chat",
+    route: HOME_ROUTE,
+    fixtures: ["only-me-pictures"],
+    variant: "picture-save",
+    open: async (page) => {
+      await expect(page.getByRole("button", { name: "Open The checkout with the code applied" })).toBeVisible();
+      // ...and one on each picture the person sent.
+      await expect(page.getByRole("button", { name: "Save lamp.jpg" })).toBeAttached();
+      await expect(page.getByRole("button", { name: "Save checkout.jpg" })).toBeAttached();
+    },
+    // The pointer goes back on the picture at each size (the window's resize moved the picture from under it): the
+    // button shows, 28 px round and 6 px in from the picture's top right corner, and the picture stays where it was.
+    check: async (page) => {
+      const picture = page.getByRole("img", { name: "The checkout with the code applied" });
+      const save = page.getByRole("button", { name: "Save checkout-with-code.jpg" });
+      await picture.scrollIntoViewIfNeeded();
+      await page.mouse.move(2, 2);
+      await expect(save).toHaveCSS("opacity", "0");
+      const before = await picture.boundingBox();
+      await picture.hover();
+      await expect(save).toHaveCSS("opacity", "1");
+      const [at, button] = [await picture.boundingBox(), await save.boundingBox()];
+      if (before === null || at === null || button === null) throw new Error("the picture or its download button has no box");
+      expect(at, "the picture moved as its download button showed").toEqual(before);
+      expect([button.width, button.height]).toEqual([28, 28]);
+      expect(button.y - at.y).toBe(6);
+      expect(at.x + at.width - (button.x + button.width)).toBeCloseTo(6, 0);
+    },
+  },
+  // The same picture opened large: the viewer's download button beside its X.
+  {
+    id: "chat",
+    route: HOME_ROUTE,
+    fixtures: ["only-me-pictures"],
+    variant: "picture-viewer",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Open The checkout with the code applied" }).click();
+      await expect(page.getByRole("dialog").getByRole("button", { name: "Save checkout-with-code.jpg" })).toBeVisible();
     },
   },
   // An archived project still open: the palette offers every project's views, its Checklist too.

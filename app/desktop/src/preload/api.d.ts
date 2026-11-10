@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, CloudKeyRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
@@ -96,11 +96,16 @@ export interface FleetdApi {
   openExternal(url: string): Promise<OpenOutcome>;
   /**
    * A chat's file on this computer: main reads it from the hub, keeps it under a name of its type, and opens it in the
-   * app for that type, or saves it where the person picks (a cancelled save is ok too). Never rejects.
+   * app for that type, or saves it where the person picks (a cancelled save is ok too). `download` saves it straight to
+   * the Downloads folder under its name, a number added when that is taken, and `show` shows a file so saved in its
+   * folder. `copyImage` puts a picture on the clipboard. Never rejects.
    */
   readonly files: {
     open(hub: HubId, request: FileRequest): Promise<OpenOutcome>;
     save(hub: HubId, request: FileRequest): Promise<OpenOutcome>;
+    download(hub: HubId, request: FileRequest): Promise<DownloadOutcome>;
+    show(path: string): Promise<OpenOutcome>;
+    copyImage(hub: HubId, request: FileRequest): Promise<OpenOutcome>;
   };
   /** The hubs this app is paired with, in sidebar order; never empty. */
   readonly hubs: {

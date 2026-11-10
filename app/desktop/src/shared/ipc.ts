@@ -451,6 +451,10 @@ export const REQUESTS = {
   [IPC.openExternal]: z.tuple([z.string().max(8192)]),
   [IPC.fileOpen]: z.tuple([HubId, FileRequest]),
   [IPC.fileSave]: z.tuple([HubId, FileRequest]),
+  [IPC.fileDownload]: z.tuple([HubId, FileRequest]),
+  // Which paths it shows is main's to say (main/files.ts: only what it saved); this only bounds the size.
+  [IPC.fileShow]: z.tuple([z.string().min(1).max(4096)]),
+  [IPC.fileCopyImage]: z.tuple([HubId, FileRequest]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

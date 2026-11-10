@@ -1,0 +1,72 @@
+/*
+ * A picture's frame is the picture's own box, so its download button sits in the picture's corner and takes no room:
+ * nothing moves as it shows. The button is glass, as the chat's capsules are (the page behind it is the picture), icon
+ * only, shown while the pointer is on the picture or the keyboard is on it or on the button.
+ */
+.frame {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+.save {
+  position: absolute;
+  top: var(--space-1-5);
+  right: var(--space-1-5);
+  display: grid;
+  place-items: center;
+  width: var(--field);
+  height: var(--field);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-snap),
+    transform var(--dur-quick) var(--ease-snap);
+}
+.save > svg {
+  width: 14px;
+  height: 14px;
+}
+.frame:hover > .save,
+.frame:has(:focus-visible) > .save,
+.save[data-busy] {
+  opacity: 1;
+}
+/* The overlay is a shadow inside it, so the glass stays glass. */
+.save:hover {
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 100px var(--glass-hover),
+    var(--glass-lift);
+}
+.save:active {
+  transform: scale(0.97);
+}
+.save:disabled {
+  color: var(--quiet);
+  cursor: default;
+}
+/* Without backdrop blur (Reduce transparency), the glass is the page's own raised tone. */
+@media (prefers-reduced-transparency: reduce) {
+  .save {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .save:active {
+    transform: none;
+  }
+}
