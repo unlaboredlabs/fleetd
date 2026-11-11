@@ -160,6 +160,7 @@ import m156 from "../hub/store/migrations/202611110954_small_settings_gone.sql" 
 import m157 from "../hub/store/migrations/202611111200_review_people.sql" with { type: "text" };
 import m158 from "../hub/store/migrations/202611111201_cloud_machines_removed.sql" with { type: "text" };
 import m159 from "../hub/store/migrations/202611111541_project_setup_changes.sql" with { type: "text" };
+import m160 from "../hub/store/migrations/202611111730_project_proposed_clones.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -322,4 +323,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611111200_review_people", sql: m157 },
   { name: "202611111201_cloud_machines_removed", sql: m158 },
   { name: "202611111541_project_setup_changes", sql: m159 },
+  { name: "202611111730_project_proposed_clones", sql: m160 },
 ];

@@ -111,6 +111,7 @@ export const LEAD_ASK_WHY: Why<string> = [
   ["WebFetch", "A lead fetches a site unasked only once the person allowed or linked it."],
   ["mcp__fleetd__confirm_step", "A final Confirm on a site goes through the project's approval mode, like a send."],
   ["mcp__fleetd__automation_confirm", "Only the person lets an automation run on its own, on its card."],
+  ["mcp__fleetd__project_propose", "Only a person creates a project, on the card a lead's proposal shows them."],
   [
     "mcp__fleetd__project_message",
     "A message to another project's lead, who may open work for it, goes through the project's approval mode, like a send.",

@@ -176,7 +176,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agents`, `stop_agent`, plus `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run`, `repo_add`, `repo_remove`, `project_setup` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agents`, `stop_agent`, plus `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run`, `repo_add`, `repo_remove`, `project_setup`, `project_propose` and more. |
 | Task | `report` (a review verdict; fleetd fills in the task and the head reviewed) and `ask_lead`. A writer's ready PR goes on the train by itself. |
 
 - Results come back in the lead's next wake, never by polling.
@@ -186,6 +186,8 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 - A lead changes its own project's setup when you ask it to (`repo_add`, `repo_remove`, `project_setup`): each change
   is one chat line with Undo, and what guards people stays yours. See
   [What the lead sets up](/docs/projects#lead-setup).
+- A lead never creates a project. It proposes one (`project_propose`), and the project exists only after you tap
+  **Create it** on its card, in every approval mode. See [A new project, proposed](/docs/projects#lead-propose).
 
 Every tool and its inputs: [Agent tools](/docs/reference/agent-tools). The lead-side `fleetd` commands stay, for you.
 

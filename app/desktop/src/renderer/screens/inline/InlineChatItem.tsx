@@ -14,7 +14,8 @@ import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import { Media } from "../chat/blocks/Media";
-import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords } from "./toolPreview";
+import { actionPlace, actionWarning, actionWords, answerWords, blockedWords, confirmStep, confirmWords, proposal, proposalWords, type Proposal } from "./toolPreview";
+import { openTo } from "../../../shared/proposal";
 import {
   approvalOffline,
   approvalOutcome,
@@ -357,6 +358,40 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
   );
 }
 
+/** A proposed project, as it would be made: its repo or none, its folder, and who sees it. The machine is the card's own line. */
+function ProposalDetail({ made }: { made: Proposal }) {
+  return (
+    <dl className={s.facts} data-proposal="">
+      <Text as="dt" size="sm" tone="quiet">
+        Repo
+      </Text>
+      <Text as="dd" size="sm">
+        {made.repo === undefined ? (
+          "None"
+        ) : (
+          <InlineCode>
+            <Exact text={made.repo} ltr />
+          </InlineCode>
+        )}
+      </Text>
+      <Text as="dt" size="sm" tone="quiet">
+        Folder
+      </Text>
+      <Text as="dd" size="sm">
+        <InlineCode>
+          <Exact text={made.path} ltr />
+        </InlineCode>
+      </Text>
+      <Text as="dt" size="sm" tone="quiet">
+        Open to
+      </Text>
+      <Text as="dd" size="sm">
+        {openTo(made)}
+      </Text>
+    </dl>
+  );
+}
+
 function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: number | undefined; asker: string | undefined }) {
   const live = useLive();
   const machines = useMachines();
@@ -373,7 +408,9 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
   const checker = permission?.checker;
   const blocked = checker?.verdict === "block";
   const warning = blocked ? { text: "Blocked by the checker", tone: "danger" as const } : preview === undefined ? undefined : actionWarning(preview.action);
-  const words = blocked ? blockedWords : preview === undefined ? undefined : answerWords(preview.action);
+  // A lead's proposal for a new project: the card says what approving it makes.
+  const made = preview === undefined ? undefined : proposal(preview);
+  const words = blocked ? blockedWords : preview === undefined ? undefined : made !== undefined ? proposalWords : answerWords(preview.action);
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -432,7 +469,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
     <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
+          {made !== undefined ? "New project" : preview !== undefined ? `${actionWords(preview.action)} · ${actionPlace(preview)}` : gated === undefined ? "Permission" : "Command"}
         </Text>
         {warning === undefined ? null : (
           <Text size="xs" tone={warning.tone} strong>
@@ -448,6 +485,13 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
       <Text as="p" strong className={cx(s.title)}>
         {gated !== undefined
             ? prose(gated.reason)
+            : made !== undefined
+              ? (
+                  <>
+                    {marks(`${who} wants to create the project “`)}
+                    <Exact text={made.title} />”
+                  </>
+                )
             : preview?.action === "confirm"
               ? (
                   <>
@@ -506,6 +550,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             ))}
           </Code>
         ) : null}
+        {made !== undefined ? <ProposalDetail made={made} /> : null}
         {preview !== undefined ? <PreviewDetail preview={preview} /> : null}
         {gated === undefined && permission !== undefined && preview === undefined ? (
           <Code code={permission.summary} bare>

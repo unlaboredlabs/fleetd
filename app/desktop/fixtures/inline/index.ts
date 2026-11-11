@@ -9,7 +9,8 @@
 // approval checker at work (fixtures/inline/checker.json). inline-secure is a project's secure input
 // (fixtures/inline/secure.json): one to type in a sealed field. inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
-// email in several languages shown as written.
+// email in several languages shown as written. inline-propose is a chat with a lead's proposals for a new project
+// (fixtures/inline/propose.json): two waiting, and one approved, one declined and one that could not be made.
 import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -21,6 +22,7 @@ import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
 import checker from "./checker.json" with { type: "json" };
 import secure from "./secure.json" with { type: "json" };
+import propose from "./propose.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
 const BOX_PUB_KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
@@ -30,6 +32,8 @@ const inlineItems = (
   name = "inline-items",
   note = "A project's chat with every state of the two inline items: a secret to enter and a command to approve.",
   list: ReadonlyArray<unknown> = data.items,
+  // What the person asked and what the lead said before its items.
+  opening: ReadonlyArray<string> = ["Ship the share card to staging.", "On it. I need a couple of things from you on the way: a key, and your OK before anything risky runs."],
 ): Fixture => {
   const f = Fixture.from(base, name, note);
   const now = Date.parse(f.now);
@@ -46,13 +50,13 @@ const inlineItems = (
   const items = list as JsonObject[];
   const at = (i: number) => iso(now - (items.length + 2 - i) * 60_000);
   const messages: JsonObject[] = [
-    { messageId: "m1", projectRef, seq: 1, author: "human", text: "Ship the share card to staging.", attachments: [], createdAt: at(0), state: "final" },
+    { messageId: "m1", projectRef, seq: 1, author: "human", text: opening[0] ?? "", attachments: [], createdAt: at(0), state: "final" },
     {
       messageId: "m2",
       projectRef,
       seq: 2,
       author: "lead",
-      text: "On it. I need a couple of things from you on the way: a key, and your OK before anything risky runs.",
+      text: opening[1] ?? "",
       attachments: [],
       createdAt: at(1),
       state: "final",
@@ -193,6 +197,7 @@ export default defineGroup({
     checked.answer("attachment_get", { projectRef: shotRef, attachmentId: "F7" }, { attachmentId: "F7", name: "lupa-confirm.png", mime: "image/png", bytes: png.length, dataB64: png.toString("base64") });
     const sealed = inlineItems(base("typical"), "inline-secure", "A chat with a project's secure input: a passport number to type in a sealed field.", secure.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked];
+    const proposed = inlineItems(base("typical"), "inline-propose", "A chat with a lead's proposals for a new project: two waiting, one approved, one declined and one that could not be made.", propose.items, propose.opening);
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, checked, sealed, marked, proposed];
   },
 });

@@ -169,6 +169,8 @@ export const fixtures = [
   "inline-reopened",
   // A project's integration cards (fixtures/inline/integrations.json).
   "inline-integrations",
+  // A lead's proposals for a new project (fixtures/inline/propose.json).
+  "inline-propose",
   // A project's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
   // (fixtures/integrations).
   "inline-checker",
@@ -2024,7 +2026,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a project's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden", "inline-propose"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {
@@ -3759,7 +3761,18 @@ export const screens: readonly Screen[] = [
     fixtures: ["integrations-approvals"],
     check: async (page) => {
       const part = page.getByRole("region", { name: "Approvals" });
-      await part.scrollIntoViewIfNeeded();
+      // A hint leaves when its page scrolls, and the page hears of a scroll a frame or more after it happened. So the
+      // scroll that brings the part into view has been heard before the title takes focus: heard after it, it closed
+      // the hint the focus had just opened.
+      await part.evaluate(
+        (el) =>
+          new Promise((heard) => {
+            const { top } = el.getBoundingClientRect();
+            el.scrollIntoView({ block: "center" });
+            if (el.getBoundingClientRect().top === top) heard(null);
+            else addEventListener("scroll", () => requestAnimationFrame(() => heard(null)), { capture: true, once: true });
+          }),
+      );
       const title = part.getByText("Approvals", { exact: true }).first();
       await title.blur();
       await title.focus();

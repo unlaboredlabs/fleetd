@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandApprovalItem, ToolPreview } from "../../../shared/contracts";
-import { actionWarning, actionWords, answeredWords, answerWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
+import { actionWarning, actionWords, answeredWords, answerWords, previewNeedsConfirm, previewOutcome, proposal, proposalWords } from "./toolPreview";
 
 const send: ToolPreview = {
   server: "crm",
@@ -45,5 +45,36 @@ describe("an integration's approval card", () => {
     expect(previewNeedsConfirm(send)).toBe(false);
     expect(previewNeedsConfirm({ ...send, action: "delete" })).toBe(true);
     expect(previewNeedsConfirm({ ...send, action: "spend" })).toBe(true);
+  });
+});
+
+describe("a lead's proposal for a new project", () => {
+  const shown = { machineId: "devbox", onlyMe: false, path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
+  const card = (input: unknown, more: Partial<ToolPreview> = {}): ToolPreview => ({
+    server: "fleetd",
+    tool: "project_propose",
+    action: "write",
+    title: "Create the project “Pricing page”",
+    input: typeof input === "string" ? input : JSON.stringify(input),
+    ...more,
+  });
+  it("reads what approving it makes from the card: the name, the repo or none, the folder and who sees it", () => {
+    expect(proposal(card(shown))).toEqual({ title: "Pricing page", repo: "acme/pricing-page", machineId: "devbox", path: "/home/dev/src/pricing-page", onlyMe: false });
+    expect(proposal(card({ ...shown, repo: null, onlyMe: true }))).toEqual({ title: "Pricing page", repo: undefined, machineId: "devbox", path: "/home/dev/src/pricing-page", onlyMe: true });
+    expect(proposalWords).toEqual({ yes: "Create it", no: "Don't create" });
+  });
+  it("is no proposal from another server's tool of that name, or with a card it can't read", () => {
+    expect(proposal(card(shown, { server: "crm" }))).toBeUndefined();
+    expect(proposal(card(shown, { tool: "project_setup" }))).toBeUndefined();
+    expect(proposal(card("not json"))).toBeUndefined();
+    expect(proposal(card("null"))).toBeUndefined();
+    expect(proposal(card({ title: "Pricing page" }))).toBeUndefined();
+    expect(proposal(send)).toBeUndefined();
+  });
+  it("folds, once answered, to what was decided: never that it ran", () => {
+    expect(previewOutcome(card(shown), item("open"))).toBeUndefined();
+    expect(previewOutcome(card(shown), item("approved"))).toEqual({ tone: "quiet", text: "Approved: a new project" });
+    expect(previewOutcome(card(shown), item("denied"))?.text).toBe("Declined: a new project");
+    expect(previewOutcome(card(shown), item("failed"))).toEqual({ tone: "danger", text: "Approved, not created" });
   });
 });

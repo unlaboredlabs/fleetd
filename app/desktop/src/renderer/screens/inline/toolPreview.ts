@@ -3,7 +3,10 @@
 // (hub/integrations), never the agent's own summary.
 import type { CommandApprovalItem, ToolAction, ToolPreview } from "../../../shared/contracts";
 import { shortClock } from "../chat/format";
+import { proposal } from "../../../shared/proposal";
 import type { Outcome } from "./request";
+
+export { proposal, type Proposal } from "../../../shared/proposal";
 
 /** The kicker over the card's title: "Sends · MCP server". */
 export const actionWords = (action: ToolAction): string =>
@@ -50,6 +53,9 @@ export const confirmStep = (p: ToolPreview): { readonly site: string; readonly b
   }
 };
 
+/** A proposal's buttons: the project exists only after the first. */
+export const proposalWords = { yes: "Create it", no: "Don't create" } as const;
+
 /** A blocked action's buttons: the checker refused it, and the person may still let it run once. */
 export const blockedWords = { yes: "Approve anyway", no: "Keep it blocked" } as const;
 
@@ -67,7 +73,8 @@ const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write:
  */
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
   // Its act, not the tool's name: a name is a slug, which the open card shows as code.
-  const what = ACT_WORDS[p.action];
+  const made = proposal(p) !== undefined;
+  const what = made ? "a new project" : ACT_WORDS[p.action];
   switch (item.state) {
     case "open":
       return undefined;
@@ -75,7 +82,7 @@ export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outco
     case "ran":
       return { tone: "quiet", text: `Approved: ${what}` };
     case "failed":
-      return { tone: "danger", text: `Approved, didn't run: ${what}` };
+      return { tone: "danger", text: made ? "Approved, not created" : `Approved, didn't run: ${what}` };
     case "denied":
       return { tone: "quiet", text: `Declined: ${what}` };
     default:
