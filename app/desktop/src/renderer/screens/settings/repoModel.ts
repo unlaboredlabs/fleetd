@@ -1,26 +1,5 @@
-// Settings → Projects → Repos, the parts with no React: what setup applies to a repo, and where its checkout is. A
-// hub reads a repo's own setup, or the project's when the repo has none of its own.
-import type { ProjectRepo, ProjectSettings, ProjectSummary, ToolInput, WorktreeSetup } from "../../../shared/contracts";
-
-/** One setting as it applies to a repo: its own, or the project's; `line` is null when there is none. */
-export interface Applied {
-  own: boolean;
-  line: string | null;
-}
-
-/** The setup commands in one line, or null when none run. */
-export const setupLine = (setup: WorktreeSetup): string | null => (setup.commands?.length ? setup.commands.join("; ") : null);
-
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
-/**
- * The setup `repo` (the hub's answer for it, undefined while there is none: a hub before per-repo settings refuses the
- * read) runs with. One the same as the project's reads as the project's.
- */
-export function applied(project: ProjectSettings, repo: ProjectSettings | undefined): { setup: Applied } {
-  const setupOwn = repo !== undefined && !same(repo.setup, project.setup);
-  return { setup: { own: setupOwn, line: setupLine(setupOwn ? repo.setup : project.setup) } };
-}
+// Settings → Projects → Repos, the parts with no React: where a repo's checkout is, and what Add repo sends.
+import type { ProjectRepo, ProjectSummary, ToolInput } from "../../../shared/contracts";
 
 /**
  * The directory holding the repo's files: as the hub serves it, else its checkout project's folder, else the checkout's

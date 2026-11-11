@@ -21,9 +21,9 @@ const pages: Command[] = [
   {
     id: "go:settings.notifications",
     title: "Notifications",
-    detail: "What alerts you, sound, the badge",
+    detail: "What alerts you",
     group: "settings",
-    keywords: ["alerts", "sound", "badge", "dock", "app icon", "mute", "silent", "notify me when"],
+    keywords: ["alerts", "mute", "notify me when"],
     run: () => {
       revealNext("notifications");
       go(tabHref("general"));

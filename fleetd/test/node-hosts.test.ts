@@ -26,8 +26,8 @@ const home = () => {
 test("a browser turned off, or named where no Chrome is, isn't ready; one not installed yet is", () => {
   const h = home();
   expect(browser(h, { enabled: false })).toMatchObject({ host: "browser", ready: false, off: "off", on: false, idleMinutes: 30 });
-  const named = browser(h, { chrome: "/nowhere/chrome" }, 12);
-  expect(named).toMatchObject({ ready: false, off: "missing", on: true, idleMinutes: 12 });
+  const named = browser(h, { chrome: "/nowhere/chrome" });
+  expect(named).toMatchObject({ ready: false, off: "missing", on: true, idleMinutes: 30 });
   expect(named.detail).toContain("not there");
   expect(browser(h, {})).toMatchObject({ ready: true, detail: "Chrome not installed yet: the node installs it with the first screen" });
   expect(browser(h, {})).not.toHaveProperty("off");
@@ -35,23 +35,23 @@ test("a browser turned off, or named where no Chrome is, isn't ready; one not in
 
 test.skipIf(!linuxX64)("android is fleetd's own emulator, and only where set up", () => {
   const h = home();
-  expect(android(h, { enabled: false }, undefined, kvmOk)).toMatchObject({ ready: false, off: "off", on: false });
-  const unset = android(h, {}, undefined, kvmOk);
+  expect(android(h, { enabled: false }, kvmOk)).toMatchObject({ ready: false, off: "off", on: false });
+  const unset = android(h, {}, kvmOk);
   expect(unset).toMatchObject({ ready: false, off: "off", on: false });
   expect(unset.detail).toContain("turn Android on");
   // Opted in: the first session installs it where KVM opens.
-  expect(android(h, { enabled: true }, undefined, kvmOk)).toMatchObject({ ready: true, on: true });
-  const noKvm = android(h, { enabled: true }, undefined, kvmNo);
+  expect(android(h, { enabled: true }, kvmOk)).toMatchObject({ ready: true, on: true });
+  const noKvm = android(h, { enabled: true }, kvmNo);
   expect(noKvm).toMatchObject({ ready: false, off: "missing" });
   expect(noKvm.detail).toContain("no /dev/kvm");
   // An install that failed is tried again by the next session, so it stays placeable where KVM opens.
   mkdirSync(deviceDir(h), { recursive: true });
   writeFileSync(join(deviceDir(h), "state.json"), JSON.stringify({ installing: false, failed: "the download broke" }));
-  const failed = android(h, { enabled: true }, undefined, kvmOk);
+  const failed = android(h, { enabled: true }, kvmOk);
   expect(failed.ready).toBe(true);
   expect(failed.detail).toContain("the download broke");
   writeFileSync(join(deviceDir(h), "state.json"), JSON.stringify({ installing: true }));
-  expect(android(h, { enabled: true }, undefined, kvmOk)).toMatchObject({ ready: false, off: "installing" });
+  expect(android(h, { enabled: true }, kvmOk)).toMatchObject({ ready: false, off: "installing" });
 });
 
 test("the Mac screen is a Mac's own, never ready elsewhere, and off unless turned on", () => {
@@ -124,6 +124,7 @@ function nodeWith(config: Record<string, unknown>) {
 }
 
 test("each heartbeat carries every kind's line, around the desktop's, in Rust's order", async () => {
+  // An older node.json's idle timeout is ignored: every screen ends after 30 idle minutes.
   const t = nodeWith({ screenIdleMinutes: 20 });
   // node/desktop's line, as its own heartbeat part adds it.
   t.node.area("hb").contribute((hb) => {
@@ -137,7 +138,7 @@ test("each heartbeat carries every kind's line, around the desktop's, in Rust's 
   };
   const hosts = await fill();
   expect(hosts.map((c) => c.host)).toEqual(["browser", "android", "desktop", "mac"]);
-  expect(hosts[0]).toMatchObject({ ready: true, on: true, idleMinutes: 20 });
+  expect(hosts[0]).toMatchObject({ ready: true, on: true, idleMinutes: 30 });
   expect(hosts[3]?.ready).toBe(false);
   // Opted in where KVM opens, Android still waits for node/device to list its sessions.
   writeFileSync(join(t.node.home, "node.json"), JSON.stringify({ hub: "http://127.0.0.1:1", machineId: "devbox", name: "devbox", enrolled: true, screenIdleMinutes: 20, device: { enabled: true } }));

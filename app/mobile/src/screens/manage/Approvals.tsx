@@ -1,12 +1,11 @@
 // Approvals, pushed from a project's screen, as the desktop's Settings › Projects › Approvals: how its risky actions
 // (sends, shares, a site it opens on its own for the first time, a final confirm on a site) are approved, one of the
-// three modes checked, with the checker's model and effort and what every mode keeps; then what ran without asking,
-// newest first, each opening its line in the chat. Reads and writes the project's approvals tools (PROJECT_TOOLS);
-// the checker's model and effort are set on the desktop.
+// three modes checked, with what every mode keeps; then what ran without asking, newest first, each opening its line
+// in the chat. Reads and writes the project's approvals tools (PROJECT_TOOLS).
 import { useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { listTime } from "../../chatView";
-import { APPROVAL_MODES, checkerLine, FLOORS, logWhy, type ApprovalMode, type HubError } from "../../desktop";
+import { APPROVAL_MODES, FLOORS, logWhy, type ApprovalMode, type HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
@@ -35,7 +34,7 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
     haptics.select();
     setBusy(mode);
     setError(null);
-    const r = await setApprovalMode(session, ref, mode, view.approvals);
+    const r = await setApprovalMode(session, ref, mode);
     setBusy(null);
     if (!r.ok) setError(r.error);
     read.reload();
@@ -57,11 +56,6 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
         )}
       </ListSection>
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
-      {saved?.mode === "checker" && view !== undefined ? (
-        <ListSection footer="It sees the action and where each part came from, never the mail or pages it read. Pick its model and effort in the desktop app.">
-          <ListRow title="Checker" detail={checkerLine(view.models, saved)} />
-        </ListSection>
-      ) : null}
       {saved === undefined ? null : <Note>{FLOORS}</Note>}
 
       {view === undefined ? null : (

@@ -11,6 +11,7 @@ import { lstat, rm, utimes } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { readConfig } from "../config.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
+import type { Plan } from "./setup.ts";
 import { git } from "./index.ts";
 
 export const KEEP = 2;
@@ -192,10 +193,10 @@ const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
 /** What a reader's worktree at `cwd` is set up with: the project's commands when it has some, else an install for each
  * tracked lockfile in a directory the commits since `base` touched; time-boxed, and a failure starts it anyway. */
-export async function readerSetup(project: WorktreeSetup | undefined, cwd: string, base: string): Promise<WorktreeSetup | undefined> {
+export async function readerSetup(project: WorktreeSetup | undefined, cwd: string, base: string): Promise<Plan | undefined> {
   const own = project && (project.commands ?? []).length ? project : await installs(cwd, base);
   if (!own) return undefined;
-  return { ...own, runAnyway: true, timeoutSec: Math.min(own.timeoutSec ?? 600, SETUP_LIMIT_SEC) };
+  return { commands: own.commands ?? [], inputs: own.inputs ?? [], timeoutSec: SETUP_LIMIT_SEC };
 }
 
 async function installs(cwd: string, base: string): Promise<WorktreeSetup | undefined> {

@@ -346,23 +346,21 @@ describe("Your name", () => {
 });
 
 describe("Approvals and Linked hubs", () => {
-  const approvals = { mode: "checker" as const, model: "claude-opus-5-5", effort: "high" as const, defaults: false };
+  const approvals = { mode: "checker" as const, model: "claude-opus-5-5", effort: "high" as const, defaults: true };
 
-  it("reads its approvals and the models the checker may run on", async () => {
+  it("reads its approvals, and nothing about the checker's model", async () => {
     const { hub, session, calls } = setup();
     const read = readApprovals(session, SHOP);
     expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual(REF);
+    expect(calls("profiles_list")).toEqual([]);
     hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [] });
-    hub.answer("profiles_list", { profiles: [], models: [{ id: "claude-opus-5-5", displayName: "Opus 5.5", fast: false }], efforts: [], modelsFrom: "builtin" });
-    await expect(read).resolves.toMatchObject({ ok: true, value: { approvals: { mode: "checker" }, log: [], models: [{ displayName: "Opus 5.5" }] } });
+    await expect(read).resolves.toMatchObject({ ok: true, value: { approvals: { mode: "checker" }, log: [] } });
   });
 
-  it("picks a mode, keeping the checker as the person set it, or the hub's default", () => {
+  it("picks a mode, and only the mode", () => {
     const { session, calls } = setup();
-    void setApprovalMode(session, SHOP, "ask", approvals);
-    expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "ask", model: "claude-opus-5-5", effort: "high" });
-    void setApprovalMode(session, SHOP, "yolo", { ...approvals, defaults: true });
-    expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "yolo" });
+    void setApprovalMode(session, SHOP, "ask");
+    expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "ask" });
   });
 
   it("lists only its own hub links, and removes one", async () => {

@@ -161,16 +161,15 @@ export const forgetSignins = async (hub: Hub, p: ProjectRef): Promise<Result<nul
   return r.ok ? { ok: true, value: null } : r;
 };
 
-/** How its risky actions are approved, the log of what ran without asking, and the models the checker may run on. */
-export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<ApprovalsOutput & { models: ProfilesListOutput["models"] }>> => {
-  const [read, profiles] = await Promise.all([hub.call(PROJECT_TOOLS.approvals, ref(p)), hub.call("profiles_list", {})]);
-  if (!read.ok) return read;
-  return { ok: true, value: { ...read.output, models: profiles.ok ? profiles.output.models : [] } };
+/** How its risky actions are approved, and the log of what ran without asking. */
+export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<ApprovalsOutput>> => {
+  const read = await hub.call(PROJECT_TOOLS.approvals, ref(p));
+  return read.ok ? { ok: true, value: read.output } : read;
 };
 
-/** A mode picked, the checker's model and effort kept as the person set them; the defaults stay the hub's. */
-export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMode, saved: ApprovalsOutput["approvals"]): Promise<Result<null>> => {
-  const r = await hub.call(PROJECT_TOOLS.approvalsSet, { ...ref(p), mode, ...(saved.defaults ? {} : { model: saved.model, effort: saved.effort }) });
+/** A mode picked: the checker always runs on the hub's own model. */
+export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMode): Promise<Result<null>> => {
+  const r = await hub.call(PROJECT_TOOLS.approvalsSet, { ...ref(p), mode });
   return r.ok ? { ok: true, value: null } : r;
 };
 

@@ -2918,8 +2918,8 @@ export type HostCheck = {
   fix?: string;
   host: SessionHost;
   /**
-   * Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a
-   * node before it.
+   * Minutes without a command before a screen of this kind ends: 30, the agents' Mac's 5. Absent from a node before
+   * it.
    */
   idleMinutes?: number;
   /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */
@@ -4193,8 +4193,6 @@ export type MachineRolesSetOutput = {
 
 export type MachineScreensSetInput = {
   host?: SessionHost;
-  /** Minutes without a command before a screen there ends, for every kind. */
-  idleMinutes?: number;
   machineId: MachineId;
   on?: boolean;
 };
@@ -4364,6 +4362,7 @@ export type McpServerRemoveOutput = {
 };
 
 export type McpServerSetInput = {
+  /** Saved off when `roles` names no one. */
   enabled: boolean;
   /** A stdio server's env, the whole list: a value saved before and not here is removed. */
   env?: McpValueSet[];
@@ -4372,6 +4371,10 @@ export type McpServerSetInput = {
   /** The tools the person marked as only reading, for the hub's tool policy. */
   integration?: McpIntegration;
   name: McpServerName;
+  /**
+   * "Agents get it too": writers or reviewers gives it to the lead and every agent, else the lead alone (an older
+   * app's other picks are saved as that).
+   */
   roles: McpRoles;
   scope: McpScope;
   transport: McpTransport;
@@ -4591,7 +4594,7 @@ export type MemoryRefreshJob = {
   lastRun?: MemoryRefreshRun;
   /** Absent while off. */
   nextRunAt?: Timestamp;
-  /** The project's `memory_refresh` setting. */
+  /** Always true: the refresh can't be turned off. Kept for older apps, which offered a switch. */
   on: boolean;
   tz: TimeZone;
 };
@@ -4653,26 +4656,6 @@ export type MemorySetInput = {
 };
 
 export type MemorySetOutput = {
-  file: MemoryFile;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type MemorySharedGetInput = { [key: string]: unknown };
-
-export type MemorySharedGetOutput = {
-  /** Empty once retired. */
-  file: MemoryFile;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type MemorySharedSetInput = {
-  /** The whole file. Empty retires it. */
-  text: string;
-};
-
-export type MemorySharedSetOutput = {
   file: MemoryFile;
   next?: string;
   truncated?: boolean;
@@ -4871,7 +4854,10 @@ export type NaviApprovals = {
   defaults: boolean;
   effort: Effort;
   mode: NaviApprovalMode;
-  /** The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. */
+  /**
+   * The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with
+   * `effort`, for older phones, which showed them.
+   */
   model: ModelName;
 };
 
@@ -6339,13 +6325,8 @@ export type ProjectSettings = {
   /** Its agents' variables, by name. A secret's value is never here. */
   env: ProjectEnvVar[];
   machineId: MachineId;
-  /**
-   * True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
-   * Absent from older hubs.
-   */
-  memoryRefresh?: boolean;
   projectId: ProjectId;
-  /** The repo `setup` is for; absent when it is the project's, and from older hubs. */
+  /** The repo `setup` is for; absent when it is the project's own directory's, and from older hubs. */
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
@@ -6365,7 +6346,7 @@ export type ProjectSettings = {
 export type ProjectSettingsGetInput = {
   machineId: MachineId;
   projectId: ProjectId;
-  /** The repo whose setup to read (its own, else the project's); absent: the project's. */
+  /** The repo whose own setup to read; absent, or the project's own directory: the project's. */
   repo?: RepoName;
 };
 
@@ -6379,8 +6360,6 @@ export type ProjectSettingsSetInput = {
   /** Its bot's color, from the palette; slate is the default. */
   avatarColor?: BotColor;
   machineId: MachineId;
-  /** Turns the nightly memory refresh on or off for the project. */
-  memoryRefresh?: boolean;
   /**
    * Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on
    * the hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which
@@ -6389,11 +6368,11 @@ export type ProjectSettingsSetInput = {
   onlyMe?: boolean;
   projectId: ProjectId;
   /**
-   * The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the
-   * project's either way.
+   * The repo whose own setup to set, no commands turning it off; absent, or the project's own directory: the
+   * project's. Title is the project's either way.
    */
   repo?: RepoName;
-  /** Replaces the project's setup commands and their settings; no commands turns setup off. */
+  /** Replaces the setup; no commands turns it off. */
   setup?: WorktreeSetup;
   /** The project's name in fleetd; its folder keeps its own. */
   title?: string;
@@ -9707,8 +9686,8 @@ export type WorktreeBase = {
 /** What runs in each new worktree of a project before its agent starts: install dependencies, generate code. */
 export type WorktreeSetup = {
   /**
-   * In order, each with `sh -c` in the worktree and the project's variables (the order's too); the first that
-   * fails or passes its time limit stops the rest.
+   * In order, each with `sh -c` in the worktree and the project's variables (the order's too), each within 10
+   * minutes; the first that fails stops the rest, and the agent starts anyway, told what failed.
    */
   commands?: string[];
   /**
@@ -9716,13 +9695,6 @@ export type WorktreeSetup = {
    * same commands, while these held the same contents, is not set up again. None listed: setup always runs.
    */
   inputs?: SetupInput[];
-  /**
-   * True: a failed setup still starts the agent, which is told what failed. False (the default): the start fails,
-   * naming the command and the end of its output.
-   */
-  runAnyway?: boolean;
-  /** Each command's time limit, in seconds. */
-  timeoutSec?: number;
 };
 
 /**
@@ -9837,8 +9809,6 @@ export interface ToolMap {
   memory_import: { input: MemoryImportInput; output: MemoryImportOutput };
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
-  memory_shared_get: { input: MemorySharedGetInput; output: MemorySharedGetOutput };
-  memory_shared_set: { input: MemorySharedSetInput; output: MemorySharedSetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   navi_approvals: { input: NaviApprovalsInput; output: NaviApprovalsOutput };

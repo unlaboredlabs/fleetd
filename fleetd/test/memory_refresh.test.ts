@@ -15,7 +15,6 @@ import { ExecutorTurn } from "../src/hub/executor/turn.ts";
 import { register as registerAutomationTools } from "../src/hub/automations/tools.ts";
 import { job, nightDue, refreshPorts, runNow, tick } from "../src/hub/memory/refresh.ts";
 import { put as putNavi } from "../src/hub/navi/store.ts";
-import { projectSettings } from "../src/hub/projects/settings.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { isoMs } from "../src/hub/store/time.ts";
@@ -123,7 +122,7 @@ test("a node that can't hold the session to its memory tools gets no refresh, an
   expect(skipped()).toBe(2);
 });
 
-test("a quiet project gets no refresh and no line; the setting turns it off", async () => {
+test("a quiet project gets no refresh and no line", async () => {
   const { hub, node } = setup();
   // A line of fleetd's own is not activity.
   chat(hub).systemLine(PROJECT, "PR #4 merged");
@@ -131,18 +130,6 @@ test("a quiet project gets no refresh and no line; the setting turns it off", as
   expect(node.launches).toEqual([]);
   expect(refreshed(hub)).toEqual([]);
   expect(job(hub, PROJECT).lastRun?.state).toBe("skipped");
-
-  hub.db.conn.query("DELETE FROM memory_refreshes").run();
-  hub.db.conn
-    .query("INSERT INTO project_settings (machine_id, project_id, memory_refresh) VALUES (?, ?, 0) ON CONFLICT DO UPDATE SET memory_refresh = 0")
-    .run(PROJECT.machineId, PROJECT.projectId);
-  expect(projectSettings(hub).memoryRefresh(PROJECT)).toBe(false);
-  say(hub, "human", "From now on, no npm here: pnpm only.");
-  await tick(hub);
-  expect(node.launches).toEqual([]);
-  hub.db.conn.query("UPDATE project_settings SET memory_refresh = 1").run();
-  await tick(hub);
-  expect(node.launches.length).toBe(1);
 });
 
 test("an active project gets one session that reads its chat, memory and decisions, and opens no order", async () => {
@@ -241,16 +228,14 @@ test("the row lists its hour, next night and last run; Run now is held by the ni
   expect(job(hub, PROJECT).lastRun).toMatchObject({ trigger: "manual", state: "running" });
   expect(await runNow(hub, PROJECT)).toBe("A refresh is already running.");
   expect(await runNow(hub, { ...PROJECT, projectId: "gone" })).toBe(`There is no project ${PROJECT.machineId}/gone.`);
-  hub.db.conn.query("INSERT INTO project_settings (machine_id, project_id, memory_refresh) VALUES (?, ?, 0) ON CONFLICT DO UPDATE SET memory_refresh = 0").run(PROJECT.machineId, PROJECT.projectId);
-  expect(job(hub, PROJECT).nextRunAt).toBeUndefined();
 
   // The tool answers with the row, and why when nothing started.
   const tools = new Map<string, (hub: Hub, c: unknown, input: unknown) => unknown>();
   registerImportAndRefresh({ add: (n: string, h: never) => tools.set(n, h) } as unknown as Registry);
   const out = (await tools.get("memory_refresh_run")!(hub, caller("operate", true), { projectRef: PROJECT })) as Record<string, unknown>;
-  expect(out.why).toBe("It is off for this project: turn it on first.");
+  expect(out.why).toBe("A refresh is already running.");
   expect(out.next).toBe("Nothing started; the nightly pass goes on as before.");
-  expect((out.memoryRefresh as { on: boolean }).on).toBe(false);
+  expect((out.memoryRefresh as { on: boolean }).on).toBe(true);
   expect(() => tools.get("memory_refresh_run")!(hub, caller("read", true), { projectRef: PROJECT })).toThrow("no operate grant");
 });
 

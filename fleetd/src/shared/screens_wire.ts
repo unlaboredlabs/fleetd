@@ -111,7 +111,7 @@ export type SessionHostResult = { id: string; frame: BrowserResultFrame };
 export type MacResultFrame = { id: string; sealed?: string; error?: McpToolError };
 
 /** `ScreenSettings`: what node_action `screens` changes in a node's node.json. */
-export type ScreenSettings = { host?: SessionHost; on?: boolean; idleMinutes?: number };
+export type ScreenSettings = { host?: SessionHost; on?: boolean };
 
 /** The tagged frames, as they go on the link. */
 export type HubToNodeFrame =

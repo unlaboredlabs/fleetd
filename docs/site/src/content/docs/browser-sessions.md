@@ -280,8 +280,7 @@ machine hosts screens:
   desktop runs there, so its row has none of their switches, and New screen never offers it for them.
 - **How many at once**: its screen cap, Auto or a number ([Machine roles](/docs/machines#roles)).
 - **When an idle screen ends**: after 30 minutes without a command, said in a line, for every kind but the agents'
-  Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting. A `screenIdleMinutes` in node.json
-  (set by hand, or by `machine_screens_set`) still holds there, and the line says it; the app no longer picks it.
+  Mac, whose screen goes back after 5 minutes so the next agent isn't kept waiting.
 
 **Recordings**, on Settings › Hub › Machines itself, sets how many days the hub keeps them, for every project
 ([On the hub](#hub)).
@@ -293,7 +292,7 @@ waits for the ones mid-step to finish (10 minutes at most), so the restart finds
 after it. Until then a kind turned on says it starts once the node restarts. A node that doesn't run as
 the service `fleetd machine add` sets up saves the change and says to restart it. The machine has to be online, and
 its fleetd new enough: an older one's switches show what it hosts but don't move. MCP clients use
-`machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`. On the
+`machine_screens_set`, and `machine_roles` reads each kind's reason (`off`), switch (`on`) and `idleMinutes`, its idle timeout. On the
 agents' Mac, `machine_roles` lists only `mac`, and `machine_screens_set` takes only `host` `mac`.
 
 ## On each machine {#setup}
@@ -315,8 +314,8 @@ without Node.js, `session_start` explains why it can't start one. A machine with
 their video, and each screen's note says so.
 
 Settings go under `browser` in [node.json](/docs/config-and-files#node-json) (`enabled` from [Settings](#settings)
-too). The node keeps one Chrome launched for the next screen, about 0.5 GB of memory. A screen ends after
-`screenIdleMinutes` (absent: 30) without an `agent-browser` command.
+too). The node keeps one Chrome launched for the next screen, about 0.5 GB of memory. A screen ends after 30
+minutes without an `agent-browser` command.
 
 | Key | Means |
 |---|---|
@@ -398,7 +397,7 @@ then installs everything the first time an agent asks for an Android screen, abo
 It then boots the emulator once to save its snapshot. Until that's done, `session_start` says it is still installing.
 
 Settings go under `device` in [node.json](/docs/config-and-files#node-json). The node keeps one emulator booted for
-the next screen, about 2 GB of memory. A person's screen ends after `screenIdleMinutes` (absent: 30) without a tap or
+the next screen, about 2 GB of memory. A person's screen ends after 30 minutes without a tap or
 key.
 
 | Key | Means |
@@ -460,7 +459,7 @@ from snapshot.debian.org at a fixed date. Screens that ask meanwhile are told to
 node uses Xvfb where it has one, and tries the build again at its next start. The recording's video needs an ffmpeg: the browser screens' or the Android screens' one.
 
 Settings go under `desktop` in [node.json](/docs/config-and-files#node-json). The node keeps one display started for
-the next screen. A screen ends after `screenIdleMinutes` (absent: 30) without a `desktop` action.
+the next screen. A screen ends after 30 minutes without a `desktop` action.
 
 | Key | Means |
 |---|---|

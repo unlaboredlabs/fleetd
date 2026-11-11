@@ -26,7 +26,7 @@ const settings: Settings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+  setup: { commands: [], inputs: [] },
   env: [],
 };
 

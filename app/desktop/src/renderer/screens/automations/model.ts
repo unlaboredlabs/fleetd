@@ -186,7 +186,7 @@ export function refreshRuns(job: MemoryRefreshJob): string {
     return `${state}, ${refreshChanges(run)}`;
   };
   return [
-    job.on && job.nextRunAt ? `Next run ${when(job.nextRunAt)}` : null,
+    job.nextRunAt ? `Next run ${when(job.nextRunAt)}` : null,
     last ? `${last.state === "running" ? "Started" : "Last run"} ${when(last.at)}${last.trigger === "manual" ? " (Run now)" : ""}: ${how(last)}` : "Not run yet",
   ]
     .filter(Boolean)

@@ -1,7 +1,7 @@
 // A project's own settings (Settings › Projects in the app):
 // `project_settings_get`, `project_settings_set` and `project_env_set`, and what the hub keeps of them:
-// `project_settings.memory_refresh` (on by default), `project_settings.setup` (each new worktree's commands) and the
-// `project_env` rows. A repo of the project can have its own `setup` (`repos.setup`).
+// `project_settings.setup` (each new worktree's commands, in the project's own directory) and the `project_env` rows.
+// Each of the project's other repos has its own `setup` (`repos.setup`); none falls back to another's.
 //
 // A variable is set on the project's node first, which keeps the value; only then does the hub record it. The hub's
 // row holds a plain variable's value and a secret's fingerprint: a secret reaches the hub sealed to the node's box
@@ -48,7 +48,6 @@ export const ENV_VALUE_MAX_BYTES = 64 * 1024;
 /** All of one project's values together: every one goes into every session's environment. */
 export const ENV_TOTAL_MAX_BYTES = 512 * 1024;
 const SEAL_OVERHEAD = 48;
-const SETUP_TIMEOUT_DEFAULT_SEC = 600;
 /** The colors a project's bot comes in (app/desktop/src/shared/bot.ts BOT_PAINT), slate its default. */
 export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"];
 
@@ -67,11 +66,9 @@ function base64Bytes(text: string): number | undefined {
 const setBytes = (v: EnvVarSet) =>
   v.kind === "plain" ? Buffer.byteLength(v.value) : Math.max(0, (base64Bytes(v.sealed) ?? 0) - SEAL_OVERHEAD);
 
-/** A setup as Rust's `WorktreeSetup` reads it, its defaults filled. */
+/** A setup with its defaults filled; an older app's or row's time limit and "start anyway" are dropped. */
 const setupOf = (s: Partial<WorktreeSetup> | undefined): WorktreeSetup => ({
   commands: s?.commands ?? [],
-  timeoutSec: s?.timeoutSec ?? SETUP_TIMEOUT_DEFAULT_SEC,
-  runAnyway: s?.runAnyway ?? false,
   inputs: s?.inputs ?? [],
 });
 const isEmptySetup = (s: WorktreeSetup) => (s.commands ?? []).length === 0;
@@ -87,31 +84,12 @@ export type EnvRow = { name: EnvVarName; value?: string; fingerprint?: string; b
 export class ProjectSettingsStore {
   constructor(private readonly db: Database) {}
 
-  private column<T>(r: ProjectRef, column: "memory_refresh" | "setup"): T | null | undefined {
-    const row = this.db
-      .query<Record<string, T | null>, [string, string]>(`SELECT ${column} FROM project_settings WHERE machine_id = ? AND project_id = ?`)
-      .get(r.machineId, r.projectId);
-    return row ? row[column] : undefined;
-  }
-
-  /** Whether the project's memory is refreshed each night: on until a person turns it off. */
-  memoryRefresh(r: ProjectRef): boolean {
-    const saved = this.column<number>(r, "memory_refresh");
-    return saved === undefined || saved === null ? true : Boolean(saved);
-  }
-
-  setMemoryRefresh(r: ProjectRef, on: boolean): void {
-    this.db
-      .query(
-        `INSERT INTO project_settings (machine_id, project_id, memory_refresh) VALUES (?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET memory_refresh = excluded.memory_refresh`,
-      )
-      .run(r.machineId, r.projectId, on ? 1 : 0);
-  }
-
-  /** The project's setup commands; undefined when it has none. */
+  /** The setup commands of the project's own directory; undefined when it has none. */
   setup(r: ProjectRef): WorktreeSetup | undefined {
-    return parseSetup(this.column<string>(r, "setup"));
+    const row = this.db
+      .query<{ setup: string | null }, [string, string]>("SELECT setup FROM project_settings WHERE machine_id = ? AND project_id = ?")
+      .get(r.machineId, r.projectId);
+    return parseSetup(row?.setup);
   }
 
   /** Replaces the project's setup commands; none turns setup off. */
@@ -125,27 +103,28 @@ export class ProjectSettingsStore {
       .run(r.machineId, r.projectId, json);
   }
 
-  /** The setup commands a new worktree of `repo` runs: the repo's own, else the project's. */
-  setupIn(r: ProjectRef, repo: RepoId | undefined): WorktreeSetup | undefined {
-    if (repo !== undefined) {
-      const own = parseSetup(this.repoJson(repo));
-      if (own) return own;
-    }
-    return this.setup(r);
-  }
-
-  /** Replaces `repo`'s setup commands; none gives it the project's. `repo` undefined: the project's. */
-  setSetupIn(r: ProjectRef, repo: RepoId | undefined, setup: WorktreeSetup): void {
-    if (repo === undefined) return this.setSetup(r, setup);
-    const n = repos.number(repo);
-    if (n === undefined) return;
-    this.db.query("UPDATE repos SET setup = ? WHERE n = ?").run(isEmptySetup(setup) ? null : JSON.stringify(setupOf(setup)), n);
-  }
-
-  private repoJson(repo: RepoId): string | null | undefined {
-    const n = repos.number(repo);
+  /** One of the project's other repos, by its row; undefined for its own directory (or none named). */
+  private otherRepo(r: ProjectRef, repo: RepoId | undefined): number | undefined {
+    const n = repo === undefined ? undefined : repos.number(repo);
     if (n === undefined) return undefined;
-    return this.db.query<{ setup: string | null }, [number]>("SELECT setup FROM repos WHERE n = ?").get(n)?.setup;
+    const row = this.db
+      .query<{ machine_id: string; project_id: string }, [number]>("SELECT checkout_machine_id AS machine_id, checkout_project_id AS project_id FROM repos WHERE n = ?")
+      .get(n);
+    return row && !(row.machine_id === r.machineId && row.project_id === r.projectId) ? n : undefined;
+  }
+
+  /** The setup commands a new worktree of `repo` runs: its own directory's, or that repo's own; none falls back. */
+  setupIn(r: ProjectRef, repo: RepoId | undefined): WorktreeSetup | undefined {
+    const n = this.otherRepo(r, repo);
+    if (n === undefined) return this.setup(r);
+    return parseSetup(this.db.query<{ setup: string | null }, [number]>("SELECT setup FROM repos WHERE n = ?").get(n)?.setup);
+  }
+
+  /** Replaces `repo`'s setup commands, none turning its setup off. Its own directory's are the project's. */
+  setSetupIn(r: ProjectRef, repo: RepoId | undefined, setup: WorktreeSetup): void {
+    const n = this.otherRepo(r, repo);
+    if (n === undefined) return this.setSetup(r, setup);
+    this.db.query("UPDATE repos SET setup = ? WHERE n = ?").run(isEmptySetup(setup) ? null : JSON.stringify(setupOf(setup)), n);
   }
 
   /** The project's variables, by name. */
@@ -211,7 +190,7 @@ function parseSetup(json: string | null | undefined): WorktreeSetup | undefined 
 
 export const projectSettings = (hub: Hub) => new ProjectSettingsStore(hub.db.conn);
 
-/** The setup commands a new worktree of the project's task in `repo` runs: the repo's, else the project's. */
+/** The setup commands a new worktree of the project's task in `repo` runs. */
 export const taskSetup = (hub: Hub, r: ProjectRef, repo: RepoId | undefined) => projectSettings(hub).setupIn(r, repo);
 
 export const tooOld = (m: MachineId) =>
@@ -272,7 +251,6 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     title: project.title,
     workspaceRoot: project.workspaceRoot,
     ...(repo ? { repo: repo.name } : {}),
-    memoryRefresh: s.memoryRefresh(r),
     env: s.env(r),
     setup: s.setupIn(r, repo?.repoId) ?? setupOf(undefined),
     ...(worktrees ? { worktrees } : {}),
@@ -346,15 +324,10 @@ export function register(tools: Registry): void {
     }
     if (input.onlyMe !== undefined) setOnlyMe(hub, caller, project, input.onlyMe);
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
-    if (input.memoryRefresh !== undefined) projectSettings(hub).setMemoryRefresh(r, input.memoryRefresh);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the project use these settings.";
-    if (input.memoryRefresh !== undefined && input.setup === undefined) {
-      next = input.memoryRefresh
-        ? "The lead refreshes this project's memory from tonight."
-        : "The nightly memory refresh is off for this project; memory stays as the lead and you write it.";
-    } else if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
+    if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
       next = `Its bot is ${input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the project use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;

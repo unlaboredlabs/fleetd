@@ -3,7 +3,7 @@
 // machine_screens_set call: the machine's node writes its node.json, so turning Android on installs what it needs, and
 // the line under the switch follows what the node says (installing, starting once its live screens end). A kind that
 // can't run for something missing shows the command that fixes it, to run on that machine. The at-once limit is
-// machine_roles_set. An idle screen ends after the node's timeout (30 minutes unless node.json says otherwise; the
+// machine_roles_set. An idle screen ends after the node's timeout (30 minutes; the
 // agents' Mac's own screen, 5), said in a line. Retention is browser_retention_set, for every project: the app sets
 // only the days, and the hub keeps its size limit as a safety net. Hub-wide, so only owners and admins see it.
 import { useState, type ReactNode } from "react";
