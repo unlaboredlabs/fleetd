@@ -11,6 +11,7 @@ import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { profilesList } from "../settings/profiles.ts";
 import { projectSections } from "../kit/sections.ts";
 import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
+import { longLogPages } from "./longLog.ts";
 
 const AT = "2026-10-27T09:00:00.000Z";
 
@@ -166,9 +167,18 @@ const approvals = (base: Fixture): Fixture => {
   return f;
 };
 
+const approvalsLong = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "integrations-approvals-long", "A busy YOLO project's approvals: 400 actions ran without asking, read in pages.");
+  const ref = home(f);
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
+  for (const [input, output] of longLogPages()) f.answer(PROJECT_TOOLS.approvals, { ...ref, ...input }, { approvals: { ...CHECKER, mode: "yolo" }, ...output });
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => [
     signin(base("typical")),
     approvals(base("typical")),
+    approvalsLong(base("typical")),
   ],
 });

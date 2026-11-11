@@ -14,5 +14,6 @@
     "src/main/hub/explain.ts", "src/renderer/screens/time/fixture.ts", "src/renderer/screens/time/format.ts",
     "src/renderer/screens/time/types.ts", "src/renderer/ui/primitives/roles.ts", "src/renderer/screens/factory/fixture.ts",
     "src/renderer/screens/factory/model.ts", "src/renderer/screens/train/fixture.ts",
-    "src/renderer/screens/train/model.ts", "src/renderer/screens/projects/model.ts"]
+    "src/renderer/screens/train/model.ts", "src/renderer/screens/projects/model.ts",
+    "src/renderer/screens/settings/approvedLog.ts"]
 }

@@ -394,3 +394,12 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+/* Show all: the whole log in a bounded list that scrolls on its own, so the page around it keeps its length. */
+.logAll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

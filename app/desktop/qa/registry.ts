@@ -166,6 +166,8 @@ export const fixtures = [
   // (fixtures/integrations).
   "inline-checker",
   "integrations-approvals",
+  // ...and a busy project's 400 of them, read in pages (W601).
+  "integrations-approvals-long",
   // A project's servers that sign in with OAuth (fixtures/integrations).
   "integrations-signin",
   // A project's secure input: a passport number to type (fixtures/inline/secure.json).
@@ -3407,6 +3409,33 @@ export const screens: readonly Screen[] = [
       const part = page.getByRole("region", { name: "Approvals" });
       await expect(part.getByRole("radio", { name: /Checker decides/u })).toBeChecked();
       await expect(page.getByRole("list", { name: "Ran without asking" }).getByRole("listitem")).toHaveCount(4);
+      await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // A busy project's log (W601): 400 actions, the page shows the newest five, repeats folded, and Show all.
+  {
+    id: "settings.projects",
+    variant: "integrations-approvals-long",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-approvals-long"],
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Ran without asking" });
+      await expect(part.getByRole("list", { name: "Ran without asking" }).getByRole("listitem")).toHaveCount(5);
+      await expect(part.getByRole("button", { name: "Show all 400" })).toBeVisible();
+      await part.scrollIntoViewIfNeeded();
+    },
+  },
+  // ...Show all: the log in a bounded list that reads older pages as it scrolls.
+  {
+    id: "settings.projects",
+    variant: "integrations-approvals-all",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-approvals-long"],
+    open: async (page) => {
+      const part = page.getByRole("region", { name: "Ran without asking" });
+      await part.getByRole("button", { name: "Show all 400" }).click();
+      await part.getByRole("button", { name: "Show older" }).click();
+      await expect(part.getByRole("button", { name: "Show older" })).toBeEnabled();
       await part.scrollIntoViewIfNeeded();
     },
   },

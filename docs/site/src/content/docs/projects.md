@@ -456,9 +456,12 @@ fleetd's own rules hold whatever the checker says:
 same input, it runs without the checker. **Keep it blocked** leaves it refused.
 
 **Ran without asking**, under Approvals, lists every action the checker let through or YOLO ran, newest first:
-when, what, the checker's reason, and **Show in chat**, which opens its line. `project_approvals {machineId,
-projectId}` reads the mode and the log; `project_approvals_set {machineId, projectId, mode}` sets
-the mode, from your own key only (an older app's `model` and `effort` are taken and ignored).
+when, what, the checker's reason, and **Show in chat**, which opens its line. The page shows the newest five, the
+same action run several times in a row as one row with its count; **Show all** opens the whole log in a list of its
+own that reads older ones as you scroll (on the phone, a screen of its own). `project_approvals {machineId,
+projectId, limit?, before?}` reads the mode and a page of the log (`older` is the next page's `before`, `total` the
+whole log's count); `project_approvals_set {machineId, projectId, mode}` sets the mode, from your own key only (an
+older app's `model` and `effort` are taken and ignored).
 
 ### Automations you set up {#automations-go-ahead}
 

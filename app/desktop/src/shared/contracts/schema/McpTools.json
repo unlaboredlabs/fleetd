@@ -14275,6 +14275,18 @@
     },
     "NaviApprovalsInput": {
       "properties": {
+        "before": {
+          "description": "The page's end: the `older` of the page before. Absent: from the newest.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read).",
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -14294,7 +14306,7 @@
           "$ref": "#/$defs/NaviApprovals"
         },
         "log": {
-          "description": "Newest first, at most `AUTO_APPROVED_MAX`.",
+          "description": "Newest first, at most `limit`.",
           "items": {
             "$ref": "#/$defs/AutoApproved"
           },
@@ -14302,6 +14314,18 @@
         },
         "next": {
           "type": "string"
+        },
+        "older": {
+          "description": "Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "How many the whole log holds. Absent from older hubs.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "truncated": {
           "type": "boolean"

@@ -11,6 +11,7 @@ import type { ChatInfoParams, RootParams } from "../../hubContext";
 import { useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { Approvals } from "./Approvals";
+import { ApprovedLog } from "./ApprovedLog";
 import { IconPicker } from "./IconPicker";
 import { Info } from "./Info";
 import { LinkedHubs } from "./LinkedHubs";
@@ -122,6 +123,7 @@ function ChatInfo() {
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
       <InfoStack.Screen name="Approvals" component={Approvals} options={pushed(t, "Approvals")} />
+      <InfoStack.Screen name="ApprovedLog" component={ApprovedLog} options={pushed(t, "Ran Without Asking")} />
       <InfoStack.Screen name="Payments" component={Payments} options={pushed(t, "Payments")} />
       <InfoStack.Screen name="LinkedHubs" component={LinkedHubs} options={pushed(t, "Linked Hubs")} />
       <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />
