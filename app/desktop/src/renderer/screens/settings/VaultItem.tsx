@@ -187,7 +187,7 @@ export function VaultItemPanel({ listed, whose, onGone, onClose }: { listed: Vau
       {item.canEdit && !trashed ? (
         <SettingsRow
           title="Delete"
-          line={item.kind === "env" ? "Agents stop getting it from their next start. It stays in the trash for 30 days." : "Agents can't use it any more. It stays in the trash for 30 days."}
+          hint={item.kind === "env" ? "Agents stop getting it from their next start. It stays in the trash for 30 days." : "Agents can't use it any more. It stays in the trash for 30 days."}
           control={
             <DangerButton disabled={!live} onClick={() => setDeleting(true)}>
               Delete…
@@ -260,7 +260,8 @@ function SourceRow({ item }: { item: VaultItemSummary }) {
   return (
     <SettingsRow
       title="From"
-      line={src.kind === "1password" ? `Imported from 1Password (${when(new Date(src.importedMs).toISOString(), now)}). 1Password isn't asked again for it.` : `Moved into the vault from ${src.from}.`}
+      hint={src.kind === "1password" ? "1Password isn't asked again for it." : undefined}
+      line={src.kind === "1password" ? `Imported from 1Password (${when(new Date(src.importedMs).toISOString(), now)}).` : `Moved into the vault from ${src.from}.`}
     />
   );
 }
@@ -412,7 +413,8 @@ function TrashPart({ item, onGone }: { item: VaultItemSummary; onGone: () => voi
   return (
     <SettingsRow
       title="In the trash"
-      line={`Gone for good on ${when(new Date(gone).toISOString(), now)}. Agents can't use it meanwhile.`}
+      hint="Agents can't use it while it's here."
+      line={`Gone for good on ${when(new Date(gone).toISOString(), now)}.`}
       control={
         item.canEdit ? (
           <>

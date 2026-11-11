@@ -68,7 +68,8 @@ export function ProfilesEditor() {
   return (
     <>
       <SettingsSection
-        intro={view.modelsFrom === "api" ? "Models as the hub's API key lists them." : "Models from fleetd's own list: the hub has no API key that lists them."}
+        hint="What agents run on: a model, its effort and speed, under a name the lead picks it by."
+        intro={view.modelsFrom === "api" ? undefined : "Models from fleetd's own list: the hub has no API key that lists them."}
         aside={editing?.kind === "new" ? undefined : <AddButton label="New profile" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))} />}
       >
         {before.length === 0 ? null : <SettingsList label="Profiles">{before.map(row)}</SettingsList>}
@@ -113,11 +114,8 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      line={
-        error === undefined
-          ? "Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs. Reviews and tasks that name no profile stay on the default."
-          : `Not changed: ${error}`
-      }
+      hint="Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs. Reviews and tasks that name no profile stay on the default."
+      line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={
         <Select

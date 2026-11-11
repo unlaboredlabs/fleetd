@@ -31,7 +31,7 @@ export function LinksToThisHub({ label = "Links to this hub" }: { label?: string
   // Day-grained lines, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
   const row = (control: ReactNode, body: ReactNode) => (
-    <SettingsRow reveal="hubs.links" title={label} line="Lets your project on another hub work here as you. Paste it into that project’s Linked hubs." control={control}>
+    <SettingsRow reveal="hubs.links" title={label} hint="A link lets your project on another hub work here as you. Paste its key into that project’s Linked hubs." control={control}>
       {body}
     </SettingsRow>
   );
@@ -48,7 +48,7 @@ export function LinksToThisHub({ label = "Links to this hub" }: { label?: string
   return row(
     making ? undefined : <AddButton label="Make a link key" onClick={start} />,
     <>
-      {links.length === 0 && !making && made === null ? <Text tone="quiet">No links to this hub yet.</Text> : null}
+      {links.length === 0 && !making && made === null ? <Text tone="quiet">None yet.</Text> : null}
       {made === null ? null : <MadeKey made={made} />}
       {links.length === 0 ? null : (
         <SettingsList label="Your links to this hub">

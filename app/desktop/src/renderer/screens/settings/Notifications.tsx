@@ -33,13 +33,14 @@ export function Notifications() {
   };
   return (
     <SettingsSection title="Notifications" reveal="notifications">
-      <SettingsRow reveal="notifications.kinds" title="Notify me when" line="Never for the chat in front of you." />
+      <SettingsRow reveal="notifications.kinds" title="Notify me when" hint="Never for the chat in front of you." />
       {KINDS.map(({ kind, label }) => (
         <SwitchRow key={kind} title={label} checked={prefs.kinds[kind]} onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })} />
       ))}
       <SettingsRow
         reveal="notifications.test"
-        title="Test"
+        title="Test notification"
+        hint="Shows one now, whatever is set above."
         line={
           // A live region from the start, so the line is read out when it appears.
           <span role="status">
@@ -49,12 +50,12 @@ export function Notifications() {
                 : "Sent. Nothing showed? Check your desktop's notification settings."
               : test === "unsupported"
                 ? "This system doesn’t show notifications."
-                : "Shows one now, whatever is set above."}
+                : null}
           </span>
         }
         control={
           <Button variant="secondary" onClick={() => void sendTest()}>
-            Send a test notification
+            Send
           </Button>
         }
       />

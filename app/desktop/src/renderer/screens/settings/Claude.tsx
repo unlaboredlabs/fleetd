@@ -22,7 +22,7 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <SettingsSection title="Claude" reveal="claude" intro="What the agents of the orders you start, and your Only-me projects, run on from their next start.">
+    <SettingsSection title="Claude" reveal="claude" hint="What the agents of the orders you start, and your Only-me projects, run on from their next start. Nobody else's work uses it.">
       {!live ? (
         <GroupNote>Not connected. Connect to a hub to choose your Claude account.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
@@ -54,12 +54,8 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       {refused === null ? (
         <SettingsRow
           title="In use"
-          line={
-            <>
-              <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>
-              {!offer && data.hubApi !== undefined ? " The hub's API key is kept for leads and unrequested work." : null}
-            </>
-          }
+          hint={!offer && data.hubApi !== undefined ? "The hub's API key is kept for leads and unrequested work." : undefined}
+          line={<HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>}
         />
       ) : (
         <SettingsRow
@@ -101,18 +97,17 @@ function Choice({ me }: { me: PersonClaude }) {
     );
   };
   return (
-    <SettingsRow title="Runs on" line="Switch any time: agents started from then on use it; a running one keeps its account.">
+    <SettingsRow
+      title="Runs on"
+      hint="Your subscription: your plan's limits, and only your work runs on it. The hub's API key: billed to the hub's Claude account. Agents started after a switch use the new one; a running one keeps its account."
+    >
       <RadioGroup className={s.radios} value={shown ?? ""} onValueChange={pick} disabled={busy} aria-label="Runs on">
-        <Radio
-          value="subscription"
-          label="My own Claude subscription"
-          description={me.subscription === undefined ? "Connect it below first." : "Your plan's limits; only your work runs on it."}
-        />
+        <Radio value="subscription" label="My own Claude subscription" description={me.subscription === undefined ? "Connect it below first." : undefined} />
         <Radio
           value="hub_api"
           label="The hub's API key"
           disabled={!me.mayUseHubApi}
-          description={me.mayUseHubApi ? "Billed to the hub's Claude account." : "The hub's admins turned this off for members."}
+          description={me.mayUseHubApi ? undefined : "The hub's admins turned this off for members."}
         />
       </RadioGroup>
       <Problem text={problem} />
@@ -155,7 +150,6 @@ function Subscription({ me }: { me: PersonClaude }) {
       setTried(t);
     });
   };
-  const help = "Kept encrypted on the hub's machines. Never shown again.";
   const form = (
     <>
       <ol className={s.steps}>
@@ -168,7 +162,7 @@ function Subscription({ me }: { me: PersonClaude }) {
           <Text size="sm">Paste the token it prints below.</Text>
         </li>
       </ol>
-      <Field label="Token" description="Valid for a year.">
+      <Field label="Token">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder={TOKEN_PLACEHOLDER} onChange={(e) => setToken(e.target.value)} />
       </Field>
       {/* Connect shows once there is a token to connect. */}
@@ -191,7 +185,8 @@ function Subscription({ me }: { me: PersonClaude }) {
   return (
     <SettingsRow
       title="Your subscription"
-      line={sub === undefined ? help : `Connected. ${sealedLine(sub.sealedOn)}`}
+      hint="The token is kept encrypted on the hub's machines and never shown again. It is valid for a year."
+      line={sub === undefined ? null : sealedLine(sub.sealedOn)}
       control={
         sub === undefined ? undefined : (
           <>

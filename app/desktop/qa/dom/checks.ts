@@ -262,6 +262,16 @@ export function runChecks(opts: CheckOptions): Finding[] {
       { left: v.left, right: hit.left, top: hit.top, bottom: hit.bottom },
       { left: hit.right, right: v.right, top: hit.top, bottom: hit.bottom },
     ].filter((p) => !empty(p));
+  // What is drawn on top at a point. A surface that takes no pointer (a Settings row's hint, so that it never takes a
+  // press meant for what it covers) is asked as if it did: elementFromPoint passes over it otherwise.
+  const topAt = (occ: Element, x: number, y: number) => {
+    if (!(occ instanceof HTMLElement) || style(occ).pointerEvents !== "none") return document.elementFromPoint(x, y);
+    const was = occ.style.pointerEvents;
+    occ.style.pointerEvents = "auto";
+    const top = document.elementFromPoint(x, y);
+    occ.style.pointerEvents = was;
+    return top;
+  };
   // The parts of `v` (the visible rect of `el`) that no occluder is drawn over. A run an occluder covers only in part
   // keeps its uncovered part, which is still checked: a popover over one end of a line must not hide an overlap at
   // the other.
@@ -273,7 +283,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
       pieces = pieces.flatMap((p) => {
         const hit = intersect(p, o);
         if (empty(hit)) return [p];
-        const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
+        const top = topAt(occ, (hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
         return top && occ.contains(top) ? minus(p, hit) : [p];
       });
     }

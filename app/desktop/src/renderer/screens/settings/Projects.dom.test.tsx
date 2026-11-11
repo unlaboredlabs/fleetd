@@ -432,7 +432,7 @@ describe("Settings → Projects", () => {
   it("offers no Forget sign-ins where its machine keeps none", async () => {
     answers = [{ ...settings, signinsKept: false }];
     await render();
-    expect(document.body.textContent).toContain("No sign-ins kept yet.");
+    expect(document.body.textContent).toContain("None kept yet.");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
   });
 
@@ -450,7 +450,7 @@ describe("Settings → Projects", () => {
     await settle();
     expect(calls.find((c) => c.tool === PROJECT_TOOLS.signinsForget)?.input).toEqual({ machineId: "devbox", projectId: "p1" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(document.body.textContent).toContain("Its next browser session starts signed out of every site.");
+    expect(document.body.textContent).toContain("Forgotten. Its next browser session starts signed out.");
   });
 
   it("opens a project's skills on its Agents page, where the one list of them is", async () => {
@@ -476,8 +476,9 @@ describe("Settings → Projects", () => {
     expect(log?.textContent).toContain("Checker: you asked to tell Sam that Saturday works");
     expect(log?.textContent).toContain("YOLO: nothing asks");
     const yoloChoice = [...(part?.querySelectorAll<HTMLElement>("label") ?? [])].find((l) => l.textContent.startsWith("YOLO"));
-    // YOLO says it is what a new project starts in, and how to be asked instead.
-    expect(yoloChoice?.textContent).toContain("A new project starts in this mode; pick one of the others to be asked.");
+    // The row's hint says YOLO is what a new project starts in; the choice itself is only its name.
+    expect(yoloChoice?.textContent).toBe("YOLO");
+    expect(part?.querySelector("[data-hint]")?.textContent).toContain("Nothing asks, and each action shows in the log. A new project starts in this mode.");
     const yolo = yoloChoice?.querySelector<HTMLElement>('[role="radio"]');
     if (!yolo) throw new Error("no YOLO choice");
     await click(yolo);
@@ -504,7 +505,7 @@ describe("Settings → Projects", () => {
   it("shares a project or keeps it to its owner with Only me, saved on the project", async () => {
     await render();
     const part = document.querySelector('section[aria-label="Only me"]');
-    expect(part?.textContent).toContain("Everyone on this hub sees it.");
+    expect(part?.querySelector("[data-hint]")?.textContent).toBe("On: only you see this project. Off: everyone on this hub sees it.");
     const toggle = part?.querySelector<HTMLElement>('[role="switch"]');
     if (!toggle) throw new Error("no Only me switch");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
@@ -517,7 +518,7 @@ describe("Settings → Projects", () => {
     onlyMe = true;
     await render();
     const again = document.querySelector('section[aria-label="Only me"]');
-    expect(again?.textContent).toContain("Only you see it.");
+    expect(again?.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
     await click(again?.querySelector<HTMLElement>('[role="switch"]') as HTMLElement);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", onlyMe: false });
@@ -535,7 +536,7 @@ describe("Settings → Projects", () => {
       await Promise.resolve();
     });
     await settle();
-    expect(document.querySelector('section[aria-label="Archive"]')?.textContent).toContain("Its lead doesn’t start until you bring it back.");
+    expect(document.querySelector('section[aria-label="Archive"]')?.textContent).toContain("Archived ");
     await click(button("Bring back"));
     await settle();
     expect(calls.filter((c) => c.tool === PROJECT_TOOLS.archive).at(-1)?.input).toEqual({ machineId: "devbox", projectId: "p1", archived: false });

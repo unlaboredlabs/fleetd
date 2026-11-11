@@ -20,7 +20,7 @@ export function GithubSettings() {
   const live = useLive();
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   return (
-    <SettingsSection title="GitHub" reveal="github" intro="Your pull requests open as this account.">
+    <SettingsSection title="GitHub" reveal="github" hint="The pull requests agents open for the orders you start open as this account.">
       {!live ? (
         <GroupNote>Not connected. Connect to a hub to connect your GitHub.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
@@ -30,7 +30,7 @@ export function GithubSettings() {
       ) : read.data === undefined ? (
         <GroupNote>Loading…</GroupNote>
       ) : read.data.app === undefined ? (
-        <GroupNote>This hub has no GitHub App yet, so agents open PRs with each machine&apos;s own gh login. An admin creates it in Settings › Hub accounts.</GroupNote>
+        <GroupNote>This hub has no GitHub App yet. An admin creates it in Hub accounts.</GroupNote>
       ) : (
         <Account info={read.data} />
       )}
@@ -62,14 +62,15 @@ function Account({ info }: { info: GithubAppGetOutput }) {
     <SettingsRow
       reveal="github.account"
       title="Your GitHub"
+      hint={`You sign in through the hub's App, ${info.app?.name ?? ""}. The hub keeps the token and renews it, and never shows it. GitHub drops a connection that was revoked there or unused for six months.`}
       lineTone={me !== undefined && lapsed ? "warning" : "quiet"}
       line={
         me === undefined ? (
-          <span role="status">Not connected. Connect before your first pull request. Until then, work that opens one can&apos;t start.</span>
+          <span role="status">Not connected: work that opens a pull request can&apos;t start.</span>
         ) : lapsed ? (
-          <span role="alert">{`GitHub no longer takes your connection as ${me.login}. It was revoked on GitHub, or unused for six months. Connect again to open pull requests.`}</span>
+          <span role="alert">{`GitHub no longer takes your connection as ${me.login}. Connect again to open pull requests.`}</span>
         ) : (
-          `Connected as ${me.login} since ${dayWords(me.connectedAt)}. Signed in through the hub's App, ${info.app?.name ?? ""}; the hub keeps the token and renews it, and never shows it.`
+          `Connected as ${me.login} since ${dayWords(me.connectedAt)}.`
         )
       }
       control={

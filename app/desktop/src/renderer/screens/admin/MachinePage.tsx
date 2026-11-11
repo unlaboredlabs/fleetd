@@ -173,8 +173,9 @@ export function MachinePage({ machineId }: { machineId: string }) {
             <SettingsSection>
               <SettingsRow
                 title={`Remove ${machine.name}`}
+                hint={REMOVE_LINE}
                 control={
-                  <DangerButton title={REMOVE_LINE} onClick={() => setRemoving(true)}>
+                  <DangerButton onClick={() => setRemoving(true)}>
                     Remove…
                   </DangerButton>
                 }

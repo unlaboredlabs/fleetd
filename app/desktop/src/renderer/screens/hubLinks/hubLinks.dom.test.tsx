@@ -183,7 +183,7 @@ describe("a project's Linked hubs", () => {
   it("with none yet, says so in one line with a button", async () => {
     await render(<LinkedHubs project={ADA} />);
     expect(calls).toContainEqual({ tool: "hub_links_get", input: { navi: ADA } });
-    expect(text()).toContain("No linked hubs yet.");
+    expect(text()).toContain("None yet.");
     expect(button("Link a hub")).toBeTruthy();
     expect(document.querySelector("form")).toBeNull();
   });
@@ -239,7 +239,7 @@ describe("a project's Linked hubs", () => {
     const gone = row("oldjob").textContent;
     expect(gone).toContain("Revoked on oldjob");
     expect(gone).toContain("As Alex · every project of theirs");
-    expect(text()).not.toContain("No linked hubs yet.");
+    expect(text()).not.toContain("None yet.");
   });
 
   it("removes a link, saying when the other hub didn't hear of it", async () => {
@@ -248,7 +248,7 @@ describe("a project's Linked hubs", () => {
     answer = { ...answer, links: [] };
     await click(button("Remove", row("acme")));
     expect(calls).toContainEqual({ tool: "hub_link_remove", input: { linkId: "hl_acmeaaaa" } });
-    expect(text()).toContain("No linked hubs yet.");
+    expect(text()).toContain("None yet.");
   });
 
   it("on a hub from before hub links, says it needs updating", async () => {
@@ -262,7 +262,7 @@ describe("a project's Linked hubs", () => {
 describe("Links to this hub, in a person's settings", () => {
   it("with none yet, says so in one line with a button", async () => {
     await render(<LinksToThisHub />);
-    expect(text()).toContain("No links to this hub yet.");
+    expect(text()).toContain("None yet.");
     expect(button("Make a link key")).toBeTruthy();
   });
 
@@ -319,7 +319,7 @@ describe("Links to this hub, in a person's settings", () => {
     });
     for (let i = 0; i < 3; i++) await settle();
     expect(document.querySelector('[role="listitem"]')).toBeNull();
-    expect(text()).toContain("No links to this hub yet.");
+    expect(text()).toContain("None yet.");
   });
 
   it("lists only the person's own links, even for an admin, and revokes one", async () => {
@@ -360,7 +360,7 @@ describe("You › Hubs › Hub links", () => {
   it("lists the links to each hub, and leaves each project's linked hubs to its settings", async () => {
     await render(<HubLinksSettings />);
     expect(text()).toContain("Links to this hub");
-    expect(text()).toContain("Paste it into that project’s Linked hubs.");
+    expect(text()).toContain("Paste its key into that project’s Linked hubs.");
     expect(text()).not.toContain("Ada");
     const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { navi?: { projectId: string } }).navi?.projectId);
     expect(asked.filter((id) => id !== undefined)).toEqual([]);

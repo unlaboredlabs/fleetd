@@ -26,7 +26,7 @@ export function HubsSettings() {
     <SettingsSection
       title="Paired hubs"
       reveal="hubs.add"
-      intro="This app acts as you on each."
+      hint="The hubs this app is paired with. It acts as you on each. With two hubs or more, a hub's name shows above its projects and beside its work."
       aside={
         <AddButton
           label="Add a hub"
@@ -225,7 +225,7 @@ function NameAndColor() {
   };
   return (
     <>
-      <Field label="Name" description="Any name you like: Personal, Acme, Side project. With two hubs or more, it shows above its projects and beside its work." error={error ?? undefined}>
+      <Field label="Name" error={error ?? undefined}>
         <Input
           value={name}
           maxLength={LABEL_MAX}

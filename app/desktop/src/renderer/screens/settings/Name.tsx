@@ -74,8 +74,9 @@ function NameField({ title, reveal, saved }: { title: string; reveal: string | u
     <SettingsRow
       reveal={reveal}
       title={title}
-      line={error === null ? "What your teammates and the leads call you." : <span role="alert">{error}</span>}
-      lineTone={error === null ? "quiet" : "danger"}
+      hint="What your teammates and the leads call you."
+      line={error === null ? null : <span role="alert">{error}</span>}
+      lineTone="danger"
       data={{ "data-your-name": "" }}
       control={
         <Input

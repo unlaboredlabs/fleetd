@@ -68,7 +68,7 @@ export function Automations({ route }: { route: SettingsRoute }) {
   return (
     <div className={settings.scroll} data-screen="settings.automations">
       <div className={settings.column}>
-        <PageHead title="Automations">Something the lead does on a schedule or from a webhook. Reviews and approvals still apply.</PageHead>
+        <PageHead title="Automations" />
         {url ? <WebhookUrl {...url} onDone={() => setUrl(null)} /> : null}
         <SettingsSection
           aside={ref && editing === "new" ? undefined : <AddButton label="New automation" disabled={!ref} onClick={() => setEditing("new")} />}
@@ -112,7 +112,8 @@ function WebhookUrl(props: { name: string; url: string; onDone: () => void }) {
       <SettingsRow
         title={`Webhook URL for ${props.name}`}
         lineTone="warning"
-        line="POST to it to start a run with the request body as context. It holds a secret and is shown only now: copy it. Rotate makes a new one and the old one stops working."
+        hint="POST to it to start a run with the request body as context. Rotate makes a new one and the old one stops working."
+        line="It holds a secret and is shown only now: copy it."
       >
         <div data-text="code">
           <Input mono readOnly value={props.url} aria-label="Webhook URL" onFocus={(e) => e.currentTarget.select()} />
@@ -353,11 +354,14 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
   };
 
   return (
-    <SettingsRow title={a ? `Edit ${a.name}` : "New automation"}>
+    <SettingsRow
+      title={a ? `Edit ${a.name}` : "New automation"}
+      hint="Something the lead does on a schedule or from a webhook. Reviews and approvals still apply. A run missed while the hub is down runs once when it is back."
+    >
       <Field label="Name" error={shown.name}>
         <Input value={draft.name} maxLength={NAME_MAX} placeholder="Weekly dependency check" onChange={(e) => set({ name: e.target.value })} />
       </Field>
-      <Field label="Prompt" description="What the lead does on each run, as you'd ask it in the chat." error={shown.prompt}>
+      <Field label="Prompt" error={shown.prompt}>
         <Textarea
           value={draft.prompt}
           minRows={4}
@@ -384,9 +388,7 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
           <Text size="sm" tone={preview === null || preview.ok ? "default" : "danger"} aria-label="Schedule preview">
             {preview ? (preview.ok ? preview.text : preview.error) : draft.at !== undefined ? onceLine(draft.at, draft.tz) : null}
           </Text>
-          <Text size="xs" tone="quiet">
-            A run missed while the hub is down runs once when it is back.
-          </Text>
+
         </>
       ) : null}
       <Switch

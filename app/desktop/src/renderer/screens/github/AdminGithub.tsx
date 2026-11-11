@@ -65,7 +65,7 @@ export function AdminGithub() {
     const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
-      <SettingsSection title="GitHub" reveal="admin.github" intro={intro}>
+      <SettingsSection title="GitHub" reveal="admin.github" hint={intro}>
         <GroupNote tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</GroupNote>
       </SettingsSection>
     );
@@ -73,7 +73,7 @@ export function AdminGithub() {
   const app = read.data.app;
   return (
     <>
-      <SettingsSection title="GitHub" reveal="admin.github" intro={intro}>
+      <SettingsSection title="GitHub" reveal="admin.github" hint={intro}>
         {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
       </SettingsSection>
       <Create info={read.data} />
@@ -83,7 +83,7 @@ export function AdminGithub() {
 
 function NoApp({ removed }: { removed: string | null }) {
   return (
-    <SettingsRow title="No App yet" label="GitHub App" line="Until there is one, the hub uses gh as it is logged in on the hub’s machine. Create the App below.">
+    <SettingsRow title="No App yet" label="GitHub App" hint="Until there is one, the hub uses gh as it is logged in on the hub’s machine. Create the App below.">
       {removed === null ? null : (
         <div role="status">
           <Text size="sm">{removed}</Text>
@@ -130,7 +130,8 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
     <SettingsRow
       title={app.name}
       label="GitHub App"
-      line={`Owned by ${app.owner}. Created ${dayWords(app.createdAt)}. Its keys are sealed on the hub.`}
+      hint="Its keys are sealed on the hub."
+      line={`Owned by ${app.owner}. Created ${dayWords(app.createdAt)}.`}
       control={
         <Button size="sm" disabled={testing} onClick={test}>
           {testing ? "Testing…" : "Test"}
@@ -235,7 +236,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
   return (
     <SettingsSection
       title={fresh ? "Create the App" : "Replace it with a new App"}
-      intro={fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the hub; delete the old one on GitHub."}
+      hint={fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the hub; delete the old one on GitHub."}
       aside={
         fresh ? undefined : (
           <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -248,6 +249,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
         <>
           <SettingsRow
             title="Where it lives"
+            hint="App names are unique on GitHub: if this one is taken, GitHub asks for another on its form."
             control={
               <Segmented<Owner>
                 label="Owner"
@@ -267,12 +269,12 @@ function Create({ info }: { info: GithubAppGetOutput }) {
                   <Input mono aria-label="Organization" value={org} disabled={waiting} autoComplete="off" spellCheck={false} placeholder="acme" onChange={(e) => setOrg(e.target.value)} />
                 </Field>
               ) : null}
-              <Field label="Name" error={nameIssue} description="App names are unique on GitHub: if this one is taken, GitHub asks for another on its form.">
+              <Field label="Name" error={nameIssue}>
                 <Input aria-label="Name" value={name} disabled={waiting} autoComplete="off" spellCheck={false} onChange={(e) => setName(e.target.value)} />
               </Field>
             </div>
           </SettingsRow>
-          <SettingsRow title="What it asks for" line="On each repository you install it on.">
+          <SettingsRow title="What it asks for" hint="On each repository you install it on. It needs no webhooks: the hub polls GitHub, as the merge train already does.">
             <ul className={s.list} aria-label="Permissions">
               {info.permissions.map(([key, level]) => (
                 <li key={key}>
@@ -281,17 +283,15 @@ function Create({ info }: { info: GithubAppGetOutput }) {
               ))}
               <li>
                 <Text size="sm" tone="quiet">
-                  Webhooks: off. The hub polls GitHub, as the merge train already does.
+                  Webhooks: off
                 </Text>
               </li>
             </ul>
           </SettingsRow>
           <SettingsRow
             title="Create it on GitHub"
-            line={
-              why ??
-              "GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the hub, and you come back here to install it."
-            }
+            hint="GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the hub, and you come back here to install it. No desktop app at hand? On the hub’s machine, fleetd github-app create does the same from a terminal."
+            line={why ?? null}
             control={
               <>
                 {waiting ? (
@@ -320,9 +320,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
               </div>
             )}
           </SettingsRow>
-          <GroupNote>
-            No desktop app at hand? On the hub&rsquo;s machine, <code>fleetd github-app create</code> does the same from a terminal.
-          </GroupNote>
+
         </>
       ) : null}
     </SettingsSection>

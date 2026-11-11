@@ -25,18 +25,15 @@ import v from "./vault.module.css";
 /** What the plus menu opened. */
 type Adding = { readonly kind: "item"; readonly item: VaultKind } | { readonly kind: "paste" } | { readonly kind: "import" };
 
-const PAGE_WORDS: Readonly<Record<Whose["kind"], { screen: string; intro: string }>> = {
+const PAGE_WORDS: Readonly<Record<Whose["kind"], { screen: string }>> = {
   mine: {
     screen: "settings.vault",
-    intro: "Logins, cards, addresses and variables your agents fill in and get, without ever seeing them. Every use is in each item's activity.",
   },
   project: {
     screen: "settings.project-vault",
-    intro: "What this project's agents fill in and get. Its variables reach every agent it starts. Your own items shared with it, and the hub's, are under Settings › You › Vault.",
   },
   hub: {
     screen: "settings.hub.vault",
-    intro: "Cards, logins and addresses every project's agents can use, such as a team card. Only owners and admins change them; nobody else can see their values.",
   },
 };
 
@@ -79,7 +76,7 @@ function VaultList({ whose }: { whose: Whose }) {
   return (
     <div className={s.scroll} data-screen={words.screen}>
       <div className={s.column}>
-        <PageHead title="Vault">{words.intro}</PageHead>
+        <PageHead title="Vault" />
         {status.data === undefined ? null : <StatusNote status={status.data} whose={whose} />}
         <div className={v.bar} ref={ref}>
           <Input className={v.search} type="search" aria-label="Search the vault" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -113,14 +110,9 @@ function VaultList({ whose }: { whose: Whose }) {
                 name={trash ? "Back to the vault" : "Trash"}
                 label={trash ? "Back to the vault" : "Trash"}
                 icon={trash ? <ArrowLeft /> : <Trash2 />}
+                hint={trash ? undefined : "Deleted items, kept for 30 days."}
                 open={{ onClick: () => (setTrash((t) => !t), setOpen(null)) }}
-              >
-                {trash ? null : (
-                  <Text size="sm" tone="quiet">
-                    Deleted items, kept for 30 days.
-                  </Text>
-                )}
-              </SettingsListRow>
+              />
             </SettingsList>
           )}
         </SettingsSection>
@@ -322,12 +314,14 @@ function KeyPart({ status }: { status: VaultStatusOutput }) {
       {waiting.length === 0 ? null : (
         <SettingsRow
           title="Still moving in"
-          line={`${waiting.map((m) => `${String(m.waiting)} on ${m.machineId}${m.waitingFor === undefined ? "" : ` (${m.waitingFor})`}`).join(", ")}. They keep working where they are meanwhile.`}
+          hint="Items sealed on a machine before the vault, on their way in. They keep working where they are meanwhile."
+          line={`${waiting.map((m) => `${String(m.waiting)} on ${m.machineId}${m.waitingFor === undefined ? "" : ` (${m.waitingFor})`}`).join(", ")}.`}
         />
       )}
       <SettingsRow
         title="Rotate the key"
-        line={status.locked ? "Unlock the vault to rotate its key." : status.keyMissing ? "Restore the key to rotate it." : "Seals every item again under a new key: after an admin leaves, or if the key file may have been copied."}
+        hint="Seals every item again under a new key: after an admin leaves, or if the key file may have been copied."
+        line={status.locked ? "Unlock the vault to rotate its key." : status.keyMissing ? "Restore the key to rotate it." : null}
         control={
           <Button size="sm" variant="secondary" disabled={status.locked || status.keyMissing} onClick={() => setRotating(true)}>
             Rotate…

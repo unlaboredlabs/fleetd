@@ -19,7 +19,6 @@ import {
   machineHolds,
   pauseLine,
   projectAgents,
-  serialNote,
   sliderTop,
   sourceLine,
   type MachineAgents,
@@ -214,12 +213,13 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   );
   const value = clampMax(state.value, a.top);
   const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
-  const serial = serialNote(value);
+
 
   return (
     <SettingsRow
       title={props.title ?? "Max agents"}
       titleId={`${id}-label`}
+      hint="The most agents this project runs at once. At 1, the lead works through its tasks in order."
       line={sourceLine(props.slots, a)}
       control={
         <>
@@ -250,11 +250,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           ) : null;
         }}
       />
-      {serial ? (
-        <Text size="xs" tone="quiet">
-          {serial}
-        </Text>
-      ) : null}
+
     </SettingsRow>
   );
 }
@@ -371,7 +367,7 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
               <SettingsRow
                 reveal="agents.profiles"
                 title="Allowed profiles"
-                line="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Settings › Hub › Every project › Profiles."
+                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every project › Profiles."
               >
                 <AllowedProfiles projectRef={ref} />
               </SettingsRow>

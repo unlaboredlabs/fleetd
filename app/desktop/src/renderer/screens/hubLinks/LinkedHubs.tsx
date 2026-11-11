@@ -24,7 +24,7 @@ export function LinkedHubs({ project }: { project: ProjectRef }) {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   const row = (control: ReactNode, body: ReactNode) => (
-    <SettingsRow reveal="projects.linked" title="Linked hubs" line={LINKED_LINE} control={control}>
+    <SettingsRow reveal="projects.linked" title="Linked hubs" hint={LINKED_LINE} control={control}>
       {body}
     </SettingsRow>
   );
@@ -36,7 +36,7 @@ export function LinkedHubs({ project }: { project: ProjectRef }) {
   return row(
     adding ? undefined : <AddButton label={links.length === 0 ? "Link a hub" : "Link another hub"} onClick={() => (setAdded(null), setAdding(true))} />,
     <>
-      {links.length === 0 && !adding ? <Text tone="quiet">No linked hubs yet.</Text> : null}
+      {links.length === 0 && !adding ? <Text tone="quiet">None yet.</Text> : null}
       {links.length === 0 ? null : (
         <SettingsList label="Linked hubs">
           {links.map((l) => (
@@ -171,7 +171,7 @@ function AddLink(props: { project: ProjectRef; boxPubKey: string; taken: Readonl
         void submit();
       }}
     >
-      <Field label="Link key" description="Made on the other hub, in Settings › Hubs, Links to this hub. It is sealed to this hub and never shown again.">
+      <Field label="Link key" description="Made on the other hub, in Settings › Hubs, Links to this hub.">
         {/* A secret's characters show as dots; two lines, so the address Links to this hub copies with it pastes too. */}
         <Textarea
           mono

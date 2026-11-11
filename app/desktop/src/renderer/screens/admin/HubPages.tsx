@@ -158,9 +158,7 @@ function Machines() {
               <AddButton label="Add machine" onClick={() => setOpen({ view: { kind: "choose" }, at: Date.now() })} />
             </span>
           }
-        >
-          The computers that run this hub&apos;s agents.
-        </PageHead>
+        />
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
         <MachineList />
         <SettingsSection title="Recordings" reveal="hub.recordings">
@@ -179,7 +177,7 @@ function Profiles() {
   return (
     <div className={s.scroll} data-screen="settings.hub.profiles">
       <div className={s.column}>
-        <PageHead title="Profiles">The models agents run on. Each project picks which it allows.</PageHead>
+        <PageHead title="Profiles" />
         <ProfilesEditor />
       </div>
     </div>
@@ -191,7 +189,7 @@ function ToolsAndSkills() {
   return (
     <div className={s.scroll} data-screen="settings.hub.tools">
       <div className={s.column}>
-        <PageHead title="Tools & skills">What every project&apos;s agents get. A project&apos;s own come with them, on its Agents page.</PageHead>
+        <PageHead title="Tools & skills" />
         <SettingsSection title="MCP servers" reveal="hub.mcp">
           <HubMcpServers />
         </SettingsSection>
@@ -206,7 +204,7 @@ function InstructionsAndMemory() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory">What every project&apos;s agents are told.</PageHead>
+        <PageHead title="Instructions & memory" />
         <SettingsSection title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </SettingsSection>
@@ -232,9 +230,7 @@ function HubAccounts({ me }: { me: Person | undefined }) {
               Run guided setup again
             </Button>
           }
-        >
-          The hub&apos;s own accounts. Each person connects their own Claude and GitHub in You › Your accounts.
-        </PageHead>
+        />
         <ClaudeAdmin me={me} />
         <AdminGithub />
       </div>

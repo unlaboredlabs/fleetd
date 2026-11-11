@@ -41,7 +41,7 @@ describe("a project's integrations model", () => {
     expect(statusOf({ ...server, oauth: { status: "signed_out", issuer } })).toEqual({ text: "Signed out", tone: "danger" });
     expect(statusOf({ ...server, oauth: { status: "signed_out", issuer, signingIn: true } }).text).toBe("Signing in…");
     expect(signInLine({ status: "connected", issuer, clientId: "mine" }).text).toBe(
-      "Signed in with `auth.example.com`, with your own app. fleetd renews the sign-in by itself, and it never goes in the chat.",
+      "Signed in with `auth.example.com`, with your own app.",
     );
     // A renewal failing past the token's end is said on a server still signed in.
     expect(signInLine({ status: "connected", issuer, problem: "fleetd can't renew its sign-in." })).toEqual({ text: "fleetd can't renew its sign-in.", tone: "danger" });

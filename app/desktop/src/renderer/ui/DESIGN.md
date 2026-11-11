@@ -10,13 +10,23 @@ breaks a rule changes this page in the same PR and says why.
   Rows that have ended (merged, closed, done) step back to `--quiet`. A line between every row reads as clutter.
 - **Settings are soft groups** (`screens/settings/parts.tsx`; every Settings page, and the Vault's, is built from these
   and has no row, line or card style of its own):
-  - a section is a quiet 12 px label (an optional quiet line under it) over **one soft group**: a `--group` fill with
-    `--radius-group` corners and no lines inside it (`SettingsSection`);
-  - a row is a title in regular weight, an optional quiet line, and **one control at its right end** (`SettingsRow`);
-    a row that holds a list or a form puts it under its title, full width;
+  - a section is a quiet 12 px label over **one soft group**: a `--group` fill with `--radius-group` corners and no
+    lines inside it (`SettingsSection`);
+  - a row is a title in regular weight and **one control at its right end** (`SettingsRow`); a row that holds a list
+    or a form puts it under its title, full width;
+  - **at rest a row is its title and its control; what explains it is its `hint`.** The hint shows under the title, in
+    the app's tooltip as a soft raised surface (`Tooltip`, `prose`), while the pointer rests on the row's title or
+    control, a section's label or a list's row, and while keyboard focus is inside it; a screen reader reads the same
+    words from the page. No question-mark or info icon marks it, and a page has no line of description under its
+    title: what there is to explain belongs to the section or row it is about, or is cut;
+  - **the quiet line under a title is only for state the person needs now**: a current value, an error, a warning
+    before something that can't be undone, or why a control is off and how to turn it on. The same goes for a
+    section's line, a group's note and the line that opens a page. A line that would read the same tomorrow and for
+    everyone is a hint;
   - a switch's own words are its row (`SwitchRow`), so nothing is said twice; three short choices are a segmented control;
-  - a list row is the name with a quiet word beside it, quiet lines under it, and its controls, with a glyph before
-    it only where the glyph tells rows apart; its state is the word itself, coloured (`SettingsListRow`). A row that
+  - a list row is the name with a quiet word beside it, quiet lines under it for what it is now, and its controls,
+    with a glyph before it only where the glyph tells rows apart; its state is the word itself, coloured
+    (`SettingsListRow`). A row that
     opens a page trails a chevron, and when all it has to say is that it needs someone, it says so with one dot at
     its end in the warning's colour, why in its tooltip (`needs`: a machine that is offline or wants a login), never
     a dot and a word;

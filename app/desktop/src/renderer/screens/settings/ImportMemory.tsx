@@ -103,7 +103,7 @@ export function ImportMemory() {
   const full = done?.skipped.filter((x) => x.why === "full") ?? [];
 
   return (
-    <SettingsSection title="Import memory" reveal="import-memory" intro="Bring what another AI assistant knows about you, so you don't teach it all again.">
+    <SettingsSection title="Import memory" reveal="import-memory" hint="Bring what another AI assistant knows about you, so you don't teach it all again.">
       <SettingsRow
         title="1. Copy this prompt into a chat with your other AI assistant"
         control={

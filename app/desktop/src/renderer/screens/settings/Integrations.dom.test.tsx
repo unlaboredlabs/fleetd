@@ -195,7 +195,7 @@ describe("a project's MCP servers", () => {
     await click(button("Test", row("crm")));
     const text = row("crm").textContent;
     expect(text).toContain("Connected");
-    expect(text).toContain("Key sealed on devbox. It never goes in the chat.");
+    expect(text).toContain("Its key is sealed on devbox. It never goes in the chat.");
     expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools run without asking · 1 asks you each time.");
     expect(text).toContain("list_contacts, get_contact");
     tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
@@ -455,7 +455,7 @@ describe("an MCP server that signs you in", () => {
     await signInMoved({ status: "connected", issuer: "https://auth.mail.example", signedInAt: "2026-10-27T11:00:00.000Z" });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(row("mail").textContent).toContain("Connected");
-    expect(row("mail").textContent).toContain("Signed in with auth.mail.example. fleetd renews the sign-in by itself, and it never goes in the chat.");
+    expect(row("mail").textContent).toContain("Signed in with auth.mail.example.");
     expect(row("mail").textContent).toContain("Works on devbox (mail 1.0): 1 tool runs without asking");
     expect(row("mail").querySelector("button")?.textContent).not.toBe("Reconnect");
   });

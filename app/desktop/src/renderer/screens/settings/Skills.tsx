@@ -40,7 +40,7 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
       <SettingsRow
         reveal="agents.skills"
         title="Skills"
-        line={`Workflows ${where}'s agents can follow, from its repo or kept for it here: its repo's, its own and the hub-wide ones. On a name clash the first wins. Name one in the chat with $.`}
+        hint={`Workflows ${where}'s agents can follow, from its repo or kept for it here: its repo's, its own and the hub-wide ones. On a name clash the first wins. Name one in the chat with $.`}
         control={<SkillActions onOpen={setDialog} />}
       />
       <SkillList
@@ -53,7 +53,8 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
           <SettingsRow
             title="Hub-wide"
             label="Hub-wide skills"
-            line={`${names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.`}
+            hint="Skills every project gets. Owners and admins manage them."
+            line={names.length > 0 ? names.join(", ") : "None."}
             control={
               administers ? (
                 <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
@@ -131,7 +132,7 @@ function SkillList(props: { scope: Scope; where: string; dialog: Dialogs; onDial
       ) : null}
       {list.data?.repoUnavailable ? <GroupNote>{list.data.repoUnavailable}</GroupNote> : null}
       {list.data === undefined && !list.isLoadingError ? <GroupNote>Loading…</GroupNote> : null}
-      {list.data && skills.length === 0 ? <GroupNote>No skills yet. Write one with New skill, or install one from skills.sh.</GroupNote> : null}
+      {list.data && skills.length === 0 ? <GroupNote>No skills yet.</GroupNote> : null}
       {rows.length === 0 ? null : (
         <SettingsList label="Skills">
           {rows.map((row) => (
@@ -232,7 +233,7 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
       ) : null}
       {/* SKILL.md exactly as kept, frontmatter included: a code view to the QA text rule. */}
       <div data-text="code">
-        <Field label="SKILL.md" description={canEdit ? "Sessions get a saved change from their next start." : `Read from the repo (${skill.path ?? ""}): change it there.`}>
+        <Field label="SKILL.md" description={canEdit ? undefined : `Read from the repo (${skill.path ?? ""}): change it there.`}>
           <Textarea
             mono
             value={draft.text}

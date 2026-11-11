@@ -85,8 +85,11 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
             ? live
               ? "Loading…"
               : "Not connected."
-            : `${card === undefined ? "No card: the lead can't pay at a checkout." : `Pays with ${pickedName(card)}.`} ${vault ? VAULT_HELP : PAYMENTS_HELP}`
+            : card === undefined
+              ? "No card: the lead can't pay at a checkout."
+              : `Pays with ${pickedName(card)}.`
       }
+      hint={vault ? VAULT_HELP : PAYMENTS_HELP}
       lineTone={read.isLoadingError ? "danger" : "quiet"}
       control={
         read.data === undefined ? undefined : picking && vault ? (
@@ -152,9 +155,11 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
             </div>
           )}
           {purchases.length === 0 ? (
-            <Text size="sm" tone="quiet">
-              No purchases yet.
-            </Text>
+            card === undefined ? null : (
+              <Text size="sm" tone="quiet">
+                No purchases yet.
+              </Text>
+            )
           ) : (
             <SettingsList label="Purchases">
               {purchases.map((p) => {

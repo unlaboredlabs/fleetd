@@ -79,7 +79,7 @@ export const signInLine = (oauth: McpOauth): { text: string; tone: "quiet" | "da
   if (oauth.status === "connected") {
     const own = oauth.clientId === undefined ? "" : ", with your own app";
     return {
-      text: oauth.problem ?? `Signed in with ${host}${own}. fleetd renews the sign-in by itself, and it never goes in the chat.`,
+      text: oauth.problem ?? `Signed in with ${host}${own}.`,
       tone: oauth.problem === undefined ? "quiet" : "danger",
     };
   }

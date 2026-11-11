@@ -131,7 +131,7 @@ right-click menu. Its **Project** page has these, in order:
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
 | MCP servers | One list of the project's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
-| Sign-ins | **Forget sign-ins…** signs its browser out of every site. It shows once its machine keeps sign-ins for it; until then the row says "No sign-ins kept yet." See [Sign-ins](#sign-ins). |
+| Sign-ins | **Forget sign-ins…** signs its browser out of every site. It shows once its machine keeps sign-ins for it; until then the row says "None kept yet." See [Sign-ins](#sign-ins). |
 | Skills | **Open its skills** goes to the list on its Agents page. See [Skills](#skills). |
 | Payments | The card it pays with, and its purchases. See [Purchases](#purchases). |
 | Archive | See [Archive](#archive). |

@@ -35,7 +35,7 @@ export function RepoSection({ settings, children }: { settings: Settings; childr
         <SettingsRow
           reveal="projects.repos"
           title="Repos"
-          line={repos.length === 0 ? "No repo, a plain folder." : "The git repos the project holds."}
+          line={repos.length === 0 ? "No repo, a plain folder." : null}
           control={adding ? undefined : <AddButton label="Add a repo" onClick={() => setAdding(true)} />}
         >
           {repos.length === 0 ? null : (
@@ -103,7 +103,7 @@ function AddRepo({ settings, onCancel, onDone }: { settings: Settings; onCancel:
     );
   };
   // Add repo says why it can't be used yet, under its fields.
-  const why = !live ? "Connect to the hub to add a repo." : (problem ?? (input === null ? `Type a checkout on ${machine}, or a GitHub URL.` : `Added to the project on ${machine}.`));
+  const why = !live ? "Connect to the hub to add a repo." : (problem ?? (input === null ? `Type a checkout on ${machine}, or a GitHub URL.` : null));
   return (
     <div className={s.addRepo} role="group" aria-label="Add a repo">
       <div className={s.inline}>
@@ -123,9 +123,11 @@ function AddRepo({ settings, onCancel, onDone }: { settings: Settings; onCancel:
           {busy ? "Adding…" : "Add repo"}
         </Button>
       </div>
-      <Text size="sm" tone="quiet">
-        {why}
-      </Text>
+      {why === null ? null : (
+        <Text size="sm" tone="quiet">
+          {why}
+        </Text>
+      )}
     </div>
   );
 }

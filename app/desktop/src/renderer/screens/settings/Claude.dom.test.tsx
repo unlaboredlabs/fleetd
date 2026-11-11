@@ -160,7 +160,7 @@ it("asks someone with nothing to run on to connect, seals the pasted token throu
   expect(sealed).toEqual([{ account: "mine", token: TOKEN, boxes: [{ machineId: "devbox", boxPubKey: BOX }] }]);
   expect(sent("claude_account_test")).toEqual([{ account: "mine" }]);
   for (let i = 0; i < 2; i++) await settle();
-  expect(host.textContent).toContain("Connected. Sealed on devbox.");
+  expect(host.textContent).toContain("Sealed on devbox.");
   expect(host.textContent).toContain("Worked on devbox");
   expect(host.textContent).not.toContain(TOKEN);
   expect([...host.querySelectorAll("input")].map((i) => i.value)).not.toContain(TOKEN);

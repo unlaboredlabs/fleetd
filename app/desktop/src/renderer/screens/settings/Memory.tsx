@@ -59,7 +59,7 @@ export function Memory({ project }: { project: Scope | null }) {
   const head = "What the lead remembers about this project. Edit or delete anything that's wrong.";
   if (!live) {
     return (
-      <SettingsSection title="Memory" reveal="memory" intro={head}>
+      <SettingsSection title="Memory" reveal="memory" hint={head}>
         <GroupNote>Not connected. Connect to a hub to see what its leads remember.</GroupNote>
       </SettingsSection>
     );
@@ -86,7 +86,7 @@ export function Memory({ project }: { project: Scope | null }) {
   );
   return (
     <>
-      <SettingsSection title="Memory" reveal="memory" intro={head} bare>
+      <SettingsSection title="Memory" reveal="memory" hint={head} bare>
         {read.isLoadingError ? <FileError read={read} /> : null}
         <div className={m.search}>
           <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -256,7 +256,7 @@ function MemoryGroup(props: {
     <SettingsSection
       title={props.bare === true ? undefined : props.label}
       part={props.part}
-      intro={
+      hint={
         props.bare === true ? undefined : (
           <>
             <span data-text="code">{name}</span>

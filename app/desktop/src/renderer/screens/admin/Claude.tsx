@@ -29,7 +29,7 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
     <SettingsSection
       title="Claude"
       reveal="admin.claude"
-      intro="The hub's Claude API key, and who may use it. Each person picks their own in You › Your accounts."
+      hint="The hub's Claude API key, and who may use it. Each person picks their own in You › Your accounts."
     >
       {!live ? (
         <GroupNote>Connect to a hub to see and change this.</GroupNote>
@@ -107,11 +107,8 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
   return (
     <SettingsRow
       title="Hub API key"
-      line={
-        api === undefined
-          ? "From the Claude Console. fleetd never shows it again, and no agent sees it."
-          : `Saved. ${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`
-      }
+      hint="From the Claude Console. fleetd never shows it again, and no agent sees it."
+      line={api === undefined ? null : `${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`}
       control={
         api === undefined ? undefined : (
           <>
@@ -146,7 +143,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
               Claude Console › API keys
             </Button>
           </div>
-          <Field label="API key" description={api === undefined ? "From console.anthropic.com." : "Leave it empty to keep the saved key."}>
+          <Field label="API key" description={api === undefined ? undefined : "Leave it empty to keep the saved key."}>
             <Input mono aria-label="API key" className={s.secretValue} data-secret="" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder={KEY_PLACEHOLDER} onChange={(e) => setKey(e.target.value)} />
           </Field>
           <Field label="Endpoint (optional)" description="Only for a gateway or proxy.">
@@ -208,7 +205,8 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
       <SwitchRow
         reveal="admin.claude.members"
         title="Members may use the hub's API key"
-        line={`${hubApi ? "Off: each member connects their own subscription before their next order." : "Takes effect once the hub has a key."} Owners and admins always may.`}
+        hint="Off: each member connects their own subscription before their next order. Owners and admins always may."
+        line={hubApi ? null : "Takes effect once the hub has a key."}
         checked={on}
         disabled={busy}
         onCheckedChange={flip}
