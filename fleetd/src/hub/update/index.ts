@@ -51,6 +51,12 @@ export const UPDATE_PARTS_MAX = 401;
 /** Machines `hub.update` names one by one (mcp.rs `HUB_UPDATE_MACHINES_MAX`); past these, `moreMachines` counts the rest. */
 export const HUB_UPDATE_MACHINES_MAX = 10;
 const OFFLINE = "offline: press Update again once it's online, or run `fleetd update` on it";
+/** How a hub from before cloud machines were removed skipped one asleep: the machine is gone, and so is its part. */
+const GONE_ASLEEP = "asleep: it takes the hub's build when it wakes";
+
+/** The run as this hub keeps it: without the parts an older hub planned for machines it no longer has. */
+export const withoutGone = (run: UpdateRun): UpdateRun => ({ ...run, parts: run.parts.filter((p) => p.message !== GONE_ASLEEP) });
+
 /** A part skipped for being offline when it was its turn: asking again once it's online may still work. */
 const away = (p: UpdatePart) => p.state === "skipped" && p.message === OFFLINE;
 /** How the node's answer to a Claude Code install begins when it's left as it is, or already there (install.rs). */
@@ -348,7 +354,7 @@ export class Updates {
     private readonly stopSignal?: AbortSignal,
   ) {
     try {
-      this.run = JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun;
+      this.run = withoutGone(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun);
     } catch {
       this.run = undefined;
     }

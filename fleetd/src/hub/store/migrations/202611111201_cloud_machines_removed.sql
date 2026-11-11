@@ -65,6 +65,10 @@ DELETE FROM repos WHERE machine_id IN (SELECT machine_id FROM cloud_gone) OR che
 DELETE FROM navi_asks WHERE from_machine_id IN (SELECT machine_id FROM cloud_gone);
 DELETE FROM session_places WHERE origin_machine IN (SELECT machine_id FROM cloud_gone);
 DELETE FROM vault_items WHERE machine_id IN (SELECT machine_id FROM cloud_gone);
+-- An ended task's worktree on a cloud machine went with the machine: the nightly sweep has nothing left to remove.
+UPDATE tasks SET worktree = 'removed'
+  WHERE state IN ('done', 'failed', 'cancelled') AND (worktree IS NULL OR worktree = 'flagged')
+    AND json_extract(data, '$.threadRef.machineId') IN (SELECT machine_id FROM cloud_gone);
 DROP TABLE cloud_gone;
 UPDATE machines SET data = json_remove(data, '$.cloud') WHERE json_extract(data, '$.cloud') IS NOT NULL;
 UPDATE tasks SET data = json_remove(data, '$.ranOn') WHERE json_extract(data, '$.ranOn') IS NOT NULL;

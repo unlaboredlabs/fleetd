@@ -11,6 +11,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { migrate } from "../src/hub/store/migrations.ts";
+import { TaskRecords } from "../src/hub/tasks/records.ts";
 import type { HubSetupStep } from "../src/shared/contracts.ts";
 import { tempHome } from "./helpers.ts";
 
@@ -40,6 +41,10 @@ function seed(conn: Database): void {
   conn.run(`INSERT INTO slot_claims (holder, machine_id, project_id, priority, state, order_n, on_machine)
     VALUES ('T1', 'devbox', 'shop', 'work', 'queued', 1, 'boat-1'), ('T2', 'devbox', 'shop', 'work', 'held', 2, NULL)`);
   conn.run(`INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES ('devbox', 'shop', 'W1', 'queued', '{"taskId":"T1","ranOn":"boat-1"}')`);
+  // Two ended tasks: T2 ran on boat-1, T3 on devbox, each with its worktree not swept yet.
+  conn.run(`INSERT INTO tasks (machine_id, project_id, workstream_id, state, thread_id, ended_at, data) VALUES
+    ('devbox', 'shop', 'W1', 'done', 't-boat-1', '${AT}', '{"taskId":"T2","projectRef":{"machineId":"devbox","projectId":"shop"},"threadRef":{"machineId":"boat-1","threadId":"t-boat-1"}}'),
+    ('devbox', 'shop', 'W1', 'done', 't-devbox', '${AT}', '{"taskId":"T3","projectRef":{"machineId":"devbox","projectId":"shop"},"threadRef":{"machineId":"devbox","threadId":"t-devbox"}}')`);
 }
 
 const tables = (conn: Database) =>
@@ -71,7 +76,9 @@ test("a hub with cloud machines upgrades clean: their rows, the boat.dev key and
     expect(left("SELECT machine_id AS v FROM projects")).toEqual(["devbox"]);
     expect(left("SELECT machine_id AS v FROM threads")).toEqual(["devbox"]);
     expect(left("SELECT holder AS v FROM slot_claims ORDER BY holder")).toEqual(["T1", "T2"]);
-    expect(left("SELECT data AS v FROM tasks")).toEqual(['{"taskId":"T1"}']);
+    expect(left("SELECT data AS v FROM tasks WHERE state = 'queued'")).toEqual(['{"taskId":"T1"}']);
+    // The nightly sweep no longer tries boat-1's worktree, which went with it; devbox's it still sweeps.
+    expect(TaskRecords.unswept(c, "9999").map(([t]) => t.taskId)).toEqual(["T3"]);
     expect(left("SELECT data AS v FROM machines").some((d) => d.includes("cloud"))).toBe(false);
 
     // The hub starts on it: its store reads one machine, and "Machines that run agents" is done, not failing.

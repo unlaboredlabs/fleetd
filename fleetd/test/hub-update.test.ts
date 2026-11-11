@@ -518,6 +518,25 @@ test("without scopes, or across a host protocol change, agents are held as befor
   }
 });
 
+// The update that installs the hub without cloud machines was planned by one with them: its cloud machines' parts,
+// skipped as asleep, are of machines this hub no longer has. They neither show nor make the update partial.
+test("a run an older hub planned drops its cloud machines' asleep parts as it loads", () => {
+  const dir = join(home.dir, "gone");
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  const at = new Date(0).toISOString();
+  const asleep = "asleep: it takes the hub's build when it wakes";
+  const parts = [
+    { part: "hub", name: "the hub", from: OLD, state: "done" },
+    { part: "node", machineId: "m0", name: "builder", from: OLD, state: "done" },
+    { part: "node", machineId: "boat-1", name: "boat-1", from: OLD, state: "skipped", message: asleep },
+    { part: "claude", machineId: "boat-1", name: "boat-1", from: "2.1.310", state: "skipped", message: asleep },
+  ];
+  writeFileSync(join(dir, "update", "run.json"), JSON.stringify({ id: "U0", channel: "edge", to: NEW, startedAt: at, finishedAt: at, auto: true, parts }));
+  const run = new Updates(join(dir, "update"), { now: () => 0 }, defaultTiming()).status()!;
+  expect(run.parts.map((p) => p.machineId ?? p.part)).toEqual(["hub", "m0"]);
+  expect(lastAutoOf(run)).toMatchObject({ result: "done" });
+});
+
 test("a node waits 2 minutes at most by default", () => {
   expect(defaultTiming().drain).toBe(120_000);
   const dir = join(home.dir, "l");
