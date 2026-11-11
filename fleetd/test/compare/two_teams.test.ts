@@ -6,18 +6,19 @@ import { expect, test } from "bun:test";
 import mcpToolsText from "../../../app/desktop/src/shared/contracts/schema/McpTools.json" with { type: "text" };
 import { openSession, type Tool } from "../../../tests/compare/mcp.ts";
 import { type Leak, Refusal, standIn, type StandInTool } from "../../../tests/compare/standIn.ts";
-import { fromPattern, reportLines, runTwoTeams, twoTeamCases } from "../../../tests/compare/twoTeams.ts";
+import { fromPattern, readIds, reportLines, runTwoTeams, twoTeamCases } from "../../../tests/compare/twoTeams.ts";
 import { decodeInput } from "../../src/hub/api/decode.ts";
 import { inputSchema } from "../../src/hub/mcp/endpoint.ts";
 
-/** Two teams on a stand-in, A made first; the cases run with A's key against B's ids. */
+/** Two teams on a stand-in, A's ids read before B is made; the cases run with A's key against B's ids. */
 async function run(opts: { leak?: Leak; tools?: ReadonlyArray<StandInTool> } = {}) {
   const target = await standIn(opts);
   try {
-    const a = await target.team("");
+    const session = async (team: Awaited<ReturnType<typeof target.team>>) => openSession(team.url, await team.key({ name: "cases", role: "admin" }));
+    const a = await session(await target.team(""));
+    const own = await readIds(a, target.contract);
     const b = await target.team("");
-    const session = async (team: typeof a) => openSession(team.url, await team.key({ name: "cases", role: "admin" }));
-    return await runTwoTeams({ a: await session(a), b: await session(b), contract: target.contract, canaries: [target.data(b).canary] });
+    return await runTwoTeams({ a, b: await session(b), contract: target.contract, own, canaries: [target.data(b).canary] });
   } finally {
     await target.close();
   }
@@ -59,7 +60,29 @@ test("a tool that answers forbidden for team B's id, where an unknown one gets n
 });
 
 test("a list that holds team B's rows fails, though it takes no id", async () => {
-  expect(failed(await run({ leak: "list" }))).toEqual([{ tool: "things_list", ids: "A's own", verdict: "fail", detail: "team A's own read holds team B's data (its canary)" }]);
+  expect(failed(await run({ leak: "list" }))).toEqual([{ tool: "things_list", ids: "A's own", verdict: "fail", detail: "team A's own read holds team B's data: a BoxId, a ThingId, its canary" }]);
+});
+
+test("a list that holds team B's ids fails with no text of B's in it, and those ids are still asked about", async () => {
+  // Team B's thing ids in team A's own list don't make them A's: the lookups are probed with them all the same.
+  const report = await run({ leak: "ids" });
+  expect(failed(report)).toEqual([{ tool: "things_list", ids: "A's own", verdict: "fail", detail: "team A's own read holds team B's data: a BoxId, a ThingId" }]);
+  expect(report.cases.filter((c) => c.tool === "thing_get" || c.tool === "thing_rename").map((c) => `${c.tool} (${c.ids}): ${c.verdict}`)).toEqual(["thing_get (ThingId: B's): pass", "thing_rename (ThingId: B's): pass"]);
+  expect(report.unprobed).toEqual({});
+
+  // So a lookup that leaks beside such a list still fails.
+  const box: StandInTool = {
+    name: "thing_box",
+    readOnly: true,
+    input: { type: "object", properties: { thingId: { $ref: "#/$defs/ThingId" } }, required: ["thingId"] },
+    output: { type: "object", properties: { boxId: { $ref: "#/$defs/BoxId" } }, required: ["boxId"] },
+    run: (_team, input, all) => {
+      const found = all.flatMap((t) => t.things).find((t) => t.thingId === input.thingId);
+      if (found === undefined) throw new Refusal("not_found", `No thing ${input.thingId}.`);
+      return { boxId: found.boxId };
+    },
+  };
+  expect(failed(await run({ leak: "ids", tools: [box] })).map((c) => c.tool)).toEqual(["things_list", "thing_box"]);
 });
 
 test("a tool added to the list is covered with no case written for it", async () => {
@@ -95,30 +118,35 @@ test("a clock in the answer is not a difference, whichever call it ticks on", as
   }
 });
 
-test("a number team A comes to count up to itself is no longer team B's id", async () => {
-  // Each team numbers its boxes from B1. box_add gives the caller its next one, so by box_peek team A has its own B2.
+test("a number team A counts up to itself during the run is no longer team B's id", async () => {
+  // Each team numbers its boxes from B1. box_add gives the caller its next one, so by box_empty team A has its own B2.
   const add: StandInTool = {
     name: "box_add",
     readOnly: false,
-    input: { type: "object", properties: { label: { $ref: "#/$defs/NoteName" } }, required: ["label"] },
+    input: { type: "object", properties: { thingId: { $ref: "#/$defs/ThingId" } }, required: ["thingId"] },
     output: { type: "object", properties: { boxRef: { $ref: "#/$defs/BoxRef" } }, required: ["boxRef"] },
     run: (team) => {
       team.boxes.push(`B${team.boxes.length + 1}`);
       return { boxRef: { boxId: team.boxes.at(-1) } };
     },
   };
-  const peek: StandInTool = {
-    name: "box_peek",
-    readOnly: true,
+  const count = (name: string, readOnly: boolean): StandInTool => ({
+    name,
+    readOnly,
     input: { type: "object", properties: { boxId: { $ref: "#/$defs/BoxId" } }, required: ["boxId"] },
     output: { type: "object", properties: { things: { type: "integer" } }, required: ["things"] },
     run: (team, input) => {
       if (!team.boxes.includes(input.boxId)) throw new Refusal("not_found", `No box ${input.boxId}.`);
       return { things: team.things.filter((t) => t.boxId === input.boxId).length };
     },
-  };
-  const report = await run({ tools: [add, peek] });
-  expect(report.cases.filter((c) => c.tool === "box_peek")).toEqual([{ tool: "box_peek", ids: "BoxId: B's", verdict: "weak", detail: "team A came to hold the same BoxId itself during the run" }]);
+  });
+  // A read is asked first, while B2 is still only team B's. The write after box_add finds team A's own B2 and is not
+  // asked about it: its answer would be team A's to have.
+  const report = await run({ tools: [add, count("box_empty", false), count("box_peek", true)] });
+  expect(report.cases.filter((c) => c.tool === "box_peek")).toEqual([{ tool: "box_peek", ids: "BoxId: B's", verdict: "pass" }]);
+  expect(report.cases.filter((c) => c.tool === "box_empty")).toEqual([]);
+  expect(report.unprobed).toEqual({ box_empty: ["BoxId"] });
+  expect(report.shared.BoxId).toEqual(["B1", "B2"]);
   expect(failed(report)).toEqual([]);
 });
 

@@ -69,15 +69,23 @@ holds. B's must get the answer the unknown ones get, once the ids sent are maske
 same message. What differs between the two unknown ids (a time, a number the call drew) is not held against it. And
 nothing team A is told, in the cases or in its own reads, may hold a canary: a string the run puts in team B's rows.
 
+An id is team B's while team A doesn't hold it too, and what A holds is not taken from its reads on trust: a list that
+shows A team B's rows would make every id in it look shared. So team A's ids are read before team B is made
+(`readIds`), and what it held then is its own. An id of B's that A's reads return afterwards fails the tool that
+returned it, and is still asked about as B's. One thing is allowed for: after a call of A's that wrote, A may have
+counted up to a number B also has (its own second decision is `D2`), which is A's own from then on. The read-only
+tools' cases run first, before any such write.
+
 The run prints the counts, then each failure:
 
 - `pass`, `FAIL`;
-- `weak`: the case proved little, and says why. The unknown id was itself refused as invalid input, before any
-  lookup; or team A came to hold the same id during the run (each team counts its own `D2`);
+- `weak`: the case proved little, and says why: the unknown id was itself refused as invalid input, before any
+  lookup;
 - not probed: tools whose ids are of kinds team B holds none of that team A lacks. `isolation.ts` gives each team a
   fleet, an order, a writer, a decision, an automation and an invite, team B two of each; a kind it seeds nothing of
   (a vault item, a browser session, an upload) is listed here, by name;
-- tools that take no id.
+- tools that take no id;
+- the ids both teams hold, team A's its own (a number each team counts, a built-in name), which tell nothing apart.
 
 Not covered: an id that is an integer (`profile_update`'s and `profile_delete`'s `id`), and what a key of a lesser
 role may do inside its own team.
@@ -87,7 +95,8 @@ how many cases were made and not run. Two things stand in for the missing second
 
 - `fleetd/test/compare/two_teams.test.ts` (in fleetd's own test run) proves the cases on `standIn.ts`, a small
   service with many teams at one address: they pass when it keeps its teams apart, and fail when it is told to leak (a
-  row of B's returned, `forbidden` where an unknown id gets `not_found`, a list holding B's rows). It also holds the
+  row of B's returned, `forbidden` where an unknown id gets `not_found`, a list holding B's rows, a list holding B's
+  ids and none of its texts). It also holds the
   cases to the hub's real tool list: every tool with an id gets one, and each input is one the hub's decoder takes.
 - `node isolation.ts --two-hubs` runs them on two hubs of the build. Neither hub has heard of the other's ids, so every
   case must pass: one that fails is a fault in the cases, not in the hub.
@@ -95,5 +104,5 @@ how many cases were made and not run. Two things stand in for the missing second
 `isolation.ts` also names a hosted service's other isolation checks (its database's policies, events across two
 instances, stored vault items and objects) as rows skipped with what they need: more than a target gives.
 
-`results/bun/behaviour.json` is a run of the hub build on main `954e89620`: every suite passes, 57 rows pass and 4 are
+`results/bun/behaviour.json` is a run of the hub build on main `a91b5b914`: every suite passes, 57 rows pass and 4 are
 skipped (the two-team cases, 507 of them over 168 of 213 tools, and the three checks above).

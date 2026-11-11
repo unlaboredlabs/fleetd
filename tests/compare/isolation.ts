@@ -3,7 +3,8 @@
 // that takes an id is called with team A's key and team B's ids and must answer as it answers an id nobody holds.
 //
 // They run on a target that makes two teams. Each team gets a fleet (a node of the build under test, a project, an
-// order, a writer, a decision, an automation, an invite), team B more of each, so B holds ids A lacks, and with a canary in every text of B's.
+// order, a writer, a decision, an automation, an invite), team B more of each, so B holds ids A lacks, and with a
+// canary in every text of B's. Team A's ids are read before team B is made: what A holds then is its own.
 // On a target that makes one team, as a self-hosted hub does, there is no second team to ask about: the cases are
 // made and counted and the row is skipped, saying how many. `--two-hubs` runs them on two hubs of the build, which
 // checks the cases, not the hub (hubBuild.ts).
@@ -18,7 +19,7 @@ import { openTarget } from "./hubBuild.ts";
 import { arg, REPO, scratch } from "./lib.ts";
 import { openSession, type Session } from "./mcp.ts";
 import type { Team } from "./target.ts";
-import { type Contract, type Report, reportLines, runTwoTeams, twoTeamCases } from "./twoTeams.ts";
+import { type Contract, readIds, type Report, reportLines, runTwoTeams, twoTeamCases } from "./twoTeams.ts";
 
 const LATER: ReadonlyArray<readonly [name: string, needs: string]> = [
   ["every table is kept to its team by a policy", "the service's database, which a target doesn't give"],
@@ -65,19 +66,20 @@ try {
     const tools = new Set(made.map((c) => c.tool)).size;
     cases.check = { name: "two-team cases", ok: true, skipped: `${made.length} cases over ${tools} tools not run: ${target.name} makes one team` };
   } else {
-    const b = await target.team(path.join(dir, "b"));
     const canary = `canary-${randomBytes(6).toString("hex")}`;
     await withFactory(
       path.join(dir, "a"),
       async (fa) => {
         const asA = await session(a);
         await seed(fa, asA, "team A's", 1);
+        const own = await readIds(asA, contract);
+        const b = await target.team(path.join(dir, "b"));
         await withFactory(
           path.join(dir, "b"),
           async (fb) => {
             const asB = await session(b);
             await seed(fb, asB, canary, 2);
-            cases.report = await runTwoTeams({ a: asA, b: asB, contract, canaries: [canary] });
+            cases.report = await runTwoTeams({ a: asA, b: asB, contract, own, canaries: [canary] });
           },
           { hub: b, machine: "factory-b" },
         );

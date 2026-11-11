@@ -4,7 +4,8 @@
 // box's is a number each team counts for itself (both teams have a B1), a note's is a name the team chose.
 //
 // `leak` breaks the wall on purpose, the ways a real one breaks: `row` reads a thing whoever's it is, `forbidden`
-// finds another team's thing and refuses it (so the caller learns it exists), `list` lists every team's things.
+// finds another team's thing and refuses it (so the caller learns it exists), `list` lists every team's things,
+// `ids` lists them too but with another team's titles blanked: its ids and nothing a canary is in.
 // Imports nothing of the lab's: fleetd's own tests start it.
 import { randomBytes } from "node:crypto";
 import http from "node:http";
@@ -13,7 +14,7 @@ import type { Schema } from "./mcp.ts";
 import type { Target, Team } from "./target.ts";
 import type { Contract } from "./twoTeams.ts";
 
-export type Leak = "row" | "forbidden" | "list";
+export type Leak = "row" | "forbidden" | "list" | "ids";
 
 interface Thing {
   readonly thingId: string;
@@ -74,7 +75,7 @@ function tools(leak: Leak | undefined): Array<StandInTool> {
       readOnly: true,
       input: object({}),
       output: object({ things: { type: "array", items: ref("Thing") } }),
-      run: (team, _input, all) => ({ things: (leak === "list" ? all : [team]).flatMap((t) => t.things) }),
+      run: (team, _input, all) => ({ things: (leak === "list" || leak === "ids" ? all : [team]).flatMap((t) => (leak === "ids" && t !== team ? t.things.map((x) => ({ ...x, title: "" })) : t.things)) }),
     },
     { name: "thing_get", readOnly: true, input: object({ thingId: ref("ThingId") }), output: object({ thing: ref("Thing") }), run: (team, input, all) => ({ thing: thing(team, all, input.thingId) }) },
     {

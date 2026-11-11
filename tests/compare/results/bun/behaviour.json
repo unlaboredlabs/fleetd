@@ -8,37 +8,37 @@
     "memGb": 59,
     "kernel": "7.0.0-42-generic",
     "loadavg": [
-      1.89,
-      1.82,
-      1.54
+      1.2,
+      1.12,
+      1.38
     ],
-    "at": "2026-11-11T17:57:06.397Z"
+    "at": "2026-11-11T18:19:06.330Z"
   },
   "data": {
     "suites": {
       "factory:throughput": {
         "ok": true,
-        "wallMs": 10536
+        "wallMs": 10583
       },
       "factory:self-healing": {
         "ok": true,
-        "wallMs": 3338
+        "wallMs": 3347
       },
       "factory:lead-wake": {
         "ok": true,
-        "wallMs": 6033
+        "wallMs": 5950
       },
       "factory:agent-messages": {
         "ok": true,
-        "wallMs": 31047
+        "wallMs": 31038
       },
       "blackbox": {
         "ok": true,
-        "wallMs": 5707
+        "wallMs": 5704
       },
       "contract": {
         "ok": true,
-        "wallMs": 1557
+        "wallMs": 1569
       },
       "contract: GET /healthz is 200": {
         "ok": true,
@@ -242,7 +242,7 @@
       },
       "isolation": {
         "ok": true,
-        "wallMs": 444
+        "wallMs": 440
       },
       "isolation: two-team cases": {
         "ok": true,
