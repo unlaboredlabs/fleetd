@@ -4,7 +4,9 @@
 // many events, to ellipsize; lead-counting has worked over an hour with nothing more known. lead-worked: the turn is
 // over, and the reply wears how long it took. lead-memory: the night's memory refresh line, after the lead's
 // reply, with the changes it made to MEMORY.md and a topic file. lead-worktrees: the night's cleanup line for the
-// worktrees it kept, before the memory refresh's.
+// worktrees it kept, before the memory refresh's. lead-pictures: the lead thinking with no agents at work, after a reply
+// ending in two pictures that load late.
+import fs from "node:fs";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -90,6 +92,66 @@ function leadAtWork(f: Fixture, turn: Turn): Fixture {
     f.events.push(event("task.started", mid + (startS - mid) / 4 - i, `${taskId} started`, { taskId, workstreamId: "W20", createdAt: t(mid + (startS - mid) / 4 + 30 - i) }));
   }
   if (turn.endS !== undefined) f.events.push(event("chat.waiting", turn.endS, "The lead is idle", { ...state, leadWorking: false }));
+  return f;
+}
+
+/** How long each picture's bytes take to come: they land after the chat has opened at its end. */
+const LATE_MS = 1_500;
+
+/**
+ * The lead thinking again, no agents at work, after a reply that ends in two pictures with captions, a page of
+ * conversation above it: the turn line has the band to itself, over the pictures once the chat is scrolled up. The
+ * pictures come late, growing the reply after the chat has opened at its end.
+ */
+function leadPictures(f: Fixture): Fixture {
+  leadAtWork(f, { activity: { kind: "thinking" }, orders: 0, agents: 0, startS: 15, replyS: 30 });
+  f.update("orders_board", (out) => ({ ...obj(out), orders: arr(obj(out)["orders"]).filter((o) => obj(obj(o)["projectRef"])["projectId"] !== STOREFRONT.projectId) }));
+  const t = (s: number) => at(f.now, -s * 1000);
+  const shot = (name: string) => fs.readFileSync(new URL(`../sessions/media/${name}.jpg`, import.meta.url));
+  const before = { v: 1, kind: "image", attachmentId: "F31", caption: "Before: the checkout total wraps under the price at 360 px" };
+  const after = { v: 1, kind: "image", attachmentId: "F32", caption: "After: one line, the total beside the price" };
+  const intro = "The receipt fix is up as #231. Here is the checkout before and after it.";
+  let text = intro;
+  const parts: JsonObject[] = [{ start: 0, end: intro.length }];
+  for (const block of [before, after]) {
+    text += "\n\n";
+    const start = text.length;
+    text += `\`\`\`fleetd-block\n${JSON.stringify(block)}\n\`\`\``;
+    parts.push({ start, end: text.length, block });
+  }
+  const msg = (seq: number, author: "human" | "lead", body: string, s: number, extra: JsonObject = {}): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef: STOREFRONT,
+    seq,
+    author,
+    text: body,
+    attachments: [],
+    createdAt: t(s),
+    state: "final",
+    ...(author === "human" ? { by: "laptop", clientRequestId: `seed-${seq}`, delivery: "turn" } : {}),
+    ...extra,
+  });
+  const earlier = [
+    "Fix the receipt: the total wraps under the price on a narrow phone.",
+    "On it. One writer on the receipt layout, a reviewer on its PR.",
+    "Send me before and after screenshots once it's up.",
+    "Will do: the writer takes them on the 360 px checkout.",
+  ];
+  const messages = [
+    ...earlier.map((body, i) => msg(i + 1, i % 2 === 0 ? "human" : "lead", body, 900 - i * 60)),
+    msg(earlier.length + 1, "human", "How does it look now?", 40),
+    msg(earlier.length + 2, "lead", text, 30, { parts }),
+  ];
+  const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: true, lastSeq: messages.length, lastMessageAt: t(30) });
+  for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
+  f.answer("chat_history", { projectRef: STOREFRONT }, { messages, moreBefore: false, moreAfter: false, state });
+  for (const [attachmentId, name] of [
+    ["F31", "checkout"],
+    ["F32", "checkoutApplied"],
+  ] as const) {
+    const data = shot(name);
+    f.answer("attachment_get", { projectRef: { ...STOREFRONT }, attachmentId }, { attachmentId, name: `${name}.jpg`, mime: "image/jpeg", bytes: data.length, dataB64: data.toString("base64") }, LATE_MS);
+  }
   return f;
 }
 
@@ -218,6 +280,7 @@ export default defineGroup({
       Fixture.from(base("typical"), "lead-worked", "storefront's lead finished its turn: beside its reply, how long it worked."),
       { orders: 1, agents: 3, startS: 460, replyS: 250, endS: 240 },
     ),
+    leadPictures(Fixture.from(base("typical"), "lead-pictures", "storefront's lead thinking, no agents at work, after a reply that ends in two pictures whose bytes come late.")),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
     worktreesKept(Fixture.from(base("typical"), "lead-worktrees", "storefront's chat with the night's cleanup line: 6 worktrees kept for unsaved work.")),
   ],

@@ -6,7 +6,7 @@
 // agents, where its live work and steer box are. At its end, quiet until pointed at, "8 DMs between agents" opens
 // Activity's log of them: the only trace of agents' DMs in the lead chat. The lead's turn line (`lead`, chat/TurnLine)
 // is its first item, so the capsule always spans the band, its edges on the composer's, and never resizes. With no
-// agent shown, nothing is drawn but the turn line, on its own in the band.
+// agent shown, nothing is drawn but the turn line, in the capsule ChatScreen gives it alone.
 import { ChevronUp } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useData } from "../../src/data/react";

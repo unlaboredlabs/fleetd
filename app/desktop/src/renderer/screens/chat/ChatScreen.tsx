@@ -362,7 +362,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
                   <LiveStrip project={project} lead={turnLine} />
                 </Boundary>
               ) : (
-                turnLine
+                // No agents at work: the line in a capsule of its own, the strip's glass across the band (view.module.css).
+                <div className={s.alone} data-alone="">
+                  {turnLine}
+                </div>
               )}
               <span className={s.say} data-say="">
                 {view?.held === true ? <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip> : null}
