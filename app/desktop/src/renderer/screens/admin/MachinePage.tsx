@@ -1,21 +1,21 @@
 // Settings › Hub › Machines › one machine (#/settings/hub/machines/<id>): everything about it in one place, its name
 // and the way back in the window's top row. First its state in a line, and while it isn't online, Repair at the line's
 // end: again over SSH when the hub reaches the machine, else a line that enrolls it again (machine_join with rejoin),
-// in the Add machine flow, opened in place under it. Then what it needs, as a checklist read from the hub's own
-// checks (doctor_list, refetched on doctor.changed): claude installed and logged in, the git identity its commits
-// carry, GitHub access, and the screens it can host. Each item that wants a look has its fix: a command to run on the
-// machine, with Copy, or for claude's login, Log in, which runs `claude auth login` on the machine through its node.
-// The person signs in on their own device and pastes the code the page shows; the token stays on the machine. A
-// machine just joined, which the hub hasn't checked yet, is checked as its page opens. Then its role
+// in the Add machine flow, opened in place under it. Then only what is wrong with it, read from the hub's own checks
+// (doctor_list, refetched on doctor.changed): a row per check that failed or warns (claude installed and logged in,
+// the git identity its commits carry, GitHub access, the screens it can host), each with its one fix: a command to run
+// on the machine, with Copy, or for claude's login, Log in, which runs `claude auth login` on the machine through its
+// node. The person signs in on their own device and pastes the code the page shows; the token stays on the machine.
+// A machine whose checks all pass shows nothing about them. A machine just joined, which the hub hasn't checked yet,
+// is checked as its page opens. Then its role
 // (settings/MachineRoles.tsx), its screens and how many it hosts at once (settings/Screens.tsx), and its max agents
 // (settings/Agents.tsx), all read from machine_roles and the hub's slot state. Last, Remove (RemoveMachine.tsx): once
 // the hub's resync has dropped the machine, the page goes back to the list.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DoctorFix } from "../../../shared/contracts";
 import { versionLabel } from "../../../shared/updates";
 import { callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, copyText, Field, Input, StateGlyph, Text, Truncate, toast, type GlyphState } from "../../ui";
+import { Button, copyText, Field, Input, Text, Truncate, toast } from "../../ui";
 import { AddMachine, type View } from "../addMachine";
 import { useNow } from "../live";
 import { CommandLine } from "../onboarding/Prose";
@@ -25,19 +25,16 @@ import { errorText, useHubCall, useLive } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { MachineCap } from "../settings/Agents";
 import { MachineRole } from "../settings/MachineRoles";
-import { DangerButton, GroupNote, PageFrame, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
+import { DangerButton, GroupNote, PageFrame, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
 import { MachineScreens } from "../settings/Screens";
 import { toHash } from "../shell/routes";
-import { when } from "../live/when";
-import { checklistOf, fixPlace, MACHINE_WAIT_MS, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type ChecklistItem, type ItemState } from "./machines";
+import { fixPlace, MACHINE_WAIT_MS, problemsOf, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
 import { RemoveMachine } from "./RemoveMachine";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
 const allChecks = {};
 const noInput = {};
-
-const GLYPH: Readonly<Record<ItemState, GlyphState>> = { done: "done", failed: "failed", warn: "waiting", waiting: "queued" };
 
 const toList = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
 
@@ -73,8 +70,6 @@ export function MachinePage({ machineId }: { machineId: string }) {
   // hub couldn't answer: the hub checks it now, rather than the page waiting for its next round. Once per page.
   const checked = useRef(false);
   const mine = checks.data?.checks.filter((c) => c.machineId === machineId);
-  // This machine's own run, which another machine's or the hub's doesn't move (absent from older hubs).
-  const checkedAt = mine?.find((c) => c.checkedAt !== undefined)?.checkedAt;
   const unchecked = machine !== undefined && machine.status !== "offline" && mine !== undefined && (mine.length === 0 || mine.some((c) => c.status === "unknown"));
   useEffect(() => {
     if (!unchecked || checked.current) return;
@@ -102,7 +97,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
     }),
     [name],
   );
-  const items = checks.data === undefined ? undefined : checklistOf(checks.data.checks, machineId);
+  const problems = checks.data === undefined ? [] : problemsOf(checks.data.checks, machineId);
   return (
     <PageFrame.Provider value={frame}>
       <div className={s.scroll} data-screen="settings.hub.machine">
@@ -136,32 +131,28 @@ export function MachinePage({ machineId }: { machineId: string }) {
           </PageHead>
           {/* Repair's steps, in place: nothing shows until it is asked for, or while this page's run goes on. */}
           {repair === undefined ? null : <AddMachine open={repair} closed onClose={() => setRepair(undefined)} />}
-          {machine === undefined ? null : (
-            <SettingsSection title="Checklist">
-              {checks.error ? (
-                <GroupNote tone="danger">{`Couldn't read the checks: ${errorText(checks.error)}`}</GroupNote>
-              ) : items === undefined ? (
-                <GroupNote>Loading…</GroupNote>
-              ) : (
-                <>
-                  <SettingsList label="Checklist">
-                    {items.map((item) => (
-                      <Item key={item.key} item={item} machineId={machineId} name={machine.name} onLoggedIn={() => void rerun()} />
-                    ))}
-                  </SettingsList>
-                  <div className={a.checked}>
-                    {checkedAt === undefined ? null : (
-                      <Text size="sm" tone="quiet">
-                        {`Checked ${when(checkedAt, nowMs)}.`}
-                      </Text>
-                    )}
-                    <Button variant="link" size="sm" disabled={rerunning} onClick={() => void rerun()}>
-                      {rerunning ? "Checking…" : "Check again"}
-                    </Button>
-                  </div>
-                </>
-              )}
+          {/* Only what is wrong: nothing while its checks pass, load, or wait for the hub. */}
+          {machine === undefined ? null : checks.error ? (
+            <SettingsSection>
+              <GroupNote tone="danger">{`Couldn't read ${machine.name}'s checks: ${errorText(checks.error)}`}</GroupNote>
             </SettingsSection>
+          ) : problems.length === 0 ? null : (
+            <div className={a.problems}>
+              <SettingsSection data={{ "data-problems": String(problems.length) }}>
+                {problems.map((problem) =>
+                  problem.login === true ? (
+                    <LoginRow key={problem.key} problem={problem} machineId={machineId} onLoggedIn={() => void rerun()} />
+                  ) : (
+                    <ProblemRow key={problem.key} problem={problem} name={machine.name} />
+                  ),
+                )}
+              </SettingsSection>
+              <span className={a.checked}>
+                <Button variant="link" size="sm" disabled={rerunning} onClick={() => void rerun()}>
+                  {rerunning ? "Checking…" : "Check again"}
+                </Button>
+              </span>
+            </div>
           )}
           {machine === undefined || roles === undefined ? null : (
             <SettingsSection title="Role" reveal="hub.roles">
@@ -182,8 +173,11 @@ export function MachinePage({ machineId }: { machineId: string }) {
             <SettingsSection>
               <SettingsRow
                 title={`Remove ${machine.name}`}
-                line={REMOVE_LINE}
-                control={<DangerButton onClick={() => setRemoving(true)}>Remove…</DangerButton>}
+                control={
+                  <DangerButton title={REMOVE_LINE} onClick={() => setRemoving(true)}>
+                    Remove…
+                  </DangerButton>
+                }
               />
             </SettingsSection>
           )}
@@ -194,48 +188,39 @@ export function MachinePage({ machineId }: { machineId: string }) {
   );
 }
 
-function Item({ item, machineId, name, onLoggedIn }: { item: ChecklistItem; machineId: string; name: string; onLoggedIn: () => void }) {
-  return (
-    <SettingsListRow
-      icon={<StateGlyph state={GLYPH[item.state]} size="sm" />}
-      name={<Text tone={item.state === "failed" ? "danger" : item.state === "warn" ? "warning" : "default"}>{item.title}</Text>}
-      label={item.title}
-      data={{ "data-item": item.key, "data-state": item.state }}
-    >
-      <div className={s.stack}>
-        {item.lines.map((line) => (
-          <Text key={line} size="sm" tone="quiet">
-            <HubText>{line}</HubText>
-          </Text>
-        ))}
-        {item.login ? <ClaudeLogin machineId={machineId} onLoggedIn={onLoggedIn} /> : item.fix ? <Fix fix={item.fix} name={name} /> : null}
-        {item.screens === true ? (
-          <span className={a.more}>
-            <Button variant="link" size="sm" onClick={() => revealNext(document.querySelector("[data-part='hub.screens']") === null ? "hub.roles" : "hub.screens")}>
-              Turn them on under Screens
-            </Button>
-          </span>
-        ) : null}
-      </div>
-    </SettingsListRow>
-  );
-}
+const marks = (problem: Problem) => ({ "data-problem": problem.key, "data-state": problem.failed ? "failed" : "warn" }) as const;
 
-/** The hub's fix: what to do, then where its command runs (the machine or the hub's, as the hub says) and the command with Copy. */
-function Fix({ fix, name }: { fix: DoctorFix; name: string }) {
+/**
+ * One thing wrong, and its one fix: what to do, then where its command runs (the machine or the hub's, as the hub
+ * says) and the command with Copy. A screen kind the hub has no command for points at Screens, where it turns on.
+ */
+function ProblemRow({ problem, name }: { problem: Problem; name: string }) {
   const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
-  const where = fixPlace(fix, name, hosts);
-  const what = fix.label ? <HubText>{fix.label}</HubText> : null;
+  const fix = problem.fix;
+  const where = fix === undefined ? null : fixPlace(fix, name, hosts);
+  const run = fix?.command === undefined || where === null ? "" : `Run on ${where}:`;
+  const what = fix?.label ? <HubText>{fix.label}</HubText> : null;
   return (
-    <div className={a.fix} data-fix={where ?? ""}>
-      {what === null && (fix.command === undefined || where === null) ? null : (
-        <Text size="sm">
+    <SettingsRow
+      title={<HubText>{problem.words}</HubText>}
+      label={problem.words}
+      line={what === null && run === "" ? undefined : (
+        <>
           {what}
-          {fix.command === undefined || where === null ? null : `${what === null ? "" : ". "}Run on ${where}:`}
-        </Text>
+          {what === null || run === "" ? run : `. ${run}`}
+        </>
       )}
-      {fix.command === undefined ? null : <CommandLine command={fix.command} />}
-    </div>
+      control={
+        problem.screens === true ? (
+          <Button size="sm" onClick={() => revealNext(document.querySelector("[data-part='hub.screens']") === null ? "hub.roles" : "hub.screens")}>
+            Screens
+          </Button>
+        ) : undefined
+      }
+      data={{ ...marks(problem), "data-fix": where ?? undefined }}
+    >
+      {fix?.command === undefined ? null : <CommandLine command={fix.command} />}
+    </SettingsRow>
   );
 }
 
@@ -247,11 +232,12 @@ type Login =
   | { readonly step: "done"; readonly message: string };
 
 /**
- * Claude's login from here: Log in starts `claude auth login` on the machine (machine_claude_login), which answers the
- * page to sign in at. The person opens it on this device, signs in with the account the machine should use, and
- * pastes the code the page shows. Only that code passes through the hub, once; the token stays on the machine.
+ * Claude logged out, and its login from here: Log in starts `claude auth login` on the machine (machine_claude_login),
+ * which answers the page to sign in at. The person opens it on this device, signs in with the account the machine
+ * should use, and pastes the code the page shows. Only that code passes through the hub, once; the token stays on the
+ * machine. Once logged in the hub checks again, and the row goes with its check.
  */
-export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLoggedIn: () => void }) {
+function LoginRow({ problem, machineId, onLoggedIn }: { problem: Problem; machineId: string; onLoggedIn: () => void }) {
   const call = useHubCall();
   const live = useLive();
   const [login, setLogin] = useState<Login>({ step: "idle" });
@@ -289,17 +275,33 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
     );
   };
 
+  const waiting = login.step === "idle" || login.step === "starting";
   return (
-    <div className={a.login} aria-label="Claude login">
-      {login.step === "done" ? (
-        <Text size="sm">{`Logged in on ${machineId}. ${login.message}`}</Text>
-      ) : login.step === "idle" || login.step === "starting" ? (
-        <span>
-          <Button size="sm" variant="secondary" disabled={!live || login.step === "starting"} onClick={start}>
-            {login.step === "starting" ? `Starting claude auth login on ${machineId}…` : error === undefined ? "Log in…" : "Try again"}
+    <SettingsRow
+      title={<HubText>{problem.words}</HubText>}
+      label={problem.words}
+      line={
+        error !== undefined ? (
+          <span role="alert">{error}</span>
+        ) : login.step === "done" ? (
+          `Logged in on ${machineId}. ${login.message}`
+        ) : login.step === "starting" ? (
+          `Starting claude auth login on ${machineId}…`
+        ) : !live && waiting ? (
+          "Not connected to the hub."
+        ) : undefined
+      }
+      lineTone={error === undefined ? "quiet" : "danger"}
+      control={
+        waiting ? (
+          <Button size="sm" disabled={!live || login.step === "starting"} onClick={start}>
+            {login.step === "starting" ? "Starting…" : error === undefined ? "Log in…" : "Try again"}
           </Button>
-        </span>
-      ) : (
+        ) : undefined
+      }
+      data={marks(problem)}
+    >
+      {login.step === "url" || login.step === "finishing" ? (
         <form
           className={a.loginForm}
           aria-label="Sign in"
@@ -323,7 +325,7 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-          <Field label="The code the page shows" description="It goes to the machine once; claude keeps its login there.">
+          <Field label="The code the page shows">
             <Input value={code} mono autoComplete="off" placeholder="Code" onChange={(e) => setCode(e.target.value)} disabled={login.step === "finishing"} />
           </Field>
           <span>
@@ -332,14 +334,7 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
             </Button>
           </span>
         </form>
-      )}
-      {error === undefined ? null : (
-        <p role="alert">
-          <Text size="sm" tone="danger">
-            {error}
-          </Text>
-        </p>
-      )}
-    </div>
+      ) : null}
+    </SettingsRow>
   );
 }

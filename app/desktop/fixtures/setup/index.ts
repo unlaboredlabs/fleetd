@@ -30,6 +30,7 @@ const NOTES: Readonly<Record<string, string>> = {
   "setup-claude-logins": "Claude done the plain way: no hub key, devbox's own claude logged in.",
   "setup-github": "Claude done with the hub's API key; GitHub is next, and its Test finds gh logged in on the hub.",
   "setup-done": "Everything required and GitHub done; people left to do.",
+  "setup-all": "Every step done: Ada joined, 1Password reads one vault and the agents' Mac is in.",
 };
 
 export default defineGroup({

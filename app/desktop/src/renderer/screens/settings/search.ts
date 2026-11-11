@@ -126,7 +126,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "admin.github", label: "GitHub App", tab: "hub.accounts", keywords: ["github", "app", "manifest", "installation", "webhook"] },
   page("hub.vault", ["vault", "team card", "shared login", "every project", "hub-wide", "cards", "logins", "addresses"]),
   { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
-  page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps", "checklist"]),
+  page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps"]),
 ];
 
 const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];

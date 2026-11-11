@@ -1,6 +1,6 @@
-// Settings › Hub › Machines: the hub's machines in one group, each row its name alone, opening its page (its checklist,
-// role, screens, max agents, Repair and Remove) from anywhere on the row, which a trailing chevron marks. One that
-// needs someone (offline, degraded, claude logged out) says so with one dot at its row's end, why in its tooltip; a
+// Settings › Hub › Machines: the hub's machines in one group, each row its name alone, opening its page (what is wrong
+// with it, its role, screens, max agents, Repair and Remove) from anywhere on the row, which a trailing chevron marks.
+// One that needs someone (offline, degraded, claude logged out) says so with one dot at its row's end, why in its tooltip; a
 // role other than the usual both is a quiet word beside its name. A search for a machine's role, screens or max agents
 // lands on this list, since each is on a machine's own page.
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed

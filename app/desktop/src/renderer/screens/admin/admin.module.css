@@ -41,14 +41,6 @@
   max-width: 420px;
 }
 
-.fix,
-.login {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  min-width: 0;
-}
 .loginForm {
   display: flex;
   flex-direction: column;
@@ -57,16 +49,20 @@
   max-width: 560px;
 }
 
-/* Under the checklist: when the hub last looked, and Check again, in line with the items' words (past their glyphs). */
-.checked {
+/* What is wrong with a machine, and Check again under its group, in line with the rows' words. */
+.problems {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-1) var(--space-4) var(--space-3) calc(var(--space-4) + 20px + var(--space-3));
 }
-/* A link's own border, taken back: its words start where the items' do. */
-.checked > button:first-child {
+.checked {
+  display: flex;
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+/* A link's own border, taken back: its words start where the rows' do. */
+.checked > button {
   margin-inline-start: -1px;
 }
 /* Repair, at the end of the machine's state: its box ends where the groups' controls do. */
@@ -74,11 +70,6 @@
   flex: none;
   margin-inline-end: var(--space-1);
 }
-/* A link's own border, taken back: its words start where the line above them does. */
-.more {
-  margin-inline-start: -1px;
-}
-
 /* The machine list: a search for roles, screens or caps lands on it. */
 .revealed {
   scroll-margin-top: var(--space-4);
@@ -151,7 +142,9 @@
   border-radius: 1px;
 }
 
-/* Setup's steps and the open one side by side want more room than a settings column. */
-.setup {
-  max-width: 1040px;
+/* Setup's steps that are done, as one line: how many, and Show at its end. */
+.doneLine {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
 }

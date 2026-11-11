@@ -123,6 +123,13 @@
   border-top: 1px solid var(--hairline);
 }
 
+/* A step by itself on a Settings page: nothing above its first part to rule off. */
+.guide > .part:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .partHead {
   display: flex;
   align-items: baseline;
