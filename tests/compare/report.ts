@@ -68,7 +68,7 @@ out();
 out(`| suite | ${a} | ${b} |`);
 out("|---|---|---|");
 const suites = new Set([...Object.keys(A.behaviour?.data.suites ?? {}), ...Object.keys(B.behaviour?.data.suites ?? {})]);
-const cell = (r: Json | undefined) => (r === undefined ? "-" : `${fmt(r.ok as boolean)}${r.wallMs > 0 ? ` (${fmt(seconds(r.wallMs))} s)` : ""}`);
+const cell = (r: Json | undefined) => (r === undefined ? "-" : typeof r.skipped === "string" ? `skipped: ${r.skipped}` : `${fmt(r.ok as boolean)}${r.wallMs > 0 ? ` (${fmt(seconds(r.wallMs))} s)` : ""}`);
 for (const s of suites) out(`| ${s} | ${cell(A.behaviour?.data.suites?.[s])} | ${cell(B.behaviour?.data.suites?.[s])} |`);
 out();
 

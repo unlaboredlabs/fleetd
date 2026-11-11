@@ -1,16 +1,18 @@
-// `node contract.ts [--impl <name>] [--bin <fleetd>] [--json <file>]`: the wire contract, checked from outside. On a
-// throwaway fleet (hub, node, project) of the fleetd under test it checks that every frame and tool answer the apps
-// read decodes as its type in app/desktop/src/shared/contracts/schema (the JSON Schemas the hub decodes calls with,
-// kept with the apps' TypeScript): /healthz, `--version` and `help`, MCP's tool list and a read of each tool below as its
-// `<tool>.output`, /app's `ready`, `snapshot` and a call's `result` as AppServerMessage, a hub event on /app after a
-// write, and `fleetd status --json`. It also prints the surface (tool names, ready's features, snapshot keys) so
-// behaviour.ts can diff two implementations. Exit 0 when every check passed.
+// `node contract.ts [--impl <name>] [--bin <fleetd>] [--target <module>] [--json <file>]`: the wire contract, checked
+// from outside. On a throwaway fleet (node, project) of the fleetd under test, on a team of the target (a hub of that
+// build unless --target gives another), it checks that every frame and tool answer the apps read decodes as its type
+// in app/desktop/src/shared/contracts/schema (the JSON Schemas the hub decodes calls with, kept with the apps'
+// TypeScript): /healthz, `--version` and `help`, MCP's tool list and a read of each tool below as its `<tool>.output`,
+// /app's `ready`, `snapshot` and a call's `result` as AppServerMessage, a hub event on /app after a write, and
+// `fleetd status --json`. It also prints the surface (tool names, ready's features, snapshot keys) so behaviour.ts can
+// diff two implementations. Exit 0 when every check passed.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { connectApp, type Frame } from "./app.ts";
 import { withFleet } from "./fleet.ts";
-import { arg, REPO, scratch, target } from "./lib.ts";
+import { openTarget } from "./hubBuild.ts";
+import { arg, REPO, scratch } from "./lib.ts";
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020") as new (o: object) => { compile: (s: object) => ((x: unknown) => boolean) & { errors?: unknown } };
@@ -60,9 +62,9 @@ const commandCheck = (name: string, run: () => string, pass: (out: string) => bo
   }
 };
 
-const { name, bin } = target();
+const { name, bin, target } = await openTarget();
 const surface: Record<string, unknown> = {};
-await withFleet(path.join(scratch(`ct-${name}`), "f"), bin, async (fleet) => {
+await withFleet(path.join(scratch(`ct-${name}`), "f"), target, async (fleet) => {
   const { f } = fleet;
   const ref = f.ref;
   const healthz = await fetch(`${f.hubUrl}/healthz`);
@@ -148,7 +150,9 @@ await withFleet(path.join(scratch(`ct-${name}`), "f"), bin, async (fleet) => {
     const status = JSON.parse(out) as unknown;
     return typeof status === "object" && status !== null;
   });
-}).catch((e: unknown) => record("the fleet runs to the end", false, failure(e)));
+})
+  .catch((e: unknown) => record("the fleet runs to the end", false, failure(e)))
+  .finally(() => target.close());
 
 const failed = checks.filter((c) => !c.ok);
 const out = arg("--json");

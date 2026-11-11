@@ -78,38 +78,31 @@ const freePort = (host: string) =>
     });
   });
 
-/**
- * Sets up the run under `dir` (which must be empty or missing), runs `body`, and stops everything it started however
- * `body` ends. `host` is the address the hub listens on (default 127.0.0.1; the phone lab gives the tailnet's).
- */
-export async function withFactory(dir: string, body: (f: Factory) => Promise<void>, opts: { readonly host?: string } = {}) {
+const start = (dir: string, name: string, args: Array<string>, env: Record<string, string>): Proc => {
   fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
-  const procs: Array<Proc> = [];
-  /** Processes the node started (sessions, their tools), recorded before each stop so none outlives the run. */
-  const sessions: Array<ProcInfo> = [];
+  const logFile = fs.openSync(path.join(dir, "logs", `${name}.log`), "a");
+  const [bin, argv] = fleetdCommand(args);
+  const child = spawn(bin, argv, { env, stdio: ["ignore", logFile, logFile] });
+  fs.closeSync(logFile);
+  log(`started ${name} pid=${child.pid}`);
+  return { name, child };
+};
+const alive = (p: Proc) => p.child.exitCode === null && p.child.signalCode === null;
+const stop = async (p: Proc, signal: "SIGTERM" | "SIGKILL" = "SIGTERM") => {
+  if (!alive(p)) return;
+  const exited = new Promise((r) => p.child.once("exit", r));
+  const timer = setTimeout(() => p.child.kill("SIGKILL"), 15_000);
+  p.child.kill(signal);
+  await exited;
+  clearTimeout(timer);
+  log(`stopped ${p.name} pid=${p.child.pid} (${signal})`);
+};
 
-  const start = (name: string, args: Array<string>, env: Record<string, string>) => {
-    const logFile = fs.openSync(path.join(dir, "logs", `${name}.log`), "a");
-    const [bin, argv] = fleetdCommand(args);
-    const child = spawn(bin, argv, { env, stdio: ["ignore", logFile, logFile] });
-    fs.closeSync(logFile);
-    procs.push({ name, child });
-    log(`started ${name} pid=${child.pid}`);
-    return child;
-  };
-  const live = (name: string) => procs.findLast((p) => p.name === name && p.child.exitCode === null && p.child.signalCode === null);
-  const stop = async (name: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM") => {
-    const p = live(name);
-    if (p === undefined) return;
-    const exited = new Promise((r) => p.child.once("exit", r));
-    const timer = setTimeout(() => p.child.kill("SIGKILL"), 15_000);
-    p.child.kill(signal);
-    await exited;
-    clearTimeout(timer);
-    log(`stopped ${name} pid=${p.child.pid} (${signal})`);
-  };
-
-  // `claude` on the node's PATH is the stand-in; `fleetd` is the build under test, for the agents' shells.
+/**
+ * The run's environment for a user whose HOME is `home`. `claude` on its PATH is the stand-in; `fleetd` is the build
+ * under test, for the agents' shells.
+ */
+function labEnv(dir: string): { readonly PATH: string; readonly env: (home: string) => Record<string, string> } {
   const bin = path.join(dir, "bin");
   fs.mkdirSync(bin, { recursive: true });
   // FLEETD_LAB_DIR: where the stand-in finds replies.json, the lab's canned replies (fakeClaude.ts).
@@ -118,13 +111,82 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   fs.writeFileSync(path.join(bin, "fleetd"), `#!/bin/sh\nexec ${[fleetdBin, ...fleetdPrefix].map((a) => `'${a}'`).join(" ")} "$@"\n`, { mode: 0o755 });
   const PATH = `${bin}:${process.env.PATH ?? ""}`;
   // TMPDIR: this session's scratch dir, on disk, never a /tmp that may be held in memory.
-  const env = (home: string): Record<string, string> => ({
+  const env = (home: string) => ({
     HOME: home,
     PATH,
     LANG: "C.UTF-8",
     USER: process.env.USER ?? "lab",
     ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
   });
+  return { PATH, env };
+}
+
+/**
+ * The hub a factory runs on, as the kit needs it: its address, and the two things the kit otherwise does on the hub's
+ * own machine. A hub the kit starts (startHub) is one; tests/compare gives any other team's.
+ */
+export interface FactoryHub {
+  readonly url: string;
+  /** A new key; `human`: a person's device key, which /app takes. */
+  readonly key: (opts: { readonly name: string; readonly role: "read" | "operate" | "admin"; readonly human?: boolean }) => Promise<string>;
+  /** A join code for a machine called `machineId`: what `fleetd node join --token` takes. */
+  readonly enrol: (machineId: string) => Promise<string>;
+}
+
+/**
+ * Starts the hub of the fleetd under test on `dir`/hub, listening on a free port of `host`, and waits until it
+ * answers. `stop` stops it by the PID captured here.
+ */
+export async function startHub(dir: string, host = "127.0.0.1"): Promise<FactoryHub & { readonly pid: number; readonly stop: () => Promise<void> }> {
+  const hubHome = path.join(dir, "hub");
+  // The hub's fleetd dir, beside its home: `hub key` and `pair` find the hub there.
+  const hubUser = path.join(dir, "hub-user");
+  const hubEnv = { ...labEnv(dir).env(hubUser), FLEETD_HOME: dir };
+  fs.mkdirSync(hubUser, { recursive: true });
+  fs.mkdirSync(path.join(dir, "keys"), { recursive: true });
+  const port = await freePort(host);
+  const url = `http://${host}:${port}`;
+  const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: hubEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const hub = start(dir, "hub", ["hub", "start", "--home", hubHome, "--listen", `${host}:${port}`], hubEnv);
+  try {
+    await until("hub /healthz", 60_000, async () => {
+      const up = await fetch(`${url}/healthz`).then((r) => r.ok, () => false);
+      return up ? true : (await sleep(250), undefined);
+    });
+  } catch (e) {
+    await stop(hub);
+    throw e;
+  }
+  return {
+    url,
+    pid: hub.child.pid!,
+    key: async ({ name, role, human }) => {
+      const out = path.join(dir, "keys", `${name}.key`);
+      cli("hub", "key", "create", ...(human === true ? ["--human"] : []), "--name", name, "--role", role, "--machines", "*", "--out", out);
+      return fs.readFileSync(out, "utf8").trim();
+    },
+    enrol: async (machineId) => {
+      const token = /--code (\S+)/u.exec(cli("pair", "--worker", machineId))?.[1];
+      check(token, "pair --worker printed an enrollment code");
+      return token!;
+    },
+    stop: () => stop(hub),
+  };
+}
+
+/**
+ * Sets up the run under `dir` (which must be empty or missing), runs `body`, and stops everything it started however
+ * `body` ends. `host` is the address the hub listens on (default 127.0.0.1; the phone lab gives the tailnet's).
+ * `hub`: run on that hub instead of starting one, the node joining it as `machine` (default MACHINE).
+ */
+export async function withFactory(dir: string, body: (f: Factory) => Promise<void>, opts: { readonly host?: string; readonly hub?: FactoryHub; readonly machine?: string } = {}) {
+  fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
+  const procs: Array<Proc> = [];
+  /** Processes the node started (sessions, their tools), recorded before each stop so none outlives the run. */
+  const sessions: Array<ProcInfo> = [];
+  const live = (name: string) => procs.findLast((p) => p.name === name && alive(p));
+  const { PATH, env } = labEnv(dir);
+  const machine = opts.machine ?? MACHINE;
 
   const project = createProject(dir);
   // The machine user's HOME holds their checkout (the node's default command root) and their git identity.
@@ -134,27 +196,18 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
   fs.writeFileSync(path.join(machineHome, ".gitconfig"), "[user]\n\tname = lab agent\n\temail = agent@lab.invalid\n[init]\n\tdefaultBranch = main\n");
   const nodeEnv = { ...env(machineHome), ...sharedCaches(), ANTHROPIC_API_KEY: "lab-offline" };
 
-  const hubHome = path.join(dir, "hub");
-  // The hub's fleetd dir, beside its home: `hub key` and `pair` find the hub there.
   const hubUser = path.join(dir, "hub-user");
-  const hubEnv = { ...env(hubUser), FLEETD_HOME: dir };
   fs.mkdirSync(hubUser, { recursive: true });
-  const host = opts.host ?? "127.0.0.1";
-  const port = await freePort(host);
-  const hubUrl = `http://${host}:${port}`;
-  const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: hubEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
   let client: Client | undefined;
+  let own: Awaited<ReturnType<typeof startHub>> | undefined;
   try {
-    start("hub", ["hub", "start", "--home", hubHome, "--listen", `${host}:${port}`], hubEnv);
-    await until("hub /healthz", 60_000, async () => {
-      const up = await fetch(`${hubUrl}/healthz`).then((r) => r.ok, () => false);
-      return up ? true : (await sleep(250), undefined);
-    });
-    const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--name", "factory", "--role", "operate", "--machines", "*"))?.[0];
-    check(key, "hub key create printed a key");
+    if (opts.hub === undefined) own = await startHub(dir, opts.host);
+    const hub = opts.hub ?? own!;
+    const hubUrl = hub.url;
+    const key = await hub.key({ name: "factory", role: "operate" });
     const keyFile = path.join(dir, "read.key");
-    cli("hub", "key", "create", "--name", "factory-status", "--role", "read", "--machines", "*", "--out", keyFile);
+    fs.writeFileSync(keyFile, `${await hub.key({ name: "factory-status", role: "read" })}\n`, { mode: 0o600 });
     client = new Client({ name: "fleetd-factory-lab", version: "0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${hubUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport);
     const callTool = callToolWith(() => client!);
@@ -162,27 +215,26 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
     ok(`hub up on ${hubUrl}`);
 
-    const token = /--code (\S+)/u.exec(cli("pair", "--worker", MACHINE))?.[1];
-    check(token, "pair --worker printed an enrollment code");
-    start(`node-${MACHINE}`, ["node", "join", "--hub", hubUrl, "--token", token!, "--machine", MACHINE, "--home", nodeHome], nodeEnv);
+    const token = await hub.enrol(machine);
+    procs.push(start(dir, `node-${machine}`, ["node", "join", "--hub", hubUrl, "--token", token, "--machine", machine, "--home", nodeHome], nodeEnv));
 
     /** Online, and once it has the project, with a live session link (the project's reads aren't stale). */
     let projectId: string | undefined;
     const waitLive = () =>
-      until(`${MACHINE} online`, 120_000, async () => {
+      until(`${machine} online`, 120_000, async () => {
         const s = (await callTool("fleetd_status")).body;
-        const online = (s.machines as Array<Body>).some((m) => m.machineId === MACHINE && m.status === "online");
-        if (online && (projectId === undefined || (await callTool("project_get", { machineId: MACHINE, projectId })).body.stale === false)) return true;
+        const online = (s.machines as Array<Body>).some((m) => m.machineId === machine && m.status === "online");
+        if (online && (projectId === undefined || (await callTool("project_get", { machineId: machine, projectId })).body.stale === false)) return true;
         await callTool("events_wait", { cursor: s.cursor, timeoutSec: 2 });
         return undefined;
       });
     await waitLive();
     const added = await until("project_add", 60_000, async () => {
-      const out = await callTool("project_add", { machineId: MACHINE, path: project.root, title: "inventory" });
+      const out = await callTool("project_add", { machineId: machine, path: project.root, title: "inventory" });
       return out.isError ? (await sleep(500), undefined) : out.body;
     });
     projectId = added.projectId as string;
-    const ref = { machineId: MACHINE, projectId };
+    const ref = { machineId: machine, projectId };
     // Its writers run on medium, which a new project allows only once it picks it.
     await until("project_set medium", 60_000, async () => {
       const out = await callTool("project_set", { ...ref, profiles: ["medium"] });
@@ -192,7 +244,11 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
 
     const nodeSock = path.join(nodeHome, "node.sock");
     const lead = leadIn(project.root, { HOME: machineHome, PATH, FLEETD_NODE_SOCK: nodeSock });
-    const nodePid = () => live(`node-${MACHINE}`)?.child.pid;
+    const nodePid = () => live(`node-${machine}`)?.child.pid;
+    const stopNode = async (signal: "SIGTERM" | "SIGKILL") => {
+      const node = live(`node-${machine}`);
+      if (node !== undefined) await stop(node, signal);
+    };
     const recordSessions = () => {
       const pid = nodePid();
       if (pid !== undefined) sessions.push(...descendants(pid));
@@ -228,7 +284,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
       },
       running: async () => {
         const perProject = ((await callTool("fleetd_status")).body.slots?.perProject ?? []) as Array<Body>;
-        return (perProject.find((p) => p.projectRef?.machineId === MACHINE && p.projectRef?.projectId === projectId)?.running as number | undefined) ?? 0;
+        return (perProject.find((p) => p.projectRef?.machineId === machine && p.projectRef?.projectId === projectId)?.running as number | undefined) ?? 0;
       },
       waitTask: async (taskId, states, ms = 120_000) => {
         let from = await cursor();
@@ -242,18 +298,18 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
       },
       killNode: async () => {
         recordSessions();
-        await stop(`node-${MACHINE}`, "SIGKILL");
+        await stopNode("SIGKILL");
       },
       stopNode: async () => {
         recordSessions();
-        await stop(`node-${MACHINE}`);
+        await stopNode("SIGTERM");
       },
       startNode: async () => {
         // A quick restart may relink before the hub ever saw it offline, so the node's own log says when it is back.
-        const logPath = path.join(dir, "logs", `node-${MACHINE}.log`);
+        const logPath = path.join(dir, "logs", `node-${machine}.log`);
         const offset = fs.statSync(logPath).size;
-        start(`node-${MACHINE}`, ["node", "run", "--home", nodeHome], nodeEnv);
-        await until(`${MACHINE} relinked`, 120_000, async () =>
+        procs.push(start(dir, `node-${machine}`, ["node", "run", "--home", nodeHome], nodeEnv));
+        await until(`${machine} relinked`, 120_000, async () =>
           fs.readFileSync(logPath, "utf8").slice(offset).includes("linked to hub") ? true : (await sleep(250), undefined),
         );
         await waitLive();
@@ -261,7 +317,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
       nodePid,
       status: (opts = {}) =>
         execFileSync(...fleetdCommand(["status", "--hub", hubUrl, "--key-file", keyFile, ...(opts.json === true ? ["--json"] : [])]), {
-          env: { ...hubEnv, FLEETD_HOME: path.join(dir, "status-home") },
+          env: { ...env(hubUser), FLEETD_HOME: path.join(dir, "status-home") },
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
         }),
@@ -317,9 +373,10 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
     await body(factory);
   } finally {
     await client?.close().catch(() => undefined);
-    const nodePid = live(`node-${MACHINE}`)?.child.pid;
+    const nodePid = live(`node-${machine}`)?.child.pid;
     if (nodePid !== undefined) sessions.push(...descendants(nodePid));
-    for (const p of procs.toReversed()) await stop(p.name);
+    for (const p of procs.toReversed()) await stop(p);
+    await own?.stop();
     // What the node started and left behind: its sessions' hosts, which outlive a stopped or killed node until the next
     // node re-adopts or stops them, and what they run.
     for (const p of sessions.filter(stillRuns)) {

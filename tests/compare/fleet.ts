@@ -1,18 +1,21 @@
-// A throwaway fleet of the fleetd under test: the factory lab's hub, node and generated project
-// (tests/lab/factory/kit.ts), offline claude stand-in and all, plus what the benches need on top: the hub's and the
-// node's PIDs, an admin key for MCP and a human key for /app (the desktop's). Everything runs under its own run dir
-// and ports, never the real hub's; the kit stops every process it started by PID.
+// A throwaway fleet of the fleetd under test on a team of the target (target.ts): the factory lab's node and
+// generated project (tests/lab/factory/kit.ts), offline claude stand-in and all, joined to that team, plus what the
+// benches need on top: the hub's and the node's PIDs, an admin key for MCP and a human key for /app (the desktop's).
+// Given a binary instead of a target, the team is a hub of that build (hubBuild.ts), as every fleet here used to be.
+// Everything runs under its own run dir and ports, never the real hub's; what is started is stopped by PID.
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { callToolWith, descendants, fleetdCommand } from "../lab/harness.ts";
 import { type Factory, withFactory } from "../lab/factory/kit.ts";
+import { hubBuild } from "./hubBuild.ts";
+import type { Target } from "./target.ts";
 
 export interface Fleet {
   readonly f: Factory;
+  /** The hub's process; throws on a target that started none here. */
   readonly hubPid: number;
   readonly nodePid: () => number | undefined;
   /** The node's descendants that are its session hosts (and so the agents' processes' parents). */
@@ -31,16 +34,22 @@ export interface Fleet {
   readonly cli: (...args: Array<string>) => string;
 }
 
-export async function withFleet(dir: string, bin: string, body: (fleet: Fleet) => Promise<void>) {
-  process.env.FLEETD_BIN = bin;
+export async function withFleet(dir: string, on: string | Target, body: (fleet: Fleet) => Promise<void>) {
+  const target = typeof on === "string" ? hubBuild("", on) : on;
+  try {
+    await onTeam(dir, target, body);
+  } finally {
+    // A target given is its caller's to close.
+    if (typeof on === "string") await target.close();
+  }
+}
+
+async function onTeam(dir: string, target: Target, body: (fleet: Fleet) => Promise<void>) {
+  const team = await target.team(dir);
   await withFactory(dir, async (f) => {
-    const hub = descendants(process.pid).find((p) => p.cmdline.includes("hub") && p.cmdline.includes("start"));
-    if (hub === undefined) throw new Error("the fleet's hub process isn't among this run's children");
     const env = { HOME: path.join(dir, "hub-user"), PATH: process.env.PATH ?? "", LANG: "C.UTF-8", USER: process.env.USER ?? "lab", FLEETD_HOME: dir };
     const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    const keyFile = path.join(dir, "bench-human.key");
-    cli("hub", "key", "create", "--human", "--name", "bench", "--role", "admin", "--machines", "*", "--out", keyFile);
-    const humanKey = fs.readFileSync(keyFile, "utf8").trim();
+    const humanKey = await team.key({ name: "bench", role: "admin", human: true });
     const client = new Client({ name: "fleetd-compare", version: "0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${f.hubUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${humanKey}` } } }) as Transport);
     const hostPids = () => {
@@ -67,9 +76,23 @@ export async function withFleet(dir: string, bin: string, body: (fleet: Fleet) =
         return { failed: [...threads.values()].filter((v) => v !== "thread.completed").length };
       };
       const toolNames = async () => (await client.listTools()).tools.map((t) => t.name).sort();
-      await body({ f, hubPid: hub.pid, nodePid: f.nodePid, hostPids, humanKey, admin: callToolWith(() => client), toolNames, turnsEnded, cli });
+      const fleet: Fleet = {
+        f,
+        get hubPid() {
+          if (team.pid === undefined) throw new Error(`${target.name} started no hub process here to measure`);
+          return team.pid;
+        },
+        nodePid: f.nodePid,
+        hostPids,
+        humanKey,
+        admin: callToolWith(() => client),
+        toolNames,
+        turnsEnded,
+        cli,
+      };
+      await body(fleet);
     } finally {
       await client.close().catch(() => undefined);
     }
-  });
+  }, { hub: team });
 }

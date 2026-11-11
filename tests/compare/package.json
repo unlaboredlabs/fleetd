@@ -2,12 +2,14 @@
   "name": "fleetd-compare",
   "private": true,
   "type": "module",
-  "description": "Side-by-side tests and benchmarks of fleetd implementations given as binaries (FLEETD_BIN): the Rust build and the Bun one.",
+  "description": "Black-box tests and benchmarks of fleetd builds given as binaries (FLEETD_BIN), run against a hub of the build or another target.",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "behaviour": "node behaviour.ts",
+    "contract": "node contract.ts",
+    "isolation": "node isolation.ts",
     "build-bench": "node build.ts",
     "bench": "node bench.ts",
     "soak": "node soak.ts",
