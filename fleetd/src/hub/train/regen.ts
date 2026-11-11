@@ -108,8 +108,8 @@ generated() {
   printf '%s' "$paths" | {
     while IFS= read -r p; do
       case "$p" in
-        */) case "$1" in "$p"*) exit 0 ;; esac ;;)
-        * [ "$1" = "$p" ] && exit 0 ;;
+        */) case "$1" in "$p"*) exit 0 ;; esac ;;
+        *) [ "$1" = "$p" ] && exit 0 ;;
       esac
     done
     exit 1
@@ -222,7 +222,11 @@ again=$(git status --porcelain --untracked-files=all | head -n 3 | tr '\\n' ' ')
 say "done $(git rev-parse HEAD)"
 `;
 
-/** Where a regeneration of a Change at one head stands. */
+/** The command the node runs for a regeneration: the script under `sh`, with the head to rebase and the config. */
+export function scriptArgv(repo: string, base: string, head: string, title: string, config: Regenerate): string[] {
+  return ["sh", "-c", SCRIPT, "fleetd-regenerate", repo, base, head, title, config.migrations ?? "", String(config.generated.length), ...config.generated, ...config.run];
+}
+
 /**
  * Where a regeneration of a Change at one head stands, kept in `train_waits` so a restart doesn't try a failed one
  * again. One running when the hub stopped is tried again: the hub runs each of its steps, so none goes on without it.
@@ -374,8 +378,7 @@ async function regenerate(t: Train, change: Change, pull: Pull, config: Regenera
   const fetch = ["git", "fetch", "-q", "--no-tags", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`, `+refs/heads/${branch}:refs/remotes/origin/${branch}`];
   let run = await t.host.nodeRun(checkout, root, fetch, GIT_TIMEOUT_SEC);
   if (run.exitCode !== 0) throw new Error(`fetching from origin failed: ${said(run)}`);
-  const argv = ["sh", "-c", SCRIPT, "fleetd-regenerate", change.repo, base, head, pull.title, config.migrations ?? "", String(config.generated.length), ...config.generated, ...config.run];
-  run = await t.host.nodeRun(checkout, root, argv, timeoutSec(config));
+  run = await t.host.nodeRun(checkout, root, scriptArgv(change.repo, base, head, pull.title, config), timeoutSec(config));
   const outcome = said(run);
   let sha: string;
   if (run.exitCode === 0) {
