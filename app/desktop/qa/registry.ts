@@ -3130,6 +3130,29 @@ export const screens: readonly Screen[] = [
   { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-checklist"] },
   // A machine that needs someone says why where its state is, with Repair beside it: buildbox offline for three days.
   { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-unwell"], variant: "offline" },
+  // The whole row opens its machine, its right end too: the dot and the chevron are marks, so the pointer falls
+  // through each to the row's link, which holds the dot's why as its tooltip. A click on the chevron, back, then one
+  // on the dot.
+  {
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-unwell"],
+    variant: "from-dot",
+    open: async (page) => {
+      const row = page.getByRole("listitem", { name: "buildbox" });
+      for (const mark of [row.locator("svg").last(), row.getByRole("img", { name: /^Offline/u })]) {
+        await page.evaluate(() => {
+          window.location.hash = "#/settings/hub/machines";
+        });
+        const at = await mark.boundingBox();
+        if (at === null) throw new Error("buildbox's row has no dot or no chevron");
+        const [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
+        expect(await page.evaluate(([px, py]) => document.elementFromPoint(px ?? 0, py ?? 0)?.closest("a")?.title, [x, y])).toMatch(/^Offline/u);
+        await page.mouse.click(x, y);
+        await expect(page).toHaveURL(/#\/settings\/hub\/machines\/buildbox$/u);
+      }
+    },
+  },
   // Repair opens in place: buildbox joined by itself, so its line again and the wait for it.
   {
     id: "settings.hub.machine",

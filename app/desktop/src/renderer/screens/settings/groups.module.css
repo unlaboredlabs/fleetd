@@ -190,6 +190,12 @@
 .opens > .control > * {
   pointer-events: auto;
 }
+/* ...but its dot and its chevron are marks, not controls: the pointer falls through them to the link, which opens the
+   row and holds the dot's why as its tooltip. */
+.opens > .control > .needs,
+.opens > .control > .chevron {
+  pointer-events: none;
+}
 .opener {
   padding: 0;
   border: 0;
