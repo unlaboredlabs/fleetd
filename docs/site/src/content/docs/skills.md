@@ -69,7 +69,7 @@ A project's skills are in Settings → Projects → Agents: pick the project. Ch
 hub-wide (global) skills it gets are named on one line there, read-only.
 
 Global skills reach every machine's agents, so changing them takes admin on every machine: they are in
-Settings › [Hub](/docs/desktop-app#hub) › Every project › Tools & skills, which only the hub's owners and admins see.
+Settings › [Hub](/docs/desktop-app#hub) › Every project › Agents, which only the hub's owners and admins see.
 
 - **List**: every skill of the project or hub-wide, marked with where it comes from. A skill that another source
   outranks says which one.

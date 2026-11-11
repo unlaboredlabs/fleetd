@@ -22,7 +22,7 @@ runners: no Expo account and no EAS.
 
 ## Pair it {#pair}
 
-1. In the desktop app, open **Settings › Your devices** and click **Pair a phone**. Or run `fleetd pair` on the hub,
+1. In the desktop app, open **Settings › Hubs & devices** and click **Pair a phone**. Or run `fleetd pair` on the hub,
    which prints the QR code in the terminal above the code (`--no-qr` leaves it out). Either shows a QR code, and the
    hub's address and a one-time code under it.
 2. In the app, tap **Scan QR Code** and point the camera at it: the phone pairs at once, and Your devices in the
@@ -50,7 +50,7 @@ the photo's metadata, and `person_avatar_get` reads it). Tap your name beside it
 away or going back saves it for everyone on the hub (`person_name_set`). **Disconnect**, at its end, asks
 first, then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If
 the hub can't be reached, you can forget it anyway and sign the phone out later: **Sign out** on its row under
-Settings › You › Your devices in the desktop app.
+Settings › You › Hubs & devices in the desktop app.
 
 Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any
@@ -173,7 +173,7 @@ version, **Versions** picks an older one, which says so over the page with the w
 
 ## Update fleetd {#update}
 
-An admin has **Update** in Settings, which says what the desktop app's Settings › Hub › Updates says, in the same
+An admin has **Update** in Settings, which says what the desktop app's Settings › Hub › Machines › Updates says, in the same
 words: **Up to date**, **Update available** with **Update**, the update as it goes in one line, or what didn't go
 through, with **Try again**. A machine is named only when it didn't update or runs an older fleetd than the hub.
 **Update** starts at once and does what the desktop app's does: the hub updates itself, then every machine. Members

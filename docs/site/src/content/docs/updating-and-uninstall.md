@@ -30,7 +30,7 @@ an update only swaps it in and restarts, in order:
    mid-step. On a machine without systemd user scopes (macOS, a container), or when the new build's hosts speak
    another protocol, the agents can't carry on, so the node holds every tool call that hasn't started yet and waits
    for the ones running to end, as before. Either way it updates within 2 minutes, whatever still runs: what the
-   restart cuts off carries on by itself. Meanwhile Settings › Hub › Updates says what the machines wait for and when
+   restart cuts off carries on by itself. Meanwhile Settings › Hub › Machines › Updates says what the machines wait for and when
    they update at the latest (**Waiting for *n* agents to finish their step, *time* at the latest**). A screen whose
    task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A machine
    already on the new build, or a newer one (updated with `fleetd update` on it, say), is never moved back.
@@ -60,7 +60,7 @@ members read **Not updated** too, and their row says to ask an admin.
 The 2 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 10}`; `0` doesn't wait),
 read at each update.
 
-**Update automatically**, in Settings › Hub › Updates (`"auto": true` in the same file), is off by default.
+**Update automatically**, in Settings › Hub › Machines › Updates (`"auto": true` in the same file), is off by default.
 On, the hub installs a new build by itself as soon as it is ready, at most one update in 10 minutes: a build that comes
 out within 10 minutes of the last update (yours or its own) waits for those 10 minutes to end, so builds that came out
 in between install once, as the newest. It waits for agents as **Update** does. While a build waits for those 10
@@ -81,7 +81,7 @@ machine links on the hub's build.
 `fleetd update` on a machine holds its own node's agents and waits for their step, 2 minutes at most;
 `fleetd update --now` doesn't wait.
 
-Settings › Hub › Updates (**Check for Updates…** opens it) says one thing at a time, with at most
+Settings › Hub › Machines › Updates (**Check for Updates…** opens it) says one thing at a time, with at most
 one button: **Up to date** and the build everything runs, **Update available** with **Update**, the update as it goes
 in one line (**Updating the hub…**, then **Updating the machines · 2 of 3**), or what didn't go through. A machine
 gets a line of its own only when it didn't update or runs an older build than the hub: its name and why, in one
@@ -150,7 +150,7 @@ The app checks for updates when it opens, every 10 minutes and when you come bac
 in the background; a newer build than one already downloaded replaces it. It downloads only the parts that changed since
 the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
 as it keeps the previous download to compare with). It shows in the same place and the same words as the hub's:
-when the hub and its machines are up to date, Settings › Hub › Updates and Settings › General say **Update available**
+when the hub and its machines are up to date, Settings › Hub › Machines › Updates and Settings › General say **Update available**
 with **Restart to update**, and **Update** shows under your name for everyone, with the same row in the menu there.
 An update you don't install now installs the next time you quit.
 

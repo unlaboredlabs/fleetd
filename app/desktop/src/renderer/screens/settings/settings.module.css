@@ -26,6 +26,15 @@
   max-width: 760px;
   padding: var(--space-4) var(--space-6) 56px;
 }
+/* What was a page once, now a part of another (Frames.tsx): its sections keep the column's rhythm. */
+.part {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+  outline: none;
+  scroll-margin-top: var(--space-4);
+}
 .settingLabel,
 .stack {
   display: flex;

@@ -5597,7 +5597,7 @@ export type KnownPrState = "open" | "draft" | "merged" | "closed";
 export type PrState = KnownPrState | (string & {});
 
 /**
- * One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
+ * One task profile (Settings › Hub › Every project › Agents): what an agent on it runs on. Exactly one is the hub's default, which
  * every project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on
  * the default when none is.
  */

@@ -163,7 +163,7 @@ function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: string }
       : behind.who === "admin"
         ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the hub level."
         : behind.who === "member"
-          ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in Settings › Hub › Updates."
+          ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in Settings › Hub › Machines › Updates."
           : `Your hub runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
   return (
     <div className={s.notice} role="status" data-hub-behind={behind.who}>

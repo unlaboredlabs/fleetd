@@ -211,7 +211,7 @@ export const fixLabel = (fix: OffFix): string | null => {
   }
 };
 
-/** Where an admin's action that isn't Turn on goes: Settings › Hub › Updates for an update, else the option it reveals
+/** Where an admin's action that isn't Turn on goes: Settings › Hub › Machines › Updates for an update, else the option it reveals
  * on Settings › Hub › Machines (a role, on the machine's own page when the reason names one). */
 export const fixPlace = (fix: OffFix): { readonly tab: "hub.machines" | "hub.updates"; readonly reveal: string | null } =>
   fix === "update"

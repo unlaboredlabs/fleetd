@@ -16,8 +16,10 @@ describe("Settings' search for a member", () => {
     }
   });
 
-  it("offers an owner or admin every Hub page", () => {
+  it("offers an owner or admin every Hub page, and what was a page once on the page that holds it", () => {
     const pages = new Set(optionsFor(true).filter((o) => isHubTab(o.tab)).map((o) => o.tab));
-    expect([...pages].sort()).toEqual(["hub.accounts", "hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.tools", "hub.updates", "hub.vault"]);
+    expect([...pages].sort()).toEqual(["hub.accounts", "hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.vault"]);
+    const at = (key: string) => optionsFor(true).find((o) => o.key === key)?.tab;
+    expect([at("hub.updates"), at("hub.tools"), at("hub.mcp"), at("hub.skills")]).toEqual(["hub.machines", "hub.profiles", "hub.profiles", "hub.profiles"]);
   });
 });

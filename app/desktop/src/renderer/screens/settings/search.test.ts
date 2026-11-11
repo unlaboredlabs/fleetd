@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OPTIONS, optionsFor, searchSettings } from "./search";
+import { pageOf } from "./route";
+import { OPTIONS, optionsFor, pagePath, searchSettings } from "./search";
 
 /** What a member finds; an admin finds the Hub group's too. */
 const labels = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.label);
@@ -42,7 +43,7 @@ describe("settings search", () => {
     expect([tabOf("max agents"), tabOf("skills")]).toEqual(["agents", "agents"]);
     // A project's MCP servers are one list, on its Project page (W467).
     expect([tabOf("mcp"), tabOf("integrations")]).toEqual(["projects", "projects"]);
-    // Task profiles are the hub's, on Every project › Profiles (W146).
+    // Task profiles are the hub's, on Every project › Agents (W146).
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");
     expect(tabs("task profiles", true)).toContain("hub.profiles");
@@ -52,7 +53,7 @@ describe("settings search", () => {
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);
-    expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true), tabOf("global mcp", true)]).toEqual(["hub.people", "hub.people", "hub.machines", "hub.tools"]);
+    expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true), tabOf("global mcp", true)]).toEqual(["hub.people", "hub.people", "hub.machines", "hub.profiles"]);
     expect([tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.accounts", "hub.accounts"]);
   });
 
@@ -85,6 +86,28 @@ describe("settings search", () => {
     expect(keys("api key", true)).not.toContain("admin.claude.key");
     expect(keys("global mcp", true)).toEqual(["hub.mcp"]);
     expect(keys("worktrees")).toEqual([]);
+  });
+
+  it("opens every option on a page of its own, never on one that became a part of another", () => {
+    expect(OPTIONS.filter((o) => pageOf(o.tab) !== o.tab).map((o) => o.key)).toEqual([]);
+  });
+
+  it("still finds what was a page once by its old name and words, on the page that holds it now", () => {
+    const first = (q: string) => {
+      const o = searchSettings(q, optionsFor(true, true))[0];
+      return o === undefined ? null : [o.key, o.tab, pagePath(o.tab)];
+    };
+    expect(first("your devices")).toEqual(["devices", "hubs", "Hubs & devices"]);
+    expect(first("pair a phone")).toEqual(["devices.pair", "hubs", "Hubs & devices"]);
+    expect(first("hubs")).toEqual(["hubs", "hubs", "Hubs & devices"]);
+    expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
+    expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
+    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Every project › Agents"]);
+    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Every project › Agents"]);
+    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Every project › Agents"]);
+    expect(first("instructions for every project")).toEqual(["hub.instructions", "hub.instructions", "Every project › Instructions"]);
+    expect(first("vault for every project")).toEqual(["hub.vault", "hub.vault", "Every project › Vault"]);
+    expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every project › Vault"]);
   });
 
   it("gives every option a unique key", () => {

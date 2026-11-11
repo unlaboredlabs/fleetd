@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Skills, a member's and an admin's: a project's Agents page in Settings shows its own and repo skills, and names the hub-wide
-// ones on a read-only line (with the way to Every project for an owner or admin only); Hub › Every project › Tools & skills is
+// ones on a read-only line (with the way to Every project for an owner or admin only); Hub › Every project › Agents is
 // where the hub-wide ones are installed, updated and removed, and a member never reaches it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -64,7 +64,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** `page`: storefront's skills on Settings → Projects › Agents, or Hub › Every project › Tools & skills. `admin`: what hub_info says of this app's person. */
+/** `page`: storefront's skills on Settings → Projects › Agents, or Hub › Every project › Agents. `admin`: what hub_info says of this app's person. */
 const render = async (page: "settings" | "admin", admin: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -80,7 +80,7 @@ const render = async (page: "settings" | "admin", admin: boolean) => {
               ? { skill: GLOBAL[0], text: "---\nname: pr-review\n---\n" }
               : tool === "skill_install"
                 ? { installed: [GLOBAL[0]], next: "" }
-                : tool === "mcp_servers_get"
+                : tool === "mcp_servers_get" || tool === "profiles_list"
                   ? undefined
                   : {};
       // Hub settings' other parts find a hub without them.
@@ -181,7 +181,7 @@ it("keeps Every project's skills from a member, and reads none of it", async () 
   expect(texts()).not.toContain("Install from a source…");
 });
 
-it("lets an admin install, update and remove hub-wide skills on Every project › Tools & skills", async () => {
+it("lets an admin install, update and remove hub-wide skills on Every project › Agents", async () => {
   await render("admin", true);
   expect(document.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);

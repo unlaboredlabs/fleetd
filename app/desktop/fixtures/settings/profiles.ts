@@ -1,4 +1,4 @@
-// The hub's task profiles as profiles_list answers them (W146), for Settings › Hub › Every project › Profiles and each
+// The hub's task profiles as profiles_list answers them (W146), for Settings › Hub › Every project › Agents and each
 // project's Agents page: high (the default), medium as a hub migrates it, and a fast one on Opus.
 import type { JsonObject } from "../kit/json.ts";
 

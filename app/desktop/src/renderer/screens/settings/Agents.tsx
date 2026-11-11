@@ -367,7 +367,7 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
               <SettingsRow
                 reveal="agents.profiles"
                 title="Allowed profiles"
-                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every project › Profiles."
+                hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every project › Agents."
               >
                 <AllowedProfiles projectRef={ref} />
               </SettingsRow>

@@ -1,6 +1,6 @@
 // Settings › Hub › People, Hub links: every link minted on this hub, each with the person it acts as, its limits,
 // when it was last used, and Revoke. Only an admin reads everyone's (hub_links_get answers a member with their own),
-// and only here: You › Hubs lists a person's own.
+// and only here: You › Hubs & devices lists a person's own.
 import { useState } from "react";
 import { useToolQuery } from "../../src/data/react";
 import { Button } from "../../ui";
@@ -38,7 +38,7 @@ export function AllLinks() {
           title="No links to this hub yet."
           control={
             <Button size="sm" onClick={() => navigate({ id: "settings", tab: "hubs" })}>
-              Make one in You › Hubs
+              Make one in You › Hubs & devices
             </Button>
           }
         />

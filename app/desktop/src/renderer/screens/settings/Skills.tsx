@@ -70,7 +70,7 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
 }
 
 /**
- * Settings › Hub › Every project › Tools & skills: the hub-wide skills every project's agents get, written, installed from
+ * Settings › Hub › Every project › Agents: the hub-wide skills every project's agents get, written, installed from
  * skills.sh, updated and removed by an owner or admin (skill_install and the rest at scope global need one).
  */
 export function HubSkills() {

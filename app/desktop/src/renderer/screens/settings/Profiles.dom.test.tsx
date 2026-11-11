@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › Hub › Every project › Profiles: the hub's profiles listed with the default marked, one created with fast
+// Settings › Hub › Every project › Agents: the hub's profiles listed with the default marked, one created with fast
 // mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; Lead
 // runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
 // page, where the default is checked for good and another is allowed with project_set, and which profile leads run on,
@@ -255,7 +255,7 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
 it("tells a project which profile leads run on: an admin the way to change it, a member who to ask", async () => {
   profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
   await render("project");
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every project › Profiles");
+  expect(host.querySelector("[data-lead-profile]")?.textContent).toBe("Leads run on medium.Change in Every project › Agents");
   act(() => root.unmount());
   root = createRoot(host);
   me = { name: "Sam", role: "member" };

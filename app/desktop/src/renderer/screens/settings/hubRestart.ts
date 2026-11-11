@@ -1,4 +1,4 @@
-// Settings › You › Hubs › Restart hub: an admin's restart of the hub in scope (hub_restart), and what its row says
+// Settings › You › Hubs & devices › Restart hub: an admin's restart of the hub in scope (hub_restart), and what its row says
 // while it goes: asked, the hub away, back. The hub answers before it stops; a call the restart itself cut off counts
 // as answered.
 import { useEffect, useRef, useState } from "react";

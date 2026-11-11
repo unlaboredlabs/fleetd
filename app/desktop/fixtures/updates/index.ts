@@ -1,5 +1,5 @@
 // C1, W38 and W603: the app's own update, the hub's and its machines', and the one Update button's run, one fixture
-// per state, around typical's data so the sidebar's word and Hub › Updates are shot in a full window. Main's fixture updater
+// per state, around typical's data so the sidebar's word and Hub › Machines › Updates are shot in a full window. Main's fixture updater
 // reads each one's `update` section in place of the release feed; the hub's version comes in the ready frame (the
 // fixture's live state), its machines' from the snapshot, and the run from hub_update and hub_update_status.
 import type { Release, UpdatesState } from "../../src/shared/updates.ts";
@@ -172,7 +172,7 @@ export default defineGroup({
         f.appUpdate = state({ kind: "current" }, { ...RELEASE, cli: NEXT });
         return f;
       })(),
-      // W521: the word under your name and Hub › Updates, found as the app opens (the hub's own automatic update, or one pressed
+      // W521: the word under your name and Hub › Machines › Updates, found as the app opens (the hub's own automatic update, or one pressed
       // in another window): a machine that didn't update, then everything updated a few minutes ago.
       (() => {
         const f = withHub("put-back", "The hub updated by itself, and one machine didn't start the new build, so its old one runs again: Not updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });

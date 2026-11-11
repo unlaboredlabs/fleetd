@@ -1,7 +1,7 @@
 // A hub in the menu under your name (You.tsx; W607): its lines as youMenu.ts words them, each one row. All being
-// well that is a dot and the hub's name, which opens Settings › You › Hubs (its address, Pair again, Restart hub and
+// well that is a dot and the hub's name, which opens Settings › You › Hubs & devices (its address, Pair again, Restart hub and
 // Disconnect are there). What is off is one more row each, plain words then the one action a click takes: Retry, Pair
-// again, Update, Try again, Open (a machine's page, Hub › Updates), Finish (Hub › Setup). A row a member can do nothing about ends
+// again, Update, Try again, Open (a machine's page, Hub › Machines › Updates), Finish (Hub › Setup). A row a member can do nothing about ends
 // in who to ask and isn't a button. With several hubs each has its rows, its own under the name the person gave it.
 // The sidebar has no row for the hub, so the most pressing thing off also marks your avatar (linkMark, useWorkMark).
 import { ArrowUp } from "lucide-react";

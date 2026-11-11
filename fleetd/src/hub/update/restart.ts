@@ -1,4 +1,4 @@
-// hub_restart: the hub restarts in place (Settings › Hubs › Restart hub). The service manager restarts its service, the
+// hub_restart: the hub restarts in place (Settings › Hubs & devices › Restart hub). The service manager restarts its service, the
 // way an update's watcher does, asked from outside the service so the restart outlives the process that asked. Agents
 // carry on on their machines, as across an update. On its way down the hub marks the leads whose profile changed since
 // their session started; the hub that comes up starts each again on its current profile (leads/loops.ts).

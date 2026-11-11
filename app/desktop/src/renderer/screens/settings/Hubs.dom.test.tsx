@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › You › Hubs › Restart hub: an admin of the hub has the button on its row and a member has none; it asks
+// Settings › You › Hubs & devices › Restart hub: an admin of the hub has the button on its row and a member has none; it asks
 // first, saying what a restart does; confirmed, it calls hub_restart, the row says Restarting the hub… until the hub
 // has been away and is back, then how many leads start again; a refusal shows with its fix; a hub that never goes away
 // is said to be still up.
@@ -45,7 +45,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** Settings › You › Hubs on a connected hub; `admin`: what hub_info says of this app's person. */
+/** Settings › You › Hubs & devices on a connected hub; `admin`: what hub_info says of this app's person. */
 const render = async (admin: boolean) => {
   send = () => undefined;
   const hub: HubApi = {

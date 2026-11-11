@@ -3,8 +3,8 @@
 // refused the key, not paired), an update to take or one that didn't go in, and for an admin a machine that is
 // offline and setup steps left. A member never reads an admin's line; where the problem is theirs too, the line ends
 // in who to ask instead of an action. An update's line is the update status's own title and button (updates/quiet.ts),
-// the words Settings › Hub › Updates says. The hub's address, Disconnect, versions and the setup steps themselves are
-// in Settings (You › Hubs, Hub › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
+// the words Settings › Hub › Machines › Updates says. The hub's address, Disconnect, versions and the setup steps themselves are
+// in Settings (You › Hubs & devices, Hub › Machines › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
 import type { MachineStatus } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
 import { clockAt, type Act } from "../updates/model";

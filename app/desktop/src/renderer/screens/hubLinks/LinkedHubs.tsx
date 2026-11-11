@@ -171,7 +171,7 @@ function AddLink(props: { project: ProjectRef; boxPubKey: string; taken: Readonl
         void submit();
       }}
     >
-      <Field label="Link key" description="Made on the other hub, in Settings › Hubs, Links to this hub.">
+      <Field label="Link key" description="Made on the other hub, in Settings › Hubs & devices, Links to this hub.">
         {/* A secret's characters show as dots; two lines, so the address Links to this hub copies with it pastes too. */}
         <Textarea
           mono

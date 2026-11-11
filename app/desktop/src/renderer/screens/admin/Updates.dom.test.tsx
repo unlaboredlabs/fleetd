@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// Hub › Updates: one status with its one button, and Update automatically, which says only why it holds back.
+// Hub › Machines' Updates: one status with its one button, and Update automatically, which says only why it holds
+// back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -9,7 +10,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { resetFlow } from "../updates/flow";
 import { AutoUpdates } from "../updates/AutoUpdates";
-import { UpdatesPage } from "./UpdatesPage";
+import { Updates } from "./Updates";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -97,7 +98,7 @@ const render = async (node: React.ReactNode, admin = true) => {
 const text = (within: ParentNode | null | undefined, selector: string) => within?.querySelector(selector)?.textContent;
 
 it("shows one status with one button, and the switch with why it holds back", async () => {
-  await render(<UpdatesPage />);
+  await render(<Updates />);
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
   expect(text(page, "[data-update-status='available']")).toBe("Update availablefleetd Edge · Nov 7, 14:30Update");
   // No machine to look at: no rows.

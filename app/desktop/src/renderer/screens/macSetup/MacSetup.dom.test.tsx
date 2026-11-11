@@ -241,10 +241,10 @@ it("a hub older than this Mac's build: an admin signed in here updates it from t
 
 it("a hub older than this Mac's build: anyone else is told who updates it, and where", async () => {
   await behindOn("member");
-  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("ask an admin of the hub to press Update in Settings › Hub › Updates");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("ask an admin of the hub to press Update in Settings › Hub › Machines › Updates");
   expect(button("Update the hub")).toBeUndefined();
   act(() => root.unmount());
   root = createRoot(host);
   await behindOn("unknown");
-  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("On your main machine, open Settings › Hub › Updates and press Update.");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("On your main machine, open Settings › Hub › Machines › Updates and press Update.");
 });

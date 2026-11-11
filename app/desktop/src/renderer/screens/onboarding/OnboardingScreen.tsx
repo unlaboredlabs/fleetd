@@ -21,7 +21,7 @@ export interface OnboardingProps {
   /** Pair the hub on screen again (`#/onboarding?another`, from Settings): the form stays up while it is connected. */
   readonly another?: boolean | undefined;
   /**
-   * Add a hub beside the ones paired (`#/onboarding?add`, from Settings › Hubs), under a name and colour the person
+   * Add a hub beside the ones paired (`#/onboarding?add`, from Settings › Hubs & devices), under a name and colour the person
    * picks; a pairing link that comes while a hub is in use adds one too.
    */
   readonly add?: boolean | undefined;

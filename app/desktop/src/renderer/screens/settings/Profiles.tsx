@@ -1,4 +1,4 @@
-// Task profiles (W146): Settings › Hub › Every project › Profiles lists the hub's profiles, each with its model, effort,
+// Task profiles (W146): Settings › Hub › Every project › Agents lists the hub's profiles, each with its model, effort,
 // fast mode and note, and creates, edits, renames and deletes them and marks the default (profile_create,
 // profile_update, profile_delete: an owner's or admin's), and picks the one leads start on (Lead runs on: profile_update's
 // `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and says which leads run on.
@@ -68,6 +68,8 @@ export function ProfilesEditor() {
   return (
     <>
       <SettingsSection
+        title="Profiles"
+        reveal="hub.task-profiles"
         hint="What agents run on: a model, its effort and speed, under a name the lead picks it by."
         intro={view.modelsFrom === "api" ? undefined : "Models from fleetd's own list: the hub has no API key that lists them."}
         aside={editing?.kind === "new" ? undefined : <AddButton label="New profile" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))} />}
@@ -114,7 +116,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      hint="Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs. Reviews and tasks that name no profile stay on the default."
+      hint="Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs & devices. Reviews and tasks that name no profile stay on the default."
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={
@@ -335,7 +337,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           </Text>
           {administers ? (
             <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
-              Change in Every project › Profiles
+              Change in Every project › Agents
             </Button>
           ) : null}
         </div>

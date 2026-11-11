@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings' Hub group (D211): People, Machines, Updates, Every project (Profiles, Tools & skills, Instructions & memory),
+// Settings' Hub group (D211): People, Machines (Updates under them), Every project (Agents, Instructions, Vault),
 // Hub accounts, and Setup, always; Machines a list with Add machine and recordings, each machine's role,
 // screens and caps on its own page; Claude and
 // GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
@@ -199,7 +199,7 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Updates", "Every project", "Hub accounts", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Every project", "Hub accounts", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
   expect(host.querySelector("nav[aria-label='Settings'] [role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
@@ -209,8 +209,8 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
   expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
   const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Every project']");
-  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Profiles", "Tools & skills", "Instructions & memory"]);
-  await tab(tabs, "Instructions & memory");
+  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Agents", "Instructions"]);
+  await tab(tabs, "Instructions");
   expect(window.location.hash).toBe("#/settings/hub/instructions");
   expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
 });
@@ -222,6 +222,8 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   // The page's plus is the way to add one; this hub has none yet, and the list says so.
   expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
   expect(host.textContent).toContain("No machines yet. Add one with the plus above.");
+  // Updates is a part of the page, between the machines and their recordings.
+  expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();
   expect(parts()).toEqual(["hub.recordings"]);
 
   await click(button("Hub accounts", nav() ?? document));
@@ -232,8 +234,10 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
 });
 
 it("gathers what reaches every project on Every project's pages, and saves its instructions hub-wide", async () => {
+  // Tools & skills is a part of Agents, under the task profiles: its old link opens there.
   window.location.hash = "#/settings/hub/tools";
   await render(admin);
+  expect(host.querySelector("[data-screen='settings.hub.profiles'] [data-screen='settings.hub.tools']")).not.toBeNull();
   expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
@@ -341,7 +345,7 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("One text for every project: the hub's owners and admins change it in Hub › Every project › Instructions & memory.");
+  expect(host.textContent).toContain("One text for every project: the hub's owners and admins change it in Hub › Every project › Instructions.");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });

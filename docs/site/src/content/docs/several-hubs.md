@@ -23,7 +23,7 @@ first. A link or address for a hub you already have pairs that hub again instead
 
 ## Rename, recolour or remove {#manage}
 
-Settings › Hubs lists each hub with its address, its connection and where its key is kept.
+Settings › Hubs & devices lists each hub with its address, its connection and where its key is kept.
 
 | To | Do |
 |---|---|
@@ -80,7 +80,7 @@ owner or admin are listed.
 
 While a hub is out of reach, a small mark shows on your picture at the bottom of the sidebar, its tooltip naming the
 hub. Click your name for a row per hub: its name beside a dot while it's connected, else what is wrong in a few words
-with **Retry** or **Pair again**. A click on a connected hub's row opens it in Settings › You › Hubs, which says why a
+with **Retry** or **Pair again**. A click on a connected hub's row opens it in Settings › You › Hubs & devices, which says why a
 hub is out of reach.
 
 A hub that's out of reach only affects its own group. Its projects show as they were last seen, marked "as of 09:02",
@@ -98,5 +98,5 @@ the fleetd directory. The first hub keeps the files it always had, so an app upd
 has one hub.
 
 If `desktop-hubs.json` can't be read, no hub is lost. The app keeps the old file as `desktop-hubs.json.bad`, finds
-each hub again from its saved key, and Settings › Hubs says so. The hubs come back under their host names, so rename
+each hub again from its saved key, and Settings › Hubs & devices says so. The hubs come back under their host names, so rename
 them if you like.

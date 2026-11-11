@@ -19,16 +19,20 @@ export function revealNext(key: string | null) {
 
 const FOCUSABLE = 'input, textarea, button:not([disabled]), [role="slider"]';
 
-/** Marks an option's element: when a search opens this option, it scrolls into view and its first control takes focus. */
-export function useReveal<T extends HTMLElement>(key: string) {
+/**
+ * Marks an option's element: when a search opens this option, it scrolls into view and its first control takes focus.
+ * `whole` marks a part of a page (Frames.tsx's Part) instead: it comes to the top and takes the focus itself, so
+ * arriving there never leaves Enter on one of its buttons.
+ */
+export function useReveal<T extends HTMLElement>(key: string, whole = false) {
   const ref = useRef<T>(null);
   const want = useSyncExternalStore(subscribe, () => wanted);
   useEffect(() => {
     const el = ref.current;
     if (want !== key || el === null) return;
     wanted = null;
-    el.scrollIntoView({ block: "nearest" });
-    (el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus({ preventScroll: true });
-  }, [want, key]);
+    el.scrollIntoView({ block: whole ? "start" : "nearest" });
+    ((whole ? null : el.querySelector<HTMLElement>(FOCUSABLE)) ?? el).focus({ preventScroll: true });
+  }, [want, key, whole]);
   return ref;
 }

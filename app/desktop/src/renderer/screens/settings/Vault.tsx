@@ -1,4 +1,4 @@
-// Settings › You › Vault, a project's Vault tab and Hub › Vault (vault-design §8): the logins, cards, addresses and
+// Settings › You › Vault, a project's Vault tab and Hub › Every project › Vault (vault-design §8): the logins, cards, addresses and
 // variables agents fill and get without ever seeing them, as Passwords lays them out. A search field and a filter by
 // kind above the list; the open item beside it (VaultItem.tsx); one plus menu to add each kind, paste a .env or import
 // from 1Password (VaultImport.tsx); the trash under the list. Yours lists your own items and the hub's; a project's,
@@ -269,7 +269,7 @@ const KEY_WHERE: Readonly<Record<string, string>> = {
   passphrase: "a passphrase, typed after each restart",
 };
 
-/** Hub › Vault's foot: where the root key is, the recovery code, Rotate, and how moving the variables in goes. */
+/** Hub › Every project › Vault's foot: where the root key is, the recovery code, Rotate, and how moving the variables in goes. */
 function KeyPart({ status }: { status: VaultStatusOutput }) {
   const call = useHubCall();
   const refetch = useRefetch();
@@ -378,5 +378,5 @@ export function ProjectVault({ project }: { project: string | null }) {
   return <VaultPage key={project} whose={{ kind: "project", machineId: project.slice(0, slash), projectId: project.slice(slash + 1) }} />;
 }
 
-/** Hub › Vault. */
+/** Hub › Every project › Vault. */
 export const HubVault = () => <VaultPage whose={{ kind: "hub" }} />;

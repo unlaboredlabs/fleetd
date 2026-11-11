@@ -147,7 +147,7 @@ async function machineScreensSet(
     throw new ToolError(
       "failed",
       `${name}'s fleetd is too old to take screen settings from the hub.`,
-      `Update it from Settings › Hub › Updates, or set it in ${name}'s node.json by hand.`,
+      `Update it from Settings › Hub › Machines › Updates, or set it in ${name}'s node.json by hand.`,
     );
   }
   let answer: { ok: boolean; message: string; hosts?: HostCheck[] };

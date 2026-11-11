@@ -1,4 +1,4 @@
-// Settings › You › Your devices: which of the hub's human keys are yours, the one a phone just paired with, how long a
+// Settings › You › Hubs & devices: which of the hub's human keys are yours, the one a phone just paired with, how long a
 // pairing code has left, and the QR of its link. The hub decides who sees which devices (people_list) and what the link
 // carries (pair_code_create: a one-time code and an address a phone reaches, never loopback); these only present it.
 import { encode } from "uqr";
