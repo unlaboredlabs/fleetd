@@ -11,8 +11,8 @@ paths=(
   fleetd .fleetd .github/workflows/ci.yml .github/fleetd-scope.sh .github/migrations-check.mjs
   # The wire contract and its schemas; the setup steps the docs generator checks; the installer a test runs.
   app/desktop/src/shared/contracts app/desktop/fixtures/setup site/install.sh
-  # The lab scenarios.
-  tests/lab
+  # The lab scenarios; the two-team cases a test proves (fleetd/test/compare).
+  tests/lab tests/compare
   # The docs pages generated from the code.
   docs/site/src/content/docs/reference/cli.md docs/site/src/content/docs/reference/agent-tools.md
   docs/site/src/content/docs/what-agents-are-told.md

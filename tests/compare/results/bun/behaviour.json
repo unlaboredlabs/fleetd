@@ -8,41 +8,37 @@
     "memGb": 59,
     "kernel": "7.0.0-42-generic",
     "loadavg": [
-      26.4,
-      29.85,
-      22.22
+      1.89,
+      1.82,
+      1.54
     ],
-    "at": "2026-11-08T22:59:21.883Z"
+    "at": "2026-11-11T17:57:06.397Z"
   },
   "data": {
     "suites": {
       "factory:throughput": {
         "ok": true,
-        "wallMs": 12338
+        "wallMs": 10536
       },
       "factory:self-healing": {
         "ok": true,
-        "wallMs": 9348
+        "wallMs": 3338
       },
       "factory:lead-wake": {
         "ok": true,
-        "wallMs": 20223
+        "wallMs": 6033
       },
-      "cargo:closed_pipe": {
+      "factory:agent-messages": {
         "ok": true,
-        "wallMs": 120954
+        "wallMs": 31047
       },
-      "cargo:home_isolation": {
+      "blackbox": {
         "ok": true,
-        "wallMs": 4909
-      },
-      "cargo:session_host": {
-        "ok": true,
-        "wallMs": 674
+        "wallMs": 5707
       },
       "contract": {
         "ok": true,
-        "wallMs": 2819
+        "wallMs": 1557
       },
       "contract: GET /healthz is 200": {
         "ok": true,
@@ -243,11 +239,36 @@
       "contract: fleetd status --json reads the hub": {
         "ok": true,
         "wallMs": 0
+      },
+      "isolation": {
+        "ok": true,
+        "wallMs": 444
+      },
+      "isolation: two-team cases": {
+        "ok": true,
+        "wallMs": 0,
+        "skipped": "507 cases over 168 tools not run: bun makes one team"
+      },
+      "isolation: every table is kept to its team by a policy": {
+        "ok": true,
+        "wallMs": 0,
+        "skipped": "not written here: needs the service's database, which a target doesn't give"
+      },
+      "isolation: one team's events never reach another's sockets, on two instances": {
+        "ok": true,
+        "wallMs": 0,
+        "skipped": "not written here: needs a target that says which instance serves a team"
+      },
+      "isolation: one team's vault items and objects don't open under another's key": {
+        "ok": true,
+        "wallMs": 0,
+        "skipped": "not written here: needs the service's stored rows and object store, which a target doesn't give"
       }
     },
     "surface": {
       "mcpTools": [
         "actions_list",
+        "agent_messages",
         "agent_work",
         "agents_list",
         "approval_answer",
@@ -274,6 +295,8 @@
         "chat_nudge_clear",
         "chat_pins_get",
         "chat_pins_set",
+        "chat_sections_get",
+        "chat_sections_set",
         "chat_send",
         "chat_stop",
         "checklist_get",
@@ -309,6 +332,7 @@
         "hub_link_remove",
         "hub_link_revoke",
         "hub_links_get",
+        "hub_restart",
         "hub_update",
         "hub_update_settings",
         "hub_update_status",
@@ -337,8 +361,6 @@
         "memory_import",
         "memory_refresh_run",
         "memory_set",
-        "memory_shared_get",
-        "memory_shared_set",
         "memory_undo",
         "metrics_get",
         "navi_approvals",
@@ -364,6 +386,7 @@
         "people_list",
         "person_avatar_get",
         "person_avatar_set",
+        "person_name_set",
         "person_remove",
         "person_set",
         "pr_diff",
@@ -395,6 +418,7 @@
         "project_set",
         "project_settings_get",
         "project_settings_set",
+        "project_setup_undo",
         "project_signins_forget",
         "project_site_revoke",
         "project_sites",
@@ -436,6 +460,19 @@
         "time_spans",
         "usage_resume",
         "usage_status",
+        "vault_audit",
+        "vault_delete",
+        "vault_get",
+        "vault_import",
+        "vault_import_search",
+        "vault_list",
+        "vault_restore",
+        "vault_reveal",
+        "vault_rotate",
+        "vault_save",
+        "vault_share_set",
+        "vault_status",
+        "vault_unlock",
         "wake_cancel",
         "wake_list",
         "wake_set",
@@ -445,6 +482,7 @@
         "workstream_list"
       ],
       "readyFeatures": [
+        "agent_messages",
         "artifacts",
         "browser_navigate",
         "browser_sessions",
@@ -454,7 +492,8 @@
         "navi_skills",
         "presence",
         "screen_open",
-        "screen_thumbs"
+        "screen_thumbs",
+        "vault"
       ],
       "snapshotKeys": [
         "attention",

@@ -1,23 +1,35 @@
-// `node behaviour.ts [--impl bun[=<bin>]]… [--only <suite>,…]`: black-box tests against each build given (two builds
-// of fleetd, say, before and after a change), pass/fail side by side. An impl's binary defaults to its impls.json `bin`. Suites:
-// - factory:<scenario>: the factory lab (tests/lab/factory, CI's), hub and node of the binary, offline claude;
-// - blackbox: fleetd/test/blackbox and the session host's tests, on the binary (FLEETD_BIN);
+// `node behaviour.ts [--impl bun[=<bin>]]… [--target <module>] [--two-hubs] [--only <suite>,…]`: black-box tests
+// against each build given (two builds of fleetd, say, before and after a change), pass/fail side by side. An impl's
+// binary defaults to its impls.json `bin`. Every suite but blackbox runs on a team of the target (target.ts): a hub of
+// the build, or what `--target` makes. Suites:
+// - factory:<scenario>: the factory lab's scenarios (tests/lab/factory, CI's), a node of the binary, offline claude;
+// - blackbox: fleetd/test/blackbox and the session host's tests, on the binary (FLEETD_BIN). They start hubs of their
+//   own, so with --target they are skipped;
 // - contract: contract.ts, every wire shape the apps read checked against app/desktop/src/shared/contracts/schema, one
-//   row per check, plus the surface (MCP tools, ready's features, snapshot keys) diffed between the builds.
+//   row per check, plus the surface (MCP tools, ready's features, snapshot keys) diffed between the builds;
+// - isolation: isolation.ts, the two-team cases made from the tool list. Skipped, with their count, on a target that
+//   makes one team, as a hub build does (--two-hubs: on two hubs of the build, which checks the cases themselves).
 // Not here: testLab.ts's `demo`, which needs the real claude, a login and GitHub (run it by hand with FLEETD_BIN).
-// Writes results/<impl>/behaviour.json for each; exit 0 only when every suite passed on every implementation.
+// Writes results/<impl>/behaviour.json for each; exit 0 only when every suite passed on every implementation. A row
+// that was skipped says why, there and in the table, and the last line counts them.
 import fs from "node:fs";
 import path from "node:path";
-import { HERE, impls, REPO, round, scratch, timed, writeResult } from "./lib.ts";
+import { SCENARIOS } from "../lab/factory/scenarios.ts";
+import { arg, has, HERE, impls, REPO, round, scratch, timed, writeResult } from "./lib.ts";
 
 interface Suite {
   readonly name: string;
   readonly command: (bin: string, dir: string, impl: string) => string;
+  /** Why it can't run on a target a module makes. */
+  readonly hubBuildOnly?: string;
 }
+const targetModule = arg("--target", "COMPARE_TARGET");
+const on = (bin: string, impl: string) => `--impl ${impl} --bin '${bin}'${targetModule === undefined ? "" : ` --target '${path.resolve(targetModule)}'`}`;
 const SUITES: ReadonlyArray<Suite> = [
-  ...["throughput", "self-healing", "lead-wake", "agent-messages"].map((s) => ({ name: `factory:${s}`, command: (_: string, dir: string) => `FLEETD_FACTORY_DIR='${dir}/r' node '${REPO}/tests/lab/factory/run.ts' ${s}` })),
-  { name: "blackbox", command: (bin: string) => `cd '${REPO}/fleetd' && FLEETD_BIN='${bin}' bun test test/blackbox test/node/session_host.test.ts` },
-  { name: "contract", command: (bin, dir, impl) => `node '${path.join(HERE, "contract.ts")}' --impl ${impl} --bin '${bin}' --json '${dir}/contract.json'` },
+  ...SCENARIOS.map((s) => ({ name: `factory:${s.name}`, command: (bin: string, dir: string, impl: string) => `node '${path.join(HERE, "factory.ts")}' ${s.name} --dir '${dir}/r' ${on(bin, impl)}` })),
+  { name: "blackbox", command: (bin: string) => `cd '${REPO}/fleetd' && FLEETD_BIN='${bin}' bun test test/blackbox test/node/session_host.test.ts`, hubBuildOnly: "these tests start hubs of the binary themselves" },
+  { name: "contract", command: (bin, dir, impl) => `node '${path.join(HERE, "contract.ts")}' ${on(bin, impl)} --json '${dir}/contract.json'` },
+  { name: "isolation", command: (bin, dir, impl) => `node '${path.join(HERE, "isolation.ts")}' ${on(bin, impl)}${has("--two-hubs") ? " --two-hubs" : ""} --json '${dir}/isolation.json'` },
 ];
 
 const given = process.argv.flatMap((a, i) => (process.argv[i - 1] === "--impl" ? [a] : []));
@@ -32,7 +44,7 @@ const onlyAt = process.argv.indexOf("--only");
 const only = onlyAt >= 0 ? process.argv[onlyAt + 1]!.split(",") : undefined;
 const suites = SUITES.filter((s) => only === undefined || only.some((o) => s.name === o || s.name.startsWith(`${o}:`)));
 
-type Row = { ok: boolean; wallMs: number; log: string };
+type Row = { ok: boolean; wallMs: number; skipped?: string; log: string };
 const table = new Map<string, Map<string, Row>>();
 const surfaces = new Map<string, Record<string, unknown>>();
 for (const t of targets) {
@@ -41,18 +53,27 @@ for (const t of targets) {
     const dir = scratch("b");
     const logFile = path.join(dir, "log.txt");
     console.log(`${t.name} ${suite.name} …`);
-    const r = timed(suite.command(t.bin, dir, t.name), { cwd: REPO, env: { FLEETD_BIN: t.bin }, logFile });
-    const row = (name: string, ok: boolean, wallMs = 0) => {
+    const row = (name: string, ok: boolean, wallMs = 0, skipped?: string) => {
       if (!table.has(name)) table.set(name, new Map());
-      table.get(name)!.set(t.name, { ok, wallMs, log: logFile });
+      table.get(name)!.set(t.name, { ok, wallMs, ...(skipped === undefined ? {} : { skipped }), log: logFile });
     };
+    if (targetModule !== undefined && suite.hubBuildOnly !== undefined) {
+      row(suite.name, true, 0, suite.hubBuildOnly);
+      console.log(`  skipped: ${suite.hubBuildOnly}`);
+      continue;
+    }
+    const r = timed(suite.command(t.bin, dir, t.name), { cwd: REPO, env: { FLEETD_BIN: t.bin }, logFile });
     row(suite.name, r.code === 0, r.wallMs);
     console.log(`  ${r.code === 0 ? "pass" : "FAIL"} in ${(r.wallMs / 1000).toFixed(1)} s${r.code === 0 ? "" : `; log: ${logFile}`}`);
-    const contract = path.join(dir, "contract.json");
-    if (suite.name === "contract" && fs.existsSync(contract)) {
-      const out = JSON.parse(fs.readFileSync(contract, "utf8")) as { checks: Array<{ name: string; ok: boolean }>; surface: Record<string, unknown> };
-      for (const c of out.checks) row(`contract: ${c.name}`, c.ok);
-      surfaces.set(t.name, out.surface);
+    // A suite that checks many things says each in <suite>.json: a row apiece.
+    const each = path.join(dir, `${suite.name}.json`);
+    if (fs.existsSync(each)) {
+      const out = JSON.parse(fs.readFileSync(each, "utf8")) as { checks: Array<{ name: string; ok: boolean; skipped?: string }>; surface?: Record<string, unknown> };
+      for (const c of out.checks) {
+        row(`${suite.name}: ${c.name}`, c.ok, 0, c.skipped);
+        if (c.skipped !== undefined) console.log(`  skipped ${c.name}: ${c.skipped}`);
+      }
+      if (out.surface !== undefined) surfaces.set(t.name, out.surface);
     }
   }
 }
@@ -63,7 +84,7 @@ console.log(`\n${"suite".padEnd(width)}  ${names.map((n) => n.padEnd(12)).join("
 for (const [suite, cells] of table) {
   const cell = (n: string) => {
     const c = cells.get(n);
-    return (c === undefined ? "-" : `${c.ok ? "pass" : "FAIL"}${c.wallMs > 0 ? ` ${round(c.wallMs / 1000, 0)}s` : ""}`).padEnd(12);
+    return (c === undefined ? "-" : `${c.skipped !== undefined ? "skip" : c.ok ? "pass" : "FAIL"}${c.wallMs > 0 ? ` ${round(c.wallMs / 1000, 0)}s` : ""}`).padEnd(12);
   };
   console.log(`${suite.padEnd(width)}  ${names.map(cell).join("")}`);
 }
@@ -81,7 +102,10 @@ for (const other of rest) {
   }
 }
 for (const t of targets) {
-  const rows = Object.fromEntries([...table].flatMap(([suite, cells]) => (cells.has(t.name) ? [[suite, { ok: cells.get(t.name)!.ok, wallMs: cells.get(t.name)!.wallMs }]] : [])));
+  const rows = Object.fromEntries([...table].flatMap(([suite, cells]) => (cells.has(t.name) ? [[suite, (({ log: _, ...row }) => row)(cells.get(t.name)!)]] : [])));
+  const all = Object.values(rows);
+  const skipped = all.filter((r) => r.skipped !== undefined).length;
+  console.log(`${t.name}: ${all.length} rows: ${all.filter((r) => r.ok).length - skipped} pass, ${all.filter((r) => !r.ok).length} FAIL, ${skipped} skipped`);
   writeResult(t.name, "behaviour", { suites: rows, surface: surfaces.get(t.name) }, t.bin);
 }
 process.exitCode = [...table.values()].every((cells) => [...cells.values()].every((c) => c.ok)) ? 0 : 1;
