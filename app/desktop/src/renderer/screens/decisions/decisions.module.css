@@ -1,4 +1,4 @@
-/* The panel's Decisions tab: a search and two filters above one calm list. The value reads first; who, where and
+/* The panel's Decisions: a search with its one filter above one calm list. The value reads first; who, where and
    when stay quiet under it. */
 
 .screen {
@@ -21,21 +21,12 @@
 .toolbar {
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--pad) var(--space-2);
-  border-bottom: 1px solid var(--hairline);
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) 0;
 }
 .search {
-  width: 100%;
-}
-.filters {
-  display: flex;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.filter {
-  flex: 1 1 0;
+  flex: 1;
   min-width: 0;
 }
 
@@ -56,13 +47,6 @@
 .skeleton > span:nth-child(3) {
   width: 55%;
 }
-.empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8) var(--pad);
-}
 .paneNote {
   display: flex;
   flex-wrap: wrap;
@@ -71,20 +55,12 @@
   padding: var(--space-4) var(--pad);
 }
 
+/* One scroll, its rows inset so a group's label starts on their left edge (panel/folds). */
 .listScroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-1) 0 var(--space-4);
-}
-.section + .section {
-  margin-top: var(--space-2);
-}
-.group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: 0 var(--space-2) var(--space-4);
 }
 .rows {
   list-style: none;
@@ -93,20 +69,19 @@
 }
 
 .item {
-  margin: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 .item.open {
   background: var(--hover);
 }
 .row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-1-5);
+  flex-direction: column;
+  gap: 2px;
   width: 100%;
   padding: var(--space-2);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: inherit;
   font: inherit;
@@ -123,22 +98,15 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.chevron {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  /* On the key's line, which sits above the value. */
-  margin-top: 1px;
-  color: var(--faint);
-}
-.rowBody {
-  flex: 1;
-  min-width: 0;
+/* The question, and when it was settled at the line's end. */
+.rowTop {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
 }
 .rowKey {
+  flex: 1;
   display: flex;
   min-width: 0;
 }
@@ -150,23 +118,15 @@
   text-decoration: line-through;
   text-decoration-color: var(--faint);
 }
-.rowMeta {
-  display: flex;
-  align-items: center;
-  column-gap: var(--space-2);
-  min-width: 0;
-}
 .rowWhen {
   flex: none;
-  margin-inline-start: auto;
 }
 
 .details {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  /* Under the text, past the chevron. */
-  padding: 0 var(--space-2) var(--space-3) calc(var(--space-2) + 14px + var(--space-1-5));
+  padding: 0 var(--space-2) var(--space-3);
 }
 .note {
   display: flex;

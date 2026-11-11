@@ -51,7 +51,7 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 | Sidebar | Your chats, newest first: each with its picture, name, time and newest line ("You: …" when you wrote it). A chat that moves glides to its place, and nothing moves while the pointer is over the list. Pin a chat from its right-click menu to keep it on top (up to 9, the same as on your phone), and drag a pinned one, or press ⌥↑ / ⌥↓ on one you've tabbed to, to order your pins. A pinned name cut short shows whole when you point at it. Group the rest under names of your own with **Move to section** in a chat's right-click menu, or by dragging a chat onto a section's label: [sections](/docs/projects#sections) are yours alone, the same on each of your devices, and a click on a label folds one. A dot at a row's end means it waits on you (amber; its tooltip says why: a reply, an approval, a secret or a block) or has a new message. Otherwise it says "CI red" while a check fails on main (which blocks nothing), or how many agents are working. New project is the round button at the top. At the bottom, your name opens a small menu: who you are, your hub's name beside a dot while it's connected (a click opens it in Settings › You › Hubs & devices, where its address, **Pair again** and **Disconnect** are), and Settings. Anything off is one more row with the one thing to do: **Retry** when the hub is out of reach, **Pair again** when it refused the key, **Update** or **Try again** for an update, and, for owners and admins, **Open** on a machine that is offline and **Finish** on setup steps left. A member is told to ask an admin instead. [Screens](/docs/browser-sessions#page) and Factory are the round buttons beside it. While all is well that's all it shows. An update says one word under your name (**Update**, **Updating…**, **Updated**, **Not updated**), and a small mark on your picture means a hub is out of reach or refused the key (for owners and admins, also a machine offline or setup steps left). |
 | The top row | No bar: the page's title and its controls float over the page. In a chat they are glass capsules the conversation scrolls under: the project's picture and name, then only [what needs you](#chat), if anything; its settings; and at the end the agents capsule, with how many agents are working, which opens and closes the panel. The panel starts at the window's top, so its tabs share this row. ⌘K opens the command palette. The sidebar floats in from the window's edge; ⌘B or View › Toggle Sidebar hides and shows it. |
 | The chat | The selected project's conversation with its lead. |
-| The panel | Beside a chat, on the right, four tabs, each with a line saying what it is and, where it has two views, a row to switch them: **Agents** (the project's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs) and its [merge line](#train)), **Plan** (its [to-do](#checklist) and the work it asked other projects for) and **History** ([what happened](#activity) in it, and its [decisions](#decisions)). **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them, before History, once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the agents capsule at the top right, ⌥⌘B or View › Toggle Panel. |
+| The panel | Beside a chat, on the right, one row of four tabs and a list under it: **Agents** (the project's [agents](#agents) and the [screens](/docs/browser-sessions) they use), **Shipping** (its [pull requests](/docs/chat#prs), what [merges now](#train) among them), **Plan** (its [to-do](#checklist) and the work it asked other projects for) and **History** ([what happened](#activity) in it, with its [decisions](#decisions) a row away). Point at a tab for what it holds. The gear at the row's end opens the project's settings. **Artifacts**, the reports published in its chat and the files sent in it ([Artifacts](/docs/chat#artifacts)), joins them, before History, once there is either. The project's [skills](/docs/skills) are in its settings, on its **Agents** page; one skill's history opens in the panel. Open it with the agents capsule at the top right, ⌥⌘B or View › Toggle Panel. |
 
 Drag the sidebar's right edge to make it wider or narrower, from 200 px up to 420 px or 40% of the window, whichever
 is smaller; double-click the edge to put it back. From the keyboard, Tab to the edge and use ← and →. In a window
@@ -66,11 +66,11 @@ to the edge, then ← widens it and → narrows it (with Shift, in bigger steps)
 widest, and Enter resets it. Reading a pull request's changes widens the panel so the diff has room; that wide width
 is set the same way and kept apart from the other. The panel never grows so wide that the chat loses its room.
 
-The views of a two-view tab are **Agents** and **Screens**; **Pull requests** and **Merge line**; **To-do** and
-**Asked**; **What happened** and **Decisions**. Each tab remembers the view you last had in it while the app runs.
-In a narrow panel the tabs show only their icons and counts (point at one for what it is). Each view is a link
-too: `#/project/<machine>/<project>/checklist` opens Plan's To-do, as the palette's **Checklist** does, and `/agents`,
-`/sessions`, `/prs`, `/train`, `/asked`, `/artifacts`, `/activity` and `/decisions` open theirs the same way.
+That row is all the navigation the panel has: no tab has tabs of its own, and a tab opens on its list. In a narrow
+panel the tabs show only their icons and counts (point at one for what it is). Each place in a list is a link too:
+`#/project/<machine>/<project>/checklist` opens Plan, as the palette's **Checklist** does, and `/agents`, `/prs`,
+`/artifacts` and `/activity` open their tabs the same way. `/sessions` opens Agents at its screens, `/train` Shipping
+at what merges now, `/asked` Plan at the asked work, and `/decisions` the decisions, from History.
 
 Click a project to open its chat. ⌘. jumps to the next project that wants you. To add a project, click **+** at the top of the sidebar (one more per hub with
 [several hubs](/docs/several-hubs)). New project opens over the chat you're in, which stays as it was: type a name to
@@ -109,54 +109,56 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 ## Agents {#agents}
 
-The panel's **Agents** section (⌥⌘B shows the panel) lists the project's agents at work under the orders they work on,
-those waiting on you first: each one's role, its task, what it's doing and for how long. Click one to watch its work as it happens: what it was told,
+The panel's **Agents** tab (⌥⌘B shows the panel) lists the project's agents at work under the orders they work on,
+those waiting on you first: each one's role, its task, what it's doing and for how long. Under them, **Screens** lists
+the [screens](/docs/browser-sessions) they use: the icons beside it open the Screens page and a new screen. Click one to watch its work as it happens: what it was told,
 the commands it ran, the files it edited and what it's writing. Watching doesn't interrupt it. To change what it does,
 tell the lead in the chat. Its PR number opens [the PR](/docs/chat#prs), and **What it was told** shows the exact
 first message and prompts it started with; **All agents** or Esc goes back to the list. The [DMs](#dms) it sent other
 agents and got from them stand among its steps as cards.
 
-**All projects**, above the list, lists every project's agents instead, each project under its name, those with an
-agent waiting on you first. Click an agent of another project to open its work beside that project's chat.
-**This project** goes back. The panel remembers which you chose. Under the project's own agents, folded, **Also on
-this repo** lists live work on the same repo and base that isn't theirs, read-only; it isn't there when there is none.
+Under the project's own agents, folded, **Also on this repo** lists live work on the same repo and base that isn't
+theirs, read-only, and **Other projects** lists every other project's agents at work, each project under its name,
+those with an agent waiting on you first. Click an agent of another project to open its work beside that project's
+chat. Neither is there when it has nothing to list, and what you unfolded stays so while the app runs.
 
-Beside the count of agents working, **max** is the project's [Max agents](/docs/projects#max-agents) ("4 working · max
-20"). Click it to change it in Settings › Projects › Agents.
+The project's [Max agents](/docs/projects#max-agents) is in its settings (the gear at the end of the panel's row, then
+**Agents**), or **Max agents** in the command palette.
 
 ## Merge line {#train}
 
-**Merge line**, under Shipping, shows the project's [merge train](/docs/merge-train): the pull request merging now and its stage (rebasing onto the base,
-running CI, merging) with the checks it waits on, then the pull requests in line, in the order they'll merge. Each
-one says whether it's waiting for review, in review, ready, or blocked, and what blocks it: a `hold` label, a conflict
-with the base, or failed checks that sent it back to the agent that wrote it. Pull requests that go through together
-as a batch show as one group, while they merge and after. Below them are the latest merges and refusals, with the fix
-a refusal asks for. Click any of them to open the pull request. The view follows the train as it moves, shows when
-each thing happened and never guesses how long something will take. Its count is the pull requests merging or in
+**Shipping** shows the project's [merge train](/docs/merge-train) among its pull requests. **Needs a look** comes
+first: the ones the train holds or sent back (a `hold` label, a conflict with the base, failed checks). Then
+**Merging now**, a card with the pull request the train has in hand, its stage (rebasing onto the base, running CI,
+merging) and the checks it waits on; pull requests that go through together as a batch share the card. **In line**
+lists those behind it in the order they'll merge, each saying whether it's waiting for review, in review or ready, and
+**Open** the ones not on the train. Merged and closed ones fold under them. Point at a row for what holds it, its
+number and its branch; click it to open the pull request, which says the fix a refusal asks for. The list follows the
+train as it moves and never guesses how long something will take. The tab's count is the pull requests merging or in
 line. It only reads: the train itself decides what merges.
 
 ## To-do {#checklist}
 
-**To-do**, under Plan, shows the project's checklist as its lead keeps them: how many are done, then what's being done now,
+**Plan** shows the project's checklist as its lead keeps it: how much is done, then what's being done now,
 what's still to do and, folded away, what's done. An item's pull request or agent opens in the panel. The lead
 updates the list as the work moves, and the view follows along as it does. Its count is the items still open.
 
 You can tidy the list yourself. Point at an item for its delete button, or right-click it and choose **Delete**;
-**Clear done**, beside the progress, takes off every done item at once and shows only while something is done.
+**Clear**, beside **Done**, takes off every done item at once and shows only while something is done.
 Neither asks first: the items go at once, and **Undo** in the toast puts them back for a few seconds after, held
 while you point at it. Quitting before then still removes them. The lead's next wake tells it what you took off,
 and it leaves those off unless you ask again. To add or change an item, tell the lead in the chat. A project's lead
-starts a checklist when it plans work; until then the view says there is none yet. **Asked**, beside it, lists the
-work the lead asked your other projects for: see [Asked](/docs/projects#asked).
+starts a checklist when it plans work; until then the tab says there is none yet. **Asked of other projects**, under
+the list, is the work the lead asked your other projects for: see [Asked](/docs/projects#asked).
 
 ## What happened {#activity}
 
-**What happened**, under History, shows what happened in the project while you were away, newest first: agents starting and
+**History** shows what happened in the project while you were away, newest first: agents starting and
 finishing, reviews, merges, what was asked of you and what you answered. A line marks what came in since you last
 looked, and a run of the same thing (a pull request reviewed again and again) folds into one row. A line that names
-an agent or a pull request opens it. Its count is what came in since you last looked. Under **All**, two agents'
-[DMs](#dms) to each other fold into one row per hour; a wake the guard refused has a line of its own. **DMs** shows
-their log.
+an agent or a pull request opens it. Its count is what came in since you last looked. Two agents'
+[DMs](#dms) to each other fold into one row per hour; a wake the guard refused has a line of its own. The filter at
+the top right narrows the list to one kind of event; its **DMs** shows their log.
 
 ## DMs between agents {#dms}
 
@@ -168,7 +170,7 @@ held for that agent's next run. Nothing about DMs shows in the chat itself.
 | Where | What you see |
 |---|---|
 | An agent's work | Each DM it sent or got, as a card among its steps: "From T2573" or "To T2577" with that agent's title, the words cut at three lines (click for the rest), and what became of it: "Read at its next step, 23:02", "Held: it has finished…", "Woke it, 23:09: it answers what T2577 asked at 23:05", or "Didn't wake T2567: it has finished and isn't waiting on T2584. Held for its next run." The other agent's id opens its work. |
-| History › What happened › **DMs** | Every DM between the project's agents, newest first: who wrote to whom, the opening words, what became of it (delivered, held, woke, didn't wake) and when. Click a row for the full words and a line per recipient, ending with the lead's copy. **Any agent** narrows it to one agent's DMs. |
+| History, filtered to **DMs** | Every DM between the project's agents, newest first: who wrote to whom, the opening words, what became of it (delivered, held, woke, didn't wake) and when. Click a row for the full words and a line per recipient, ending with the lead's copy. **Any agent** narrows it to one agent's DMs. |
 | The agents strip | "8 DMs between agents" at its end, which opens the DMs log. |
 
 Everyone in the project sees the same DMs, members and admins alike, and a device paired read-only sees them too. Nobody
@@ -177,8 +179,8 @@ reading its DMs, steer it or tell the lead.
 
 ## Decisions {#decisions}
 
-**Decisions**, beside it, lists what the lead and you have decided in the project, one row per question with the answer in
-force first. What it replaced, or that you revoked it, folds under it. Search, or narrow the list to who decided and
+**Decisions**, the line at the top of History, lists what the lead and you have decided in the project, one row per question with the answer in
+force first. What it replaced, or that you revoked it, folds under it. Search, or narrow the list with the filter beside it to who decided and
 where it applies; open a row for its why and history, and change or revoke the decision there. Its count is the
 decisions in force.
 

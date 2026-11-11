@@ -1,45 +1,14 @@
-/* The panel's Asked work: one ask a row, apart by a hairline, that opens in place. No cards, no coloured edges
-   (ui/DESIGN.md). */
-.screen {
-  --pad: var(--space-4);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-.scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-bottom: var(--space-4);
-}
-.empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8) var(--pad);
-}
-.note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--pad);
-}
-/* Inset, so a row's hover keeps clear of the panel's edges; its words line up with the panel's padding. */
+/* Asked work, a group of the Plan list: one ask a row that opens in place. No cards, no rules, no coloured edges
+   (ui/DESIGN.md). The list it sits in insets its rows, so a row's hover keeps clear of the panel's edges. */
 .rows {
+  --pad: var(--space-4);
   --inset: var(--space-2);
   list-style: none;
   margin: 0;
-  padding: var(--space-1) var(--inset) 0;
+  padding: 0;
 }
 /* One ask: a button row that opens it in place. The ask in up to two lines at full voice, its chip at the right,
    whose word never wraps; under them the project and when, xs and quiet. A done or stopped one steps back. */
-.ask + .ask {
-  border-top: 1px solid var(--hairline);
-}
 .row {
   all: unset;
   box-sizing: border-box;
@@ -175,18 +144,4 @@
 }
 .quiet {
   color: var(--quiet);
-}
-.skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--pad);
-}
-.skeleton > span {
-  height: var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--selected);
-}
-.skeleton > span:nth-child(2) {
-  width: 70%;
 }

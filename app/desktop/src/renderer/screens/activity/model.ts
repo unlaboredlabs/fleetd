@@ -33,21 +33,10 @@ const TYPES: Readonly<Record<ActivityKind, readonly HubEventType[]>> = {
 };
 
 /**
- * DMs is a log of its own (screens/dms): chosen, it shows alone, from agent_messages. Under All, its events fold one
+ * DMs is a log of its own (screens/dms): chosen, it shows from agent_messages. Under Everything, its events fold one
  * row per pair and hour.
  */
 export const DMS: ActivityKind = "dms";
-
-/** The chips after `kind` is pressed in `filter`: DMs shows alone, and any other kind leaves it. */
-export function toggled(filter: KindFilter, kind: ActivityKind | null): KindFilter {
-  if (kind === null) return new Set();
-  if (kind === DMS) return filter.has(DMS) ? new Set() : new Set([DMS]);
-  const next = new Set(filter);
-  next.delete(DMS);
-  if (next.has(kind)) next.delete(kind);
-  else next.add(kind);
-  return next.size === KINDS.length - 1 ? new Set() : next;
-}
 
 const KIND_OF: ReadonlyMap<string, ActivityKind> = new Map(KINDS.flatMap((k) => TYPES[k].map((t) => [t, k] as const)));
 

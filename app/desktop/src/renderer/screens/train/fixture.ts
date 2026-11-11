@@ -1,9 +1,9 @@
-// Screenshot and test data for the Train tab, shaped as the hub's changes_list, pr_list and pr_get return it: one
-// repo's train with a PR in CI, a queue in every state (in review, ready, held, sent back), a batch that landed as one
-// commit, a refusal and a lone merge. `batch` swaps the head for a batch of three in CI. Fixture data only.
+// Screenshot and test data for Shipping's merge line, shaped as the hub's changes_list, pr_list and pr_get return it:
+// one repo's train with a PR in CI, a line in every state (in review, ready, held, sent back), a batch that landed as
+// one commit, a refusal and a lone merge. `batch` swaps the head for a batch of three in CI. Fixture data only.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/train/index.ts).
 import type { Change, ChangesListInput, ChangesListOutput, ChangeState, PrCheck, PrGetOutput, PrRow, ProjectRef } from "../../../shared/contracts";
-import { trainReads } from "./model.ts";
+import { lineReads } from "./model.ts";
 
 export const TRAIN_REPO = "acme/storefront";
 
@@ -104,6 +104,7 @@ export const trainFixture = (project: ProjectRef, nowIso: string, batch = false)
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
   const head = batch ? BATCH : HEAD;
   const specs = [...head, ...QUEUE, ...RECENT];
+  const waiting = specs.filter((p) => p.position !== undefined).length;
   const changes = specs
     .map(
       (p, i): Change => ({
@@ -141,6 +142,14 @@ export const trainFixture = (project: ProjectRef, nowIso: string, batch = false)
       updatedAt: ago(p.moved),
       ...(p.state === "merged" ? { mergedAt: ago(p.moved) } : {}),
       ...(p.checks === undefined ? {} : { checks: p.checks }),
+      // As pr_list says where each stands on the train: the list's groups and a row's words come from it.
+      queue: {
+        changeId: `X${p.number}`,
+        length: waiting,
+        state: p.state,
+        ...(p.position === undefined ? {} : { position: p.position }),
+        ...(p.lastError === undefined ? {} : { reason: p.lastError }),
+      },
     }),
   );
   // A batch's checks run on the train's own PR, so the pane asks only a lone head's.
@@ -159,9 +168,9 @@ export const trainFixture = (project: ProjectRef, nowIso: string, batch = false)
   return { changes, prs, heads };
 };
 
-/** changes_list's answer to each of the pane's reads (model.ts trainReads), as the hub would give it. */
+/** changes_list's answer to each of the card's reads (model.ts lineReads), as the hub would give it. */
 export const changesAnswers = (project: ProjectRef, changes: readonly Change[]): Array<{ readonly input: ChangesListInput; readonly output: ChangesListOutput }> =>
-  trainReads(project).map((input) => {
+  lineReads(project).map((input) => {
     const of = changes.filter((c) => c.state === input.state);
     const limit = input.limit ?? 50;
     return { input, output: { changes: of.slice(0, limit), ...(of.length > limit ? { truncated: true } : {}) } };

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { DIFF_PAGE, diffRows, fileRowIndex, toPairs, type Page } from "./diffModel";
-import { emptyWords, filterCounts, inFilter, listItems, rowMeta, type Item } from "./listModel";
+import { listItems, openGroup, rowMeta, type Item } from "./listModel";
 import { resolvePr } from "./PrsPane";
-import { checksShort, checksWord, findingsWord, githubLine, movedWords, openCount, placeWord, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
+import { checksShort, checksWord, findingsWord, githubLine, movedWords, openCount, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
 
 const row = (over: Partial<PrRow> = {}): PrRow => ({
   repo: "acme/storefront",
@@ -32,16 +32,10 @@ describe("where a PR is on its way to main", () => {
     }
   });
 
-  it("gives a place in line in the row and the PR's sentence alike, and only while it waits in one", () => {
-    const reviewing = row({ queue: queue("reviewing", { position: 1 }) });
-    expect(stateLine(reviewing).sentence).toBe("In review, 2nd of 3 in line. It merges once its reviews and checks pass.");
-    expect(rowMeta(reviewing).place).toBe("2nd in line");
-    const alone = row({ queue: queue("queued", { position: 0, length: 1 }) });
-    expect(stateLine(alone).sentence).toBe("Waiting to merge, next in line.");
-    expect(rowMeta(alone).place).toBe("next in line");
-    const conflicted = row({ queue: queue("needs_rebase", { position: 1 }) });
-    expect(stateLine(conflicted).sentence).not.toMatch(/in line/u);
-    expect(rowMeta(conflicted).place).toBeUndefined();
+  it("gives a place in line in the PR's sentence, and only while it waits in one", () => {
+    expect(stateLine(row({ queue: queue("reviewing", { position: 1 }) })).sentence).toBe("In review, 2nd of 3 in line. It merges once its reviews and checks pass.");
+    expect(stateLine(row({ queue: queue("queued", { position: 0, length: 1 }) })).sentence).toBe("Waiting to merge, next in line.");
+    expect(stateLine(row({ queue: queue("needs_rebase", { position: 1 }) })).sentence).not.toMatch(/in line/u);
   });
 
   it("puts GitHub's state first, and reads a state from a newer hub as plain open", () => {
@@ -97,75 +91,84 @@ describe("checks and reviews", () => {
   });
 });
 
-const words = (list: readonly Item[]) => list.map((i) => (i.kind === "group" ? `${i.label} ${i.count}` : i.kind === "cut" ? `cut ${i.count}` : i.row.number));
+/** A list as words: a label with its count, a card by its PRs, a row by its number. */
+const words = (list: readonly Item[]) =>
+  list.map((i) =>
+    i.kind === "group" || i.kind === "fold" ? `${i.label} ${i.count}` : i.kind === "moving" ? `card ${i.moving.prs.map((p) => p.number).join()}` : i.kind === "pr" ? i.row.number : i.kind === "note" ? i.text : "cut",
+  );
+
+const HOLD = "held: the PR has the `hold` label; the train takes it once the label is gone";
 
 describe("the list", () => {
   const rows = [row({ number: 8, state: "merged" }), row({ number: 11 }), row({ number: 12, state: "draft" }), row({ number: 7, state: "closed" })];
-
-  it("shows all of them with open PRs (drafts too) under one heading before merged and closed ones", () => {
-    expect(words(listItems(rows, "all"))).toEqual(["Open 2", 11, 12, "Merged or closed 2", 8, 7]);
-    expect(listItems([], "all")).toEqual([]);
+  const card = (...numbers: number[]) => ({
+    repo: "acme/storefront",
+    moving: { stage: "ci" as const, since: "2026-10-19T10:00:00.000Z", prs: numbers.map((number) => ({ changeId: `X${number}`, repo: "acme/storefront", number, title: `PR ${number}`, at: "2026-10-19T10:00:00.000Z" })) },
   });
 
-  it("filters to the open or the merged ones, in the hub's order and without a heading", () => {
-    expect(words(listItems(rows, "open"))).toEqual([11, 12]);
-    expect(words(listItems(rows, "merged"))).toEqual([8]);
-    expect(rows.filter((r) => inFilter(r, "merged")).map((r) => r.number)).toEqual([8]);
-    // A state from a newer hub is in All, never lost.
-    expect(inFilter(row({ state: "queued" }), "all")).toBe(true);
-    expect(inFilter(row({ state: "queued" }), "open")).toBe(false);
+  it("is one list: the open PRs (drafts too) under Open, then the merged and closed ones folded under their count", () => {
+    expect(words(listItems(rows))).toEqual(["Open 2", 11, 12, "Merged and closed 2"]);
+    expect(words(listItems(rows, { rest: true }))).toEqual(["Open 2", 11, 12, "Merged and closed 2", 8, 7]);
+    expect(words(listItems([row({ number: 8, state: "merged" }), row({ number: 11 })]))).toEqual(["Open 1", 11, "Merged 1"]);
+    expect(listItems([])).toEqual([]);
   });
 
-  it("groups open PRs by where they stand: a look needed, on the merge train, the rest", () => {
+  it("says nothing is open above the fold when only merged ones are left", () => {
+    expect(words(listItems([row({ number: 8, state: "merged" })]))).toEqual(["Nothing open.", "Merged 1"]);
+  });
+
+  it("orders the open PRs as someone acts on them: a look needed, what merges now, the line in the train's order, the rest", () => {
     const failed = row({ number: 10, checks: { state: "failing", passed: 4, failed: 2, pending: 0 } });
-    const queued = row({ number: 9, queue: queue("queued", { position: 1 }) });
-    const open = [row({ number: 14 }), queued, failed];
-    expect(words(listItems(open, "open"))).toEqual(["Needs a look 1", 10, "On the merge train 1", 9, "Open 1", 14]);
-    expect(words(listItems([...open, row({ number: 8, state: "merged" })], "all"))).toEqual([
-      "Needs a look 1",
-      10,
-      "On the merge train 1",
-      9,
-      "Open 1",
-      14,
-      "Merged or closed 1",
-      8,
-    ]);
+    const open = [
+      row({ number: 14 }),
+      row({ number: 9, queue: queue("queued", { position: 2 }) }),
+      row({ number: 13, queue: queue("ready", { position: 0 }) }),
+      failed,
+      row({ number: 20, queue: queue("ci") }),
+      row({ number: 23, queue: queue("ready", { position: 1, reason: HOLD }) }),
+      row({ number: 19, queue: queue("needs_rebase") }),
+      row({ number: 8, state: "merged" }),
+    ];
+    // What merges now is the card: its PR is not a row too.
+    expect(words(listItems(open, { moving: [card(20)] }))).toEqual(["Needs a look 3", 10, 23, 19, "Merging now 0", "card 20", "In line 2", 13, 9, "Open 1", 14, "Merged 1"]);
+    // Until the train is read, its head waits with the line.
+    expect(words(listItems(open))).toEqual(["Needs a look 3", 10, 23, 19, "In line 3", 13, 9, 20, "Open 1", 14, "Merged 1"]);
+    expect(open.map(openGroup)).toEqual(["open", "train", "train", "look", "train", "look", "look", "open"]);
   });
 
-  it("counts each filter's rows", () => {
-    expect(filterCounts(rows)).toEqual({ open: 2, merged: 1, all: 4 });
-    expect(filterCounts([])).toEqual({ open: 0, merged: 0, all: 0 });
+  it("names each repo's card when more than one train moves, and lists a card with no rows at all", () => {
+    const two = listItems([], { moving: [card(20), { ...card(31), repo: "acme/admin" }] });
+    expect(two.map((i) => (i.kind === "moving" ? i.repo : i.kind))).toEqual(["group", "acme/storefront", "acme/admin"]);
+    expect(listItems([], { moving: [card(20)] })[1]).not.toHaveProperty("repo");
   });
 
-  it("says what an empty filter has instead, and offers the filter that has something", () => {
-    const merged = [row({ number: 8, state: "merged" })];
-    expect(listItems(merged, "open")).toEqual([]);
-    expect(emptyWords("open", filterCounts(merged))).toEqual({ title: "Nothing open", body: "1 merged.", offer: { filter: "merged", label: "Show merged" } });
-    expect(emptyWords("open", filterCounts([row({ state: "closed" })])).offer?.filter).toBe("all");
-    expect(emptyWords("merged", filterCounts([row()])).offer).toEqual({ filter: "open", label: "Show open" });
-    expect(emptyWords("all", filterCounts([]))).toMatchObject({ title: "No pull requests yet", offer: undefined });
-  });
-
-  it("says under each title its repo and number, state, place in line, checks and reviews, quietly", () => {
+  it("says under each title its state, checks and reviews, quietly; its repo, number and why it waits are its hover's", () => {
     const passing = { state: "passing", passed: 6, failed: 0, pending: 0 } as const;
-    const meta = rowMeta(row({ checks: passing, review: { state: "approved", done: 1, needed: 1 }, queue: queue("queued", { position: 1 }) }));
-    expect(meta).toMatchObject({ ref: "storefront#11", state: { word: "waiting to merge" }, place: "2nd in line", checks: { text: "6 passed", tone: "done" }, review: { text: "Approved" } });
-    expect(rowMeta(row({ queue: queue("ready", { position: 0 }) })).place).toBe("next in line");
+    const approved = { state: "approved", done: 1, needed: 1 } as const;
+    const meta = rowMeta(row({ checks: passing, review: approved }));
+    expect(meta).toMatchObject({ ref: "storefront#11", why: undefined, state: { word: "open" }, checks: { text: "6 passed", tone: "done" }, review: { text: "Approved" } });
+    // In line, its state word already says it passed review; a review still asked for, or failed, stays.
+    expect(rowMeta(row({ checks: passing, review: approved, queue: queue("queued", { position: 1 }) }))).toMatchObject({ state: { word: "waiting to merge" }, review: undefined });
+    expect(rowMeta(row({ queue: queue("reviewing", { position: 1 }) })).review?.text).toBe("Reviews 1 of 3");
+    expect(rowMeta(row({ review: { state: "changes_requested", done: 1, needed: 1 }, queue: queue("reviewing") })).review?.tone).toBe("failed");
     // The state word says the checks failed already; a merged PR's checks and reviews are history.
     expect(rowMeta(row({ checks: { ...passing, failed: 2 }, queue: queue("ci_failed") })).checks).toBeUndefined();
-    expect(rowMeta(row({ state: "merged", checks: passing, queue: queue("merged", { position: 0 }) }))).toMatchObject({ checks: undefined, review: undefined, place: undefined });
+    expect(rowMeta(row({ state: "merged", checks: passing, queue: queue("merged", { position: 0, reason: "old" }) }))).toMatchObject({ checks: undefined, review: undefined, why: undefined });
     expect(rowMeta(row({ repo: "solo", number: 3 })).ref).toBe("solo#3");
   });
 
-  it("words a row's checks and place in line short", () => {
+  it("says a held PR is held, and why the train holds one or sent it back, without its tag or code marks", () => {
+    const held = rowMeta(row({ queue: queue("ready", { position: 1, reason: HOLD }) }));
+    expect(held.state).toMatchObject({ word: "held", tone: "needs-you" });
+    expect(held.why).toBe("the PR has the hold label; the train takes it once the label is gone");
+    expect(rowMeta(row({ queue: queue("needs_rebase", { reason: "src/shipping/zones.ts, src/shipping/rates.ts" }) }))).toMatchObject({ state: { word: "conflicts" }, why: "src/shipping/zones.ts, src/shipping/rates.ts" });
+    expect(rowMeta(row({ queue: queue("ready", { position: 0 }) }))).toMatchObject({ state: { word: "ready to merge" }, why: undefined });
+  });
+
+  it("words a row's checks short", () => {
     expect(checksShort({ state: "failing", passed: 7, failed: 2, pending: 1 })).toEqual({ text: "2 failed", tone: "failed" });
     expect(checksShort({ state: "pending", passed: 7, failed: 0, pending: 1 })?.text).toBe("1 running");
     expect(checksShort({ state: "none", passed: 0, failed: 0, pending: 0 })).toBeUndefined();
-    expect(placeWord(queue("queued", { position: 2 }))).toBe("3rd in line");
-    expect(placeWord(queue("reviewing"))).toBeUndefined();
-    expect(placeWord(queue("needs_rebase", { position: 1 }))).toBeUndefined();
-    expect(placeWord(undefined)).toBeUndefined();
   });
 
   it("counts drafts as open in the header", () => {
@@ -178,9 +181,9 @@ describe("the list", () => {
     expect(githubLine([row(), row({ checks: { state: "passing", passed: 3, failed: 0, pending: 0 } })])).toMatch(/may be out of date\.$/u);
   });
 
-  it("says so last when the hub sent only the most recent", () => {
-    const items = listItems([row({ number: 11 }), row({ number: 8, state: "merged" })], "open", true);
-    expect(items.at(-1)).toEqual({ kind: "cut", count: 2 });
+  it("ends with Load more when the hub sent only the most recent, under the fold too", () => {
+    const items = listItems([row({ number: 11 }), row({ number: 8, state: "merged" })], { cut: true });
+    expect(words(items)).toEqual(["Open 1", 11, "Merged 1", "cut"]);
   });
 
   it("finds a PR a link names by number alone in the project's list", () => {

@@ -1,33 +1,6 @@
-/* The panel's browser sessions: a calm list like the agents', and one session in the wide panel, its page in a device's
-   frame or a window (the one card here: a page stands apart from everything around it). Separation by space and hairlines, state in
-   words first, no coloured edge, and only what is live moves (ui/DESIGN.md). */
-
-.pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-1) var(--space-2) var(--space-3);
-}
-
-/* Needs you, Live, Recent: a heading with room above it, its count beside it. */
-.group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-2) var(--space-1);
-}
-section + section .group {
-  margin-top: var(--space-1);
-  border-top: 1px solid var(--hairline);
-}
+/* The panel's screens: a session's row in the Agents list (agents/AgentsPane), and one session in the wide panel, its
+   page in a device's frame or a window (the one card here: a page stands apart from everything around it). Separation
+   by space and hairlines, state in words first, no coloured edge, and only what is live moves (ui/DESIGN.md). */
 
 /* One session: its glyph in the gutter, its purpose; under it the state, agent, site and time; asking, its reason. */
 .row {
@@ -81,11 +54,6 @@ section + section .group {
 .meta {
   flex-wrap: wrap;
   row-gap: 0;
-}
-/* The state and the time keep their words whole; the agent's title gives way first. */
-.word {
-  flex: none;
-  white-space: nowrap;
 }
 .agent {
   display: flex;
@@ -817,22 +785,6 @@ section + section .group {
   background: var(--bg);
 }
 
-/* New screen, at the top of the list: one quiet button, right-aligned like a list's own action. */
-.top {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) 0;
-}
-/* The way to the Screens page, at the start of the row; New screen keeps the end. */
-.allScreens {
-  margin-right: auto;
-}
-
-/* Your waits for a slot: a row like a session's, its Cancel at the end. */
-.waits {
-  padding: var(--space-1) var(--space-2) 0;
-}
 .wait {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;

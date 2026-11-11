@@ -132,7 +132,7 @@ opens it in your computer's app for that kind, and the download button saves it 
 it opens the share sheet (Save to Files, or another app). A file you attached shows as the same card.
 
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
-nothing (the panel's History › [What happened](/docs/desktop-app#activity) shows those). It writes when you must act or decide, when something you asked about
+nothing (the panel's [History](/docs/desktop-app#activity) shows those). It writes when you must act or decide, when something you asked about
 lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short
 line. A merge partway through your request stays silent; the lead always writes when the request finishes. To change this, edit the **Lead** prompt
 (`lead.start`).
@@ -205,8 +205,8 @@ Agents publish with the [`publish_artifact`](/docs/reference/agent-tools#publish
 
 ## Read a pull request {#prs}
 
-**Pull requests**, under Shipping in the panel beside the chat (⌥⌘B shows the panel), lists the project's PRs: open ones first, then those merged
-or closed, most recent first, each with its checks, its reviews and the agent that wrote it. **Load more** at the end
+**Shipping**, in the panel beside the chat (⌥⌘B shows the panel), lists the project's PRs: those that need a look, what [merges now](/docs/desktop-app#train) and the line behind it, the other open ones, then, folded, those merged
+or closed, most recent first, each with its checks and its reviews. **Load more** at the end
 reads older ones, back to the repo's first PR. A PR named in the chat
 ("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
 (⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
@@ -216,12 +216,12 @@ Click a PR to read it in the list's place; **All pull requests** or Esc goes bac
 If GitHub can't be reached or its rate limit is reached, the list says so: you see the PRs fleetd made, or GitHub's last
 answer, and **Retry** asks again.
 
-| A PR shows | |
-|---|---|
-| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, the agents at work on it now, and its description. |
-| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. The panel widens while you read them. |
+A PR opens on where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it,
+the agents at work on it now, and its description. **Changes**, at the top, swaps that for the changed files and their
+diff, in one column or side by side: click a file to jump to it, and the panel widens while you read them. Point at
+the PR's number for its repo and branch.
 
-**Open on GitHub** is always there, for anything the app doesn't show.
+**Open on GitHub**, the arrow beside it, is always there, for anything the app doesn't show.
 
 ## Earlier work {#history}
 

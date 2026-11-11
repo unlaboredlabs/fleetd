@@ -1,0 +1,103 @@
+/* A group's label in the panel's lists (folds.tsx), the same in every tab: quiet 12 px words, how many as bare faint
+   figures, space above it and no rule (ui/DESIGN.md). It sits in a list whose rows are inset by --space-2, so its
+   words start on the rows' own left edge. */
+.group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  min-height: 24px;
+  padding: var(--space-3) var(--space-2) 2px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--quiet);
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.warning {
+  color: var(--warning);
+}
+.count {
+  flex: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+/* What sits at the label's end: an add button, a clear. */
+.end {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  /* Its buttons are taller than the words: they hang into the label's own space, so the line keeps its height. */
+  margin-block: -4px;
+}
+
+/* A fold: the label is a button, its chevron turning as it opens. */
+.fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  margin: 0 0 0 -2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  cursor: pointer;
+}
+.fold:hover .label {
+  color: var(--text);
+}
+.fold:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-quick) var(--ease-snap);
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+/* Where a list's own rows would be, one quiet line on the rows' left edge. */
+.note {
+  margin: 0;
+  padding: var(--space-3) var(--space-2) 0;
+  color: var(--quiet);
+  font-size: var(--text-sm);
+  line-height: var(--leading-md);
+}
+
+/* A tab with nothing in it: its one line, quiet, where the eye lands, a third of the way down. */
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 22vh var(--space-4) var(--space-4);
+  text-align: center;
+}
+.emptyTitle {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: 400;
+}
+.emptyActions {
+  display: flex;
+  gap: var(--space-2);
+}

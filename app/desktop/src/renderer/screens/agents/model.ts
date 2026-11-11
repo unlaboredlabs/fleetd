@@ -1,14 +1,13 @@
-// What the panel's agents show, as plain view data: one project's agents under the orders they work on, the
-// headline, each agent's state and where its work is, one line per step of an agent's work, and the work elsewhere
+// What the panel's agents show, as plain view data: one project's agents under the orders they work on, the other
+// projects' under their names, each agent's state and where its work is, one line per step of an agent's work, and the work elsewhere
 // on the project's repo. Pure, so it is unit-tested.
 import type { AgentRow, ChangeState, ClaimOwner, LaneStatus, RecentLanding, WorkItem, WorkListOutput, WorkStep } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 import { projectKey, type ProjectKey } from "../../src/data/store";
 import { parseMs } from "../live/format";
-import { sameProject, type Screen } from "../shell/routes";
 import { agoText } from "../projects/machineText";
 
-/** A line above agents: a project's name (All projects), or the order they work on. */
+/** A line above agents: the order they work on, or (under Other projects) their project's name. */
 export interface GroupLine {
   /** Unique in the list: "project:<key>" or "order:<key>/<workstream>". */
   readonly group: string;
@@ -74,44 +73,18 @@ export const projectGroups = (agents: readonly LiveAgent[], project: string, tit
 };
 
 /**
- * Every project's agents, each project under a line with its name and in it as `projectGroups`: the projects with an
- * agent waiting on you first, then the data layer's order (by name). Not the leads.
+ * The other projects' agents, each project under a line with its name and in it as `projectAgents`: the projects with
+ * an agent waiting on you first, then the data layer's order (by name). Not the leads, and not `project`'s own.
  */
-export const allAgents = (agents: readonly LiveAgent[], titleOf: OrderTitle = noTitles): readonly (GroupLine | LiveAgent)[] => {
-  const groups = [...new Set(agents.map((a) => a.project))].map((key) => ({ key, agents: mineOf(agents, key) })).filter((g) => g.agents.length > 0);
-  return waitingFirst(groups).flatMap(({ key, agents: mine }) => [
-    { group: `project:${key}`, title: mine[0]?.row.projectTitle ?? key, level: "project" as const, count: mine.length, waiting: mine.filter(waits).length },
-    ...projectGroups(mine, key, titleOf),
+export const otherProjects = (agents: readonly LiveAgent[], project: string): readonly (GroupLine | LiveAgent)[] => {
+  const groups = [...new Set(agents.map((a) => a.project))]
+    .filter((key) => key !== project)
+    .map((key) => ({ key, agents: projectAgents(agents, key) }))
+    .filter((g) => g.agents.length > 0);
+  return waitingFirst(groups).flatMap(({ key, agents: theirs }) => [
+    { group: `project:${key}`, title: theirs[0]?.row.projectTitle ?? key, level: "project" as const, count: theirs.length, waiting: theirs.filter(waits).length },
+    ...theirs,
   ]);
-};
-
-/** What works, what waits on you and what is queued, as the rows' dots say it; the leads not counted. */
-export interface Tally {
-  readonly working: number;
-  readonly waiting: number;
-  readonly queued: number;
-}
-
-export const tally = (agents: readonly LiveAgent[]): Tally => {
-  let working = 0;
-  let waiting = 0;
-  let queued = 0;
-  for (const { row } of agents) {
-    if (row.role === "lead") continue;
-    const state = agentState(row.status);
-    if (state === "working") working++;
-    else if (state === "waiting") waiting++;
-    else if (state === "queued") queued++;
-  }
-  return { working, waiting, queued };
-};
-
-/** "18 working · 1 needs you · 1 queued"; empty when none of the three. */
-export const headline = (agents: readonly LiveAgent[]): string => {
-  const { working, waiting, queued } = tally(agents);
-  return [working > 0 ? `${String(working)} working` : "", waiting > 0 ? `${String(waiting)} ${waiting === 1 ? "needs" : "need"} you` : "", queued > 0 ? `${String(queued)} queued` : ""]
-    .filter((p) => p !== "")
-    .join(" · ");
 };
 
 /** The five states a row's dot tells apart. Working is the only one that moves. */
@@ -152,6 +125,16 @@ export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
   parked: "paused",
 };
 
+/**
+ * What an agent's row leaves to its hover: its role, its profile when it isn't the usual one, and where its work is
+ * ("reviewer · #57 in CI", "writer · medium · receipt-dates").
+ */
+export const agentDetail = (row: Pick<AgentRow, "role" | "profile" | "pr" | "branch">, roleWord: string): string => {
+  const place = workPlace(row);
+  const where = place === undefined ? "" : place.state === undefined ? place.text : `${place.text} ${place.state}`;
+  return [roleWord, row.profile === "medium" ? row.profile : "", where].filter((part) => part !== "").join(" · ");
+};
+
 /** Where an agent's work is: its PR and the train's word for it, or else its branch. */
 export interface WorkPlace {
   readonly kind: "pr" | "branch";
@@ -188,13 +171,6 @@ export const workPlace = (row: Pick<AgentRow, "pr" | "branch">): WorkPlace | und
     return slug === undefined ? { kind: "branch", text: branch, tone: "quiet" } : { kind: "branch", text: slug, full: branch, tone: "quiet" };
   }
   return undefined;
-};
-
-/** The window is on this agent's own PR in the panel: its row there leaves the PR out, as the page is that PR. */
-export const onItsPr = (screen: Screen, row: Pick<AgentRow, "pr" | "projectRef">): boolean => {
-  if (screen.id !== "project" || screen.panel?.tab !== "prs" || screen.panel.pr === null || row.pr === undefined) return false;
-  const { repo, number } = screen.panel.pr;
-  return sameProject(screen.project, row.projectRef) && number === row.pr.number && (repo === null || repo === row.pr.repo);
 };
 
 export interface StepLine {

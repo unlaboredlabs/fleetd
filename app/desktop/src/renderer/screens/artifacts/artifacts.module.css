@@ -1,5 +1,5 @@
-/* A chat's Artifacts (ArtifactsPane.tsx), by ui/DESIGN.md: rows a space apart, each a format icon, its title in full
-   voice and one quiet line under it; one artifact's head and toolbar, then its document at a reading measure or its
+/* A chat's Artifacts (ArtifactsPane.tsx), by ui/DESIGN.md: one line a row, a format icon, its title and when at its
+   end; one artifact's head and toolbar, then its document at a reading measure or its
    page's frame filling the panel. The chat's card is the one card: a hairline box that opens it. */
 .screen {
   --pad: var(--space-4);
@@ -14,13 +14,6 @@
   min-height: 0;
   overflow-y: auto;
   padding-bottom: var(--space-6);
-}
-.empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8) var(--pad);
 }
 .note {
   display: flex;
@@ -44,32 +37,21 @@
   width: 70%;
 }
 
+/* One scroll, its rows inset so the Files label starts on their left edge (panel/folds). */
 .rows {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-4);
 }
 .group {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-/* The files' group under the artifacts, its head a quiet small label in the rows' inset. */
-.groupHead {
-  margin: var(--space-3) 0 var(--space-1);
-  padding: 0 var(--space-2);
-  font-weight: 500;
-}
-.groupHead:first-child {
-  margin-top: var(--space-1);
-}
-/* A file's Save shows on its row's hover or focus, over the row's end. */
+/* A file's Save shows on its row's hover or focus, in the place of when it was sent. */
 .fileItem {
   position: relative;
-}
-.fileItem > .row {
-  padding-right: var(--space-8);
 }
 .save.save {
   position: absolute;
@@ -83,15 +65,21 @@
 .save:focus-visible {
   opacity: 1;
 }
+.fileItem:hover .when,
+.fileItem:focus-within .when {
+  visibility: hidden;
+}
+/* One line: what it is, and when at its end. */
 .row {
   all: unset;
   box-sizing: border-box;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  min-height: 32px;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background var(--dur-quick) var(--ease-snap);
 }
@@ -107,27 +95,20 @@
   flex: none;
   width: 14px;
   height: 14px;
-  margin-top: 2px;
   color: var(--quiet);
 }
-.words {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
 .title {
-  font-weight: 500;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.when {
+  flex: none;
+  color: var(--faint);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .head {
@@ -200,6 +181,22 @@
   width: 18px;
   height: 18px;
   color: var(--quiet);
+}
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.card .title {
+  flex: none;
+  font-weight: 500;
+}
+.meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cardTime {
   flex: none;

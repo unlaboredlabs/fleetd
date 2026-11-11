@@ -1,6 +1,6 @@
 // The panel beside a project's chat, as the frame holds it. Whether it shows is the window's (sidebarState: it hides
 // itself in a narrow window, like the sidebar); what it shows is the route's when the route names a view (a PR link,
-// Status's PRs, the palette), else the tab you last had. Its width is yours (panelWidth.ts): drag its left edge, or
+// Status's PRs, the palette), else the view you last had. Its width is yours (panelWidth.ts): drag its left edge, or
 // focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as its toggle opens it and
 // out as it closes it (AppFrame), only by transform, so the chat beside it never lays out again mid-way; leaving the
 // project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
@@ -10,7 +10,7 @@ import { Boundary } from "../../src/Boundary";
 import { navigate } from "./navigation";
 import { ResizeEdge } from "./ResizeEdge";
 import { shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
-import { hasItem, listView, panelRoute, type PanelView, type ProjectKey, type Screen } from "./routes";
+import { backView, listView, panelRoute, type PanelView, type ProjectKey, type Screen } from "./routes";
 import { usePanel } from "./sidebarState";
 import s from "./shell.module.css";
 
@@ -61,7 +61,7 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
 
 /**
  * The panel itself, while it shows, its max leaving room for the sidebar as wide as it is (`sidebarPx`, 0 without one).
- * Esc inside it goes back from an agent or a PR to the list, then closes it and
+ * Esc inside it goes back from an agent, a PR or the decisions to the list they opened from, then closes it and
  * returns focus to the chat's pill; menus and dialogs in it take their own Esc first.
  */
 export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; sidebarPx: number }) {
@@ -78,10 +78,11 @@ export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; side
     if (e.key !== "Escape" || e.defaultPrevented) return;
     if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null) return;
     e.preventDefault();
-    if (hasItem(view)) {
+    const back = backView(view);
+    if (back !== null) {
       // Focus stays in the panel as the item leaves, so a second Esc closes it.
       e.currentTarget.focus();
-      navigate(panelRoute(project, listView(view.tab)));
+      navigate(panelRoute(project, back));
       return;
     }
     panel.toggle();

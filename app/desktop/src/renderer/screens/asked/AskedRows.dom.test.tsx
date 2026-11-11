@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// Asked work, in a project's panel: each ask a row that opens to its words and its orders, with no fleetd ids.
+// Asked work, a group at the foot of a project's Plan: each ask a row that opens to its words and its orders, with no
+// fleetd ids. Its old tab's route (`/asked`) opens the Plan at it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,8 @@ import { AT, live } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { orderHref } from "../automations/model";
 import { PROJECT_TOOLS } from "../projects/model";
-import { AskedPane } from "./AskedPane";
+import { ChecklistPane } from "../checklist/ChecklistPane";
+import { forgetFolds } from "../panel/folds";
 
 const went = vi.hoisted(() => [] as unknown[]);
 vi.mock("../shell/navigation", () => ({ navigate: (s: unknown) => went.push(s) }));
@@ -44,6 +46,7 @@ let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   went.length = 0;
+  forgetFolds();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -118,9 +121,19 @@ const READ: NaviAsksOutput = {
   ],
 };
 
+const ADA_KEY = { machineId: "devbox", projectId: "ada" };
+const ITEM = { id: 1, text: "Ship saved carts", state: "doing", createdAt: AT, updatedAt: AT };
+const answers =
+  (asks: NaviAsksOutput | "fails", items: readonly unknown[] = []) =>
+  (tool: string): CallOutcome | undefined => {
+    if (tool === PROJECT_TOOLS.asks) return asks === "fails" ? { ok: false, error: { code: "invalid", message: "no" } } : { ok: true, output: asks };
+    if (tool === "checklist_get") return { ok: true, output: { items } };
+    return undefined;
+  };
+
 describe("Asked work", () => {
   it("reads this project's asks and shows each ask as a row that opens to its words and orders, with no ids", async () => {
-    const { calls } = await mount(<AskedPane project={{ machineId: "devbox", projectId: "ada" }} />, [STOREFRONT, ADA], (tool) => (tool === PROJECT_TOOLS.asks ? { ok: true, output: READ } : undefined));
+    const { calls } = await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers(READ));
     expect(calls).toContainEqual({ tool: PROJECT_TOOLS.asks, input: { navi: { machineId: "devbox", projectId: "ada" } } });
     expect(screen()).toBe("asked");
     expect([...host.querySelectorAll("[data-ask]")].map((a) => a.getAttribute("data-ask"))).toEqual(["N4", "N3"]);
@@ -150,4 +163,34 @@ describe("Asked work", () => {
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "storefront" }, message: null }]);
   });
 
+  it("is a group under the plan's own, with no tab or switch to reach it, and only once there is something asked", async () => {
+    await mount(<ChecklistPane project={ADA_KEY} />, [STOREFRONT, ADA], answers(READ, [ITEM]));
+    expect(screen()).toBe("checklist");
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["Doing1", "Asked of other projects2"]);
+    expect(host.querySelector("[role='tablist'], [role='tab']")).toBeNull();
+    expect(host.querySelectorAll("[data-ask]")).toHaveLength(2);
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    await mount(<ChecklistPane project={ADA_KEY} />, [STOREFRONT, ADA], answers({ ...READ, asks: [] }, [ITEM]));
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["Doing1"]);
+  });
+
+  it("says in one line that nothing was asked, and a read that failed with Retry, where its old tab's link opens", async () => {
+    await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers({ ...READ, asks: [] }));
+    expect(screen()).toBe("asked");
+    expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing asked yet");
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers({ ...READ, asks: [] }, [ITEM]));
+    expect(host.querySelector("section[aria-label='Asked of other projects']")?.textContent).toBe("Asked of other projectsNothing asked yet.");
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    await mount(<ChecklistPane project={ADA_KEY} at="asked" />, [STOREFRONT, ADA], answers("fails", [ITEM]));
+    expect(screen()).toBe("asked.error");
+    expect(host.querySelector("section[aria-label='Asked of other projects'] [role='alert']")?.textContent).toContain("Couldn’t read the asked work.");
+    expect(button("Retry")).toBeDefined();
+  });
 });

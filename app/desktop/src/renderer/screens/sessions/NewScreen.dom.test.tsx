@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
+// New screen (D239): the plus at the Agents tab's Screens label opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
 // with Cancel. An Android screen takes an open PR's build: the picker follows it in the hub until the screen is
 // yours, or says why it failed. No iOS screen is offered (D298): the agents' Mac is the one Apple kind. The palette's "New screen…" opens the same picker.
@@ -10,7 +10,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { SessionsPane } from "./SessionsPane";
+import { AgentsPane } from "../agents/AgentsPane";
 import { NewScreenHost } from "./NewScreen";
 import { commandFor } from "../palette/registry";
 import { CallRequest } from "../../../shared/ipc";
@@ -77,7 +77,22 @@ const PEOPLE = [
   { personId: "p_bobobobo", name: "Bo", role: "member", createdAt: AT },
 ];
 
+// happy-dom has no layout: the list's scroller is 600 px tall and each row 50 px, so every row renders.
+const heightOf = (el: Element) => {
+  if (el.getAttribute("role") === "list") return 600;
+  if (el instanceof HTMLElement && el.dataset["index"] !== undefined) return 50;
+  return 0;
+};
+const proto = HTMLElement.prototype;
+const realRect = proto.getBoundingClientRect.bind(proto);
+
 beforeEach(() => {
+  vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const h = heightOf(this);
+    return h ? new DOMRect(0, 0, 400, h) : realRect.call(this);
+  });
+  Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
+  Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 400 });
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -97,6 +112,7 @@ afterEach(() => {
   host.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const settle = async () => {
@@ -143,6 +159,7 @@ const mount = async () => {
         waits = [];
         return Promise.resolve({ ok: true, output: {} });
       }
+      if (tool === "work_list") return Promise.resolve({ ok: true, output: { scope: { repoKey: "github.com/acme/app", base: "main" }, items: [], recentLandings: [] } });
       return Promise.resolve({ ok: true, output: tool === "agents_list" ? { at: AT, agents: [] } : {} });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -156,7 +173,7 @@ const mount = async () => {
     root?.render(
       <DataProvider layer={layer}>
         <TooltipProvider>
-          <SessionsPane project={project} session={null} />
+          <AgentsPane project={project} agent={null} />
           <NewScreenHost />
         </TooltipProvider>
       </DataProvider>,
@@ -169,10 +186,11 @@ const mount = async () => {
   await settle();
 };
 
-const button = (words: string) => [...document.querySelectorAll("button")].find((b) => b.textContent.includes(words));
+/** A button by its words, or by its name when it is an icon alone (the list's plus). */
+const button = (words: string) => [...document.querySelectorAll("button")].find((b) => b.textContent.includes(words) || b.getAttribute("aria-label") === words);
 const picker = () => document.querySelector("[data-screen='sessions.new']");
 
-it("opens a screen on the machine picked, from the Screens tab, and goes to its live view", async () => {
+it("opens a screen on the machine picked, from the plus at Screens, and goes to its live view", async () => {
   await mount();
   act(() => button("New screen")?.click());
   await settle();
@@ -251,7 +269,8 @@ it("waits for a slot on a full machine, shows the wait in the list, and cancels 
   act(() => button("Cancel")?.click());
   await settle();
   expect(calls.find((c) => c.tool === "screen_end")?.input).toEqual({ waitId: "W1" });
-  expect(host.textContent).not.toContain("waiting for a free slot");
+  // Its row fades where it stood (ui/lib/leaving), then goes.
+  expect([...host.querySelectorAll("[data-wait]")].filter((w) => w.closest("[data-leaving]") === null)).toEqual([]);
 });
 
 /** Picks `label` in the picker's PR select. */

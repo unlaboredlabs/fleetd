@@ -13,6 +13,7 @@ import { forgetViews, SECTIONS, sectionOf } from "../panel/Sections";
 import { PANEL_TABS } from "../panel/tabs";
 import { useRoute } from "./navigation";
 import { PanelSlot, useProjectPanel, type ProjectPanelState } from "./panel";
+import { listView, panelRoute, toHash } from "./routes";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -76,15 +77,20 @@ const decision = (decisionId: string, state: Decision["state"]): Decision => ({
   at: AT,
 });
 
+const SWEEP = { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT };
+// storefront's PRs as pr_list has them: #11 alone, until a test puts more on the train.
+let prRows: PrRow[];
 // storefront's chat has no artifacts until a test publishes one.
 let artifacts: unknown[];
 let files: unknown[];
 
 const ANSWERS: Readonly<Record<string, unknown>> = {
   skills_list: { skills: [] },
+  navi_asks: { navi: { machineId: "devbox", projectId: "storefront" }, asks: [] },
+  // One report, as the chat published it.
+  artifact_get: { name: "dependency-sweep", artifact: SWEEP, content: "# Sweep", versions: [SWEEP] },
   decisions_list: { decisions: [decision("D2", "active"), decision("D1", "superseded")], orders: [] },
   events_list: { events: [], more: false },
-  pr_list: { at: AT, prs: [pr] },
   pr_get: detail,
   pr_files: { files: [], total: 0 },
   agents_list: { at: AT, agents },
@@ -111,7 +117,7 @@ let root: Root | undefined;
 
 // The panel's own chunk and its tabs' counts, loaded once up front as the app's first opening would, so each step waits on answers only.
 beforeAll(async () => {
-  await Promise.all([import("../panel/ProjectPanel"), import("../panel/counts"), import("../train/TrainPane")]);
+  await Promise.all([import("../panel/ProjectPanel"), import("../panel/panes"), import("../panel/counts")]);
 });
 
 /** happy-dom's window size, which its media queries follow. */
@@ -132,6 +138,7 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
   window.localStorage.clear();
   forgetViews();
+  prRows = [pr];
   artifacts = [];
   files = [];
   checklist = listOf([
@@ -186,6 +193,7 @@ const mount = async ({ online = true, features }: { online?: boolean; features?:
         return Promise.resolve({ ok: true, output: { changes: TRAIN.filter((c) => c.state === state) } });
       }
       if (tool === "artifacts_list") return Promise.resolve({ ok: true, output: { artifacts, files } });
+      if (tool === "pr_list") return Promise.resolve({ ok: true, output: { at: AT, prs: prRows } });
       return Promise.resolve({ ok: true, output: tool === "checklist_get" ? checklist : (ANSWERS[tool] ?? {}) });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -363,40 +371,36 @@ it("says the agents and PRs show once you're connected while it has none to show
   expect(text()).not.toContain("once you’re connected");
 });
 
-it("lists every project's agents with All projects, remembers it across a remount, and opens another project's agent", async () => {
+it("lists the project's agents with the other projects' folded under them, keeps the fold open across a remount, and opens another project's agent", async () => {
   await mount();
   const rows = () => [...(panel()?.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a") ?? [])].map((a) => a.getAttribute("href"));
   const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
   const tabCount = () => panel()?.querySelector("[role='tab']")?.textContent;
-  expect(button("This project")?.getAttribute("aria-pressed")).toBe("true");
+  // No switch between this project and all: the others' are one fold under its own.
+  expect(button("This project")).toBeUndefined();
+  expect(button("All projects")).toBeUndefined();
   expect(rows()).toEqual([`${CHAT}/agents/T1`]);
   expect(tabCount()).toBe("Agents1");
 
-  // Every project's, under its name; checkout first, as one of its agents waits on you, and the waiting one first.
-  await click("All projects");
-  expect(button("All projects")?.getAttribute("aria-pressed")).toBe("true");
-  expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40", `${CHAT}/agents/T1`]);
+  // Every other project's, under its name; the one that waits on you first. The tab still counts this project's.
+  await click("Other projects2");
+  expect(rows()).toEqual([`${CHAT}/agents/T1`, "#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
   expect(lines().indexOf("checkout")).toBeLessThan(lines().indexOf("Review the payment element change"));
-  expect(lines()).toContain("storefront");
-  expect(tabCount()).toBe("Agents3");
+  expect(tabCount()).toBe("Agents1");
 
   unmount();
   await mount();
-  expect(button("All projects")?.getAttribute("aria-pressed")).toBe("true");
   expect(rows()).toHaveLength(3);
 
-  // Another project's agent opens its work, beside that project's chat; its list is every project's still.
-  await go(rows()[0] ?? "");
+  // Another project's agent opens its work, beside that project's chat, and Back is that project's list.
+  await go(rows()[1] ?? "");
   expect(panel()?.querySelector("[data-screen='agents.work'][aria-label='What Review the payment element change is doing']")).not.toBeNull();
   await click("All agents");
   expect(window.location.hash).toBe("#/project/devbox/checkout/agents");
-  expect(rows()).toHaveLength(3);
-
-  await click("This project");
   expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
 });
 
-it("folds the live work on the project's repo under its agents, with This project only", async () => {
+it("folds the live work on the project's repo under its agents", async () => {
   await mount();
   const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
   const other = () => [...(panel()?.querySelectorAll<HTMLElement>("[data-elsewhere]") ?? [])].map((el) => el.dataset["elsewhere"]);
@@ -410,10 +414,6 @@ it("folds the live work on the project's repo under its agents, with This projec
   expect(lines()).not.toContain("pushed straight to main");
   expect(panel()?.querySelectorAll("[data-screen='agents'] a")).toHaveLength(1);
   expect(panel()?.querySelector("[role='tab']")?.textContent).toBe("Agents1");
-
-  await click("All projects");
-  expect(other()).toEqual([]);
-  expect(lines()).not.toContain("Also on this repo");
 });
 
 const handle = () => panel()?.querySelector<HTMLElement>("[role='separator']") ?? null;
@@ -429,7 +429,11 @@ const pointer = (el: Element | null, type: string, clientX: number) =>
     el?.dispatchEvent(new PointerEvent(type, { clientX, button: 0, pointerId: 1, bubbles: true, cancelable: true }));
   });
 
-it("shows its sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
+/** The view on screen: the innermost thing that names itself. */
+const screenNow = () => [...(panel()?.querySelectorAll<HTMLElement>("[data-screen]") ?? [])].at(-1)?.dataset["screen"];
+const selectedTab = () => panel()?.querySelector<HTMLElement>("[role='tab'][aria-selected='true'][data-section]")?.dataset["section"] ?? null;
+
+it("has one row of tabs and no other: every view is a route that selects its tab and shows its list, with no tabs inside", async () => {
   // A hub that serves every view, browser sessions and artifacts too; storefront has none published.
   await mount({ features: ["browser_sessions", "artifacts"] });
   expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
@@ -445,17 +449,71 @@ it("shows its sections as tabs, each view a route of its own under its section, 
     const pane = document.getElementById(selected?.getAttribute("aria-controls") ?? "");
     expect(pane?.getAttribute("role")).toBe("tabpanel");
     expect(pane?.getAttribute("aria-labelledby")).toBe(selected?.id);
-    const inner = panel()?.querySelector<HTMLElement>(`[role='tab'][data-tab='${tab.id}']`);
-    if (section.views.length > 1) {
-      expect(inner?.getAttribute("aria-selected")).toBe("true");
-      expect(document.getElementById(inner?.getAttribute("aria-controls") ?? "")?.getAttribute("role")).toBe("tabpanel");
-    } else {
-      expect(inner).toBeNull();
-    }
+    // The row is all the navigation: no second row of tabs under it, no switch, and no line saying what the tab is.
+    expect(panel()?.querySelectorAll("[role='tablist']")).toHaveLength(1);
+    expect(pane?.querySelector("[role='tab'], [role='radiogroup'], [role='switch'], select")).toBeNull();
+    expect(panel()?.textContent).not.toContain(section.line);
   }
   // Away from Artifacts, its tab goes again.
   await go(`${CHAT}/agents`);
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
+});
+
+// Every route the panel has ever had, as chat lines, cards, Status and old bookmarks write it: the tab it selects on
+// the row and the view under it. Screens, the merge line, the asked work and the decisions were tabs of a second row
+// once; their routes still open where they went.
+const LANDS: readonly (readonly [route: string, tab: string | null, screen: string])[] = [
+  ["agents", "agents", "agents"],
+  ["agents/T1", "agents", "agents.work"],
+  ["sessions", "agents", "sessions"],
+  ["sessions/Bgone", "agents", "sessions.missing"],
+  ["prs", "shipping", "prs"],
+  ["prs/11", "shipping", "prs.detail"],
+  ["prs/acme/storefront/11", "shipping", "prs.detail"],
+  ["train", "shipping", "train"],
+  ["checklist", "plan", "checklist"],
+  ["asked", "plan", "asked"],
+  ["artifacts", "artifacts", "artifacts"],
+  ["artifacts/dependency-sweep", "artifacts", "artifact"],
+  ["artifacts/dependency-sweep/1", "artifacts", "artifact"],
+  ["activity", "history", "activity"],
+  ["activity/dms", "history", "activity"],
+  ["decisions", "history", "decisions"],
+  // A skill the project doesn't have says so in the skill's own view, under no tab.
+  ["skills/taxes", null, "skill.gone"],
+];
+
+it("lands every route the panel ever had on its tab and view", async () => {
+  artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
+  await mount({ features: ["browser_sessions", "artifacts"] });
+  const landed: (readonly [string, string | null, string | undefined])[] = [];
+  for (const [route] of LANDS) {
+    await go(`${CHAT}/${route}`);
+    landed.push([route, selectedTab(), screenNow()]);
+  }
+  expect(landed).toEqual(LANDS);
+});
+
+it("lands each of the palette's Go to commands, and the view the panel was last left on, on its tab and view", async () => {
+  artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
+  await mount({ features: ["browser_sessions", "artifacts"] });
+  // Shell.tsx's commands, one per view with a list: each goes to that view's route.
+  const commands = PANEL_TABS.filter((t) => !("itemOnly" in t));
+  expect(commands.map((t) => t.label)).toEqual(["Agents", "Screens", "Pull requests", "Train", "Checklist", "Artifacts", "Activity", "Decisions", "Asked work"]);
+  const want = new Map(LANDS.map(([route, tab, screen]) => [route, [tab, screen]]));
+  for (const tab of commands) {
+    await go(toHash(panelRoute(STORE, listView(tab.id))));
+    expect([tab.id, selectedTab(), screenNow()]).toEqual([tab.id, ...(want.get(tab.id) ?? [])]);
+  }
+
+  // A launch with no view in the route (the sidebar, a notification, the dock) opens the one it was left on.
+  for (const tab of ["sessions", "train", "asked", "decisions"] as const) {
+    unmount();
+    window.location.hash = CHAT;
+    window.localStorage.setItem("fleetd.panel", JSON.stringify({ open: true, tab }));
+    await mount({ features: ["browser_sessions", "artifacts"] });
+    expect([tab, selectedTab(), screenNow()]).toEqual([tab, ...(want.get(tab) ?? [])]);
+  }
 });
 
 it("opens one skill with no tab of its own, and sends a link to the skills' list to the project's settings", async () => {
@@ -477,7 +535,7 @@ it("opens on Agents when it was last left on the skills' list", async () => {
 it("shows Artifacts once the project has one, the moment its first is published", async () => {
   await mount({ features: ["artifacts"] });
   expect(panel()?.querySelector("[role='tab'][data-section='artifacts']")).toBeNull();
-  artifacts = [{ name: "dependency-sweep", newest: { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT } }];
+  artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
   act(() => send(event(2, "artifacts.changed", { projectRef: STORE, name: "dependency-sweep", version: 1 })));
   // Events coalesce for a moment before their reads go out.
   await act(() => new Promise((done) => setTimeout(done, 150)));
@@ -497,37 +555,38 @@ it("shows Artifacts for a chat with files sent in it and no report, so its Files
 });
 
 it("never shows Artifacts from a hub that doesn't serve them, whatever the project has", async () => {
-  artifacts = [{ name: "dependency-sweep", newest: { version: 1, title: "Dependency sweep", format: "md", by: "the lead", at: AT } }];
+  artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
   await mount();
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(["agents", "shipping", "plan", "history"]);
 });
 
-it("gives one screen the section's whole height: no section line, inner tabs or back row, its own line going back", async () => {
+it("gives one screen the tab's whole height: no back row above it, its own line going back to the screens", async () => {
   await mount({ features: ["browser_sessions"] });
   await go(`${CHAT}/sessions`);
-  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).not.toBeNull();
+  expect(panel()?.querySelector("[data-screen='sessions']")).not.toBeNull();
   await go(`${CHAT}/sessions/Bgone`);
   expect(panel()?.querySelector("[data-screen='sessions.missing']")).not.toBeNull();
-  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).toBeNull();
-  expect(panel()?.textContent).not.toContain(SECTIONS[0]?.line);
   const back = [...(panel()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent === "All screens");
   expect(back).toHaveLength(1);
   act(() => back[0]?.click());
   await settle();
+  expect(window.location.hash).toBe(`${CHAT}/sessions`);
   expect(panel()?.querySelector("[data-screen='sessions']")).not.toBeNull();
 });
 
-it("shows Agents alone from a hub that doesn't serve browser sessions, and opens Agents for a link to them", async () => {
+it("shows Agents with no screens from a hub that doesn't serve browser sessions, and opens Agents for a link to them", async () => {
   await mount();
   await go(`${CHAT}/agents`);
-  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).toBeNull();
-  expect(panel()?.textContent).toContain("The AI workers on this project, and what each is doing right now.");
+  expect(panel()?.querySelector("[role='list']")?.textContent).not.toContain("Screens");
+  // What the tab is, is its hover's, and the hover says only what this hub serves.
+  act(() => panel()?.querySelector<HTMLElement>("[role='tab'][data-section='agents']")?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("The AI workers on this project, and what each is doing right now.");
   await go(`${CHAT}/sessions`);
   expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
   expect(panel()?.querySelector("[data-screen^='sessions']")).toBeNull();
 });
 
-it("opens a section on the view you last had in it", async () => {
+it("opens a tab on its list, wherever in it a link had opened it", async () => {
   await mount();
   const press = (el: Element | null | undefined) =>
     act(() => {
@@ -539,36 +598,49 @@ it("opens a section on the view you last had in it", async () => {
   expect(window.location.hash).toBe(`${CHAT}/agents`);
   press(panel()?.querySelector("[role='tab'][data-section='shipping']"));
   await settle();
-  expect(window.location.hash).toBe(`${CHAT}/train`);
-  press(panel()?.querySelector("[role='tab'][data-tab='prs']"));
-  await settle();
   expect(window.location.hash).toBe(`${CHAT}/prs`);
+  await go(`${CHAT}/decisions`);
+  press(panel()?.querySelector("[role='tab'][data-section='plan']"));
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/checklist`);
+  press(panel()?.querySelector("[role='tab'][data-section='history']"));
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/activity`);
 });
 
-it("opens the merge train, the activity and the decisions from their tabs, each with its count, and a train row opens its PR", async () => {
+it("shows the merge line among Shipping's pull requests, a row opening its PR, and the decisions a row away from History, Esc and Back leading out", async () => {
+  // On the train: #11 in CI and #12 next in line, as pr_list says where each stands.
+  const queued = (row: PrRow, state: Change["state"], position?: number): PrRow => ({ ...row, queue: { changeId: `X${row.number}`, length: 1, state, ...(position === undefined ? {} : { position }) } });
+  prRows = [queued(pr, "ci"), queued({ ...pr, number: 12, url: "https://github.com/acme/storefront/pull/12", title: "Dark mode toggle" }, "ready", 0)];
   await mount();
-  const tab = (id: string) => panel()?.querySelector(`[role='tab'][data-tab='${id}']`);
-  // On the train: #11 merging and #12 in line. In force: one decision. Activity counts only after a first look.
-  await go(`${CHAT}/prs`);
-  expect(tab("train")?.textContent).toBe("Merge line2");
-  await go(`${CHAT}/activity`);
-  expect(tab("decisions")?.textContent).toBe("Decisions1");
-  expect(tab("activity")?.textContent).toBe("What happened");
-
   await go(`${CHAT}/train`);
   const train = panel()?.querySelector("[data-screen='train']");
-  expect(train?.querySelector("section[aria-label='Merging now']")?.textContent).toContain("#11");
-  expect(train?.querySelector("section[aria-label='In line']")?.textContent).toContain("#12");
+  expect(train?.querySelector("[data-moving]")?.textContent).toContain("Receipts show the shop's local time");
+  expect([...(train?.querySelectorAll("[data-group-label]") ?? [])].map((l) => l.textContent)).toEqual(["Merging now", "In line1"]);
+  expect(panel()?.querySelector("[role='tab'][data-section='shipping']")?.textContent).toBe("Shipping2");
   const row = train?.querySelector<HTMLAnchorElement>("a[data-pr='12']");
   expect(row?.getAttribute("href")).toBe(`${CHAT}/prs/acme/storefront/12`);
   act(() => row?.click());
-  await settle();
-  expect(tab("prs")?.getAttribute("aria-selected")).toBe("true");
+  await go(row?.getAttribute("href") ?? "");
+  expect(selectedTab()).toBe("shipping");
+  expect(screenNow()).toMatch(/^prs\.detail/u);
 
+  // History is what happened; the decisions, with how many are in force, are its first line.
   await go(`${CHAT}/activity`);
   expect(panel()?.querySelector("[data-screen^='activity']")).not.toBeNull();
-  await go(`${CHAT}/decisions`);
+  const decisions = panel()?.querySelector<HTMLAnchorElement>("a[data-decisions]");
+  expect(decisions?.textContent).toBe("Decisions1");
+  expect(decisions?.getAttribute("href")).toBe(`${CHAT}/decisions`);
+  await go(decisions?.getAttribute("href") ?? "");
   expect(panel()?.querySelector("[data-screen^='decisions']")).not.toBeNull();
+  expect(selectedTab()).toBe("history");
+  // Esc steps back to History, as its own Back does.
+  await press("Escape");
+  expect(window.location.hash).toBe(`${CHAT}/activity`);
+  await go(`${CHAT}/decisions`);
+  act(() => panel()?.querySelector<HTMLButtonElement>("[data-screen^='decisions'] button[aria-label='History']")?.click());
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/activity`);
 });
 
 it("resizes from its edge by keyboard and by drag, keeps the width across a relaunch, and a double-click resets it", async () => {
@@ -702,33 +774,34 @@ it("says the lead keeps a checklist while there is none, and that it shows once 
   checklist = listOf([]);
   await mount();
   await go(`${CHAT}/checklist`);
-  expect(panel()?.querySelector("[data-screen='checklist.empty']")?.textContent).toContain("No checklist yet");
+  expect(panel()?.querySelector("[data-screen='checklist.empty']")?.textContent).toContain("No plan yet");
   unmount();
   await mount({ online: false });
   await go(`${CHAT}/checklist`);
-  expect(panel()?.textContent).toContain("The checklist shows once you’re connected.");
+  expect(panel()?.textContent).toContain("The plan shows once you’re connected.");
   expect(panel()?.querySelector("[aria-busy='true']")).toBeNull();
 });
 
-it("widens for a PR's changes with a width of its own, and narrows again to yours from its Overview", async () => {
+it("widens for a PR's changes with a width of its own, and narrows again to yours when Changes is switched off", async () => {
   await mount();
   await key(handle(), "ArrowRight", true);
   expect(width()).toBe(356);
   await go(`${CHAT}/prs/acme/storefront/11`);
-  const prTab = (name: string) => [...(panel()?.querySelectorAll<HTMLElement>("[data-screen^='prs.detail'] [role='tab']") ?? [])].find((t) => t.textContent.startsWith(name));
-  act(() => {
-    prTab("Changes")?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
-  });
+  // One PR has no tabs of its own: Changes is one switch on its top line, beside the way back.
+  expect(panel()?.querySelector("[data-screen^='prs.detail'] [role='tab']")).toBeNull();
+  const changes = () => panel()?.querySelector<HTMLButtonElement>("[data-screen^='prs.detail'] button[data-changes]");
+  expect(changes()?.getAttribute("aria-pressed")).toBe("false");
+  act(() => changes()?.click());
   await settle();
+  expect(changes()?.getAttribute("aria-pressed")).toBe("true");
   expect(panel()?.getAttribute("data-mode")).toBe("wide");
   expect(width()).toBe(770);
   await key(handle(), "ArrowLeft");
   expect(width()).toBe(786);
 
-  act(() => {
-    prTab("Overview")?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
-  });
+  act(() => changes()?.click());
   await settle();
+  expect(changes()?.getAttribute("aria-pressed")).toBe("false");
   expect(panel()?.getAttribute("data-mode")).toBe("normal");
   expect(width()).toBe(356);
   await click("All pull requests");

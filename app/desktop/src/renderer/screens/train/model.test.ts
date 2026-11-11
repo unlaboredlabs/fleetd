@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Change, PrCheck } from "../../../shared/contracts";
 import { effectsOf } from "../../src/data/effects";
 import { trainFixture, TRAIN_REPO } from "./fixture";
-import { changesOf, checkLines, LINE_STATES, lineReads, onTrain, OPEN_STATES, RECENT_MAX, stageLine, trainReads, trainViews, type Recent } from "./model";
+import { changesOf, checkLines, LINE_STATES, lineReads, movingNow, stageLine } from "./model";
 
 const NOW = "2026-10-19T10:30:00.000Z";
 const PROJECT = { machineId: "devbox", projectId: "storefront" };
@@ -23,86 +23,34 @@ const change = (n: number, state: Change["state"], extra: Partial<Change> = {}):
   ...extra,
 });
 
-const numbers = (r: Recent): number[] => (r.kind === "merged" ? r.prs.map((p) => p.number) : [r.pr.number]);
-
-describe("the train pane's model", () => {
-  it("reads the fixture as one train: a PR in CI, the line in order, then what landed lately", () => {
+describe("what merges now", () => {
+  it("reads the fixture as one train with one PR in CI, titled from the PR list", () => {
     const { changes, prs } = trainFixture(PROJECT, NOW);
-    const [view, ...more] = trainViews(changes, prs);
-    expect(more).toEqual([]);
-    expect(view?.moving).toMatchObject({ stage: "ci", prs: [{ number: 20, title: "Bump the image CDN client" }] });
-    expect(view?.queue.map((q) => [q.pr.number, q.state, q.place])).toEqual([
-      [21, "ready", 1],
-      [22, "reviewing", 2],
-      [23, "blocked", 3],
-      [24, "queued", 4],
-      [19, "blocked", undefined],
-    ]);
-    expect(view?.recent.map((r) => [r.kind, numbers(r)])).toEqual([
-      ["merged", [18]],
-      ["merged", [15, 16, 17]],
-      ["refused", [14]],
-      ["merged", [12]],
-    ]);
-  });
-
-  it("says why a PR is blocked: its hold without the train's tag, its conflicts, its failed checks", () => {
-    const view = trainViews(
-      [
-        change(1, "ready", { position: 0, lastError: "held: the PR has the `hold` label; the train takes it once the label is gone" }),
-        change(2, "needs_rebase", { lastError: "src/a.ts" }),
-        change(3, "ci_failed", { lastError: "unit tests, e2e" }),
-        change(4, "ci_failed"),
-      ],
-      undefined,
-    )[0];
-    expect(view?.queue.map((q) => [q.why, q.detail])).toEqual([
-      ["the PR has the hold label; the train takes it once the label is gone", undefined],
-      ["Checks failed; back with its writer", undefined],
-      ["Checks failed", "unit tests, e2e"],
-      ["Conflicts with the base", "src/a.ts"],
-    ]);
-    expect(view?.queue.map((q) => q.sentBack)).toEqual([undefined, true, true, true]);
+    expect(movingNow(changes, prs)).toMatchObject([{ repo: TRAIN_REPO, moving: { stage: "ci", prs: [{ number: 20, title: "Bump the image CDN client" }] } }]);
   });
 
   it("shows PRs in flight together as one batch at the stage of the one furthest behind", () => {
     const { changes, prs } = trainFixture(PROJECT, NOW, true);
-    const moving = trainViews(changes, prs)[0]?.moving;
+    const moving = movingNow(changes, prs)[0]?.moving;
     expect(moving?.prs.map((p) => p.number)).toEqual([25, 26, 27]);
     expect(moving?.stage).toBe("ci");
     expect(moving === undefined ? undefined : stageLine(moving)).toBe("One CI run for all 3; green, they land together.");
-    const mixed = trainViews([change(1, "merging"), change(2, "ci")], undefined)[0]?.moving;
+    const mixed = movingNow([change(1, "merging"), change(2, "ci")], undefined)[0]?.moving;
     expect(mixed?.stage).toBe("ci");
     expect(mixed?.since).toBe("2026-10-19T10:02:00.000Z");
   });
 
-  it("groups merges by their landed commit, and keeps the newest few", () => {
-    const merged = Array.from({ length: 12 }, (_, i) => change(i + 1, "merged", { mergedSha: `${i}`.repeat(40) }));
-    const batch = [change(30, "merged", { mergedSha: "f".repeat(40) }), change(31, "merged", { mergedSha: "f".repeat(40) })];
-    const recent = trainViews([...merged, ...batch], undefined)[0]?.recent ?? [];
-    expect(recent).toHaveLength(RECENT_MAX);
-    expect(recent.slice(0, 2).map(numbers)).toEqual([[30, 31], [12]]);
+  it("reads a PR by its branch when the PR list doesn't have it, and is nothing while none is in flight", () => {
+    expect(movingNow([change(5, "rebasing", { position: 0 })], [])[0]?.moving.prs.map((p) => p.title)).toEqual(["fleetd/b5"]);
+    expect(movingNow([change(5, "queued", { position: 0 }), change(6, "ready", { position: 1 }), change(7, "merged"), change(8, "abandoned")], undefined)).toEqual([]);
   });
 
-  it("reads a PR by its branch when the PR list doesn't have it, and leaves out abandoned changes", () => {
-    const view = trainViews([change(5, "queued", { position: 0 }), change(6, "abandoned")], [])[0];
-    expect(view?.queue.map((q) => q.pr.title)).toEqual(["fleetd/b5"]);
-    expect(view?.recent).toEqual([]);
-    expect(trainViews([change(6, "abandoned")], undefined)).toEqual([]);
-  });
-
-  it("keeps each repo's train apart, the busiest first", () => {
-    const views = trainViews([change(1, "merged"), change(2, "ready", { repo: "acme/admin", position: 0 }), change(3, "reviewing", { repo: "ACME/admin", position: 1 })], undefined);
-    expect(views.map((v) => [v.repo, v.queue.length])).toEqual([
-      ["acme/admin", 2],
-      [TRAIN_REPO, 0],
+  it("keeps each repo's train apart, the biggest batch first", () => {
+    const now = movingNow([change(1, "ci"), change(2, "ci", { repo: "acme/admin", position: 0 }), change(3, "ci", { repo: "ACME/admin", position: 1 })], undefined);
+    expect(now.map((m) => [m.repo, m.moving.prs.map((p) => p.number)])).toEqual([
+      ["acme/admin", [2, 3]],
+      [TRAIN_REPO, [1]],
     ]);
-  });
-
-  it("counts the PRs on the train: in flight and in line, not those sent back", () => {
-    const { changes } = trainFixture(PROJECT, NOW);
-    expect(onTrain(trainViews(changes, undefined))).toBe(5);
-    expect(onTrain([])).toBe(0);
   });
 
   it("lists the head's checks failed, then running, then passed, the rest counted", () => {
@@ -118,26 +66,17 @@ describe("the train pane's model", () => {
     expect(running.shown).toHaveLength(3);
   });
 
-  it("reads each open state whole, then the newest merges and refusals; the count reads only the line", () => {
-    const reads = trainReads(PROJECT);
-    expect(reads.slice(0, OPEN_STATES.length)).toEqual(OPEN_STATES.map((state) => ({ projectRef: PROJECT, state, limit: 100 })));
-    expect(reads.slice(OPEN_STATES.length).map((r) => r.state)).toEqual(["merged", "refused"]);
-    expect(lineReads(PROJECT).map((r) => r.state)).toEqual([...LINE_STATES]);
+  it("reads the line, each state whole", () => {
+    expect(lineReads(PROJECT)).toEqual(LINE_STATES.map((state) => ({ projectRef: PROJECT, state, limit: 100 })));
   });
 
-  it("joins the reads' answers, a change that moved between two reads once and as it is now, and says when the line was cut", () => {
+  it("joins the reads' answers, a change that moved between two reads once and as it is now", () => {
     const before = change(7, "ci");
-    const after = change(7, "merged", { updatedAt: "2026-10-19T10:30:00.000Z" });
-    const joined = changesOf([{ changes: [before] }, { changes: [after, change(8, "merged")] }]);
-    expect(joined.changes.map((c) => [c.prNumber, c.state])).toEqual([
-      [7, "merged"],
-      [8, "merged"],
+    const after = change(7, "merging", { updatedAt: "2026-10-19T10:30:00.000Z" });
+    expect(changesOf([{ changes: [before] }, { changes: [after, change(8, "ready")] }]).map((c) => [c.prNumber, c.state])).toEqual([
+      [7, "merging"],
+      [8, "ready"],
     ]);
-    expect(joined.cut).toBe(false);
-    expect(changesOf([{ changes: [], truncated: true }]).cut).toBe(true);
-    // A cut Recent is just Recent.
-    const answers = trainReads(PROJECT).map((_, i) => ({ changes: [], ...(i >= OPEN_STATES.length ? { truncated: true } : {}) }));
-    expect(changesOf(answers).cut).toBe(false);
   });
 
   it("refetches the train on the hub's change and PR events", () => {

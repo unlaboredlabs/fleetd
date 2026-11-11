@@ -1,80 +1,55 @@
-// The Agents, Sessions and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane, SessionsPane and
-// PrsPane with the state they share with their counts; Skills and Artifacts, which open one item in the wide panel. The agents' scope (this project or all) is the panel's, so the
-// tab's count follows the list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading diffs
-// one PR after another stays on Changes, and Changes asks the frame for its wide width.
-import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+// The panel's tabs as the row (Sections.tsx) loads them, each one list that takes every view landing in it: Agents
+// (the agents, the screens among them, and one agent's work or one screen in the list's place), Shipping (the merge
+// line and the pull requests, and one PR), Plan (the checklist and the asked work), History (what happened, and the
+// decisions a row away), Artifacts and one skill. With them the counts on the row. The PR tab you read (Overview or
+// Changes) is kept while the app runs, so reading diffs one PR after another stays on Changes; Changes, one screen,
+// one artifact and one skill ask the frame for its wide width.
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents } from "../../src/data/selectors";
-import { AgentsPane, isLine, scopedAgents, useAgentScope, type AgentScope } from "../agents/AgentsPane";
+import { ActivityPane } from "../activity";
+import { AgentsPane } from "../agents/AgentsPane";
+import { projectAgents } from "../agents/model";
+import { ArtifactsTabView } from "../artifacts/ArtifactsPane";
+import { ChecklistPane } from "../checklist/ChecklistPane";
+import { DecisionsPane } from "../decisions/DecisionsPane";
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
-import { SessionsPane } from "../sessions/SessionsPane";
-import { SkillsTabView } from "../skills/SkillsPane";
-import { ArtifactsTabView } from "../artifacts/ArtifactsPane";
-import { isLive } from "../sessions/model";
-import { useSessions } from "../sessions/hub";
 import { openCount } from "../prs/words";
+import { SessionView } from "../sessions/SessionView";
+import { SkillsTabView } from "../skills/SkillsPane";
 import type { CountProps, PaneProps } from "./tabs";
 
 const ALL = {} as const;
 
-type Scope = readonly [AgentScope, (next: AgentScope) => void];
-const ScopeContext = createContext<Scope>(["project", () => undefined]);
-
-/** What the panes and their counts share, for as long as the panel shows. */
-export function PanesProvider({ children }: { children: ReactNode }) {
-  const [scope, setScope] = useAgentScope();
-  const value = useMemo((): Scope => [scope, setScope], [scope, setScope]);
-  return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
-}
-
-export function AgentsTab({ project, view }: PaneProps) {
-  const [scope, setScope] = useContext(ScopeContext);
-  return <AgentsPane project={project} agent={view.tab === "agents" ? view.agent : null} scope={scope} onScope={setScope} />;
-}
-
-/** The agents the tab lists, the leads not counted; nothing until known. */
-export function AgentCount({ project }: CountProps) {
-  const [scope] = useContext(ScopeContext);
-  useToolQuery("agents_list", ALL);
-  const all = useData(selectLiveAgents);
-  const key = projectKey(project);
-  const n = useMemo(() => (all === undefined ? 0 : scopedAgents(all, key, scope).filter((a) => !isLine(a)).length), [all, key, scope]);
-  return n > 0 ? String(n) : null;
-}
-
-/** One session opened (live or its replay) asks for the frame's wide width, so its page shows at a readable size. */
-export function SessionsTab({ project, view, onWide }: PaneProps) {
+/**
+ * The agents and, among them, the screens; one agent's work; or one screen (live or its replay), which asks for the
+ * frame's wide width so its page shows at a readable size.
+ */
+export function AgentsTab({ project, view, onWide }: PaneProps) {
   const session = view.tab === "sessions" ? view.session : null;
   useLayoutEffect(() => {
     onWide(session !== null);
   }, [session, onWide]);
   useLayoutEffect(() => () => onWide(false), [onWide]);
-  return <SessionsPane project={project} session={session} />;
+  if (session !== null) return <SessionView key={session} project={project} id={session} />;
+  return <AgentsPane project={project} agent={view.tab === "agents" ? view.agent : null} at={view.tab === "sessions" ? "screens" : null} />;
 }
 
-/** One of a project's skills, which asks for the frame's wide width. */
-export function SkillsTab({ project, view, onWide }: PaneProps): ReactNode {
-  // ProjectPanel opens Agents for a skills view with none named.
-  return view.tab === "skills" && view.skill !== null ? <SkillsTabView project={project} skill={view.skill} onWide={onWide} /> : null;
-}
-
-/** The chat's artifacts, or one of them, which asks for the frame's wide width. */
-export function ArtifactsTab({ project, view, onWide }: PaneProps) {
-  const one = view.tab === "artifacts" ? view : null;
-  return <ArtifactsTabView project={project} artifact={one?.artifact ?? null} version={one?.version} onWide={onWide} />;
-}
-
-/** The sessions open now, the ones asking for you among them. */
-export function SessionCount({ project }: CountProps) {
-  const n = useSessions(project).filter(isLive).length;
+/** The project's agents at work, the leads not counted; nothing until known. */
+export function AgentCount({ project }: CountProps) {
+  useToolQuery("agents_list", ALL);
+  const all = useData(selectLiveAgents);
+  const key = projectKey(project);
+  const n = useMemo(() => (all === undefined ? 0 : projectAgents(all, key).length), [all, key]);
   return n > 0 ? String(n) : null;
 }
 
 let lastPrTab: PrTab = "overview";
 
-export function PrsTab({ project, view, onWide }: PaneProps) {
+/** The merge line and the pull requests in one list (`/train` opens it at the line), or one PR. */
+export function ShippingTab({ project, view, onWide }: PaneProps) {
   const pr = view.tab === "prs" ? view.pr : null;
   const [tab, setTab] = useState<PrTab>(lastPrTab);
   // Changes takes the wide panel: a diff.
@@ -88,7 +63,7 @@ export function PrsTab({ project, view, onWide }: PaneProps) {
     lastPrTab = next;
     setTab(next);
   };
-  return <PrsPane project={project} pr={pr} tab={tab} onTab={pick} />;
+  return <PrsPane project={project} pr={pr} tab={tab} onTab={pick} at={view.tab === "train" ? "train" : null} />;
 }
 
 /** Its open PRs, once the list has been read: the count alone never asks GitHub. */
@@ -96,4 +71,26 @@ export function PrCount({ project, active }: CountProps) {
   const rows = usePrList(project, active).list.data?.prs;
   const n = rows === undefined ? 0 : openCount(rows);
   return n > 0 ? String(n) : null;
+}
+
+/** The lead's checklist with, at its foot, the work it asked other projects for (`/asked` opens it there). */
+export function PlanTab({ project, view }: PaneProps) {
+  return <ChecklistPane project={project} at={view.tab === "asked" ? "asked" : null} />;
+}
+
+/** What happened, or (a row away, with its way back) the decisions. */
+export function HistoryTab({ project, view }: PaneProps) {
+  return view.tab === "decisions" ? <DecisionsPane project={project} /> : <ActivityPane project={project} view={view} />;
+}
+
+/** One of a project's skills, which asks for the frame's wide width. */
+export function SkillsTab({ project, view, onWide }: PaneProps): ReactNode {
+  // ProjectPanel opens Agents for a skills view with none named.
+  return view.tab === "skills" && view.skill !== null ? <SkillsTabView project={project} skill={view.skill} onWide={onWide} /> : null;
+}
+
+/** The chat's artifacts, or one of them, which asks for the frame's wide width. */
+export function ArtifactsTab({ project, view, onWide }: PaneProps) {
+  const one = view.tab === "artifacts" ? view : null;
+  return <ArtifactsTabView project={project} artifact={one?.artifact ?? null} version={one?.version} onWide={onWide} />;
 }

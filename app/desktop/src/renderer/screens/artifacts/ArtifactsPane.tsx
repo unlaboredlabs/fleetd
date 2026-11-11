@@ -1,6 +1,7 @@
 // A chat's Artifacts (W367, D292): the reports its lead or agents published with publish_artifact, the newest
-// first, each its title over who published it, when and its version; then the files sent in the chat, each opening in
-// this computer's app for its type or saved, as its chat card does (main/files.ts). One artifact (`artifacts/<name>[/<version>]`, the
+// first, each one line, its title and when (who published it, its format and version in its hover); then the files
+// sent in the chat, each opening in this computer's app for its type or saved, as its chat card does
+// (main/files.ts). One artifact (`artifacts/<name>[/<version>]`, the
 // wide panel) shows its newest version, or the one a card or link named, with a picker for every kept version:
 // Markdown rendered in the app's own style (no raw HTML), HTML in a sandboxed frame of its own (HtmlFrame) with its
 // scripts on and no network or reach into the app. Reads artifacts_list and artifact_get; artifacts.changed reads
@@ -10,13 +11,15 @@ import { useLayoutEffect, useState } from "react";
 import type { ArtifactFormat, ChatFile, ProjectRef } from "../../../shared/contracts";
 import { glyphOf } from "../../../shared/files";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, EmptyState, Markdown, Select, Text, toast } from "../../ui";
+import { Button, Markdown, Select, Text, Tooltip, toast } from "../../ui";
 import { GLYPHS } from "../chat/blocks/FileCard";
 import { errorText } from "../settings/hub";
+import { GroupLabel, PanelEmpty } from "../panel/folds";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
 import { HtmlFrame } from "./HtmlFrame";
-import { fileLine, formatWord, metaLine, versionLabel } from "./model";
+import { fileDetail, formatWord, metaLine, rowDetail, versionLabel } from "./model";
+import { when } from "../live/when";
 import s from "./artifacts.module.css";
 
 const refOf = (p: ProjectKey): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
@@ -76,12 +79,7 @@ export function ArtifactsPane({ project }: { project: ProjectKey }) {
   if (rows.length === 0 && files.length === 0) {
     return (
       <div className={s.screen} data-screen="artifacts.empty">
-        <div className={s.empty}>
-          <EmptyState title="No artifacts yet">
-            When the lead or an agent writes a report too long for the chat, it publishes it here, as a page or a document, and the chat shows a card for it. Every
-            version is kept. Files sent in the chat show here too.
-          </EmptyState>
-        </div>
+        <PanelEmpty title="No artifacts yet" />
       </div>
     );
   }
@@ -92,30 +90,26 @@ export function ArtifactsPane({ project }: { project: ProjectKey }) {
           <ul className={s.group} aria-label="Artifacts">
             {rows.map((a) => (
               <li key={a.name}>
-                <button type="button" className={s.row} data-artifact={a.name} onClick={() => open(project, a.name)}>
-                  <FormatIcon format={a.newest.format} className={s.icon} />
-                  <span className={s.words}>
+                <Tooltip content={rowDetail(a.newest)} side="left">
+                  <button type="button" className={s.row} data-artifact={a.name} onClick={() => open(project, a.name)}>
+                    <FormatIcon format={a.newest.format} className={s.icon} />
                     <span className={s.title}>{a.newest.title}</span>
-                    <Text size="xs" tone="quiet" className={s.meta}>
-                      {`${formatWord(a.newest.format)} · ${metaLine(a.newest, now)}`}
-                    </Text>
-                  </span>
-                </button>
+                    <span className={s.when}>{when(a.newest.at, now)}</span>
+                  </button>
+                </Tooltip>
               </li>
             ))}
           </ul>
         ) : null}
         {files.length > 0 ? (
-          <>
-            <Text as="h3" size="xs" tone="quiet" className={s.groupHead}>
-              Files
-            </Text>
-            <ul className={s.group} aria-label="Files">
+          <section aria-label="Files">
+            <GroupLabel label="Files" count={files.length} />
+            <ul className={s.group}>
               {files.map((f) => (
                 <FileRow key={f.attachmentId} project={refOf(project)} file={f} now={now} />
               ))}
             </ul>
-          </>
+          </section>
         ) : null}
       </div>
     </div>
@@ -137,15 +131,13 @@ function FileRow({ project, file, now }: { project: ProjectRef; file: ChatFile; 
   };
   return (
     <li className={s.fileItem}>
-      <button type="button" className={s.row} data-file={file.name} aria-busy={busy} onClick={() => void act("open")}>
-        <Glyph aria-hidden className={s.icon} />
-        <span className={s.words}>
+      <Tooltip content={fileDetail(file)} side="left">
+        <button type="button" className={s.row} data-file={file.name} aria-busy={busy} onClick={() => void act("open")}>
+          <Glyph aria-hidden className={s.icon} />
           <span className={s.title}>{file.name}</span>
-          <Text size="xs" tone="quiet" className={s.meta}>
-            {fileLine(file, now)}
-          </Text>
-        </span>
-      </button>
+          <span className={s.when}>{when(file.at, now)}</span>
+        </button>
+      </Tooltip>
       <Button variant="ghost" size="sm" iconOnly icon={<Download />} className={s.save} aria-label={`Save ${file.name}`} title="Save…" disabled={busy} onClick={() => void act("save")} />
     </li>
   );

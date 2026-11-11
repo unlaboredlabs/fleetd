@@ -34,6 +34,13 @@ breaks a rule changes this page in the same PR and says why.
     (`DangerButton`, `--danger-fill`), and what it does is confirmed in a dialog;
   - **Save shows once there is something to save**, and a control that can't be used says why in its row's line;
   - buttons and fields on a group are `--raised`; the column is 760 px, left-aligned under the page title.
+- **The panel has one row of navigation** (`screens/panel`): its tabs, and a list under them. No tab has tabs of its
+  own: where a second row once chose between two views (agents or screens, pull requests or the merge line, this
+  project or all), the list holds both, what is over or elsewhere folded at its end (`panel/folds.tsx`). A list takes at
+  most one small control that changes what it lists, and only where that earns its place (History's filter). No
+  sentence says what a tab or a group is: that is the tab's tooltip, which focus and a screen reader get too. A row is
+  its title and where it stands; an id, a branch or a repo is its tooltip's or the opened view's. An empty list is one
+  short line. Three stacked rows of switches read as menus to work through before the list (D439).
 - **Cards only where they earn it:** one thing that stands apart from the list around it (what merges now, a PR's
   summary, a floating surface). Never a card per row.
 - **No coloured left edge** on a card, row or callout. A quote or indent rule is a neutral `--hairline`.
