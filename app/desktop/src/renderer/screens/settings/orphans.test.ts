@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectSummary, RetiredPromptOverride } from "./contracts";
-import { editScopeWords, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
+import type { RetiredPromptOverride } from "./contracts";
+import { orphanAdvice, orphanTitle, targetName, whyLine } from "./orphans";
 
-const projects = [{ machineId: "devbox", projectId: "storefront", title: "acme/storefront" }] as ProjectSummary[];
 const wake: RetiredPromptOverride = {
   id: "wake.task_result",
   title: "Wake: task finished",
@@ -21,18 +20,16 @@ const router: RetiredPromptOverride = {
 };
 
 describe("edits that no longer apply", () => {
-  it("says whose edit it was, that it no longer applies, and where its intent could go", () => {
-    expect(orphanHeadline(wake, projects)).toBe('Your edit to the lead\'s "task finished" note (hub-wide) no longer applies.');
-    expect(orphanHeadline(router, projects)).toBe("Your edit to Order router (for acme/storefront) no longer applies.");
+  it("names the prompt it edited in plain words, and says where its intent could go", () => {
+    expect(orphanTitle(wake)).toBe('The lead\'s "task finished" note');
+    expect(orphanTitle(router)).toBe("Order router");
     expect(targetName(wake)).toBe("Lead's role, rules and playbooks");
     expect(orphanAdvice(wake)).toBe("fleetd doesn't send it any more. If you still want what it said, copy it into Lead's role, rules and playbooks.");
     expect(orphanAdvice(router)).toMatch(/no other prompt takes its place\. Copy what you still need into your instructions\.$/u);
   });
 
-  it("ends the hub's reason with one full stop, and names an unknown project by its id", () => {
+  it("ends the hub's reason with one full stop", () => {
     expect(whyLine(wake)).toBe("Notes to the lead are now fixed event lines that fleetd writes.");
     expect(whyLine(router)).toBe("Orders now go to a project's lead in its chat.");
-    expect(editScopeWords(router, undefined)).toBe("for storefront");
   });
-
 });

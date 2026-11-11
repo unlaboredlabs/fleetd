@@ -18,6 +18,6 @@ describe("Settings' search for a member", () => {
 
   it("offers an owner or admin every Hub page", () => {
     const pages = new Set(optionsFor(true).filter((o) => isHubTab(o.tab)).map((o) => o.tab));
-    expect([...pages].sort()).toEqual(["hub.accounts", "hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.prompts", "hub.setup", "hub.tools", "hub.updates", "hub.vault"]);
+    expect([...pages].sort()).toEqual(["hub.accounts", "hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.tools", "hub.updates", "hub.vault"]);
   });
 });

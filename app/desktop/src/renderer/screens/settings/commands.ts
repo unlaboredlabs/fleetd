@@ -1,16 +1,12 @@
-// Settings in the command palette: its pages, a few settings by their own names, and every prompt by its plain name
-// (typed, not listed), each opening in a project's Prompts. One entry per place: Notifications covers its sound and
-// badge, and the theme commands cover Appearance. The Hub group's pages are offered to its owners and admins
-// only. main.tsx registers them once, with the app's data layer.
-import { registerCommands, registerSource, type Command } from "../palette";
-import { GROUPS, describe, groupOf } from "./catalog";
-import { hashKey } from "@tanstack/react-query";
+// Settings in the command palette: its pages and a few settings by their own names. One entry per place:
+// Notifications covers its sound and badge, and the theme commands cover Appearance. The Hub group's pages are offered
+// to its owners and admins only. main.tsx registers them once, with the app's data layer.
+import { registerCommands, type Command } from "../palette";
 import type { DataLayer } from "../../src/data/queries";
 import type { HubInfoOutput, SetupListOutput } from "../../../shared/contracts";
 import { administers } from "../admin/model";
 import { toHash, type HubTab } from "../shell/routes";
-import type { PromptSummary } from "./contracts";
-import { promptHref, tabHref } from "./route";
+import { tabHref } from "./route";
 import { revealNext } from "./search";
 
 const go = (hash: string) => {
@@ -31,10 +27,10 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.prompts",
-    title: "Prompts",
-    detail: "Everything fleetd tells a project's agents",
+    title: "Built-in prompts",
+    detail: "What fleetd itself tells a project's agents",
     group: "settings",
-    keywords: ["templates", "system prompt"],
+    keywords: ["prompts", "templates", "system prompt"],
     run: () => go(tabHref("prompts")),
   },
   {
@@ -115,16 +111,8 @@ const pages: Command[] = [
   ),
 ];
 
-const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p))?.title ?? "";
-
-/**
- * Registers the Settings pages and a `prompts` source with the palette, for the life of the app. The prompts come
- * from the data layer's hub-wide prompt_get list, the same read the Prompts page makes, fetched the first time the
- * palette asks while the connection is fresh (names don't change with edits). Returns the unregister.
- */
+/** Registers the Settings pages with the palette, for the life of the app. Returns the unregister. */
 export function registerSettingsCommands(layer: DataLayer): () => void {
-  const read = layer.toolQuery("prompt_get", {});
-  const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
   // The Hub group, for an owner or admin as hub_info last said (D211).
   const info = layer.toolQuery("hub_info", {});
   const admin = () => administers(layer.queryClient.getQueryData<HubInfoOutput>(info.queryKey));
@@ -156,37 +144,9 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
     hubPage("go:hub.profiles", "Profiles", "Every project: the task profiles agents run on", "hub.profiles", ["task profiles", "model", "effort"]),
     hubPage("go:hub.tools", "Tools & skills", "Every project: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every project"]),
     hubPage("go:hub.instructions", "Instructions for every project", "Every project: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
-    hubPage("go:hub.prompts", "Hub-wide prompts", "Every project: the texts fleetd sends every project's agents", "hub.prompts", ["prompts", "templates", "global"]),
     hubPage("go:hub.accounts", "Hub accounts", "The hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
   ]);
-  const offSource = registerSource({
-    id: "prompts",
-    items: () => {
-      const list = prompts();
-      // A failed read is tried again the next time the palette opens.
-      if (list.length === 0 && layer.store.getState().fresh) layer.queryClient.query(read).catch(() => undefined);
-      return list
-        .filter((p) => p.kind !== "instructions")
-        .map((p) => {
-          const { name, description } = describe(p);
-          return {
-            id: `prompt:${p.id}`,
-            title: name,
-            detail: description,
-            group: "prompts",
-            keywords: [p.id, p.title, groupTitle(p)],
-            searchOnly: true,
-            run: () => go(promptHref(p.id)),
-          };
-        });
-    },
-    subscribe: (onChange) =>
-      layer.queryClient.getQueryCache().subscribe((e) => {
-        if (e.type === "updated" && e.query.queryHash === hashKey(read.queryKey)) onChange();
-      }),
-  });
   return () => {
-    offSource();
     offAdmin();
     offPages();
   };

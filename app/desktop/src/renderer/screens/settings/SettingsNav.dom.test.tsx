@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Settings in one window (D211), its sidebar one flat list: You (General, Your accounts, Hubs) and Projects (the list
-// of projects, each opening its Project, Agents, Instructions & memory, Automations and Prompts under tabs, all of that
-// one project) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
+// of projects, each opening its Project, Agents, Instructions & memory and Automations under tabs, all of that one
+// project, and its built-in prompts from the foot of its Instructions) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
 // page that has their option now. General's Version & updates says which fleetd this app,
 // the hub and each machine run, with Check for updates for everyone and Hub › Updates for an owner or admin only.
 import { act } from "react";
@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
-import { UiProvider } from "../../ui";
+import { AppFrame, TopBar, UiProvider } from "../../ui";
 import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -100,8 +100,9 @@ const render = async (hash: string, admin: boolean, live = true) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <SettingsSidebar onBack={() => undefined} />
-          <SettingsScreen />
+          <AppFrame topBar={<TopBar />} sidebar={<SettingsSidebar onBack={() => undefined} />}>
+            <SettingsScreen />
+          </AppFrame>
         </DataProvider>
       </UiProvider>,
     );
@@ -143,7 +144,7 @@ const pickTab = async (set: string, name: string) => {
   for (let i = 0; i < 3; i++) await settle();
 };
 
-it("has You and Projects for a member as one flat list, Projects listing the projects, each opening its five pages under tabs", async () => {
+it("has You and Projects for a member as one flat list, Projects listing the projects, each opening its four pages under tabs", async () => {
   await render("#/settings/general", false);
   expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Your devices", "Hubs", "Projects"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
@@ -163,11 +164,12 @@ it("has You and Projects for a member as one flat list, Projects listing the pro
   expect(button("Projects", nav() ?? document).getAttribute("aria-current")).toBe("page");
 
   // Each of the project's pages is one tab from there, on the same project.
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Project']");
+  expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Project", "Agents", "Instructions & memory", "Automations"]);
   for (const [name, tab, data] of [
     ["Agents", "agents", "settings.agents"],
     ["Instructions & memory", "instructions", "settings.instructions"],
     ["Automations", "automations", "settings.automations"],
-    ["Prompts", "prompts", "settings.prompts"],
     ["Project", "projects", "settings.projects"],
   ]) {
     await pickTab("Project", name ?? "");
@@ -194,12 +196,24 @@ it("keeps the opened project across its tabs, and Projects goes back to the list
   expect(window.location.hash).toBe("#/settings/projects");
 });
 
-it("shows a project's prompts on its Prompts tab, with no picker of its own", async () => {
-  await render("#/settings/prompts?for=devbox/storefront", false);
+it("opens a project's built-in prompts from the one row at the foot of its Instructions, a page of its own with the way back", async () => {
+  await render("#/settings/instructions?for=devbox/storefront", false);
+  const row = host.querySelector<HTMLAnchorElement>("[data-part='builtin-prompts'] a");
+  expect(row?.textContent).toBe("Built-in prompts");
+  expect(host.querySelector("[data-part='builtin-prompts']")?.textContent).toContain("Most changes belong in the instructions above.");
+  // Quiet until something is edited.
+  expect(host.querySelector("[data-part='builtin-prompts']")?.textContent).not.toContain("edited");
+  expect(row?.getAttribute("href")).toBe("#/settings/prompts?for=devbox/storefront");
+  window.location.hash = row?.getAttribute("href") ?? "";
+  for (let i = 0; i < 3; i++) await settle();
   expect(screen()).toBe("settings.prompts");
+  // No tab of the project's, and no picker: the page is the project's, and goes back to its Instructions.
+  expect(host.querySelector("[role='tablist']")).toBeNull();
   expect(host.querySelector("#prompts-scope")).toBeNull();
-  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Project']");
-  expect(tabs?.querySelector("[role='tab'][data-state='active']")?.textContent).toBe("Prompts");
+  expect(button("Projects", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  await click(button("‹ Instructions"));
+  expect(window.location.hash).toBe("#/settings/instructions?for=devbox/storefront");
+  expect(screen()).toBe("settings.instructions");
 });
 
 it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs", async () => {

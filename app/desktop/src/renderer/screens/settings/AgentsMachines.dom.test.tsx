@@ -121,7 +121,7 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean, start: 
               ))}
             </>
           ) : (
-            <AgentsSettings route={{ tab: "agents", prompt: null, for: "devbox/storefront", view: "edit" }} />
+            <AgentsSettings route={{ tab: "agents", prompt: null, for: "devbox/storefront" }} />
           )}
         </DataProvider>
       </UiProvider>,

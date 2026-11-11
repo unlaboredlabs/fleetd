@@ -2944,8 +2944,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
-  // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
-  // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
+  // F9: Settings. The built-in prompts open from the foot of Instructions; one opens on the lead's first message, the
+  // longest text; many-prompts lists 72 with long keys and titles; settings-prompts is the real registry with edits.
   // Max agents: the fleet cap and each project's slider.
   // Settings › Projects: the list of projects, each row opening its pages under tabs; none yet says how to make one, and
   // no hub says it isn't connected.
@@ -2954,7 +2954,7 @@ export const screens: readonly Screen[] = [
   // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
   // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the
   // hub's Claude key and GitHub App); Every project's Tools & skills and Instructions & memory
-  // (its prompts under its Prompts in the sidebar); Setup; and a member who follows a link.
+  // (the hub-wide built-in prompts open from its foot); Setup; and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
   // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
@@ -3549,8 +3549,15 @@ export const screens: readonly Screen[] = [
   },
   // A member's: the hub-wide line, without the way to Every project an owner or admin gets.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["admin-member", "admin-owner"], variant: "skills-role" },
-  // Prompts before one is picked.
-  { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
+  // The built-in prompts before one is picked: the edited ones first, the rest behind their groups, one unfolded.
+  { id: "settings.prompts", route: "#/settings/prompts?for=devbox/storefront", fixtures: ["settings-prompts", "many-prompts"], variant: "none" },
+  {
+    id: "settings.prompts",
+    route: "#/settings/prompts?for=devbox/storefront",
+    fixtures: ["settings-prompts", "many-prompts"],
+    variant: "unfolded",
+    open: (page) => page.getByRole("button", { name: "The lead", exact: true }).click(),
+  },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   // Your name, an owner's and a member's alike: at rest, while typing a new one, saved on Enter as the hub kept it, and
   // an empty one refused in the hub's words under the row's title.
@@ -3614,14 +3621,14 @@ export const screens: readonly Screen[] = [
     route: "#/settings/prompts?prompt=lead.start",
     fixtures: ["settings-prompts", "many-prompts", "long-text", "empty", "hub-unreachable"],
   },
-  {
-    id: "settings.prompts.compare",
-    route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront&view=compare",
-    fixtures: ["settings-prompts"],
-  },
-  // The hub-wide texts are Every project's: one open from the list under its Prompts, and its update to merge.
+  // A project's own edit, with Reset to the built-in; and its edit of a prompt fleetd no longer sends.
+  { id: "settings.prompts", variant: "edited", route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront", fixtures: ["settings-prompts"] },
+  { id: "settings.prompts", variant: "retired", route: "#/settings/prompts?prompt=router&for=devbox/storefront", fixtures: ["settings-prompts"] },
+  // The hub-wide texts open from the foot of Every project's Instructions: their list, and an edit whose built-in text
+  // changed since it was made, with both changes to save together.
+  { id: "settings.hub.prompts", variant: "none", route: "#/settings/hub/prompts", fixtures: ["settings-prompts"] },
   { id: "settings.hub.prompts", route: "#/settings/hub/prompts?prompt=lead.start", fixtures: ["settings-prompts"] },
-  { id: "settings.hub.prompts.update", route: "#/settings/hub/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
+  { id: "settings.hub.instructions", variant: "prompts", route: "#/settings/hub/instructions", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
   // The Factory (D33, fixtures/factory): the four tiles, the three charts, the projects table and the merge list over
   // 30 days; long titles; eight projects with one repo on two machines; no projects; no hub; failing reads; nothing

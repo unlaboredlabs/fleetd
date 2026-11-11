@@ -127,7 +127,7 @@ async function mount(prepare?: (hub: ReturnType<typeof fakeHub>) => void) {
     root.render(
       <DataProvider layer={createDataLayer(hub.api)}>
         <TooltipProvider>
-          <Automations route={{ tab: "automations", prompt: null, for: `${project.machineId}/${project.projectId}`, view: "edit" }} />
+          <Automations route={{ tab: "automations", prompt: null, for: `${project.machineId}/${project.projectId}` }} />
         </TooltipProvider>
       </DataProvider>,
     );

@@ -52,7 +52,7 @@ describe("rank", () => {
   });
 
   it("finds a word in a detail, but not letters scattered through it", () => {
-    const list = [item("j", "Research judge", "prompts", { detail: "Decides whether a research claim's check passed." }), item("s", "Status", "go-to", { detail: "Every project: working, waiting on you" })];
+    const list = [item("j", "Research judge", "machines", { detail: "Decides whether a research claim's check passed." }), item("s", "Status", "go-to", { detail: "Every project: working, waiting on you" })];
     expect(rank("dark", list).matches).toEqual([]);
     expect(rank("waiting", list).matches.map((i) => i.id)).toEqual(["s"]);
   });
@@ -66,23 +66,23 @@ describe("rank", () => {
     expect(rank("st", close).matches[0]?.id).toBe("x");
     expect(rank("st", close, used({ y: 2 })).matches[0]?.id).toBe("y");
     // Heavy use of a scattered match doesn't beat a name that starts with the query.
-    const far = [item("p", "Prompts for fleetd", "prompts"), item("f", "fleetd", "projects")];
+    const far = [item("p", "Prompts for fleetd", "settings"), item("f", "fleetd", "projects")];
     expect(rank("fleetd", far, used({ p: 1000 })).matches[0]?.id).toBe("f");
     expect(boost(1000)).toBe(8);
   });
 
   it("shows each group once, in the order of its best match", () => {
     const mixed = [
-      item("p1", "Status report", "prompts"),
+      item("p1", "Status report", "machines"),
       item("s1", "Status", "go-to"),
-      item("p2", "Stash", "prompts"),
+      item("p2", "Stash", "machines"),
       item("x1", "Settings · status bar", "settings"),
     ];
     const rows = buildRows("st", mixed, new Map());
     const labels = rows.flatMap((r) => (r.label === undefined ? [] : [r.label]));
     expect(labels).toEqual([...new Set(labels)]);
     expect(rows[0]?.item.id).toBe("s1");
-    expect(rows.map((r) => r.item.group)).toEqual(["go-to", "prompts", "prompts", "settings"]);
+    expect(rows.map((r) => r.item.group)).toEqual(["go-to", "machines", "machines", "settings"]);
   });
 });
 
@@ -249,13 +249,12 @@ describe("projects", () => {
   it("offers the project's other pages as actions, scoped to it", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
-    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Settings for this project", "Instructions for this project", "Prompts for this project", "Max agents for this project"]);
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Settings for this project", "Instructions for this project", "Max agents for this project"]);
     for (const action of project?.actions ?? []) action.run();
     expect(opened).toEqual([
       "#/project/devbox/storefront/prs",
       "#/settings/projects?for=devbox/storefront",
       "#/settings/instructions?for=devbox/storefront",
-      "#/settings/prompts?for=devbox/storefront",
       "#/settings/agents?for=devbox/storefront",
     ]);
   });

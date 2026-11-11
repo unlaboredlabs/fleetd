@@ -142,7 +142,8 @@ Its other pages: **Agents** has its [max agents](#max-agents), the [task profile
 night**: on (the default), around 04:00 on a day with chat or orders, the lead tidies the project's memory and the chat
 shows one line of its changes, with Undo; off, memory changes only as the lead and you write it. Beside the switch are
 the refresh's hour, its next and last run, and **Run now**. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
-**Automations** has its [automations](/docs/automations), and **Prompts** the prompts its agents get.
+**Automations** has its [automations](/docs/automations). **Built-in prompts**, at the foot of Instructions & memory,
+opens the prompts fleetd itself sends its agents.
 
 The project's worktrees live on its machine in `~/.fleetd/node/worktrees/<project>/`, one per agent, each starting
 from the repo's default branch, freshly fetched (see [Which branch](#branches)). The chat lists any the nightly

@@ -1,6 +1,6 @@
 // The pages Settings gathers in sets, under tabs in the content pane, so the sidebar stays one flat list: a project's
-// six (Project, Agents, Instructions & memory, Automations, Prompts, Vault), opened from Settings › Projects with a way
-// back to it in the window's top row, and Hub › Every project's four.
+// five (Project, Agents, Instructions & memory, Automations, Vault), opened from Settings › Projects with a way
+// back to it in the window's top row, and Hub › Every project's three.
 import type { ReactNode } from "react";
 import { Button, Tab, TabList, Tabs } from "../../ui";
 import { useData, useHub } from "../../src/data/react";

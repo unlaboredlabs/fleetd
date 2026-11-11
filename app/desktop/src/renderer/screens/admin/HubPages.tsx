@@ -3,8 +3,9 @@
 // and every hub link); Machines (Add machine, the machines with Remove, and Repair for one that isn't well, each one's
 // page with its checklist, its role, its screens and its max agents; recordings and cloud machines); Updates
 // (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
-// as a project's own pages are: Profiles, Tools & skills,
-// Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
+// as a project's own pages are: Profiles, Tools & skills
+// and Instructions & memory, each reaching every project on the hub, and the hub-wide built-in prompts from the foot
+// of Instructions; Hub accounts (the hub's Claude API key
 // and its GitHub App, github/AdminGithub.tsx); Vault (the cards, logins and addresses every project uses, and the vault
 // key, settings/Vault.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
@@ -17,7 +18,7 @@ import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { FleetCapNote } from "../settings/Agents";
 import { Recordings } from "../settings/Screens";
-import { HubInstructions } from "../settings/Instructions";
+import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame } from "../settings/Frames";
 import { PageHead, SettingsSection } from "../settings/parts";
@@ -68,7 +69,7 @@ export function HubPage({ tab, route }: { tab: HubTab; route: SettingsRoute }) {
   return (
     <>
       <Managing tab={tab} />
-      {view.administers && isEveryProject(tab) ? <EveryProjectFrame tab={tab}>{page(tab, route, view)}</EveryProjectFrame> : page(tab, route, view)}
+      {view.administers && tab !== "hub.prompts" && isEveryProject(tab) ? <EveryProjectFrame tab={tab}>{page(tab, route, view)}</EveryProjectFrame> : page(tab, route, view)}
     </>
   );
 }
@@ -129,7 +130,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
     case "hub.instructions":
       return <InstructionsAndMemory />;
     case "hub.prompts":
-      return <Prompts where="hub" route={{ tab: "hub.prompts", prompt: route.prompt, for: null, view: route.view }} />;
+      return <Prompts where="hub" route={{ tab: "hub.prompts", prompt: route.prompt, for: null }} />;
     case "hub.accounts":
       return <HubAccounts me={me} />;
     case "hub.vault":
@@ -206,6 +207,7 @@ function InstructionsAndMemory() {
         <SettingsSection title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </SettingsSection>
+        <BuiltInPrompts project={null} />
       </div>
     </div>
   );
