@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { capChoices, choiceOf, hostsNote, rolesOf, sessionsLine } from "./machinesModel";
+import { capChoices, choiceOf, hostsNote, rolesOf, roleWord, sessionsLine } from "./machinesModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -25,6 +25,15 @@ describe("machine roles", () => {
     expect(choiceOf(["agents"])).toBe("agents");
     expect(rolesOf("both")).toEqual(["agents", "sessions"]);
     expect(rolesOf("sessions")).toEqual(["sessions"]);
+  });
+
+  it("names a machine's role beside it in the list only where it isn't the usual both", () => {
+    expect(roleWord(devbox)).toBeUndefined();
+    expect(roleWord({ roles: ["agents"] })).toBe("Agents only");
+    expect(roleWord({ roles: ["sessions"] })).toBe("Screens only");
+    expect(roleWord({ roles: ["sessions"], mac: { on: true, ready: true } })).toBe("Agents’ Mac");
+    // Not read yet: no word, never a wrong one.
+    expect(roleWord(undefined)).toBeUndefined();
   });
 
   it("says a machine's session slots and where its cap comes from", () => {

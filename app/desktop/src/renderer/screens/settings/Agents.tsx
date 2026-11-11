@@ -297,14 +297,14 @@ export function MachineCap({ machineId }: { machineId: string }) {
   return <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />;
 }
 
-/** On Hub › Machines, while a fleet cap the CLI set holds the machines back: what it is and how to change it. */
+/** On Hub › Machines, under its machines, while a fleet cap the CLI set holds them back: what it is and how to change it. */
 export function FleetCapNote() {
   const slots = useSlots();
   const line = slots === undefined ? null : fleetCapLine(slots);
   return line === null ? null : (
-    <Text size="xs" tone="warning" data-fleet-cap="">
-      {line}
-    </Text>
+    <GroupNote>
+      <span data-fleet-cap="">{line}</span>
+    </GroupNote>
   );
 }
 

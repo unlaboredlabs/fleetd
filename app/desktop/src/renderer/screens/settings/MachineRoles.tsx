@@ -6,7 +6,7 @@
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import { Segmented } from "../../ui";
 import { useMachineSet } from "./Screens";
-import { choiceOf, ROLE_CHOICES, ROLE_HELP, rolesOf } from "./machinesModel";
+import { choiceOf, ROLE_CHOICES, ROLE_HELP, ROLE_TITLE, rolesOf } from "./machinesModel";
 import { SettingsRow, SwitchRow } from "./parts";
 
 export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
@@ -24,7 +24,8 @@ export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
         />
       ) : (
         <SettingsRow
-          title={`What ${m.name} is for`}
+          title={ROLE_TITLE[choice]}
+          label={`What ${m.name} is for`}
           line={ROLE_HELP[choice]}
           control={<Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles: rolesOf(roles) })} />}
         />

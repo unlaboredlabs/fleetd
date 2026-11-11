@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Settings › Hub › Machines: the machine list's Repair for a machine that isn't well (over SSH, or a line that enrolls
-// it again) and Remove (asked first, then gone), the projects left from a removed machine (each with Remove), and a
-// machine's page: its checklist read from the hub's checks, each item waiting until checked, Claude's login from the
-// app, its code going to the hub once, and its role, screens and max agents.
+// Settings › Hub › Machines: the machine list, each row a name that opens its page with one dot where it needs
+// someone, the projects left from a removed machine (each with Remove), and a machine's page: its state with Repair
+// while it isn't online (over SSH, or a line that enrolls it again), its checklist read from the hub's checks, each
+// item waiting until checked, Claude's login from the app, its code going to the hub once, its role, screens and max
+// agents, and Remove (asked first, then gone).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,7 +14,6 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
-import type { Repair } from "./machines";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -67,6 +67,9 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown; timeoutMs?: number | undefined }>;
 let checks: DoctorCheck[];
 let opened: string[];
+/** The hub's next frame, once a page is up. */
+let frame: (frame: HubFrame) => void;
+const MACHINES = [machine("devbox"), machine("builder-1"), machine("laptop", "offline")];
 
 beforeEach(() => {
   calls = [];
@@ -77,6 +80,9 @@ beforeEach(() => {
     fixture: null,
     copy: () => Promise.resolve(),
     openExternal: (url: string) => (opened.push(url), Promise.resolve({ ok: true })),
+    // Repair opens in Add machine, which asks what this computer is.
+    system: { hostName: () => Promise.resolve("desk") },
+    machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
   });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -93,6 +99,7 @@ const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
 const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
   let listener: (frame: HubFrame) => void = () => undefined;
+  frame = (f) => listener(f);
   const hub: HubApi = {
     call: (tool, input, options) => {
       calls.push({ tool, input, timeoutMs: options?.timeoutMs });
@@ -118,12 +125,16 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
           : tool === "doctor_list"
             ? { checks, checkedAt: AT }
             : tool === "machine_remove"
-              ? { machineId: "laptop", steps: [], revoked: true }
+              ? { machineId: (input as { machineId: string }).machineId, steps: [], revoked: true }
               : tool === "machine_claude_login"
                 ? code === undefined
                   ? { machineId: "laptop", loginUrl: LOGIN_URL, message: "sign in at the URL, then give the code it shows" }
                   : ((checks = READY), { machineId: "laptop", loggedIn: true, message: "Login successful." })
-                : {};
+                : tool === "machine_add_status"
+                  ? { runs: [] }
+                  : tool === "machine_join"
+                    ? { machineId: "laptop", hubUrl: "http://devbox:4790", code: "K7QM-4XWD", expiresAt: AT, line: "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --rejoin" }
+                    : {};
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -141,7 +152,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
-    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("builder-1"), machine("laptop", "offline")], projects } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: MACHINES, projects } });
     await new Promise((r) => setTimeout(r, 0));
   });
   await settle();
@@ -173,31 +184,63 @@ const type = async (input: HTMLInputElement, value: string) => {
   });
 };
 
-it("lists the machines, each with its page and Remove, and Repair only for one that isn't well", async () => {
-  const repairs: Repair[] = [];
-  await render(<MachineList onRepair={(r) => repairs.push(r)} />);
+it("lists the machines, each a name that opens its page, with one dot on the one that needs someone", async () => {
+  await render(<MachineList />);
   const names = [...host.querySelectorAll("[role='listitem']")].map((li) => li.getAttribute("aria-label"));
   // Online first, then by name.
   expect(names).toEqual(["builder-1", "devbox", "laptop"]);
-  expect(row("laptop")?.textContent).toContain("Offline");
-  // What brings it back, and nothing under one that is online.
-  expect(row("laptop")?.textContent).toContain("If the machine is on, Repair sets its node up again.");
-  expect(row("devbox")?.textContent).not.toContain("Repair sets");
   expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
   // Every row ends in a chevron, so it reads as one that opens without a hover.
   for (const name of names) expect(row(name ?? "")?.lastElementChild?.lastElementChild?.matches("svg[aria-hidden='true']")).toBe(true);
 
-  // No raw version on a row: the machine's page says it.
+  // What it needs is one dot, the words its name and the row's tooltip: no state word, and none on a row that is well.
+  expect(row("laptop")?.querySelector("[role='img']")?.getAttribute("aria-label")).toMatch(/^Offline since /u);
+  expect(row("laptop")?.querySelector("a")?.title).toMatch(/^Offline since /u);
+  expect(row("devbox")?.querySelector("[role='img']")).toBeNull();
+  // A role other than the usual both is a quiet word beside the name, and all the words a row has.
+  expect(row("laptop")?.textContent).toBe("laptopAgents only");
+  expect(row("builder-1")?.textContent).toBe("builder-1");
+
+  // No raw version on a row, and nothing to press but the row: Repair and Remove are on the machine's page.
   expect(row("devbox")?.textContent).not.toContain("0.9.0");
-  expect(() => rowButton("devbox", "Repair")).toThrow();
-  expect(() => rowButton("builder-1", "Repair")).toThrow();
-  await click(rowButton("laptop", "Repair"));
-  expect(repairs).toEqual([{ kind: "line", machineId: "laptop", rejoin: true }]);
+  expect(host.querySelector("[role='list'][aria-label='Machines'] button")).toBeNull();
 });
 
-it("asks before it removes a machine, then takes it off the list", async () => {
-  await render(<MachineList onRepair={() => undefined} />);
-  await click(rowButton("laptop", "Remove"));
+it("marks a machine that is online with claude logged out, saying which check failed", async () => {
+  checks = LOGGED_OUT.map((c) => ({ ...c, id: c.id.replace("laptop/", "builder-1/"), machineId: "builder-1" }));
+  await render(<MachineList />);
+  expect(row("builder-1")?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Claude: laptop: claude is not logged in, so its sessions can't start.");
+});
+
+it("says a machine's state first on its page, and offers Repair only while it isn't online", async () => {
+  await render(<MachinePage machineId="laptop" />);
+  expect(host.textContent).toMatch(/Offline since [^·]+ · fleetd 0\.9\.0/u);
+  // laptop joined by itself: a line that enrolls it again, in place.
+  await click(button("Repair…"));
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "laptop", rejoin: true }]);
+  expect(host.textContent).toContain("Repair laptop");
+  expect(host.textContent).toContain("--rejoin");
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render(<MachinePage machineId="builder-1" />);
+  expect(host.textContent).toContain("Online · fleetd 0.9.0");
+  expect(() => button("Repair…")).toThrow();
+});
+
+it("reads a machine's state from the live feed when it is newer than the snapshot, as the list does", async () => {
+  await render(<MachinePage machineId="builder-1" />);
+  await act(async () => {
+    frame({ t: "live", frame: { at: AT, full: true, lanes: [], machines: [{ machineId: "builder-1", name: "builder-1", status: "offline", asOf: AT, running: 0 }] } });
+    await Promise.resolve();
+  });
+  expect(host.textContent).toMatch(/Offline since /u);
+  expect(button("Repair…")).not.toBeNull();
+});
+
+it("asks before it removes a machine, then says it is removed and goes back to the list once the hub has dropped it", async () => {
+  await render(<MachinePage machineId="laptop" />);
+  await click(button("Remove…"));
   const dialog = document.querySelector("[role='dialog']");
   expect(dialog?.textContent).toContain("Remove laptop?");
   expect(dialog?.textContent).toContain("It joined by itself, so stop its node on it by hand.");
@@ -206,25 +249,34 @@ it("asks before it removes a machine, then takes it off the list", async () => {
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "laptop" }]);
   // Removing waits on SSH: longer than the app's usual 30 s.
   expect(calls.find((c) => c.tool === "machine_remove")?.timeoutMs).toBe(100_000);
-  expect(row("laptop")).toBeNull();
-  expect(row("builder-1")).not.toBeNull();
+  // At once, whatever the snapshot still holds: nothing of the machine left to press.
+  expect(host.textContent).toContain("Removed laptop.");
+  expect(host.querySelector("[data-item]")).toBeNull();
+  expect(() => button("Remove…")).toThrow();
+  // The hub's resync drops it: back to the list.
+  window.location.hash = "#/settings/hub/machines/laptop";
+  await act(async () => {
+    frame({ t: "snapshot", snapshot: { cursor: 2, attention: [], machines: MACHINES.filter((m) => m.machineId !== "laptop"), projects: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  expect(window.location.hash).toBe("#/settings/hub/machines");
 });
 
 it("says what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
-  await render(<MachineList onRepair={() => undefined} />);
-  await click(rowButton("devbox", "Remove"));
+  await render(<MachinePage machineId="devbox" />);
+  await click(button("Remove…"));
   await click(button("Remove devbox"));
   const dialog = document.querySelector("[role='dialog']");
   expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 projects (app, site)");
-  expect(row("devbox")).not.toBeNull();
+  expect(host.textContent).not.toContain("Removed devbox.");
   await click(button("Remove anyway"));
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "devbox" }, { machineId: "devbox", force: true }]);
-  expect(row("devbox")).toBeNull();
+  expect(host.textContent).toContain("Removed devbox.");
 });
 
 it("says a machine the hub set up loses its service as well as its key", async () => {
-  await render(<MachineList onRepair={() => undefined} />);
-  await click(rowButton("builder-1", "Remove"));
+  await render(<MachinePage machineId="builder-1" />);
+  await click(button("Remove…"));
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("The hub stops and removes builder-1's node service, then revokes its key.");
   // Its projects and their history go with it, and the confirm says so.
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("its projects are deleted from fleetd with their chats, memory, skills, files and orders");
@@ -235,16 +287,18 @@ const items = () => [...host.querySelectorAll("[data-item]")].map((li) => `${li.
 it("shows a joined machine's checklist, each item waiting until the hub has checked it", async () => {
   checks = [];
   await render(<MachinePage machineId="laptop" />);
-  expect(host.textContent).toContain("Offline · fleetd 0.9.0");
+  expect(host.textContent).toMatch(/Offline since [^·]+ · fleetd 0\.9\.0/u);
   expect(items()).toEqual(["claude:waiting", "identity:waiting", "github:waiting", "capabilities:done"]);
   expect(host.textContent).toContain("Checked when an agent first starts in one of its projects.");
 });
 
-it("says when the hub last checked the machine, beside its checklist: its own run, not a later one of another's", async () => {
-  // The answer's checkedAt (Oct 27 10:00) moves with every machine's run; laptop's own ran on Oct 25.
-  checks = LOGGED_OUT.map((c) => ({ ...c, checkedAt: "2026-10-25T10:00:00.000Z" }));
+it("says when the hub last checked the machine, under its checklist with Check again: its own run, not a later one of another's", async () => {
+  // The answer's checkedAt (2020, Oct 27 10:00) moves with every machine's run; laptop's own ran on Oct 25.
+  checks = LOGGED_OUT.map((c) => ({ ...c, checkedAt: "2020-10-25T10:00:00.000Z" }));
   await render(<MachinePage machineId="laptop" />);
-  expect(host.textContent).toContain("Offline · fleetd 0.9.0 · checked Oct 25");
+  const foot = button("Check again").parentElement;
+  expect(foot?.textContent).toBe("Checked Oct 25, 2020.Check again");
+  expect(host.querySelector("section[aria-label='Checklist']")?.contains(foot ?? null)).toBe(true);
 });
 
 it("checks a machine the hub hasn't checked yet as its page opens, once", async () => {
@@ -275,8 +329,11 @@ it("checks a machine again as its page opens when the hub couldn't answer some o
 it("gives each fix as the command to run on the machine, with Copy", async () => {
   await render(<MachinePage machineId="laptop" />);
   const android = host.querySelector("[data-item='capabilities']");
-  expect(android?.querySelector("dt")?.textContent).toBe("Run on laptop");
-  expect(android?.querySelector("dd [data-text='code']")?.textContent).toBe("sudo usermod -aG kvm ada");
+  expect(android?.getAttribute("aria-label")).toBe("Screens");
+  expect(android?.querySelector("[data-fix]")?.getAttribute("data-fix")).toBe("laptop");
+  expect(android?.querySelector("[data-fix]")?.textContent).toContain("Let ada use KVM. Run on laptop:");
+  expect(android?.querySelector("[data-fix] > div > span")?.textContent).toBe("sudo usermod -aG kvm ada");
+  expect([...(android?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).toEqual(["Copy"]);
 });
 
 it("gives a fix that runs on the hub as the command to run on the hub's machine, not the machine's", async () => {
@@ -293,8 +350,9 @@ it("gives a fix that runs on the hub as the command to run on the hub's machine,
   await render(<MachinePage machineId="laptop" />);
   const identity = host.querySelector("[data-item='identity']");
   // Named once the hub has said which machine it runs on (machine_hosts, asked as the fix shows).
-  await vi.waitFor(() => expect(identity?.querySelector("dt")?.textContent).toBe("Run on devbox, the hub"));
-  expect(identity?.querySelector("dd [data-text='code']")?.textContent).toBe("fleetd pair --worker laptop");
+  await vi.waitFor(() => expect(identity?.querySelector("[data-fix]")?.getAttribute("data-fix")).toBe("devbox, the hub"));
+  expect(identity?.querySelector("[data-fix]")?.textContent).toContain("Run on devbox, the hub:");
+  expect(identity?.querySelector("[data-fix] > div > span")?.textContent).toBe("fleetd pair --worker laptop");
 });
 
 it("logs claude in from the app: the URL to sign in at, then the code, once", async () => {
@@ -304,7 +362,7 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
 
   await click(button("Log in…"));
   expect(calls.filter((c) => c.tool === "machine_claude_login").map((c) => c.input)).toEqual([{ machineId: "laptop" }]);
-  expect(host.textContent).toContain("1. Open this page and sign in with the Claude account laptop should use.");
+  expect(host.textContent).toContain("Open this page and sign in with the Claude account laptop should use.");
   expect(host.textContent).toContain(LOGIN_URL);
   await click(button("Open"));
   expect(opened).toEqual([LOGIN_URL]);
@@ -370,7 +428,7 @@ it("lists the projects left from a removed machine, and Remove only forgets one 
     lastActivityAt: AT,
     threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
   });
-  await render(<MachineList onRepair={() => undefined} />, [project("devbox", "fleetd"), project("worker", "fleetd")]);
+  await render(<MachineList />, [project("devbox", "fleetd"), project("worker", "fleetd")]);
   const leftovers = host.querySelector("[aria-label='Projects left from removed machines']");
   expect([...(leftovers?.querySelectorAll("[role='listitem']") ?? [])].map((li) => li.textContent)).toEqual([
     "fleetdworker · /home/dev/src/fleetdRemove",
@@ -382,6 +440,6 @@ it("lists the projects left from a removed machine, and Remove only forgets one 
 });
 
 it("lists no leftovers while every project's machine is in the hub", async () => {
-  await render(<MachineList onRepair={() => undefined} />);
+  await render(<MachineList />);
   expect(document.body.textContent).not.toContain("Left from removed machines");
 });

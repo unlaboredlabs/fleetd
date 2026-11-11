@@ -146,6 +146,11 @@
   column-gap: var(--space-2);
   min-width: 0;
 }
+/* A row that needs someone: one dot at its end, before the chevron (DESIGN.md, Marks). */
+.needs {
+  flex: none;
+  display: flex;
+}
 /* A list inside a row: its rows in line with the row's words. */
 .below .list {
   padding: 0;
@@ -184,6 +189,12 @@
 }
 .opens > .control > * {
   pointer-events: auto;
+}
+/* ...but its dot and its chevron are marks, not controls: the pointer falls through them to the link, which opens the
+   row and holds the dot's why as its tooltip. */
+.opens > .control > .needs,
+.opens > .control > .chevron {
+  pointer-events: none;
 }
 .opener {
   padding: 0;
@@ -240,7 +251,9 @@
   background: color-mix(in srgb, var(--danger-fill) 88%, black);
 }
 
+/* A block, so its padding holds its room wherever it stands, not only as a flex group's child. */
 .note {
+  display: block;
   padding: var(--space-3) var(--space-4);
 }
 .note:empty {

@@ -15,11 +15,24 @@ export const choiceOf = (roles: readonly MachineRole[]): RolesChoice =>
 
 export const rolesOf = (choice: RolesChoice): MachineRole[] => (choice === "both" ? ["agents", "sessions"] : [choice]);
 
-/** What the choice means, under the control. */
+/** What the machine does as chosen, the row's title, and the rest of it under that. */
+export const ROLE_TITLE: Readonly<Record<RolesChoice, string>> = {
+  agents: "Runs agents",
+  sessions: "Hosts screens",
+  both: "Runs agents and hosts screens",
+};
 export const ROLE_HELP: Readonly<Record<RolesChoice, string>> = {
-  agents: "Runs agents. Their browser and device screens run on a machine that hosts screens.",
-  sessions: "Hosts browser and device screens for agents on any machine, and runs no agents.",
-  both: "Runs agents and hosts screens, its own agents' first.",
+  agents: "Their browser and device screens open on a machine that hosts screens.",
+  sessions: "Browser and device screens for agents on any machine. It runs no agents.",
+  both: "Its own agents' screens come first.",
+};
+
+/** A machine's role as a quiet word beside its name in the list, only where it isn't the usual both. */
+export const roleWord = (m: Pick<MachineRolesEntry, "roles" | "mac"> | undefined): string | undefined => {
+  if (m === undefined) return undefined;
+  if (m.mac !== undefined) return "Agents’ Mac";
+  const choice = choiceOf(m.roles);
+  return choice === "both" ? undefined : choice === "agents" ? "Agents only" : "Screens only";
 };
 
 /** "2 of 4 screens now (auto: 8 CPUs, 16 GB)"; "set" reads as "you set it". */

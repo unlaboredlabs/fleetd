@@ -13,13 +13,40 @@
   margin-top: calc(-1 * var(--space-1));
 }
 
+/* A view's label and line, and the ways in's Close at their right end, where the page's plus was. */
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.panel > .top {
+  padding-inline-end: var(--space-3);
+}
 .head {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 .label {
   margin: 0;
+}
+.close {
+  flex: none;
+  color: var(--quiet);
+}
+/* What a view holds under its label that isn't rows: steps, notes and what to do next. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+/* A link has a button's 1px edge: its words in line with the steps' glyphs all the same. */
+.more {
+  margin-inline-start: -1px;
 }
 
 .rows {

@@ -1,7 +1,7 @@
 // Hub › Machines › Screens' words: a kind's switch and its line from the machine's node, and the choices.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { daysChoices, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { daysChoices, elsewhereLine, fixOf, idleLine, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 
 const devbox: MachineRolesEntry = {
   machineId: "devbox",
@@ -30,6 +30,9 @@ describe("a kind's switch", () => {
     expect(stateLine(check("browser"))).toBe("Ready");
     expect(stateLine(check("android"))).toBe("Off");
     expect(stateLine(check("desktop"))).toBe("Starts after the screens open now end");
+    // The node's own words start as a sentence does.
+    expect(stateLine({ host: "desktop", ready: false, detail: "desktop screens run on Linux", off: "unsupported" })).toBe("Desktop screens run on Linux");
+    expect(stateLine({ host: "desktop", ready: false, detail: "no docker, podman or Xvfb", off: "missing" })).toBe("No docker, podman or Xvfb");
     // A node before switches: on where it can host.
     expect(switchOn({ host: "browser", ready: true, detail: "Chrome" })).toBe(true);
   });
@@ -46,6 +49,16 @@ describe("a kind's switch", () => {
     expect(nodeWait({ ...devbox, screenSettings: false })).toBe("old");
     expect(nodeWait({ ...restarting, online: false })).toBeNull();
     expect(nodeWait(devbox)).toBeNull();
+  });
+
+  it("says where the Mac's screen is, and how to get one, on a machine that isn't a Mac", () => {
+    const line = "Only a Mac has this screen. Add one from Machines: the plus, then A Mac for agents.";
+    expect(elsewhereLine(devbox, "mac", check("mac"))).toBe(line);
+    // Any other kind, and the Mac itself, keep the node's words.
+    expect(elsewhereLine(devbox, "android", check("android"))).toBeNull();
+    expect(elsewhereLine(devbox, "desktop", { host: "desktop", ready: false, detail: "desktop screens run on Linux", off: "unsupported" })).toBeNull();
+    expect(elsewhereLine({ mac: { on: false, ready: false } }, "mac", { host: "mac", ready: false, detail: "off", off: "off", on: false })).toBeNull();
+    expect(elsewhereLine(devbox, "mac", undefined)).toBeNull();
   });
 });
 

@@ -143,7 +143,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (open?: { view: View; at: number }) => {
+const render = async (open?: { view: View; at: number }, page: { closed?: boolean; onClose?: () => void } = {}) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -198,7 +198,7 @@ const render = async (open?: { view: View; at: number }) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AddMachine open={open} />
+          <AddMachine open={open} {...page} />
         </DataProvider>
       </UiProvider>,
     );
@@ -377,6 +377,43 @@ it("opens on a run still going, step by step", async () => {
   await render();
   expect(state()).toBe("run");
   expect(steps().map((x) => x.split(" ")[0])).toEqual(["done", "done", "running", "planned", "planned", "planned", "planned"]);
+});
+
+// Behind a page's plus (Machines), or a machine's Repair: nothing until there is something to follow.
+it("shows nothing while closed", async () => {
+  await render(undefined, { closed: true });
+  expect(state()).toBeUndefined();
+  expect(host.textContent).toBe("");
+});
+
+it("shows a run still going even while closed", async () => {
+  runs = [RUNNING];
+  await render(undefined, { closed: true });
+  expect(state()).toBe("run");
+});
+
+it("closes the ways in from their own Close, which only a page that can close them shows", async () => {
+  const onClose = vi.fn();
+  await render(undefined, { onClose });
+  expect(state()).toBe("choose");
+  const close = host.querySelector<HTMLButtonElement>("button[aria-label='Close']");
+  act(() => close?.click());
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("has no Close where nothing closes the ways in", async () => {
+  await render();
+  expect(state()).toBe("choose");
+  expect(host.querySelector("button[aria-label='Close']")).toBeNull();
+});
+
+it("leaves on Back from a view asked for from outside, which has no ways in behind it", async () => {
+  const onClose = vi.fn();
+  await render({ view: { kind: "line", machineId: "laptop", rejoin: true }, at: 1 }, { closed: true, onClose });
+  expect(state()).toBe("line");
+  await click("Back");
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(state()).toBeUndefined();
 });
 
 it("shows a failed step's output and retries the same host", async () => {

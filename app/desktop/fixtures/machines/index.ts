@@ -4,7 +4,9 @@
 // `machines-failed` open on a run the hub is following, one at its install step and one stopped at the node's service
 // with its output and Retry. Any other machine's line is answered for laptop; `machines-joined` has laptop's node
 // come online a moment after the line is made, so its wait turns into Joined. `machines-checklist` has laptop joined
-// with claude logged out, and opens its page: the checklist and Claude's login from the app.
+// with claude logged out, and opens its page: the checklist and Claude's login from the app. `machines-one` is a hub
+// just set up, devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with
+// claude logged out, so the list has a row that needs someone of each kind and each one's page says what to do.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
@@ -168,11 +170,55 @@ function checklist(from: Fixture): Fixture {
   return f;
 }
 
+const machinesOf = (f: Fixture): JsonObject[] => (Array.isArray(f.snapshot?.["machines"]) ? f.snapshot["machines"].filter(isObject) : []);
+
+/** A hub just set up: devbox, which runs it, is its only machine. */
+function one(from: Fixture): Fixture {
+  const f = hub(from, "machines-one", "A hub just set up: devbox is its only machine, and well", () => []);
+  const { degradedReason: _, ...devbox } = machinesOf(f).find((m) => m["machineId"] === "devbox") ?? {};
+  f.snapshot = { ...f.snapshot, machines: [{ ...devbox, status: "online", nodeVersion: "0.9.0" }] };
+  f.update("machine_roles", (out) => (isObject(out) && Array.isArray(out["machines"]) ? { ...out, machines: out["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox") } : out));
+  return f;
+}
+
+/** Two machines that need someone beside devbox: buildbox's node gone for three days, and laptop with claude logged out. */
+function unwell(from: Fixture): Fixture {
+  const f = hub(from, "machines-unwell", "buildbox offline for three days and laptop with claude logged out, beside devbox", () => []);
+  const gone = new Date(Date.parse(f.now) - 3 * 24 * 3600_000).toISOString();
+  const machines = machinesOf(f).map((m) => (m["machineId"] === "buildbox" ? { ...m, status: "offline", lastSeenAt: gone, nodeVersion: "0.9.0" } : { ...m, nodeVersion: "0.9.0" }));
+  f.snapshot = { ...f.snapshot, machines: [...machines, { ...laptop(f), status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" }] };
+  // The live feed's status is newer than the snapshot's, so it says the same.
+  for (const frame of f.live) {
+    if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].map((m) => (isObject(m) && m["machineId"] === "buildbox" ? { ...m, status: "offline", asOf: gone, running: 0 } : m));
+  }
+  f.update("machine_roles", (out) => {
+    if (!isObject(out) || !Array.isArray(out["machines"])) return out;
+    const roles = out["machines"].filter(isObject).map((m) => (m["machineId"] === "buildbox" ? { ...m, online: false } : m));
+    const [devbox] = roles;
+    return { ...out, machines: [...roles, { ...devbox, machineId: "laptop", name: "laptop", roles: ["agents"], hostsOthers: false, sessionsLive: 0 }] };
+  });
+  const recorded = f.output("doctor_list", {});
+  const checks = isObject(recorded) && Array.isArray(recorded["checks"]) ? recorded["checks"] : [];
+  const laptops = LAPTOP_CHECKS.map((c) => ({ ...c, checkedAt: f.now }));
+  for (const input of [{}, { rerun: true }]) f.answer("doctor_list", input, { checks: [...checks, ...laptops], checkedAt: f.now });
+  // Repair on buildbox's page: it joined by itself, so its line again, with a new code.
+  f.answer("machine_join", { machineId: "buildbox", rejoin: true }, {
+    machineId: "buildbox",
+    hubUrl: HUB,
+    code: "K7QM-4XWD",
+    expiresAt: "2026-10-19T10:45:00.000Z",
+    line: `${LINE.replace("--machine-id laptop", "--machine-id buildbox")} --rejoin`,
+  });
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
     joined(base("typical")),
     checklist(base("typical")),
+    one(base("empty")),
+    unwell(base("typical")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),
     ]),

@@ -142,10 +142,13 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   expect(toggle(box, "Android")?.getAttribute("aria-checked")).toBe("false");
   expect(toggle(box, "Android")?.disabled).toBe(false);
   expect(box?.textContent).toContain("Ready");
-  // No iOS switch (D298); the agents' Mac can't run on Linux: its switch doesn't move, and says why.
+  // No iOS switch (D298); the agents' Mac can't run on Linux: its switch doesn't move, and says why and how to get one.
   expect(toggle(box, "iOS")).toBeNull();
   expect(toggle(box, "Agents’ Mac")?.disabled).toBe(true);
-  expect(box?.textContent).toContain("the Mac screen is a Mac's own");
+  expect(box?.textContent).toContain("Only a Mac has this screen. Add one from Machines: the plus, then A Mac for agents.");
+  expect(box?.textContent).not.toContain("the Mac screen is a Mac's own");
+  // Online: nothing about being offline.
+  expect(box?.textContent).not.toContain("is offline");
   expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
   // One idle timeout, said rather than picked.
   expect(box?.textContent).toContain("An idle screen ends after 30 minutes.");
@@ -163,6 +166,15 @@ it("lists each machine that hosts screens with a switch per kind and what its no
   // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
   expect(host.querySelector("[aria-label='Recordings per project, at most']")).toBeNull();
+});
+
+it("says once that an offline machine's switches wait for it, not on every row", async () => {
+  listed = [{ ...devbox, online: false }];
+  await render();
+  const box = row("devbox");
+  expect((box?.textContent ?? "").split("devbox is offline: these change once it's back.")).toHaveLength(2);
+  expect(box?.textContent).not.toContain("Offline");
+  for (const kind of ["Browser", "Android"]) expect(toggle(box, kind)?.disabled).toBe(true);
 });
 
 // The person updated: the hub read the machines while devbox's node was restarting onto the new build (the machine
