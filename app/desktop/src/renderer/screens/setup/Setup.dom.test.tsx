@@ -8,6 +8,7 @@ import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixtures from "../../../../fixtures/setup/steps.json" with { type: "json" };
+import type { GithubApp } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -29,11 +30,30 @@ const scenarios = fixtures.scenarios as unknown as Readonly<Record<string, Scena
 const guides = fixtures.guides as unknown as ReadonlyArray<SetupStep>;
 const step = (id: string, read: Partial<SetupStep> | undefined): SetupStep => ({ ...(guides.find((g) => g.id === id) as SetupStep), ...read });
 
+/** The hub's GitHub App once made, installed nowhere; and as its Test leaves it, on the hub. */
+const made: GithubApp = {
+  appId: 4242,
+  slug: "fleetd-on-devbox",
+  name: "fleetd on devbox",
+  clientId: "Iv23liTEST",
+  owner: "acme",
+  htmlUrl: "https://github.com/apps/fleetd-on-devbox",
+  settingsUrl: "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox",
+  createdAt: "2026-10-18T10:00:00.000Z",
+};
+const installed: GithubApp = {
+  ...made,
+  installations: [{ installationId: 7, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/web", "acme/api"] }],
+  lastTest: { at: "2026-10-19T08:30:00.000Z", ok: true, said: '"fleetd on devbox" is installed on acme (2 repositories), and its tokens work.' },
+};
+
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let admin: boolean;
 let scenario: Scenario;
+/** The hub's GitHub App; none unless a test makes one. Its GitHub step reads done once the App's test passed. */
+let app: GithubApp | undefined;
 /** Sends the app a frame, as the hub's feed would. */
 let send: (frame: HubFrame) => void = () => undefined;
 
@@ -44,7 +64,18 @@ beforeEach(() => {
   calls = [];
   admin = true;
   scenario = scenarios["setup-github"] as Scenario;
-  vi.stubGlobal("fleetd", { platform: "linux", openExternal: () => Promise.resolve({ ok: true }) });
+  app = undefined;
+  vi.stubGlobal("fleetd", {
+    platform: "linux",
+    openExternal: () => Promise.resolve({ ok: true }),
+    github: {
+      createApp: (): Promise<CallOutcome> => {
+        app = made;
+        return Promise.resolve({ ok: true, output: { app: made } });
+      },
+      cancel: () => Promise.resolve(),
+    },
+  });
   window.location.hash = "#/setup";
 });
 afterEach(() => {
@@ -59,9 +90,13 @@ const answer = (tool: string, input: unknown): CallOutcome => {
   switch (tool) {
     case "hub_info":
       return { ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin } };
-    case "setup_list":
-      return { ok: true, output: { steps: guides.map((g) => step(g.id, scenario.list[g.id])), requiredLeft: scenario.requiredLeft } };
+    case "setup_list": {
+      const reads: Reads = app?.lastTest?.ok === true ? { ...scenario.list, github: scenario.tests.github ?? {} } : scenario.list;
+      return { ok: true, output: { steps: guides.map((g) => step(g.id, reads[g.id])), requiredLeft: scenario.requiredLeft } };
+    }
     case "setup_test":
+      // GitHub's Test runs the App's own, as the hub does.
+      if (asked.step === "github" && app !== undefined) app = installed;
       return { ok: true, output: { step: step(asked.step ?? "", scenario.tests[asked.step ?? ""]) } };
     // The hub's own accounts, whose controls Settings › Hub › Setup holds: a key sealed on devbox, and no GitHub App.
     case "claude_accounts_get":
@@ -81,7 +116,13 @@ const answer = (tool: string, input: unknown): CallOutcome => {
     case "people_list":
       return { ok: true, output: { people: [], devices: [], invites: [] } };
     case "github_app_get":
-      return { ok: true, output: { permissions: [], authorizeUrl: "https://github.com/login/oauth/authorize", people: [] } };
+      return { ok: true, output: { ...(app === undefined ? {} : { app }), permissions: [], authorizeUrl: "https://github.com/login/oauth/authorize", people: [] } };
+    case "github_app_test":
+      app = installed;
+      return { ok: true, output: { app } };
+    case "github_app_remove":
+      app = undefined;
+      return { ok: true, output: { settingsUrl: made.settingsUrl } };
     default:
       return { ok: true, output: {} };
   }
@@ -326,6 +367,56 @@ describe("Settings › Hub › Setup", () => {
     await click(button("‹ Setup"));
     expect(rows("Accounts")).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordBefore the first login"]);
     expect(settings()?.textContent).toContain("2 done.");
+  });
+
+  it("keeps GitHub's row, its step and the App's controls saying the same after the App's Test, the step's Test, Remove and Create", async () => {
+    const card = () => pane()?.querySelector("[data-part='admin.github']");
+    const tests = () => [...(pane()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent.trim() === "Test");
+    const asked = (tool: string) => calls.filter((c) => c.tool === tool).length;
+    const github = () => rows("Accounts").find((r) => r.startsWith("github:"));
+    // An App made and installed nowhere: the step is still to do.
+    app = made;
+    await render(page);
+    expect(github()).toBe("github:GitHubBefore the first PR");
+    await click(button("GitHub"));
+    expect(card()?.textContent).toContain("Not installed yet");
+    expect(tests()).toHaveLength(2);
+    // The App's own Test: the step under it reads the hub again, and so does its row.
+    let lists = asked("setup_list");
+    await click(tests()[0] as HTMLElement);
+    expect(asked("github_app_test")).toBe(1);
+    expect(asked("setup_list")).toBe(lists + 1);
+    expect(card()?.textContent).toContain("acme: acme/web and acme/api");
+    // Done now: only a done account's guide can be hidden.
+    expect(button("Hide the guide")).not.toBeNull();
+    await click(button("‹ Setup"));
+    expect(github()).toBe("github:GitHubUses the hub's GitHub App");
+    // Remove: the row stops saying the hub uses it.
+    await click(button("GitHub"));
+    lists = asked("setup_list");
+    await click(button("Remove"));
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button")].find((b) => b.textContent.trim() === "Remove");
+    if (confirm === undefined) throw new Error("no confirm");
+    await click(confirm);
+    expect(asked("github_app_remove")).toBe(1);
+    expect(asked("setup_list")).toBe(lists + 1);
+    expect(card()?.textContent).toContain("No App yet");
+    await click(button("‹ Setup"));
+    expect(github()).toBe("github:GitHubBefore the first PR");
+    // Create: the step is read again with the App made.
+    await click(button("GitHub"));
+    lists = asked("setup_list");
+    await click(button("Create GitHub App"));
+    expect(card()?.textContent).toContain("Not installed yet");
+    expect(asked("setup_list")).toBe(lists + 1);
+    // The step's Test runs the App's on the hub: the App's controls read it again, and say what the step says.
+    const gets = asked("github_app_get");
+    await click(tests()[tests().length - 1] as HTMLElement);
+    expect(asked("setup_test")).toBe(1);
+    expect(asked("github_app_get")).toBe(gets + 1);
+    expect(pane()?.textContent).toContain("is installed on acme (2 repositories), and its tokens work.");
+    expect(card()?.textContent).toContain("acme: acme/web and acme/api");
+    expect(card()?.textContent).not.toContain("Not installed yet");
   });
 
   it("holds every control of the hub's Claude on its page, its guide and the step's Test folded once it is done", async () => {

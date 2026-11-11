@@ -185,12 +185,15 @@ function StepRail({ steps, open, onOpen }: { steps: ReadonlyArray<SetupStep>; op
 function useTest(step: SetupStep) {
   const data = useDataLayer();
   const keep = useKeep();
+  const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const run = async () => {
     setBusy(true);
     const out = await data.call("setup_test", { step: step.id }, { timeoutMs: testMs(step) });
     setBusy(false);
+    // GitHub's Test runs the App's own on the hub, so the App's controls over this guide (Hub › Setup) ask again.
+    if (step.id === "github") refetch(["github_app_get"]);
     if (!out.ok) {
       setTested({ ok: false, text: out.error.message });
       return;

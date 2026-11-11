@@ -101,6 +101,9 @@ export const testWords = (test: NonNullable<GithubApp["lastTest"]>, nowMs: numbe
   return test.ok ? { ok: true, text: `${said} Checked ${at}.` } : { ok: false, text: `Failed ${at}: ${said}` };
 };
 
+/** What a change to the App changes: the App itself, and the GitHub step of Hub › Setup, whose row and page show it. */
+const APP_READS = ["github_app_get", "setup_list"] as const;
+
 /** The App as the hub keeps it: where it is installed, Install, Test and Remove. */
 function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: string) => void }) {
   const hubCall = useHubCall();
@@ -114,7 +117,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
     hubCall("github_app_test", {}, { timeoutMs: 60_000 }).then(
       (_out: GithubAppTestOutput) => {
         setTesting(false);
-        refetch(["github_app_get"]);
+        refetch(APP_READS);
       },
       (e: unknown) => {
         setTesting(false);
@@ -175,6 +178,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
           onRemove={() =>
             hubCall("github_app_remove", {}).then((out) => {
               onRemoved(`Removed from the hub. Delete it on GitHub too, under Advanced: ${out.settingsUrl}/advanced`);
+              // The step, ConfirmRemove reads again itself.
               refetch(["github_app_get"]);
             })
           }
@@ -226,7 +230,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
       return;
     }
     setMade("Created. Now install it on the repositories fleetd works on, above.");
-    refetch(["github_app_get"]);
+    refetch(APP_READS);
   };
   const fresh = info.app === undefined;
   const [open, setOpen] = useState(fresh);
