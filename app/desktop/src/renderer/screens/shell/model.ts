@@ -140,9 +140,6 @@ export const stepProject = <P extends SidebarProject>(projects: ReadonlyArray<P>
 export const homeProject = <P extends SidebarProject>(projects: ReadonlyArray<P>, last: string | null): P | null =>
   projects.find((x) => x.key === last) ?? projects[0] ?? null;
 
-/** `restarting`: the hub closed to restart, and its dot opens to a ring until it answers. */
-export type ConnTone = "success" | "warning" | "danger" | "quiet" | "restarting";
-
 /** An update's restart that runs longer than this gets the main area's one line (updates/RestartLine). */
 export const LONG_RESTART_MS = 30_000;
 /** And one longer than this is an outage: the offline banner, as for any lost link. */
@@ -183,71 +180,4 @@ export const hubName = (hub: string): string => {
   const bare = h.replace(/:\d*$/u, "");
   if (/^\d+(?:\.\d+){3}$/u.test(bare)) return bare;
   return bare.split(".")[0] ?? bare;
-};
-
-export interface ConnLine {
-  /** The chip's words: the hub's short name while connected, else its state in a word or two. */
-  readonly label: string;
-  readonly tone: ConnTone;
-  /** The state in a word or two ("Connected", "Offline"), the popover's heading. */
-  readonly status: string;
-  /** What is going on, in a sentence without a final period; null when the status says it all. */
-  readonly detail: string | null;
-  /** What to do about it, from the hub's own error (may name a command in backticks); null when there's nothing to say. */
-  readonly fix: string | null;
-  /** The hub's address in full, when there is one. */
-  readonly hub: string | null;
-  /** Waiting out a retry: Retry dials now. */
-  readonly retry: boolean;
-}
-
-/**
- * The sidebar's hub chip, and its popover. A fixture never says it is connected. Offline the projects above it are
- * marked with the time they were last current (`asOf`, "as of 09:02"); the popover says it too, and the banner
- * counts down.
- */
-export const connLine = (state: HubState, fixture = false, asOf?: string, now = Date.now()): ConnLine => {
-  const none = { detail: null, fix: null, hub: null, retry: false };
-  if (fixture) return { ...none, label: "Sample data", tone: "quiet", status: "Sample data", detail: "Sample data, no hub" };
-  // A restart isn't an outage while it is short (an update's for 2 minutes): the hub keeps its name, its dot opens to
-  // a ring. Only an update says it updates.
-  const restart = restartOf(state, now);
-  if (restart !== null && restart.phase !== "outage" && state.phase !== "live" && state.phase !== "unpaired" && state.phase !== "refused") {
-    return {
-      ...none,
-      label: hubName(state.hub),
-      tone: "restarting",
-      status: restart.to === null ? "Reconnecting…" : "Updating fleetd…",
-      detail:
-        restart.to === null
-          ? "The hub is restarting. Agents keep working on their machines, and anything you send goes once it's back"
-          : "The hub is restarting into a new build. Agents keep working on their machines, and anything you send goes once it's back",
-      hub: state.hub,
-      retry: restart.phase === "long",
-    };
-  }
-  switch (state.phase) {
-    // The first attempt is the usual start: quiet. Amber once it is trying again.
-    case "connecting": {
-      const again = state.attempt > 1;
-      const status = again ? "Reconnecting…" : "Connecting…";
-      return { ...none, label: status, tone: again ? "warning" : "quiet", status, hub: state.hub === "" ? null : state.hub };
-    }
-    case "unpaired":
-      return { ...none, label: "No hub", tone: "quiet", status: "Not connected", detail: state.note ?? "This app isn't paired with a hub" };
-    case "live":
-      return { ...none, label: hubName(state.hub), tone: "success", status: "Connected", hub: state.hub };
-    case "retrying":
-      return {
-        label: "Offline",
-        tone: "warning",
-        status: asOf === undefined ? "Offline" : `Offline, ${asOf}`,
-        detail: state.reason,
-        fix: state.fix ?? null,
-        hub: state.hub,
-        retry: true,
-      };
-    case "refused":
-      return { label: "Key refused", tone: "danger", status: "Key refused", detail: `The hub refused this app's key: ${state.message}`, fix: null, hub: state.hub, retry: false };
-  }
 };

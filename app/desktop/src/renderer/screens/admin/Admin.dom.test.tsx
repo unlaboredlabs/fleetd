@@ -253,8 +253,8 @@ it("marks an admin's name while required setup steps are left, and opens Hub ›
   expect(you?.getAttribute("aria-label")).toContain("2 setup steps left");
   if (you === null) throw new Error("no name at the foot");
   await click(you);
-  const setup = document.querySelector<HTMLElement>("[aria-label='You'] [data-opens='setup']");
-  expect(setup?.textContent).toBe("2 steps left");
+  const setup = document.querySelector<HTMLElement>("[aria-label='You'] [data-line='setup']");
+  expect(setup?.textContent).toBe("2 setup steps leftFinish");
   if (setup === null) throw new Error("no Setup line");
   await click(setup);
   expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hub.setup" });

@@ -288,6 +288,17 @@ export const fixtures = [
   "showcase-pin",
   // ...and with billing and Ada pinned: two side by side, a small gap between them (W577).
   "showcase-pins-two",
+  // The menu under your name (W607): Sam's hub with one thing off in each (fixtures/menu).
+  "menu-setup",
+  "menu-machine-offline",
+  "menu-offline",
+  "menu-refused",
+  "menu-updating",
+  "menu-updated",
+  "menu-update-failed",
+  "menu-member-update-failed",
+  "menu-member-no-machine",
+  "menu-everything",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -2054,14 +2065,39 @@ export const screens: readonly Screen[] = [
     fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-run-hub"],
     variant: "updates",
   },
+  // The menu under your name, open (W607). All being well it is who you are, a dot beside the hub's name and Settings,
+  // for the owner and for a member. What is off is one more row with the one thing to do: a setup step left, a
+  // machine offline, the hub out of reach, a second hub out of reach or refusing this app's key, an update to take,
+  // going on, just in, or one that didn't go in (a member is told who to ask, as when no machine is online), and
+  // everything at once. One size: the menu is as wide in every window.
   {
     id: "shell",
     route: "#/",
-    fixtures: ["updates-hub-ready", "updates-run-hub", "updates-put-back", "updates-updated"],
-    variant: "updates-popover",
+    fixtures: [
+      "admin-owner",
+      "admin-member",
+      "menu-setup",
+      "menu-machine-offline",
+      "menu-offline",
+      "menu-refused",
+      "sidebar-hubs-offline",
+      "updates-hub-ready",
+      "menu-updating",
+      "menu-updated",
+      "menu-update-failed",
+      "menu-member-update-failed",
+      "menu-member-no-machine",
+      "menu-everything",
+    ],
+    variant: "you-menu",
+    sizes: ["small"],
     open: async (page) => {
       await page.locator("[data-opens='you']").click();
-      await page.locator("[data-update-note]").waitFor();
+      const menu = page.getByRole("dialog", { name: "You" });
+      await menu.getByRole("button", { name: /^Settings/u }).waitFor();
+      // One row a hub while all is well, and never a table, an address or a build's name.
+      await expect(menu.locator("[data-line='hub']").first()).toBeVisible();
+      await expect(menu).not.toContainText(/https?:|:4790|edge|Protocol|\bv\d/iu);
     },
   },
   {

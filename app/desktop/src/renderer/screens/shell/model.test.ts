@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectRow } from "../../src/data/selectors";
-import { connLine, homeProject, hubName, nextWanting, stepProject, toSidebar, type MarksIn, type SidebarProject } from "./model";
+import { homeProject, hubName, nextWanting, stepProject, toSidebar, type MarksIn, type SidebarProject } from "./model";
 
 // Rows as the data layer hands them over: by title.
 const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "working" | "running" | "lastSeq">> = {}): ProjectRow =>
@@ -153,43 +153,5 @@ describe("hubName", () => {
   it("keeps an address whole, without its port", () => {
     expect(hubName("http://100.64.0.1:4790/")).toBe("100.64.0.1");
     expect(hubName("http://[fd7a:115c::1]:4790")).toBe("[fd7a:115c::1]");
-  });
-});
-
-describe("connLine", () => {
-  it("names a live hub by its short name, and keeps the full address and status for the popover", () => {
-    expect(connLine({ phase: "live", hub: "https://devbox.example.ts.net:4790", protocol: 1 })).toEqual({
-      label: "devbox",
-      tone: "success",
-      status: "Connected",
-      detail: null,
-      fix: null,
-      hub: "https://devbox.example.ts.net:4790",
-      retry: false,
-    });
-  });
-
-  it("says when it isn't connected, calmly: quiet on the first try, amber once it tries again, red when the key is refused", () => {
-    expect(connLine({ phase: "connecting", hub: "http://hub:4790", attempt: 1 })).toMatchObject({ label: "Connecting…", tone: "quiet", retry: false });
-    expect(connLine({ phase: "connecting", hub: "http://hub:4790", attempt: 3 })).toMatchObject({ label: "Reconnecting…", tone: "warning" });
-    expect(connLine({ phase: "connecting", hub: "", attempt: 1 }).hub).toBeNull();
-    const down = { phase: "retrying", hub: "http://hub:4790", reason: "Nothing is listening at hub:4790", fix: "Start the hub (`fleetd doctor` says why)", retryAt: 0 } as const;
-    expect(connLine(down, false, "as of 09:02")).toEqual({
-      label: "Offline",
-      tone: "warning",
-      status: "Offline, as of 09:02",
-      detail: "Nothing is listening at hub:4790",
-      fix: "Start the hub (`fleetd doctor` says why)",
-      hub: "http://hub:4790",
-      retry: true,
-    });
-    expect(connLine(down).status).toBe("Offline");
-    expect(connLine({ ...down, fix: undefined }).fix).toBeNull();
-    expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" })).toMatchObject({ label: "Key refused", tone: "danger", retry: false });
-    expect(connLine({ phase: "unpaired" })).toMatchObject({ label: "No hub", tone: "quiet", hub: null });
-  });
-
-  it("never says a fixture is connected", () => {
-    expect(connLine({ phase: "live", hub: "http://devbox:4790", protocol: 1 }, true)).toMatchObject({ label: "Sample data", tone: "quiet", hub: null, retry: false });
   });
 });
