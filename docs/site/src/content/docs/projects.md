@@ -33,8 +33,8 @@ one for taxes. Every project has the same abilities: memory, [automations](/docs
    Write to its lead in the app's chat, or from any agent with chat_send; the lead starts with the first message.
    ```
 
-2. Read the `Lead needs:` line. It names anything to fix on GitHub before the first pull request, such as
-   `squash merges are off on acme/storefront`.
+2. Read the `Lead needs:` line. It names anything to fix or to know on GitHub before the first pull request, such
+   as a repo with no CI.
 
 ### What you can pass
 
