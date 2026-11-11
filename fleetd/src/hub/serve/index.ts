@@ -1,5 +1,6 @@
 // `fleetd hub start`: parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
+import { isLiveHubHome, liveHubRefusal } from "../../cli/common.ts";
 import { refreshOwnUnit } from "../../cli/setup/units.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -138,6 +139,11 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
+  // A second hub on the live one's home from an agent's session would migrate and run its database beside it.
+  if (isLiveHubHome(home)) {
+    process.stderr.write(`fleetd: ${liveHubRefusal("Starting a hub on the live hub's home")}\n`);
+    return 1;
+  }
   stampLogs();
   protect("hub");
   refreshOwnUnit();

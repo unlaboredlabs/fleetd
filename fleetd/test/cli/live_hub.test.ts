@@ -114,7 +114,7 @@ describe("the CLI from an agent's session", () => {
     said(machine.stdout + machine.stderr);
   }, CASE_MS);
 
-  test("init and uninstall leave the live hub's setup alone", async () => {
+  test("init, uninstall and a second hub start leave the live hub alone", async () => {
     const setup = readFileSync(join(live.hubHome, "setup.json"), "utf8");
     const listen = live.hubUrl.replace("http://", "");
     const init = await live.run(["init", "--no-service", "--listen", listen, "--url", "http://changed.example:1", "--git-identity", "Dev <dev@example.com>"], { env: session });
@@ -123,6 +123,13 @@ describe("the CLI from an agent's session", () => {
     const uninstall = await live.run(["uninstall", "--purge"], { env: session });
     expect(uninstall.code).toBe(1);
     said(uninstall.stdout + uninstall.stderr);
+    // A second hub on the live home, from its default or by --home, never starts.
+    for (const argv of [["hub", "start", "--listen", "127.0.0.1:1"], ["hub", "start", "--home", live.hubHome, "--listen", "127.0.0.1:1"]]) {
+      const started = await live.run(argv, { env: session });
+      expect(started.code).toBe(1);
+      said(started.stderr);
+      expect(started.stderr).not.toContain("listening on");
+    }
     expect(readFileSync(join(live.hubHome, "setup.json"), "utf8")).toBe(setup);
     expect(existsSync(join(live.hubHome, "hub.sqlite"))).toBe(true);
   }, CASE_MS);
