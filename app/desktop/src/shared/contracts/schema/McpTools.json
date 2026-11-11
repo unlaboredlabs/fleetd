@@ -7492,7 +7492,7 @@
           "$ref": "#/$defs/SessionHost"
         },
         "idleMinutes": {
-          "description": "Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a\nnode before it.",
+          "description": "Minutes without a command before a screen of this kind ends: 30, the agents' Mac's 5. Absent from a node before\nit.",
           "maximum": 1440,
           "minimum": 1,
           "type": "integer"
@@ -10636,12 +10636,6 @@
         "host": {
           "$ref": "#/$defs/SessionHost"
         },
-        "idleMinutes": {
-          "description": "Minutes without a command before a screen there ends, for every kind.",
-          "maximum": 1440,
-          "minimum": 1,
-          "type": "integer"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -11053,6 +11047,7 @@
     "McpServerSetInput": {
       "properties": {
         "enabled": {
+          "description": "Saved off when `roles` names no one.",
           "type": "boolean"
         },
         "env": {
@@ -11081,7 +11076,8 @@
           "$ref": "#/$defs/McpServerName"
         },
         "roles": {
-          "$ref": "#/$defs/McpRoles"
+          "$ref": "#/$defs/McpRoles",
+          "description": "\"Agents get it too\": writers or reviewers gives it to the lead and every agent, else the lead alone (an older\napp's other picks are saved as that)."
         },
         "scope": {
           "$ref": "#/$defs/McpScope"
@@ -11900,18 +11896,6 @@
         },
         "memory_set.output": {
           "$ref": "#/$defs/MemorySetOutput"
-        },
-        "memory_shared_get.input": {
-          "$ref": "#/$defs/MemorySharedGetInput"
-        },
-        "memory_shared_get.output": {
-          "$ref": "#/$defs/MemorySharedGetOutput"
-        },
-        "memory_shared_set.input": {
-          "$ref": "#/$defs/MemorySharedSetInput"
-        },
-        "memory_shared_set.output": {
-          "$ref": "#/$defs/MemorySharedSetOutput"
         },
         "memory_undo.input": {
           "$ref": "#/$defs/MemoryUndoInput"
@@ -12827,10 +12811,6 @@
         "memory_refresh_run.output",
         "memory_set.input",
         "memory_set.output",
-        "memory_shared_get.input",
-        "memory_shared_get.output",
-        "memory_shared_set.input",
-        "memory_shared_set.output",
         "memory_undo.input",
         "memory_undo.output",
         "metrics_get.input",
@@ -13511,7 +13491,7 @@
           "description": "Absent while off."
         },
         "on": {
-          "description": "The project's `memory_refresh` setting.",
+          "description": "Always true: the refresh can't be turned off. Kept for older apps, which offered a switch.",
           "type": "boolean"
         },
         "tz": {
@@ -13677,57 +13657,6 @@
       "type": "object"
     },
     "MemorySetOutput": {
-      "properties": {
-        "file": {
-          "$ref": "#/$defs/MemoryFile"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "file"
-      ],
-      "type": "object"
-    },
-    "MemorySharedGetInput": {
-      "type": "object"
-    },
-    "MemorySharedGetOutput": {
-      "properties": {
-        "file": {
-          "$ref": "#/$defs/MemoryFile",
-          "description": "Empty once retired."
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "file"
-      ],
-      "type": "object"
-    },
-    "MemorySharedSetInput": {
-      "properties": {
-        "text": {
-          "description": "The whole file. Empty retires it.",
-          "maxLength": 100000,
-          "type": "string"
-        }
-      },
-      "required": [
-        "text"
-      ],
-      "type": "object"
-    },
-    "MemorySharedSetOutput": {
       "properties": {
         "file": {
           "$ref": "#/$defs/MemoryFile"
@@ -14333,7 +14262,7 @@
         },
         "model": {
           "$ref": "#/$defs/ModelName",
-          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick."
+          "description": "The checker's model: always [`CHECKER_MODEL`] since W467, which dropped the per-project pick. Kept, with\n`effort`, for older phones, which showed them."
         }
       },
       "required": [
@@ -18074,17 +18003,12 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "memoryRefresh": {
-          "default": true,
-          "description": "True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.\nAbsent from older hubs.",
-          "type": "boolean"
-        },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo `setup` is for; absent when it is the project's, and from older hubs."
+          "description": "The repo `setup` is for; absent when it is the project's own directory's, and from older hubs."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",
@@ -18129,7 +18053,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose setup to read (its own, else the project's); absent: the project's."
+          "description": "The repo whose own setup to read; absent, or the project's own directory: the project's."
         }
       },
       "required": [
@@ -18164,10 +18088,6 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "memoryRefresh": {
-          "description": "Turns the nightly memory refresh on or off for the project.",
-          "type": "boolean"
-        },
         "onlyMe": {
           "description": "Only me (D310), a person's own device only: on, only the project's owner sees and uses it; off, everyone on\nthe hub does. Its owner or an admin changes it; only an admin turns it on for a project nobody owns, which\nbecomes theirs.",
           "type": "boolean"
@@ -18177,11 +18097,11 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose own setup to set, an empty one giving it the project's; absent: the project's. Title is the\nproject's either way."
+          "description": "The repo whose own setup to set, no commands turning it off; absent, or the project's own directory: the\nproject's. Title is the project's either way."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",
-          "description": "Replaces the project's setup commands and their settings; no commands turns setup off."
+          "description": "Replaces the setup; no commands turns it off."
         },
         "title": {
           "description": "The project's name in fleetd; its folder keeps its own.",
@@ -26968,7 +26888,7 @@
       "properties": {
         "commands": {
           "default": [],
-          "description": "In order, each with `sh -c` in the worktree and the project's variables (the order's too); the first that\nfails or passes its time limit stops the rest.",
+          "description": "In order, each with `sh -c` in the worktree and the project's variables (the order's too), each within 10\nminutes; the first that fails stops the rest, and the agent starts anyway, told what failed.",
           "items": {
             "maxLength": 2000,
             "minLength": 1,
@@ -26987,18 +26907,6 @@
           "maxItems": 20,
           "type": "array",
           "uniqueItems": true
-        },
-        "runAnyway": {
-          "default": false,
-          "description": "True: a failed setup still starts the agent, which is told what failed. False (the default): the start fails,\nnaming the command and the end of its output.",
-          "type": "boolean"
-        },
-        "timeoutSec": {
-          "default": 600,
-          "description": "Each command's time limit, in seconds.",
-          "maximum": 3600,
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object"

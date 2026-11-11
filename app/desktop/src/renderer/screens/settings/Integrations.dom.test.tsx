@@ -324,7 +324,7 @@ describe("one list for the lead and the project's agents", () => {
     project = [crm, plain];
     global = [{ ...plain, scope: { kind: "global" } }];
     await render();
-    expect(row("github").textContent).toContain("Lead and writers · unasked");
+    expect(row("github").textContent).toContain("Lead and agents · unasked");
     expect(() => button("Edit", row("crm"))).toThrow();
     expect(document.body.textContent).toContain("replaced by this project's");
     await click(button("Edit", row("github")));
@@ -332,7 +332,7 @@ describe("one list for the lead and the project's agents", () => {
     await click(button("Save", dialog()));
     expect(saved[0]?.scope).toEqual({ kind: "project", ...ref });
     expect(saved[0]?.headers).toEqual([{ kind: "keep", name: "Authorization" }]);
-    expect(saved[0]?.roles).toEqual({ lead: true, writers: true, reviewers: false });
+    expect(saved[0]?.roles).toEqual({ lead: true, writers: true, reviewers: true });
     expect(saved[0]?.integration).toBeUndefined();
   });
 
@@ -349,7 +349,7 @@ describe("one list for the lead and the project's agents", () => {
     expect(saved[0]?.roles).toEqual({ lead: true, writers: true, reviewers: true });
     expect(saved[0]?.integration).toBeUndefined();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(row("db").textContent).toContain("Lead, writers and reviewers · unasked");
+    expect(row("db").textContent).toContain("Lead and agents · unasked");
     expect(row("db").textContent).toContain("Works on devbox (CRM 2.0.0).");
   });
 });

@@ -93,7 +93,7 @@ export {
 } from "../../desktop/src/renderer/screens/projects/discovery";
 export { initialAdd, step as addStep, type AddMsg, type AddState, type Call as AddCall } from "../../desktop/src/renderer/screens/projects/flow";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
-export { checkerLine, FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
+export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { linkState, reachLine } from "../../desktop/src/renderer/screens/hubLinks/model";
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";

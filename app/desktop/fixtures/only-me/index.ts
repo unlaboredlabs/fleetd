@@ -243,7 +243,7 @@ const adaSkills = (f: Fixture): void => {
 /** Ada's settings page, as Settings › Projects reads it. */
 const adaSettings = (f: Fixture): void => {
   f.answer("project_settings_get", { ...ADA }, {
-    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
+    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", env: [], setup: { commands: [], inputs: [] } },
   });
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
 };

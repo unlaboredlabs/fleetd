@@ -1,4 +1,4 @@
-// The MCP servers pages' pure parts: a server's one-line summary, its roles in words, which global servers a project
+// The MCP servers pages' pure parts: a server's one-line summary, who gets it in words, which global servers a project
 // replaces, and the editor's draft turned into the request main seals and sends (mcp_server_set). A saved secret
 // left blank in the editor is kept as it is; typing a value replaces it.
 import type { McpRoles, McpScope, McpServer, McpValue } from "../../../shared/contracts";
@@ -18,7 +18,8 @@ export interface DraftValue {
 export interface Draft {
   readonly name: string;
   readonly enabled: boolean;
-  readonly roles: McpRoles;
+  /** "Agents get it too": its writers and reviewers as well as its lead. */
+  readonly agents: boolean;
   readonly kind: TransportKind;
   readonly command: string;
   /** One argument per line. */
@@ -28,16 +29,22 @@ export interface Draft {
   readonly values: ReadonlyArray<DraftValue>;
 }
 
-export const ALL_ROLES: McpRoles = { lead: true, writers: true, reviewers: true };
+/** A server for the lead alone. */
+export const LEAD_ONLY: McpRoles = { lead: true, writers: false, reviewers: false };
+/** One every agent of the project gets too. */
+export const EVERYONE: McpRoles = { lead: true, writers: true, reviewers: true };
 
-export const emptyDraft = (): Draft => ({ name: "", enabled: true, roles: ALL_ROLES, kind: "stdio", command: "", args: "", url: "", values: [] });
+/** Its agents get it too: the hub saves any roles past the lead's as every agent's. */
+export const agentsGet = (r: McpRoles): boolean => r.writers || r.reviewers;
+
+export const emptyDraft = (): Draft => ({ name: "", enabled: true, agents: true, kind: "stdio", command: "", args: "", url: "", values: [] });
 
 const valuesOf = (s: McpServer): ReadonlyArray<McpValue> => (s.transport.type === "stdio" ? (s.env ?? []) : (s.headers ?? []));
 
 export const draftOf = (s: McpServer): Draft => ({
   name: s.name,
   enabled: s.enabled,
-  roles: s.roles,
+  agents: agentsGet(s.roles),
   kind: s.transport.type,
   command: s.transport.type === "stdio" ? s.transport.command : "",
   args: s.transport.type === "stdio" ? (s.transport.args ?? []).join("\n") : "",
@@ -45,13 +52,8 @@ export const draftOf = (s: McpServer): Draft => ({
   values: valuesOf(s).map((v) => ({ name: v.name, secret: v.kind === "secret", value: v.kind === "plain" ? (v.value ?? "") : "", saved: v.kind === "secret" })),
 });
 
-/** "Lead, writers and reviewers", "Writers", or "No one". */
-export const rolesText = (r: McpRoles): string => {
-  const on = [r.lead && "lead", r.writers && "writers", r.reviewers && "reviewers"].filter((x): x is string => typeof x === "string");
-  if (on.length === 0) return "No one";
-  const text = on.length === 1 ? on[0] : `${on.slice(0, -1).join(", ")} and ${on[on.length - 1]}`;
-  return (text ?? "").charAt(0).toUpperCase() + (text ?? "").slice(1);
-};
+/** "Lead and agents", or "Lead only". */
+export const rolesText = (r: McpRoles): string => (agentsGet(r) ? "Lead and agents" : "Lead only");
 
 /** `npx -y @acme/mcp --read-only`, or the URL with its transport. */
 export const transportText = (s: McpServer): string =>
@@ -138,7 +140,7 @@ export const toRequest = (
       scope,
       name,
       enabled: draft.enabled,
-      roles: draft.roles,
+      roles: draft.agents ? EVERYONE : LEAD_ONLY,
       transport,
       env: stdio ? values : [],
       headers: stdio ? [] : values,

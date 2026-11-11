@@ -126,7 +126,7 @@ right-click menu. Its **Project** page has these, in order:
 | Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the project. On the phone it's in the project's info, under **Edit** on its icon. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Only me | Who sees and uses it. See [Only me](#only-me). |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and its own setup if it has one. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Setup**: what runs in each new worktree (called **Default setup** once a repo has its own). See [Setup commands](#setup). |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Setup**: what runs in its new worktrees. See [Setup commands](#setup). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
@@ -201,23 +201,23 @@ order's agents, until the order closes: see [A variable an agent asks for](/docs
 Each agent's brief lists the variables it gets by name.
 
 From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
-`setup` and `memoryRefresh`, and the [vault's tools](/docs/vault#clients) set and remove variables. For one release,
+`setup`, and the [vault's tools](/docs/vault#clients) set and remove variables. For one release,
 `project_env_set` (a secret sealed to the machine's `boxPubKey`) still works and its variables land in the vault. Both
 take only a human key. Give either settings call a `repo` (a repo's name, such as
-`api`) to read or set that repo's own `setup`; a repo with none of its own uses the project's.
+`api`) to read or set that repo's own `setup`; without one, or with the project's own directory's, it is the project's.
 
 ### Setup commands {#setup}
 
-The project's **Setup**, under its repos (**Default setup** once a repo has setup of its own): commands that run in
-each new worktree of a repo without setup of its own, before its agent starts: install dependencies, generate code. One a line, in
-order; each runs with `sh -c` in the worktree, with the project's variables (and the order's), the machine's build
-jobs and the agent's own `$TMPDIR`. The first that fails, or runs past the time limit (10 minutes unless you set
-another, up to an hour), stops the rest.
+Each repo's **Setup**, under the repos (**Setup: api** and so on once the project has more than one): commands that
+run in each new worktree of that repo, before its agent starts: install dependencies, generate code. The project's
+own directory's is the project's; a repo without any runs none. One a line, in order; each runs with `sh -c` in the
+worktree, with the project's variables (and the order's), the machine's build jobs and the agent's own `$TMPDIR`. The
+first that fails, or runs past 10 minutes, stops the rest.
 
 - Each command shows on the agent's thread in the app as it runs, with its exit code and the end of its output, and
   the agent's brief says what ran.
-- A failure fails the agent's start: its task fails with the command and the end of its output, and its lead hears it.
-  With **Start the agent anyway when setup fails** on, the agent starts and hears what failed instead.
+- A failure doesn't stop the agent: it starts anyway, and its brief names the command that failed, how it ended and
+  the end of its output, so it can fix what it needs.
 - **Skip when unchanged**: name the files whose contents decide what setup makes, such as `pnpm-lock.yaml`. A worktree
   set up before (a task restarted on its own worktree) is not set up again while the commands and those files are
   unchanged. With none named, setup runs every time.

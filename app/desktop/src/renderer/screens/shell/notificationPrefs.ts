@@ -1,25 +1,21 @@
-// Settings → General → Notifications: which kinds alert, with or without a sound, and the Dock badge. Per install, in the
-// renderer's storage like the theme; the shell reads them when it posts.
+// Settings → General → Notifications: which kinds alert. Per install, in the renderer's storage like the theme; the
+// shell reads them when it posts. A sound and the Dock badge are the system's own per-app switches.
 import { useSyncExternalStore } from "react";
 import type { NotifyKind } from "./notifier";
 
 export interface NotificationPrefs {
   readonly kinds: Readonly<Record<NotifyKind, boolean>>;
-  readonly sound: boolean;
-  readonly badge: boolean;
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = {
   kinds: { reply: true, approval: true, done: true, machine: true, other: true },
-  sound: true,
-  badge: true,
 };
 
 const KEY = "fleetd.notifications";
 
 const flag = (value: unknown, fallback: boolean): boolean => (typeof value === "boolean" ? value : fallback);
 
-/** Whatever was stored, with anything missing or off-shape at its default. */
+/** Whatever was stored, with anything missing or off-shape at its default; an older app's `sound` and `badge` are dropped. */
 export const parsePrefs = (raw: string | null): NotificationPrefs => {
   let stored: unknown;
   try {
@@ -38,8 +34,6 @@ export const parsePrefs = (raw: string | null): NotificationPrefs => {
       machine: flag(kinds["machine"], d.kinds.machine),
       other: flag(kinds["other"], d.kinds.other),
     },
-    sound: flag(o["sound"], d.sound),
-    badge: flag(o["badge"], d.badge),
   };
 };
 

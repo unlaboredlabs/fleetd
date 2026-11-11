@@ -3,6 +3,8 @@ import { expect, test } from "bun:test";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
 import { MODELS_FRESH_MS, MODELS_RETRY_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
+import { taskSetup } from "../src/hub/projects/settings.ts";
+import * as repos from "../src/hub/repos/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { key, kit, project } from "./work-kit.ts";
@@ -162,7 +164,7 @@ test("a project's bot color: slate until picked, kept with the project, announce
   expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarColor: "blue" })).toBe("forbidden");
 });
 
-test("a project's settings: memory refresh, setup per repo, Only me's rules, and what env_set refuses", async () => {
+test("a project's settings: setup per repo, Only me's rules, and what env_set refuses", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
@@ -172,24 +174,34 @@ test("a project's settings: memory refresh, setup per repo, Only me's rules, and
     machineId: "devbox",
     projectId: "app",
     title: "App",
-    memoryRefresh: true,
     env: [],
-    setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+    setup: { commands: [], inputs: [] },
     worktreesUnknown: "devbox is offline.",
   });
   expect(await k.refused(key("read"), "project_settings_get", { ...r, repo: "web" })).toBe("not_found");
 
-  const off = await k.ok(key("operate"), "project_settings_set", { ...r, memoryRefresh: false });
-  expect(off.settings.memoryRefresh).toBe(false);
-  expect(off.next).toBe("The nightly memory refresh is off for this project; memory stays as the lead and you write it.");
-  const setup = await k.ok(key("operate"), "project_settings_set", { ...r, setup: { commands: ["bun install"] } });
-  expect(setup.settings.setup).toEqual({ commands: ["bun install"], timeoutSec: 600, runAnyway: false, inputs: [] });
+  // An older app's memoryRefresh, time limit and "start anyway" are taken and dropped.
+  const setup = await k.ok(key("operate"), "project_settings_set", {
+    ...r,
+    memoryRefresh: false,
+    setup: { commands: ["bun install"], timeoutSec: 900, runAnyway: false },
+  } as never);
+  expect(setup.settings).not.toHaveProperty("memoryRefresh");
+  expect(setup.settings.setup).toEqual({ commands: ["bun install"], inputs: [] });
+  expect(k.hub.db.conn.query<{ setup: string }, []>("SELECT setup FROM project_settings").get()?.setup).toBe('{"commands":["bun install"],"inputs":[]}');
   expect(setup.next).toBe("New tasks of the project use these settings. devbox's node is too old to run setup commands: update fleetd there.");
-  // A repo of the project keeps its own setup; an empty one is the project's.
+  // Each repo has its own setup, none falling back to the project's; the project's own directory's is the project's.
+  k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'app', 'devbox', 'app')");
   k.hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'app', 'web', 'devbox', 'web')");
+  expect((await k.ok(key("read"), "project_settings_get", { ...r, repo: "web" })).settings.setup.commands).toEqual([]);
+  expect(taskSetup(k.hub, r, repos.byName(k.hub.db.conn, r, "web")?.repoId)).toBeUndefined();
   await k.ok(key("operate"), "project_settings_set", { ...r, repo: "web", setup: { commands: ["make"] } });
   expect((await k.ok(key("read"), "project_settings_get", { ...r, repo: "web" })).settings).toMatchObject({ repo: "web", setup: { commands: ["make"] } });
   expect((await k.ok(key("read"), "project_settings_get", r)).settings.setup.commands).toEqual(["bun install"]);
+  await k.ok(key("operate"), "project_settings_set", { ...r, repo: "app", setup: { commands: ["pnpm install"] } });
+  expect((await k.ok(key("read"), "project_settings_get", r)).settings.setup.commands).toEqual(["pnpm install"]);
+  expect(taskSetup(k.hub, r, repos.byName(k.hub.db.conn, r, "app")?.repoId)?.commands).toEqual(["pnpm install"]);
+  expect(taskSetup(k.hub, r, repos.byName(k.hub.db.conn, r, "web")?.repoId)?.commands).toEqual(["make"]);
   // A rename needs the node.
   expect(await k.refused(key("operate"), "project_settings_set", { ...r, title: "Renamed" })).toBe("machine_offline");
 

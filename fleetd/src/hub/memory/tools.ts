@@ -1,12 +1,12 @@
 // memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo.
 // Writes are a person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. Each
-// person's own memory is theirs alone, admins included, except to delete a removed person's. The caps, and
-// memory_shared_get and memory_shared_set (the shared user.md of before people), are an admin's.
+// person's own memory is theirs alone, admins included, except to delete a removed person's. The caps are an admin's;
+// the shared user.md of before people is read and edited as Your memory only on a hub with no people yet.
 import type { ChatMessage, MemoryFile, MemoryRefreshed, PersonId, ProjectRef, RememberedItem, Role } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import type { Hub } from "../api/hub.ts";
-import { isHuman, REPAIR_FIX, requireRole } from "../api/grants.ts";
+import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { chat } from "../chat/index.ts";
 import { requireHuman, unknownProject } from "../leads/seams.ts";
@@ -69,17 +69,6 @@ function mayUndo(hub: Hub, caller: Caller, item: RememberedItem): void {
   }
   if (mine(hub, caller).kind === "shared" || allowsEverywhere(caller, "admin")) return;
   throw new ToolError("forbidden", "That entry is in the shared memory, which only the hub's owners and admins edit now.");
-}
-
-/** The shared user.md is every project's of before people: Admin on every machine reads and edits it. */
-function requireHubAdmin(caller: Caller): void {
-  if (!allowsEverywhere(caller, "admin")) {
-    throw new ToolError(
-      "forbidden",
-      "The shared memory is hub-wide: it needs Admin on every machine.",
-      isHuman(caller) ? REPAIR_FIX : "Use an Admin key for all machines (`--machines '*'`).",
-    );
-  }
 }
 
 /**
@@ -186,23 +175,6 @@ export function register(tools: Registry): void {
     changed(hub, item.scope === "project" ? r : undefined, item.topic, caller.name);
     chat(hub).setRemembered(message, { ...item, undone: true });
     return { ok: true };
-  });
-
-  tools.add("memory_shared_get", (hub, caller) => {
-    requireHubAdmin(caller);
-    return {
-      file: Memory.of(hub).file(userTarget()),
-      next: "No session reads it: each person has their own memory, and the hub's owner got a copy. Empty it with memory_shared_set to retire it.",
-    };
-  });
-
-  tools.add("memory_shared_set", (hub, caller, input) => {
-    requireHuman(caller, "memory_shared_set");
-    requireHubAdmin(caller);
-    const t = userTarget();
-    Memory.of(hub).set(t, input.text);
-    changed(hub, undefined, undefined, caller.name);
-    return { file: Memory.of(hub).file(t) };
   });
 }
 

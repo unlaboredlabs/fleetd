@@ -1,16 +1,14 @@
 // Memory, as the plain text files the hub keeps (D212): a project's MEMORY.md and the topic files it lists, on its
 // Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
-// work you start and your Only-me projects read, and only you edit; and the hub's old shared user.md, read by no agent now, on Hub ›
-// Every project › Instructions & memory for an owner or admin to read and retire, there only while it has text. The lead writes with `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
+// work you start and your Only-me projects read, and only you edit. The lead writes with `remember`; here a person reads
+// each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
-// memory_set (memory_shared_set for the shared file), a human key's write.
+// memory_set, a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
-import { lacksTool } from "../../src/data/errors";
-import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -156,54 +154,6 @@ export function YourMemory() {
     </>
   );
 }
-
-/**
- * Hub › Every project › Instructions & memory: the hub's old shared user.md (D212), shown only while it still has
- * text. Its owner got a copy as their own; no agent reads it now. An owner or admin reads it, moves what still matters
- * to the people it was about, and retires it (empty), and then the part is gone. A hub from before per-person memory
- * has no such tool, and says so.
- */
-export function SharedMemory() {
-  const live = useLive();
-  const read = useToolQuery("memory_shared_get", {}, { enabled: live });
-  const hubCall = useHubCall();
-  const refetch = useRefetch();
-  const old = read.error instanceof CallError && lacksTool(read.error.error);
-  const file = read.data?.file;
-  if (!live || (!old && !read.isLoadingError && (file === undefined || file.text.trim() === ""))) return null;
-  return (
-    <>
-      {old ? (
-        <SettingsSection title="Shared memory" part="hub.shared-memory" intro={SHARED}>
-          <GroupNote>This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</GroupNote>
-        </SettingsSection>
-      ) : (
-        <>
-          {read.isLoadingError ? (
-            <SettingsSection title="Shared memory" part="hub.shared-memory" intro={SHARED} bare>
-              <FileError read={read} />
-            </SettingsSection>
-          ) : null}
-          {file === undefined ? null : (
-            <MemoryGroup
-              label="Shared memory"
-              part="hub.shared-memory"
-              help={`${SHARED} No agent reads it now; its owner got a copy. Empty it once nothing in it is missing elsewhere, and it goes.`}
-              name="user.md"
-              file={file}
-              query=""
-              onSave={(text) => hubCall("memory_shared_set", { text }).then(() => refetch(["memory_shared_get"]))}
-              reread={() => hubCall("memory_shared_get", {}).then((now) => now.file.text)}
-              deletable
-            />
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
-const SHARED = "The one memory every lead read before each person had their own. Owners and admins only.";
 
 function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; refetch: () => unknown } }) {
   return (

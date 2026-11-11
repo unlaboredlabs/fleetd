@@ -177,6 +177,8 @@ test("a project's server keeps only its secrets' fingerprints, and its sessions 
   ]);
   expect(link.opened).toEqual(["key-1"]);
   expect(JSON.stringify(hub.db.all("SELECT data FROM mcp_servers"))).not.toContain(sealedFor("key-1").slice(0, 20));
+  // One switch: an older app's writers-only pick gives it to every agent.
+  expect(server.roles).toEqual({ lead: true, writers: true, reviewers: true });
   // Saved again keeping the key: the node keeps it, and nothing is sealed again.
   await call("mcp_server_set", { ...input, env: [input.env[0], { kind: "keep", name: "CRM_KEY" }] });
   expect(link.calls.at(-1)).toMatchObject({ op: "mcp_secrets", set: [], keep: [{ field: "env", name: "CRM_KEY" }] });
@@ -187,7 +189,7 @@ test("a project's server keeps only its secrets' fingerprints, and its sessions 
       {
         name: "crm",
         secrets: { kind: "project", projectId: "p1" },
-        roles: { lead: true, writers: true, reviewers: false },
+        roles: { lead: true, writers: true, reviewers: true },
         transport: { type: "stdio", command: "crm-mcp", args: [] },
         env: [
           { kind: "plain", name: "CRM_REGION", value: "eu" },

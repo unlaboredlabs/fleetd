@@ -125,20 +125,16 @@ function machineRolesSet(
 async function machineScreensSet(
   hub: Hub,
   caller: Caller,
-  input: { machineId: string; host?: SessionHost; on?: boolean; idleMinutes?: number },
+  input: { machineId: string; host?: SessionHost; on?: boolean },
 ) {
   const m = input.machineId;
   requireRole(caller, "admin", m);
   const machine = store(hub).machineGet(m);
   if (!machine) throw new ToolError("not_found", `No machine ${m}.`, "machine_roles lists the machines.");
   const name = machine.name;
-  if (input.idleMinutes !== undefined && (!Number.isInteger(input.idleMinutes) || input.idleMinutes < 1 || input.idleMinutes > 1440)) {
-    throw new ToolError("invalid", "idleMinutes: 1 to 1440.");
-  }
   const settings: ScreenSettings = {
     ...(input.host === undefined ? {} : { host: input.host }),
     ...(input.on === undefined ? {} : { on: input.on }),
-    ...(input.idleMinutes === undefined ? {} : { idleMinutes: input.idleMinutes }),
   };
   // The agents' Mac offers only its own screen, whatever an older node of it still lists.
   const refuses = machine.agentsMac === true ? macRefuses(settings) : undefined;

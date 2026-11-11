@@ -142,8 +142,6 @@ export const TOOLS = {
   memory_set: { scope: "operate", module: "src/hub/memory" },
   memory_undo: { scope: "operate", module: "src/hub/memory" },
   memory_import: { scope: "operate", module: "src/hub/memory" },
-  memory_shared_get: { scope: "admin", module: "src/hub/memory" },
-  memory_shared_set: { scope: "admin", module: "src/hub/memory" },
   automation_list: { scope: "read", module: "src/hub/automations" },
   automation_create: { scope: "operate", module: "src/hub/automations" },
   automation_update: { scope: "operate", module: "src/hub/automations" },

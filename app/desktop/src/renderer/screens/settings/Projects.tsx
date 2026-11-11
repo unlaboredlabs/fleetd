@@ -324,15 +324,13 @@ function ArchiveSetting({ projectRef, title, archivedAt }: { projectRef: Ref; ti
 }
 
 /**
- * The nightly memory refresh: on the project's Instructions & memory, beside the memory it tidies, with its hour and
- * runs (automation_list's job, when the hub lists it) and Run now.
+ * The nightly memory refresh, always on: on the project's Instructions & memory, beside the memory it tidies, with its
+ * hour and runs (automation_list's job, when the hub lists it) and Run now.
  */
 export function MemoryRefreshSetting({ settings, job }: { settings: Settings; job: MemoryRefreshJob | undefined }) {
-  const { busy, echo, save } = useSave();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [ran, setRan] = useState<Echo | null>(null);
-  const on = settings.memoryRefresh ?? true;
   const running = job?.lastRun?.state === "running";
   const run = () => {
     setRan(null);
@@ -345,48 +343,22 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
     );
   };
   return (
-    <>
-      <SwitchRow
-        reveal="projects.memory"
-        title="Refresh memory every night"
-        line={
-          echo !== null ? (
-            <EchoText echo={echo} />
-          ) : (
-            "On a day with chat or orders, the lead adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
-          )
-        }
-        lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
-        checked={on}
-        disabled={busy}
-        onCheckedChange={(next) =>
-          save(
-            { machineId: settings.machineId, projectId: settings.projectId, memoryRefresh: next },
-            next ? "Memory is refreshed every night." : "The nightly memory refresh is off.",
-          )
-        }
-      />
-      <SettingsRow
-        title="Refresh now"
-        lineTone={ran !== null && !ran.ok ? "danger" : "quiet"}
-        line={
-          ran !== null ? (
-            <EchoText echo={ran} />
-          ) : !on ? (
-            "Turn the nightly refresh on to run it."
-          ) : job ? (
-            `${refreshSchedule(job)} · ${refreshRuns(job)}`
-          ) : (
-            "Runs the nightly refresh once, now."
-          )
-        }
-        control={
-          <Button variant="secondary" disabled={!on || running} onClick={run}>
-            {running ? "Refreshing…" : "Run now"}
-          </Button>
-        }
-      />
-    </>
+    <SettingsRow
+      title="Refresh now"
+      lineTone={ran !== null && !ran.ok ? "danger" : "quiet"}
+      line={
+        ran !== null ? (
+          <EchoText echo={ran} />
+        ) : (
+          `${job ? refreshSchedule(job) : "Every night"} with chat or orders, the lead adds what it missed to memory, merges overlaps and removes what no longer holds, and lists the changes in the chat, each with Undo.${job ? ` ${refreshRuns(job)}.` : ""}`
+        )
+      }
+      control={
+        <Button variant="secondary" disabled={running} onClick={run}>
+          {running ? "Refreshing…" : "Run now"}
+        </Button>
+      }
+    />
   );
 }
 

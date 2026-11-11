@@ -19,7 +19,7 @@ export class Notifier {
   show(request: NotifyRequest): boolean {
     if (!Notification.isSupported()) return false;
     this.#shown.get(request.tag)?.close();
-    const notification = new Notification({ title: request.title, body: request.body, silent: request.silent === true });
+    const notification = new Notification({ title: request.title, body: request.body });
     notification.on("click", () => {
       this.#opener.open(request.target);
       this.#forget(request.tag, notification);

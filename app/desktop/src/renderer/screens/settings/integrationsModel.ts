@@ -6,11 +6,6 @@ import { toRequest, type Draft } from "./mcpModel";
 
 export const DOCS = "https://fleetd.sh/docs/integrations/";
 
-/** A server for the lead alone is an integration: the lead is the one whose every write asks first. */
-const LEAD_ONLY = { lead: true, writers: false, reviewers: false } as const;
-/** One the project's agents get too runs every tool unasked: an agent can't stop to ask. */
-const EVERYONE = { lead: true, writers: true, reviewers: true } as const;
-
 type Built = { ok: true; request: McpServerRequest } | { ok: false; problem: string };
 
 /**
@@ -18,7 +13,9 @@ type Built = { ok: true; request: McpServerRequest } | { ok: false; problem: str
  * by the hub's policy), or for its agents too, unjudged.
  */
 export const customRequest = (draft: Draft, readTools: ReadonlyArray<string>, scope: McpScope, boxes: McpServerRequest["boxes"], agents = false): Built => {
-  const built = toRequest({ ...draft, roles: agents ? EVERYONE : LEAD_ONLY, enabled: true }, scope, boxes);
+  // For the lead alone it is an integration, whose every write asks first; one its agents get too runs every tool
+  // unasked: an agent can't stop to ask.
+  const built = toRequest({ ...draft, agents, enabled: true }, scope, boxes);
   if (!built.ok || agents) return built;
   return { ok: true, request: { ...built.request, integration: readTools.length === 0 ? {} : { readTools: [...readTools] } } };
 };

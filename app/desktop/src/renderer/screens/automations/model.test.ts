@@ -105,9 +105,9 @@ describe("the nightly memory refresh's row", () => {
     expect(refreshRuns({ ...job, lastRun: skipped })).toContain("skipped: Nothing new in the chat or its orders since the last refresh.");
     const manual = { ...run, trigger: "manual", state: "running", added: 0, replaced: 0, removed: 0 } as const;
     expect(refreshRuns({ ...job, lastRun: manual })).toContain(`Started ${when(run.at)} (Run now): running, no changes`);
-    // Off: no next run.
-    const { nextRunAt: _, ...off } = { ...job, on: false };
-    expect(refreshRuns({ ...off, lastRun: run })).toBe(`Last run ${when(run.at)}: done, 1 added, 2 updated, 1 removed`);
+    // No next run known: only the last.
+    const { nextRunAt: _, ...unknown } = job;
+    expect(refreshRuns({ ...unknown, lastRun: run })).toBe(`Last run ${when(run.at)}: done, 1 added, 2 updated, 1 removed`);
   });
 });
 

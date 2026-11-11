@@ -58,7 +58,7 @@ export const fixOf = (m: MachineRolesEntry, check: HostCheck | undefined): strin
   return check.off === "missing" || check.off === "failed" ? check.fix : null;
 };
 
-/** When an idle screen ends there, as its node reports it (30 minutes unless its node.json says otherwise). */
+/** When an idle screen ends there, as its node reports it (30 minutes; an older node may say otherwise). */
 export const idleLine = (m: MachineRolesEntry): string => {
   if (m.mac !== undefined) return `An idle Mac screen ends after ${String((m.hosts ?? []).find((h) => h.host === "mac")?.idleMinutes ?? 5)} minutes, so the next agent gets it.`;
   const minutes = (m.hosts ?? []).find((h) => h.idleMinutes !== undefined)?.idleMinutes ?? 30;

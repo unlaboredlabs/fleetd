@@ -402,7 +402,7 @@ export class Devices implements Screens {
 
   /** Every minute: ends sessions idle past the limit, and sends the recordings still waiting for the hub. */
   async housekeep(now = Date.now()): Promise<void> {
-    const idle = (Number(this.node.config.screenIdleMinutes) || IDLE_MINUTES) * 60_000;
+    const idle = IDLE_MINUTES * 60_000;
     for (const [thread, session] of [...this.sessions]) {
       if (session.idleFor(now) >= idle && session.control() === "agent") {
         console.info(`android session ${session.id} idle; ending it`);

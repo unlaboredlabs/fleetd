@@ -29,7 +29,7 @@ const home = (f: Fixture): { machineId: string; projectId: string } => {
       ...ref,
       title: "Home",
       workspaceRoot: "/home/dev/projects/home",
-      setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+      setup: { commands: [], inputs: [] },
       env: [],
       worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${ref.projectId}`, baseBranch: "main", worktrees: [] },
     },

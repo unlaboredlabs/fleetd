@@ -36,16 +36,15 @@ Open **Settings → Projects**, pick a project, then its **Automations** tab. Th
 
 ## The nightly memory refresh
 
-It isn't in the Automations list. **Refresh memory every night**, on the project's Instructions & memory, is the
-hub's own job, so it has no prompt to edit, no webhook and no Delete. It shows:
+It isn't in the Automations list. The nightly memory refresh, on the project's Instructions & memory, is the hub's
+own job for every project, always on, so it has no prompt to edit, no webhook, no switch and no Delete. It shows:
 
 - **Its hour**, such as "Every night at 04:00 (Europe/Berlin)". The hour is the hub's, the same for every project.
   An admin sets it with the `policy.memory_refresh_at` decision, in the zone of `policy.tz`.
 - **Next run** and **Last run**: what the last refresh changed in memory, as its chat line counts it ("2 added, 1
   updated, 1 removed"), or that it was skipped and why. A quiet day, with no chat and no order changes, is skipped.
-- **Refresh memory every night**: the project's switch, on by default.
 - **Run now**: refreshes the project's memory at once, the way the night's refresh does. It doesn't start, and says
-  why, while the refresh is off for the project, one is already running, nothing is new since the last one, the
+  why, while one is already running, nothing is new since the last one, the
   lead is mid-turn, or the project's machine is offline, out of usage or too old.
 
 From an MCP client, `automation_list` returns it as `memoryRefresh`, and `memory_refresh_run` is its Run now.

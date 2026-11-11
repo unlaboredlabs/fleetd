@@ -621,7 +621,7 @@ export class Broker {
   }
 
   private async housekeepOnce(now: number): Promise<void> {
-    const idle = (Number(this.node.config.screenIdleMinutes) || IDLE_MINUTES) * 60_000;
+    const idle = IDLE_MINUTES * 60_000;
     for (const [thread, open] of this.sessions) {
       if (open.session.control() !== "human" && open.session.idleFor(now) >= idle) await this.end(thread).catch(() => {});
     }
