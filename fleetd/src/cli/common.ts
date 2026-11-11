@@ -124,13 +124,13 @@ export function isLiveHubHome(home: string): boolean {
   return hub !== undefined && realPath(home) === hub.home;
 }
 
-/** Whether `url` reaches the live hub and this runs in an agent's session: the same address, or this machine at the
- * same port. */
+/** Whether `url` reaches the live hub and this runs in an agent's session: one of its addresses, or this machine at
+ * its port when it listens on loopback or every address (a throwaway hub on loopback beside one on the tailnet isn't). */
 export function isLiveHubUrl(url: string): boolean {
   const hub = liveHub();
   const at = address(url);
   if (hub === undefined || at === undefined) return false;
-  return hub.addresses.some((a) => a.port === at.port && (a.host === at.host || LOCAL.has(at.host)));
+  return hub.addresses.some((a) => a.port === at.port && (a.host === at.host || (LOCAL.has(at.host) && LOCAL.has(a.host))));
 }
 
 /** Throws {@link LiveHubRefused} when `home` is the live hub's and this runs in an agent's session. */

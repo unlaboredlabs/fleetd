@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { NotImplemented } from "../../shared/errors.ts";
 import { fleetdDir } from "../../shared/home.ts";
 import { ArgError, parse } from "../args.ts";
-import { type Failure, type GitIdentity, ioMessage, isNoreply, mkdirPrivate, parseGitIdentity, readSetup, resolveHome, type SetupState, writeSetup } from "../common.ts";
+import { type Failure, type GitIdentity, ioMessage, isLiveHubHome, isNoreply, liveHubRefusal, mkdirPrivate, parseGitIdentity, readSetup, resolveHome, type SetupState, writeSetup } from "../common.ts";
 import { currentExe, DEFAULT_LISTEN, localDirs, localPlatform, localUid, parseListen, type Probe, probeListen, processesHolding, say, SETUP_USAGE } from "./shared.ts";
 import { type InitOptions, joinedHere, openStep, run } from "./wizard.ts";
 import { foreignUnit, renderUnit, ServiceManager, type ServiceSpec, systemdName, unitPath } from "./units.ts";
@@ -261,6 +261,7 @@ async function initPlain(opts: InitOptions): Promise<number> {
 export async function initCommand(argv: string[]): Promise<number> {
   const opts = initOptions(argv);
   if (typeof opts === "number") return opts;
+  if (isLiveHubHome(opts.home)) return fail(liveHubRefusal("fleetd init"));
   const terminal = process.stdin.isTTY === true && process.stderr.isTTY === true;
   if (opts.step !== undefined) return openStep(opts, opts.step, terminal && !opts.yes);
   // A worker that joined by itself is repaired, even from a script; only a fresh machine gets the plain hub setup.
@@ -273,6 +274,7 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
   const v = parse(argv, { options: { purge: "bool" }, positionals: false });
   if (v instanceof ArgError) return usage(v.message);
   const home = resolveHome();
+  if (isLiveHubHome(home)) return fail(liveHubRefusal("fleetd uninstall"));
   let state: SetupState | undefined;
   try {
     state = readSetup(home);

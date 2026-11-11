@@ -3,7 +3,7 @@
 // A throwaway hub (its own FLEETD_HOME) and a person's terminal keep working in full. A scratch fleet stands in for the
 // live one: the session's FLEETD_NODE_SOCK sits in its node home, so its hub home is the "live" one.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HubDb } from "../../src/hub/store/db.ts";
 import { isLiveHubHome, isLiveHubUrl, LiveHubRefused, sessionThreadId, standInSession } from "../../src/cli/common.ts";
@@ -114,6 +114,19 @@ describe("the CLI from an agent's session", () => {
     said(machine.stdout + machine.stderr);
   }, CASE_MS);
 
+  test("init and uninstall leave the live hub's setup alone", async () => {
+    const setup = readFileSync(join(live.hubHome, "setup.json"), "utf8");
+    const listen = live.hubUrl.replace("http://", "");
+    const init = await live.run(["init", "--no-service", "--listen", listen, "--url", "http://changed.example:1", "--git-identity", "Dev <dev@example.com>"], { env: session });
+    expect(init.code).toBe(1);
+    said(init.stdout + init.stderr);
+    const uninstall = await live.run(["uninstall", "--purge"], { env: session });
+    expect(uninstall.code).toBe(1);
+    said(uninstall.stdout + uninstall.stderr);
+    expect(readFileSync(join(live.hubHome, "setup.json"), "utf8")).toBe(setup);
+    expect(existsSync(join(live.hubHome, "hub.sqlite"))).toBe(true);
+  }, CASE_MS);
+
   test("a throwaway hub the session started works in full", async () => {
     const made = await throwaway.run(["hub", "key", "create", "--name", "ci", "--role", "read", "--machines", "*"], { env: session });
     expect(made.stderr).toContain("created key_");
@@ -212,7 +225,25 @@ describe("which hub is the live one", () => {
     for (const url of ["http://0.0.0.0:4790", "http://devbox.example:4790/mcp", "http://hub.example:4791", "http://127.0.0.1:4790", "http://localhost:4790", "http://[::1]:4790"]) {
       expect(isLiveHubUrl(url)).toBe(true);
     }
-    for (const url of ["http://127.0.0.1:47123", "http://other.example:4790", "not a url"]) expect(isLiveHubUrl(url)).toBe(false);
+    // The node's hub is on another machine: this machine at its port is a throwaway hub.
+    for (const url of ["http://127.0.0.1:47123", "http://other.example:4790", "http://127.0.0.1:4791", "not a url"]) {
+      expect(isLiveHubUrl(url)).toBe(false);
+    }
+  });
+
+  test("a live hub on the tailnet only: a throwaway hub on loopback at its port is not it", () => {
+    const file = join(liveHome, "setup.json");
+    const before = readFileSync(file, "utf8");
+    writeFileSync(file, JSON.stringify({ listen: "100.64.0.1:4790", url: "http://devbox.example:4790", machines: {} }));
+    try {
+      inSession();
+      expect(isLiveHubUrl("http://100.64.0.1:4790")).toBe(true);
+      expect(isLiveHubUrl("http://devbox.example:4790")).toBe(true);
+      for (const url of ["http://127.0.0.1:4790", "http://localhost:4790"]) expect(isLiveHubUrl(url)).toBe(false);
+      expect(liveHubToolRefusal("http://127.0.0.1:4790/mcp", "navi_create")).toBeUndefined();
+    } finally {
+      writeFileSync(file, before);
+    }
   });
 
   test("only read tools go to the live hub", () => {
