@@ -144,7 +144,8 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
     hubPage("go:hub.profiles", "Agents for every project", "Every project: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
     hubPage("go:hub.tools", "Tools & skills", "Every project › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every project"]),
     hubPage("go:hub.instructions", "Instructions for every project", "Every project: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
-    hubPage("go:hub.accounts", "Hub accounts", "The hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
+    hubPage("go:hub.accounts", "Hub accounts", "Hub › Setup: the hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
+    hubPage("go:hub.setup", "Setup", "Settings › Hub: the hub's accounts and its other setup steps", "hub.setup", ["setup", "guided setup", "accounts", "steps"]),
   ]);
   return () => {
     offAdmin();

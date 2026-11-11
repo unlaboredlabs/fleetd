@@ -1,9 +1,10 @@
-// Settings › Hub accounts › GitHub: the hub's own GitHub App (D190), which does the hub's work on GitHub (the train's reads,
-// rebases, statuses and merges, and the PR pages) on the repositories it is installed on. Create GitHub App goes
-// through main (window.fleetd.github.createApp): it posts the hub's manifest to GitHub from a page on 127.0.0.1 and
-// hands GitHub's code to github_app_create, so the App's keys go from GitHub to the hub and never to this computer.
-// Then the admin installs it on repositories at GitHub, and Test (github_app_test) reads where it is installed with a
-// token for each. Without an App, the hub's gh uses its machine's own login, as before.
+// Settings › Hub › Setup › GitHub (the GitHub step's own page, admin/SetupPage.tsx): the hub's own GitHub App (D190),
+// which does the hub's work on GitHub (the train's reads, rebases, statuses and merges, and the PR pages) on the
+// repositories it is installed on. Create GitHub App goes through main (window.fleetd.github.createApp): it posts the
+// hub's manifest to GitHub from a page on 127.0.0.1 and hands GitHub's code to github_app_create, so the App's keys go
+// from GitHub to the hub and never to this computer. Then the admin installs it on repositories at GitHub, and Test
+// (github_app_test) reads where it is installed with a token for each. Without an App, the hub's gh uses its
+// machine's own login, as before.
 import { Check, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import type { GithubApp, GithubAppGetOutput, GithubAppTestOutput, GithubInstallation } from "../../../shared/contracts";
@@ -59,13 +60,11 @@ export function AdminGithub() {
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
-  const intro =
-    "The hub's own GitHub App, which merges PRs and shows their pages. Create it here once; there's nothing to paste.";
   if (!live || read.data === undefined) {
     const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
-      <SettingsSection title="GitHub" reveal="admin.github" hint={intro}>
+      <SettingsSection reveal="admin.github">
         <GroupNote tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</GroupNote>
       </SettingsSection>
     );
@@ -73,7 +72,7 @@ export function AdminGithub() {
   const app = read.data.app;
   return (
     <>
-      <SettingsSection title="GitHub" reveal="admin.github" hint={intro}>
+      <SettingsSection reveal="admin.github">
         {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
       </SettingsSection>
       <Create info={read.data} />
@@ -102,6 +101,9 @@ export const testWords = (test: NonNullable<GithubApp["lastTest"]>, nowMs: numbe
   return test.ok ? { ok: true, text: `${said} Checked ${at}.` } : { ok: false, text: `Failed ${at}: ${said}` };
 };
 
+/** What a change to the App changes: the App itself, and the GitHub step of Hub › Setup, whose row and page show it. */
+const APP_READS = ["github_app_get", "setup_list"] as const;
+
 /** The App as the hub keeps it: where it is installed, Install, Test and Remove. */
 function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: string) => void }) {
   const hubCall = useHubCall();
@@ -115,7 +117,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
     hubCall("github_app_test", {}, { timeoutMs: 60_000 }).then(
       (_out: GithubAppTestOutput) => {
         setTesting(false);
-        refetch(["github_app_get"]);
+        refetch(APP_READS);
       },
       (e: unknown) => {
         setTesting(false);
@@ -176,6 +178,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
           onRemove={() =>
             hubCall("github_app_remove", {}).then((out) => {
               onRemoved(`Removed from the hub. Delete it on GitHub too, under Advanced: ${out.settingsUrl}/advanced`);
+              // The step, ConfirmRemove reads again itself.
               refetch(["github_app_get"]);
             })
           }
@@ -227,7 +230,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
       return;
     }
     setMade("Created. Now install it on the repositories fleetd works on, above.");
-    refetch(["github_app_get"]);
+    refetch(APP_READS);
   };
   const fresh = info.app === undefined;
   const [open, setOpen] = useState(fresh);

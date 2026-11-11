@@ -109,7 +109,7 @@
             {
               "label": "Where",
               "plain": true,
-              "value": "Paste it on Settings › Hub accounts › Claude, with an endpoint if you use a gateway; the app seals it on your device."
+              "value": "Paste it on Settings › Hub › Setup › Claude, with an endpoint if you use a gateway; the app seals it on your device."
             }
           ]
         },
@@ -175,7 +175,7 @@
       "parts": [
         {
           "links": [],
-          "note": "On Settings › Hub accounts › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+          "note": "On Settings › Hub › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
           "title": "Create the hub's GitHub App",
           "values": [
             {
@@ -509,7 +509,7 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
+            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
@@ -544,7 +544,7 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
+            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
@@ -642,7 +642,7 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
+            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
@@ -678,7 +678,7 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
+            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
@@ -714,7 +714,7 @@
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
-            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub accounts › GitHub",
+            "label": "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
             "on": "hub"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
@@ -763,6 +763,81 @@
         "people": {
           "status": "todo"
         }
+      }
+    }
+  },
+  "team": {
+    "list": {
+      "address": {
+        "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+        "status": "done"
+      },
+      "claude": {
+        "said": "The hub's Claude API key works: tested on devbox.",
+        "status": "done",
+        "way": "the hub's API key"
+      },
+      "github": {
+        "said": "gh is logged in on the hub as dev.",
+        "status": "done",
+        "way": "gh on the hub"
+      },
+      "mac": {
+        "status": "todo"
+      },
+      "machines": {
+        "said": "devbox is online.",
+        "status": "done"
+      },
+      "onepassword": {
+        "failing": false,
+        "fix": {
+          "kind": "manual",
+          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Your accounts › 1Password and revokes the old one"
+        },
+        "said": "Sam's 1Password token reads 2 vaults (Agents, Shared logins): an agent on a machine holding it could read every item in each. Keep it to one vault with only what fleetd needs.",
+        "status": "look"
+      },
+      "people": {
+        "said": "Alice and Bob have joined.",
+        "status": "done"
+      }
+    },
+    "requiredLeft": 0,
+    "tests": {
+      "address": {
+        "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+        "status": "done"
+      },
+      "claude": {
+        "said": "The hub's Claude API key works: tested on devbox.",
+        "status": "done",
+        "way": "the hub's API key"
+      },
+      "github": {
+        "said": "gh is logged in on the hub as dev.",
+        "status": "done",
+        "way": "gh on the hub"
+      },
+      "mac": {
+        "status": "todo"
+      },
+      "machines": {
+        "said": "devbox is online.",
+        "status": "done"
+      },
+      "onepassword": {
+        "failing": false,
+        "fix": {
+          "kind": "manual",
+          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Your accounts › 1Password and revokes the old one"
+        },
+        "said": "Sam's 1Password token reads 2 vaults (Agents, Shared logins): an agent on a machine holding it could read every item in each. Keep it to one vault with only what fleetd needs.",
+        "status": "look"
+      },
+      "people": {
+        "said": "Alice and Bob have joined.",
+        "status": "done"
       }
     }
   }

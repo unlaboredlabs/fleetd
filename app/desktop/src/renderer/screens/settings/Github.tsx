@@ -2,7 +2,7 @@
 // for the orders they start open as them; until they connect, a writer for their order on a repository the App reaches
 // is refused with "Connect your GitHub to open this order's PRs", never run as anyone else. Connect goes through main
 // (window.fleetd.github.connect): GitHub's sign-in with PKCE and a loopback redirect, the code to github_connect. The
-// token stays on the hub; Disconnect (github_disconnect) revokes it at GitHub. The App itself is Hub accounts'.
+// token stays on the hub; Disconnect (github_disconnect) revokes it at GitHub. The App itself is Hub › Setup › GitHub's.
 import { useState } from "react";
 import type { GithubAccount, GithubAppGetOutput } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -30,7 +30,7 @@ export function GithubSettings() {
       ) : read.data === undefined ? (
         <GroupNote>Loading…</GroupNote>
       ) : read.data.app === undefined ? (
-        <GroupNote>This hub has no GitHub App yet. An admin creates it in Hub accounts.</GroupNote>
+        <GroupNote>This hub has no GitHub App yet. An admin creates it in Hub › Setup.</GroupNote>
       ) : (
         <Account info={read.data} />
       )}

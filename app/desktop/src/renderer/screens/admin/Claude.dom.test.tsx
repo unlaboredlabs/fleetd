@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Settings › Hub accounts › Claude: the hub's key pasted goes to main to seal with its endpoint and is tested at once, never
-// shown back; the members switch; what leads run on and the owner's subscription they fall back to; each person's
-// account, with a usage pause on one and their GitHub, on their People row; and a member who follows the link sees
-// none of it.
+// Settings › Hub › Setup › Claude: the hub's key pasted goes to main to seal with its endpoint and is tested at once,
+// never shown back; the members switch; what leads run on and the owner's subscription they fall back to; each
+// person's account, with a usage pause on one and their GitHub, on their People row; and a member who follows the
+// link sees none of it. The hub here serves no setup steps (an older one): Setup still lists Claude, and its row, a
+// search for one of its options and the old Hub accounts link all reach these controls.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { revealNext } from "../settings/reveal";
 import { SettingsScreen } from "../settings/SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -86,9 +88,12 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  window.location.hash = "#/settings/hub/accounts";
+  // As a search for the hub's API key, or the Claude step's button in the first run, opens it.
+  window.location.hash = "#/settings/hub/setup";
+  revealNext("admin.claude");
 });
 afterEach(() => {
+  revealNext(null);
   act(() => root.unmount());
   host.remove();
   document.body.innerHTML = "";
@@ -194,7 +199,9 @@ const section = (label: string) => {
 
 it("saves the hub's key and endpoint sealed through main, tests it at once, and never shows it back", async () => {
   await render(noKey);
-  expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
+  // Claude's own page of Setup, the way back to the list in its place.
+  expect(host.querySelector("[data-screen='settings.hub.setup.step'] [data-part='admin.claude']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.setup']")).toBeNull();
   // What leads run on is one line under the key, with the owner's subscription they fall back to.
   expect(section("Hub API key").textContent).toContain("Leads and automations run on the hub's key, once it has one, else your subscription.");
   expect(section("Hub API key").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
@@ -270,6 +277,43 @@ it("drops a failed Test once the setting it tried is changed", async () => {
   await click(button("Save and test"));
   expect(sealed).toEqual([{ account: "hub_api", boxes: expect.any(Array) as unknown }]);
   expect(section("Hub API key").textContent).not.toContain("Failed on devbox");
+});
+
+it("reaches the same controls from Claude's row on Setup, from the old Hub accounts link, and from a search for the members switch", async () => {
+  revealNext(null);
+  window.location.hash = "#/settings/hub/accounts";
+  await render(withKey);
+  // The old link lands on the accounts, on Setup: each account one row, and no control of it beside the row.
+  const accounts = host.querySelector<HTMLElement>("[data-screen='settings.hub.setup.error'] [data-screen='settings.hub.accounts']");
+  expect(document.activeElement).toBe(accounts);
+  expect([...(accounts?.querySelectorAll("[data-step]") ?? [])].map((r) => r.getAttribute("data-step"))).toEqual(["claude", "github"]);
+  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
+  await click(button("Claude"));
+  expect(section("Hub API key").textContent).toContain("Sealed on devbox.");
+  expect(section("Members may use the hub's API key").querySelector("[role='switch']")).not.toBeNull();
+  // A search for Hub accounts, with an account open, goes back to them all.
+  await act(async () => {
+    revealNext("hub.accounts");
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 4; i++) await settle();
+  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
+  expect(document.activeElement).toBe(host.querySelector("[data-screen='settings.hub.accounts']"));
+  // One for the switch opens the account that holds it, with the switch in focus.
+  await act(async () => {
+    revealNext("admin.claude.members");
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 4; i++) await settle();
+  expect(document.activeElement).toBe(section("Members may use the hub's API key").querySelector("[role='switch']"));
+  // And one for the GitHub App, GitHub's.
+  await act(async () => {
+    revealNext("admin.github");
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 4; i++) await settle();
+  expect(host.querySelector("[data-screen='settings.hub.setup.step'] [data-part='admin.github']")).not.toBeNull();
+  expect(host.querySelector("section[aria-label='Hub API key']")).toBeNull();
 });
 
 it("shows a member who follows the link none of it, and reads nothing", async () => {

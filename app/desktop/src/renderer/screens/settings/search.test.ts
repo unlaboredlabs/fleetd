@@ -54,7 +54,7 @@ describe("settings search", () => {
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);
     expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true), tabOf("global mcp", true)]).toEqual(["hub.people", "hub.people", "hub.machines", "hub.profiles"]);
-    expect([tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.accounts", "hub.accounts"]);
+    expect([tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.setup", "hub.setup"]);
   });
 
   it("finds every option a page marks for search, and marks every option it finds", () => {
@@ -108,6 +108,16 @@ describe("settings search", () => {
     expect(first("instructions for every project")).toEqual(["hub.instructions", "hub.instructions", "Every project › Instructions"]);
     expect(first("vault for every project")).toEqual(["hub.vault", "hub.vault", "Every project › Vault"]);
     expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every project › Vault"]);
+    // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
+    expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);
+    expect(first("connections")?.[1]).toBe("accounts");
+    expect(first("hub claude api key")).toEqual(["admin.claude", "hub.setup", "Hub › Setup"]);
+    expect(first("members may use the hub's key")).toEqual(["admin.claude.members", "hub.setup", "Hub › Setup"]);
+    expect(first("github app")).toEqual(["admin.github", "hub.setup", "Hub › Setup"]);
+    expect(first("installation")).toEqual(["admin.github", "hub.setup", "Hub › Setup"]);
+    expect(searchSettings("setup", optionsFor(true, true)).map((o) => o.key)).toContain("hub.setup");
+    expect(first("guided setup")).toEqual(["hub.setup", "hub.setup", "Hub › Setup"]);
+    expect(first("fleetd init")).toEqual(["hub.setup", "hub.setup", "Hub › Setup"]);
   });
 
   it("gives every option a unique key", () => {

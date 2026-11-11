@@ -4855,7 +4855,7 @@
       "type": "object"
     },
     "ClaudeSettings": {
-      "description": "Hub-wide Claude settings (Settings › Hub accounts).",
+      "description": "Hub-wide Claude settings (Settings › Hub › Setup › Claude).",
       "properties": {
         "membersUseHubApi": {
           "description": "Members may run their work on the hub's API configuration (on by default). Off, each member connects their\nown subscription; it never affects owners and admins, projects' leads or work nobody started.",

@@ -65,7 +65,10 @@ describe("routes", () => {
   });
 
   it("writes the Hub group's pages under #/settings/hub", () => {
+    expect(toHash({ id: "settings", tab: "hub.setup" })).toBe("#/settings/hub/setup");
+    // Hub accounts is a part of Setup now: its link is still one, and still read.
     expect(toHash({ id: "settings", tab: "hub.accounts" })).toBe("#/settings/hub/accounts");
+    expect(parseHash("#/settings/hub/accounts")).toEqual({ id: "settings", tab: "hub.accounts" });
     expect(toHash({ id: "settings", tab: "hub.machines", machine: "laptop" })).toBe("#/settings/hub/machines/laptop");
     expect(toHash({ id: "settings", tab: "hub.prompts", prompt: "lead.start" })).toBe("#/settings/hub/prompts?prompt=lead.start");
     // A link of before the prompt's compare and update views went still opens the prompt.

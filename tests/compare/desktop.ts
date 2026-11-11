@@ -95,7 +95,7 @@ await withFleet(path.join(run, "f"), bin, async (fleet) => {
       ["hub people", "#/settings/hub/people"],
       ["hub profiles", "#/settings/hub/profiles"],
       ["hub tools", "#/settings/hub/tools"],
-      ["hub accounts", "#/settings/hub/accounts"],
+      ["hub setup", "#/settings/hub/setup"],
     ];
     for (const [label, route] of routes) {
       await step(`screen: ${label}`, async () => {

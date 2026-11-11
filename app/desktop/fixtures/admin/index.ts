@@ -7,6 +7,7 @@ import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { asText, type JsonObject } from "../kit/json.ts";
 import { profilesList } from "../settings/profiles.ts";
+import steps from "../setup/steps.json" with { type: "json" };
 
 const AT = "2026-10-12T09:00:00.000Z";
 const person = (personId: string, name: string, role: string, createdAt = AT): JsonObject => ({ personId, name, role, createdAt });
@@ -113,6 +114,19 @@ const usageStatus: JsonObject = {
   ],
 };
 
+/**
+ * The hub's setup steps as it reads them here (setup_list; steps.json's `team`, the hub's own words): Claude on the
+ * hub's key, GitHub on gh while the App is installed nowhere, Sam's 1Password token reading two vaults, which asks
+ * for a look, and a Mac for agents still to add. Test finds each step as it is.
+ */
+const setup = (f: Fixture): void => {
+  const guides = steps.guides as unknown as ReadonlyArray<JsonObject & { readonly id: string }>;
+  const team = steps.team as unknown as { readonly requiredLeft: number; readonly list: Readonly<Record<string, JsonObject>> };
+  const list = guides.map((g) => ({ ...g, ...team.list[g.id] }));
+  f.answer("setup_list", undefined, { steps: list, requiredLeft: team.requiredLeft });
+  for (const step of list) f.answer("setup_test", { step: step.id }, { step }, 600);
+};
+
 /** The owner's hub as `me` sees it, with every write answered as the hub would. */
 function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean, membersUseHubApi = true): Fixture {
   return answerHub(Fixture.from(from, name, note), me, admin, membersUseHubApi);
@@ -122,6 +136,7 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
 export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, membersUseHubApi = true): Fixture {
   f.answer("hub_info", undefined, hubInfo(me, admin));
   f.answer("claude_accounts_get", undefined, claudeAccounts(me, admin, membersUseHubApi));
+  setup(f);
   // Sam saved a 1Password service account that reads two vaults; anyone else has none yet.
   const vaults = { at: "2026-10-19T09:20:00.000Z", machineId: "devbox", ok: true, vaults: ["Agents", "Shared logins"] };
   f.answer("onepassword_get", undefined, me === sam ? { token: { sealedOn: [{ machineId: "buildbox", fingerprint: "0b5e55ed" }, { machineId: "devbox", fingerprint: "0b5e55ed" }], savedAt: "2026-10-19T09:20:00.000Z", lastTest: vaults } } : {});

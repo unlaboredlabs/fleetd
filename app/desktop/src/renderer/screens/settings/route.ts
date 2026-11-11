@@ -42,10 +42,10 @@ export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.instru
 
 /**
  * The tabs that were pages of their own and are now a part of another: Your devices on Hubs & devices, Updates on
- * Machines, Tools & skills on Every project › Agents. Every link to one still works: it opens the page at that part,
- * which is marked for reveal by the tab's own name.
+ * Machines, Tools & skills on Every project › Agents, Hub accounts on Setup. Every link to one still works: it opens
+ * the page at that part, which is marked for reveal by the tab's own name.
  */
-const PART_OF: Partial<Record<Tab, Tab>> = { devices: "hubs", "hub.updates": "hub.machines", "hub.tools": "hub.profiles" };
+const PART_OF: Partial<Record<Tab, Tab>> = { devices: "hubs", "hub.updates": "hub.machines", "hub.tools": "hub.profiles", "hub.accounts": "hub.setup" };
 /** The page a tab is on: itself, unless it is a part of another. */
 export const pageOf = (tab: Tab): Tab => PART_OF[tab] ?? tab;
 

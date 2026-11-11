@@ -113,6 +113,14 @@ test("setup checks are there only once their step is set up", () => {
   const got = c.setupChecks({ joined: ["Alice", "Bo", "Cy"], onepassword: [] }).map((e) => [e.id, e.status, e.message]);
   expect(got).toEqual([["hub/people", "ok", "Alice and 2 others have joined."]]);
   expect(c.setupChecks({ joined: ["Alice", "Bo"], onepassword: [] })[0]!.message).toBe("Alice and Bo have joined.");
+  // Every one of them is named as such: setup drops a kept one that a fresh read no longer has (an App removed).
+  const all = c.setupChecks({
+    joined: ["Alice"],
+    githubApp: { appId: 1, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23", owner: "acme", htmlUrl: "", settingsUrl: "", createdAt: "2026-10-19T09:00:00.000Z" },
+    onepassword: [["Sam"]],
+    vault: { mode: "file", path: "/home/dev/.config/fleetd/vault.key", locked: false, unsafe: [], recoverySaved: true },
+  });
+  expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });
 
 test("a repo with no CI fails with the add-CI fix", () => {

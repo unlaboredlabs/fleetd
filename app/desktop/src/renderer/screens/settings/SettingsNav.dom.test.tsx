@@ -230,13 +230,13 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
 
 const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']") ?? [])].map((b) => b.textContent.trim());
 
-it("has eleven rows for an admin and six for a member, one fewer each on a hub without the vault", async () => {
+it("has ten rows for an admin and six for a member, one fewer each on a hub without the vault", async () => {
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Hub accounts", "Setup"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Hub accounts", "Setup"]);
+  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
@@ -267,7 +267,7 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every project"],
   ["#/settings/hub/vault", "settings.hub.vault", null, "Every project"],
   ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every project"],
-  ["#/settings/hub/accounts", "settings.hub.accounts", null, "Hub accounts"],
+  ["#/settings/hub/accounts", "settings.hub.setup", "settings.hub.accounts", "Setup"],
   ["#/settings/hub/setup", "settings.hub.setup", null, "Setup"],
 ];
 

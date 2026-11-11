@@ -2,10 +2,10 @@
 // one short flat list of pages in three groups (D211), with nothing to pick or unfold. You: General, Your accounts,
 // Vault, Your memory, Hubs & devices. Projects: the list of projects, each opening its pages under tabs (Frames.tsx).
 // Hub, for the hub's owners and admins only: People, Machines (with updates), Every project (its pages under tabs:
-// Agents, Instructions, Vault), Hub accounts and Setup, always listed, saying how many required steps are left.
-// Vault's row and tabs show only on a hub that serves it. A page that became a part of another (route.ts) has no
-// row: its links open the page that holds it, which is the row shown as current.
-import { ArrowLeft, Brain, FolderGit2, KeyRound, Layers, ListChecks, LockKeyhole, Network, Server, SlidersHorizontal, UserRound, Users } from "lucide-react";
+// Agents, Instructions, Vault) and Setup (the hub's accounts and its other setup steps), always listed, saying how many
+// required steps are left. Vault's row and tabs show only on a hub that serves it. A page that became a part of
+// another (route.ts) has no row: its links open the page that holds it, which is the row shown as current.
+import { ArrowLeft, Brain, FolderGit2, Layers, ListChecks, LockKeyhole, Network, Server, SlidersHorizontal, UserRound, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
@@ -31,7 +31,6 @@ const HUB_PAGES: ReadonlyArray<{ tab: HubTab; icon: ReactNode; label?: string }>
   { tab: "hub.people", icon: <Users /> },
   { tab: "hub.machines", icon: <Server /> },
   { tab: "hub.profiles", icon: <Layers />, label: "Every project" },
-  { tab: "hub.accounts", icon: <KeyRound /> },
   { tab: "hub.setup", icon: <ListChecks /> },
 ];
 
@@ -115,7 +114,7 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
 
 /**
  * The Hub group, for an owner or admin of the hub on screen: its pages in one flat list, Every project's under tabs on
- * its page, and Setup, always listed, with how many required steps are left while some are. With several hubs, which
+ * its page, and Setup (the hub's accounts too), always listed, with how many required steps are left while some are. With several hubs, which
  * one they manage is picked on the page (admin/HubPages.tsx).
  */
 function HubGroup({ route }: { route: SettingsRoute }) {

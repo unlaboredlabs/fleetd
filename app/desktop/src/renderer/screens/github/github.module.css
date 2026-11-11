@@ -1,4 +1,4 @@
-/* Settings › Hub accounts › GitHub: what its rows hold (settings/groups.module.css draws the rows). */
+/* Settings › Hub › Setup › GitHub: what its rows hold (settings/groups.module.css draws the rows). */
 .list {
   display: flex;
   flex-direction: column;

@@ -157,7 +157,7 @@ const type = async (label: string, value: string) => {
   });
 };
 
-describe("Hub accounts › GitHub", () => {
+describe("Hub › Setup › GitHub", () => {
   it("names the App after the hub, and says where it reaches", () => {
     expect(appName("devbox", "")).toBe("fleetd on devbox");
     expect(appName("", "http://devbox.example.ts.net:4790")).toBe("fleetd on devbox");

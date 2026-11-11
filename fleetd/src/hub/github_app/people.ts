@@ -120,7 +120,7 @@ export async function connect(
   redirect: string,
 ): Promise<GithubAccount> {
   const { app, secret } =
-    client(apps) ?? fail("This hub has no GitHub App yet: an admin creates it in Settings › Hub accounts › GitHub");
+    client(apps) ?? fail("This hub has no GitHub App yet: an admin creates it in Settings › Hub › Setup › GitHub");
   const pair = await tokenCall(apps, {
     client_id: app.clientId,
     client_secret: secret,

@@ -859,7 +859,7 @@ profile.
 ### What a profile runs on {#profile-settings}
 
 A profile's model is one of the models the hub's Claude configuration offers: what the Models API lists on the hub's
-API key when it has one (Settings › Hub accounts), else fleetd's own list of current Claude models. Its effort is
+API key when it has one (Settings › Hub › Setup › Claude), else fleetd's own list of current Claude models. Its effort is
 one Claude Code takes: low, medium, high, xhigh or max; a model without that level runs the nearest one below. Fast
 mode is Claude Code's (`"fastMode": true` in the session's settings), only on the models that have it (Opus 5.5, Opus
 5 and Opus 4.8), at a higher price per token.

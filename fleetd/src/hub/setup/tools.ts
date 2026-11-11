@@ -4,6 +4,7 @@ import type { DoctorCheck, HubSetupStep } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
+import { SETUP_CHECK_IDS } from "../doctor/checks.ts";
 import { readHubSetup } from "../doctor/config.ts";
 import { doctor } from "../doctor/index.ts";
 import { githubApps } from "../github_app/index.ts";
@@ -27,10 +28,14 @@ export function hubUrl(hub: Hub): string {
   return hub.config.url ?? readHubSetup(hub.config.home)[0].url ?? hub.url();
 }
 
-/** The doctor's checks with the ones read from the hub's own state taken now, so a key saved a moment ago counts. */
+/**
+ * The doctor's checks with the ones read from the hub's own state taken now, so a key saved a moment ago counts, and
+ * what was removed a moment ago (the GitHub App) stops counting: its check goes, rather than stand until the doctor's
+ * next run.
+ */
 function withFresh(hub: Hub, checks: DoctorCheck[]): DoctorCheck[] {
   const fresh = doctor(hub).setupChecks();
-  return [...checks.filter((c) => !fresh.some((f) => f.id === c.id)), ...fresh];
+  return [...checks.filter((c) => !SETUP_CHECK_IDS.has(c.id) && !fresh.some((f) => f.id === c.id)), ...fresh];
 }
 
 function read(hub: Hub, checks: DoctorCheck[]): HubSetupStep[] {

@@ -208,7 +208,7 @@ export const HubLinkRequest = z.strictObject({
 export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
- * Create the hub's own GitHub App (Settings › Hub accounts › GitHub): main asks the hub for its manifest, posts it to GitHub from
+ * Create the hub's own GitHub App (Settings › Hub › Setup › GitHub): main asks the hub for its manifest, posts it to GitHub from
  * a loopback page, catches GitHub's code there and calls github_app_create itself; the App's keys go to the hub only.
  */
 export const GithubAppRequest = z.strictObject({
@@ -222,7 +222,7 @@ export type GithubAppRequest = z.infer<typeof GithubAppRequest>;
 
 const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500);
 /**
- * A Claude account's secret (Settings › Your accounts › Claude, Settings › Hub accounts › Claude): main seals it to every machine in `boxes`
+ * A Claude account's secret (Settings › Your accounts › Claude, Settings › Hub › Setup › Claude): main seals it to every machine in `boxes`
  * and calls claude_hub_api_set (the hub's key, with its endpoint; no key keeps the saved one) or
  * claude_subscription_set (the person's own `claude setup-token` token). The hub gets the boxes, never the value.
  */

@@ -5,12 +5,12 @@
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
 // as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide
 // built-in prompts from its foot) and Vault (the cards, logins and addresses every project uses, and the vault key,
-// settings/Vault.tsx), each reaching every project on the hub; Hub accounts (the hub's Claude API key and its GitHub
-// App, github/AdminGithub.tsx); and Setup, the hub's setup steps still left (SetupPage.tsx), always listed, with how
-// many required ones are left. With several hubs the group manages one hub at a time, named above every page, and
-// switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
+// settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
+// Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
+// with how many required ones are left. With several hubs the group manages one hub at a time, named above every
+// page, and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Text } from "../../ui";
+import { Text } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
@@ -26,17 +26,14 @@ import { Prompts } from "../settings/Prompts";
 import { isEveryProject, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
-import { AdminGithub } from "../github/AdminGithub";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
-import { ClaudeAdmin } from "./Claude";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
 import { SetupPage } from "./SetupPage";
 import { Updates } from "./Updates";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
-import type { Person } from "../../../shared/contracts";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -129,12 +126,12 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <EveryInstructions />;
     case "hub.prompts":
       return <Prompts where="hub" route={{ tab: "hub.prompts", prompt: route.prompt, for: null }} />;
-    case "hub.accounts":
-      return <HubAccounts me={me} />;
     case "hub.vault":
       return <HubVault />;
+    // Hub accounts is a part of Setup (settings/route.ts).
+    case "hub.accounts":
     case "hub.setup":
-      return <SetupPage />;
+      return <SetupPage me={me} />;
   }
 }
 
@@ -202,30 +199,6 @@ function EveryInstructions() {
           <HubInstructions />
         </SettingsSection>
         <BuiltInPrompts project={null} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * What the hub itself connects to: its Claude API key and its GitHub App, each set up once; and the
- * way back into the guided setup, which walks the same steps.
- */
-function HubAccounts({ me }: { me: Person | undefined }) {
-  const { id } = useHub();
-  return (
-    <div className={s.scroll} data-screen="settings.hub.accounts">
-      <div className={s.column}>
-        <PageHead
-          title="Hub accounts"
-          aside={
-            <Button size="sm" variant="quiet" data-setup-again onClick={() => navigate({ id: "settings", tab: "hub.setup", at: id })}>
-              Run guided setup again
-            </Button>
-          }
-        />
-        <ClaudeAdmin me={me} />
-        <AdminGithub />
       </div>
     </div>
   );
