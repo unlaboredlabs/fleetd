@@ -108,7 +108,7 @@ test("a person's say, as GitHub counts it: bots, plain comments, answered review
         review(4, "cy", "DISMISSED", "Wrong file."),
         review(5, "dee", "COMMENTED", "nice"),
         review(6, "dependabot[bot]", "CHANGES_REQUESTED", "bump", bot("dependabot[bot]")),
-        review(7, "wynn", "COMMENTED", `**fleetd's agent review** of abc: 2 blocking\n\n${REVIEW_MARK}`),
+        review(7, "devon", "COMMENTED", `**fleetd's agent review** of abc: 2 blocking\n\n${REVIEW_MARK}`),
         // A later review that only comments doesn't take a request for changes back.
         review(8, "ana", "COMMENTED", "see the thread"),
       ],
@@ -177,8 +177,8 @@ test("a person's new thread on a ready PR sends it back to review; a new comment
   expect(k.change(8).state).toBe("reviewing");
   // The writer replies on the thread, as the PR's author: its own reply never comes back to it.
   const t = thread(21, "ben", "a.md", 1, "Why a?");
-  t.comments.nodes.push({ databaseId: 22, body: "a is the cache key.", url: "u", author: person("wynn") });
-  people.set(8, { author: person("wynn"), reviews: { nodes: [] }, reviewThreads: { nodes: [t] } });
+  t.comments.nodes.push({ databaseId: 22, body: "a is the cache key.", url: "u", author: person("devon") });
+  people.set(8, { author: person("devon"), reviews: { nodes: [] }, reviewThreads: { nodes: [t] } });
   await poll();
   expect(k.host.sends.filter(([to]) => to === "T8").length).toBe(1);
   // Ben answers it on the same thread: that comment goes to the writer, with the thread so far.
@@ -186,7 +186,7 @@ test("a person's new thread on a ready PR sends it back to review; a new comment
   await poll();
   const toWriter = k.host.sends.filter(([to]) => to === "T8");
   expect(toWriter.length).toBe(2);
-  expect(toWriter[1]![1]).toContain("@wynn: a is the cache key.");
+  expect(toWriter[1]![1]).toContain("@devon: a is the cache key.");
   expect(toWriter[1]![1]).toContain("@ben: Still not convinced.");
   t.isResolved = true;
   await k.settle();
