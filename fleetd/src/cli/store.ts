@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import type { Grant, Role } from "../shared/contracts.ts";
 import { dirname } from "node:path";
+import { NAMELESS } from "../hub/auth/nodes.ts";
 import { HubDb } from "../hub/store/db.ts";
 import { isLiveHubHome, refuseLiveHubWrite } from "./common.ts";
 
@@ -177,17 +178,20 @@ export function keyWorks(db: HubDb, key: string): boolean {
 
 // ---- enroll codes ----
 
-/** One-time, valid for 15 minutes; it replaces the machine's open one. */
-export function createEnrollToken(db: HubDb, machineId: string): { token: string; expiresAt: string } {
+/** One-time, valid for 15 minutes; it replaces the machine's open one. With no machine, it enrolls a node under the
+ * name it asks for, made unique (hub/auth/nodes.ts), and replaces none. */
+export function createEnrollToken(db: HubDb, machineId: string | undefined): { token: string; expiresAt: string } {
   writable(db, "Making an enroll code");
   const now = Date.now();
   const expires = now + ENROLL_TTL_MS;
   const token = secret(ENROLL_PREFIX);
   db.transaction((c) => {
-    c.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(machineId, now);
+    if (machineId !== undefined) {
+      c.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(machineId, now);
+    }
     c.query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)").run(
       sha256(token),
-      machineId,
+      machineId ?? NAMELESS,
       expires,
     );
   });

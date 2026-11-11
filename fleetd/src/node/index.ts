@@ -387,7 +387,7 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
   const gated = new GatedRuns(home, config.machineId);
   let resolveDone!: (code: number) => void;
   const done = new Promise<number>((r) => (resolveDone = r));
-  let enrolled: (() => void) | undefined;
+  let enrolled: ((machineId: string) => void) | undefined;
   const screensRestart = new ScreensRestart(home, {
     live: () => broker(node).count(),
     hold: () => {
@@ -398,14 +398,19 @@ export async function startNode(home: string, config: NodeConfig, enrollToken?: 
     restart: () => resolveDone(0),
   });
   if (enrollToken)
-    enrolled = () => {
+    enrolled = (machineId) => {
+      // A code minted for no machine enrolls the node under the id the hub settled on: its config takes it, and the
+      // node ends so that it starts again as that machine (its service does that by itself).
+      const renamed = machineId !== config.machineId && isMachineId(machineId);
+      const name = renamed && config.name === config.machineId ? machineId : config.name;
       try {
-        writeConfig(home, { ...config, enrolled: true });
+        writeConfig(home, { ...config, ...(renamed ? { machineId, name } : {}), enrolled: true });
       } catch (error) {
         console.warn(`cannot mark the node enrolled in its config: ${String(error)}`);
       }
-      console.log(`${new Date().toISOString()} INFO enrolled with the hub; later starts use \`fleetd node run\``);
-      if (exitWhenEnrolled) resolveDone(0);
+      const as = renamed ? ` as ${machineId}` : "";
+      console.log(`${new Date().toISOString()} INFO enrolled with the hub${as}; later starts use \`fleetd node run\``);
+      if (exitWhenEnrolled || renamed) resolveDone(0);
     };
 
   /** A frame's work that failed past its own handling: logged, and the node carries on. */

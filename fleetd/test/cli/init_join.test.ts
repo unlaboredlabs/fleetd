@@ -6,6 +6,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { localHostName, machineIdFromHost } from "../../src/cli/project.ts";
+import { createEnrollToken, openHub } from "../../src/cli/store.ts";
 import { TESTED } from "../../src/node/runner/claude.ts";
 import { Fleet } from "./golden.ts";
 
@@ -23,19 +25,24 @@ afterAll(async () => {
   for (const f of fleets) await f.stop();
 });
 
-async function join_() {
+/** A code `fleetd pair --worker builder-1` prints. */
+async function named(fleet: Fleet): Promise<string> {
+  const minted = await fleet.run(["pair", "--worker", "builder-1"]);
+  return /fle_[a-z2-7]{52}/.exec(minted.stdout)![0];
+}
+
+async function join_(mint: (fleet: Fleet) => Promise<string> = named, args = ["--machine-id", "builder-1"]) {
   const fleet = new Fleet("init-join");
   fleets.push(fleet);
   await fleet.startHub();
-  const minted = await fleet.run(["pair", "--worker", "builder-1"]);
-  const code = /fle_[a-z2-7]{52}/.exec(minted.stdout)![0];
+  const code = await mint(fleet);
   // The worker is another fleetd home on this machine; its hub is the one above.
   const worker = new Fleet("init-join-worker");
   fleets.push(worker);
   const bin = join(worker.home, "stand-in");
   mkdirSync(bin);
   writeFileSync(join(bin, "claude"), `#!/bin/sh\necho '${TESTED} (Claude Code)'\n`, { mode: 0o755 });
-  const proc = Bun.spawn([bunBin, "init", "--join", fleet.hubUrl, "--code", code, "--machine-id", "builder-1", "--no-service"], {
+  const proc = Bun.spawn([bunBin, "init", "--join", fleet.hubUrl, "--code", code, ...args, "--no-service"], {
     cwd: worker.cwd,
     env: { ...worker.env(), PATH: `${bin}:${process.env.PATH ?? ""}` },
     stdout: "pipe",
@@ -55,4 +62,23 @@ test("a worker joins with the code", async () => {
   expect(joined.node.machineId).toBe("builder-1");
   expect(joined.shown.stderr).toContain("\nJoin a hub  1/2\n\nWorker  2/2\n–  builder-1 enrolled; its node isn't started (--no-service)\n");
   expect(joined.shown.stderr).toContain("start builder-1's node: $HOME/bin/fleetd node run --home $HOME/node");
+}, 60_000);
+
+test("a line minted for no machine joins under this computer's name, made unique when another has it", async () => {
+  const own = machineIdFromHost(localHostName());
+  const joined = await join_(async (fleet) => {
+    const db = openHub(fleet.hubHome);
+    try {
+      // An open code for another computer of this name takes it.
+      createEnrollToken(db, own);
+      return createEnrollToken(db, undefined).token;
+    } finally {
+      db.conn.close();
+    }
+  }, []);
+  const settled = `${own.slice(0, 30).replace(/-+$/, "")}-2`;
+  expect(joined.node.enrolled).toBe(true);
+  expect(joined.node.machineId).toBe(settled);
+  expect(joined.node.name).toBe(settled);
+  expect(joined.shown.stderr).toContain(`–  ${settled} enrolled; its node isn't started (--no-service)\n`);
 }, 60_000);

@@ -112,7 +112,9 @@ export type NodeHello = {
 /** The hub's first frame: the node signs `nonce`. */
 export type HubChallenge = { nonce: string };
 
-export type HubWelcome = { hubId: string; protocol: number; nonce?: string; capabilities?: string[] };
+/** `machineId`: the id the hub links the node as, which a code minted for no machine settles (a hub before it sends
+ * none). */
+export type HubWelcome = { hubId: string; protocol: number; nonce?: string; capabilities?: string[]; machineId?: string };
 
 /** Both directions every 15 s; `load`, `steps` and `busy` are node -> hub only. */
 export type Heartbeat = { at: Timestamp; load?: NodeLoad; steps?: unknown[]; busy?: NodeBusy };

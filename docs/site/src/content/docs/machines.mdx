@@ -172,6 +172,12 @@ say so. Give the hub its tailnet or LAN address first: on the hub, `fleetd init 
 
 A machine has one code that works at a time: printing a new one replaces the machine's open code.
 
+A line can also name no machine: the app asks the hub for one with the `machine_join` tool and no `machineId`. Its
+line has no `--machine-id`, and the computer that runs it joins under its own host name (the first label, lowercased),
+or that name with `-2`, `-3`… when another computer has it or an open code is for it. A computer that joined before
+keeps its id. It still works once, for 15 minutes, and joins one computer; making one replaces no other code. A line
+made for a name admits only that name.
+
 To see the codes that still work, run `fleetd pair --worker-codes`. It lists each code's id, machine, when it was
 made and when it expires, but never the code itself. To take one back before it is used, run
 `fleetd pair --worker-revoke <id>`. The hub drops used and expired codes a day later.

@@ -12,7 +12,7 @@ import { tempHome } from "../helpers.ts";
 type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
 
 /** A hub: answers each hello with `welcome` (or closes with `refuse`), and keeps every frame its nodes send. */
-function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean } = {}) {
+function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string } = {}) {
   const conns: Conn[] = [];
   const inflaters = new Map<unknown, Inflater>();
   const server = Bun.serve({
@@ -39,7 +39,7 @@ function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean } = {}) {
         conn.frames.push(frame);
         if (frame.t !== "hello") return;
         if (opts.refuse) return ws.close(opts.refuse[0], opts.refuse[1]);
-        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [] }));
+        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
   };
   return { url: `http://127.0.0.1:${server.port}`, conns, server };
 }
@@ -86,6 +86,21 @@ test("the hello is signed over the hub's nonce and carries the enroll token unti
   stop.abort();
   hub.server.stop(true);
   home.done();
+});
+
+test("the enrolling welcome's machine id reaches onEnrolled: the hub's, else the node's own", async () => {
+  for (const [said, heard] of [["devbox-2", "devbox-2"], [undefined, "devbox"]] as const) {
+    const home = tempHome();
+    const hub = fakeHub(said ? { machineId: said } : {});
+    const stop = new AbortController();
+    const ids: string[] = [];
+    void runNode(options(hub.url, home.dir, { enrollToken: "fle_token", onEnrolled: (id) => ids.push(id), signal: stop.signal }));
+    await until("the enrolment", () => ids.length === 1);
+    expect(ids).toEqual([heard]);
+    stop.abort();
+    hub.server.stop(true);
+    home.done();
+  }
 });
 
 test("a refusal (4001, 4002) ends the loop with the hub's reason; retrying wouldn't help", async () => {

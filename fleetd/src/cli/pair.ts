@@ -253,7 +253,7 @@ export function workerCodes(home: string | undefined): string {
     if (codes.length === 0 && !mac) return "No open worker codes. `fleetd pair --worker <machine-id>` makes one.\n";
     let out = "";
     for (const c of codes) {
-      out += `${c.id}  ${c.machineId}  made ${c.createdAt}  until ${c.expiresAt}\n`;
+      out += `${c.id}  ${c.machineId || "any name"}  made ${c.createdAt}  until ${c.expiresAt}\n`;
     }
     if (mac) {
       const created = new Date(mac.created_ms ?? mac.expires_ms - MAC_CODE_TTL_MS).toISOString();
@@ -289,8 +289,9 @@ export function revokeWorkerCode(home: string | undefined, id: string): string {
 
 export type WorkerJoin = { hub: string; code: string; expiresAt: string; gitIdentity?: string; line: string };
 
-/** Mints the one-time code `fleetd pair --worker` prints, and the line that installs fleetd and joins with it. */
-export function workerJoin(home: string, machine: string, rejoin: boolean, mac: boolean): WorkerJoin {
+/** Mints the one-time code `fleetd pair --worker` prints, and the line that installs fleetd and joins with it. With no
+ * `machine`, the computer that runs the line joins under its own name, made unique in the hub. */
+export function workerJoin(home: string, machine: string | undefined, rejoin: boolean, mac: boolean): WorkerJoin {
   const setup = readSetup(home);
   const urls = localHubUrls(home);
   const db = openHub(home);
@@ -318,8 +319,9 @@ export function q(value: string): string {
 
 export const macFlags = (version: string) => (version === "0.0.0" ? " --mac" : ` --mac --version ${q(version)}`);
 
-export function joinLine(hub: string, code: string, machine: string, identity?: string): string {
-  let line = `curl -fsSL https://fleetd.sh | sh -s -- --join ${q(hub)} --code ${q(code)} --machine-id ${q(machine)}`;
+export function joinLine(hub: string, code: string, machine: string | undefined, identity?: string): string {
+  let line = `curl -fsSL https://fleetd.sh | sh -s -- --join ${q(hub)} --code ${q(code)}`;
+  if (machine !== undefined) line += ` --machine-id ${q(machine)}`;
   if (identity !== undefined) line += ` --git-identity ${q(identity)}`;
   return line;
 }
