@@ -14,7 +14,7 @@ import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../store/time.ts";
 import { requestAttention } from "./outcome.ts";
-import { answerPrompt } from "./permissions.ts";
+import { answerPrompt, refusePrompt } from "./permissions.ts";
 import {
   type ApprovalEvents,
   type ApprovalHooks,
@@ -516,6 +516,15 @@ export class Approvals {
         }
         if (shown !== undefined) await this.deps.hooks.naviAutomationConfirm(projectOf(answered), shown, by);
       }
+      // A new project is the person's alone to make: their approval of the card makes it here, as theirs, before the
+      // lead's call runs. Not made, the lead hears why in place of the go-ahead.
+      if (approve && p.toolName === PROJECT_PROPOSE_TOOL) {
+        const why = await this.makeProposed(answered, caller);
+        if (why !== undefined) {
+          await refusePrompt(this, answered, why);
+          return this.get(requestId) ?? answered;
+        }
+      }
       await answerPrompt(this, answered, reason);
       return this.get(requestId) ?? answered;
     }
@@ -527,6 +536,22 @@ export class Approvals {
     if (approve) void this.runApproved(answered).catch((e) => console.error(`approvals: ${answered.requestId} didn't run:`, e));
     else await this.deps.hub.wakeRequest(answered);
     return this.get(requestId) ?? answered;
+  }
+
+  /** Makes the project an approved `project_propose` card showed, as the person's who approved it; a string is why not. */
+  private async makeProposed(r: HumanRequest, caller: ApprovalCaller): Promise<string | undefined> {
+    let shown: unknown;
+    try {
+      shown = JSON.parse(r.permission?.preview?.input ?? "");
+    } catch {
+      return "its card showed nothing to create";
+    }
+    try {
+      const by = { name: caller.name, ...(caller.person ? { person: caller.person } : {}) };
+      return await this.deps.hooks.projectProposed(projectOf(r), shown, by, r.requestId);
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
   }
 
   /** `request_withdraw`: the lead takes back an open request of its own project. A secret is withdrawn; an approval denied. */
@@ -757,6 +782,8 @@ export class Approvals {
 
 /** The Navi tool whose approval lets an automation run on its own (automations/calls.rs `CONFIRM_TOOL`). */
 export const AUTOMATION_CONFIRM_TOOL = "mcp__fleetd__automation_confirm";
+/** A lead's proposal for a new project (projects/propose.ts): asked in every approval mode, made only by a person's approval. */
+export const PROJECT_PROPOSE_TOOL = "mcp__fleetd__project_propose";
 
 const GATED_CLASSES = ["irreversible", "money", "credential"];
 

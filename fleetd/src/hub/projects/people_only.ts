@@ -31,7 +31,8 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   only_me: "Only the project's owner or an admin turns Only me on or off: the project's settings in the app.",
   hub_links: "Only a person links hubs: Settings › You › Hubs in the app.",
   delete: "Only a person deletes a project: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
-  create: "Only a person creates a project: New project in the app, or `fleetd project add` from their own terminal.",
+  create:
+    "Only a person creates a project. When they ask you for one, propose it with project_propose: their Approve on its card makes it, as theirs. Or they make it themselves: New project in the app, or `fleetd project add` from their own terminal.",
   another_project: "A lead sets up only its own project. Another project is set up by its own lead (project_message writes to it) or by a person in the app.",
   project_folder: "That folder is a project of its own, and adding it as a repo would archive that project: only a person does that, in this project's settings in the app.",
 };

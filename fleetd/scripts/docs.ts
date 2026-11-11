@@ -703,6 +703,7 @@ function example(role: Role, tool: string): Json {
       setup: { commands: ["pnpm install --frozen-lockfile"] },
       env: { set: [{ name: "NODE_ENV", value: "test" }] },
     },
+    project_propose: { title: "Billing", url: "https://github.com/acme/billing" },
     project_message: { project: "storefront", text: "Please add gift cards at checkout; the person asked for it this morning." },
     factory_status: { project: "storefront" },
     chat_search: { words: "dentist saturday", from: "2026-10-01" },

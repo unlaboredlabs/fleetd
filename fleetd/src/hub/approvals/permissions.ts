@@ -10,7 +10,7 @@
 // prompt files a card for the person.
 import type { CheckerNote, HubEvent, HumanRequest, ProjectRef, ToolPermission, ToolPreview } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
-import { AUTOMATION_CONFIRM_TOOL, type Approvals, projectOf } from "./index.ts";
+import { AUTOMATION_CONFIRM_TOOL, type Approvals, PROJECT_PROPOSE_TOOL, projectOf } from "./index.ts";
 import { verdict as policyVerdict } from "../integrations/policy.ts";
 import type { Action, Checked, PendingPermission, PermissionDecision, PromptVerdict } from "./ports.ts";
 import { personOnly } from "./purchases.ts";
@@ -101,16 +101,22 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
   const automationId = toObject(input).automationId;
   const automation =
     confirming && typeof automationId === "string" ? await hooks.naviAutomation(project, automationId) : undefined;
+  // A new project a lead proposes: its card says exactly what would be made, and only a person's answer settles it.
+  const proposing = tool === PROJECT_PROPOSE_TOOL;
   // The integrations policy first, for an MCP server's tool; then the Navi's own rules (its confirm step, its bridge,
   // automation confirm), which the navi port sets.
-  const policy = policyVerdict(tool, input, servers);
-  const verdict: PromptVerdict | undefined = policy
-    ? "allow" in policy
-      ? { allow: true }
-      : "block" in policy
-        ? { deny: policy.block }
-        : { ask: policy.ask }
-    : hooks.promptVerdict(project, tool, input, servers, automation);
+  const policy = proposing ? undefined : policyVerdict(tool, input, servers);
+  const verdict: PromptVerdict | undefined = proposing
+    ? unshown
+      ? undefined
+      : await hooks.projectProposal(project, input)
+    : policy
+      ? "allow" in policy
+        ? { allow: true }
+        : "block" in policy
+          ? { deny: policy.block }
+          : { ask: policy.ask }
+      : hooks.promptVerdict(project, tool, input, servers, automation);
   let decided: PermissionDecision | undefined;
   let preview: ToolPreview | undefined;
   if (verdict && "allow" in verdict) decided = ALLOW;
@@ -154,8 +160,8 @@ async function raise(a: Approvals, project: ProjectRef, threadId: string, prompt
   }
   const settings = unshown ? undefined : await hooks.naviApprovals(project);
   const risky = action.preview !== undefined || action.site !== undefined;
-  // A purchase, a spend and a payment command are the person's alone: no checker and no YOLO answers them.
-  const alone = hooks.alwaysAsks(action) || confirming || personOnly(prospect(a, project, threadId, prompt, action));
+  // A purchase, a spend, a payment command and a new project are the person's alone: no checker and no YOLO answers them.
+  const alone = hooks.alwaysAsks(action) || confirming || proposing || personOnly(prospect(a, project, threadId, prompt, action));
   if (!alone && settings?.mode === "yolo") {
     // YOLO skips the checker and every ask, never the floors.
     const command = toObject(input).command;
@@ -394,6 +400,25 @@ export async function checksDone(a: Approvals): Promise<void> {
       a.idle.add(done);
     });
   }
+}
+
+/**
+ * A prompt a person approved whose own step the hub couldn't do (a proposed project that wasn't made): the request
+ * fails with why, and its session hears the same in place of the go-ahead.
+ */
+export async function refusePrompt(a: Approvals, r: HumanRequest, why: string): Promise<void> {
+  const p = r.permission;
+  if (!p) return;
+  const at = a.now();
+  a.quietly(() =>
+    a.changeFrom(r.requestId, "approved", (r) => {
+      r.state = "failed";
+      r.evidence = clip(why, 2000);
+      r.finishedAt = at;
+    }),
+  );
+  const by = r.answeredBy ?? "a person";
+  await answerByRule(a, projectOf(r).machineId, p.threadId, { requestId: p.requestId, toolName: p.toolName, summary: p.summary }, deny(`${by} approved it (${r.requestId}), but ${why}`));
 }
 
 /**

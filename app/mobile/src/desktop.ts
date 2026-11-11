@@ -100,6 +100,7 @@ export { addPage as addApprovedPage, FIRST_PAGE as APPROVED_FIRST_PAGE, fold as 
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
+export { openTo, proposal, type Proposal } from "../../desktop/src/shared/proposal";
 export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";

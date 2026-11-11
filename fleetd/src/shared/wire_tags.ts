@@ -163,6 +163,7 @@ export const LEAD_CALLS = [
   "repo_add",
   "repo_remove",
   "project_setup",
+  "project_propose",
 ] as const;
 export type LeadCallOp = (typeof LEAD_CALLS)[number];
 
@@ -197,6 +198,7 @@ export const AGENT_MCP_TOOLS = [
   { name: "repo_add", op: "repo_add" },
   { name: "repo_remove", op: "repo_remove" },
   { name: "project_setup", op: "project_setup" },
+  { name: "project_propose", op: "project_propose" },
   { name: "project_message", op: "project_message" },
   { name: "factory_status", op: "factory_status" },
   { name: "chat_search", op: "chat_search" },
