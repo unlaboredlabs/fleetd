@@ -95,6 +95,8 @@ export const fixtures = [
   "lead-long",
   "lead-counting",
   "lead-worked",
+  // With no agents at work, the line has a capsule of its own, over late pictures scrolled up (fixtures/lead).
+  "lead-pictures",
   // The night's memory refresh line: its summary, opened to its changes (fixtures/lead).
   "lead-memory",
   // The nightly cleanup's line for the worktrees it kept: its summary, opened to each (fixtures/lead).
@@ -466,6 +468,46 @@ const bandIsOneRow =
     expect(spread(band.icons.map((i) => i.middle)), `the icons sit on one centre: ${seen}`).toBeLessThanOrEqual(0.5);
   };
 
+/**
+ * The lead's turn line, with no agents at work, lies in a capsule as wide as the composer's pill (the end given to
+ * Latest ↓ when it shows), never as a patch of its words' width over what scrolls behind (the human's report, W609:
+ * "Thinking 15s" lying on a picture). At the end, the last message ends above that capsule.
+ */
+const turnLineInCapsule = async (page: Page) => {
+  const band = await page.locator("[data-band]").evaluate((el) => {
+    const box = (e: Element | null | undefined) => {
+      if (!e) return undefined;
+      const r = e.getBoundingClientRect();
+      return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top) };
+    };
+    const line = el.querySelector("[data-turn-line]");
+    const capsule = line?.closest("[data-strip], [data-alone]");
+    const latest = el.querySelector("[data-say] ~ * > button");
+    const list = document.querySelector('[aria-label="Conversation with the lead"]');
+    const last = [...(list?.querySelectorAll("[data-index]") ?? [])].at(-1);
+    const end = list === null ? undefined : list.scrollHeight - list.scrollTop - list.clientHeight;
+    return {
+      turn: line?.getAttribute("data-turn") ?? undefined,
+      capsule: box(capsule),
+      // The glass is the capsule's layer under its words (the strip's on the dock around its row).
+      glass: capsule ? getComputedStyle(capsule.matches("[data-strip]") ? (capsule.parentElement ?? capsule) : capsule, "::before").backgroundColor : undefined,
+      pill: box(el.nextElementSibling),
+      latest: box(latest),
+      gap: parseFloat(getComputedStyle(el).columnGap),
+      lastBottom: last === undefined ? undefined : Math.max(...[...last.querySelectorAll("*")].map((k) => k.getBoundingClientRect().bottom)),
+      atEnd: end !== undefined && end <= 1,
+    };
+  });
+  const seen = JSON.stringify(band);
+  expect(band.turn, `the turn runs: ${seen}`).toBe("running");
+  expect(band.capsule, `the turn line lies in a capsule: ${seen}`).toBeDefined();
+  expect(band.glass, `of glass: ${seen}`).not.toBe("rgba(0, 0, 0, 0)");
+  expect(band.capsule?.left, `its left edge on the pill's: ${seen}`).toBe(band.pill?.left);
+  const right = band.latest === undefined ? band.pill?.right : (band.latest.left - band.gap);
+  expect(Math.abs((band.capsule?.right ?? 0) - (right ?? 0)), `its right edge on the pill's, or at Latest ↓: ${seen}`).toBeLessThanOrEqual(1);
+  if (band.atEnd) expect(band.lastBottom, `at the end, the last message ends above it: ${seen}`).toBeLessThan(band.capsule?.top ?? 0);
+};
+
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
@@ -648,6 +690,23 @@ export const screens: readonly Screen[] = [
   // it has worked; lead-long ellipsizes, lead-counting only counts; lead-worked: the turn is over, and its reply wears
   // how long it took.
   { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
+  // The lead thinking with no agents at work, after a reply ending in two pictures that load late: its line has a
+  // capsule of its own across the band, at the end and scrolled up over the pictures.
+  { id: "chat", route: CHAT, fixtures: ["lead-pictures"], variant: "turn-alone", check: turnLineInCapsule },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-pictures"],
+    variant: "turn-alone-scrolled",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-block="image"] img')).toHaveCount(2, { timeout: 10_000 });
+      await page.getByRole("list", { name: "Conversation with the lead" }).hover();
+      await page.mouse.wheel(0, -200);
+      await expect(page.getByRole("button", { name: /Latest/u })).toBeVisible();
+    },
+    check: turnLineInCapsule,
+  },
   // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to
   // what it was.
   { id: "chat", route: CHAT, fixtures: ["lead-memory"], variant: "memory-refreshed" },

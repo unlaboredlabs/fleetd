@@ -130,8 +130,10 @@ it("says only that it is blocked when the hub gave no reason, and nothing when i
 
 it("says what the lead is doing on one line in the composer's band, never as a row of the conversation", async () => {
   await mount({ state: "working" }, liveLane(leadLaneId(project), "working"));
-  const line = host.querySelector("[data-band] > [data-turn-line]");
+  // With no agents at work, in a capsule of its own across the band (the live strip's while they run).
+  const line = host.querySelector("[data-band] > [data-alone] > [data-turn-line]");
   expect(line?.getAttribute("data-turn")).toBe("running");
+  expect(line?.hasAttribute("data-shown")).toBe(true);
   expect(line?.querySelector("[role='status']")?.textContent).toBe("Working");
   expect(host.querySelector("[data-index] [data-turn-line], [data-index] [role='status']")).toBeNull();
   // Its glyph and the scan over its words step on the app's beat.

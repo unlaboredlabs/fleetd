@@ -864,13 +864,13 @@ span.changeUndo {
 }
 
 /*
- * The lead's turn line (TurnLine.tsx): the live strip's first item while agents run (live.module.css), else first in
- * the island's band on its own, its left edge on the pill's: one line, 20 px tall. It is as wide as what it says
+ * The lead's turn line (TurnLine.tsx): the live strip's first item while agents run (live.module.css), else alone in
+ * a capsule of its own (.alone): one line, 20 px tall. It is as wide as what it says
  * (TurnLine measures it and sets it at once); what follows it slides to its new place and its words are cut by a clip
  * sliding with it, all on transforms (TurnLine slide). Beside others it takes at most a little over half the row (two
  * fifths of the strip's).
- * Gone, it has no width and gives back the row's gap (--turn-gap). On its own over the conversation scrolled up, a
- * soft patch of the ground keeps it legible; in the strip, the capsule's glass does.
+ * Gone, it has no width and gives back the row's gap (--turn-gap). Over the conversation scrolled up, its capsule's
+ * glass keeps it legible.
  */
 .turnLine {
   --turn-gap: var(--space-1-5);
@@ -882,8 +882,6 @@ span.changeUndo {
   min-width: 0;
   max-width: 100%;
   height: 20px;
-  /* On its own in the band, on the capsules' centre line. */
-  margin: 0 0 calc((var(--island-capsule-h) - 20px) / 2) 0;
   pointer-events: none;
 }
 .turnLine:not(:last-child) {
@@ -895,7 +893,49 @@ span.changeUndo {
   --turn-gap: var(--space-3);
   flex-shrink: 0;
   max-width: 40%;
-  margin-bottom: 0;
+}
+/*
+ * With no agents at work, the line has the strip's capsule to itself while it says something (or fades what it said):
+ * the same glass across the band, its edges on the pill's, Latest ↓ and what needs you taking their room at its end,
+ * so it reads as the chrome it is over whatever scrolls behind it, never as a patch lying on a picture. Its width
+ * doesn't follow the words (D406). Idle, it is nothing, and gives back the band's gap.
+ */
+.band > .alone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  margin-inline-end: calc(-1 * var(--space-1-5));
+  border-radius: calc(var(--island-capsule-h) / 2);
+  isolation: isolate;
+  pointer-events: none;
+}
+.band > .alone:has(> [data-shown]) {
+  flex: 1 1 auto;
+  min-height: var(--island-capsule-h);
+  padding: 0 var(--space-3);
+  margin-inline-end: 0;
+  box-shadow: var(--glass-lift);
+}
+/* The strip's glass (live.module.css .dock::before), on a layer of its own under the words. */
+.alone:has(> [data-shown])::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .alone:has(> [data-shown])::before {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
 }
 .turnLine[data-turn] {
   min-width: 14px;
@@ -916,10 +956,6 @@ span.changeUndo {
   gap: var(--space-2);
   height: 20px;
   border-radius: var(--radius-sm);
-}
-:global([data-band]) > .turnLine[data-turn] .turnRow {
-  background: var(--bg);
-  box-shadow: 0 0 6px 4px var(--bg);
 }
 .turnGlyph {
   display: flex;

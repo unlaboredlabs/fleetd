@@ -1,6 +1,6 @@
 // The lead's turn as one line in the composer island's band (ChatScreen), the agents' capsule's first item while they
-// run: never a row of the conversation, so nothing in it moves as the line comes, changes or goes (D392). While the turn runs: a live glyph
-// (thinking walks its ring, anything else is grain), what the lead does now at full strength under the dither scan
+// run, else in a capsule of its own: never a row of the conversation, so nothing in it moves as the line comes,
+// changes or goes (D392). While the turn runs: a live glyph (thinking walks its ring, anything else is grain), what the lead does now at full strength under the dither scan
 // (base.css), after a middle dot what the turn did so far in the quiet tone, and how long it has run, faint, counting.
 // Writing the reply is a step like any other, so the line holds through it. A new wording crossfades in place, rising
 // a few pixels, and stays at least DWELL_MS, so a passing step doesn't flicker; the count ticks without fading. Once
@@ -99,7 +99,14 @@ export function TurnLine({ project, writing }: { project: ProjectRef; writing: b
     slide(host, cl, rw, want, still);
   });
   return (
-    <div ref={line} className={s.turnLine} data-turn-line="" data-turn={cur === undefined ? undefined : cur.glyph === "done" ? "done" : "running"}>
+    <div
+      ref={line}
+      className={s.turnLine}
+      data-turn-line=""
+      data-turn={cur === undefined ? undefined : cur.glyph === "done" ? "done" : "running"}
+      // Saying something, or fading out what it said: a lone line's capsule (ChatScreen) stays until its words have gone.
+      data-shown={cur === undefined && out === undefined ? undefined : ""}
+    >
       <div ref={clip} className={s.turnClip}>
         <div ref={row} className={s.turnRow}>
           <span className={s.turnGlyph}>
