@@ -1425,6 +1425,11 @@ export type ChatMessage = {
   replyTo?: ChatReplyTo;
   seq: number;
   /**
+   * A system line such as "Added the repo api": the lead changed its project's setup, which `project_setup_undo`
+   * takes back.
+   */
+  setupChanged?: SetupChanged;
+  /**
    * A system line "Saved a skill: …": a Navi saved or changed one of its skills (`skill_save`); the app links it
    * to the skill.
    */
@@ -6252,6 +6257,17 @@ export type ProjectStopOutput = {
   truncated?: boolean;
 };
 
+export type ProjectSetupUndoInput = {
+  /** The chat line that said what the lead changed. */
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+};
+
+export type ProjectSetupUndoOutput = {
+  next?: string;
+  ok: true;
+};
+
 export type ProjectSummary = {
   /**
    * When it was archived. An archived project keeps its chat, memory and folder, and its lead doesn't start until
@@ -7091,6 +7107,22 @@ export type SetupField = {
   optional?: boolean;
   placeholder?: string;
   secret?: boolean;
+};
+
+/** What a lead's setup call changed. `look` is the icon, picture or color; `env` the plain variables. */
+export type KnownSetupChangeKind = "repo_added" | "repo_removed" | "title" | "look" | "instructions" | "setup" | "env" | "archived";
+/** KnownSetupChangeKind, or a value from a newer hub. */
+export type SetupChangeKind = KnownSetupChangeKind | (string & {});
+
+/**
+ * What a lead changed about its project's setup (`repo_add`, `repo_remove`, `project_setup`), as a line in the
+ * project's chat. A person takes it back with `project_setup_undo`.
+ */
+export type SetupChanged = {
+  kind: SetupChangeKind;
+  /** The repo it added or removed, or the variables it set or removed. */
+  names?: string[];
+  undone?: boolean;
 };
 
 /** Where a step sits in the list. */
@@ -9667,6 +9699,7 @@ export interface ToolMap {
   project_repo_remove: { input: ProjectRepoRemoveInput; output: ProjectRepoRemoveOutput };
   project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_settings_get: { input: ProjectSettingsGetInput; output: ProjectSettingsGetOutput };
+  project_setup_undo: { input: ProjectSetupUndoInput; output: ProjectSetupUndoOutput };
   project_settings_set: { input: ProjectSettingsSetInput; output: ProjectSettingsSetOutput };
   project_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
   project_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };

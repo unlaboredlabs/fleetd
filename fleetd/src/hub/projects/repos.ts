@@ -9,6 +9,7 @@ import type {
   MachineId,
   ProjectId,
   ProjectInspect,
+  ProjectProblem,
   ProjectRef,
   ProjectRepo,
   ProjectRepoAddInput,
@@ -70,10 +71,14 @@ function notArchived(hub: Hub, r: ProjectRef): void {
 /** The project, if the caller may act on it with `role` and it isn't itself archived as another project's repo. */
 function target(hub: Hub, caller: Caller, role: Role, machineId: MachineId, projectId: ProjectId): [ProjectRef, ProjectSummary] {
   requireRole(caller, role, machineId);
-  const r = { machineId, projectId };
+  return known(hub, { machineId, projectId }, role !== "read");
+}
+
+/** The project `r`; to change it, it must not be archived as another project's repo. */
+function known(hub: Hub, r: ProjectRef, change: boolean): [ProjectRef, ProjectSummary] {
   const project = store(hub).projectGet(r);
   if (!project) throw unknownProject(r);
-  if (role !== "read") notArchived(hub, r);
+  if (change) notArchived(hub, r);
   return [r, project];
 }
 
@@ -106,9 +111,26 @@ async function gitCheckout(hub: Hub, m: MachineId, path: string): Promise<RepoFa
   return facts;
 }
 
-async function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promise<ProjectRepoAddOutput> {
+/**
+ * What a lead's `repo_add` adds to the add (projects/calls.ts): `existing` sees a checkout already on the machine
+ * before it is attached and throws to refuse it; a clone's end reaches `cloned` or `cloneFailed`.
+ */
+export type AddHooks = {
+  existing?(path: string): void;
+  cloned?(repo: ProjectRepo): void;
+  cloneFailed?(problem: ProjectProblem): void;
+};
+
+function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promise<ProjectRepoAddOutput> {
   checkInput(input);
-  const [r] = target(hub, caller, "operate", input.machineId, input.projectId);
+  requireRole(caller, "operate", input.machineId);
+  return addTo(hub, input, {});
+}
+
+/** `project_repo_add` once its caller may: the checkout attached, or its clone started. */
+export async function addTo(hub: Hub, input: ProjectRepoAddInput, hooks: AddHooks): Promise<ProjectRepoAddOutput> {
+  checkInput(input);
+  const [r] = known(hub, { machineId: input.machineId, projectId: input.projectId }, true);
   const m = r.machineId;
   if (input.name !== undefined && repos.byName(hub.db.conn, r, input.name)) {
     throw new ToolError(
@@ -121,6 +143,7 @@ async function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promis
   if (input.path !== undefined) {
     const path = stripSlash(input.path);
     if (projectAt(hub, m, path) === r.projectId) throw ownDirectory(path);
+    hooks.existing?.(path);
     const facts = await gitCheckout(hub, m, path);
     const inspect = await inspectCheckout(hub, facts);
     const [repo, archived] = await attachCheckout(hub, r, input.name, path, facts, inspect, undefined);
@@ -132,6 +155,7 @@ async function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promis
   const t = await cloneTarget(hub, m, repo, input.dest);
   if (t.exists) {
     if (t.sameRemote && input.useExisting === true) {
+      hooks.existing?.(t.path);
       const facts = await gitCheckout(hub, m, t.path);
       const inspect = await inspectCheckout(hub, facts);
       const [got, archived] = await attachCheckout(hub, r, input.name, t.path, facts, inspect, undefined);
@@ -142,8 +166,12 @@ async function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promis
   const run = clones(hub).start();
   const path = t.path;
   const into = (p: string): CloneInto => ({
-    add: (at, facts, inspect, addId) => attachCheckout(hub, r, input.name, at, facts, inspect, addId),
+    add: async (at, facts, inspect, addId) => {
+      const [got] = await attachCheckout(hub, r, input.name, at, facts, inspect, addId);
+      hooks.cloned?.(got);
+    },
     fix: `Add the checkout at ${p} on ${m} with project_repo_add`,
+    ...(hooks.cloneFailed ? { failed: hooks.cloneFailed } : {}),
   });
   void cloneAndRegister(hub, m, repo, path, into, run);
   return {
@@ -256,9 +284,15 @@ function list(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId
  */
 type Removals = { reconcile(r: ProjectRef): Promise<void>; endRemovedRepos(): Promise<string[]> };
 
-async function remove(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId: ProjectId; name: RepoName }): Promise<ProjectRepoRemoveOutput> {
-  const [r] = target(hub, caller, "operate", input.machineId, input.projectId);
-  const repo = repoNamed(hub, r, input.name) as ProjectRepo;
+function remove(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId: ProjectId; name: RepoName }): Promise<ProjectRepoRemoveOutput> {
+  requireRole(caller, "operate", input.machineId);
+  return removeFrom(hub, { machineId: input.machineId, projectId: input.projectId }, input.name);
+}
+
+/** `project_repo_remove` once its caller may: the repo out of the project, its tasks ended. */
+export async function removeFrom(hub: Hub, project: ProjectRef, name: RepoName): Promise<ProjectRepoRemoveOutput> {
+  const [r] = known(hub, project, true);
+  const repo = repoNamed(hub, r, name) as ProjectRepo;
   if (same(repo.checkout, r)) {
     throw new ToolError("invalid", `${repo.name} is the project's own directory.`, "project_remove removes the project itself");
   }

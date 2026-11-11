@@ -23,6 +23,7 @@ import type {
   ProjectChatState,
   ProjectRef,
   RememberedItem,
+  SetupChanged,
   SkillSaved,
   VaultImportCard,
   WorktreesKept,
@@ -65,6 +66,7 @@ export type NewMessage = {
   memoryRefreshed?: MemoryRefreshed;
   worktreesKept?: WorktreesKept;
   skillSaved?: SkillSaved;
+  setupChanged?: SetupChanged;
   artifact?: ArtifactPublished;
   vaultImport?: VaultImportCard;
   skills?: string[];
@@ -123,6 +125,7 @@ export function serialize(m: ChatMessage): string {
     "worktreesKept",
     "skills",
     "skillSaved",
+    "setupChanged",
     "artifact",
     "vaultImport",
     "nudge",
@@ -313,6 +316,7 @@ export class Chat {
       if (n.memoryRefreshed !== undefined) message.memoryRefreshed = n.memoryRefreshed;
       if (n.worktreesKept !== undefined) message.worktreesKept = n.worktreesKept;
       if (n.skillSaved !== undefined) message.skillSaved = n.skillSaved;
+      if (n.setupChanged !== undefined) message.setupChanged = n.setupChanged;
       if (n.artifact !== undefined) message.artifact = n.artifact;
       if (n.vaultImport !== undefined) message.vaultImport = n.vaultImport;
       if (n.skills && n.skills.length > 0) message.skills = n.skills;
@@ -358,6 +362,15 @@ export class Chat {
   /** A remembered line's new state, in place. */
   setRemembered(message: ChatMessage, remembered: RememberedItem): ChatMessage {
     message.remembered = remembered;
+    message.updatedAt = this.nowTs();
+    this.put(message);
+    this.announce(message);
+    return message;
+  }
+
+  /** A setup line's new state, in place, once a person undoes it. */
+  setSetupChanged(message: ChatMessage, changed: SetupChanged): ChatMessage {
+    message.setupChanged = changed;
     message.updatedAt = this.nowTs();
     this.put(message);
     this.announce(message);

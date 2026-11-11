@@ -11,6 +11,7 @@ import { executors } from "../executor/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { start as promptsStart } from "../prompts/tools.ts";
 import * as repos from "../repos/store.ts";
+import { registerLeadCalls as setupCalls } from "../projects/calls.ts";
 import { registerLeadCalls as skillCalls } from "../skills/calls.ts";
 import { ran } from "../skills/versions.ts";
 import { events } from "../store/events.ts";
@@ -113,6 +114,7 @@ export function start(hub: Hub): void {
   checklistCalls(hub);
   artifactCalls(hub);
   skillCalls(hub);
+  setupCalls(hub);
   leadCallsOfLeads(hub);
   // Every Skill call a session the hub follows finishes counts as its project's last use of it.
   executors(hub).sinks.skill = (thread, skill) => {

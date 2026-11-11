@@ -133,6 +133,7 @@ export const TOOLS = {
   memory_get: { scope: "read", module: "src/hub/memory" },
   memory_set: { scope: "operate", module: "src/hub/memory" },
   memory_undo: { scope: "operate", module: "src/hub/memory" },
+  project_setup_undo: { scope: "operate", module: "src/hub/projects" },
   memory_import: { scope: "operate", module: "src/hub/memory" },
   automation_list: { scope: "read", module: "src/hub/automations" },
   automation_create: { scope: "operate", module: "src/hub/automations" },

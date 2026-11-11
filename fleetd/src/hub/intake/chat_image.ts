@@ -27,7 +27,7 @@ export function registerLeadCalls(hub: Hub): void {
 }
 
 /** The session the caller runs in, by the hub's own records: its working directory is the only place its file is read from. */
-function sessionOf(hub: Hub, caller: LeadCaller): ThreadRef {
+export function sessionOf(hub: Hub, caller: LeadCaller): ThreadRef {
   let thread: ThreadRef | undefined;
   const r = caller.projectRef;
   if (caller.agent.kind === "lead") {
@@ -65,6 +65,42 @@ function refused(error: unknown, file: boolean): ToolError {
 
 const changed = (path: string) => new ToolError("failed", `${path} changed while it was read.`, "Call it again once the file is written.");
 
+/**
+ * The file at `path` in the session's working directory, read through its node piece by piece into `tmp`. Returns the
+ * name and type the node read from its bytes; `file` takes what `chat_file` takes, else an image only.
+ */
+export async function readInto(hub: Hub, thread: ThreadRef, path: string, file: boolean, tmp: string): Promise<{ name: string; mime: string }> {
+  let have = 0;
+  let head = new Uint8Array(0);
+  for (;;) {
+    let out;
+    try {
+      out = await executors(hub).call(
+        thread.machineId,
+        "read",
+        { op: "read_image", sessionId: thread.threadId, path, offset: have, file },
+        // A piece is at most 8 MiB: a minute is room for it on a slow link.
+        60_000,
+      );
+    } catch (error) {
+      throw refused(error, file);
+    }
+    if (out.kind !== "image") throw refused(ExecutorError.failed(thread.machineId, "read", "the node sent no image"), file);
+    const piece = Buffer.from(out.dataB64, "base64");
+    const total = out.bytes;
+    if (total > ATTACHMENT_MAX_BYTES || (piece.length === 0 && have < total)) throw changed(path);
+    if (head.length < 64 * 1024) head = Buffer.concat([head, piece.subarray(0, 64 * 1024 - head.length)]);
+    await appendFile(tmp, piece);
+    have += piece.length;
+    if (have >= total) {
+      if (have !== total) throw changed(path);
+      // The node checked the bytes; the hub checks what it holds again.
+      if (!(file ? fits(out.mime, head) : ofImage(head) === out.mime)) throw changed(path);
+      return { name: out.name, mime: out.mime };
+    }
+  }
+}
+
 async function chatImage(hub: Hub, caller: LeadCaller, call: LeadCall, file: boolean): Promise<Record<string, unknown>> {
   const path = String(call.path ?? "");
   const thread = sessionOf(hub, caller);
@@ -72,39 +108,7 @@ async function chatImage(hub: Hub, caller: LeadCaller, call: LeadCall, file: boo
   const tmp = join(root, `read-${crypto.randomUUID()}`);
   try {
     mkdirSync(root, { recursive: true });
-    let have = 0;
-    let head = new Uint8Array(0);
-    let name: string;
-    let mime: string;
-    for (;;) {
-      let out;
-      try {
-        out = await executors(hub).call(
-          thread.machineId,
-          "read",
-          { op: "read_image", sessionId: thread.threadId, path, offset: have, file },
-          // A piece is at most 8 MiB: a minute is room for it on a slow link.
-          60_000,
-        );
-      } catch (error) {
-        throw refused(error, file);
-      }
-      if (out.kind !== "image") throw refused(ExecutorError.failed(thread.machineId, "read", "the node sent no image"), file);
-      const piece = Buffer.from(out.dataB64, "base64");
-      const total = out.bytes;
-      if (total > ATTACHMENT_MAX_BYTES || (piece.length === 0 && have < total)) throw changed(path);
-      if (head.length < 64 * 1024) head = Buffer.concat([head, piece.subarray(0, 64 * 1024 - head.length)]);
-      await appendFile(tmp, piece);
-      have += piece.length;
-      if (have >= total) {
-        if (have !== total) throw changed(path);
-        name = out.name;
-        mime = out.mime;
-        break;
-      }
-    }
-    // The node checked the bytes; the hub checks what it holds again.
-    if (!(file ? fits(mime, head) : ofImage(head) === mime)) throw changed(path);
+    const { name, mime } = await readInto(hub, thread, path, file, tmp);
     const stored = await store(hub, { path: tmp }, safeName(name), mime, caller.by);
     // An image shows inline in an image block, anything else as a file card.
     const image = isImage(mime);

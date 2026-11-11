@@ -351,10 +351,14 @@ export function destTaken(m: MachineId, repo: GitHubRepo, target: { path: string
 
 // ---- Clones.
 
-/** What a finished clone becomes (Rust `CloneInto`): a project, or a repo of one; `fix` is said when that fails. */
+/**
+ * What a finished clone becomes (Rust `CloneInto`): a project, or a repo of one; `fix` is said when that fails.
+ * `failed` hears why the clone or the add failed, after its `project.add_failed`.
+ */
 export type CloneInto = {
   add(path: string, facts: RepoFacts, inspect: ProjectInspect, addId: string): Promise<unknown>;
   fix: string;
+  failed?(problem: ProjectProblem): void;
 };
 
 function intoProject(hub: Hub, m: MachineId, title: string | undefined, onlyMe: OnlyMe): (path: string) => CloneInto {
@@ -442,7 +446,15 @@ export async function cloneAndRegister(
       progress(frame.phase, frame.percent, frame.detail);
     }
   });
-  const failed = (p: ProjectProblem) => emit("project.add_failed", p.message, fitFailed({ addId, repo, path, problem: p }));
+  const target = into(path);
+  const failed = (p: ProjectProblem) => {
+    emit("project.add_failed", p.message, fitFailed({ addId, repo, path, problem: p }));
+    try {
+      target.failed?.(p);
+    } catch (error) {
+      console.warn("a failed clone was not told on:", error);
+    }
+  };
   let facts: RepoFacts;
   try {
     facts = await repoClone(hub, m, addId, `https://github.com/${repo}`, path);
@@ -460,7 +472,6 @@ export async function cloneAndRegister(
   } catch {
     inspect = build(repo, noAnswers(), facts, [], true);
   }
-  const target = into(path);
   try {
     await target.add(path, facts, inspect, addId);
   } catch (e) {

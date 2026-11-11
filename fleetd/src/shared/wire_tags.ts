@@ -160,6 +160,9 @@ export const LEAD_CALLS = [
   "vault_items",
   "vault_import_search",
   "vault_import_propose",
+  "repo_add",
+  "repo_remove",
+  "project_setup",
 ] as const;
 export type LeadCallOp = (typeof LEAD_CALLS)[number];
 
@@ -191,6 +194,9 @@ export const AGENT_MCP_TOOLS = [
   { name: "checklist", op: "checklist" },
   { name: "skill_install", op: "skill_install" },
   { name: "skill_save", op: "skill_save" },
+  { name: "repo_add", op: "repo_add" },
+  { name: "repo_remove", op: "repo_remove" },
+  { name: "project_setup", op: "project_setup" },
   { name: "project_message", op: "project_message" },
   { name: "factory_status", op: "factory_status" },
   { name: "chat_search", op: "chat_search" },

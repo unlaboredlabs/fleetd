@@ -6,6 +6,7 @@
 import { DecodeError, decodeLeadCall } from "../api/decode.ts";
 import { clip } from "../mcp/endpoint.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { namedIn, peopleOnly, SETUP_OPS } from "../projects/people_only.ts";
 import type { LeadCall, LeadCallFrame } from "./types.ts";
 
 /** `checked!` on BriefCreateCall, RequestSecretCall and TaskSpawnCall: what the schema can't say. */
@@ -49,6 +50,13 @@ export function decodeFrame(frame: LeadCallFrame): LeadCallFrame {
   if (typeof frame.cwd !== "string" || !frame.cwd.startsWith("/")) throw refuse("cwd must be an absolute path");
   if (frame.threadId !== undefined && frame.threadId !== null && typeof frame.threadId !== "string") {
     throw refuse("threadId must be a string");
+  }
+  // A setup call that names what guards people is refused as sent, before its unnamed fields are dropped: to a lead
+  // and to a task alike, with who can do it and where.
+  const sent = frame.call as { op?: unknown } | null | undefined;
+  if (typeof sent?.op === "string" && SETUP_OPS.includes(sent.op)) {
+    const named = namedIn(sent);
+    if (named) throw peopleOnly(named.thing, `${sent.op} has no ${named.field}.`);
   }
   let call: Record<string, unknown>;
   try {

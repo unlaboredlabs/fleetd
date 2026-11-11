@@ -283,8 +283,25 @@ export function setOnlyMe(hub: Hub, caller: Caller, project: ProjectSummary, on:
   announce(hub, r, `${project.title}: Only me ${on ? "on" : "off"}`, { onlyMe: on });
 }
 
+/**
+ * Renames the project. The name lives on the node, which renames it in place; the hub's cache takes it at once, and
+ * project.settings tells every open app to read its projects again.
+ */
+export async function rename(hub: Hub, project: ProjectSummary, title: string): Promise<void> {
+  const m = project.machineId;
+  const r = { machineId: m, projectId: project.projectId };
+  if (!executors(hub).isConnected(m)) throw offline(m);
+  try {
+    await projectUpsert(hub, m, r.projectId, title, project.workspaceRoot);
+  } catch (error) {
+    throw fromExecutor(error);
+  }
+  store(hub).projectsUpsertMany(m, [{ ...project, title }]);
+  announce(hub, r, `${project.title} renamed ${title}`, { title });
+}
+
 /** Gives the project's bot a color of the palette, and tells every app that shows it. */
-function setColor(hub: Hub, project: ProjectSummary, color: BotColor): void {
+export function setColor(hub: Hub, project: ProjectSummary, color: BotColor): void {
   if (!(BOT_COLORS as readonly string[]).includes(color)) {
     throw new ToolError("invalid", `${color} isn't one of the bot's colors.`, `Pick one of ${BOT_COLORS.join(", ")}.`);
   }
@@ -310,18 +327,7 @@ export function register(tools: Registry): void {
     const project = store(hub).projectGet(r);
     if (!project) throw unknownProject(r);
     const repo = repoNamed(hub, r, input.repo);
-    // The name lives on the node, which renames it in place. The hub's cache takes it at once, and project.settings
-    // tells every open app to read its projects again.
-    if (input.title !== undefined && input.title !== project.title) {
-      if (!executors(hub).isConnected(m)) throw offline(m);
-      try {
-        await projectUpsert(hub, m, r.projectId, input.title, project.workspaceRoot);
-      } catch (error) {
-        throw fromExecutor(error);
-      }
-      store(hub).projectsUpsertMany(m, [{ ...project, title: input.title }]);
-      announce(hub, r, `${project.title} renamed ${input.title}`, { title: input.title });
-    }
+    if (input.title !== undefined && input.title !== project.title) await rename(hub, project, input.title);
     if (input.onlyMe !== undefined) setOnlyMe(hub, caller, project, input.onlyMe);
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
@@ -343,60 +349,74 @@ export function register(tools: Registry): void {
     }
     const r = { machineId: m, projectId: input.projectId };
     if (!store(hub).projectGet(r)) throw unknownProject(r);
-    const s = projectSettings(hub);
-    const set = input.set ?? [];
-    const remove = input.remove ?? [];
-    // Each variable after the change, by name, with its value's size.
-    const sizes = new Map(s.env(r).map((v) => [v.name, v.bytes]));
-    for (const name of remove) sizes.delete(name);
-    for (const v of set) sizes.set(v.name, setBytes(v));
-    if (sizes.size > PROJECT_ENV_MAX) {
-      throw new ToolError("invalid", `A project takes at most ${PROJECT_ENV_MAX} variables; this would make ${sizes.size}.`, "Remove some first.");
-    }
-    const big = set.find((v) => setBytes(v) > ENV_VALUE_MAX_BYTES);
-    if (big) {
-      throw new ToolError("invalid", `${big.name}'s value is over 64 KiB.`, "Shorten it, or put a file on the machine and set its path instead.");
-    }
-    const total = [...sizes.values()].reduce((a, b) => a + b, 0);
-    if (total > ENV_TOTAL_MAX_BYTES) {
-      throw new ToolError("invalid", envTotalOver(total), "Remove or shorten some, or put large values in files on the machine.");
-    }
-    // The vault keeps them now (W549): a plain value, or a secret sealed to the hub's key, goes straight in. An older
-    // app seals a secret to the node's key: it is forwarded as before and moves into the vault from the node.
-    const { forNode, missed } = await envIntoVault(hub, caller, r, set, remove);
-    if (forNode.set.length > 0 || forNode.remove.length > 0) {
-      nodeReady(hub, m);
-      let saved;
-      try {
-        saved = await projectEnv(hub, m, r.projectId, forNode.set, forNode.remove);
-      } catch (error) {
-        throw fromExecutor(error);
-      }
-      // Every checkout of the project's repos gets them too, sealed to the same machine (W79).
-      for (const checkout of otherCheckouts(hub, r)) {
-        try {
-          await projectEnv(hub, m, checkout.projectId, forNode.set, forNode.remove);
-        } catch (error) {
-          missed.push(`${checkout.projectId} (${(error as Error).message})`);
-        }
-      }
-      const rows: EnvRow[] = forNode.set.map((v) => {
-        if (v.kind === "plain") return { name: v.name, value: v.value, bytes: Buffer.byteLength(v.value) };
-        const fingerprint = saved.find((x) => x.name === v.name)?.fingerprint;
-        if (fingerprint === undefined) {
-          throw new ToolError("failed", `${m}'s node saved ${v.name} but sent no fingerprint for it.`, `Update fleetd on ${m}, then set ${v.name} again.`);
-        }
-        return { name: v.name, fingerprint, bytes: setBytes(v) };
-      });
-      s.envApply(r, rows, forNode.remove, isoMs(hub.clock.now()));
-      adoptSoon(hub, m);
-    }
+    const { env, missed } = await setEnv(hub, caller, r, input.set ?? [], input.remove ?? []);
     return {
-      env: s.env(r),
+      env,
       next:
         missed.length === 0
           ? "Every claude the node starts for the project from now on gets them; running sessions get them at their next start."
           : `The project has them, but these didn't take: ${missed.join(", ")}. Set them again to retry.`,
     };
   });
+}
+
+/**
+ * `project_env_set` once its caller may: the variables set and removed, as `caller` in the vault. Returns the
+ * project's variables after it, and what didn't take.
+ */
+export async function setEnv(
+  hub: Hub,
+  caller: Caller,
+  r: ProjectRef,
+  set: EnvVarSet[],
+  remove: EnvVarName[],
+): Promise<{ env: ProjectEnvVar[]; missed: string[] }> {
+  const m = r.machineId;
+  const s = projectSettings(hub);
+  // Each variable after the change, by name, with its value's size.
+  const sizes = new Map(s.env(r).map((v) => [v.name, v.bytes]));
+  for (const name of remove) sizes.delete(name);
+  for (const v of set) sizes.set(v.name, setBytes(v));
+  if (sizes.size > PROJECT_ENV_MAX) {
+    throw new ToolError("invalid", `A project takes at most ${PROJECT_ENV_MAX} variables; this would make ${sizes.size}.`, "Remove some first.");
+  }
+  const big = set.find((v) => setBytes(v) > ENV_VALUE_MAX_BYTES);
+  if (big) {
+    throw new ToolError("invalid", `${big.name}'s value is over 64 KiB.`, "Shorten it, or put a file on the machine and set its path instead.");
+  }
+  const total = [...sizes.values()].reduce((a, b) => a + b, 0);
+  if (total > ENV_TOTAL_MAX_BYTES) {
+    throw new ToolError("invalid", envTotalOver(total), "Remove or shorten some, or put large values in files on the machine.");
+  }
+  // The vault keeps them now (W549): a plain value, or a secret sealed to the hub's key, goes straight in. An older
+  // app seals a secret to the node's key: it is forwarded as before and moves into the vault from the node.
+  const { forNode, missed } = await envIntoVault(hub, caller, r, set, remove);
+  if (forNode.set.length > 0 || forNode.remove.length > 0) {
+    nodeReady(hub, m);
+    let saved;
+    try {
+      saved = await projectEnv(hub, m, r.projectId, forNode.set, forNode.remove);
+    } catch (error) {
+      throw fromExecutor(error);
+    }
+    // Every checkout of the project's repos gets them too, sealed to the same machine (W79).
+    for (const checkout of otherCheckouts(hub, r)) {
+      try {
+        await projectEnv(hub, m, checkout.projectId, forNode.set, forNode.remove);
+      } catch (error) {
+        missed.push(`${checkout.projectId} (${(error as Error).message})`);
+      }
+    }
+    const rows: EnvRow[] = forNode.set.map((v) => {
+      if (v.kind === "plain") return { name: v.name, value: v.value, bytes: Buffer.byteLength(v.value) };
+      const fingerprint = saved.find((x) => x.name === v.name)?.fingerprint;
+      if (fingerprint === undefined) {
+        throw new ToolError("failed", `${m}'s node saved ${v.name} but sent no fingerprint for it.`, `Update fleetd on ${m}, then set ${v.name} again.`);
+      }
+      return { name: v.name, fingerprint, bytes: setBytes(v) };
+    });
+    s.envApply(r, rows, forNode.remove, isoMs(hub.clock.now()));
+    adoptSoon(hub, m);
+  }
+  return { env: s.env(r), missed };
 }
