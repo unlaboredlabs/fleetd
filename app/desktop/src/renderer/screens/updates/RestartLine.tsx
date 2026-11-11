@@ -14,8 +14,8 @@ import r from "./restartLine.module.css";
 /** How long the line waits for the machines once the hub is back, before it folds away all the same. */
 export const MACHINES_WAIT_MS = 60_000;
 
-/** The machines that count: this fleet's own; a cloud machine asleep is at rest. */
-const own = (machines: Readonly<Record<string, Machine>>): Machine[] => Object.values(machines).filter((m) => m.cloud !== true);
+/** The machines that count. */
+const own = (machines: Readonly<Record<string, Machine>>): Machine[] => Object.values(machines);
 
 export type LineView =
   | { readonly t: "down"; readonly hub: string; readonly seconds: number }

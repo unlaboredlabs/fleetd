@@ -2,7 +2,7 @@
 // `devbox` whose node is a fake that opens what the hub seals to it, a project, the owner's and a member's devices,
 // and the canary values every test plants so the canary test can look for them anywhere.
 import { join } from "node:path";
-import type { NodePort } from "../src/hub/cloud/node.ts";
+import type { NodePort } from "../src/hub/link/node_port.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { people } from "../src/hub/people/store.ts";
 import { type DeliveryPort } from "../src/hub/vault/deliver.ts";

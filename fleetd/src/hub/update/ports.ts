@@ -90,7 +90,6 @@ export function hubPorts(hub: Hub): UpdatePorts {
           };
           if (l.can(m.machineId, CAP_BUILD_BUN)) facts.flavour = "bun";
           else if (l.can(m.machineId, CAP_BUILD_RUST)) facts.flavour = "rust";
-          if (m.cloud) facts.cloud = true;
           if (live !== undefined) facts.liveSince = live;
           if (typeof claude === "string") facts.claude = claude;
           const b = busy(hub, m.machineId);

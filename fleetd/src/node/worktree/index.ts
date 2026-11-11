@@ -21,37 +21,6 @@ const gitEnv = (extra: Record<string, string> = {}) => ({
   ...extra,
 });
 
-/** The git config key a checkout fleetd cloned with a GitHub token carries (a cloud machine's, D306): its remote calls
- * authenticate with the latest token an order's launch brought (useToken). Every other checkout uses the machine's own
- * git login. */
-export const TOKEN_MARK = "fleetd.githubToken";
-
-/** Per checkout root, the GitHub token its remote calls use: the newest an order's launch there brought. */
-const tokens = new Map<string, string>();
-
-/** Has git authenticate to github.com with `token` through its environment only, as actions/checkout does: never in
- * its arguments, where the process list shows it, nor in the repo's config, where agents and boat's snapshots would
- * keep it. */
-export const tokenEnv = (token: string): Record<string, string> => ({
-  GIT_CONFIG_COUNT: "1",
-  GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
-  GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
-});
-
-/** Has the checkout at `root`'s remote calls use `token` from now on, when fleetd cloned it with one (TOKEN_MARK). A
- * placeholder the hub hands agents in place of a token taken back (`fleetd-github-…`) is never used: the last real one
- * goes on until it ends. */
-export async function useToken(root: string, token: string): Promise<void> {
-  if (!token || token.startsWith("fleetd-")) return;
-  if ((await tryGit(root, ["config", "--bool", "--get", TOKEN_MARK]))?.trim() === "true") tokens.set(root, token);
-}
-
-/** What a remote call in `dir` adds to git's environment: its checkout's token, when it has one. */
-export const remoteEnv = (dir: string): Record<string, string> => {
-  const token = tokens.get(dir);
-  return token ? tokenEnv(token) : {};
-};
-
 const failed = (args: string[], stderr: string) => new GitError(`git ${args.join(" ")} failed: ${stderr.trim()}`);
 
 /** `git -C dir args…`, its stdout; throws GitError with git's stderr. */
@@ -77,7 +46,7 @@ const serial = <T>(root: string, fn: () => Promise<T>) => inTurn(turns, root, fn
 /** git that talks to a remote, in a process group of its own killed at `timeoutMs`. */
 export async function gitRemote(dir: string, args: string[], timeoutMs: number): Promise<string> {
   const sshSet = process.env.GIT_SSH_COMMAND || process.env.GIT_SSH || (await tryGit(dir, ["config", "--get", "core.sshCommand"]))?.trim();
-  const env = gitEnv({ ...(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" }), ...remoteEnv(dir) });
+  const env = gitEnv(sshSet ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=10" });
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", dir, ...args], { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     let stdout = "";

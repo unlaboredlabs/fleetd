@@ -5,9 +5,6 @@ import type {
   ClaudeSealedOn,
   ClaudeSubscription,
   ClaudeTest,
-  CloudKeyTest,
-  CloudMachineState,
-  CloudPathTest,
   DoctorCheck,
   DoctorFix,
   DoctorStatus,
@@ -121,32 +118,12 @@ export function repoCi(withoutCi: string[]): DoctorCheck {
   );
 }
 
-/** What the hub's pool says of itself, for the `hub/cloud_*` checks. */
-export type CloudFacts = {
-  enabled: boolean;
-  poolSize: number;
-  /** What boat last said to the key: the admin's Test or a sweep. */
-  keyTest?: CloudKeyTest;
-  /** A billing or key pause: its kind and line. */
-  paused?: [kind: string, line: string];
-  /** The admin's last Test of the whole way from a cloud machine to the hub. */
-  pathTest?: CloudPathTest;
-  /** Each slot made: its id, state and note. */
-  machines: [id: string, state: CloudMachineState, note?: string][];
-  /** "Today $0.41 of $3.00 · this month $6.10 of $20.00". */
-  spend: string;
-  /** Why a budget holds starts back, when one does. */
-  over?: string;
-};
-
 /** What the hub keeps of its optional setup: each check below is there only once its step is set up. */
 export type SetupFacts = {
   /** Who joined after the hub's first person, by name. */
   joined: string[];
   /** The hub's own GitHub App (D190), as the hub keeps it. */
   githubApp?: GithubApp;
-  /** Cloud machines (D306), once a boat.dev key is saved. */
-  cloud?: CloudFacts;
   /** Each person's saved 1Password token (D235), by their name, with its last Test. */
   onepassword: [name: string, test?: OnePasswordTest][];
   /** The vault's root key (W549), as the hub loaded it. */
@@ -200,7 +177,6 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
           : `${j[0]} and ${j.length - 1} others have joined.`;
   if (joined !== undefined) out.push(hubEntry("people", "ok", joined));
   if (facts.githubApp) out.push(githubApp(facts.githubApp));
-  if (facts.cloud) out.push(...cloudChecks(facts.cloud));
   const vault = onepasswordVault(facts.onepassword);
   if (vault) out.push(vault);
   if (facts.vault) out.push(vaultKey(facts.vault));
@@ -248,132 +224,6 @@ export function onepasswordVault(tokens: [string, OnePasswordTest?][]): DoctorCh
   const said = read.filter(([s]) => s === worst).map(([, line]) => line);
   const fix = read.find(([s]) => s === worst)?.[2];
   return hubEntry("onepassword_vault", worst, said.join(" "), fix);
-}
-
-/** `hub/cloud_key`, `hub/cloud_network`, `hub/cloud_machines` and `hub/cloud_budget`, once a boat.dev key is saved. */
-export function cloudChecks(f: CloudFacts): DoctorCheck[] {
-  const fix = (what: string) => manual(what);
-  let key: DoctorCheck;
-  if (f.paused && f.paused[0] === "key") {
-    key = hubEntry(
-      "cloud_key",
-      "fail",
-      f.paused[1],
-      fix("Paste a new boat.dev key in Settings › Hub › Machines › Cloud machines, then Test"),
-    );
-  } else if (f.keyTest && !f.keyTest.ok) {
-    key = hubEntry("cloud_key", "fail", f.keyTest.said, fix("Check the key's actions and scope on boat.dev, then Test"));
-  } else if (f.keyTest) {
-    key = hubEntry("cloud_key", "ok", f.keyTest.said);
-  } else {
-    key = hubEntry(
-      "cloud_key",
-      "unknown",
-      "A boat.dev key is saved. Test asks boat.dev what it may read.",
-      fix("Test it in Settings › Hub › Machines › Cloud machines"),
-    );
-  }
-  // The hub dials each machine and holds an SSH tunnel its node reaches the hub through: no address to set up.
-  const joined = f.machines.some(([, s]) => s === "awake" || s === "asleep" || s === "stopping");
-  const t = f.pathTest;
-  let network: DoctorCheck;
-  if (t && t.ok === false) {
-    network = hubEntry(
-      "cloud_network",
-      "fail",
-      t.said,
-      fix("Fix what it names, then Test again in Settings › Hub › Machines › Cloud machines"),
-    );
-  } else if (t && (t.ok === undefined || t.ok === null)) {
-    network = hubEntry("cloud_network", "unknown", t.said);
-  } else if (t) {
-    network = hubEntry("cloud_network", "ok", t.said);
-  } else if (joined) {
-    network = hubEntry(
-      "cloud_network",
-      "ok",
-      "Cloud machines reach the hub through the SSH tunnel the hub opens to each: the hub needs no public address.",
-    );
-  } else {
-    network = hubEntry(
-      "cloud_network",
-      "unknown",
-      "Not tried yet: Test wakes (or makes) a cloud machine and checks the hub's tunnel to it and its node's hello.",
-      fix("Turn cloud machines on, then Test in Settings › Hub › Machines › Cloud machines"),
-    );
-  }
-  const made = f.machines.filter(([, s]) => s !== "gone");
-  const named = (states: CloudMachineState[]) =>
-    f.machines.filter(([, s]) => states.includes(s)).map(([id, , note]) => (note ? `${id} (${note})` : id));
-  const broken = named(["broken"]);
-  const failed = named(["failed", "gone"]);
-  const creating = named(["creating"]);
-  const count = (s: CloudMachineState) => f.machines.filter(([, st]) => st === s).length;
-  let machines: DoctorCheck;
-  if (broken.length > 0) {
-    machines = hubEntry(
-      "cloud_machines",
-      "fail",
-      `${broken.join(", ")} didn't come back from two wakes in a row, so the hub won't wake it again.`,
-      fix("Reset it in Settings › Hub › Machines › Cloud machines"),
-    );
-  } else if (failed.length > 0) {
-    machines = hubEntry(
-      "cloud_machines",
-      "warn",
-      `Not made: ${failed.join(", ")}.`,
-      fix("Create cloud machines again in Settings › Hub › Machines"),
-    );
-  } else if (made.length === 0) {
-    machines = hubEntry(
-      "cloud_machines",
-      "unknown",
-      "No cloud machines yet.",
-      fix("Turn them on and create them in Settings › Hub › Machines › Cloud machines"),
-    );
-  } else if (creating.length > 0) {
-    machines = hubEntry("cloud_machines", "unknown", `Setting up: ${creating.join(", ")}. Each joins in a few minutes.`);
-  } else if (made.length < f.poolSize) {
-    machines = hubEntry(
-      "cloud_machines",
-      "unknown",
-      `${made.length} of ${f.poolSize} cloud machines made.`,
-      fix("Create the rest in Settings › Hub › Machines › Cloud machines"),
-    );
-  } else if (!f.enabled) {
-    machines = hubEntry(
-      "cloud_machines",
-      "warn",
-      "Cloud machines are off: no work goes to them.",
-      fix("Turn them on in Settings › Hub › Machines › Cloud machines"),
-    );
-  } else {
-    const awake = count("awake") + count("waking");
-    machines = hubEntry(
-      "cloud_machines",
-      "ok",
-      `${made.length} cloud ${made.length === 1 ? "machine" : "machines"}: ${awake} awake, ${made.length - awake} asleep.`,
-    );
-  }
-  let budget: DoctorCheck;
-  if (f.paused && f.paused[0] === "billing") {
-    budget = hubEntry(
-      "cloud_budget",
-      "fail",
-      f.paused[1],
-      fix("Settle billing on boat.dev, then Resume in Settings › Hub › Machines"),
-    );
-  } else if (f.over !== undefined) {
-    budget = hubEntry(
-      "cloud_budget",
-      "warn",
-      `${f.over}. ${f.spend}.`,
-      fix("Raise the budget in Settings › Hub › Machines › Cloud machines, or wait for the next day"),
-    );
-  } else {
-    budget = hubEntry("cloud_budget", "ok", `${f.spend}.`);
-  }
-  return [key, network, machines, budget];
 }
 
 /** `hub/github_app`: the hub's own GitHub App, installed somewhere, and what its last Test said. */

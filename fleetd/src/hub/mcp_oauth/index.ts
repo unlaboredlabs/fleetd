@@ -7,7 +7,7 @@
 import type { McpOauth, McpScope, McpServer, ProjectRef } from "../../shared/contracts.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
-import { sessionCall } from "../cloud/node.ts";
+import { sessionCall } from "../link/node_port.ts";
 import { mcpServers, OAUTH_HEADER, scopeKey, secretScope, valuesOf } from "../mcp_servers/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";

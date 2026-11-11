@@ -3,7 +3,6 @@ import type { Hub } from "../api/hub.ts";
 import { start as s0 } from "../automations/loops.ts";
 import { start as s1 } from "../browser/loops.ts";
 import { start as s2 } from "../chat/loops.ts";
-import { start as s3 } from "../cloud/loops.ts";
 import { start as s4 } from "../github_app/loops.ts";
 import { start as s5 } from "../hub_links/loops.ts";
 import { start as s6 } from "../intake/loops.ts";
@@ -17,7 +16,6 @@ import { start as s13 } from "../metrics/loops.ts";
 import { start as s14 } from "../navi/loops.ts";
 import { start as s15 } from "../outage/loops.ts";
 import { start as s16 } from "../pair/loops.ts";
-import { start as s17 } from "../pool/loops.ts";
 import { start as s18 } from "../projects/loops.ts";
 import { start as s19 } from "../push/loops.ts";
 import { start as s20 } from "../queue/loops.ts";
@@ -39,7 +37,6 @@ export function startAll(hub: Hub): void {
   s0(hub); // hub/automations
   s1(hub); // hub/browser
   s2(hub); // hub/chat
-  s3(hub); // hub/cloud
   s4(hub); // hub/github_app
   s5(hub); // hub/hub_links
   s6(hub); // hub/intake
@@ -53,7 +50,6 @@ export function startAll(hub: Hub): void {
   s14(hub); // hub/navi
   s15(hub); // hub/outage
   s16(hub); // hub/pair
-  s17(hub); // hub/pool
   s18(hub); // hub/projects
   s19(hub); // hub/push
   s20(hub); // hub/queue

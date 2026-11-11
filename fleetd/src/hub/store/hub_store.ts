@@ -44,7 +44,6 @@ export const MACHINE_TABLES = [
   "slot_shares",
   "slot_claims",
   "shell_cursors",
-  "cloud_outbox",
   "projects",
   "project_settings",
   "project_env",
@@ -367,7 +366,7 @@ export class HubStore {
 
   /**
    * `projectsList` as people and leads see it: a checkout another project holds as one of its repos is that
-   * project's, so it is left out (`projectGet` still reads it), and so is a cloud machine's clone of a checkout.
+   * project's, so it is left out (`projectGet` still reads it).
    */
   projectsShown(machineId?: MachineId, query?: string): ProjectSummary[] {
     return this.projects(machineId, query, true);
@@ -381,7 +380,6 @@ export class HubStore {
          AND NOT ($shown AND EXISTS (SELECT 1 FROM repos r WHERE r.checkout_machine_id = projects.machine_id
            AND r.checkout_project_id = projects.project_id
            AND NOT (r.machine_id = projects.machine_id AND r.project_id = projects.project_id)))
-         AND NOT ($shown AND EXISTS (SELECT 1 FROM node_keys k WHERE k.machine_id = projects.machine_id AND k.pool = 1))
        ORDER BY last_activity_at DESC`,
       { machine: machineId ?? null, query: like, shown: shown ? 1 : 0 },
     ).map((p) => withRepos(this.conn, p));

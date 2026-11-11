@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
-import { Board, type Claim, GRANTED, type Machine, type Placed, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
+import { Board, type Claim, GRANTED, type Machine, type SlotPriority, SETTLE_MS } from "../src/hub/slots/board.ts";
 import { capSet, machineLine, pausedLine, raisedLine } from "../src/hub/slots/cap.ts";
 import { Slots, slots, state } from "../src/hub/slots/index.ts";
 import { start } from "../src/hub/slots/loops.ts";
@@ -32,34 +32,33 @@ describe("sizing", () => {
   const auto = (cap: number, why: string) => ({ cap, why });
 
   test("the example machines", () => {
-    expect(autoCap(machine(8, 8), false)).toEqual(auto(2, "memory 8 GB, about 2 GB an agent"));
-    expect(autoCap(machine(12, 18), false)).toEqual(auto(6, "memory 18 GB, about 2 GB an agent"));
-    expect(autoCap(machine(16, 32), false)).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
-    expect(autoCap(machine(32, 128), false)).toEqual(auto(28, "28 of 32 CPUs"));
-    expect(autoCap(machine(64, 256), false)).toEqual(auto(56, "56 of 64 CPUs"));
-    expect(autoCap(machine(128, 512), false)).toEqual(auto(64, "top of 64"));
-    expect(autoCap(machine(2, 4), false)).toEqual(auto(1, "memory 4 GB, about 2 GB an agent"));
+    expect(autoCap(machine(8, 8))).toEqual(auto(2, "memory 8 GB, about 2 GB an agent"));
+    expect(autoCap(machine(12, 18))).toEqual(auto(6, "memory 18 GB, about 2 GB an agent"));
+    expect(autoCap(machine(16, 32))).toEqual(auto(12, "memory 32 GB, about 2 GB an agent"));
+    expect(autoCap(machine(32, 128))).toEqual(auto(28, "28 of 32 CPUs"));
+    expect(autoCap(machine(64, 256))).toEqual(auto(56, "56 of 64 CPUs"));
+    expect(autoCap(machine(128, 512))).toEqual(auto(64, "top of 64"));
+    expect(autoCap(machine(2, 4))).toEqual(auto(1, "memory 4 GB, about 2 GB an agent"));
   });
 
   test("the kernel's short count of memory is rounded up; an older node without memory counts four", () => {
-    expect(autoCap({ cpus: 16, load1: 0.5, memTotalBytes: 33_520_000_000 }, false)).toEqual(
+    expect(autoCap({ cpus: 16, load1: 0.5, memTotalBytes: 33_520_000_000 })).toEqual(
       auto(12, "memory 32 GB, about 2 GB an agent"),
     );
-    expect(autoCap(machine(16), false)).toEqual(auto(4, "memory unknown"));
-    expect(autoCap(machine(2), false)).toEqual(auto(1, "1 of 2 CPUs"));
+    expect(autoCap(machine(16))).toEqual(auto(4, "memory unknown"));
+    expect(autoCap(machine(2))).toEqual(auto(1, "1 of 2 CPUs"));
   });
 
-  test("a cloud machine takes 4 GB an agent; an older node's memory per agent replaces two", () => {
+  test("an older node's memory per agent replaces two", () => {
     const large: NodeLoad = { cpus: 8, load1: 0.5, memTotalBytes: 15_991 * 2 ** 20 };
-    expect(autoCap(large, true)).toEqual(auto(3, "memory 16 GB, about 4 GB an agent"));
-    expect(autoCap(large, false).cap).toBe(6);
-    expect(autoCap({ ...machine(12, 18), memPerAgentBytes: 2 * GB }, false)).toEqual(
+    expect(autoCap(large).cap).toBe(6);
+    expect(autoCap({ ...machine(12, 18), memPerAgentBytes: 2 * GB })).toEqual(
       auto(6, "memory 18 GB, about 2 GB an agent"),
     );
-    expect(autoCap({ ...machine(16, 32), memPerAgentBytes: 4 * GB }, false)).toEqual(
+    expect(autoCap({ ...machine(16, 32), memPerAgentBytes: 4 * GB })).toEqual(
       auto(6, "memory 32 GB, about 4 GB an agent"),
     );
-    expect(autoCap({ ...machine(16, 32), memPerAgentBytes: 2_500_000_000 }, false)).toEqual(
+    expect(autoCap({ ...machine(16, 32), memPerAgentBytes: 2_500_000_000 })).toEqual(
       auto(9, "memory 32 GB, about 2.5 GB an agent"),
     );
   });
@@ -367,96 +366,13 @@ describe("board", () => {
     expect(k.board.takeOps()).toEqual([]);
   });
 
-  /** devbox fits 2; cloud machines boat-1 and boat-2 fit 3 each. */
-  const cloudKit = (cap?: number) => ({
-    k: Kit.on(cap, [machine("devbox", 2), machine("boat-1", 3), machine("boat-2", 3)]),
-    app: project_("app", "devbox"),
-    cloud: ["boat-1", "boat-2"] as MachineId[],
-  });
-  const place = (k: Kit, holder: string, r: ProjectRef, cloud: MachineId[]) => k.board.place(holder, r, "work", cloud, 0);
-  const on = (m?: string): Placed => (m === undefined ? { kind: "granted" } : { kind: "granted", on: m });
-
-  test("a new task bursts only at its machine's agent limit and packs the busiest cloud machine", () => {
-    const { k, app, cloud } = cloudKit();
-    const placed = Array.from({ length: 9 }, (_, n) => place(k, `T${n + 1}`, app, cloud));
-    expect(placed.slice(0, 8)).toEqual([on(), on(), on("boat-1"), on("boat-1"), on("boat-1"), on("boat-2"), on("boat-2"), on("boat-2")]);
-    expect(placed[8]).toEqual({ kind: "full", reason: "machine cap: 2 of 2 running on devbox-box (memory 18 GB)" });
-    expect(k.board.state().perMachine.map((m) => m.running)).toEqual([2, 3, 3]);
-    k.board.release("T9");
-    k.board.bind("T3", "boat-1", "t3");
-    expect(k.board.observe("boat-1", "t3", false)).toBe(true);
-    expect(k.board.room(app)).toBe(0);
-    expect(place(k, "T10", app, cloud)).toEqual(on("boat-1"));
-    k.release("T1");
-    expect(place(k, "T11", app, cloud)).toEqual(on());
-  });
-
-  test("the machine's own agent limit decides the burst, not the fleet cap or the project's max", () => {
-    // Fleet cap 64 and the project's own max 64, as on a live hub: devbox's limit is what a person set it to.
-    const k = Kit.on(64, [machine("devbox", 22), machine("boat-1", 3)]);
+  test("a new task at every machine's agent limit queues, and starts once a slot frees", () => {
+    const k = Kit.on(undefined, [machine("devbox", 2), machine("builder", 2)]);
     const app = project_("app", "devbox");
-    k.board.setCap(64, { projectRef: app, maxAgents: 64 });
-    k.board.setMachine("devbox", 20);
-    // Below it, nothing goes to a cloud machine, however many run.
-    for (let n = 1; n <= 20; n++) expect(place(k, `T${n}`, app, ["boat-1"])).toEqual(on());
-    // At it, the next one bursts.
-    expect(place(k, "T21", app, ["boat-1"])).toEqual(on("boat-1"));
-    // Lowered to 10 with 20 running: every new one bursts while the cloud has room, then waits for devbox.
-    k.board.setMachine("devbox", 10);
-    expect(place(k, "T22", app, ["boat-1"])).toEqual(on("boat-1"));
-    expect(place(k, "T23", app, ["boat-1"])).toEqual(on("boat-1"));
-    expect(place(k, "T24", app, ["boat-1"])).toEqual({ kind: "full", reason: "machine cap: 20 of 10 running on devbox-box (set)" });
-  });
-
-  test("a hydrated cloud machine goes before one just woken", () => {
-    const { k, app } = cloudKit();
-    for (let n = 1; n <= 2; n++) expect(place(k, `T${n}`, app, [])).toEqual(on());
-    const cloud = ["boat-2", "boat-1"];
-    expect(k.board.place("T3", app, "work", ["boat-1"], 0)).toEqual(on("boat-1"));
-    const warm = (holder: string) => k.board.place(holder, app, "work", cloud, 1);
-    expect(warm("T4")).toEqual(on("boat-2"));
-    expect(warm("T5")).toEqual(on("boat-2"));
-    expect(warm("T6")).toEqual(on("boat-2"));
-    expect(warm("T7")).toEqual(on("boat-1"));
-  });
-
-  test("a person-set limit holds bursting too", () => {
-    {
-      const { k, app, cloud } = cloudKit(4);
-      for (let n = 1; n <= 4; n++) expect(place(k, `T${n}`, app, cloud).kind).toBe("granted");
-      expect(place(k, "T5", app, cloud)).toEqual({ kind: "queued", reason: "fleet cap: 4 of 4 running" });
-    }
-    {
-      const { k, app, cloud } = cloudKit();
-      k.board.setCap(undefined, { projectRef: app, maxAgents: 3 });
-      for (let n = 1; n <= 3; n++) expect(place(k, `T${n}`, app, cloud).kind).toBe("granted");
-      expect(place(k, "T4", app, cloud)).toEqual({
-        kind: "queued",
-        reason: "machine cap: 2 of 2 running on devbox-box (memory 18 GB)",
-      });
-      expect(k.board.agents(app)).toEqual([3, 1]);
-    }
-    {
-      const { k, app, cloud } = cloudKit();
-      k.board.setRunsAgents("devbox", false);
-      expect(place(k, "T1", app, cloud).kind).toBe("queued");
-    }
-    {
-      const { k, app } = cloudKit();
-      for (let n = 1; n <= 2; n++) place(k, `T${n}`, app, []);
-      expect(place(k, "T3", app, []).kind).toBe("full");
-    }
-  });
-
-  test("a follow-up counts on the cloud machine it runs on", () => {
-    const { k, app } = cloudKit();
-    for (let n = 1; n <= 3; n++) k.board.acquire(`T${n}`, app, "work", "boat-1");
-    expect(k.board.acquire("T4", app, "work", "boat-1")).toEqual(
-      queued("machine cap: 3 of 3 running on boat-1-box (memory 18 GB)"),
-    );
-    expect(k.board.room(app)).toBe(2);
+    for (let n = 1; n <= 2; n++) expect(k.board.acquire(`T${n}`, app, "work")).toEqual(GRANTED);
+    expect(k.board.acquire("T3", app, "work")).toEqual(queued("machine cap: 2 of 2 running on devbox-box (memory 18 GB)"));
     k.release("T1");
-    expect(k.board.agents(app)).toEqual([3, 0]);
+    expect(k.board.agents(app)).toEqual([2, 0]);
   });
 });
 
@@ -496,22 +412,6 @@ describe("the service", () => {
     });
   });
 
-  test("a claim on a cloud machine outlives a restart", () => {
-    const { open } = fresh();
-    const r = project_("app", "devbox");
-    const s = open();
-    for (const [m, n] of [["devbox", 1], ["boat-1", 2]] as const) s.setCap({ machine: { machineId: m, maxAgents: n } });
-    const req = (holder: string) => ({ holder, projectRef: r, priority: "work" as const });
-    expect(s.place(req("T1"), ["boat-1"], 0)).toEqual({ kind: "granted" });
-    expect(s.place(req("T2"), ["boat-1"], 0)).toEqual({ kind: "granted", on: "boat-1" });
-    const running = (x: Slots) => (x.state().perMachine ?? []).map((m) => [m.machineId, m.running]);
-    expect(running(s)).toEqual([
-      ["devbox", 1],
-      ["boat-1", 1],
-    ]);
-    expect(running(open())).toEqual(running(s));
-  });
-
   test("going back to the default outlives a restart", () => {
     const { open } = fresh();
     const r = project_("p1");
@@ -529,7 +429,7 @@ describe("the service", () => {
     const s = open();
     const r = project_("p1");
     const load = { cpus: 32, load1: 0.5, memTotalBytes: 60 * GIB, memPerAgentBytes: 2_000_000_000 } as NodeLoad;
-    s.observeMachine(r.machineId, "builder-1", load, false);
+    s.observeMachine(r.machineId, "builder-1", load);
     s.setCap({ maxAgents: { projectRef: r, maxAgents: 20 } });
     for (let i = 1; i <= 20; i++) expect(s.acquire({ holder: `T${i}`, projectRef: r, priority: "work" })).toEqual(GRANTED);
     expect(s.acquire({ holder: "T21", projectRef: r, priority: "work" })).toEqual(queued("Max agents: 20 of 20 running"));
@@ -566,7 +466,7 @@ describe("the service", () => {
     start(hub);
     hub.shutdown.abort();
     const s = slots(hub);
-    s.observeMachine("lab-a", "builder-1", { cpus: 16, load1: 0.5, memTotalBytes: 32 * GIB }, false);
+    s.observeMachine("lab-a", "builder-1", { cpus: 16, load1: 0.5, memTotalBytes: 32 * GIB });
     expect(s.state().perMachine).toEqual([
       { machineId: "lab-a", cap: 12, auto: 12, why: "memory 32 GB, about 2 GB an agent", running: 0 },
     ]);

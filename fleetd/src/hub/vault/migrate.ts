@@ -14,7 +14,7 @@ import { CAP_VAULT } from "../../shared/node_link.ts";
 import { publicKeyOf } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
-import { linked, nodeCan, sessionCall } from "../cloud/node.ts";
+import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { forLead, token } from "../onepassword/index.ts";
 import { parseMs } from "../store/time.ts";

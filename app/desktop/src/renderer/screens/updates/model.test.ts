@@ -533,28 +533,6 @@ describe("the sheet's lines and the note", () => {
     expect(h.update?.label).toBe("Update");
   });
 
-  it("names a cloud machine that slept through the update calmly, with nothing to retry", () => {
-    const ASLEEP = "asleep: it takes the hub's build when it wakes";
-    const run = runOf(
-      [
-        p({ part: "hub", name: "the hub", state: "done" }),
-        p({ machineId: "builder", name: "builder", state: "done" }),
-        p({ machineId: "mac", name: "mac", state: "skipped", message: ASLEEP }),
-        p({ part: "claude", machineId: "mac", name: "mac", state: "skipped", message: ASLEEP }),
-      ],
-      true,
-    );
-    const v = of({ run, flow: { phase: "finished", updated: true } });
-    expect(says(v).slice(1, 3)).toEqual([
-      ["builder", "Done", "", ""],
-      ["mac", "Asleep", "Takes the hub's build when it wakes", ""],
-    ]);
-    expect(v.lines.find((l) => l.key === "mac")?.tone).toBe("quiet");
-    expect(v.progress?.tone).toBe("quiet");
-    expect(v.progress?.text.startsWith("Updated to ")).toBe(true);
-    expect(v.nodes.find((n) => n.key === "mac")?.tone).toBe("quiet");
-  });
-
   it("leaves a small Updated to note in the sidebar once everything came through", () => {
     const run = runOf([p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })], true);
     const v = updatesView({ app: { current: NEXT, app: { kind: "current" }, release }, hub: hubOf({ version: NEXT }), machines: [machine("builder", NEXT), machine("mac", NEXT)], run, now: at });

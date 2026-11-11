@@ -24,7 +24,7 @@ export const REMOVE_MS = 80_000;
 
 /**
  * Checkouts on the machines and the person's GitHub repos (`gh repo list` can take a while), machine ids as names;
- * `home` leaves out the machines no project lives on (cloud machines, the agents' Mac: projectHome).
+ * `home` leaves out the machines no project lives on (the agents' Mac: projectHome).
  */
 const DISCOVER_MS = 45_000;
 

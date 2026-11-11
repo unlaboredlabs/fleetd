@@ -6,13 +6,12 @@
 // (Retry now, Settings › Hubs, Disconnect), each only when it applies. A paired app adds or changes hubs from Settings
 // › Hubs, not #/onboarding. With several hubs there is a card per hub, each under its name. For an admin the Machines
 // line opens Machines, and machines down or setup steps left mark the avatar too; a member sees the same facts as
-// plain text, and only the link's own state marks anything. A cloud machine asleep is at rest, not down.
+// plain text, and only the link's own state marks anything.
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
 import { useData, useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dot, Text } from "../../ui";
-import { CloudStatus } from "../admin/CloudStatus";
 import { useSettledAdministers } from "../admin/role";
 import { Prose } from "../onboarding/Prose";
 import { OPTIONS, openOption } from "../settings";
@@ -59,10 +58,8 @@ const plural = (n: number, one: string, many: string): string => `${String(n)} $
 /** This hub's machines: how many of its own are down, and the Machines line. */
 const useMachines = () => {
   const machines = useData(selectMachines);
-  const own = machines?.filter((m) => m.machine.cloud !== true);
-  const cloud = (machines?.length ?? 0) - (own?.length ?? 0);
-  const down = own?.filter((m) => m.machine.status !== "online").length ?? 0;
-  const online = `${String((own?.length ?? 0) - down)} of ${String(own?.length ?? 0)} online${cloud === 0 ? "" : ` · ${String(cloud)} cloud`}`;
+  const down = machines?.filter((m) => m.machine.status !== "online").length ?? 0;
+  const online = `${String((machines?.length ?? 0) - down)} of ${String(machines?.length ?? 0)} online`;
   return { known: machines !== undefined, down, online };
 };
 
@@ -161,8 +158,6 @@ export function HubCard({ hub, close, forget }: { hub: HubState; close: () => vo
           </>
         )}
       </dl>
-      {/* Cloud machines: what they cost today, why starts wait, and for a member who to ask. Nothing without them. */}
-      <CloudStatus />
       {window.fleetd.fixture !== null ? null : (
         <div className={h.actions}>
           {conn.retry ? (

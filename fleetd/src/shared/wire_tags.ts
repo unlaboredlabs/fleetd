@@ -57,7 +57,6 @@ export const SESSION_CALLS = [
   "navi_signins_forget",
   "order_env_drop",
   "claude_account_secret",
-  "claude_account_reseal",
   "claude_account_test",
   "one_password_token",
   "one_password_test",

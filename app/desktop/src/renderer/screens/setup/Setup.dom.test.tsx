@@ -117,7 +117,7 @@ describe("setup", () => {
   it("opens the first step not done, with the hub's guide, and Test runs that step's checks on the hub", async () => {
     await render(<SetupScreen view={null} />);
     expect(document.querySelector("[data-screen='setup']")).not.toBeNull();
-    expect(document.body.textContent).toContain("3 of 8 done.");
+    expect(document.body.textContent).toContain("3 of 7 done.");
     // Claude is done with the hub's key; GitHub is next, to do before the first PR (no project yet), not failing.
     expect(rail("claude")).toContain("Done");
     expect(rail("github")).toContain("Before the first PR");

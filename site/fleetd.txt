@@ -49,13 +49,6 @@ Clip: showcase-screens-dark.webm, showcase-screens-light.webm. Still:
 showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
 
 
-CLOUD MACHINES THAT SLEEP UNTIL THERE'S WORK
-When your own machines are full, work can go to a few machines on your own
-boat.dev account. They wake for it and go back to sleep when idle, within the
-budget you set.
-Still: showcase-cloud-dark.jpg. More: https://fleetd.sh/docs/cloud-machines
-
-
 Each clip and still is the fleetd app on sample data, with the waits cut short.
 Each clip has an H.264 .mp4 twin and a -small size.
 

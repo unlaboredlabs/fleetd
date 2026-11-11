@@ -29,14 +29,13 @@ import {
   type Machine,
   type MaxSource,
   type Op,
-  type Placed,
   parseClaimState,
   parsePriority,
   type SlotPriority,
 } from "./board.ts";
 import { autoCap, diskRoom } from "./sizing.ts";
 
-export { GRANTED, type Grant, type MaxSource, type Placed, type SlotPriority } from "./board.ts";
+export { GRANTED, type Grant, type MaxSource, type SlotPriority } from "./board.ts";
 
 const RUNNING: HubEventType[] = ["thread.started"];
 const STOPPED: HubEventType[] = [
@@ -79,14 +78,12 @@ export type SlotRequest = {
   holder: string;
   projectRef: ProjectRef;
   priority: SlotPriority;
-  /** The cloud machine it runs on (D306, `Task.ranOn`); undefined: its project's own machine. */
-  on?: MachineId;
 };
 
-const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, on_machine, priority, thread_id, state, order_n)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+const SAVE_CLAIM = `INSERT INTO slot_claims (holder, machine_id, project_id, priority, thread_id, state, order_n)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT (holder) DO UPDATE SET machine_id = excluded.machine_id, project_id = excluded.project_id,
-    on_machine = excluded.on_machine, priority = excluded.priority, thread_id = excluded.thread_id,
+    priority = excluded.priority, thread_id = excluded.thread_id,
     state = excluded.state, order_n = excluded.order_n`;
 
 function applyOp(conn: Database, op: Op): void {
@@ -99,7 +96,6 @@ function applyOp(conn: Database, op: Op): void {
           c.holder,
           c.projectRef.machineId,
           c.projectRef.projectId,
-          c.on ?? null,
           c.priority,
           c.threadId ?? null,
           c.state,
@@ -168,7 +164,6 @@ type ClaimRow = {
   thread_id: string | null;
   state: string;
   order_n: number;
-  on_machine: string | null;
 };
 
 /** The persisted board: caps, max agents, machines and claims as the last hub left them. */
@@ -191,7 +186,7 @@ function load(db: HubDb): Board {
     });
   const claims = db
     .all<ClaimRow>(
-      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n, on_machine FROM slot_claims",
+      "SELECT holder, machine_id, project_id, priority, thread_id, state, order_n FROM slot_claims",
     )
     .map((r): Claim => {
       const c: Claim = {
@@ -201,7 +196,6 @@ function load(db: HubDb): Board {
         state: parseClaimState(r.state),
         order: r.order_n,
       };
-      if (r.on_machine !== null) c.on = r.on_machine;
       if (r.thread_id !== null) c.threadId = r.thread_id;
       return c;
     });
@@ -258,7 +252,7 @@ export class Slots {
     const bound = board
       .claims()
       .filter((c) => c.state !== "queued" && c.threadId !== undefined)
-      .map((c) => ({ holder: c.holder, thread: { machineId: c.on ?? c.projectRef.machineId, threadId: c.threadId } }));
+      .map((c) => ({ holder: c.holder, thread: { machineId: c.projectRef.machineId, threadId: c.threadId } }));
     for (const { holder, thread } of bound) {
       const running = hubStore.threadGet(thread as ThreadRef)?.thread.status === "running";
       board.restore(holder, running);
@@ -326,25 +320,17 @@ export class Slots {
 
   /**
    * A heartbeat's facts about the machine (`name` for the reasons people read): what it fits and its disk room. When
-   * it takes more than before, starts the queued agents that now fit. `cloud`: one of the hub's cloud machines.
+   * it takes more than before, starts the queued agents that now fit.
    */
-  observeMachine(machineId: MachineId, name: string, load: NodeLoad, cloud: boolean): void {
-    const auto = autoCap(load, cloud);
+  observeMachine(machineId: MachineId, name: string, load: NodeLoad): void {
+    const auto = autoCap(load);
     const room = diskRoom(load);
     this.locked((b) => [undefined, b.observeMachine(machineId, name, auto, room)]);
   }
 
   /** Takes a slot now, or queues the request (reviews first, then the oldest) and says why. */
   acquire(request: SlotRequest): Grant {
-    return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority, request.on), false]);
-  }
-
-  /**
-   * A new task's slot on its project's own machine, else, only once that is at its agent limit, on the cloud machine
-   * in `cloud` with room, the first `warm` (hydrated) before the rest, then the one that runs the most agents.
-   */
-  place(request: SlotRequest, cloud: MachineId[], warm: number): Placed {
-    return this.locked((b) => [b.place(request.holder, request.projectRef, request.priority, cloud, warm), false]);
+    return this.locked((b) => [b.acquire(request.holder, request.projectRef, request.priority), false]);
   }
 
   /** The holder's slot follows `thread` from now on, taken again whenever it runs, even past the cap. */

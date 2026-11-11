@@ -221,68 +221,6 @@ test("the GitHub App check reads its installations and last Test", () => {
   expect(c.githubApp(app(false)).fix?.command).toBe("fleetd github-app test");
 });
 
-test("the cloud checks read the key, the way, the machines and the budget", () => {
-  const base: c.CloudFacts = {
-    enabled: true,
-    poolSize: 2,
-    keyTest: { ok: true, said: "Key works · $20 plan" } as c.CloudFacts["keyTest"],
-    machines: [
-      ["boat-1", "awake"],
-      ["boat-2", "asleep"],
-    ],
-    spend: "Today $0.41 of $3.00 · this month $6.10 of $20.00",
-  };
-  const got = (f: c.CloudFacts) => c.cloudChecks(f).map((e) => [e.id, e.status, e.message]);
-  expect(got(base)).toEqual([
-    ["hub/cloud_key", "ok", "Key works · $20 plan"],
-    [
-      "hub/cloud_network",
-      "ok",
-      "Cloud machines reach the hub through the SSH tunnel the hub opens to each: the hub needs no public address.",
-    ],
-    ["hub/cloud_machines", "ok", "2 cloud machines: 1 awake, 1 asleep."],
-    ["hub/cloud_budget", "ok", "Today $0.41 of $3.00 · this month $6.10 of $20.00."],
-  ]);
-  const one = (f: c.CloudFacts, id: string) => {
-    const e = c.cloudChecks(f).find((x) => x.id === `hub/${id}`)!;
-    return [e.status, e.message];
-  };
-  const { keyTest: _k, ...noKeyTest } = base;
-  expect(one(noKeyTest, "cloud_key")[0]).toBe("unknown");
-  expect(one({ ...base, paused: ["key", "boat.dev key refused: Settings › Hub › Machines"] }, "cloud_key")).toEqual([
-    "fail",
-    "boat.dev key refused: Settings › Hub › Machines",
-  ]);
-  // None joined yet: the Test is what tells, and it names the step it stopped at.
-  const fresh: c.CloudFacts = { ...base, machines: [["boat-1", "creating"]] };
-  expect(one(fresh, "cloud_network")[0]).toBe("unknown");
-  const withTest = (ok: boolean | undefined, said: string): c.CloudFacts => ({
-    ...fresh,
-    pathTest: { machineId: "boat-1", said, ...(ok === undefined ? {} : { ok }) } as c.CloudFacts["pathTest"],
-  });
-  const failed = "boat-1: no hello within 2 minutes of its wake: the hub's tunnel to it didn't come up (refused)";
-  const network = c.cloudChecks(withTest(false, failed));
-  expect([network[1]!.status, network[1]!.message]).toEqual(["fail", failed]);
-  expect(network[1]!.fix?.command).toBeUndefined();
-  expect(one(withTest(undefined, "boat-1: waking"), "cloud_network")).toEqual(["unknown", "boat-1: waking"]);
-  expect(one(withTest(true, "boat-1: its node said hello"), "cloud_network")[0]).toBe("ok");
-  expect(one({ ...base, machines: [["boat-1", "broken"], ["boat-2", "asleep"]] }, "cloud_machines")).toEqual([
-    "fail",
-    "boat-1 didn't come back from two wakes in a row, so the hub won't wake it again.",
-  ]);
-  expect(one({ ...base, machines: [] }, "cloud_machines")[0]).toBe("unknown");
-  expect(one({ ...base, machines: [["boat-1", "asleep"]] }, "cloud_machines")).toEqual(["unknown", "1 of 2 cloud machines made."]);
-  expect(
-    one({ ...base, machines: [["boat-1", "asleep"], ["boat-2", "failed", "its setup failed: claude"]] }, "cloud_machines"),
-  ).toEqual(["warn", "Not made: boat-2 (its setup failed: claude)."]);
-  expect(one({ ...base, enabled: false }, "cloud_machines")[0]).toBe("warn");
-  expect(one({ ...base, over: "Cloud paused: today's boat.dev budget ($3.00) is spent" }, "cloud_budget")).toEqual([
-    "warn",
-    "Cloud paused: today's boat.dev budget ($3.00) is spent. Today $0.41 of $3.00 · this month $6.10 of $20.00.",
-  ]);
-  expect(one({ ...base, paused: ["billing", "boat.dev needs billing attention"] }, "cloud_budget")[0]).toBe("fail");
-});
-
 test("the 1Password check passes on one vault and says what to do on more", () => {
   const t = (vaults: string[]): OnePasswordTest => ({ at: "2026-11-07T10:00:00.000Z", machineId: "devbox", ok: true, vaults }) as OnePasswordTest;
   const at = (tokens: [string, OnePasswordTest?][]) => {

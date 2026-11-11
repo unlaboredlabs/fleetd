@@ -1,16 +1,14 @@
 // Cloning a repo for a project the person adds (sessions/mod.rs
 // `repo_clone`), with git's progress sent to the hub as `clone_progress` frames, and `gh repo list` (`gh_repo_list`).
 // git writes into a sibling that is renamed into place only when complete, so the destination existing always means
-// a whole clone. A GitHub token (a cloud machine's clone, D306) reaches git through its environment only.
+// a whole clone.
 import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import type { ClonePhase } from "../../shared/contracts.ts";
 import type { CloneProgressFrame, GhRepo, GhRepos } from "../../shared/sessions.ts";
-import type { NodeBoxKey } from "../identity.ts";
 import { PARTIAL } from "../repos/index.ts";
-import { git, TOKEN_MARK, tokenEnv, useToken } from "../worktree/index.ts";
-import { CallRefusal, invalid, openB64, utf8 } from "./refusal.ts";
+import { CallRefusal, invalid } from "./refusal.ts";
 
 const GH_LIMIT = "100";
 const GH_TIMEOUT_MS = 30_000;
@@ -52,9 +50,9 @@ export function parseProgress(line: string): Progress | undefined {
 
 const hasGh = () => (process.env.PATH ?? "").split(":").some((dir) => dir && existsSync(`${dir}/gh`));
 
-async function gitClone(url: string, dest: string, token: string | undefined, progress: (p: Progress) => void): Promise<void> {
-  const pre = token ? [] : hasGh() ? ["-c", "credential.https://github.com.helper=!gh auth git-credential"] : [];
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -o BatchMode=yes", ...(token ? tokenEnv(token) : {}) } as Record<string, string>;
+async function gitClone(url: string, dest: string, progress: (p: Progress) => void): Promise<void> {
+  const pre = hasGh() ? ["-c", "credential.https://github.com.helper=!gh auth git-credential"] : [];
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -o BatchMode=yes" } as Record<string, string>;
   let proc: Bun.Subprocess<"ignore", "ignore", "pipe">;
   try {
     proc = Bun.spawn(["git", ...pre, "clone", "--progress", "--", url, dest], { env, stdin: "ignore", stdout: "ignore", stderr: "pipe" });
@@ -92,9 +90,8 @@ async function gitClone(url: string, dest: string, token: string | undefined, pr
   throw new Error(last ? [...last].slice(0, 500).join("") : `git clone exited with exit status: ${code}`);
 }
 
-/** Clones `url` into `dest`, through gh's credentials when gh is installed, or with `token` when given: the clone is
- * then marked so its later fetches use the newest token an order's launch brings. Never prompts. */
-export async function clone(url: string, dest: string, addId: string, token: string | undefined, progress: (p: Progress) => void): Promise<void> {
+/** Clones `url` into `dest`, through gh's credentials when gh is installed. Never prompts. */
+export async function clone(url: string, dest: string, addId: string, progress: (p: Progress) => void): Promise<void> {
   if (existsSync(dest)) throw new Error(`${dest} already exists`);
   try {
     mkdirSync(dirname(dest), { recursive: true });
@@ -105,46 +102,23 @@ export async function clone(url: string, dest: string, addId: string, token: str
   const partial = `${dest}${PARTIAL}${id}`;
   await rm(partial, { recursive: true, force: true });
   try {
-    await gitClone(url, partial, token, progress);
-    if (token) {
-      try {
-        await git(partial, ["config", TOKEN_MARK, "true"]);
-      } catch (error) {
-        throw new Error(`cannot mark the clone: ${(error as Error).message}`);
-      }
-    }
+    await gitClone(url, partial, progress);
     try {
       renameSync(partial, dest);
     } catch (error) {
       throw new Error(`cannot move the clone into ${dest}: ${(error as Error).message}`);
     }
-    if (token) await useToken(dest, token);
   } catch (error) {
     await rm(partial, { recursive: true, force: true });
     throw error;
   }
 }
 
-/** `repo_clone`: the token opened with the node's box key, git's progress as `clone_progress` frames, git's own
- * last line as the refusal. */
-export async function repoClone(
-  addId: string,
-  url: string,
-  dest: string,
-  sealed: string | undefined,
-  boxKey: NodeBoxKey | undefined,
-  send: (frame: CloneProgressFrame) => void,
-): Promise<void> {
+/** `repo_clone`: git's progress as `clone_progress` frames, git's own last line as the refusal. */
+export async function repoClone(addId: string, url: string, dest: string, send: (frame: CloneProgressFrame) => void): Promise<void> {
   if (!isAbsolute(dest)) throw invalid(`${dest} is not an absolute path`);
-  let token: string | undefined;
-  if (sealed !== undefined) {
-    const plain = boxKey && openB64(boxKey, sealed);
-    token = plain ? utf8(plain) : undefined;
-    plain?.fill(0);
-    if (token === undefined) throw invalid("the clone's GitHub token was not sealed to this machine's box key");
-  }
   try {
-    await clone(url, dest, addId, token, (p) => send({ addId, ...p }));
+    await clone(url, dest, addId, (p) => send({ addId, ...p }));
   } catch (error) {
     const message = (error as Error).message;
     throw new CallRefusal("git", message.length > 2000 ? message.slice(message.length - 2000) : message);

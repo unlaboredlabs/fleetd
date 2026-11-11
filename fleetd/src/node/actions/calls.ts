@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount } from "./accounts.ts";
+import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, tryAccount } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { readImage } from "./image.ts";
 import { landedLog } from "./landed.ts";
@@ -135,10 +135,6 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
       const fingerprint = asInvalid(() => applyAccount(home, call.account, call.set, ctx.boxKey));
       return { kind: "claude_account_saved", ...(fingerprint ? { fingerprint } : {}) };
     }
-    case "claude_account_reseal": {
-      const sealed = asInvalid(() => resealAccount(home, call.account, call.to));
-      return { kind: "claude_account_resealed", ...(sealed ? { sealed } : {}) };
-    }
     case "claude_account_test": {
       const env = ctx.runnerEnv();
       let account: ReturnType<typeof envFor>;
@@ -258,7 +254,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         return { kind: "claude_models", models: [], error: (error as Error).message };
       }
     case "repo_clone":
-      await repoClone(call.addId, call.url, call.dest, call.token, ctx.boxKey, (p) => ctx.send({ t: "clone_progress", ...p }));
+      await repoClone(call.addId, call.url, call.dest, (p) => ctx.send({ t: "clone_progress", ...p }));
       return { kind: "repo_facts", ...(await inspect(call.dest)) };
     case "gh_repo_list":
       return { kind: "gh_repos", ...(await ghRepoList()) };

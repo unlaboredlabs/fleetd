@@ -11,7 +11,7 @@ import { currentExe, DEFAULT_LISTEN, localDirs, localPlatform, localUid, parseLi
 import { type InitOptions, joinedHere, openStep, run } from "./wizard.ts";
 import { foreignUnit, renderUnit, ServiceManager, type ServiceSpec, systemdName, unitPath } from "./units.ts";
 
-const STEPS = ["address", "machines", "claude", "github", "onepassword", "people", "mac", "cloud"];
+const STEPS = ["address", "machines", "claude", "github", "onepassword", "people", "mac"];
 
 function fail(message: string): number {
   say(`fleetd: ${message}`);

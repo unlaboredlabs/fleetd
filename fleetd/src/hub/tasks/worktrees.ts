@@ -5,7 +5,7 @@
 // the worktree of every task that ended over `policy.worktree_days` (3) days ago, through its safe removal. One holding
 // work that exists only there is kept and the person is told once, in one line a sweep listing all it kept there; one
 // the node couldn't remove is tried again the next night, up to MAX_TRIES times, then given up on with one line to the
-// person; a cloud machine asleep is no failure. Each sweep also cancels tasks still queued under an order that closed.
+// person. Each sweep also cancels tasks still queued under an order that closed.
 import type { KeptWorktree, MachineId, ProjectRef, Task } from "../../shared/contracts.ts";
 import { hubZone, zoned } from "../../cli/steer.ts";
 import { zonedToUtc } from "../../cli/time.ts";
@@ -69,11 +69,8 @@ function into<T>(groups: [ProjectRef, T[]][], r: ProjectRef, item: T): void {
   else groups.push([r, [item]]);
 }
 
-/**
- * One sweep of the worktrees of tasks that ended over `policy.worktree_days` days ago, one at a time; `only`, one
- * machine's (a cloud machine's catch-up as it wakes). A sleeping cloud machine's are left, with no try counted.
- */
-export async function sweepWorktrees(tasks: Tasks, only?: MachineId): Promise<Swept> {
+/** One sweep of the worktrees of tasks that ended over `policy.worktree_days` days ago, one at a time. */
+export async function sweepWorktrees(tasks: Tasks): Promise<Swept> {
   const db = tasks.hub.db.conn;
   const ports = tasks.ports;
   const set = Number.parseInt(ports.globalDecision(WORKTREE_DAYS_KEY) ?? "", 10);
@@ -92,7 +89,6 @@ export async function sweepWorktrees(tasks: Tasks, only?: MachineId): Promise<Sw
   for (const [task, flagged] of ended) {
     const thread = task.threadRef;
     if (!thread) continue;
-    if ((only !== undefined && only !== thread.machineId) || (only === undefined && ports.asleep(thread.machineId))) continue;
     let seen: string;
     try {
       await ports.removeWorktree(thread);

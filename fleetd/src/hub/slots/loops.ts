@@ -17,13 +17,11 @@ export function start(hub: Hub): void {
     const load = frame.load as NodeLoad | undefined;
     if (!load) return;
     let name = machineId;
-    let cloud = false;
     try {
-      const m = store(hub).machineGet(machineId);
-      if (m) [name, cloud] = [m.name, m.cloud === true];
+      name = store(hub).machineGet(machineId)?.name ?? machineId;
     } catch {}
     try {
-      board.observeMachine(machineId, name, load, cloud);
+      board.observeMachine(machineId, name, load);
     } catch (error) {
       console.warn("node link: machine facts not applied to the slot board:", error);
     }

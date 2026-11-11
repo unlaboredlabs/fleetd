@@ -4,7 +4,7 @@
 // own page. Repair goes again over SSH when the hub reaches
 // the machine, else it makes a line that enrolls it again (machine_join with rejoin); Remove asks first, then runs
 // machine_remove, and offers Remove anyway when the hub refuses one that runs projects' leads or is being added. A
-// removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects. Cloud machines (boat.dev) are listed apart, as their own group under these (Cloud.tsx).
+// removed one leaves the list here at once; machine.removed resyncs every open app, which drops it and its projects.
 // Projects the hub still lists from a machine it no longer has (removed before its rows were forgotten) are listed
 // under them, each with Remove, which only forgets the project in fleetd (RemoveProjectDialog).
 import { FolderX, Server } from "lucide-react";
@@ -21,8 +21,6 @@ import { useReveal } from "../settings/search";
 import { GroupNote, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { toHash } from "../shell/routes";
 import { MACHINE_WAIT_MS, removeLine, repairOf, statusLine, type Repair } from "./machines";
-import { ownMachines } from "./cloudModel";
-import { CloudGroup, useCloud } from "./Cloud";
 import a from "./admin.module.css";
 
 const noInput = {};
@@ -34,9 +32,8 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
   const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
   const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
   const [removing, setRemoving] = useState<Machine | null>(null);
-  const cloud = useCloud();
   const all = views?.map((v) => v.machine).filter((m) => !removed.has(m.machineId));
-  const machines = all === undefined ? undefined : ownMachines(all, cloud ?? undefined).sort(machineOrder);
+  const machines = all === undefined ? undefined : [...all].sort(machineOrder);
   const rolesRef = useReveal<HTMLElement>("hub.roles");
   const screensRef = useReveal<HTMLElement>("hub.screens");
   const capsRef = useReveal<HTMLElement>("hub.caps");
@@ -101,7 +98,6 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
         />
       )}
       <LeftoverProjects />
-      <CloudGroup />
     </>
   );
 }

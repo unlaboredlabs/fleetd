@@ -39,7 +39,7 @@ import type { CmdCheck, GatedResume, GatedRun, HubFrame, NodeAction, SecretDeliv
 import { fleetdDir } from "../shared/home.ts";
 import { VERSION } from "../shared/version.ts";
 import { protect } from "./oom.ts";
-import { uploads } from "./flush.ts";
+import { uploads } from "./uploads.ts";
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
             [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
@@ -56,7 +56,7 @@ export const CAPABILITIES = [
   CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.SCREEN_SETTINGS, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED, CAP.NAVI_ERASE,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
-  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
+  CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.NAVI_SIGNINS, CAP.CLAUDE_ACCOUNTS, CAP.ONEPASSWORD,
   CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT,
 ];
 

@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClaudeAccount } from "../../shared/contracts.ts";
 import type { ApiModel, ClaudeSecretSet } from "../../shared/sessions.ts";
-import { seal } from "../../shared/sealed_box.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { Masker } from "../mask.ts";
@@ -106,23 +105,6 @@ export function applyAccount(home: string, account: ClaudeAccount, set: ClaudeSe
   return fingerprintOf(value);
 }
 
-/** The account's secret sealed to another machine's box key `to` (standard base64 of 32 bytes), for a cloud machine
- * to take with nobody pasting it again; none when this node holds no such secret. */
-export function resealAccount(home: string, account: ClaudeAccount, to: string): string | undefined {
-  const file = read(home, account);
-  if (!file) return undefined;
-  const key = Buffer.from(to, "base64");
-  if (key.length !== 32) throw new Error("the box key to seal to is not 32 bytes");
-  const plain = Buffer.from(file.value);
-  try {
-    return Buffer.from(seal(key, plain)).toString("base64");
-  } catch {
-    throw new Error(`${shown(account)} could not be sealed`);
-  } finally {
-    plain.fill(0);
-  }
-}
-
 /** The variables a claude on `account` gets, and its secret by the variable's name for masking. Throws when the node
  * doesn't hold the account: such a session must not start on the machine's own login instead. */
 export function envFor(home: string, account: ClaudeAccount): { vars: Vars; secrets: Vars } {
@@ -143,7 +125,7 @@ export function accountSecrets(home: string, account: ClaudeAccount): Vars {
 
 /** The account to probe the runner on while the machine's own claude is logged out (claude_accounts.rs `held`): the
  * hub's API key, else a person's subscription (the first by id). What the hub sealed to this node is what its work
- * runs on: a cloud machine has no login of its own. */
+ * runs on. */
 export function held(home: string): ClaudeAccount | undefined {
   if (existsSync(path(home, { kind: "hub" }))) return { kind: "hub" };
   let names: string[];

@@ -423,160 +423,6 @@
         }
       ],
       "why": "Agents on every machine build, test and drive iOS simulators on one Mac: a tool, never a runner, joined from the account at its screen."
-    },
-    {
-      "fields": [],
-      "fieldsNote": "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Paste the key, set the pool and turn it on in Settings › Hub › Machines › Cloud machines.",
-      "group": "hub",
-      "id": "cloud",
-      "need": {
-        "kind": "optional"
-      },
-      "parts": [
-        {
-          "links": [
-            {
-              "label": "boat.dev",
-              "url": "https://boat.dev"
-            },
-            {
-              "label": "Seats and limits",
-              "url": "https://docs.boat.dev/organizations/seats-and-limits"
-            },
-            {
-              "label": "Control your spend",
-              "url": "https://docs.boat.dev/billing#control-your-spend"
-            }
-          ],
-          "note": "It costs the same as a personal plan, and its owner can cap their own seat, so boat.dev itself stops everything at your cap whatever fleetd does. Leave auto top-up and extra starts off: past the plan, starts are refused rather than billed.",
-          "title": "Make a boat.dev organization with one seat",
-          "values": [
-            {
-              "label": "Plan",
-              "plain": true,
-              "value": "$20 a month: it includes $20 of machine time and 200 starts a day"
-            },
-            {
-              "label": "Billing › Auto top-up",
-              "plain": true,
-              "value": "Off"
-            },
-            {
-              "label": "Billing › Extra starts on invoice",
-              "plain": true,
-              "value": "Off"
-            },
-            {
-              "label": "Members › you › Machine time cap",
-              "note": "Recommended: boat.dev stops your machines within a minute of it.",
-              "value": "300 hours a month"
-            },
-            {
-              "label": "Members › you › Machines at once",
-              "note": "Your pool size: 3 unless you change it below.",
-              "value": "3"
-            }
-          ]
-        },
-        {
-          "links": [
-            {
-              "label": "Environments",
-              "url": "https://docs.boat.dev/environments"
-            }
-          ],
-          "note": "Cloud machines are made in it, with none of your account's secrets, AI logins or in-machine boat.dev key.",
-          "title": "Make an environment for fleetd",
-          "values": [
-            {
-              "label": "Name",
-              "value": "fleetd-devbox"
-            },
-            {
-              "label": "Safe for third parties",
-              "plain": true,
-              "value": "On"
-            }
-          ]
-        },
-        {
-          "links": [
-            {
-              "label": "API key scopes",
-              "url": "https://docs.boat.dev/api-keys/scopes"
-            }
-          ],
-          "note": "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials each machine it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
-          "title": "Make the hub's API key",
-          "values": [
-            {
-              "label": "Name",
-              "value": "fleetd-devbox"
-            },
-            {
-              "label": "Actions",
-              "note": "Not the presets: ci and admin give far more.",
-              "value": "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read"
-            },
-            {
-              "label": "Scope: environment",
-              "value": "fleetd-devbox"
-            },
-            {
-              "label": "Expires",
-              "plain": true,
-              "value": "365 days"
-            }
-          ]
-        },
-        {
-          "links": [],
-          "note": "Paste the key, Test it, then pick these and turn cloud machines on. Before you do, fleetd shows the most the pool can cost a day and a typical day. Work goes to a cloud machine only when every machine of yours is at its agent limit.",
-          "title": "Choose the pool, the budgets and the projects",
-          "values": [
-            {
-              "label": "boat.dev environment",
-              "note": "The one you made in part 2: machines are made in it, where the key reaches.",
-              "value": "fleetd-devbox"
-            },
-            {
-              "label": "Machines",
-              "plain": true,
-              "value": "3 × large (8 vCPUs, 16 GB, $0.072 an hour each)"
-            },
-            {
-              "label": "Day budget",
-              "plain": true,
-              "value": "$3"
-            },
-            {
-              "label": "Month budget",
-              "plain": true,
-              "value": "your plan's included dollars ($20)"
-            },
-            {
-              "label": "Projects",
-              "plain": true,
-              "value": "the ones you tick: their code, transcripts and the secrets sealed there go to boat.dev"
-            }
-          ]
-        }
-      ],
-      "place": "cloud",
-      "status": "todo",
-      "test": "Ask boat.dev what the key may read, then wake (or make) a cloud machine and check the hub's tunnel to it and its node's hello",
-      "title": "Cloud machines (boat.dev)",
-      "ways": [
-        {
-          "checks": [
-            "hub/cloud_key",
-            "hub/cloud_network",
-            "hub/cloud_machines",
-            "hub/cloud_budget"
-          ]
-        }
-      ],
-      "why": "When every machine of yours is at its agent limit, work runs on a few sleeping boat.dev machines of your own account, within budgets you set."
     }
   ],
   "hub": "http://devbox:4790",
@@ -591,9 +437,6 @@
           "said": "devbox: claude is logged in.",
           "status": "done",
           "way": "each machine's own login"
-        },
-        "cloud": {
-          "status": "todo"
         },
         "github": {
           "fix": {
@@ -629,9 +472,6 @@
           "said": "devbox: claude is logged in.",
           "status": "done",
           "way": "each machine's own login"
-        },
-        "cloud": {
-          "status": "todo"
         },
         "github": {
           "fix": {
@@ -669,9 +509,6 @@
           "status": "done",
           "way": "the hub's API key"
         },
-        "cloud": {
-          "status": "todo"
-        },
         "github": {
           "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
           "status": "done",
@@ -701,9 +538,6 @@
           "said": "The hub's Claude API key works: tested on devbox.",
           "status": "done",
           "way": "the hub's API key"
-        },
-        "cloud": {
-          "status": "todo"
         },
         "github": {
           "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
@@ -736,9 +570,6 @@
           "said": "devbox: claude is not logged in, so its sessions can't start.",
           "status": "look",
           "way": "each machine's own login"
-        },
-        "cloud": {
-          "status": "todo"
         },
         "github": {
           "fix": {
@@ -776,9 +607,6 @@
           "status": "look",
           "way": "each machine's own login"
         },
-        "cloud": {
-          "status": "todo"
-        },
         "github": {
           "fix": {
             "command": "gh auth login",
@@ -815,9 +643,6 @@
           "status": "done",
           "way": "the hub's API key"
         },
-        "cloud": {
-          "status": "todo"
-        },
         "github": {
           "fix": {
             "command": "gh auth login",
@@ -852,9 +677,6 @@
           "said": "The hub's Claude API key works: tested on devbox.",
           "status": "done",
           "way": "the hub's API key"
-        },
-        "cloud": {
-          "status": "todo"
         },
         "github": {
           "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",

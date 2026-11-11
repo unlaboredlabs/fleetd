@@ -9,7 +9,7 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { isSealedSecret } from "../approvals/sink.ts";
 import { allows } from "../auth/index.ts";
 import { allowsEverywhere } from "../claude_accounts/people.ts";
-import { linked, nodeCan, offline, sessionCall } from "../cloud/node.ts";
+import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { toolPolicy } from "../integrations/policy.ts";
 import * as oauth from "../mcp_oauth/index.ts";
 import { offersSignIn } from "../mcp_oauth/oauth.ts";

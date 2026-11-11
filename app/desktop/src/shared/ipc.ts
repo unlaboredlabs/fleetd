@@ -244,16 +244,6 @@ export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
 export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes });
 export type OnePasswordRequest = z.infer<typeof OnePasswordRequest>;
 
-/**
- * The hub's boat.dev API key (Settings › Hub › Machines › Cloud machines): main seals it to `boxPubKey`, the hub's own
- * key from cloud_get, and calls cloud_key_set. The hub gets the box, never the key, and nothing returns it.
- */
-export const CloudKeyRequest = z.strictObject({
-  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
-  key: z.string().trim().min(1).max(500),
-});
-export type CloudKeyRequest = z.infer<typeof CloudKeyRequest>;
-
 const VaultId = z.string().regex(/^V[0-9a-f]{32}$/u);
 /** A field's name as a kind has it: `password`, `number`, `postalCode`. */
 const VaultField = z.string().regex(/^[a-zA-Z0-9]{1,32}$/u);
@@ -407,7 +397,6 @@ export const REQUESTS = {
   [IPC.githubConnect]: z.tuple([HubId]),
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
-  [IPC.cloudKeySubmit]: z.tuple([HubId, CloudKeyRequest]),
   [IPC.vaultSave]: z.tuple([HubId, VaultSaveRequest]),
   [IPC.vaultReveal]: z.tuple([HubId, VaultRevealRequest]),
   [IPC.vaultCopy]: z.tuple([HubId, VaultCopyRequest]),

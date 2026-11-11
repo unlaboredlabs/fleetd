@@ -1,5 +1,5 @@
 import type { Hub } from "../api/hub.ts";
-import { every } from "../cloud/every.ts";
+import { every } from "../serve/every.ts";
 import { found } from "../executor/sessions.ts";
 import { policy, toolRules } from "../policy/index.ts";
 import { forgetQueued } from "./tools.ts";

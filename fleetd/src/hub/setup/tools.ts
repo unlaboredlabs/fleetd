@@ -61,8 +61,6 @@ export function register(tools: Registry): void {
         console.warn("setup: the GitHub App's test didn't run:", error);
       }
     }
-    // TODO(hub-work): the cloud step's Test (pool `test` and `test_path`) runs here once the pool is ported; until then
-    // the step reads its last checks.
     // 1Password's Test lists the vaults the caller's own token reads, on a machine holding it, and keeps it as that
     // token's last Test, which hub/onepassword_vault reads with everyone else's.
     if (input.step === "onepassword") {

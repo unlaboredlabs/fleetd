@@ -6,7 +6,7 @@ import { slots } from "../src/hub/slots/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { Tasks } from "../src/hub/tasks/index.ts";
-import { type CmdOutput, type LaunchRequest, NO_ROOM, PortError, type TaskPorts, type ThreadChanges, type WakeKind } from "../src/hub/tasks/ports.ts";
+import { type CmdOutput, type LaunchRequest, PortError, type TaskPorts, type ThreadChanges, type WakeKind } from "../src/hub/tasks/ports.ts";
 import type { BranchPrError } from "../src/hub/tasks/pr.ts";
 import type { HubEvent, ProjectRef, ThreadRef, Workstream } from "../src/shared/contracts.ts";
 import type { WorktreeBase } from "../src/shared/sessions.ts";
@@ -55,10 +55,6 @@ export class FakePorts implements TaskPorts {
     this.liveWaiters.delete(m);
   }
   liveSince = (m: string) => (this.connected.has(m) ? 0 : undefined);
-  asleep = (m: string) => this.sleeping.has(m);
-  cloudRoom = () => NO_ROOM;
-  cloudWake = () => ({ why: "cloud machines are off" });
-  cloudClaim = () => true;
   caughtUp = () => undefined;
   launch = async (machineId: string, request: LaunchRequest) => {
     this.launches.push({ machineId, request });
@@ -86,7 +82,6 @@ export class FakePorts implements TaskPorts {
   };
   /** Throws instead of removing, per thread id. */
   removeErrors = new Map<string, PortError>();
-  sleeping = new Set<string>();
   removeWorktree = async (thread: ThreadRef) => {
     const error = this.removeErrors.get(thread.threadId);
     if (error) throw error;
@@ -149,7 +144,7 @@ export function tasksKit() {
   const hub: Hub = k.hub;
   project(hub, P, { title: "Shop", workspaceRoot: "/home/me/shop" });
   // The machine fits 12 agents.
-  slots(hub).observeMachine("lab-a", "lab-a", { cpus: 16, load1: 0.5, memTotalBytes: 32 * GIB }, false);
+  slots(hub).observeMachine("lab-a", "lab-a", { cpus: 16, load1: 0.5, memTotalBytes: 32 * GIB });
   const ports = new FakePorts();
   ports.workstreamOf = (id) => {
     const row = hub.db.conn.query<{ data: string }, [number]>("SELECT data FROM workstreams WHERE n = ?").get(Number(id.slice(1)));

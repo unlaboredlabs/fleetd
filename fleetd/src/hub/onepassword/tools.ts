@@ -8,7 +8,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { accountRemoved, me as person, refOf } from "../claude_accounts/people.ts";
 import { checkSeals } from "../claude_accounts/tools.ts";
-import { linked, nodeCan, offline, sessionCall } from "../cloud/node.ts";
+import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { CAP_ONEPASSWORD, CAP_ONEPASSWORD_CARDS, forget, forgetPerson, putToken, token } from "./index.ts";

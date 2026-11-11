@@ -212,8 +212,6 @@ export class Link {
   private readonly runnerBy = new Map<string, string | undefined>();
   /** Machines git can't reach GitHub from, as the landing scanner last found. */
   private readonly githubDown = new Set<string>();
-  /** Cloud machines whose tunnel finds the hub's Claude endpoint not answering: why. */
-  private readonly claudeDown = new Map<string, string>();
   /** The socket handler `GET /node/link` upgrades to. */
   readonly socket: SocketHandler;
   /** Lead calls being answered now, across every link: the hub's stop waits for them (`stop`). */
@@ -365,17 +363,6 @@ export class Link {
     if (reached) this.githubDown.delete(machineId);
     else this.githubDown.add(machineId);
     if (this.networkProblem(machineId) !== before) this.settle(machineId);
-  }
-
-  /**
-   * What the hub's tunnel to a cloud machine found of the hub's Claude endpoint it carries there (undefined: it
-   * answers): while it doesn't, the machine is degraded with why, since its sessions can't reach their model.
-   */
-  claudeEndpoint(machineId: string, problem: string | undefined): void {
-    if (this.claudeDown.get(machineId) === problem) return;
-    if (problem === undefined) this.claudeDown.delete(machineId);
-    else this.claudeDown.set(machineId, `${problem}. Fix: start it again on the hub's network, or change the endpoint in Settings › Hub accounts › Claude`);
-    this.settle(machineId);
   }
 
   /** Whether the machine is a Mac, as its node last said what it can host. False before its first heartbeat. */
@@ -571,10 +558,6 @@ export class Link {
     if (previous) this.close(previous.ws, previous.state, CLOSE.REPLACED, "a newer link for this machine took over");
 
     const agentsMac = caps.includes(CAP_AGENTS_MAC);
-    let cloud = false;
-    try {
-      cloud = this.hub.auth.nodes.isPool(machineId);
-    } catch {}
     const hubStore = store(this.hub);
     let lastSlept: Machine["lastSlept"];
     try {
@@ -595,7 +578,6 @@ export class Link {
     if (hello.boxPubKey) machine.boxPubKey = hello.boxPubKey;
     if (lastSlept) machine.lastSlept = lastSlept;
     if (agentsMac) machine.agentsMac = true;
-    if (cloud) machine.cloud = true;
     try {
       hubStore.machineUpsert(machine as Machine);
     } catch (error) {
@@ -968,7 +950,7 @@ export class Link {
   private settle(machineId: string): void {
     if (!this.links.has(machineId) || !this.runnerBy.has(machineId)) return;
     const runner = this.runnerBy.get(machineId);
-    const network = this.networkProblem(machineId) ?? this.claudeDown.get(machineId);
+    const network = this.networkProblem(machineId);
     if (runner !== undefined) {
       this.setReady(machineId, false);
       this.writeStatus(machineId, "degraded", runner);

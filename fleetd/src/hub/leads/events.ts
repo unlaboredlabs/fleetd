@@ -35,7 +35,6 @@ export type Event =
       worktree: string;
     }
   | { kind: "agent_unreachable"; task: string; title: string; place: string; machine: string; minutes: number }
-  | { kind: "agent_cloud_waits"; task: string; title: string; place: string; machine: string; why: string }
   | { kind: "message_not_sent"; task: string; title: string; why: string; text: string }
   | { kind: "agent_waiting"; task: string; title: string; question: string }
   | { kind: "agent_pr"; task: string; prUrl: string }
@@ -102,11 +101,6 @@ export function renderEvent(e: Event): string {
       case "agent_unreachable":
         return [
           `- ${e.task} waits for ${e.machine}, offline for ${e.minutes} min: ${oneLine(e.title, 80)}${e.place}; it resumes on its own when ${e.machine} is back`,
-          [stays(e.machine)],
-        ];
-      case "agent_cloud_waits":
-        return [
-          `- ${e.task} waits for ${e.machine}, a cloud machine that can't wake now (${oneLine(e.why, 160)}): ${oneLine(e.title, 80)}${e.place}; it goes on there once ${e.machine} can wake`,
           [stays(e.machine)],
         ];
       case "message_not_sent":

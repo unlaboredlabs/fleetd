@@ -12,8 +12,8 @@ from a terminal on the hub.
 A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
 yet.
 
-When your machines are full, [cloud machines](/docs/cloud-machines) on your own boat.dev account can take the overflow;
-they show in the same list.
+Cloud machines (boat.dev) were removed from fleetd: before you upgrade from a fleetd that had them, delete any machines
+it made on your boat.dev account.
 
 ## Add a machine in the app {#app}
 
@@ -329,60 +329,6 @@ if it isn't, so it starts at the next boot. The rewritten unit takes effect at i
 node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
 rather than exiting.
 
-## When work goes to a cloud machine {#cloud}
-
-A hub with cloud machines (boat.dev machines the hub keeps asleep and wakes when work needs them) sends work there
-only when the project's own machine is at its agent limit: its [max agents](/docs/projects#max-agents), or no disk room
-for another agent. Memory, load and pressure never send work to the cloud; to burst sooner, lower the machine's max
-agents. Placement is the same every time, in this order:
-
-1. **The project's own machine**, while it has room.
-2. **An awake cloud machine with room**: the one running the most agents, so work packs onto it and the others go
-   idle and stop.
-3. **A sleeping cloud machine is woken**, within fleetd's start budget and the day and month budgets. One wakes at a
-   time; the next wakes only once that one is awake and full.
-4. **Otherwise the task waits** for whichever frees first, and its queued line says why.
-
-A task may go to a cloud machine only when all of these hold:
-
-- Cloud machines are on, and the hub has checked boat.dev since it started.
-- Its project is opted in to cloud machines.
-- Its project has no secret variables (those are kept only on its own machine). Plain variables,
-  the worktree setup and the project's rules come from its own machine's checkout.
-
-A fleet cap, or a max agents a person set for the project, holds bursting too: a project set to 6 runs 6 in all,
-wherever they run.
-
-Each cloud machine keeps a clone of each opted-in project's repos, made when it first wakes after the project opted
-in. It never shows as a project of its own. A private repo clones with the token of the hub's
-[GitHub App](/docs/github) for it. Later fetches there use the GitHub token of the order whose task launches there.
-Both are handed to git in its environment for github.com only, never written to the clone's config. A repo the App
-doesn't reach clones only if it is public. When a clone fails (no access, no remote, its folder taken), that machine
-tries it again after 10 minutes, then doubling up to 6 hours. Meanwhile its tasks say why in their queued line, and
-no cloud machine wakes for them.
-
-**Follow-ups stay where the work is.** A task placed on a cloud machine records it, and every later turn (a CI fix, a
-review fix, a lead's message, a resume after its run died) runs on that machine, in the same worktree. If the machine
-is asleep, the follow-up wakes it and waits, even when its own machine has room. If it can't wake (a budget is spent,
-the start budget is used), the task waits there and its lead is told once.
-
-**Screens** go to an awake cloud machine only when every other machine's screen slots are full, the busiest one first.
-A screen never wakes a cloud machine. An agent on a cloud machine gets its screens there, as on any machine.
-
-The queued line puts the project's machine first, then the cloud's part:
-
-| Line | Meaning |
-|---|---|
-| machine cap: 6 of 6 running on devbox (set); waking boat-2, a cloud machine, about 30 s | A cloud machine is waking for it. |
-| …; the cloud machines are busy (3 of 3 awake) | Every cloud machine is awake and full. |
-| …; cloud paused: today's boat.dev budget ($3.00) is spent; work runs on your own machines when there's room | No cloud machine takes new work until the budget allows it. |
-| …; fleetd's boat.dev start budget is used (6 of 6 this minute): next start at 14:32 | No more wakes until then. |
-| …; not for cloud: its project's secret variables are only on its own machine | This task may not go. |
-| …; its repo didn't clone on boat-1, a cloud machine (…); tried again at 14:40 UTC | No cloud machine takes or wakes for it until then. |
-| waiting for boat-2 to wake: its work is there | A follow-up waking its own cloud machine. |
-
-The lead's list of tasks shows "on boat-2, a cloud machine" for a task running there.
-
 ## Machine roles {#roles}
 
 Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator or desktop](/docs/browser-sessions), or the agents' Mac's screen),
@@ -449,8 +395,7 @@ been offline for 10m00s". Nothing more comes however long it stays down, a hub r
 is back online after 1h11m" follows once its node links again. Back within 10 minutes, it notifies nobody.
 
 An update restarting the machine's node doesn't count until the update has its result: one that leaves the node
-offline notifies then. Neither does a [cloud machine](/docs/cloud-machines) the hub stopped or put to sleep, but one
-marked broken does. The agents' Mac counts like any machine; a removed machine never does.
+offline notifies then. The agents' Mac counts like any machine; a removed machine never does.
 
 ## Check health {#health}
 

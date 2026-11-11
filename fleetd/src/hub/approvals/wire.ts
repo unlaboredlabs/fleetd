@@ -3,7 +3,7 @@
 import type { HumanRequest, McpServer, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes } from "../api/leads.ts";
-import { nodePort } from "../cloud/node.ts";
+import { nodePort } from "../link/node_port.ts";
 import { mcpServers } from "../mcp_servers/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";

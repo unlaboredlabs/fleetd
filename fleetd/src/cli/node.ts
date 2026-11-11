@@ -1,5 +1,5 @@
-// `fleetd node join|run|grants|restart|flush`: the CLI parses the flags and refuses a
-// usage mistake in the Rust CLI's words; the node itself (src/node) runs join, run and flush; grants is its to
+// `fleetd node join|run|grants|restart`: the CLI parses the flags and refuses a
+// usage mistake in the Rust CLI's words; the node itself (src/node) runs join and run; grants is its to
 // port, and `restart` is the update service's (src/update).
 import { NotImplemented } from "../shared/errors.ts";
 import { ArgError, parse } from "./args.ts";
@@ -91,14 +91,6 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       const home = v.str("home");
       (await node()).ownTmpOrExec(home);
       return (await node()).run(home === undefined ? {} : { home });
-    }
-    case "flush": {
-      const wait = v.str("wait");
-      if (wait !== undefined && !SECONDS.test(wait)) return usage("--wait takes a number of seconds");
-      const { flush } = await import("../node/flush.ts");
-      const { defaultNodeHome } = await import("../node/config.ts");
-      console.log(await flush(v.str("home") ?? defaultNodeHome(), (wait === undefined ? 50 : Number(wait)) * 1000));
-      return 0;
     }
     case "grants": {
       const ask = v.str("ask");

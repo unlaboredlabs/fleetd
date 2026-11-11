@@ -12,7 +12,7 @@ import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
-import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret, submitCloudKey } from "./secret";
+import { submitClaudeAccount, submitHubLink, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import { authorizer, copyVaultField, revealVaultItem, saveVaultItem, unlockVault } from "./vault";
 import type { Notifier } from "./notify";
@@ -112,7 +112,6 @@ export const registerIpc = (
   );
   handle(IPC.claudeAccountSubmit, (_event, id, request) => submitClaudeAccount(request, call(id)));
   handle(IPC.onePasswordSubmit, (_event, id, request) => submitOnePassword(request, call(id)));
-  handle(IPC.cloudKeySubmit, (_event, id, request) => submitCloudKey(request, call(id)));
   // A vault value is shown or copied only once the person proves they're here: Touch ID where this Mac has it, else a
   // native confirm, which the page can't answer for them.
   const vaultAuthorize = authorizer({

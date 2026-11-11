@@ -3,7 +3,7 @@
 // is one cross-area call.
 //
 // Areas not ported yet are reached through `taskHooks(hub)`, which this area owns and other areas fill in when they
-// start (the cloud pool, the train, the reviews, steering; D355). Until one is filled in, a call answers as the Rust
+// start (the train, the reviews, steering; D355). Until one is filled in, a call answers as the Rust
 // trait's default does.
 import type {
   Brief,
@@ -30,7 +30,6 @@ import type { Hub } from "../api/hub.ts";
 import { type LineKind, leadWakes } from "../api/leads.ts";
 import { forTask as claudeForTask, orderRefusal, taskAccountKey } from "../claude_accounts/index.ts";
 import { chat } from "../chat/index.ts";
-import { isPool } from "../cloud/outbox.ts";
 import { ExecutorError, executors, READ_TIMEOUT_MS, STOP_TIMEOUT_MS } from "../executor/index.ts";
 import { launch as executorLaunch, send as executorSend, sendBrief, sendWith, startedRun as executorStartedRun } from "../executor/sessions.ts";
 import { pendingQuestionText } from "../executor/thread_view.ts";
@@ -129,25 +128,6 @@ export type CmdOutput = { exitCode?: number; outputTail: string };
 /** Which "why you are woken" entry a task trigger is. */
 export type WakeKind = "task_result" | "task_waiting" | "cap_raised" | "recovery" | "recovery_paused" | "quiet";
 
-/** The cloud machines a new task may run on now (hub/pool/place.rs `Room`). */
-export type Room = {
-  /** Whether it may run on one at all: `true`, else why not when the pool is on (undefined: cloud machines are off). */
-  eligible: true | { why?: string };
-  /** Awake, caught up and holding its checkout: the hydrated ones first. */
-  awake: MachineId[];
-  /** How many of `awake`, from the front, have their disk hydrated. */
-  warm: number;
-  /** An awake one still cloning its checkout. */
-  cloning?: MachineId;
-  /** Its checkout's clone failed on a cloud machine and waits out its backoff: why. */
-  cloneFailed?: string;
-  /** Why no cloud machine takes work now, even an awake one. */
-  closed?: string;
-};
-
-/** Not eligible, and nothing to say: cloud machines are off. */
-export const NO_ROOM: Room = { eligible: {}, awake: [], warm: 0 };
-
 /** A held steer's id and its riders, sent with a task's next run (hub/steer `take_held`). */
 export type HeldSteer = { id: string; riders: string[] };
 
@@ -176,13 +156,6 @@ export type PolicyFile = { tools?: { allow: string[]; deny: string[] }; branchPr
  * What other areas fill in on tasks when they start (`Object.assign(taskHooks(hub), { … })`), each absent until then.
  */
 export type TaskHooks = {
-  /** hub/pool: the cloud machines a new task may run on, waking one, and the claim on one before a launch. */
-  pool?: {
-    room(task: Task, checkout: ProjectRef): Room;
-    /** The machine coming (`machine`, else whichever comes first), or the one line why none does. */
-    wake(machine: MachineId | undefined): { machine: MachineId } | { why: string };
-    claim(machine: MachineId): boolean;
-  };
   /**
    * The train: a finished task's PR was set after its `task.completed`, its GitHub reader (`TrainGitHub`), and where
    * an upstream PR stands, for a `wait_ci` with `merged` (absent: such a wait waits).
@@ -198,7 +171,7 @@ export type TaskHooks = {
   };
 };
 
-/** The tasks area's hooks: `taskHooks(hub).pool = …` from the pool area's start, and so on. */
+/** The tasks area's hooks: `taskHooks(hub).train = …` from the train area's start, and so on. */
 export const taskHooks = (hub: Hub): TaskHooks => hub.area<TaskHooks>("task_hooks", () => ({}));
 
 export interface TaskPorts {
@@ -207,11 +180,6 @@ export interface TaskPorts {
   awaitLive(machineId: MachineId, signal: AbortSignal): Promise<void>;
   /** When the machine's current node link went live, in ms; undefined while it has none. */
   liveSince(machineId: MachineId): number | undefined;
-  /** A cloud machine asleep: offline by design. */
-  asleep(machineId: MachineId): boolean;
-  cloudRoom(task: Task, checkout: ProjectRef): Room;
-  cloudWake(machine: MachineId | undefined): { machine: MachineId } | { why: string };
-  cloudClaim(machine: MachineId): boolean;
   /** When the node of the machine's live link said it had reported every run its restart cut off. */
   caughtUp(machineId: MachineId): { atMs: number; head: number } | undefined;
   /** The thread, and where its worktree's branch started when it has one. Throws a PortError. */
@@ -322,11 +290,7 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
     isConnected: (m) => ex().isConnected(m),
     awaitLive: (m, signal) => ex().awaitLive(m, signal),
     liveSince: (m) => ex().liveSince(m),
-    asleep: (m) => !ex().isConnected(m) && isPool(hub, m),
     caughtUp: (m) => ex().caughtUp(m),
-    cloudRoom: (task, checkout) => hooks().pool?.room(task, checkout) ?? NO_ROOM,
-    cloudWake: (m) => hooks().pool?.wake(m) ?? { why: "cloud machines are off" },
-    cloudClaim: (m) => hooks().pool?.claim(m) ?? true,
 
     launch: (m, request) =>
       call(async () => {

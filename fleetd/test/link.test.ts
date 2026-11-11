@@ -378,21 +378,6 @@ test("no IPv4 and no GitHub degrade the machine with the fix; sessions still sta
   await node.closed;
 });
 
-test("a cloud machine whose tunnel finds the hub's Claude endpoint down is degraded with why; its answer clears it", async () => {
-  const node = await linked("boat-16");
-  await until(() => store(hub).machineGet("boat-16")?.status === "online");
-  links.claudeEndpoint("boat-16", "the hub's Claude endpoint at 100.104.249.49:8317 doesn't answer the hub: connect ECONNREFUSED");
-  expect(store(hub).machineGet("boat-16")).toMatchObject({
-    status: "degraded",
-    degradedReason:
-      "the hub's Claude endpoint at 100.104.249.49:8317 doesn't answer the hub: connect ECONNREFUSED. Fix: start it again on the hub's network, or change the endpoint in Settings › Hub accounts › Claude",
-  });
-  links.claudeEndpoint("boat-16", undefined);
-  expect(store(hub).machineGet("boat-16")?.status).toBe("online");
-  node.close();
-  await node.closed;
-});
-
 /** A hub of its own: its stop ends lead calls for good. */
 async function stoppingHub() {
   const home = hubHome();

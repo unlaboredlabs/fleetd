@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest, CloudKeyRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -227,21 +227,4 @@ export const submitOnePassword = async (
   const sealed = await sealEach(request.boxes, value);
   if (!sealed.ok) return sealed;
   return call("onepassword_set", { sealed: sealed.sealed });
-};
-
-/**
- * The hub's boat.dev API key: trimmed, refused here unless it looks like one ("boat_…"), sealed to the hub's own key
- * (cloud_get's boxPubKey), then cloud_key_set.
- */
-export const submitCloudKey = async (
-  request: CloudKeyRequest,
-  call: (tool: "cloud_key_set", input: ToolInput<"cloud_key_set">) => Promise<CallOutcome>,
-): Promise<CallOutcome> => {
-  const key = request.key.trim();
-  if (!/^boat_\S+$/u.test(key)) {
-    return refused("That isn't a boat.dev API key.", "Paste the key boat.dev showed when you made it: it starts with boat_.");
-  }
-  const sealed = await seal(request.boxPubKey, key);
-  if (!sealed.ok) return sealed;
-  return call("cloud_key_set", { sealed: sealed.sealed });
 };

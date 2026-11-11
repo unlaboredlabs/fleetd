@@ -186,19 +186,6 @@ own](/docs/agents-mac#own-user), which keeps agents out of your files and logins
 | DevTools stay on the Mac | An app agent-desktop launches with `--cdp` listens on the Mac's loopback only, and is closed when its session ends. |
 | Only while it can be seen | The node checks at every start that its session is on the Mac's screen and unlocked, so an agent never drives a screen nobody could watch. |
 
-## Cloud machines {#cloud}
-
-[Cloud machines](/docs/cloud-machines) run on the hub owner's own boat.dev account; fleetd runs no service.
-
-| Rule | Detail |
-|---|---|
-| The boat.dev key stays on the hub | Sealed in the app to the hub's own key. The [setup step](/docs/cloud-machines) has you make it scoped to fleetd's boat.dev environment, with no `exec`, `file` or `snapshot` actions; the hub doesn't check a key's actions, so make it as the step says. Its `ssh` action only lets the hub's own SSH key in. No cloud machine or agent gets it. |
-| The hub stays private | The hub dials each machine it wakes over SSH, pins the host key boat.dev names, and holds one reverse forward its node reaches the hub through, plus one to the hub's `http://` Claude endpoint when it names one. The hub needs no public address, and boat.dev learns none of your network's. |
-| The hub never runs commands there | The tunnel asks for no shell or command, and refuses every channel but its own forwards. The hub's SSH key is made by the hub, sealed to its box key, and never leaves it. |
-| boat.dev can see what runs there | As any host can, including the disk it keeps while a machine sleeps. Only projects an admin opts in run there; Reset deletes a machine with its disk and keys. |
-| Agents have no sudo | The node and its agents run as a user of their own on each cloud machine. |
-| A bill can't run on | Each awake machine has boat.dev's own 30-minute lease; budgets, the idle stop and a sweep every 10 minutes stop the rest, and `fleetd cloud stop` stops all. |
-
 ## Hub links {#hub-links}
 
 A hub link lets a project on one hub open and follow work in projects on another hub, for example from a personal

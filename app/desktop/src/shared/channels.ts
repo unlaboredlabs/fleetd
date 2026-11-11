@@ -124,8 +124,6 @@ export const IPC = {
   claudeAccountSubmit: "claude-account:submit",
   /** invoke(OnePasswordRequest) → CallOutcome. Main seals a person's 1Password service account token to each machine's key, then calls onepassword_set. */
   onePasswordSubmit: "onepassword:submit",
-  /** invoke(CloudKeyRequest) → CallOutcome. Main seals the hub's boat.dev key to the hub's own key, then calls cloud_key_set. */
-  cloudKeySubmit: "cloud:key-submit",
   /** invoke(VaultSaveRequest) → CallOutcome. Main seals the typed fields to the hub's own key, then calls vault_save. */
   vaultSave: "vault:save",
   /** invoke(VaultRevealRequest) → VaultRevealOutcome. Main asks for Touch ID (or a confirm), then opens vault_reveal's fields. */

@@ -1,5 +1,5 @@
 import type { Hub } from "../api/hub.ts";
-import { every } from "../cloud/every.ts";
+import { every } from "../serve/every.ts";
 import { RENEW_TICK_MS, renewDue } from "./index.ts";
 
 /** Starts this module's loop (Rust: mcp_oauth::run_renew): `renewDue` every 30 s, until the hub stops. */

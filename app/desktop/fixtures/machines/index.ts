@@ -8,7 +8,6 @@
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
-import { cloudAtWork, cloudSnapshotMachines } from "../kit/cloud.ts";
 import steps from "../setup/steps.json" with { type: "json" };
 
 const RUN = "M0123456789abcdef0123456789abcdef";
@@ -169,24 +168,8 @@ function checklist(from: Fixture): Fixture {
   return f;
 }
 
-/** Cloud machines at work beside the hub's own (D306): boat-1 awake, boat-2 asleep, boat-3 broken, with the pool's
- * settings, its spend today and the kill switch; Status's cloud line reads the same answer. */
-function cloud(from: Fixture): Fixture {
-  const f = hub(from, "machines-cloud", "Cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken", () => []);
-  const snapshot = f.snapshot ?? {};
-  const machines = Array.isArray(snapshot["machines"]) ? snapshot["machines"] : [];
-  const projects = (Array.isArray(snapshot["projects"]) ? snapshot["projects"] : []).filter(isObject).slice(0, 2);
-  f.snapshot = { ...snapshot, machines: [...machines, ...cloudSnapshotMachines(f.now)] };
-  const view = cloudAtWork(f.now, projects.map((p) => ({ machineId: p["machineId"] ?? "", projectId: p["projectId"] ?? "" })));
-  f.answer("cloud_get", undefined, { cloud: view });
-  f.answer("cloud_test", undefined, { test: view["keyTest"] ?? null, cloud: view }, 400);
-  f.answer("cloud_stop", undefined, { stopped: ["boat-1"], failed: [] }, 400);
-  return f;
-}
-
 export default defineGroup({
   fixtures: (base) => [
-    cloud(base("typical")),
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
     joined(base("typical")),
     checklist(base("typical")),

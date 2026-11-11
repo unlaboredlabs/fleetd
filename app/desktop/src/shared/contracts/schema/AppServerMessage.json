@@ -924,7 +924,7 @@
         },
         {
           "const": "machine.down",
-          "description": "The machine has been offline 10 minutes with nothing to explain it (an update restarting its node, a cloud\nmachine the hub put to sleep): the hub's admins are paged, once per outage. `data.offlineMs`.",
+          "description": "The machine has been offline 10 minutes with nothing to explain it (an update restarting its node): the hub's admins are paged, once per outage. `data.offlineMs`.",
           "type": "string"
         },
         {
@@ -1801,10 +1801,6 @@
         "boxPubKey": {
           "$ref": "#/$defs/BoxPublicKey",
           "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
-        },
-        "cloud": {
-          "description": "One of the hub's cloud machines on boat.dev (D306): the hub wakes it for work and puts it to sleep, so offline\nis its rest, not a fault. Absent on every other machine.",
-          "type": "boolean"
         },
         "degradedReason": {
           "description": "Plain language, set while status is \"degraded\".",

@@ -6,8 +6,9 @@
 //    `order-env/`, `secret-sinks.json` and the sink files it names into a fake node home beside it. Nothing live is
 //    written; the live files are only read.
 // 2. Opens the copy directly: no hub starts, nothing links, listens or acts on the outside world. Fingerprints every
-//    table (its rows' SHA-256), runs this build's migrations with `HubDb`, then fingerprints again: every table that
-//    was there must read the same, and the vault's must be there, empty.
+//    table (each column's values' SHA-256), runs this build's migrations with `HubDb`, then fingerprints again: every
+//    table that was there must read the same, but for a table or column a later migration dropped, and the vault's must
+//    be there, empty.
 // 3. Takes stock of what the migrate job is to take in, each against the node's copied files: every `project_env` row
 //    (a secret's fingerprint against the node's value), every order variable a person gave (fleetd's own `GH_TOKEN`
 //    rows, request id `github`, are skipped and counted), and every stored `env:`/`file:` sink of this machine.
@@ -36,20 +37,25 @@ const arg = (name: string) => {
   return at > 0 ? process.argv[at + 1] : undefined;
 };
 
-/** Every table's rows, hashed in rowid order (or every column's when it has none), by table name. */
-function fingerprints(conn: Database): Map<string, string> {
-  const out = new Map<string, string>();
+/** Each column of every table, its values hashed in rowid order (or every column's when it has none), by table name. */
+function fingerprints(conn: Database): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
   const tables = conn
     .query("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .all() as { name: string; sql: string }[];
   for (const { name, sql } of tables) {
-    const hash = new Bun.CryptoHasher("sha256");
     const order = /WITHOUT ROWID/i.test(sql) ? "1" : "rowid";
-    for (const row of conn.query(`SELECT * FROM "${name}" ORDER BY ${order}`).values()) {
-      hash.update(JSON.stringify(row, (_, v) => (v instanceof Uint8Array ? Buffer.from(v).toString("base64") : v)));
-      hash.update("\n");
+    const columns = (conn.query("SELECT name FROM pragma_table_info(?)").all(name) as { name: string }[]).map((c) => c.name);
+    const byColumn = new Map<string, string>();
+    for (const column of columns) {
+      const hash = new Bun.CryptoHasher("sha256");
+      for (const row of conn.query(`SELECT "${column}" FROM "${name}" ORDER BY ${order}`).values()) {
+        hash.update(JSON.stringify(row, (_, v) => (v instanceof Uint8Array ? Buffer.from(v).toString("base64") : v)));
+        hash.update("\n");
+      }
+      byColumn.set(column, hash.digest("hex"));
     }
-    out.set(name, hash.digest("hex"));
+    out.set(name, byColumn);
   }
   return out;
 }
@@ -109,9 +115,20 @@ export async function run(opts: {
     try {
       if (db.drift.length) problems.push(`${db.drift.length} applied migration(s) read as drift`);
       const after = fingerprints(db.conn);
-      for (const [table, hash] of before) {
+      for (const [table, columns] of before) {
         if (table === "migrations_applied") continue;
-        if (after.get(table) !== hash) problems.push(`table ${table} changed in the migration`);
+        // A table or column a later migration dropped on purpose is no change to the rows that stay.
+        const now = after.get(table);
+        if (now === undefined) {
+          count("tables a later migration dropped");
+          continue;
+        }
+        let changed = false;
+        for (const [column, hash] of columns) {
+          if (!now.has(column)) count("columns a later migration dropped");
+          else if (now.get(column) !== hash) changed = true;
+        }
+        if (changed) problems.push(`table ${table} changed in the migration`);
       }
       count("tables kept", [...before.keys()].filter((t) => t !== "migrations_applied").length);
       for (const table of ["vault_keys", "vault_items", "vault_shares", "vault_deliveries", "vault_audit", "vault_imports", "vault_settings"]) {

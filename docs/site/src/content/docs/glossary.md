@@ -50,11 +50,6 @@ The one ongoing conversation with a project's lead. You give work and answer the
 The lead's to-do list for a project: a few items per piece of work, each to do, doing or done. You see it in the
 panel's Plan tab. See [The checklist](/docs/what-agents-are-told#checklist).
 
-## Cloud machine {#cloud-machine}
-
-A worker the hub starts on your own boat.dev account when your machines are full, and stops when idle. Only projects
-an admin opts in run there. See [Cloud machines](/docs/cloud-machines).
-
 ## Critical path {#critical-path}
 
 The chain of work that decides when a piece of work finishes. Shortening it makes it finish sooner. See

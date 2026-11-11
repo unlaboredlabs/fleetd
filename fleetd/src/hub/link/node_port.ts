@@ -1,11 +1,11 @@
-// The node as this area's modules reach it (approvals, 1Password, Claude accounts, MCP servers, cloud machines):
+// The node as the hub's modules reach it (approvals, 1Password, Claude accounts, MCP servers, the vault):
 // `nodePort(hub)`, over `link(hub)` (D346) and the executor's session calls (crates/fleetd/src/hub/executor/mod.rs
 // `mcp_secrets`, `claude_account_secret`, `onepassword_token`, `answer`, `pending_permission`, …), with their
 // operations, waits and errors' words. Tests set `hub.area("node_port")` to a fake.
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { ExecutorError, executors, type NodeOperation } from "../executor/index.ts";
-import { link } from "../link/index.ts";
+import { link } from "./index.ts";
 import type { PendingPermission } from "../approvals/ports.ts";
 
 export type NodePort = {
@@ -45,7 +45,6 @@ const CALLS: Record<string, [NodeOperation, number]> = {
   mcp_secrets: ["project", 15_000],
   claude_account_secret: ["project", 15_000],
   onepassword_token: ["project", 15_000],
-  claude_account_reseal: ["read", 15_000],
   claude_account_test: ["read", 100_000],
   onepassword_test: ["read", 230_000],
   onepassword_cards: ["read", 230_000],

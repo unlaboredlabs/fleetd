@@ -4,9 +4,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { CONNECT_REFUSAL, Setup, type Whose, whoseForLead, whoseForTask } from "../src/hub/claude_accounts/index.ts";
-import { bring } from "../src/hub/cloud/claude.ts";
-import { fakeNodePort, type Link } from "../src/hub/cloud/node.ts";
-import { Outbox } from "../src/hub/cloud/outbox.ts";
+import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { forTask as opForTask } from "../src/hub/onepassword/index.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { HubDb } from "../src/hub/store/db.ts";
@@ -195,28 +193,6 @@ test("only admins set the hub's API, and its key reaches the nodes sealed, never
   expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
 });
 
-test("a cloud machine is handed the hub's http:// endpoint at its tunnel's loopback port; others as it is", async () => {
-  const { hub, link, call, ann } = setup();
-  hub.db.conn.run("INSERT INTO node_keys (machine_id, pub_key, pool) VALUES ('mac', 'k', 1)");
-  await call(ann, "claude_hub_api_set", {
-    sealed: [
-      { machineId: "lab", sealed: SEALED },
-      { machineId: "mac", sealed: SEALED },
-    ],
-    endpoint: "http://100.104.249.49:8317/v1",
-  });
-  expect(link.calls).toEqual([
-    ["lab", { op: "claude_account_secret", account: { kind: "hub" }, set: { sealed: SEALED, endpoint: "http://100.104.249.49:8317/v1" } }],
-    ["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { sealed: SEALED, endpoint: "http://127.0.0.1:47901/v1" } }],
-  ]);
-  // Its catch-up as it wakes sets the same.
-  expect(await bring(hub, "mac")).toEqual({ current: { kind: "hub" } });
-  expect(link.calls.at(-1)).toEqual(["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { endpoint: "http://127.0.0.1:47901/v1" } }]);
-  // An https:// one names a host its certificate must match: handed as it is.
-  await call(ann, "claude_hub_api_set", { endpoint: "https://llm.example/v1" });
-  expect(link.calls.at(-1)).toEqual(["mac", { op: "claude_account_secret", account: { kind: "hub" }, set: { endpoint: "https://llm.example/v1" } }]);
-});
-
 test("a Test isn't ok while the machine's claude settings override the account there, and says why", async () => {
   const { link, call, ann } = setup();
   await call(ann, "claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: SEALED }], endpoint: "http://devbox.example:8317" });
@@ -240,9 +216,8 @@ test("a Test isn't ok while the machine's claude settings override the account t
   expect(((await call(ann, "claude_account_test", { account: "hub_api" })).test as { ok: boolean }).ok).toBe(true);
 });
 
-test("a person connects their own subscription; a sleeping cloud machine forgets it as it wakes", async () => {
+test("a person connects their own subscription; an offline machine is skipped as it forgets it", async () => {
   const { hub, link, call, bob } = setup();
-  hub.db.conn.run("INSERT INTO node_keys (machine_id, pub_key, pool) VALUES ('mac', 'k', 1)");
   const out = await call(bob, "claude_subscription_set", {
     sealed: [
       { machineId: "lab", sealed: SEALED },
@@ -255,7 +230,6 @@ test("a person connects their own subscription; a sleeping cloud machine forgets
   link.online.delete("mac");
   await call(bob, "claude_subscription_remove", {});
   expect(link.calls.at(-1)).toEqual(["lab", { op: "claude_account_secret", account: { kind: "person", personId: "p_bbbbbbbb" } }]);
-  expect(new Outbox(hub.db).list("mac")).toEqual([[1, { kind: "claude_forget", account: { kind: "person", personId: "p_bbbbbbbb" } }]]);
   expect(hub.db.all<{ type: string }>("SELECT type FROM events").map((e) => e.type)).toEqual(["people.changed"]);
   // An agent key never connects one.
   const agent = { ...bob, kind: undefined, person: undefined } as Caller;

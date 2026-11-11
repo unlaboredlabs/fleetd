@@ -232,7 +232,7 @@ export async function deliver(hub: Hub, r: ProjectRef, order: WorkstreamId, repo
   await deliverOn(hub, r, order, repoId, writer, undefined);
 }
 
-/** `deliver`, for a task launched on `on` (another machine than its repo's checkout: a cloud machine's own clone). */
+/** `deliver`, for a task launched in the checkout `on`. */
 export async function deliverOn(
   hub: Hub,
   r: ProjectRef,
@@ -539,24 +539,6 @@ export async function renew(hub: Hub): Promise<void> {
       if (k.expiresMs <= now) await blockAt(hub, k, { kind: "not_renewed", why: e });
     }
   }
-}
-
-/** A cloud machine's catch-up at its wake: each token kept there that ended or is near its end goes again. */
-export async function redeliverOn(hub: Hub, machineId: MachineId): Promise<{ done: number; problems: string[] }> {
-  const now = hub.clock.now();
-  let done = 0;
-  const problems: string[] = [];
-  for (const k of kept(hub)) {
-    const due = k.expiresMs - now < k.marginMs;
-    if (k.checkout.machineId !== machineId || k.blocked || !due) continue;
-    try {
-      await deliverOn(hub, k.r, k.order, k.repoId, false, k.checkout);
-      done++;
-    } catch (error) {
-      problems.push(`${k.order}'s GitHub token not delivered: ${(error as Error).message}`);
-    }
-  }
-  return { done, problems };
 }
 
 /** Renews the orders' tokens on every sweep. */

@@ -39,7 +39,6 @@ export interface Place {
 
 const ADMIN: Readonly<Record<string, Place>> = {
   machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
-  cloud: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" }, reveal: "hub.cloud" },
   invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
   claude: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.claude" },
   github: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.github" },
