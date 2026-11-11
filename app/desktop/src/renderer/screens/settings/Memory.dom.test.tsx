@@ -11,7 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { SharedMemory, YourMemory } from "./Memory";
+import { YourMemory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "linux", fixture: null }));
@@ -240,68 +240,4 @@ it("keeps a file's section and its Edit as text when a search matches none of it
   expect(button("Edit as text").disabled).toBe(false);
   type(search, "npm");
   expect(cards()).toHaveLength(1);
-});
-
-/** The hub's old shared user.md as `text` (null: a hub from before per-person memory), every memory_shared_set kept. */
-async function mountShared(text: string | null) {
-  const hub = { text: text ?? "", sets: [] as Array<{ text: string }> };
-  const file = (): MemoryFile => ({ scope: "user", text: hub.text, chars: Array.from(hub.text).length, cap: 16000, notes: [] });
-  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-  const api: HubApi = {
-    call: (tool, input) => {
-      if (text === null && tool.startsWith("memory_shared")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
-      if (tool === "memory_shared_set") {
-        const set = input as { text: string };
-        hub.sets.push(set);
-        hub.text = set.text;
-        return Promise.resolve({ ok: true, output: { file: file() } });
-      }
-      if (tool === "memory_shared_get") return Promise.resolve({ ok: true, output: { file: file() } });
-      return Promise.resolve({ ok: true, output: {} });
-    },
-    subscribe: (l) => ((send = l), () => undefined),
-    resync: () => Promise.resolve(),
-    focus: () => Promise.resolve(),
-    chat: () => Promise.resolve(),
-  };
-  await act(async () => {
-    root.render(
-      <UiProvider>
-        <DataProvider layer={createDataLayer(api)}>
-          <SharedMemory />
-        </DataProvider>
-      </UiProvider>,
-    );
-    await Promise.resolve();
-  });
-  act(() => {
-    send(live());
-    send(snapshot(1));
-  });
-  await settle();
-  return hub;
-}
-
-it("shows the hub's old shared memory for an admin to edit, and once it is emptied the part is gone", async () => {
-  const hub = await mountShared(FILE);
-  expect(Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li'))).toHaveLength(4);
-  await click("Edit as text");
-  const field = textarea("All of user.md");
-  type(field, "");
-  await click("Save");
-  await settle();
-  expect(hub.sets.at(-1)).toEqual({ text: "" });
-  expect(document.body.textContent).not.toContain("Shared memory");
-  expect(document.body.textContent).not.toContain("Retired");
-});
-
-it("shows no shared memory part on a hub whose shared memory is already empty", async () => {
-  await mountShared("");
-  expect(document.querySelector("[data-part='hub.shared-memory']")).toBeNull();
-  expect(document.body.textContent).not.toContain("Shared memory");
-});
-
-it("says a hub from before per-person memory still shares one, read and edited in Your memory", async () => {
-  await mountShared(null);
-  expect(document.body.textContent).toContain("This hub still shares one memory among everyone");
 });

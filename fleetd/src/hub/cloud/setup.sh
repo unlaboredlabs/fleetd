@@ -165,8 +165,7 @@ step "fleetd"
 join=(--no-app --join "$HUB" --code "$CODE" --machine-id "$MACHINE")
 [ -z "$IDENTITY" ] || join+=(--git-identity "$IDENTITY")
 args=$(printf '%q ' "${join[@]}")
-# FLEETD_FLAVOUR=bun for an installer from before Rust's removal, which installed the Rust build by default.
-env_line="FLEETD_CHANNEL=$CHANNEL FLEETD_FLAVOUR=bun"
+env_line="FLEETD_CHANNEL=$CHANNEL"
 [ -z "$BASE_URL" ] || env_line="$env_line FLEETD_BASE_URL=$BASE_URL"
 # init ends 1 on claude not logged in, which a new cloud machine's never is: the hub brings it its Claude configuration
 # once its node links (hub/cloud's catch-up). So a join that enrolled passes, and one that didn't fails here with

@@ -1,14 +1,12 @@
 // What `node_action` `screens` writes into node.json (`edited`): a kind
-// of screen turned on or off, and the idle timeout of every kind.
+// of screen turned on or off. An idle screen ends after 30 minutes (the agents' Mac's after 5); an older node.json's
+// idle timeout goes with the first change.
 import type { ScreenSettings } from "../../shared/screens_wire.ts";
 
-/** Why the agents' Mac refuses `settings`: it offers only its own screen, which ends after 5 idle minutes. */
+/** Why the agents' Mac refuses `settings`: it offers only its own screen. */
 export function macRefuses(settings: ScreenSettings): string | undefined {
-  if (settings.host !== undefined && settings.host !== "mac") {
-    return "the agents' Mac offers only its own screen: browsers, emulators and Linux desktops run on other machines";
-  }
-  return settings.idleMinutes !== undefined
-    ? "the agents' Mac's screen ends after 5 idle minutes, so the next agent gets it"
+  return settings.host !== undefined && settings.host !== "mac"
+    ? "the agents' Mac offers only its own screen: browsers, emulators and Linux desktops run on other machines"
     : undefined;
 }
 
@@ -31,12 +29,10 @@ export function edited(text: string, settings: ScreenSettings): string {
     (part as Record<string, unknown>)[key] = value;
   };
   if (settings.host !== undefined && settings.on !== undefined) set(SECTION[settings.host] ?? settings.host, "enabled", settings.on);
-  if (settings.idleMinutes !== undefined) {
-    root.screenIdleMinutes = settings.idleMinutes;
-    for (const kind of ["browser", "device", "desktop", "ios"]) {
-      const part = root[kind];
-      if (typeof part === "object" && part !== null && !Array.isArray(part)) delete (part as Record<string, unknown>).idleMinutes;
-    }
+  delete root.screenIdleMinutes;
+  for (const kind of ["browser", "device", "desktop", "ios"]) {
+    const part = root[kind];
+    if (typeof part === "object" && part !== null && !Array.isArray(part)) delete (part as Record<string, unknown>).idleMinutes;
   }
   return `${JSON.stringify(root, null, 2)}\n`;
 }

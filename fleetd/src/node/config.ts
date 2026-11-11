@@ -17,7 +17,6 @@ export type NodeConfig = {
   minFreeGb?: number;
   warmBuilds?: number;
   buildSlots?: number;
-  screenIdleMinutes?: number;
   /** True once the hub has accepted this node's key. */
   enrolled: boolean;
   browser?: Record<string, unknown>;
@@ -36,7 +35,6 @@ export function readConfig(home: string): NodeConfig | undefined {
   const file = join(home, "node.json");
   if (!existsSync(file)) return undefined;
   const json = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-  liftScreenIdle(json);
   const ok =
     typeof json.hub === "string" &&
     typeof json.machineId === "string" &&
@@ -45,18 +43,6 @@ export function readConfig(home: string): NodeConfig | undefined {
   if (!ok) throw new Error("node.json does not decode");
   if (!isMachineId(json.machineId as string)) throw new Error("invalid machine id");
   return json as NodeConfig;
-}
-
-/** An older node.json kept the screens' idle time in each kind's section; the first one found is the one time now. */
-function liftScreenIdle(json: Record<string, unknown>): void {
-  if ("screenIdleMinutes" in json) return;
-  for (const kind of ["browser", "device", "desktop", "ios"]) {
-    const minutes = (json[kind] as Record<string, unknown> | undefined)?.idleMinutes;
-    if (minutes !== undefined) {
-      json.screenIdleMinutes = minutes;
-      return;
-    }
-  }
 }
 
 export function mkdirPrivate(dir: string): void {

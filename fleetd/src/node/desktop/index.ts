@@ -58,8 +58,6 @@ export type DesktopConfig = {
   ffmpeg?: string;
   /** Displays kept started for the next sessions: 1, and 0 in tests that start none. */
   pool?: number;
-  /** A session no action touched for this long is ended: node.json's `screenIdleMinutes`. Absent: 30. */
-  idleMinutes?: number;
   /** Where X servers put their sockets and locks, and the window managers looked for: a test's own, never the
    * host's. */
   x11Dir?: string;
@@ -72,14 +70,11 @@ export const enabled = (config: DesktopConfig) => config.enabled !== false && pr
 
 const devOverride = (name: string) => process.env[name] || undefined;
 
-/** The node's desktop config as it runs it: node.json's section, its idle time and the development overrides
- * (config.rs `desktop_screen`). The agents' Mac hosts its own screen, never a Linux desktop. */
+/** The node's desktop config as it runs it: node.json's section and the development overrides (config.rs
+ * `desktop_screen`). The agents' Mac hosts its own screen, never a Linux desktop. */
 export function desktopConfig(node: Node): DesktopConfig {
   const section = (node.config.desktop ?? {}) as DesktopConfig;
-  const config: DesktopConfig = {
-    ...section,
-    ...(node.config.screenIdleMinutes !== undefined ? { idleMinutes: node.config.screenIdleMinutes } : {}),
-  };
+  const config: DesktopConfig = { ...section };
   for (const [key, env] of [["runtime", "FLEETD_DESKTOP_RUNTIME"], ["image", "FLEETD_DESKTOP_IMAGE"], ["xvfb", "FLEETD_XVFB"], ["ffmpeg", "FLEETD_FFMPEG"]] as const) {
     const v = devOverride(env);
     if (v) config[key] = v;
@@ -190,7 +185,7 @@ export async function hostCheck(home: string, config: DesktopConfig): Promise<Ho
     ...(off ? { off } : {}),
     ...(off && fix && fix.length <= 300 ? { fix } : {}),
     on: enabled(config),
-    idleMinutes: Math.max(1, Math.min(1440, config.idleMinutes ?? IDLE_MINUTES)),
+    idleMinutes: IDLE_MINUTES,
   } as HostCheck);
   if (process.platform !== "linux") return check("unsupported", "desktop screens run on Linux (docker or Xvfb)");
   if (!enabled(config)) return check("off", "desktop screens are off in node.json");
@@ -724,7 +719,7 @@ export class Desktops implements Screens {
 
   /** Ends sessions idle past the limit. */
   async housekeep(): Promise<void> {
-    const linux = 60_000 * (this.config.idleMinutes ?? IDLE_MINUTES);
+    const linux = 60_000 * IDLE_MINUTES;
     const mac = 60_000 * MAC_IDLE_MINUTES;
     for (const [thread, session] of [...this.sessions]) {
       if (session.idleFor() >= (session.kind === "mac" ? mac : linux) && session.control() === "agent") {

@@ -268,9 +268,8 @@ mid-session reaches the next session.
 Read, edit or delete your own memory in Settings › Your memory, and each project's in Settings › a project ›
 Instructions & memory. Nobody else
 reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
-the hub. A hub from before people kept one shared `user.md`: its owner got a copy as their own memory, and the old
-file stays, read by no agent, as Shared memory, which an owner or admin reads and empties under Settings › Hub › Every
-project › Instructions & memory. Once it is empty, that part is gone.
+the hub. A hub with no people yet keeps one shared `user.md`, read and edited as Your memory; once it has people, its
+owner gets a copy as their own memory, and the old file stays on disk, read by no agent.
 
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
 cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per project. A
@@ -307,7 +306,7 @@ on every device.
 
 Before a lead's risky action (a send, a share, a first visit to a site, a final Confirm on a site) reaches you, its
 [checker](/docs/projects#approvals) judges it in one model turn: a fresh session with no tools at all, on your own
-Claude, on the checker's model and effort (Sonnet 5.5 at medium unless you pick another). Its system prompt is
+Claude, on Sonnet 5.5 at medium effort. Its system prompt is
 `approvals.checker`, which an admin can change on the Prompts page; its one message is the action, where each part came
 from, your recent messages and the lead's last question, as JSON inside `<action_review>`. It never gets the mail,
 pages or files the lead read. It answers go, ask or block with a one-line reason; fleetd's own rules (the floors, and

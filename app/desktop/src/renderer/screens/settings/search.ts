@@ -46,9 +46,6 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
 export const pagePath = (tab: Tab): string =>
   tab === "project-vault" ? "Project › Vault" : !isHubTab(tab) ? PAGE_LABEL[tab] : tab === "hub.profiles" || tab === "hub.tools" || tab === "hub.instructions" || tab === "hub.prompts" ? `Every project › ${PAGE_LABEL[tab]}` : `Hub › ${PAGE_LABEL[tab]}`;
 
-/** "Dock" is the Mac's word for it. (No window in the unit tests.) */
-export const BADGE = typeof window !== "undefined" && window.fleetd.platform === "darwin" ? "Dock badge" : "App icon badge";
-
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
 /** Every option, in the sidebar's order. The Hub group's are found only by its owners and admins (optionsFor). */
@@ -59,8 +56,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "general.presence", label: "Time in the app", tab: "general", keywords: ["presence", "focus", "activity", "privacy", "minutes", "tracking"] },
   { key: "notifications", label: "Notifications", tab: "general", keywords: ["alerts", "mute"] },
   { key: "notifications.kinds", label: "Notify me when", tab: "general", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
-  { key: "notifications.sound", label: "Sound", tab: "general", keywords: ["notifications", "mute", "silent"] },
-  { key: "notifications.badge", label: BADGE, tab: "general", keywords: ["badge", "dock", "count", "app icon"] },
   { key: "notifications.test", label: "Test notification", tab: "general", keywords: ["notifications", "alerts", "try"] },
   { key: "general.updates", label: "Version", tab: "general", keywords: ["version", "update", "check for updates", "edge", "stable", "channel", "what's new", "up to date"] },
   page("accounts", ["accounts", "connect", "sign in", "connections"]),
@@ -91,7 +86,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.only-me", label: "Only me", tab: "projects", keywords: ["private", "personal", "share", "shared", "who sees", "owner", "everyone"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
-  { key: "projects.setup", label: "Setup", tab: "projects", keywords: ["setup commands", "default setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
+  { key: "projects.setup", label: "Setup", tab: "projects", keywords: ["setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
   { key: "projects.linked", label: "Linked hubs", tab: "projects", keywords: ["hub link", "link key", "other hub", "reach"] },
   { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["checker", "approve", "ask me", "yolo", "auto"] },
   { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["checker", "log", "auto-approved", "yolo", "history"] },
@@ -106,8 +101,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "agents.profiles", label: "Allowed profiles", tab: "agents", keywords: ["task profiles", "profile", "allowed", "model", "effort"] },
   { key: "agents.skills", label: "Skills", tab: "agents", keywords: ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"] },
   page("instructions", ["custom instructions", "rules", "my text", "project"]),
-  { key: "memory", label: "Project memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules"] },
-  { key: "projects.memory", label: "Refresh memory every night", tab: "instructions", keywords: ["refresh", "nightly", "dreaming", "tidy", "memory"] },
+  { key: "memory", label: "Project memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules", "refresh", "nightly", "tidy"] },
   { key: "project-vault", label: "Project vault", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token", "logins", "cards"] },
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
   page("prompts", ["templates", "system prompt"]),
@@ -138,7 +132,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
   { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.tools", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
   { key: "hub.skills", label: "Hub-wide skills", tab: "hub.tools", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
-  { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide", "shared memory", "user.md"] },
+  { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
   page("hub.prompts", ["templates", "system prompt", "hub-wide", "global", "every project"]),
   page("hub.accounts", ["connections", "claude api key", "api key", "github app", "guided setup"]),
   { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },

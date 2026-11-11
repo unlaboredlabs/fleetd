@@ -157,11 +157,12 @@ test("a worktree's setup runs before its agent starts, and the brief says what i
   expect(brief).toStartWith("brief\n\n## Setup\nSetup ran in this worktree before you started: `echo made > made.txt` (exited 0 after 0 s), `echo second`");
   expect(service.store.session("s5")?.local.setupPending).toBeUndefined();
 
-  // A setup that fails keeps the agent from starting, and says why.
-  await launch("s6", "u2", "fleetd/t6", { commands: ["echo broke; exit 3", "echo never"] });
-  await until("the failed start", () => summary("s6")?.latestRun?.status === "failed");
-  expect(summary("s6")?.latestRun?.failure?.message).toStartWith("setup failed, so the agent did not start: `echo broke; exit 3` exited 3 after 0 s; 1 not run after it.");
-  expect(service.store.session("s6")?.local.pid).toBeUndefined();
+  // A setup that fails still starts the agent, whose brief says what failed; an older hub's runAnyway: false is ignored.
+  await launch("s6", "u2", "fleetd/t6", { commands: ["echo broke; exit 3", "echo never"], runAnyway: false });
+  await until("the run after the failed setup", () => summary("s6")?.latestRun?.status === "completed");
+  const told = service.store.message("s6", "u2")!.text;
+  expect(told).toContain("Setup failed in this worktree before you started, and you were started anyway: `echo broke; exit 3` exited 3 after 0 s. Not run after it: `echo never`.");
+  expect(told).toContain("broke");
 
   // With inputs, a worktree set up before with the same ones is not set up again.
   const plan = { commands: ["date >> runs.txt"], inputs: ["README.md"] };

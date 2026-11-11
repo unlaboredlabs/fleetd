@@ -48,7 +48,6 @@ describe("settings search", () => {
     // Memory is yours on You › Your memory, a project's on its Instructions & memory, with its nightly refresh (D212).
     expect([tabOf("instructions"), tabOf("memory"), tabOf("project memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
     expect([tabOf("setup commands"), tabOf("linked hubs"), tabOf("subscription")]).toEqual(["projects", "projects", "accounts"]);
-    expect(tabOf("shared memory", true)).toBe("hub.instructions");
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);

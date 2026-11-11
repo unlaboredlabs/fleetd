@@ -51,7 +51,6 @@ import * as hooks from "../worktree/hooks.ts";
 import type { LaunchArea, ScreenHooks } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
 import { gitCommandEnv } from "../util.ts";
-import type { WorktreeSetup } from "../../shared/contracts.ts";
 import { ITEMS_KEPT_MS, NodeStore, SPANS_KEPT, type SessionLocal, type SessionRow } from "./store.ts";
 import { Health } from "./health.ts";
 import { killOrphans, killRecorded } from "./proc.ts";
@@ -1013,7 +1012,7 @@ export class SessionService {
     if (raced) return { kind: "launched", summary: raced.summary };
     const path = join(this.#worktreesDir(launch.projectId), id);
     let prompt = launch.prompt;
-    let readerPlan: WorktreeSetup | undefined;
+    let readerPlan: setup.Plan | undefined;
     let cwd = root;
     let addDirs: string[] = [];
     let baseRef: string | undefined;
@@ -1774,7 +1773,7 @@ export class SessionService {
   }
 
   /** The setup due before the session's claude next starts: one the node stopped in the middle of, or that failed. */
-  #setupDue(id: string): WorktreeSetup | undefined {
+  #setupDue(id: string): setup.Plan | undefined {
     const row = this.store.session(id);
     const lost = !!row?.local.baseRef && !existsSync(row.local.cwd);
     return row && (row.local.setupPending || lost) ? row.local.setup : undefined;
@@ -1827,7 +1826,7 @@ export class SessionService {
   }
 
   /** Runs setup in the background, then sends the recorded run's message; sends that come meanwhile wait for it. */
-  #setUpThenSend(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: WorktreeSetup): void {
+  #setUpThenSend(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: setup.Plan): void {
     const abort = new AbortController();
     this.#setupCancel.set(id, { runId, abort });
     const done = this.#setUp(id, runId, text, mode, plan, abort.signal).finally(() => {
@@ -1839,7 +1838,7 @@ export class SessionService {
 
   /** Runs the setup commands, each shown as an item of the run, then sends the run's message with what setup did;
    * true once it went to claude. Setup is due again until it has run to its end. */
-  async #setUp(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: WorktreeSetup, signal: AbortSignal): Promise<boolean> {
+  async #setUp(id: string, runId: string, text: string, mode: "plain" | "boundary" | "now", plan: setup.Plan, signal: AbortSignal): Promise<boolean> {
     const row = this.store.session(id);
     if (!row) return false;
     // A worktree that is gone comes back first: setup runs in it.
@@ -1906,11 +1905,6 @@ export class SessionService {
     if (signal.aborted) {
       if (startedAt.length) item(startedAt.length - 1, undefined, true);
       console.log(`${nowIso()} INFO worktree setup stopped: the agent does not start {"sessionId":"${id}"}`);
-      return false;
-    }
-    const why = setup.failure(outcome, timeoutSec);
-    if (!plan.runAnyway && why) {
-      this.#failRun(id, runId, "other", masker.text(why));
       return false;
     }
     this.update(id, (c) => void delete c.row.local.setupPending);

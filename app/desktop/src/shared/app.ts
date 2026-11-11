@@ -63,8 +63,6 @@ export const NotifyRequest = z.strictObject({
   title: z.string().min(1).max(120),
   body: z.string().max(400),
   target: NotifyTarget,
-  /** No sound (Settings → General → Notifications). */
-  silent: z.boolean().optional(),
 });
 export type NotifyRequest = z.infer<typeof NotifyRequest>;
 

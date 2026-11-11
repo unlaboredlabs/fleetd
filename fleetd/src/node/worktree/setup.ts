@@ -1,6 +1,6 @@
 // A project's setup commands: run in order in a new worktree before its
-// agent starts, each with `sh -c`, the project's (and order's) variables and the project's time limit, until one
-// fails. A worktree set up before is not set up again while its commands and the contents of the files setup names as
+// agent starts, each with `sh -c`, the project's (and order's) variables and a 10 minute limit, until one fails. The
+// agent starts either way and hears what failed. A worktree set up before is not set up again while its commands and the contents of the files setup names as
 // its inputs are unchanged: the digest is kept in the worktree's own git directory, which goes when the worktree does.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -10,7 +10,10 @@ import { tailUtf16, type Env } from "../util.ts";
 import type { WorktreeSetup } from "../../shared/contracts.ts";
 
 const MARKER = "fleetd-setup";
-export const SETUP_TIMEOUT_DEFAULT_SEC = 600;
+export const SETUP_TIMEOUT_SEC = 600;
+
+/** What a worktree is set up with: the hub's setup, or a reader's own (warm.ts `readerSetup`) with a shorter limit. */
+export type Plan = WorktreeSetup & { timeoutSec?: number };
 
 export type Ran = { command: string; exitCode: number | null; outputTail: string; timedOut: boolean; tookMs: number };
 export type Outcome = { kind: "done"; ran: Ran[] } | { kind: "reused" } | { kind: "failed"; ran: Ran[]; skipped: string[] };
@@ -20,7 +23,7 @@ const ok = (r: Ran) => r.exitCode === 0;
 export const how = (r: Ran, timeoutSec: number) =>
   r.timedOut ? `passed its ${timeoutSec} s limit` : r.exitCode !== null ? `exited ${r.exitCode} after ${Math.floor(r.tookMs / 1000)} s` : `ended by a signal after ${Math.floor(r.tookMs / 1000)} s`;
 
-export const timeoutOf = (setup: WorktreeSetup) => setup.timeoutSec ?? SETUP_TIMEOUT_DEFAULT_SEC;
+export const timeoutOf = (plan: Plan) => plan.timeoutSec ?? SETUP_TIMEOUT_SEC;
 
 /** The git directory of the worktree at `cwd`: `.git` itself, or where a linked worktree's `.git` file points. */
 function gitDir(cwd: string): string | undefined {
@@ -79,7 +82,7 @@ export function record(cwd: string, d: string | undefined): void {
 
 /** Runs the commands in order in `cwd`, stopping at the first that fails; `signal` kills the one running. */
 export async function run(
-  setup: WorktreeSetup,
+  setup: Plan,
   cwd: string,
   env: Env,
   scrub: string[],
@@ -119,17 +122,7 @@ export function note(outcome: Outcome, timeoutSec: number, again: boolean): stri
     return outcome.ran.length ? `Setup ran in this worktree ${when}: ${outcome.ran.map((r) => `${code(r.command)} (${how(r, timeoutSec)})`).join(", ")}.` : undefined;
   const last = outcome.ran[outcome.ran.length - 1];
   if (!last) return undefined;
-  let text = `Setup failed in this worktree ${when}, and the project starts its agents anyway: ${code(last.command)} ${how(last, timeoutSec)}.`;
+  let text = `Setup failed in this worktree ${when}, and you were started anyway: ${code(last.command)} ${how(last, timeoutSec)}.`;
   if (outcome.skipped.length) text += ` Not run after it: ${outcome.skipped.map(code).join(", ")}.`;
   return `${text} The end of its output:\n\`\`\`\n${tail(last.outputTail, 1500)}\n\`\`\`\nFix what you need, or tell your lead if you can't.`;
-}
-
-/** Why the start failed: the command, how it ended and the end of its output. */
-export function failure(outcome: Outcome, timeoutSec: number): string | undefined {
-  if (outcome.kind !== "failed") return undefined;
-  const last = outcome.ran[outcome.ran.length - 1];
-  if (!last) return undefined;
-  let text = `setup failed, so the agent did not start: ${code(last.command)} ${how(last, timeoutSec)}`;
-  if (outcome.skipped.length) text += `; ${outcome.skipped.length} not run after it`;
-  return `${text}. Fix the project's setup commands (Settings › Projects) or turn on "Start the agent anyway". The end of its output:\n${tail(last.outputTail, 3000)}`;
 }

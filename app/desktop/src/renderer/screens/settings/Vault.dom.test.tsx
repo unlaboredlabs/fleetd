@@ -95,7 +95,7 @@ const render = async (hash: string, features: string[] = ["vault"], page?: React
       if (tool === "vault_status") return Promise.resolve({ ok: true, output: { hubBoxKey: "k", keyMode: "file", locked: false, keyMissing: false, recoverySaved: true, migration: { done: true, machines: [] } } });
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin: false } });
       if (tool === "project_settings_get")
-        return Promise.resolve({ ok: true, output: { settings: { machineId: "devbox", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [{ name: "STRIPE_KEY", kind: "secret", fingerprint: "ab12cd34", bytes: 20, updatedAt: AT }], worktrees: { dir: "/w/wt", baseBranch: "main", worktrees: [] } } } });
+        return Promise.resolve({ ok: true, output: { settings: { machineId: "devbox", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", setup: { commands: [], inputs: [] }, env: [{ name: "STRIPE_KEY", kind: "secret", fingerprint: "ab12cd34", bytes: 20, updatedAt: AT }], worktrees: { dir: "/w/wt", baseBranch: "main", worktrees: [] } } } });
       if (tool === "navi_purchases") return Promise.resolve({ ok: true, output: { purchases: [], ...(card === undefined ? {} : { card }) } });
       if (tool === "navi_card_set") {
         const ref = (input as { card?: string }).card;

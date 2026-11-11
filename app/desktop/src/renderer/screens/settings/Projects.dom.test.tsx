@@ -30,7 +30,7 @@ const settings: Settings = {
   projectId: "p1",
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
-  setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+  setup: { commands: [], inputs: [] },
   env: [
     { name: "API_URL", kind: "plain", value: "https://staging.example", bytes: 23, updatedAt: AT },
     { name: "STRIPE_KEY", kind: "secret", fingerprint: "5ec2e7a1", bytes: 20, updatedAt: AT },
@@ -320,51 +320,47 @@ describe("Settings → Projects", () => {
     expect(name.value).toBe("shop");
   });
 
-  it("turns the nightly memory refresh off, on by default, beside the project's memory", async () => {
+  it("refreshes memory every night with no switch, and runs it now beside the project's memory", async () => {
     await render();
-    expect(document.body.textContent).not.toContain("Refresh memory every night");
+    expect(document.body.textContent).not.toContain("Refresh now");
     act(() => root.unmount());
     root = createRoot(host);
     await render("instructions");
-    const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("section")?.textContent.includes("Refresh memory every night"));
-    if (toggle === undefined) throw new Error("no memory switch");
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    const section = [...document.querySelectorAll<HTMLElement>("section")].find((x) => x.textContent.includes("Refresh now"));
+    if (section === undefined) throw new Error("no memory refresh");
+    expect(section.querySelector('[role="switch"]')).toBeNull();
     // Its hour and last run, and Run now, are here too: Automations no longer lists it.
-    expect(document.body.textContent).toContain("Every night at 04:00 (Europe/Berlin)");
-    expect(document.body.textContent).toContain("done, 2 added, 1 removed");
+    expect(section.textContent).toContain("Every night at 04:00 (Europe/Berlin) with chat or orders");
+    expect(section.textContent).toContain("done, 2 added, 1 removed");
     await click(button("Run now"));
     expect(calls.find((c) => c.tool === "memory_refresh_run")?.input).toEqual({ projectRef: { machineId: "devbox", projectId: "p1" } });
     expect(document.body.textContent).toContain("Not run: Nothing new since the last refresh.");
-    await click(toggle);
-    await settle();
-    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", memoryRefresh: false });
+    expect(calls.some((c) => c.tool === "project_settings_set")).toBe(false);
   });
 
-  it("saves the default setup, under the repos, in order, with its limit, inputs and run anyway", async () => {
+  it("saves the setup, under the repos, in order, with its inputs, and no limit or start-anyway to pick", async () => {
     await render();
     // Setup is a section of its own, under Code's repos.
     const section = document.querySelector<HTMLElement>('section[data-part="projects.setup"]');
     if (section === null) throw new Error("no setup section");
+    expect(section.querySelector("input")).toBeNull();
+    expect(section.querySelector('[role="switch"]')).toBeNull();
+    expect(section.textContent).toContain("up to 10 minutes");
+    expect(section.textContent).toContain("the agent starts anyway, told what failed");
     const [commands, inputs] = [...section.querySelectorAll("textarea")];
-    const limit = section.querySelector("input");
-    if (commands === undefined || inputs === undefined || limit === null) throw new Error("no setup fields");
+    if (commands === undefined || inputs === undefined) throw new Error("no setup fields");
     // Save shows once there is something to save.
     expect(() => button("Save setup")).toThrow();
     await type(commands, "pnpm install --frozen-lockfile\n\npnpm codegen\n");
-    await type(limit, "0");
-    expect(section.textContent).toContain("1 to 3600");
+    await type(inputs, "/etc/passwd");
     expect(button("Save setup").disabled).toBe(true);
-    await type(limit, "900");
     await type(inputs, "pnpm-lock.yaml");
-    const anyway = section.querySelector<HTMLElement>('[role="switch"]');
-    if (anyway === null) throw new Error("no run anyway switch");
-    await click(anyway);
     await click(button("Save setup"));
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({
       machineId: "devbox",
       projectId: "p1",
-      setup: { commands: ["pnpm install --frozen-lockfile", "pnpm codegen"], timeoutSec: 900, runAnyway: true, inputs: ["pnpm-lock.yaml"] },
+      setup: { commands: ["pnpm install --frozen-lockfile", "pnpm codegen"], inputs: ["pnpm-lock.yaml"] },
     });
     expect(section.textContent).toContain("Saved.");
   });
@@ -612,7 +608,7 @@ describe("Settings → Projects → Repos", () => {
     expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
   });
 
-  it("shows one repo's remote, base and checkout, and the project's setup on a hub that has none of its own", async () => {
+  it("shows one repo's remote, base and checkout, and its setup as the project's", async () => {
     repos = [web];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     await renderRepos();
@@ -621,13 +617,13 @@ describe("Settings → Projects → Repos", () => {
     expect(text).not.toContain("github.com");
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
-    // Its setup is the project's, shown once, below: the row doesn't repeat it, and there is no "default" to explain.
+    // The project's own directory's setup is the project's, shown once, below: the row doesn't repeat it.
     expect(text).not.toContain("pnpm install");
     expect(setupTitle()).toBe("Setup");
-    expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
+    expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
   });
 
-  it("shows two repos, each with the setup that applies to it", async () => {
+  it("shows two repos, each with a setup section of its own, and saves another repo's with its name", async () => {
     repos = [web, api];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
     repoAnswers = {
@@ -642,9 +638,24 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("Not known yet");
     // Its checkout isn't a listed project: shown by its id, on its machine.
     expect(text).toContain("p9 on devbox");
-    expect(text).toContain("go mod download; make gen");
-    // One repo has its own, so the project's is the default for the rest.
-    expect(setupTitle()).toBe("Default setup");
+    expect(text).not.toContain("go mod download");
+    // No default: the project's own directory's setup, then api's.
+    expect(setupTitle()).toBe("Setup: web");
+    expect(document.body.textContent).not.toContain("Default setup");
+    const apiSetup = [...document.querySelectorAll<HTMLElement>("section")].find((x) => x.querySelector("h2")?.textContent === "Setup: api");
+    if (apiSetup === undefined) throw new Error("no setup for api");
+    const commands = apiSetup.querySelector("textarea");
+    if (commands === null) throw new Error("no api commands");
+    expect(commands.value).toBe("go mod download\nmake gen");
+    await type(commands, "go mod download");
+    await click(button("Save setup"));
+    await settle();
+    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({
+      machineId: "devbox",
+      projectId: "p1",
+      repo: "api",
+      setup: { commands: ["go mod download"], inputs: [] },
+    });
   });
 
   it("adds a repo by its path on the machine, or clones one from GitHub", async () => {

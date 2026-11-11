@@ -190,11 +190,6 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
         ]
       : [],
   });
-  // The hub's old shared memory (D212): no agent reads it; an admin reads it and retires it.
-  const shared = "# How the team works\n- Concise. State first.\n- Use pnpm, not npm.\n- Never estimate time.\n";
-  const sharedFile = (text: string): JsonObject => ({ scope: "user", text, chars: text.length, cap: 16000, notes: [] });
-  f.answer("memory_shared_get", undefined, { file: sharedFile(shared) });
-  f.answer("memory_shared_set", { text: "" }, { file: sharedFile("") });
   // Every project's global MCP servers: GitHub's, its token sealed on every machine.
   f.answer("mcp_servers_get", undefined, {
     global: [

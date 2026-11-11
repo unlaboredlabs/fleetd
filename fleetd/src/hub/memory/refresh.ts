@@ -1,7 +1,6 @@
 // The nightly memory refresh: once a night, at `policy.memory_refresh_at`
-// (04:00 by default) in `policy.tz` (else the hub machine's zone), each project with the refresh on
-// (`project_settings.memory_refresh`) and chat or order activity since its last run gets a fresh lead session of its
-// own. It reads the chat since the last run, the decisions and the memory, and may use `memory_read`, `remember` and
+// (04:00 by default) in `policy.tz` (else the hub machine's zone), each project with chat or order activity since its
+// last run gets a fresh lead session of its own. It reads the chat since the last run, the decisions and the memory, and may use `memory_read`, `remember` and
 // `forget` and nothing else: it starts with none of the runtime's tools and none of the person's MCP servers, only on a
 // node that lists `allowed_only`, and the hub takes only those calls from it (lead_calls/policy.ts). Its changes are
 // kept as it makes them (refresh_store.ts `record`) and posted at its end as one "Memory refreshed: +a ~b −c" line with
@@ -35,7 +34,6 @@ import { launch, type LaunchInput, type LaunchOptions } from "../executor/sessio
 import { stop } from "../executor/stop.ts";
 import { link } from "../link/index.ts";
 import { profiles } from "../projects/profiles.ts";
-import { projectSettings } from "../projects/settings.ts";
 import { prompts } from "../prompts/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -307,7 +305,7 @@ export async function tick(hub: Hub, launcher: Launcher = refreshPorts(hub).laun
   for (const project of store(hub).projectsList().filter((p) => !isPool(hub, p.machineId))) {
     const r = { machineId: project.machineId, projectId: project.projectId };
     const run = getRun(hub.db, r);
-    if (run.threadId !== undefined || (run.nightMs !== undefined && run.nightMs >= night) || !projectSettings(hub).memoryRefresh(r)) continue;
+    if (run.threadId !== undefined || (run.nightMs !== undefined && run.nightMs >= night)) continue;
     if (!active(hub, r, run.watermark, run.nightMs)) {
       run.nightMs = night;
       ran(hub, r, run, outcome(night, "schedule", "skipped", [], QUIET));
@@ -329,16 +327,15 @@ export async function tick(hub: Hub, launcher: Launcher = refreshPorts(hub).laun
   }
 }
 
-/** The refresh as the Automations page lists it for `r`: on or off, its hour and zone, its next night, the run now or last. */
+/** The refresh as the Automations page lists it for `r`: its hour and zone, its next night, the run now or last. */
 export function job(hub: Hub, r: ProjectRef): MemoryRefreshJob {
-  const on = projectSettings(hub).memoryRefresh(r);
   const [tz, at] = schedule(hub);
   const run = getRun(hub.db, r);
   const last = run.lastRun;
   const lastRun = last && run.threadId !== undefined ? { ...outcome(0, last.trigger, "running", run.items), at: last.at } : last;
-  const next = on ? nextNight(hub.clock.now(), tz, at) : undefined;
+  const next = nextNight(hub.clock.now(), tz, at);
   return {
-    on,
+    on: true,
     at: `${pad(at.hour)}:${pad(at.minute)}`,
     tz,
     ...(next === undefined ? {} : { nextRunAt: isoMs(next) }),
@@ -352,8 +349,7 @@ export async function runNow(hub: Hub, r: ProjectRef, launcher: Launcher = refre
   if (!project) return `There is no project ${r.machineId}/${r.projectId}.`;
   const run = getRun(hub.db, r);
   let why: string | undefined;
-  if (!projectSettings(hub).memoryRefresh(r)) why = "It is off for this project: turn it on first.";
-  else if (run.threadId !== undefined) why = "A refresh is already running.";
+  if (run.threadId !== undefined) why = "A refresh is already running.";
   else if (!active(hub, r, run.watermark, run.nightMs)) why = QUIET;
   else if (refreshPorts(hub).lacks(r.machineId, CAP_ALLOWED_ONLY)) why = `Its node is too old: ${tooOld(r)}.`;
   else why = held(hub, r);

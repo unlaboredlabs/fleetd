@@ -8,7 +8,12 @@ describe("notification preferences", () => {
   });
 
   it("keep what was stored and default the rest", () => {
-    const stored = JSON.stringify({ kinds: { machine: false, reply: "yes" }, sound: false });
-    expect(parsePrefs(stored)).toEqual({ kinds: { ...DEFAULT_PREFS.kinds, machine: false }, sound: false, badge: true });
+    const stored = JSON.stringify({ kinds: { machine: false, reply: "yes" } });
+    expect(parsePrefs(stored)).toEqual({ kinds: { ...DEFAULT_PREFS.kinds, machine: false } });
+  });
+
+  it("drop the sound and badge switches an older app stored", () => {
+    const stored = JSON.stringify({ kinds: { done: false }, sound: false, badge: false });
+    expect(parsePrefs(stored)).toEqual({ kinds: { ...DEFAULT_PREFS.kinds, done: false } });
   });
 });

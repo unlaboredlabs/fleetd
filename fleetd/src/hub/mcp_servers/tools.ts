@@ -22,6 +22,7 @@ import {
   MCP_SERVERS_MAX,
   mcpServers,
   OAUTH_HEADER,
+  oneSwitch,
   secretScope,
   secretsMissingOn,
   signedIn,
@@ -305,8 +306,7 @@ async function set(hub: Hub, caller: Caller, input: McpServerSetInput) {
   const server: McpServer = {
     scope,
     name: input.name,
-    enabled: input.enabled,
-    roles: input.roles,
+    ...oneSwitch(input.roles, input.enabled),
     transport: input.transport,
     env: values("env"),
     headers: values("header"),

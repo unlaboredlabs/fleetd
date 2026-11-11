@@ -147,7 +147,7 @@ describe("Settings → MCP servers", () => {
     await render(<HubMcpServers />);
     const text = document.body.textContent;
     expect(text).toContain("github");
-    expect(text).toContain("Lead and writers");
+    expect(text).toContain("Lead and agents");
     expect(text).toContain("HTTP https://api.example.com/mcp");
     expect(text).toContain("Authorization=secret");
     expect(text).toContain("Its secrets aren't on laptop");
@@ -202,6 +202,20 @@ describe("Settings → MCP servers", () => {
     const status = document.querySelector('[role="status"]')?.textContent ?? "";
     expect(status).toContain("one already running at its next start");
     expect(status).toContain("aren't on laptop yet");
+  });
+
+  it("asks one thing about who gets it: whether agents get it too, as well as each lead", async () => {
+    await render(<HubMcpServers />);
+    await click(button("Edit"));
+    expect(dialog().querySelector('[role="checkbox"]')).toBeNull();
+    const agents = [...dialog().querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label")?.textContent.includes("Agents get it too") ?? false);
+    if (agents === undefined) throw new Error("no agents switch");
+    // Saved for the lead and writers by an older app: on.
+    expect(agents.getAttribute("aria-checked")).toBe("true");
+    await click(agents);
+    expect(dialog().textContent).toContain("Only each project's lead gets it.");
+    await click(button("Save", dialog()));
+    expect(saved.at(-1)?.roles).toEqual({ lead: true, writers: false, reviewers: false });
   });
 
   it("turns the person's own servers off", async () => {
