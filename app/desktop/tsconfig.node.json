@@ -3,7 +3,9 @@
   "compilerOptions": {
     "lib": ["ES2024"],
     "types": ["node"],
+    // The repo's stand-in accounts service (fleetd/test/fake-accounts.ts), which the cloud sign-in's tests run against.
+    "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "scripts/**/*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "scripts/**/*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "../../fleetd/test/fake-accounts.ts"]
 }

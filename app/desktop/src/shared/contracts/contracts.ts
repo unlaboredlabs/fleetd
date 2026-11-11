@@ -59,6 +59,63 @@ export const STEER_TEXT_MAX = 20000;
 /** How long a machine's sleep stays shown. */
 export const SLEPT_SHOWN_MS = 3600000;
 
+/** The accounts service's sign-in, under its origin (fleetd cloud's `https://accounts.<base>`): POST, JSON. */
+export const ACCOUNTS_SIGN_IN_PATH = "/v1/app/sign-in";
+
+/** The accounts service's sign-out: POST, JSON, always 204. */
+export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
+
+/** Where WorkOS sends the browser back on the desktop: `http://127.0.0.1:<any port>` then this path. */
+export const ACCOUNTS_LOOPBACK_PATH = "/signin/callback";
+
+/** Where it sends it back on the phone. */
+export const ACCOUNTS_APP_REDIRECT = "fleetd://signin/callback";
+
+/** A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written. */
+export type AccountsFailure = {
+  /** invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). */
+  code: string;
+  fix?: string;
+  message: string;
+};
+
+/** POST /v1/app/sign-in: what WorkOS sent the browser back with, and this device's name. The service redeems the code with WorkOS itself and keeps no token it got; no auth header. */
+export type AccountsSignInInput = {
+  /** WorkOS's authorization code, from the redirect. */
+  code: string;
+  /** The PKCE verifier (RFC 7636) whose S256 challenge the authorize URL carried. */
+  codeVerifier: string;
+  /** Names the key each team's /pair makes: the computer's or phone's name. */
+  deviceName: string;
+  /** Exactly the redirect_uri the authorize URL carried: a loopback `http://127.0.0.1:<port>/signin/callback` or `fleetd://signin/callback`. */
+  redirectUri: string;
+};
+
+/** 200: who signed in and every team they are in, each with a pairing code for its /pair. A first sign-in makes the person's team in the same call. */
+export type AccountsSignInOutput = {
+  email: string;
+  /** WorkOS's session id, which sign-out ends. The app keeps it and the email, nothing else of WorkOS. */
+  sessionId: string;
+  teams: AccountsTeam[];
+};
+
+/** POST /v1/app/sign-out: the session to end. */
+export type AccountsSignOutInput = {
+  sessionId: string;
+};
+
+/** One team of the person's. */
+export type AccountsTeam = {
+  /** The team's id in the service. */
+  id: string;
+  /** The label in its address: `<name>.<base>`. */
+  name: string;
+  /** A pairing code (`ABCD-2345`) for this person on this team: one use, 15 minutes. */
+  pairingCode: string;
+  /** The team's hub address, an https origin with no path (http only on 127.0.0.1, for tests). */
+  url: string;
+};
+
 export type ActionItem = {
   at: Timestamp;
   /** Only when the runner reports one or the output says "Exit code N". */

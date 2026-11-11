@@ -9,6 +9,7 @@ import { externalUrl } from "./external";
 import type { Hubs } from "./hub/hubs";
 import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
+import type { Cloud } from "./cloud";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
@@ -63,6 +64,7 @@ export const registerIpc = (
     menuBar: Pick<MenuBar, "look" | "fit" | "hide" | "showMenu">;
   },
   pairing: PairingService,
+  cloud: Cloud,
 ): MacSetup => {
   // A hub removed while a call was on its way answers as an unpaired one would.
   const gone = { ok: false, error: { code: "offline", message: "That hub was removed from this app." } } as const;
@@ -229,6 +231,13 @@ export const registerIpc = (
   handle(IPC.pairAuto, () => pairing.auto());
   handle(IPC.pairStore, () => pairing.store());
   handle(IPC.pairSetup, () => pairing.setup());
+  handle(IPC.cloudState, () => cloud.state());
+  handle(IPC.cloudSignIn, () => cloud.signIn());
+  handle(IPC.cloudCancel, () => cloud.cancel());
+  handle(IPC.cloudReopen, () => cloud.reopen());
+  handle(IPC.cloudLink, () => cloud.link());
+  handle(IPC.cloudSignOut, () => cloud.signOut());
+  handle(IPC.cloudConnectComputer, (_event, id) => cloud.connectComputer(id));
   handle(IPC.appSessionWindow, (_event, request) => frame.sessionWindows.show(request));
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);

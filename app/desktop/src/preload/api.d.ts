@@ -3,6 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
+import type { CloudState, ConnectComputerOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -160,6 +161,21 @@ export interface FleetdApi {
     store(): Promise<KeyStore>;
     /** Opens `fleetd init` in the system terminal, or says why not and what to run. Never rejects; takes nothing. */
     setup(): Promise<SetupOutcome>;
+  };
+  /** fleetd cloud's Sign in (src/main/cloud). A build without the cloud's values answers `available: false`. */
+  readonly cloud: {
+    state(): Promise<CloudState>;
+    /** The whole sign-in, browser and all; resolves when it ends. Never rejects. */
+    signIn(): Promise<SignInOutcome>;
+    cancel(): Promise<void>;
+    /** Opens the sign-in page under way again. */
+    reopen(): Promise<void>;
+    /** The sign-in page under way, or null. */
+    link(): Promise<string | null>;
+    /** Drops this device's key on each of the account's hubs, then ends the session. Never rejects. */
+    signOut(): Promise<SignOutOutcome>;
+    /** Connect this computer to `hub`: its join line in a terminal. Never rejects. */
+    connectComputer(hub: HubId): Promise<ConnectComputerOutcome>;
   };
   readonly system: {
     /** This computer's host name (without .local). */

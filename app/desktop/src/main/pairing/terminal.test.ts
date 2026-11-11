@@ -22,6 +22,7 @@ const fake = (over: Partial<TerminalDeps> & { files?: ReadonlyArray<string> } = 
       scripts.push(text);
       return `/tmp/fleetd-x/${name}`;
     },
+    removeScript: () => undefined,
     ...over,
   };
   return { deps, ran, scripts };

@@ -125,6 +125,12 @@ export class Fixture {
    */
   pair: JsonObject | undefined;
   /**
+   * fleetd cloud's Sign in (src/main/cloud/fixture.ts): present turns it on, as a build with the cloud's values has it,
+   * and says who is signed in, whether the first hub came with the account, and how Sign in and Connect this computer
+   * answer. Absent: Sign in is off, as in a release.
+   */
+  cloud: JsonObject | undefined;
+  /**
    * The app's own update instead of the release feed (src/main/updater.ts): `{ current, app, release }`, an UpdatesState.
    * Absent: up to date.
    */
@@ -152,6 +158,7 @@ export class Fixture {
     f.state = { ...base.state };
     f.connect = base.connect;
     f.pair = base.pair === undefined ? undefined : clone(base.pair);
+    f.cloud = base.cloud === undefined ? undefined : clone(base.cloud);
     f.appUpdate = base.appUpdate === undefined ? undefined : clone(base.appUpdate);
     f.cache = base.cache === undefined ? undefined : clone(base.cache);
     f.label = base.label;
@@ -278,7 +285,7 @@ export class Fixture {
   }
 
   /** The file main loads. Within a tool, more specific inputs come first, since main takes the first match. */
-  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject; update?: JsonObject } {
+  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject; cloud?: JsonObject; update?: JsonObject } {
     const frames: Array<FixtureFrame> = [];
     const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
     if (this.snapshot !== undefined) frames.push({ t: "snapshot", snapshot: { ...this.snapshot, cursor: num(this.snapshot["cursor"]) } });
@@ -317,6 +324,7 @@ export class Fixture {
       ...(this.connect === undefined ? {} : { connect: this.connect }),
       ...(settleMs === undefined ? {} : { settleMs }),
       ...(this.pair === undefined ? {} : { pair: this.pair }),
+      ...(this.cloud === undefined ? {} : { cloud: this.cloud }),
       ...(this.appUpdate === undefined ? {} : { update: this.appUpdate }),
       ...(this.cache === undefined ? {} : { cache: this.cache }),
       ...(this.hidden.length === 0 ? {} : { hidden: this.hidden }),
@@ -327,7 +335,7 @@ export class Fixture {
         : {
             hubs: this.hubs.map((h) => {
               // One hub each: what only the app's first hub (or the QA harness) reads stays with the file's own.
-              const { settleMs: _settle, pair: _pair, update: _update, hubs: _hubs, label: _label, color: _color, ...fixture } = h.fixture.toFile();
+              const { settleMs: _settle, pair: _pair, cloud: _cloud, update: _update, hubs: _hubs, label: _label, color: _color, ...fixture } = h.fixture.toFile();
               return { label: h.label, ...(h.color === undefined ? {} : { color: h.color }), fixture };
             }),
           }),

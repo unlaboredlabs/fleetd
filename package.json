@@ -8,6 +8,7 @@
     "fleetd/src",
     "fleetd/test/fake-app.ts",
     "fleetd/test/fake-node.ts",
+    "fleetd/test/fake-accounts.ts",
     "app/desktop/src/shared/contracts"
   ],
   "exports": {
@@ -16,6 +17,7 @@
     "./tools": "./fleetd/src/pkg/tools.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",
+    "./fakes/accounts": "./fleetd/test/fake-accounts.ts",
     "./gen/migrations": "./fleetd/src/gen/migrations.ts",
     "./shared/clock": "./fleetd/src/shared/clock.ts",
     "./shared/errors": "./fleetd/src/shared/errors.ts",

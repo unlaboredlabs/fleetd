@@ -17,6 +17,7 @@ import { DevicesSettings } from "./Devices";
 import { General } from "./General";
 import { GithubSettings } from "./Github";
 import { HubLinksSettings, HubsSettings } from "./Hubs";
+import { CloudAccountSettings } from "./CloudAccount";
 import { ImportMemory } from "./ImportMemory";
 import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
@@ -127,6 +128,7 @@ function HubsAndDevices() {
     <div className={s.scroll} data-screen="settings.hubs">
       <div className={s.column}>
         <PageHead title="Hubs & devices" />
+        <CloudAccountSettings />
         <HubsSettings />
         <Part reveal="devices" screen="settings.devices">
           <DevicesSettings />

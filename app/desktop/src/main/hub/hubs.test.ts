@@ -30,6 +30,28 @@ const setup = () => {
 };
 
 describe("hubs", () => {
+  it("marks a team from signing in to fleetd cloud as the account's, on a fresh app and beside a hub of one's own, across launches", () => {
+    const fresh = setup().make();
+    expect(fresh.connectCloud({ url: "https://acme.fleetd.dev", key: "k1" }, "acme")).toEqual({ ok: true });
+    expect(fresh.list()).toEqual([{ id: "hub", label: "acme", cloud: true }]);
+    fresh.stop();
+
+    const other = setup();
+    saveCredentials(other.credentials, { url: "http://devbox:4790", key: "k0" });
+    const hubs = other.make();
+    expect(hubs.connectCloud({ url: "https://acme.fleetd.dev", key: "k1" }, "acme")).toEqual({ ok: true });
+    // Signing in again pairs the same team again rather than listing it twice.
+    expect(hubs.connectCloud({ url: "https://acme.fleetd.dev/", key: "k2" }, "acme")).toEqual({ ok: true });
+    expect(hubs.list().map((h) => [h.label, h.cloud])).toEqual([["devbox", undefined], ["acme", true]]);
+    expect(hubs.cloudHubs().map((h) => h.label)).toEqual(["acme"]);
+    const id = hubs.list()[1]?.id ?? "";
+    expect(hubs.update(id, { label: "Acme", color: null })).toEqual({ ok: true });
+    hubs.stop();
+    const again = other.make();
+    expect(again.list()[1]).toEqual({ id, label: "Acme", cloud: true });
+    again.stop();
+  });
+
   it("starts an upgraded app as its first hub, labelled by host until named, and writes nothing until a change", () => {
     const { home, credentials, make } = setup();
     saveCredentials(credentials, { url: "http://devbox.tail1234.ts.net:4790", key: "k1" });

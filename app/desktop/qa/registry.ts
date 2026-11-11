@@ -131,6 +131,15 @@ export const fixtures = [
   "onboarding-not-found",
   "onboarding-app-too-old",
   "onboarding-hub-too-old",
+  // fleetd cloud's Sign in, on a build that has it (fixtures/cloud): the two ways in, how a sign-in fails, Connect a
+  // computer on a team with no machine, and the account in Settings.
+  "cloud-first-screen",
+  "cloud-sign-in-refused",
+  "cloud-sign-in-timeout",
+  "cloud-connect",
+  "cloud-connect-no-terminal",
+  "cloud-account",
+  "cloud-account-signed-out",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -2409,6 +2418,54 @@ export const screens: readonly Screen[] = [
       "onboarding-file-store",
     ],
   },
+  // fleetd cloud (fixtures/cloud), on a build given its two values: the first screen's two ways in; the wait for the
+  // browser after Sign in; a sign-in that came back refused or ran out; and Use your own hub, the form as it always
+  // was with a way back. Every onboarding fixture above has no `cloud` section, so it is today's screen exactly.
+  { id: "onboarding", route: "#/onboarding", fixtures: ["cloud-first-screen"], variant: "ways" },
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-first-screen"],
+    variant: "signing-in",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByText("Finish signing in in your browser").waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-sign-in-refused", "cloud-sign-in-timeout"],
+    variant: "sign-in-failed",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("button", { name: "Sign in again" }).waitFor({ timeout: 10_000 });
+    },
+  },
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-first-screen"],
+    variant: "own-hub",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Use your own hub/u }).click();
+      await page.getByRole("textbox", { name: "Hub address" }).waitFor({ timeout: 10_000 });
+    },
+  },
+  // Connect a computer: a team of fleetd cloud with no machine, as its owner. Connect this computer opens a terminal,
+  // or, where none opens, points at the line.
+  { id: "setup.machine", route: "#/", fixtures: ["cloud-connect"] },
+  {
+    id: "setup.machine",
+    route: "#/",
+    fixtures: ["cloud-connect", "cloud-connect-no-terminal"],
+    variant: "this-computer",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Connect this computer" }).click();
+      await page.getByText(/^Connecting this computer|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
+    },
+  },
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-account", "cloud-account-signed-out"], variant: "fleetd-account" },
   // UX-1 [22]: a code typed in lower case with no dash shows as ABCD-2345, and pressing Connect moves nothing above
   // the hub's answer: the field and the button stay where they were.
   {
