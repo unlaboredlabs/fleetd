@@ -4862,15 +4862,23 @@ export type NaviApprovals = {
 };
 
 export type NaviApprovalsInput = {
+  /** The page's end: the `older` of the page before. Absent: from the newest. */
+  before?: number;
+  /** How many of the log to answer; absent, `AUTO_APPROVED_MAX` (what older apps read). */
+  limit?: number;
   machineId: MachineId;
   projectId: ProjectId;
 };
 
 export type NaviApprovalsOutput = {
   approvals: NaviApprovals;
-  /** Newest first, at most `AUTO_APPROVED_MAX`. */
+  /** Newest first, at most `limit`. */
   log: AutoApproved[];
   next?: string;
+  /** Where the next older page starts (pass it as `before`); absent once `log` reaches the oldest. */
+  older?: number;
+  /** How many the whole log holds. Absent from older hubs. */
+  total?: number;
   truncated?: boolean;
 };
 

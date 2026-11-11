@@ -74,9 +74,10 @@ export const hasItem = (view: PanelView): boolean => {
 
 /**
  * Settings' pages, in one window (D211): You (General, Your accounts, Vault, Your memory, Your devices, Hubs); a project's (Project, Agents,
- * Instructions & memory, Automations, Prompts and Vault), all of the one project picked under Projects (`for`); and the Hub group, for the
- * hub's owners and admins only: People, Machines, Updates, Every project's Profiles, Tools & skills, Instructions & memory and
- * Prompts, Hub accounts, the hub's Vault, and Setup. A Hub page's tab is `hub.<page>`, its path `#/settings/hub/<page>`.
+ * Instructions & memory, Automations and Vault), all of the one project picked under Projects (`for`); and the Hub group, for the
+ * hub's owners and admins only: People, Machines, Updates, Every project's Profiles, Tools & skills and Instructions & memory,
+ * Hub accounts, the hub's Vault, and Setup. A Hub page's tab is `hub.<page>`, its path `#/settings/hub/<page>`. The built-in
+ * prompts (`prompts`, `hub.prompts`) are no tab: each opens from the foot of its Instructions page.
  */
 export const SETTINGS_TABS = [
   "general",
@@ -104,7 +105,6 @@ export const SETTINGS_TABS = [
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type HubTab = Extract<SettingsTab, `hub.${string}`>;
-export type SettingsView = "edit" | "compare" | "update";
 
 /** A page of the Hub group: an owner's or admin's only. */
 export const isHubTab = (tab: SettingsTab): tab is HubTab => tab.startsWith("hub.");
@@ -133,15 +133,14 @@ type ScreenOf =
   | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
   /**
-   * A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update
-   * (Every project's prompts with no `for`); `machine` opens one machine's page under Hub › Machines.
+   * A tab; `prompt` and `for` ("<machine>/<project>") link one built-in prompt and a project's texts (the hub-wide
+   * prompts with no `for`); `machine` opens one machine's page under Hub › Machines.
    */
   | {
       readonly id: "settings";
       readonly tab: SettingsTab;
       readonly prompt?: string;
       readonly for?: string;
-      readonly view?: SettingsView;
       readonly machine?: string;
     }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
@@ -155,16 +154,13 @@ export const HOME: Screen = { id: "home" };
 
 const isSettingsTab = (tab: string): tab is SettingsTab => SETTINGS_TABS.some((t) => t === tab);
 
-const viewOf = (view: string | null): { view?: SettingsView } => (view === "compare" || view === "update" ? { view } : {});
-
 /** `#/settings/hub/<page>[/<machine>]`: a Hub page; an unknown one is People. */
 const hubScreen = (page: string | undefined, machine: string | undefined, query: URLSearchParams): ScreenOf => {
   const tab = `hub.${page ?? ""}`;
   const hubTab = isSettingsTab(tab) && isHubTab(tab) ? tab : "hub.people";
   if (hubTab === "hub.machines" && machine !== undefined) return { id: "settings", tab: hubTab, machine };
   const prompt = query.get("prompt");
-  if (hubTab !== "hub.prompts" || !prompt) return { id: "settings", tab: hubTab };
-  return { id: "settings", tab: hubTab, prompt, ...viewOf(query.get("view")) };
+  return hubTab === "hub.prompts" && prompt ? { id: "settings", tab: hubTab, prompt } : { id: "settings", tab: hubTab };
 };
 
 const decode = (segment: string): string | null => {
@@ -249,14 +245,13 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       return a === "add" ? { id: "projects.add" } : HOME;
     case "settings": {
       if (a === "hub") return hubScreen(b, parts[3], query);
-      const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
+      const [prompt, project] = [query.get("prompt"), query.get("for")];
       const tab = a !== undefined && isSettingsTab(a) && !isHubTab(a) ? a : "general";
       return {
         id: "settings",
         tab,
         ...(prompt ? { prompt } : {}),
         ...(project ? { for: project } : {}),
-        ...viewOf(view),
       };
     }
     case "onboarding":
@@ -333,7 +328,6 @@ export const toHash = (screen: Screen): string => {
   if (screen.id === "settings") {
     if (screen.prompt !== undefined) query.set("prompt", screen.prompt);
     if (screen.for !== undefined) query.set("for", screen.for);
-    if (screen.view !== undefined && screen.view !== "edit") query.set("view", screen.view);
   }
   if (screen.at !== undefined) query.set("at", screen.at);
   // A project's "<machine>/<project>" reads as one in a copied link.

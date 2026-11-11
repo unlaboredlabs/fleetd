@@ -34,7 +34,7 @@ export function ProjectList() {
   return (
     <div className={s.scroll} data-screen="settings.projects.list">
       <div className={s.column}>
-        <PageHead title="Projects">Each project&apos;s own settings: its repos, agents, instructions, automations and prompts.</PageHead>
+        <PageHead title="Projects">Each project&apos;s own settings: its repos, agents, instructions and automations.</PageHead>
         <SettingsSection>
           {projects === undefined ? (
             <GroupNote>Loading…</GroupNote>

@@ -76,6 +76,8 @@ export type ChatInfoParams = {
   Profiles: { key: Key };
   /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
   Approvals: { key: Key };
+  /** All that ran without asking, read in pages as it scrolls (ApprovedLog.tsx). */
+  ApprovedLog: { key: Key };
   /** The card it pays with and what it bought (Payments.tsx). */
   Payments: { key: Key };
   /** The other hubs it reaches (LinkedHubs.tsx). */

@@ -2,17 +2,20 @@
 // instructions from the human": the hub-wide text, then the project's. Settings → Projects › Instructions & memory
 // edits one project's;
 // Settings › Hub › Every project edits the one for every project (HubInstructions), which only owners and admins change
-// (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
+// (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt. Each ends
+// on one quiet row that opens fleetd's built-in prompts (Prompts.tsx), which have no tab of their own.
 import { useEffect, useState } from "react";
 import { Button, Text, Textarea } from "../../ui";
+import { editCount } from "./catalog";
 import { INSTRUCTIONS, type ProjectRef, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Memory } from "./Memory";
 import { MemoryRefreshSetting } from "./Projects";
-import { GroupNote, NoProject, PageHead, scopeName, SettingsRow, SettingsSection, useProjects } from "./parts";
-import { replaceRoute, type SettingsRoute } from "./route";
+import { GroupNote, NoProject, PageHead, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { formatRoute, replaceRoute, type SettingsRoute } from "./route";
+import { hashFor } from "../shell/navigation";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -185,8 +188,33 @@ export function Instructions({ route }: { route: SettingsRoute }) {
         )}
         <Memory project={project} />
         {project === null ? null : <Refresh projectRef={project.ref} />}
+        {project === null ? null : <BuiltInPrompts project={project} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * The way to fleetd's built-in prompts, at the foot of a project's instructions (or, with no project, of the hub-wide
+ * ones, which only owners and admins see): one quiet row. It counts the edits made there, and says nothing with none.
+ */
+export function BuiltInPrompts({ project }: { project: Scope | null }) {
+  const live = useLive();
+  const ref = project ? projectRefOf(project) : undefined;
+  const list = useToolQuery("prompt_get", ref ? { projectRef: ref } : {}, { enabled: live });
+  if (!live) return null;
+  const edits = list.data === undefined ? 0 : editCount(list.data.prompts ?? [], list.data.orphans ?? [], project ? "project" : "global");
+  const href = project ? formatRoute({ tab: "prompts", for: scopeKey(project) }) : hashFor({ id: "settings", tab: "hub.prompts" });
+  return (
+    <SettingsSection part="builtin-prompts">
+      <SettingsList label="Built-in prompts">
+        <SettingsListRow name="Built-in prompts" label="Built-in prompts" meta={edits > 0 ? `${edits} edited` : undefined} open={{ href }}>
+          <Text size="sm" tone="quiet">
+            What fleetd itself tells {project ? "this project's" : "every project's"} agents. Most changes belong in the instructions above.
+          </Text>
+        </SettingsListRow>
+      </SettingsList>
+    </SettingsSection>
   );
 }
 

@@ -118,13 +118,3 @@ function shared(pieces: ReadonlyArray<Piece>): number {
   const same = pieces.reduce((n, p) => n + (p.op === "same" ? p.text.length : 0), 0);
   return total === 0 ? 0 : same / total;
 }
-
-export function counts(d: ReadonlyArray<DiffLine>): { added: number; removed: number } {
-  return {
-    added: d.filter((l) => l.op === "add").length,
-    removed: d.filter((l) => l.op === "del").length,
-  };
-}
-
-/** Whitespace-only differences (a reflow) do not make two texts different to a person. */
-export const sameProse = (a: string, b: string): boolean => a.replace(/\s+/gu, " ").trim() === b.replace(/\s+/gu, " ").trim();

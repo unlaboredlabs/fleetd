@@ -207,9 +207,9 @@ const render = async (page: "project" | "instructions" = "project") => {
       <UiProvider>
         <DataProvider layer={layer}>
           {page === "project" ? (
-            <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1", view: "edit" }} />
+            <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1" }} />
           ) : (
-            <Instructions route={{ tab: "instructions", prompt: null, for: "devbox/p1", view: "edit" }} />
+            <Instructions route={{ tab: "instructions", prompt: null, for: "devbox/p1" }} />
           )}
         </DataProvider>
       </UiProvider>,

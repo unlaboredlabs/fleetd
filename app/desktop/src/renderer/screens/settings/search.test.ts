@@ -1,8 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseRoute, replaceRoute } from "./route";
-import { OPTIONS, optionHref, optionsFor, searchSettings } from "./search";
+import { describe, expect, it } from "vitest";
+import { OPTIONS, optionsFor, searchSettings } from "./search";
 
 /** What a member finds; an admin finds the Hub group's too. */
 const labels = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.label);
@@ -23,10 +22,12 @@ describe("settings search", () => {
     expect(labels("disconnect")).toEqual(["Hub"]);
   });
 
-  it("finds a prompt by its name, opening it in the editor", () => {
-    const [reviewer] = searchSettings("reviewer");
-    expect(reviewer?.prompt).toBe("review.reviewer");
-    expect(reviewer?.tab).toBe("prompts");
+  it("finds the built-in prompts as one page, never one result per prompt", () => {
+    const found = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).filter((o) => o.tab === "prompts" || o.tab === "hub.prompts");
+    for (const q of ["prompts", "built-in prompts", "reviewer", "voice", "system prompt"]) expect(found(q).map((o) => o.key), q).toEqual(["prompts"]);
+    expect(found("prompts")[0]?.label).toBe("Built-in prompts");
+    // An admin finds the same one page: the hub-wide ones open from Hub › Instructions.
+    expect(found("prompts", true).map((o) => o.key)).toEqual(["prompts"]);
   });
 
   it("needs every word, and finds nothing for nothing", () => {
@@ -71,7 +72,7 @@ describe("settings search", () => {
     }
     const keys = new Set(OPTIONS.map((o) => o.key));
     expect([...marked].filter((k) => !keys.has(k)), "marked on a page, missing from search").toEqual([]);
-    const found = OPTIONS.filter((o) => o.key !== o.tab && o.prompt === undefined).map((o) => o.key);
+    const found = OPTIONS.filter((o) => o.key !== o.tab).map((o) => o.key);
     expect(found.filter((k) => !marked.has(k)), "in search, marked on no page").toEqual([]);
   });
 
@@ -89,16 +90,4 @@ describe("settings search", () => {
   it("gives every option a unique key", () => {
     expect(new Set(OPTIONS.map((o) => o.key)).size).toBe(OPTIONS.length);
   });
-
-  it("opens a prompt in the project Prompts was showing, so a save never lands hub-wide by surprise", () => {
-    vi.stubGlobal("window", { location: { hash: "" }, history: { state: null, replaceState: () => undefined }, dispatchEvent: () => true });
-    replaceRoute({ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" });
-    const [reviewer] = searchSettings("reviewer");
-    if (reviewer === undefined) throw new Error("no reviewer");
-    expect(parseRoute(optionHref(reviewer))).toMatchObject({ tab: "prompts", prompt: "review.reviewer", for: "devbox/storefront" });
-  });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });

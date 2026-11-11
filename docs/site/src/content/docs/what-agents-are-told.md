@@ -10,7 +10,7 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app's Settings › a project › Prompts, and in
+Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app under **Built-in prompts** (at the foot of a project's Instructions), and in
 the [table at the end of this page](#prompts). You can edit each one. What fleetd fills into them, such as the event
 lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
@@ -197,9 +197,10 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings › a project › Prompts for one project's own texts, or Settings › Hub › Every project › Prompts for the hub-wide ones
-(owners and admins only: the hub refuses anyone else). Open a prompt from the list in the sidebar, edit it and Save. "Compare with default"
-shows your changes; "Reset to default" drops them.
+In the app: Settings › a project › Instructions & memory, then **Built-in prompts** at the foot of the page, for one project's own
+texts. Hub › Every project › Instructions & memory has the same row for the hub-wide ones (owners and admins only: the hub refuses
+anyone else). Most changes belong in the instructions above that row. The list shows your edits first and the rest behind their
+groups: open a prompt, edit it and Save. "Reset to the built-in" drops your edit.
 
 On the hub machine:
 
@@ -283,7 +284,7 @@ Your memory › Import memory:
 1. **Copy prompt**, and paste it into a chat with the other assistant. It asks for everything that assistant has
    stored about you, in five parts (instructions, identity, career, projects, preferences), one dated line per entry,
    in a single code block, and to say whether that is all of it. It also asks it to leave secrets out. The prompt is
-   `memory.export`; an admin can change it on the Prompts page, and the phone shows the same text.
+   `memory.export`; an admin can change it under Built-in prompts, and the phone shows the same text.
 2. **Paste its answer** into the box and press **Add to Memory**. A minute or so later it says how many entries it
    added.
 
@@ -307,7 +308,7 @@ on every device.
 Before a lead's risky action (a send, a share, a first visit to a site, a final Confirm on a site) reaches you, its
 [checker](/docs/projects#approvals) judges it in one model turn: a fresh session with no tools at all, on your own
 Claude, on Sonnet 5.5 at medium effort. Its system prompt is
-`approvals.checker`, which an admin can change on the Prompts page; its one message is the action, where each part came
+`approvals.checker`, which an admin can change under Built-in prompts; its one message is the action, where each part came
 from, your recent messages and the lead's last question, as JSON inside `<action_review>`. It never gets the mail,
 pages or files the lead read. It answers go, ask or block with a one-line reason; fleetd's own rules (the floors, and
 the cases that always ask) hold past it, and anything else it answers asks you.
@@ -364,8 +365,8 @@ listed by name and description as `fleetd:<name>`. It opens one with the Skill t
 
 Your version stays in use.
 
-- In a project's Prompts, the prompt is marked `update`. "Review the update" shows both changes, and you pick Save
-  merged, Keep mine, or Use the new default.
+- Under Built-in prompts, the prompt is marked "built-in changed". Opening it shows what fleetd changed, what you
+  changed and both together to edit, and you pick Save both changes, Keep mine, or Use the new built-in.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
 ## When fleetd retires a prompt you edited {#retired}
@@ -373,12 +374,11 @@ Your version stays in use.
 A release can fold a prompt into another one or drop it. Your edit to it then stops applying, but fleetd keeps it and
 never moves it for you.
 
-1. Open a project's Prompts in Settings. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
-   "task finished" note (hub-wide) no longer applies", why, and which prompt to copy it into.
-2. "Show your text" shows your old edit; "Copy your text" copies it.
-3. Paste what you still want into the prompt it names. If none takes its place, use your
+1. Open Built-in prompts, a project's or the hub-wide ones. Among your edits, each one is marked "no longer sent";
+   opening it says why, shows your old text, and names the prompt to copy it into.
+2. Paste what you still want into the prompt it names. If none takes its place, use your
    [instructions](#instructions).
-4. Delete the old edit.
+3. Delete the old edit.
 
 From an MCP client, `prompt_get` without an `id` returns these under `orphans`, and `prompt_set` with the old id and
 `reset: true` deletes one.

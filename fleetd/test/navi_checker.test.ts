@@ -291,6 +291,25 @@ test("a checker's go shows in the chat and the log, and a YOLO run only in the l
   expect(Object.keys(JSON.parse(row.data))).toEqual(["at", "by", "tool", "what", "reason", "messageId"]);
 });
 
+test("the log reads in pages from the newest, every entry reachable, and an older app still gets its 200", async () => {
+  const { hub, ok, sam } = setup();
+  for (let i = 0; i < 205; i += 1) autoApproved(hub, NAVI, mailSend({ to: [`p${String(i)}@example.com`] }), "yolo");
+  const device = key("operate", { human: true, person: { personId: sam, name: "Sam" } });
+  const first = await ok(device, "project_approvals", { ...NAVI, limit: 5 });
+  expect(first.log.map((e: { what: string }) => e.what)).toEqual([204, 203, 202, 201, 200].map((i) => `\`send_message\` on \`mail\`, to p${String(i)}@example.com`));
+  expect(first.total).toBe(205);
+  let seen = first.log.length;
+  let before: number | undefined = first.older;
+  while (before !== undefined) {
+    const page = await ok(device, "project_approvals", { ...NAVI, limit: 50, before });
+    seen += page.log.length;
+    before = page.older;
+  }
+  expect(seen).toBe(205);
+  const old = await ok(device, "project_approvals", NAVI);
+  expect([old.log.length, old.older === undefined, old.total]).toEqual([checker.AUTO_APPROVED_MAX, false, 205]);
+});
+
 /** Whole outputs, each with its call: a long mail with an attacker's address early in its body, sent mail, contacts. */
 function wholeReads(): Read[] {
   const mail =

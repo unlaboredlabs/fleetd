@@ -39,18 +39,29 @@ export function startNew(c: Database, r: ProjectRef): void {
   );
 }
 
-/** The actions the Navi ran without asking, newest first. */
-export function log(c: Database, r: ProjectRef): AutoApproved[] {
-  return c
-    .query<{ data: string }, [string, string, number]>(
-      "SELECT data FROM navi_auto_approved WHERE machine_id = ? AND project_id = ? ORDER BY n DESC LIMIT ?",
+/**
+ * The actions the Navi ran without asking, newest first: `limit` of them (`AUTO_APPROVED_MAX` when absent, as older
+ * apps read it), older than the row `before` when given. `older` is the cursor for the next page, absent once this one
+ * reaches the oldest; `total` counts the whole log.
+ */
+export function log(c: Database, r: ProjectRef, page: { limit?: number; before?: number } = {}): { log: AutoApproved[]; older?: number; total: number } {
+  const limit = Math.min(Math.max(page.limit ?? AUTO_APPROVED_MAX, 1), AUTO_APPROVED_MAX);
+  const rows = c
+    .query<{ n: number; data: string }, [string, string, number, number]>(
+      "SELECT n, data FROM navi_auto_approved WHERE machine_id = ? AND project_id = ? AND n < ? ORDER BY n DESC LIMIT ?",
     )
-    .all(r.machineId, r.projectId, AUTO_APPROVED_MAX)
-    .flatMap((row) => {
-      try {
-        return [JSON.parse(row.data) as AutoApproved];
-      } catch {
-        return [];
-      }
-    });
+    .all(r.machineId, r.projectId, page.before ?? Number.MAX_SAFE_INTEGER, limit + 1);
+  const total = c
+    .query<{ total: number }, [string, string]>("SELECT COUNT(*) AS total FROM navi_auto_approved WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId)?.total ?? 0;
+  const shown = rows.slice(0, limit);
+  const entries = shown.flatMap((row) => {
+    try {
+      return [JSON.parse(row.data) as AutoApproved];
+    } catch {
+      return [];
+    }
+  });
+  const last = shown[shown.length - 1];
+  return { log: entries, ...(rows.length > limit && last !== undefined ? { older: last.n } : {}), total };
 }

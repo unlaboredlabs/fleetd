@@ -6,7 +6,7 @@
 // Profiles (project_set), Approvals, Linked hubs (hub_links_get, hub_link_remove), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them). A project's own tools go
 // by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, discovery, PROJECT_TOOLS, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type AddCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -163,7 +163,7 @@ export const forgetSignins = async (hub: Hub, p: ProjectRef): Promise<Result<nul
 
 /** How its risky actions are approved, and the log of what ran without asking. */
 export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<ApprovalsOutput>> => {
-  const read = await hub.call(PROJECT_TOOLS.approvals, ref(p));
+  const read = await hub.call(PROJECT_TOOLS.approvals, { ...ref(p), limit: APPROVED_FIRST_PAGE });
   return read.ok ? { ok: true, value: read.output } : read;
 };
 
@@ -171,6 +171,12 @@ export const readApprovals = async (hub: Hub, p: ProjectRef): Promise<Result<App
 export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMode): Promise<Result<null>> => {
   const r = await hub.call(PROJECT_TOOLS.approvalsSet, { ...ref(p), mode });
   return r.ok ? { ok: true, value: null } : r;
+};
+
+/** A page of what ran without asking, newest first: from the newest, or older than `before` (the last page's `older`). */
+export const readApprovedPage = async (hub: Hub, p: ProjectRef, before?: number): Promise<Result<ApprovedPages>> => {
+  const r = await hub.call(PROJECT_TOOLS.approvals, { ...ref(p), limit: APPROVED_PAGE, ...(before === undefined ? {} : { before }) });
+  return r.ok ? { ok: true, value: { log: r.output.log, older: r.output.older } } : r;
 };
 
 /** The other hubs it reaches through hub links. */

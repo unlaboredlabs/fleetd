@@ -1,13 +1,12 @@
 import { describe as group, expect, it } from "vitest";
-import { GROUPS, describe, groupOf, sections } from "./catalog";
-import type { PromptDetail, PromptSummary } from "./contracts";
-import { diffLines, sameProse } from "./diff";
+import { GROUPS, describe, editCount, groupOf, listed, sections } from "./catalog";
+import type { PromptDetail, PromptSummary, RetiredPromptOverride } from "./contracts";
+import { diffLines } from "./diff";
 import {
   HUB,
   canSave,
   editScope,
-  effectLines,
-  fillBase,
+  effectLine,
   hasConflictMarkers,
   insertAt,
   parseScope,
@@ -15,7 +14,6 @@ import {
   shownDraft,
   startOn,
   synced,
-  syncedMerge,
   updateTarget,
   warningLine,
   type Filled,
@@ -69,6 +67,33 @@ group("the prompt catalog", () => {
     expect(messages?.group.key).toBe("messages");
     expect(messages?.rows[0]).toMatchObject({ name: "Wake: something new", description: "Sent per wake set that fired late." });
   });
+
+  it("lists the edits of the page's own level first, and leaves the rest in their groups", () => {
+    const prompts = [summary("lead.start", { scope: "global", stale: true }), summary("task.brief.write", { scope: "project" }), summary("review.reviewer")];
+    const project = listed(prompts, "project");
+    expect(project.edited.map((r) => r.summary.id)).toEqual(["task.brief.write"]);
+    // A hub-wide edit is no edit of the project's: it stays in its group there.
+    expect(project.rest.map((s) => [s.group.key, s.rows.map((r) => r.summary.id)])).toEqual([
+      ["lead", ["lead.start"]],
+      ["reviews", ["review.reviewer"]],
+    ]);
+    const hub = listed(prompts, "global");
+    expect(hub.edited.map((r) => r.summary.id)).toEqual(["lead.start"]);
+    expect(hub.rest.flatMap((s) => s.rows).map((r) => r.summary.id)).toEqual(["task.brief.write", "review.reviewer"]);
+  });
+
+  it("counts a level's edits for the row that opens the page: its prompts' and its retired ones, never the instructions", () => {
+    const prompts = [
+      summary("lead.start", { scope: "global" }),
+      summary("task.brief.write", { scope: "project" }),
+      summary("instructions", { kind: "instructions", group: "instructions", scope: "project" }),
+    ];
+    const retired = (scope: "global" | "project"): RetiredPromptOverride => ({ id: "router", title: "Order router", scope, text: "Route it.", why: "orders go to the lead" });
+    expect(editCount(prompts, [], "project")).toBe(1);
+    expect(editCount(prompts, [retired("project"), retired("global")], "project")).toBe(2);
+    expect(editCount(prompts, [retired("project")], "global")).toBe(1);
+    expect(editCount([summary("lead.start")], [], "global")).toBe(0);
+  });
 });
 
 group("the editor", () => {
@@ -102,7 +127,9 @@ group("the editor", () => {
     expect(editScope(d, storefront)).toBe("global");
     expect(editScope({ ...d, perProject: true }, storefront)).toBe("project");
     expect(editScope({ ...d, perProject: true }, HUB)).toBe("global");
-    expect(effectLines(d, storefront, "acme/storefront").lands).toBe("This prompt has one hub-wide text: saving changes it for every project.");
+    expect(effectLine(d, storefront, "acme/storefront")).toBe("In effect: fleetd's built-in text. This prompt has one hub-wide text: saving changes it for every project.");
+    expect(effectLine({ ...d, perProject: true, scope: "project" }, storefront, "acme/storefront")).toBe("In effect: acme/storefront's own edit. Saving changes it for acme/storefront only.");
+    expect(effectLine({ ...d, scope: "global" }, HUB, null)).toBe("In effect: the hub-wide edit. Saving changes it for every project without its own edit.");
   });
 
   it("says who still keeps a safety rule the text dropped", () => {
@@ -117,7 +144,8 @@ group("the editor", () => {
   });
 });
 
-// Review blockers on #185: the Update view's level, the base a save sends, and a kept draft on every entry path.
+// Review blockers on #185: the level an out-of-date edit's save lands on, the base a save sends, and a kept draft on
+// every entry path.
 group("defaults that change under an edit", () => {
   const storefront = parseScope("devbox/storefront");
   const v = (id: string, text: string) => ({ ref: `lead.start@${id.padEnd(10, "0")}`, text });
@@ -162,32 +190,15 @@ group("defaults that change under an edit", () => {
     expect(synced(first.filled, detail(), "hub", first.filled.text)).toMatchObject({ refill: true, filled: { base: v2.ref } });
   });
 
-  it("keeps a stale edit's own base when it is edited from the Edit tab", () => {
-    expect(fillBase(staleHubWide)).toBe(v1.ref);
-    expect(synced(null, staleHubWide, "devbox/storefront", "").filled.base).toBe(v1.ref);
-    // No record of the base: nothing to send, and the Edit tab won't save it.
-    const { base: _, ...noBase } = stale;
-    expect(fillBase(detail({ ...staleHubWide, stale: noBase }))).toBeNull();
-  });
-
-  it("keeps a merge in progress against the default it merges, when fleetd's default moves again", () => {
-    const first = syncedMerge(null, staleHubWide, "hub", "");
-    expect(first?.filled.base).toBe(v2.ref);
-    // Default three ships while the merge is being edited.
+  it("fills an out-of-date edit with both changes together, written against the new built-in", () => {
+    const first = synced(null, staleHubWide, "hub", "");
+    expect(first).toMatchObject({ refill: true, filled: { ref: v2.ref, text: stale.merged, base: v2.ref } });
+    // Default three ships while the merge is being edited: the draft keeps the built-in it merged.
     const v3 = v("4", "Default three.\n");
     const moved = detail({ ...staleHubWide, default: v3, stale: { ...stale, current: v3, merged: "Default three.\nMine.\n" } });
-    const during = syncedMerge(first?.filled ?? null, moved, "hub", "Default two.\nMine, merged.\n");
-    expect(during).toMatchObject({ refill: false, filled: { base: v2.ref } });
+    expect(synced(first.filled, moved, "hub", "Default two.\nMine, merged.\n")).toMatchObject({ refill: false, filled: { base: v2.ref } });
     // An untouched merge simply takes the newer one.
-    expect(syncedMerge(first?.filled ?? null, moved, "hub", first?.filled.text ?? "")).toMatchObject({ refill: true, filled: { base: v3.ref } });
-    expect(syncedMerge(null, detail(), "hub", "")).toBeNull();
-  });
-
-  it("asks before a link drops a merge-only draft", () => {
-    const filled = { scope: "hub", id: "lead.start", ref: mine.ref, text: mine.text, base: v1.ref };
-    const mergeDraft = { filled, text: mine.text, mergedFilled: { ...filled, ref: v2.ref, text: "merged", base: v2.ref }, merged: "merged, edited" };
-    expect(startOn(mergeDraft, { prompt: "router", for: null })).toMatchObject({ id: "lead.start", ask: { id: "router" } });
-    expect(startOn({ ...mergeDraft, merged: "merged" }, { prompt: "router", for: null }).ask).toBeNull();
+    expect(synced(first.filled, moved, "hub", first.filled.text)).toMatchObject({ refill: true, filled: { text: "Default three.\nMine.\n", base: v3.ref } });
   });
 
   it("opens on a kept draft and asks before following a link to another prompt or scope", () => {
@@ -228,22 +239,18 @@ group("the prose diff", () => {
     const d = diffLines("Alpha beta gamma.", "Completely different words here.");
     expect(d.every((l) => l.words === undefined)).toBe(true);
   });
-
-  it("treats a reflow as the same prose", () => {
-    expect(sameProse("one two\nthree", "one two three\n")).toBe(true);
-    expect(sameProse("one two", "one three")).toBe(false);
-  });
 });
 
 group("settings state", () => {
   it("round-trips a link to one prompt of one project", () => {
     const hash = formatRoute({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });
     expect(hash).toBe("#/settings/prompts?prompt=task.brief.write&for=devbox/storefront");
-    expect(parseRoute(hash)).toEqual({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront", view: "edit" });
-    expect(parseRoute(`${hash}&view=update`).view).toBe("update");
-    expect(parseRoute("#/settings")).toEqual({ tab: "general", prompt: null, for: null, view: "edit" });
+    expect(parseRoute(hash)).toEqual({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });
+    // An old link to the compare or update step opens the prompt: both now show on it when its built-in changed.
+    expect(parseRoute(`${hash}&view=update`)).toEqual(parseRoute(hash));
+    expect(parseRoute("#/settings/hub/prompts?prompt=lead.start")).toEqual({ tab: "hub.prompts", prompt: "lead.start", for: null });
+    expect(parseRoute("#/settings")).toEqual({ tab: "general", prompt: null, for: null });
     expect(parseScope("devbox/storefront")).toEqual({ kind: "project", ref: { machineId: "devbox", projectId: "storefront" } });
     expect(parseScope("nonsense")).toEqual(HUB);
   });
-
 });

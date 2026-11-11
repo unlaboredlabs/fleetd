@@ -142,7 +142,8 @@ Its other pages: **Agents** has its [max agents](#max-agents), the [task profile
 night**: on (the default), around 04:00 on a day with chat or orders, the lead tidies the project's memory and the chat
 shows one line of its changes, with Undo; off, memory changes only as the lead and you write it. Beside the switch are
 the refresh's hour, its next and last run, and **Run now**. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
-**Automations** has its [automations](/docs/automations), and **Prompts** the prompts its agents get.
+**Automations** has its [automations](/docs/automations). **Built-in prompts**, at the foot of Instructions & memory,
+opens the prompts fleetd itself sends its agents.
 
 The project's worktrees live on its machine in `~/.fleetd/node/worktrees/<project>/`, one per agent, each starting
 from the repo's default branch, freshly fetched (see [Which branch](#branches)). The chat lists any the nightly
@@ -456,9 +457,12 @@ fleetd's own rules hold whatever the checker says:
 same input, it runs without the checker. **Keep it blocked** leaves it refused.
 
 **Ran without asking**, under Approvals, lists every action the checker let through or YOLO ran, newest first:
-when, what, the checker's reason, and **Show in chat**, which opens its line. `project_approvals {machineId,
-projectId}` reads the mode and the log; `project_approvals_set {machineId, projectId, mode}` sets
-the mode, from your own key only (an older app's `model` and `effort` are taken and ignored).
+when, what, the checker's reason, and **Show in chat**, which opens its line. The page shows the newest five, the
+same action run several times in a row as one row with its count; **Show all** opens the whole log in a list of its
+own that reads older ones as you scroll (on the phone, a screen of its own). `project_approvals {machineId,
+projectId, limit?, before?}` reads the mode and a page of the log (`older` is the next page's `before`, `total` the
+whole log's count); `project_approvals_set {machineId, projectId, mode}` sets the mode, from your own key only (an
+older app's `model` and `effort` are taken and ignored).
 
 ### Automations you set up {#automations-go-ahead}
 

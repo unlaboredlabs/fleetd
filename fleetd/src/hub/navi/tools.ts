@@ -290,7 +290,8 @@ export function register(tools: Registry): void {
       const r = refOf(input);
       requireRole(caller, "read", r.machineId);
       naviOf(hub, r);
-      return { approvals: checker.approvals(hub.db.conn, r), log: checker.log(hub.db.conn, r) };
+      const page = { ...(input.limit === undefined ? {} : { limit: input.limit }), ...(input.before === undefined ? {} : { before: input.before }) };
+      return { approvals: checker.approvals(hub.db.conn, r), ...checker.log(hub.db.conn, r, page) };
     });
   }
 

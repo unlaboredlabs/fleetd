@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, PROJECT_TOOLS, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setOnlyMe, setPicture, setProfile, withPart } from "./api";
+import { addCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readLinks, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setOnlyMe, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -351,7 +351,8 @@ describe("Approvals and Linked hubs", () => {
   it("reads its approvals, and nothing about the checker's model", async () => {
     const { hub, session, calls } = setup();
     const read = readApprovals(session, SHOP);
-    expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual(REF);
+    // Only the newest page: the screen shows the newest few, and the rest in pages on its own screen (W601).
+    expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual({ ...REF, limit: 25 });
     expect(calls("profiles_list")).toEqual([]);
     hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [] });
     await expect(read).resolves.toMatchObject({ ok: true, value: { approvals: { mode: "checker" }, log: [] } });
@@ -361,6 +362,19 @@ describe("Approvals and Linked hubs", () => {
     const { session, calls } = setup();
     void setApprovalMode(session, SHOP, "ask");
     expect(calls(PROJECT_TOOLS.approvalsSet).at(-1)?.input).toEqual({ ...REF, mode: "ask" });
+  });
+
+  it("reads what ran without asking in pages, each older one from the last one's cursor", async () => {
+    const { hub, session, calls } = setup();
+    const entry = { at: AT, by: "yolo" as const, tool: "WebFetch", what: "Fetch `a.example`" };
+    const first = readApprovedPage(session, SHOP);
+    expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual({ ...REF, limit: 50 });
+    hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [entry], older: 51, total: 120 });
+    await expect(first).resolves.toEqual({ ok: true, value: { log: [entry], older: 51 } });
+    const next = readApprovedPage(session, SHOP, 51);
+    expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual({ ...REF, limit: 50, before: 51 });
+    hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [entry] });
+    await expect(next).resolves.toEqual({ ok: true, value: { log: [entry], older: undefined } });
   });
 
   it("lists only its own hub links, and removes one", async () => {

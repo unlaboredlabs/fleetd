@@ -4,8 +4,7 @@
 // in the chat. Reads and writes the project's approvals tools (PROJECT_TOOLS).
 import { useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
-import { listTime } from "../../chatView";
-import { APPROVAL_MODES, FLOORS, logWhy, type ApprovalMode, type HubError } from "../../desktop";
+import { APPROVAL_MODES, FLOORS, type ApprovalMode, type HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
@@ -14,6 +13,8 @@ import { ListRow, ListSection } from "../../ui/List";
 import { useNow } from "../time";
 import { readApprovals, setApprovalMode } from "./api";
 import { CheckRow, errorWords, Note, Problem, useRead } from "./parts";
+import { approvedRows } from "./ApprovedLog";
+import { APPROVED_SHOWN, foldApproved, moreApproved, showAllWord } from "../../desktop";
 
 const HELP = "What it does without asking you: its sends, replies, shares and invites, a site it opens on its own for the first time, and the final Confirm on a site. Its own commands never ask.";
 
@@ -60,21 +61,14 @@ export function Approvals({ navigation, route }: ChatInfoProps<"Approvals">) {
 
       {view === undefined ? null : (
         <ListSection header="Ran without asking" footer="Each action the checker let through, or YOLO ran, newest first, with why.">
-          {view.log.length === 0 ? (
-            <ListRow title="Nothing yet" valueColor={t.secondary} />
-          ) : (
-            view.log.map((e, i) => {
-              const messageId = e.messageId;
-              return (
-                <ListRow
-                  key={`${e.at}-${String(i)}`}
-                  title={e.what.replace(/`/gu, "")}
-                  detail={`${listTime(e.at, now)} · ${logWhy(e)}`}
-                  {...(messageId === undefined ? {} : { onPress: () => navigation.navigate("Chat", { key, messageId }) })}
-                />
-              );
-            })
-          )}
+          {view.log.length === 0
+            ? [<ListRow key="none" title="Nothing yet" valueColor={t.secondary} />]
+            : [
+                ...approvedRows(foldApproved(view.log).slice(0, APPROVED_SHOWN), now, (messageId) => navigation.navigate("Chat", { key, messageId })),
+                ...(moreApproved(foldApproved(view.log), view.older)
+                  ? [<ListRow key="all" title={showAllWord(view.total)} onPress={() => navigation.navigate("ApprovedLog", { key })} />]
+                  : []),
+              ]}
         </ListSection>
       )}
     </ScrollView>
