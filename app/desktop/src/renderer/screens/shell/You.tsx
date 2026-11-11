@@ -1,24 +1,23 @@
-// The sidebar's foot (W530): you, and two places to go. Your picture and name open a card with each hub's state (its
-// update first, then the link, its machines and version, HubStatus.tsx) and Settings. All being well, that is all it
-// says; what is off shows without opening anything, and quietly: an update's one word under your name while it runs
-// and a while after (updates/quiet.ts: "Updating…", "Updated", "Put back", or "Update" with one to take), and a small
-// mark on your picture while a hub is really unreachable or refused your key (for an admin, also while a machine is
-// down or setup steps are left), its words in the tooltip. Screens and Factory are the round buttons beside: Screens
-// marked while one needs you.
+// The sidebar's foot (W530): you, and two places to go. Your picture and name open a small menu (W607): who you are,
+// a row per hub (a dot and its name, all being well; HubStatus.tsx) and Settings. What is off is one more row each,
+// with the one thing to do, and shows without opening anything, quietly: an update's one word under your name while
+// it runs and a while after (updates/quiet.ts: "Updating…", "Updated", "Put back", or "Update" with one to take), and
+// a small mark on your picture while a hub is really unreachable or refused your key (for an admin, also while a
+// machine is offline or setup steps are left), its words in the tooltip. Screens and Factory are the round buttons
+// beside: Screens marked while one needs you.
 import { Factory, MonitorSmartphone, Settings } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { HubId } from "../../../shared/hubs";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { Avatar, Kbd, Popover, PopoverContent, PopoverTrigger, Tooltip } from "../../ui";
 import { useHubRole } from "../admin/role";
-import { ForgetHubDialog } from "../settings";
 import { UpdateWord, useQuiet } from "../updates";
-import { HubCard, linkMark, useAdminMark, type HubMark } from "./HubStatus";
+import { HubRows, MenuRow, useWorkMark } from "./HubStatus";
 import { useHubState } from "./hubFeed";
 import { useHubRows } from "./hubRows";
 import type { Screen } from "./routes";
 import s from "./sidebar.module.css";
+import { linkMark, type HubMark } from "./youMenu";
 
 const platform = window.fleetd.platform;
 const NO_INPUT = {} as const;
@@ -98,11 +97,9 @@ export function You({ screen, factory, go }: YouProps) {
   const me = role.me;
   const picture = usePersonPicture(me?.personId, me?.avatar);
   const quiet = useQuiet(hub);
-  const mark = worst([...useLinkMarks(), useAdminMark()]);
+  const mark = worst([...useLinkMarks(), useWorkMark()]);
   const [open, setOpen] = useState(false);
-  const [forget, setForget] = useState<HubId | null>(null);
   const name = me?.name ?? "You";
-  const forgetting = hubs.find((h) => h.id === forget);
   const said = [name, quiet === null ? null : quiet.word.text, mark?.why].filter((x) => x != null).join(", ");
 
   return (
@@ -128,7 +125,7 @@ export function You({ screen, factory, go }: YouProps) {
         </Tooltip>
         <PopoverContent side="top" align="start" className={s.youCard} aria-label="You">
           <div className={s.youHead}>
-            <Avatar name={name} size={36} src={picture} />
+            <Avatar name={name} size={32} src={picture} />
             <span className={s.youWho}>
               <span className={s.youName}>{name}</span>
               {me === undefined ? null : <span className={s.youRole}>{me.role.charAt(0).toUpperCase() + me.role.slice(1)}</span>}
@@ -136,24 +133,20 @@ export function You({ screen, factory, go }: YouProps) {
           </div>
           {hubs.map((h) => (
             <HubScope key={h.id} hub={h}>
-              <OneHub close={() => setOpen(false)} forget={() => setForget(h.id)} />
+              <OneHub close={() => setOpen(false)} />
             </HubScope>
           ))}
-          <div className={s.youMenu}>
-            <button
-              type="button"
-              className={s.youItem}
-              data-opens="settings"
-              onClick={() => {
-                setOpen(false);
-                go({ id: "settings", tab: "general" });
-              }}
-            >
-              <Settings aria-hidden />
-              <span>Settings</span>
-              <Kbd>{display("settings.open", platform)}</Kbd>
-            </button>
-          </div>
+          <MenuRow
+            mark={<Settings aria-hidden />}
+            end={<Kbd>{display("settings.open", platform)}</Kbd>}
+            data-opens="settings"
+            onClick={() => {
+              setOpen(false);
+              go({ id: "settings", tab: "general" });
+            }}
+          >
+            Settings
+          </MenuRow>
         </PopoverContent>
       </Popover>
       <div className={s.tools}>
@@ -168,17 +161,12 @@ export function You({ screen, factory, go }: YouProps) {
           <Factory aria-hidden />
         </Round>
       </div>
-      {forgetting === undefined ? null : (
-        <HubScope hub={forgetting}>
-          <ForgetHubDialog open onOpenChange={(next) => setForget(next ? forget : null)} only={hubs.length === 1} />
-        </HubScope>
-      )}
     </div>
   );
 }
 
-/** One hub's card, in its scope, with its own live state. */
-function OneHub({ close, forget }: { close: () => void; forget: () => void }) {
+/** One hub's rows, in its scope, with its own live state. */
+function OneHub({ close }: { close: () => void }) {
   const hub = useHubState();
-  return <HubCard hub={hub} close={close} forget={forget} />;
+  return <HubRows hub={hub} close={close} />;
 }

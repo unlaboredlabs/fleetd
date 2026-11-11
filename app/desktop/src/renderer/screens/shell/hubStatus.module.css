@@ -1,79 +1,75 @@
-/* A hub's card in the popover under your name (HubStatus.tsx, You.tsx). */
+/* The rows of the menu under your name (HubStatus.tsx, You.tsx). */
 
-/* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
-.dot {
+/* One hub's rows. */
+.hub {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * A row: its mark centred under your picture (--you-col, the picture's width), its words in the name's column, and
+ * what a click does at its end. Rows are told apart by space alone; the one under the pointer takes a rounded box.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--you-gap);
+  width: 100%;
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  text-align: left;
+}
+button.row:hover {
+  background: var(--hover);
+}
+
+.mark {
   flex: none;
   display: inline-grid;
   place-items: center;
-  width: 12px;
-  height: 12px;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-.facts:empty {
-  display: none;
-}
-.facts dt {
+  width: var(--you-col);
   color: var(--quiet);
 }
-.facts dd {
-  margin: 0;
-  color: var(--text);
+.mark > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.words {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* What a click on the row does: a link's blue, in the row's own size, clear of the words. */
+.action,
+.aside {
+  flex: none;
+  margin-left: var(--space-1-5);
+}
+.action {
+  color: var(--link);
+}
+/* A quiet word instead: where an update stands, or who to ask. */
+.aside {
+  color: var(--quiet);
   font-variant-numeric: tabular-nums;
 }
-
-/* The Machines line opens Machines: a link in the text's own size. */
-.factLink {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--link);
-  font: inherit;
-  cursor: pointer;
-}
-.factLink:hover {
-  text-decoration: underline;
-}
-
-/* The address in full: it wraps rather than cut, and can be selected to copy. */
-.url {
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding-top: var(--space-1);
-}
-
 
 /* The hub restarting: the dot opened to a ring of the same size, filled again when it answers. */
 .ring {
   box-sizing: border-box;
   width: 6px;
   height: 6px;
-  border: 1.5px solid currentColor;
+  border: 1.5px solid var(--faint);
   border-radius: 999px;
 }

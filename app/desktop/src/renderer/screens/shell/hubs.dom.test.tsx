@@ -175,7 +175,7 @@ it("shows both hubs in one sidebar under their names, each with its own connecti
   const acme = host.querySelector('section[aria-label="Acme"]');
   expect(acme?.querySelector('[aria-label="Loading projects"]')?.getAttribute("aria-busy")).toBe("false");
   // One offline marks your name, saying which; the card has both.
-  expect(you()).toBe("You, Offline (Acme)");
+  expect(you()).toBe("You, Can't reach Acme");
   expect(hubCards()).toEqual([
     ["Personal", "live"],
     ["Acme", "retrying"],

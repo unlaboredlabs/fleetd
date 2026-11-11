@@ -354,8 +354,7 @@
 }
 .new:focus-visible,
 .round:focus-visible,
-.me:focus-visible,
-.youItem:focus-visible {
+.me:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -452,24 +451,26 @@
   gap: var(--space-1-5);
 }
 
-/* The card under your name. */
+/*
+ * The menu under your name: who you are, then rows (hubStatus.module.css). One column for your picture and the rows'
+ * marks, one for your name and their words; nothing between them but space. As wide as its longest row, like any
+ * menu: small while all is well, and past its widest a row's words are cut with an ellipsis.
+ */
 .youCard {
+  --you-col: 32px;
+  --you-gap: 10px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  width: 304px;
-  max-width: calc(100vw - 16px);
-}
-.youCard > section + section {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--hairline);
+  width: max-content;
+  min-width: 272px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-1-5);
 }
 .youHead {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--hairline);
+  gap: var(--you-gap);
+  padding: var(--space-1-5) var(--space-2) var(--space-2);
 }
 .youWho {
   display: flex;
@@ -480,7 +481,7 @@
   overflow: hidden;
   font-size: var(--text-md);
   font-weight: var(--weight-strong);
-  line-height: var(--leading-md);
+  line-height: var(--leading-sm);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -488,37 +489,6 @@
   color: var(--quiet);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-}
-.youMenu {
-  display: flex;
-  flex-direction: column;
-  margin: 0 calc(-1 * var(--space-2));
-  padding-top: var(--space-1-5);
-  border-top: 1px solid var(--hairline);
-}
-.youItem {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--row);
-  padding: 0 var(--space-2);
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text);
-  font-size: var(--text-md);
-  text-align: left;
-}
-.youItem:hover {
-  background: var(--hover);
-}
-.youItem > svg {
-  width: 14px;
-  height: 14px;
-  color: var(--quiet);
-}
-.youItem > :last-child {
-  margin-left: auto;
 }
 
 /* Words for a screen reader only: a section's reorder announcements. */
