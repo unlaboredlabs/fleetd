@@ -18,7 +18,9 @@ import { HubStore } from "../../hub/store/hub_store.ts";
 import { ArgError, parse } from "../args.ts";
 import {
   type GitIdentity,
+  isLiveHubHome,
   isMachineId,
+  liveHubRefusal,
   type MachineRecord,
   readSetup,
   resolveHome,
@@ -674,6 +676,7 @@ export async function add(a: AddArgs, progress: Progress = print): Promise<Added
   }
   let db: HubDb | undefined;
   if (!r.joining) {
+    if (isLiveHubHome(r.home)) throw Stop.fail(liveHubRefusal("machine add"));
     const listen = parseListen(r.state!.listen) ?? ["", 0];
     if ((await probeListen(listen)) !== "hub") {
       throw Stop.fail(`no hub answers at ${listen[0]}:${listen[1]}. Fix: fleetd init (it starts the hub), then run ${r.again}`);
@@ -848,6 +851,7 @@ async function removeCommand(argv: string[]): Promise<number> {
   const machineId = v.positionals[0];
   if (machineId === undefined || !isMachineId(machineId)) return usage("machine remove takes a machine id");
   const home = resolveHome();
+  if (isLiveHubHome(home)) return fail(liveHubRefusal("machine remove"));
   let db: HubDb;
   try {
     db = openHub(home);

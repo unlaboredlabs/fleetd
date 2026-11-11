@@ -55,6 +55,24 @@ is treated as you. Any process of the node's OS user can do what that user can. 
 different OS user.
 :::
 
+### The fleetd CLI inside a session {#cli-in-session}
+
+On the hub's machine the `fleetd` CLI acts with the hub home's own admin key (`cli.key`), and some commands
+(`fleetd hub key`, `people`, `pair`, `prompts`, `vault`) write the hub's database and key files directly. A person
+at their terminal keeps all of that. Inside an agent's session, the CLI talking to that session's node's own hub only
+reads: `status`, lists and history work, and anything that would change the hub (a tool above `read`, a chat
+message, a key, a prompt edit, the vault's key, adding or removing a machine) is refused with one line. It says what
+works instead: the lead's own fleetd tools set up its project (`repo_add`, `repo_remove`, `project_setup`) and
+propose a new one (`project_propose`), and a task asks its lead. A hub the session started itself, with its own
+`FLEETD_HOME`, keeps working in full, writes included.
+
+:::caution[A rail, not a wall]
+This stops an agent changing the hub by accident through the CLI, as one did on a test it forgot to point at its own
+throwaway hub. It doesn't stop one that means to: an agent on the hub's machine runs as the same OS user, so it can
+still read the hub home's files, `cli.key` and the database among them, and use them without the CLI. A real wall is
+the hub running as a separate OS user, which fleetd doesn't set up.
+:::
+
 ## What an agent can reach on a machine {#agent-reach}
 
 An agent runs as the OS user its machine's node runs as, which is usually you, with no sandbox (as

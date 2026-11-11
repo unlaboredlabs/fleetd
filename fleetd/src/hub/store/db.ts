@@ -19,9 +19,14 @@ export class HubDb {
     readonly conn: Database,
     /** `<home>/hub.sqlite`; undefined for an in-memory database. */
     readonly path: string | undefined,
+    readonly readonly = false,
   ) {
     // Lets the CLI write keys while the hub runs; a writer waits up to 5 s for the other's lock.
     conn.run("PRAGMA busy_timeout = 5000");
+    if (readonly) {
+      this.drift = [];
+      return;
+    }
     conn.run("PRAGMA journal_mode = WAL");
     conn.run("PRAGMA synchronous = NORMAL");
     this.drift = migrate(conn, MIGRATIONS);
@@ -32,6 +37,12 @@ export class HubDb {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const path = join(home, "hub.sqlite");
     return new HubDb(new Database(path, { create: true, strict: true }), path);
+  }
+
+  /** `<home>/hub.sqlite` for reading only, as it is: never created or migrated, and SQLite refuses every write. */
+  static openReadonly(home: string): HubDb {
+    const path = join(home, "hub.sqlite");
+    return new HubDb(new Database(path, { readonly: true, strict: true }), path, true);
   }
 
   /** A private in-memory database, for tests. */

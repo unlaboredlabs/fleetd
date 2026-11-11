@@ -3,7 +3,9 @@
 // the claims a revoked key releases (hub/work). Ported from those Rust modules as the CLI calls them, row for row.
 import type { Database } from "bun:sqlite";
 import type { Grant, Role } from "../shared/contracts.ts";
+import { dirname } from "node:path";
 import { HubDb } from "../hub/store/db.ts";
+import { isLiveHubHome, refuseLiveHubWrite } from "./common.ts";
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 const KEY_PREFIX = "fld_";
@@ -37,13 +39,19 @@ export const secret = (prefix: string) => `${prefix}${base32(randomBytes(32))}`;
 export const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex");
 export const isoMs = (ms: number) => new Date(ms).toISOString();
 
-/** The hub home's database, opened beside a running hub. */
+/** The hub home's database, opened beside a running hub. Inside an agent's session the live hub's opens read-only:
+ * the CLI only reads it there (common `isLiveHubHome`). */
 export function openHub(home: string): HubDb {
   try {
-    return HubDb.open(home);
+    return isLiveHubHome(home) ? HubDb.openReadonly(home) : HubDb.open(home);
   } catch (error) {
     throw new Error((error as Error).message);
   }
+}
+
+/** Refuses `what`, a write to the live hub's database, inside an agent's session, with the line naming what works. */
+export function writable(db: HubDb, what: string) {
+  if (db.path !== undefined) refuseLiveHubWrite(dirname(db.path), what);
 }
 
 // ---- keys ----
@@ -113,6 +121,7 @@ export function createKey(
   kind: "agent" | "human",
   person?: string,
 ): { info: KeyInfo; key: string } {
+  writable(db, "Creating a hub key");
   const personId = kind === "agent" ? null : (person ?? ensureOwner(db).personId);
   const now = Date.now();
   const key = secret(KEY_PREFIX);
@@ -140,6 +149,7 @@ export function listKeys(db: HubDb): KeyInfo[] {
 
 /** Revokes a key and the hub links minted from it; how many links were still live. Throws when there is no key. */
 export function revokeKey(db: HubDb, keyId: string): number {
+  writable(db, "Revoking a hub key");
   const now = Date.now();
   const [changed, links] = db.transaction((c) => {
     const changed = c.query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?").run(now, keyId)
@@ -169,6 +179,7 @@ export function keyWorks(db: HubDb, key: string): boolean {
 
 /** One-time, valid for 15 minutes; it replaces the machine's open one. */
 export function createEnrollToken(db: HubDb, machineId: string): { token: string; expiresAt: string } {
+  writable(db, "Making an enroll code");
   const now = Date.now();
   const expires = now + ENROLL_TTL_MS;
   const token = secret(ENROLL_PREFIX);
@@ -202,6 +213,7 @@ export function openEnrollTokens(db: HubDb): OpenEnrollCode[] {
 
 /** Takes back the open enroll code `id` names; the machine it was for, or undefined. */
 export function revokeEnrollToken(db: HubDb, id: string): string | undefined {
+  writable(db, "Revoking an enroll code");
   const row = db.conn
     .query<{ machine_id: string }, [number, string, number]>(
       `DELETE FROM enroll_tokens WHERE substr(hash, 1, ?1) = ?2 AND length(?2) = ?1
@@ -239,16 +251,20 @@ const getOn = (c: Database, id: string) => {
   return row ? person(row) : undefined;
 };
 
+const OWNER = `SELECT ${PEOPLE_COLUMNS} FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1`;
+
 /** The hub's owner, made from the machine's user when the hub has none. */
 export function ensureOwner(db: HubDb): Person {
   const now = Date.now();
   const user = ["USER", "LOGNAME", "USERNAME"].map((v) => process.env[v]).find((v) => v && v.trim()) ?? "Owner";
+  if (db.readonly) {
+    // The live hub from an agent's session: its owner as it is; a hub that has none yet would need a write.
+    const owner = db.conn.query<PersonRow, []>(OWNER).get();
+    if (owner) return person(owner);
+    writable(db, "Making the hub's owner");
+  }
   return db.transaction((c) => {
-    let owner = c
-      .query<PersonRow, []>(
-        `SELECT ${PEOPLE_COLUMNS} FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1`,
-      )
-      .get();
+    let owner = c.query<PersonRow, []>(OWNER).get();
     if (!owner) {
       const id = `p_${base32(randomBytes(5))}`;
       c.query("INSERT INTO people (person_id, name, role, created_ms) VALUES (?, ?, 'owner', ?)").run(
@@ -276,6 +292,7 @@ export function listPeople(db: HubDb, includeRemoved: boolean): Person[] {
 }
 
 export function createPerson(db: HubDb, name: string, role: HubRole): Person {
+  writable(db, "Adding a person");
   const now = Date.now();
   const id = `p_${base32(randomBytes(5))}`;
   db.conn.query("INSERT INTO people (person_id, name, role, created_ms) VALUES (?, ?, ?, ?)").run(id, name, role, now);
@@ -283,6 +300,7 @@ export function createPerson(db: HubDb, name: string, role: HubRole): Person {
 }
 
 export function setPersonRole(db: HubDb, id: string, role: HubRole): Person | undefined {
+  writable(db, "Changing a person's role");
   return db.transaction((c) => {
     c.query("UPDATE people SET role = COALESCE(?2, role) WHERE person_id = ?1").run(id, role);
     return getOn(c, id);
@@ -291,6 +309,7 @@ export function setPersonRole(db: HubDb, id: string, role: HubRole): Person | un
 
 /** Removes a person: devices revoked, open invites closed, Only-me projects archived. How many devices went. */
 export function removePerson(db: HubDb, id: string): [Person, number] | undefined {
+  writable(db, "Removing a person");
   const now = Date.now();
   return db.transaction((c) => {
     c.query("UPDATE people SET removed_ms = COALESCE(removed_ms, ?2) WHERE person_id = ?1").run(id, now);
@@ -339,6 +358,7 @@ export type Invite = {
 
 /** One-time, valid for 15 minutes: `name` names the key when the device sends none. */
 export function createPairCode(db: HubDb, name: string | undefined, role: Role, personId?: string) {
+  writable(db, "Making a pair code");
   const now = Date.now();
   const expires = now + CODE_TTL_MS;
   const code = newCode();
@@ -368,6 +388,7 @@ const invite = (r: InviteRow, now: number): Invite => ({
 });
 
 export function createInvite(db: HubDb, personId: string) {
+  writable(db, "Making an invite");
   const now = Date.now();
   const expires = now + INVITE_TTL_MS;
   const code = newCode();
@@ -395,6 +416,7 @@ export function openInvites(db: HubDb): Invite[] {
 
 /** Takes an open invite back: the invite, and whether this call revoked it. */
 export function revokeInvite(db: HubDb, id: string): [Invite, boolean] | undefined {
+  writable(db, "Revoking an invite");
   const now = Date.now();
   const changed = db.conn
     .query("UPDATE pair_codes SET revoked_ms = ?2 WHERE invite_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL")
@@ -410,6 +432,7 @@ export function appendEvent(
   db: HubDb,
   event: { type: string; machineId?: string; projectId?: string; summary: string; data?: unknown },
 ) {
+  writable(db, "Writing to the hub's event log");
   const now = Date.now();
   db.conn.query("DELETE FROM events WHERE created_ms < ?").run(now - RETENTION_MS);
   let summary = event.summary;
@@ -477,6 +500,7 @@ const CLAIM_ORDER = [
 
 /** Releases the active claims a key holds; their ids. */
 export function releaseClaims(db: HubDb, keyId: string, reason: string): string[] {
+  writable(db, "Releasing a key's claims");
   const now = Date.now();
   const released = db.transaction((c) => {
     const rows = c

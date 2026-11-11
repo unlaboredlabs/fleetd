@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Grant, Role } from "../shared/contracts.ts";
 import { ArgError, parse } from "./args.ts";
 import { type CliResult, err, ok } from "./result.ts";
-import { isMachineId, newPrivateFile, resolveHome } from "./common.ts";
+import { isLiveHubHome, isMachineId, liveHubRefusal, newPrivateFile, resolveHome } from "./common.ts";
 import { createKey, type KeyInfo, listKeys, openHub, releaseClaims, revokeKey } from "./store.ts";
 import { HUB_KEY_USAGE } from "./usages.ts";
 export { HUB_KEY_USAGE };
@@ -63,6 +63,10 @@ export function hubKey(argv: string[], home?: string): CliResult {
     positionals: true,
   });
   if (v instanceof ArgError) return keyUsage(v.message);
+  // Inside an agent's session the live hub's keys are only listed: no key, nor key file, is written there.
+  if ((command === "create" || command === "revoke") && isLiveHubHome(resolveHome(home))) {
+    return fail(1, liveHubRefusal(command === "create" ? "Creating a hub key" : "Revoking a hub key"));
+  }
   switch (command) {
     case "create": {
       const agent = v.str("agent") || undefined;
