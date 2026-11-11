@@ -200,6 +200,50 @@ describe("approvals", () => {
   });
 });
 
+describe("a lead's proposal for a new project", () => {
+  const card = (shown: Record<string, unknown>): HumanRequest => ({
+    ...asked("r1"),
+    text: "mcp__fleetd__project_propose: Proposes a new project",
+    permission: {
+      requestId: "p1",
+      threadId: "t1",
+      toolName: "mcp__fleetd__project_propose",
+      summary: "Proposes a new project",
+      preview: { title: "Create the project “Pricing page”", input: JSON.stringify(shown, null, 2), server: "fleetd", tool: "project_propose", action: "write" },
+    },
+  });
+  const shown = { machineId: "devbox", onlyMe: false, path: "/home/dev/src/pricing-page", repo: "acme/pricing-page", title: "Pricing page" };
+
+  it("shows all that approving it makes on the card's face, and its input under Details", () => {
+    const view = approvalView(card(shown), "storefront");
+    expect(view.title).toBe("storefront wants to create the project “Pricing page”");
+    expect(view.risk).toBeUndefined();
+    expect(view.fields.filter((f) => f.more !== true)).toEqual([
+      { label: "Repo", value: "acme/pricing-page", mono: true },
+      { label: "Folder", value: "/home/dev/src/pricing-page", mono: true },
+      { label: "On", value: "devbox" },
+      { label: "Open to", value: "Everyone on this hub" },
+      { label: "Asked", value: "mcp__fleetd__project_propose: Proposes a new project", lines: true },
+    ]);
+    expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input"]);
+  });
+
+  it("says a project with no repo has none, and is the person's alone", () => {
+    const view = approvalView(card({ ...shown, repo: null, onlyMe: true, path: "/home/dev/fleetd/projects/pricing-page" }), "storefront");
+    expect(view.fields.slice(0, 4).map((f) => [f.label, f.value])).toEqual([
+      ["Repo", "None"],
+      ["Folder", "/home/dev/fleetd/projects/pricing-page"],
+      ["On", "devbox"],
+      ["Open to", "Only you"],
+    ]);
+  });
+
+  it("shows a card it can't read as any change, with everything it sends", () => {
+    const view = approvalView(card({ title: "Pricing page" }), "storefront");
+    expect(view.fields.map((f) => f.label)).toEqual(["Input", "Asked"]);
+  });
+});
+
 describe("an answered approval's line", () => {
   const ANSWERED = "2026-10-28T10:01:00Z";
 

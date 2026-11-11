@@ -80,6 +80,9 @@ export type Action = { tool: string; summary: string; input: unknown; preview?: 
 /** The checker's answer: a plain public read passes on its rule; anything else is its note. */
 export type Checked = { publicRead: true } | { note: CheckerNote };
 
+/** The person who approved a proposed project, whose it becomes: their key's name and person. */
+export type ProposalApprover = { name: string; person?: PersonRef };
+
 /** The hub policy's first word on a prompt (integrations policy, a Navi's confirm step, its bridge, automation confirm). */
 export type PromptVerdict = { allow: true } | { deny: string } | { ask: ToolPreview };
 
@@ -102,6 +105,13 @@ export type ApprovalHooks = {
   naviAutomation(project: ProjectRef, id: string): Promise<Automation | undefined>;
   /** The person approved `automation_confirm`'s card showing `shown`: whether the automation is marked confirmed. */
   naviAutomationConfirm(project: ProjectRef, shown: unknown, by: string): Promise<boolean>;
+  /** The card for a lead's `project_propose`: exactly what approving it makes, or why the proposal is refused. */
+  projectProposal(project: ProjectRef, input: unknown): Promise<PromptVerdict>;
+  /**
+   * A person approved `project_propose`'s card showing `shown`: the project is made here, as theirs. A string is why
+   * it was not made; `requestId` keeps a card approved twice (its answer undelivered) from making two.
+   */
+  projectProposed(project: ProjectRef, shown: unknown, by: ProposalApprover, requestId: string): Promise<string | undefined>;
   /** Whether `id` is an image of the Navi's own (`chat_image`); if so it becomes the project's, for its card. */
   naviImage(project: ProjectRef, id: string): Promise<boolean>;
   /** How the project's risky actions are approved; undefined when unread. */
@@ -151,6 +161,8 @@ export const defaultHooks = (): ApprovalHooks => ({
   naviSiteAllow: async () => {},
   naviAutomation: async () => undefined,
   naviAutomationConfirm: async () => false,
+  projectProposal: async () => ({ deny: "Blocked by fleetd: this hub can't put a new project on a card yet." }),
+  projectProposed: async () => "this hub can't create a project from a card yet",
   naviImage: async () => false,
   naviApprovals: async () => undefined,
   naviCheck: async () => ({ note: { verdict: "ask", reason: "the approval checker isn't ported to the Bun hub yet" } }),

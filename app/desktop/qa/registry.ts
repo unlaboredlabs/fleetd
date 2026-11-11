@@ -169,6 +169,8 @@ export const fixtures = [
   "inline-reopened",
   // A project's integration cards (fixtures/inline/integrations.json).
   "inline-integrations",
+  // A lead's proposals for a new project (fixtures/inline/propose.json).
+  "inline-propose",
   // A project's approval checker at work (fixtures/inline/checker.json), and its approvals in its settings
   // (fixtures/integrations).
   "inline-checker",
@@ -2010,7 +2012,7 @@ export const screens: readonly Screen[] = [
   // not run, denied, running).
   // ...and a project's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
   // as marks.
-  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden"], variant: "inline" },
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-checker", "inline-secure", "inline-hidden", "inline-propose"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {

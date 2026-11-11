@@ -43,6 +43,7 @@ import * as avatar from "./avatar.ts";
 import { projectAt } from "./discover.ts";
 import * as icon from "./icon.ts";
 import { peopleOnly } from "./people_only.ts";
+import * as propose from "./propose.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
 import { announce, projectSettings, rename, repoNamed, setColor, setEnv } from "./settings.ts";
 
@@ -73,9 +74,9 @@ type SetupCall = {
 const invalid = (why: string, fix?: string) => new ToolError("invalid", why, fix);
 
 /** A lead's call from its own session, and nobody else's. */
-function onlyLead(caller: LeadCaller, op: string): void {
+function onlyLead(caller: LeadCaller, op: string, fix = "A person changes the same in the project's settings in the app."): void {
   if (caller.agent.kind === "lead") return;
-  throw new ToolError("forbidden", `${op} is a project's lead's call, from its own session.`, "A person changes the same in the project's settings in the app.");
+  throw new ToolError("forbidden", `${op} is a project's lead's call, from its own session.`, fix);
 }
 
 function projectOf(hub: Hub, r: ProjectRef): ProjectSummary {
@@ -114,7 +115,7 @@ function tell(hub: Hub, r: ProjectRef, line: "request" | "quiet", text: string):
 
 // ---- Repos.
 
-type CloneRow = { add_id: string; machine_id: string; project_id: string; repo: string; path: string };
+type CloneRow = { add_id: string; machine_id: string; project_id: string; repo: string; path: string; proposed: string | null };
 
 const cloneDone = (hub: Hub, addId: string) => hub.db.conn.query("DELETE FROM project_setup_clones WHERE add_id = ?").run(addId);
 
@@ -198,13 +199,13 @@ async function repoRemove(hub: Hub, caller: LeadCaller, call: LeadCall): Promise
 }
 
 /**
- * The clones a lead's `repo_add` started under a hub process that is gone: each lead is told, so none waits for a
+ * The clones a lead's `repo_add`, or a person's approval of its `project_propose`, started under a hub process that is gone: each lead is told, so none waits for a
  * wake that never comes. Run at the hub's start, once the wakes are wired.
  */
 function tellInterrupted(hub: Hub): void {
   let rows: CloneRow[];
   try {
-    rows = hub.db.conn.query<CloneRow, []>("SELECT add_id, machine_id, project_id, repo, path FROM project_setup_clones").all();
+    rows = hub.db.conn.query<CloneRow, []>("SELECT add_id, machine_id, project_id, repo, path, proposed FROM project_setup_clones").all();
   } catch (error) {
     console.warn("the clones leads wait for were not read:", error);
     return;
@@ -215,7 +216,9 @@ function tellInterrupted(hub: Hub): void {
       hub,
       { machineId: row.machine_id, projectId: row.project_id },
       "request",
-      `repo_add: the hub restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url again: a clone that finished on the machine is added as it is.`,
+      row.proposed === null
+        ? `repo_add: the hub restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url again: a clone that finished on the machine is added as it is.`
+        : propose.interrupted(row.proposed, row.repo, row.path),
     );
   }
 }
@@ -598,5 +601,10 @@ export function registerLeadCalls(hub: Hub): void {
   leadCalls(hub).register("repo_add", (caller, call) => repoAdd(hub, caller, call));
   leadCalls(hub).register("repo_remove", (caller, call) => repoRemove(hub, caller, call));
   leadCalls(hub).register("project_setup", (caller, call) => setup(hub, caller, call));
+  leadCalls(hub).register("project_propose", (caller, call) => {
+    onlyLead(caller, "project_propose", "A person makes a project themselves with New project in the app.");
+    return propose.answer(hub, caller.projectRef, call);
+  });
+  propose.fill(hub);
   tellInterrupted(hub);
 }

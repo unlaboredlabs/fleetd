@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import hidden from "../../../../fixtures/inline/hidden.json";
 import integrations from "../../../../fixtures/inline/integrations.json";
+import propose from "../../../../fixtures/inline/propose.json";
 import type { ChatItem } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame, SecretOutcome } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -14,7 +15,7 @@ import { InlineChatItem } from "./InlineChatItem";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const items = [...data.items, ...integrations.items, ...hidden.items] as unknown as ChatItem[];
+const items = [...data.items, ...integrations.items, ...hidden.items, ...propose.items] as unknown as ChatItem[];
 const item = (id: string): ChatItem => {
   const it = items.find((x) => x.requestId === id);
   if (it === undefined) throw new Error(`no item ${id}`);
@@ -476,6 +477,40 @@ describe("an integration's approval", () => {
     await render("Q14");
     const fold = one("button[aria-expanded]") as HTMLButtonElement;
     expect(fold.textContent).toMatch(/^Approved: a send· you approved at \d\d:\d\d$/u);
+  });
+});
+
+describe("a lead's proposal for a new project", () => {
+  it("shows what would be made, and a person's one tap answers it", async () => {
+    const hub = await render("Q41");
+    const text = host.textContent;
+    expect(text).toContain("New project");
+    expect(text).toContain("The lead wants to create the project “Pricing page”");
+    expect(one("[data-proposal]").textContent).toBe("Repoacme/pricing-pageFolder/home/dev/src/pricing-pageOpen toEveryone on this hub");
+    expect(text).toContain("on devbox");
+    // Never as any tool's use, and its whole input stays one click away.
+    expect(text).not.toContain("wants to use");
+    expect(one("details").querySelector("summary")?.textContent).toBe("Everything it sends");
+    expect(has("Approve")).toBe(false);
+    expect(has("Don't create")).toBe(true);
+    await click(button("Create it"));
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q41", decision: "approve" }]);
+  });
+  it("says a project with no repo is the person's alone, and No is one tap too", async () => {
+    const hub = await render("Q42");
+    expect(one("[data-proposal]").textContent).toBe("RepoNoneFolder/home/dev/fleetd/projects/release-notesOpen toOnly you");
+    await click(button("Don't create"));
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q42", decision: "deny" }]);
+  });
+  it("folds, once answered, to what was decided", async () => {
+    const hub = await render("Q43");
+    expect(one("button[aria-expanded]").textContent).toMatch(/^Approved: a new project· you approved at /u);
+    await hub.show("Q44");
+    expect(one("button[aria-expanded]").textContent).toMatch(/^Declined: a new project· you said no at /u);
+    await hub.show("Q45");
+    expect(one("button[aria-expanded]").textContent).toMatch(/^Approved, not created/u);
   });
 });
 
