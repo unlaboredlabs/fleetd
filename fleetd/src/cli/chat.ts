@@ -1,8 +1,9 @@
 // `fleetd chat`: write to a project's lead from a terminal and read its chat, over
 // the app socket exactly as the desktop app does: chat_send, chat_history, events and streamed `chat_delta` frames.
-import { readFileSync, readlinkSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { ArgError, parse } from "./args.ts";
-import { clientRequestId, ioMessage, isMachineId, println, st, write } from "./common.ts";
+import { clientRequestId, ioMessage, isMachineId, println, sessionThreadId, st, write } from "./common.ts";
+import { liveHubToolRefusal } from "./mcp_client.ts";
 import { hubUrl, parseRfc3339, Refused, reportAs, Unreachable, zoned } from "./steer.ts";
 import { resolveProject } from "./time.ts";
 import { CHAT_USAGE } from "./usages.ts";
@@ -167,7 +168,10 @@ class Socket {
   private closed: Error | undefined;
   private readonly kept: any[] = [];
 
-  private constructor(private readonly ws: WebSocket) {
+  private constructor(
+    private readonly ws: WebSocket,
+    private readonly hub: string,
+  ) {
     ws.addEventListener("message", (e) => {
       let frame;
       try {
@@ -197,7 +201,7 @@ class Socket {
       });
     });
     if (opened !== undefined) throw new Unreachable(opened);
-    const socket = new Socket(ws);
+    const socket = new Socket(ws, hub);
     socket.send({ t: "auth", key });
     for (;;) {
       const frame = await socket.read();
@@ -229,6 +233,8 @@ class Socket {
   }
 
   async call(tool: string, input: unknown): Promise<any> {
+    const refused = liveHubToolRefusal(this.hub, tool);
+    if (refused !== undefined) throw new Refused(refused);
     const id = `c${++this.nextId}`;
     this.send({ t: "call", id, tool, input });
     const answer = (async () => {
@@ -282,33 +288,6 @@ async function projectRef(socket: Socket, given: string): Promise<any> {
     throw error;
   }
 }
-
-/** The session's thread id when this runs inside a fleetd session (node/runner/process `session_thread_id`). */
-export function sessionThreadId(): string | undefined {
-  const env = process.env.FLEETD_THREAD_ID;
-  if (env) return env;
-  if (process.platform !== "linux") return undefined;
-  const seen = new Set<number>();
-  let at = process.pid;
-  while (at > 1 && !seen.has(at)) {
-    seen.add(at);
-    try {
-      const vars = readFileSync(`/proc/${at}/environ`, "latin1").split("\0");
-      const hit = vars.find((v) => v.startsWith("FLEETD_THREAD_ID="))?.slice(17);
-      if (hit) return hit;
-    } catch {}
-    try {
-      const stat = readFileSync(`/proc/${at}/stat`, "utf8");
-      const after = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-      at = Number(after[1]);
-      if (!Number.isInteger(at)) return undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-void readlinkSync;
 
 async function send(socket: Socket, project: any, c: Extract<ChatCommand, { kind: "send" }>): Promise<number> {
   const watch = c.wait || c.follow;

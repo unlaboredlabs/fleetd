@@ -8,15 +8,15 @@ import type { ProjectRef, PromptScope } from "../shared/contracts.ts";
 import { ENTRIES, getEntry, INSTRUCTIONS, perProject, type RegistryEntry } from "../hub/prompts/entry.ts";
 import { warnings } from "../hub/prompts/render.ts";
 import { Prompts } from "../hub/prompts/store.ts";
-import { HubDb } from "../hub/store/db.ts";
+import type { HubDb } from "../hub/store/db.ts";
 import { HubStore } from "../hub/store/hub_store.ts";
 import { ArgError, parse } from "./args.ts";
-import { isMachineId, resolveHome } from "./common.ts";
+import { isLiveHubHome, isMachineId, liveHubRefusal, resolveHome } from "./common.ts";
 import { createPatch } from "./diff.ts";
 import { sortKeys } from "./json.ts";
 import { padEnd } from "./project.ts";
 import { type CliResult, err, ok } from "./result.ts";
-import { appendEvent } from "./store.ts";
+import { appendEvent, openHub } from "./store.ts";
 import { PROMPTS_USAGE } from "./usages.ts";
 export { PROMPTS_USAGE };
 
@@ -51,9 +51,10 @@ export async function promptsCommand(argv: string[]): Promise<CliResult> {
   }
   const home = resolveHome();
   if (!existsSync(join(home, "hub.sqlite"))) return err(1, `fleetd: no hub in ${home}; run this on the hub machine\n`);
+  if ((verb === "edit" || verb === "reset") && isLiveHubHome(home)) return err(1, `fleetd: ${liveHubRefusal(`Prompts ${verb}`)}\n`);
   let db: HubDb;
   try {
-    db = HubDb.open(home);
+    db = openHub(home);
   } catch (error) {
     return err(1, `fleetd: ${(error as Error).message}\n`);
   }

@@ -1,6 +1,8 @@
 // The little of an MCP Streamable HTTP client the CLI needs: initialize once,
 // then call tools. Answers may come as JSON or as an SSE stream; both are read to the matching response.
+import { TOOLS } from "../hub/api/tool_roles.ts";
 import { VERSION } from "../shared/version.ts";
+import { isLiveHubUrl, liveHubRefusal } from "./common.ts";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -15,6 +17,21 @@ export class McpError extends Error {
   static unauthorized() {
     return new McpError("the hub refused the key (401)", true);
   }
+}
+
+/** A call the CLI refuses itself inside an agent's session: it never reaches the hub. Exits as a refused key does. */
+export class LiveHubCallRefused extends McpError {
+  constructor(message: string) {
+    super(message, true);
+  }
+}
+
+/** Why `tool` is refused at `hub` (the hub's or its MCP endpoint's URL): inside an agent's session the CLI makes
+ * only read calls to the live hub. Undefined when it may go. */
+export function liveHubToolRefusal(hub: string, tool: string): string | undefined {
+  const scope = (TOOLS as Record<string, { scope: string }>)[tool]?.scope;
+  if (scope === "read" || !isLiveHubUrl(hub)) return undefined;
+  return liveHubRefusal(tool);
 }
 
 /** A tool's answer: its first text content as JSON, and whether it is an error result. */
@@ -65,6 +82,8 @@ export class McpClient {
   }
 
   async callTool(name: string, args: unknown, timeoutMs: number): Promise<ToolResult> {
+    const refused = liveHubToolRefusal(this.url, name);
+    if (refused !== undefined) throw new LiveHubCallRefused(refused);
     const result = await this.request("tools/call", { name, arguments: args }, timeoutMs);
     const text = result?.content?.[0]?.text;
     if (typeof text !== "string") throw new McpError(`${name} answered without text content`);

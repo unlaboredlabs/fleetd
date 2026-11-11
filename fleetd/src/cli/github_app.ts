@@ -6,11 +6,11 @@ import type { GithubApp } from "../shared/contracts.ts";
 import { systemClock } from "../shared/clock.ts";
 import { Hub } from "../hub/api/hub.ts";
 import { githubApps, type GithubApps, manifest, newAppPage } from "../hub/github_app/index.ts";
-import { HubDb } from "../hub/store/db.ts";
+import type { HubDb } from "../hub/store/db.ts";
 import { ArgError, parse } from "./args.ts";
-import { eprintln, println, readSetup, resolveHome } from "./common.ts";
+import { eprintln, isLiveHubHome, liveHubRefusal, println, readSetup, resolveHome } from "./common.ts";
 import { localHostName, machineIdFromHost } from "./project.ts";
-import { secret } from "./store.ts";
+import { openHub, secret } from "./store.ts";
 import { GITHUB_APP_USAGE } from "./usages.ts";
 export { GITHUB_APP_USAGE };
 
@@ -26,9 +26,14 @@ export async function githubAppCommand(argv: string[]): Promise<number> {
   const v = parse(argv, { options: { org: "str", name: "str", port: "str" }, positionals: true });
   if (v instanceof ArgError) return usage(v.message);
   const home = resolveHome();
+  const verb = v.positionals[0];
+  if ((verb === "create" || verb === "remove") && isLiveHubHome(home)) {
+    eprintln(`fleetd: ${liveHubRefusal(`github-app ${verb}`)}`);
+    return 1;
+  }
   let db: HubDb;
   try {
-    db = HubDb.open(home);
+    db = openHub(home);
   } catch (error) {
     eprintln(`fleetd: ${(error as Error).message}`);
     return 1;

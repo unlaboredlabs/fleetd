@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { readLine } from "./tty.ts";
 import { ArgError, parse } from "./args.ts";
-import { resolveHome } from "./common.ts";
+import { isLiveHubHome, liveHubRefusal, resolveHome } from "./common.ts";
 import { type CliResult, err, ok } from "./result.ts";
 import { openHub } from "./store.ts";
 import { VAULT_USAGE } from "./usages.ts";
@@ -37,6 +37,8 @@ export async function vaultCommand(argv: string[]): Promise<CliResult> {
   const args = parse(rest, { options: { home: "str", store: "str", force: "bool" }, positionals: false });
   if (args instanceof ArgError) return fail(2, `${args.message}\n\nusage:\n${VAULT_USAGE}`);
   const home = resolveHome(args.str("home"));
+  // Each of these writes the vault's key or its row, or shows what opens it.
+  if (isLiveHubHome(home)) return fail(1, liveHubRefusal("The vault's key"));
   try {
     switch (command) {
       case "key": {

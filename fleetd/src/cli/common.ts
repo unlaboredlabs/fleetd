@@ -1,8 +1,8 @@
 // What the CLI's commands share (setup/mod.rs, setup/state.rs, hub_key.rs
 // `resolve_home`): the hub home, setup.json, private files, and how a command reports a failure.
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { expandHome, fleetdDir } from "../shared/home.ts";
 
 /** The user's home directory, as Node's `os.homedir()` finds it ($HOME first). */
@@ -13,6 +13,130 @@ export const isMachineId = (id: string) => /^[a-z0-9-]{1,32}$/.test(id);
 
 /** The hub home: `--home` where given (hub start), else `<fleetd dir>/hub`. */
 export const resolveHome = (home?: string) => (home === undefined ? join(fleetdDir(), "hub") : expandHome(home));
+
+// ---- inside an agent's session ----
+
+/** The fleetd session around this process, as the node gave it to claude: undefined outside one. Tests stand in. */
+let standIn: Record<string, string> | null | undefined;
+
+/** Tests only: the session variables to see instead of this process's (`null`: no session). `undefined` undoes it. */
+export function standInSession(vars: Record<string, string> | null | undefined) {
+  standIn = vars;
+  live = undefined;
+}
+
+/** A variable of the fleetd session this process runs in: its own environment's, else the nearest ancestor's, so a
+ * shell that unsets it is still found (node/sessions `#spec` sets them on claude). */
+function sessionVar(name: string): string | undefined {
+  if (standIn !== undefined) return standIn?.[name] || undefined;
+  const env = process.env[name];
+  if (env) return env;
+  if (process.platform !== "linux") return undefined;
+  const seen = new Set<number>();
+  let at = process.pid;
+  while (at > 1 && !seen.has(at)) {
+    seen.add(at);
+    try {
+      const vars = readFileSync(`/proc/${at}/environ`, "latin1").split("\0");
+      const hit = vars.find((v) => v.startsWith(`${name}=`))?.slice(name.length + 1);
+      if (hit) return hit;
+    } catch {}
+    try {
+      const stat = readFileSync(`/proc/${at}/stat`, "utf8");
+      const after = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      at = Number(after[1]);
+      if (!Number.isInteger(at)) return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** The session's thread id when this runs inside a fleetd session (node/runner/process `session_thread_id`). */
+export const sessionThreadId = () => sessionVar("FLEETD_THREAD_ID");
+
+/** The lead's fleetd tools that set its project up: what an agent uses instead of the CLI's writes. */
+export const LEAD_SETUP_TOOLS = ["repo_add", "repo_remove", "project_setup", "project_propose"];
+
+/** Why a write to the live hub from an agent's session is refused, and what works instead: one line. */
+export const liveHubRefusal = (what: string) =>
+  `${what} would change the live hub, and inside an agent's session the fleetd CLI only reads it. ` +
+  `The lead's fleetd tools set its project up (${LEAD_SETUP_TOOLS.join(", ")}); a task asks its lead. ` +
+  `For a throwaway hub, set FLEETD_HOME.`;
+
+/** A write the CLI refuses inside an agent's session. */
+export class LiveHubRefused extends Error {}
+
+/** The live hub of the node running this session: its home (beside the node's, whose socket the session holds) and
+ * the `host:port`s it answers on. Undefined outside a session. */
+type LiveHub = { home: string; addresses: { host: string; port: string }[] };
+let live: LiveHub | null | undefined;
+
+const realPath = (path: string) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+function liveHub(): LiveHub | undefined {
+  if (live !== undefined) return live ?? undefined;
+  live = null;
+  if (sessionThreadId() === undefined) return undefined;
+  const sock = sessionVar("FLEETD_NODE_SOCK");
+  // The passwd home, not $HOME: a session's shell may change that.
+  const nodeHome = sock ? dirname(sock) : join(userInfo().homedir, ".fleetd", "node");
+  const home = join(dirname(nodeHome), "hub");
+  const urls: string[] = [];
+  try {
+    const setup = readSetup(home);
+    if (setup) urls.push(`http://${setup.listen}`, setup.url);
+  } catch {}
+  try {
+    const hub = JSON.parse(readFileSync(join(nodeHome, "node.json"), "utf8"))?.hub;
+    if (typeof hub === "string") urls.push(hub);
+  } catch {}
+  const addresses = urls.flatMap((u) => {
+    const a = address(u);
+    return a ? [a] : [];
+  });
+  live = { home: realPath(home), addresses };
+  return live;
+}
+
+function address(url: string): { host: string; port: string } | undefined {
+  try {
+    const u = new URL(url);
+    const port = u.port || (u.protocol === "https:" || u.protocol === "wss:" ? "443" : "80");
+    return { host: u.hostname.replace(/^\[|\]$/g, "").toLowerCase(), port };
+  } catch {
+    return undefined;
+  }
+}
+
+const LOCAL = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0", "::"]);
+
+/** Whether `home` is the live hub's home and this runs in an agent's session. */
+export function isLiveHubHome(home: string): boolean {
+  const hub = liveHub();
+  return hub !== undefined && realPath(home) === hub.home;
+}
+
+/** Whether `url` reaches the live hub and this runs in an agent's session: one of its addresses, or this machine at
+ * its port when it listens on loopback or every address (a throwaway hub on loopback beside one on the tailnet isn't). */
+export function isLiveHubUrl(url: string): boolean {
+  const hub = liveHub();
+  const at = address(url);
+  if (hub === undefined || at === undefined) return false;
+  return hub.addresses.some((a) => a.port === at.port && (a.host === at.host || (LOCAL.has(at.host) && LOCAL.has(a.host))));
+}
+
+/** Throws {@link LiveHubRefused} when `home` is the live hub's and this runs in an agent's session. */
+export function refuseLiveHubWrite(home: string, what: string) {
+  if (isLiveHubHome(home)) throw new LiveHubRefused(liveHubRefusal(what));
+}
 
 /** A failed step: what is wrong, and the exact command or action that fixes it. */
 export type Failure = { message: string; fix: string };

@@ -2,7 +2,7 @@
 // cliclack style in a terminal, plain lines otherwise; a stop is what went wrong, its fix and the exit code.
 import { readFileSync } from "node:fs";
 import { eprintln, println } from "./common.ts";
-import type { McpClient } from "./mcp_client.ts";
+import { LiveHubCallRefused, type McpClient } from "./mcp_client.ts";
 import * as tty from "./tty.ts";
 
 /** What went wrong, the fix, and the exit code: 1 failed, 2 usage, 3 refused, 4 the hub or machine is unreachable. */
@@ -47,6 +47,7 @@ export async function call(client: McpClient, tool: string, input: unknown): Pro
   try {
     result = await client.callTool(tool, input, CALL_MS);
   } catch (error) {
+    if (error instanceof LiveHubCallRefused) throw new Stop(3, error.message);
     throw new Stop(4, `${tool} failed: ${(error as Error).message}`);
   }
   if (result.isError) throw Stop.fromBody(result.body);
