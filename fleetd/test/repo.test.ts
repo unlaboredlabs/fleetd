@@ -54,9 +54,12 @@ test("the train's after-merge checks are what mac.yml reports, and besides those
     } else if (job["runs-on"] === "macos-latest") mac.push(job.name ?? id);
   }
   expect(mac).toContain("mobile (ios)");
-  // The link check runs only in the workflow's own runs: in release.yml's call github.workflow is Release, so it
-  // never gates a release.
-  expect(nightly.jobs["site-external-links"]?.if).toContain(`github.workflow == '${nightly.name}'`);
+  // The link check, which the train doesn't leave for after the merge, runs only in the workflow's own nightly or a
+  // manual run of it alone: never in an on-demand run of the Mac checks on a PR's head, nor in release.yml's call
+  // (github.workflow is Release there), so it never holds a PR or gates a release.
+  const links = nightly.jobs["site-external-links"]?.if;
+  expect(links).toContain(`github.workflow == '${nightly.name}'`);
+  expect(links).toContain("(github.event_name == 'schedule' || inputs.only == 'links')");
   const ci = Object.entries(workflow("ci.yml").jobs);
   const linux = (check: string) => ci.some(([id, j]) => (j.name ?? id) === check && j["runs-on"] === "ubuntu-latest");
   expect(settings.afterMerge.filter((c) => !linux(c)).sort()).toEqual(mac.sort());

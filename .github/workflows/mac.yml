@@ -5,13 +5,14 @@ name: Nightly
 # code), and before each release (release.yml builds only once they pass). Pull requests check the same code on Linux
 # instead, in ci.yml: `fleetd` type-checks the node's macOS code, `desktop (mac layout)` packs the mac app, and `mobile`
 # and `mobile (android)` type, test and bundle the phone app's JavaScript. The site's external link check runs here
-# too, nightly and on demand, never in release.yml's call.
+# too, nightly and on a manual run of it alone, never in a run of the Mac checks on demand or in release.yml's call.
 #
-# A manual run's `only` picks a part: `ios` builds just the iOS simulator app (with `metro` for a Debug build), `links`
-# runs just the link check (Actions › Nightly › Run workflow, or `gh workflow run mac.yml --ref <branch> -f only=ios
-# -f metro=<host:port>`). No EAS, no Expo service and no secret: signed builds are mobile-release.yml's.
+# A manual run's `only` picks a part: `all` (the default) runs the Mac checks, `ios` builds just the iOS simulator app
+# (with `metro` for a Debug build), `links` runs just the link check (Actions › Nightly › Run workflow, or
+# `gh workflow run mac.yml --ref <branch> -f only=ios -f metro=<host:port>`). No EAS, no Expo service and no secret:
+# signed builds are mobile-release.yml's.
 #
-# A failed nightly or manual run of every part on main opens an issue labelled `macos-nightly-failed` with the failed
+# A failed nightly or manual `all` run on main opens an issue labelled `macos-nightly-failed` with the failed
 # Mac jobs and the run's link, or comments on the one already open; the next such run on main with every Mac job green
 # closes it. The merge train lists these checks as after-merge only (.fleetd/train.json), so a red one never holds a
 # merge.
@@ -22,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "What to run: everything, only the iOS simulator build, or only the site's external link check."
+        description: "What to run: the Mac checks, only the iOS simulator build, or only the site's external link check."
         type: choice
         options: [all, ios, links]
         default: all
@@ -236,8 +237,9 @@ jobs:
     # Every external link on fleetd.sh and its docs answers (10 s a try, two tries): an external link can break without
     # a commit here. Links into this repo on GitHub are checked against the checkout by ci.yml's site job instead. Not
     # in release.yml's call (a called workflow's github.workflow is the caller's name), so it never gates a release,
-    # and not in the issue below.
-    if: ${{ github.workflow == 'Nightly' && (inputs.only || 'all') != 'ios' }}
+    # and not in a manual run of the Mac checks, whose checks the train leaves for after the merge (.fleetd/train.json
+    # doesn't list this one, so a dead link there would hold a PR's head). Not in the issue below either.
+    if: ${{ github.workflow == 'Nightly' && (github.event_name == 'schedule' || inputs.only == 'links') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
