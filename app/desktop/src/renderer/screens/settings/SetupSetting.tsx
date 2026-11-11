@@ -52,11 +52,11 @@ export function Setup({ settings, title, repo, reveal }: { settings: Settings; t
     <SettingsSection
       title={title}
       reveal={reveal}
-      intro="Runs in each new worktree, before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent."
+      hint="Runs in each new worktree, before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent."
     >
       <SettingsRow
         title="Commands"
-        line="One a line, in order, each run with sh -c in the worktree, for up to 10 minutes. The first that fails stops the rest, and the agent starts anyway, told what failed."
+        hint="One a line, in order, each run with sh -c in the worktree, for up to 10 minutes. The first that fails stops the rest, and the agent starts anyway, told what failed."
       >
         <Textarea
           mono
@@ -71,7 +71,7 @@ export function Setup({ settings, title, repo, reveal }: { settings: Settings; t
       </SettingsRow>
       <SettingsRow
         title="Skip when unchanged"
-        line="Files whose contents decide what setup makes, one a line, such as lockfiles. A worktree set up before with the same commands and the same contents of these is not set up again. None: setup always runs."
+        hint="Files whose contents decide what setup makes, one a line, such as lockfiles. A worktree set up before with the same commands and the same contents of these is not set up again. None: setup always runs."
       >
         <Textarea
           mono
@@ -88,7 +88,8 @@ export function Setup({ settings, title, repo, reveal }: { settings: Settings; t
       {dirty ? (
         <SettingsRow
           title="Unsaved changes"
-          line={next.ok ? "New worktrees run the saved setup until you save." : <span role="alert">{next.problem}</span>}
+          hint="New worktrees run the saved setup until you save."
+          line={next.ok ? null : <span role="alert">{next.problem}</span>}
           lineTone={next.ok ? "quiet" : "danger"}
           control={
             <>

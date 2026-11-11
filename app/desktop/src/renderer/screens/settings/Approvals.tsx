@@ -14,7 +14,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { FLOORS, logWhy, MODES } from "./approvalsModel";
 import { addPage, FIRST_PAGE, fold, hasMore, PAGE, SHOWN, showAllWord, timesWord, type LogRow, type Pages } from "./approvedLog";
 import { PROJECT_TOOLS } from "../projects/model";
-import { SettingsList, SettingsListRow, SettingsRow } from "./parts";
+import { HintLines, SettingsList, SettingsListRow, SettingsRow } from "./parts";
 import s from "./settings.module.css";
 
 type Ref = { machineId: string; projectId: string };
@@ -25,7 +25,11 @@ export function ApprovalsSetting({ projectRef }: { projectRef: Ref }) {
   const data = read.data;
   return (
     <>
-      <SettingsRow reveal="projects.approvals" title="Approvals" line="When the lead asks you before it sends, shares or confirms.">
+      <SettingsRow
+        reveal="projects.approvals"
+        title="Approvals"
+        hint={<HintLines lines={["When the lead asks you before it sends, shares or confirms.", ...MODES.map((m) => [m.label, m.description] as const), FLOORS]} />}
+      >
         {data === undefined && read.isError ? (
           // Plain words: the lookup's own error names the tool and the project, which mean nothing to the person.
           <div className={s.inline}>
@@ -73,17 +77,9 @@ function ModeEditor({ projectRef, saved }: { projectRef: Ref; saved: NaviApprova
     <div className={s.stack}>
       <RadioGroup className={s.modes} value={saved.mode} disabled={!live || busy} onValueChange={(v) => save(v as NaviApprovalMode)} aria-label="Approval mode">
         {MODES.map((m) => (
-          <Radio key={m.mode} value={m.mode} label={m.label} description={m.description} />
+          <Radio key={m.mode} value={m.mode} label={m.label} />
         ))}
       </RadioGroup>
-      {saved.mode === "checker" ? (
-        <Text size="xs" tone="quiet">
-          It sees the action, never the mail or pages the lead read.
-        </Text>
-      ) : null}
-      <Text size="xs" tone="quiet">
-        {FLOORS}
-      </Text>
       {problem === null ? null : (
         <div role="alert">
           <Text size="sm" tone="danger">
@@ -104,7 +100,8 @@ function ApprovedLog({ projectRef, first }: { projectRef: Ref; first: NaviApprov
     <SettingsRow
       reveal="projects.approved"
       title="Ran without asking"
-      line={`Each action the checker let through, or YOLO ran, newest first, with why. Show in chat opens its line.${first.log.length === 0 ? " Nothing yet." : ""}`}
+      hint="Each action the checker let through, or YOLO ran, newest first, with why. Show in chat opens its line."
+      line={first.log.length === 0 ? "Nothing yet." : null}
       control={
         more ? (
           <Button variant="ghost" aria-expanded={all !== null} onClick={() => setAll(all === null ? { log: first.log, older: first.older } : null)}>

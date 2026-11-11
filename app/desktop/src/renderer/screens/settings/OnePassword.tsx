@@ -60,7 +60,7 @@ export function OnePasswordSettings() {
     <SettingsSection
       title="1Password"
       reveal="onepassword"
-      intro={
+      hint={
         vault
           ? IMPORT_INTRO
           : "The logins your agents sign in to sites with, in the orders you start and your Only-me projects. They name a 1Password item and fleetd types the value in; no agent ever sees it."
@@ -131,7 +131,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
         </li>
         <li>
           <Text size="sm">
-            Paste its token below. It starts with <InlineCode>ops_</InlineCode>.
+            Paste its token below. 1Password shows it once; it starts with <InlineCode>ops_</InlineCode>.
           </Text>
         </li>
       </ol>
@@ -140,7 +140,7 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
           1Password › Service accounts
         </Button>
       </div>
-      <Field label="Token" description="Shown once in 1Password when you make the service account.">
+      <Field label="Token">
         <Input mono aria-label="Token" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} placeholder="ops_…" onChange={(e) => setValue(e.target.value)} />
       </Field>
       {/* Save shows once there is a token to save. */}
@@ -160,14 +160,15 @@ function ServiceAccount({ token }: { token: OnePasswordToken | undefined }) {
       )}
     </>
   );
-  const help = "Kept encrypted on the hub's machines. A project's own 1Password token wins over it.";
+  const help = "The token is kept encrypted on the hub's machines. A project's own 1Password token wins over it.";
   const shown = tried ?? (token?.lastTest === undefined ? undefined : { test: token.lastTest });
   const verdict = shown === undefined ? null : "error" in shown ? { ok: false, text: shown.error } : vaultsLine(shown.test, nowMs);
   return (
     <SettingsRow
       reveal="onepassword.token"
       title="Service account"
-      line={token === undefined ? help : `Saved. ${sealedLine(token.sealedOn)} A project's own 1Password token wins over it.`}
+      hint={help}
+      line={token === undefined ? null : sealedLine(token.sealedOn)}
       control={
         token === undefined ? undefined : (
           <>

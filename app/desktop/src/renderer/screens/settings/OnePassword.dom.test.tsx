@@ -139,7 +139,7 @@ it("guides a person to a service account, seals the pasted token through main, l
   expect(sealed).toEqual([{ token: TOKEN, boxes: [{ machineId: "devbox", boxPubKey: BOX }] }]);
   expect(sent("onepassword_test")).toEqual([{}]);
   for (let i = 0; i < 2; i++) await settle();
-  expect(host.textContent).toContain("Saved. Sealed on devbox.");
+  expect(host.textContent).toContain("Sealed on devbox.");
   expect(host.textContent).toContain("Reads Agents and Shared (on devbox");
   // Two vaults want a look: one kept for fleetd is what to make.
   expect(host.querySelector("[role='alert']")?.textContent).toContain("reads only fleetd's vault");

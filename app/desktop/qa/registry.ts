@@ -3361,7 +3361,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("switch", { name: /^iOS screens on /u })).toHaveCount(0);
     },
   },
-  // The agents' Mac's page: its switch for agents, its own screen's switch alone, and how soon an idle one ends.
+  // The agents' Mac's page: its switch for agents, its own screen's switch alone, and how soon an idle one ends (a hint).
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines/buildbox",
@@ -3372,7 +3372,8 @@ export const screens: readonly Screen[] = [
       await mac.scrollIntoViewIfNeeded();
       await mac.getByRole("switch", { name: /^Agents’ Mac screens on /u }).waitFor();
       await expect(mac.getByRole("switch")).toHaveCount(1);
-      await mac.getByText(/^An idle Mac screen ends after 5 minutes/u).waitFor();
+      // How soon an idle one ends is the hint of its At once row.
+      await expect(mac.getByRole("region", { name: "At once" })).toContainText("An idle Mac screen ends after 5 minutes");
     },
   },
   // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Hub › Machines.
@@ -3715,6 +3716,37 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: "The lead", exact: true }).click(),
   },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  // A row's hint (W612): at rest the row is its title and its control; with keyboard focus on its switch, what it does
+  // shows under the title. A row with no control of its own takes focus on its title: Approvals, a line per choice.
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "hint",
+    open: async (page) => {
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+    },
+    check: async (page) => {
+      const toggle = page.getByRole("switch", { name: "Tell the hub when I'm using the app" });
+      await toggle.blur();
+      await toggle.focus();
+      await expect(page.getByRole("tooltip")).toContainText("Never what you type or see.");
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "hint-choices",
+    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["integrations-approvals"],
+    check: async (page) => {
+      const part = page.getByRole("region", { name: "Approvals" });
+      await part.scrollIntoViewIfNeeded();
+      const title = part.getByText("Approvals", { exact: true }).first();
+      await title.blur();
+      await title.focus();
+      await expect(page.getByRole("tooltip")).toContainText("YOLO: Nothing asks");
+    },
+  },
   // Your name, an owner's and a member's alike: at rest, while typing a new one, saved on Enter as the hub kept it, and
   // an empty one refused in the hub's words under the row's title.
   { id: "settings.general", route: "#/settings/general", fixtures: ["admin-owner", "admin-member"], variant: "name" },
@@ -3757,7 +3789,7 @@ export const screens: readonly Screen[] = [
     variant: "notifications-test-sent",
     open: async (page, app) => {
       await systemNotifications(app, true);
-      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("button", { name: "Send", exact: true }).click();
       await page.getByRole("status").filter({ hasText: /^Sent\./u }).waitFor();
     },
   },
@@ -3768,7 +3800,7 @@ export const screens: readonly Screen[] = [
     variant: "notifications-test-unsupported",
     open: async (page, app) => {
       await systemNotifications(app, false);
-      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("button", { name: "Send", exact: true }).click();
       await page.getByRole("status").filter({ hasText: "doesn’t show notifications" }).waitFor();
     },
   },

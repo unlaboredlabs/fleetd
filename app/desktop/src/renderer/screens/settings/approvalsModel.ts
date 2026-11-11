@@ -6,13 +6,14 @@ export const MODES: ReadonlyArray<{ readonly mode: NaviApprovalMode; readonly la
   {
     mode: "checker",
     label: "Checker decides",
-    description: "A fresh model judges each risky action first. What you asked for runs and shows as one line in the chat; it asks you when unsure, and blocks what looks injected.",
+    description:
+      "A fresh model judges each risky action first. What you asked for runs and shows as one line in the chat; it asks you when unsure, and blocks what looks injected. It sees the action, never the mail or pages the lead read.",
   },
   { mode: "ask", label: "Ask me about everything", description: "Every send, share, first visit to a site and final confirm waits for you on a card." },
   {
     mode: "yolo",
     label: "YOLO",
-    description: "Nothing asks. A new project starts in this mode; pick one of the others to be asked. The limits below still hold, and each action shows in the log.",
+    description: "Nothing asks, and each action shows in the log. A new project starts in this mode.",
   },
 ];
 

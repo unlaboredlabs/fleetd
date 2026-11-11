@@ -17,7 +17,8 @@ export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
       {m.mac !== undefined ? (
         <SwitchRow
           title="Agents may use this Mac"
-          line={`Agents build iOS apps and run simulators here. It runs no agents itself.${m.mac.note === undefined ? "" : ` ${m.mac.note}`}`}
+          hint="Agents build iOS apps and run simulators here. It runs no agents itself."
+          line={m.mac.note}
           checked={m.mac.on}
           disabled={disabled}
           onCheckedChange={(macTool) => set({ macTool })}
@@ -26,7 +27,7 @@ export function MachineRole({ machine: m }: { machine: MachineRolesEntry }) {
         <SettingsRow
           title={ROLE_TITLE[choice]}
           label={`What ${m.name} is for`}
-          line={ROLE_HELP[choice]}
+          hint={ROLE_HELP[choice]}
           control={<Segmented label={`What ${m.name} is for`} options={ROLE_CHOICES} value={choice} disabled={disabled} onChange={(roles) => roles !== choice && set({ roles: rolesOf(roles) })} />}
         />
       )}

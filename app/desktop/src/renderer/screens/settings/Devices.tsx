@@ -61,7 +61,7 @@ function YourDevices({ title, reveal, one }: { title: string; reveal: string; on
     <SettingsSection
       title={one ? undefined : title}
       reveal={reveal}
-      intro={one ? undefined : "Each of these acts as you on this hub, on every machine."}
+      hint="The apps signed in as you. Each acts as you on this hub, on every machine."
       aside={
         pairing === null ? (
           <Button icon={<Smartphone size={14} />} disabled={!live || read.data === undefined} onClick={pair}>

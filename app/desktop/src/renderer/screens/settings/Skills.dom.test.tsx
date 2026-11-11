@@ -131,7 +131,7 @@ it("shows a member a project's skills and only names the hub-wide ones", async (
   expect(rowNamed("pr-review")).toBeUndefined();
   expect(rowNamed("standup")).toBeUndefined();
   const line = document.querySelector("[aria-label='Hub-wide skills']");
-  expect(line?.textContent).toContain("Hub-wide, for every project: pr-review, standup.");
+  expect(line?.textContent).toContain("pr-review, standup");
   expect(texts()).not.toContain("Hub-wide skills in Every project");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);

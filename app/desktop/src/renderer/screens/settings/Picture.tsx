@@ -104,7 +104,8 @@ export function PictureSetting({ project }: { project: Pictured }) {
     <SettingsRow
       reveal="projects.picture"
       title="Icon"
-      line={echo === null ? "Its chat shows it on every device: its bot, which shows what it's doing, or an image of your own." : <span role={echo.ok ? "status" : "alert"}>{echo.text}</span>}
+      hint="Its chat shows it on every device: its bot, which shows what it's doing, or an image of your own."
+      line={echo === null ? null : <span role={echo.ok ? "status" : "alert"}>{echo.text}</span>}
       lineTone={echo === null || echo.ok ? "quiet" : "danger"}
       control={
         <div className={p.picker}>

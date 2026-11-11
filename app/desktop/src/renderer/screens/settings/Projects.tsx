@@ -170,13 +170,12 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <SettingsRow
           reveal="projects.delete"
           title="Delete project"
-          line={
-            unknown !== null
-              ? `Deleting needs its machine to list its worktrees first: ${unknown}`
-              : gone
-                ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
-                : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
+          hint={
+            gone
+              ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
+              : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
           }
+          line={unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
           control={
             <DangerButton disabled={unknown !== null || checking} onClick={() => void open()}>
               {checking ? "Checking its worktrees…" : "Delete project…"}
@@ -240,12 +239,17 @@ function NameSetting({ settings }: { settings: Settings }) {
     <SettingsRow
       reveal="projects.name"
       title="Name"
+      hint="How fleetd shows the project. Its folder keeps its own name."
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       line={
         <>
-          <span className={s.lineBlock}>
-            {echo !== null ? <EchoText echo={echo} /> : dirty && title === "" ? "A project needs a name." : "How fleetd shows the project. Its folder keeps its own name."}
-          </span>
+          {echo !== null ? (
+            <span className={s.lineBlock}>
+              <EchoText echo={echo} />
+            </span>
+          ) : dirty && title === "" ? (
+            <span className={s.lineBlock}>A project needs a name.</span>
+          ) : null}
           <Truncate size="sm" tone="quiet" mono>
             {settings.workspaceRoot}
           </Truncate>
@@ -276,15 +280,8 @@ function OnlyMeSetting({ settings, onlyMe }: { settings: Settings; onlyMe: boole
     <SwitchRow
       reveal="projects.only-me"
       title="Only me"
-      line={
-        echo !== null ? (
-          <EchoText echo={echo} />
-        ) : onlyMe ? (
-          "Only you see it. Turn it off to share it with everyone on this hub."
-        ) : (
-          "Everyone on this hub sees it. Turn it on to keep it to yourself."
-        )
-      }
+      hint="On: only you see this project. Off: everyone on this hub sees it."
+      line={echo !== null ? <EchoText echo={echo} /> : null}
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       checked={onlyMe}
       disabled={busy}
@@ -309,11 +306,8 @@ function ArchiveSetting({ projectRef, title, archivedAt }: { projectRef: Ref; ti
     <SettingsRow
       reveal="projects.archive"
       title="Archive"
-      line={
-        archived
-          ? `Archived ${when(archivedAt, now)}. Its lead doesn’t start until you bring it back.`
-          : "Takes it out of the sidebar and stops its lead. Its chat, memory, folder and settings stay, and it comes back as it was."
-      }
+      hint="Takes it out of the sidebar and stops its lead. Its chat, memory, folder and settings stay, and it comes back as it was."
+      line={archived ? `Archived ${when(archivedAt, now)}.` : null}
       control={
         <Button variant={archived ? "primary" : "secondary"} disabled={busy} onClick={() => void act()}>
           {busy ? (archived ? "Bringing it back…" : "Archiving…") : archived ? "Bring back" : "Archive"}
@@ -345,14 +339,9 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
   return (
     <SettingsRow
       title="Refresh now"
+      hint={`${job ? refreshSchedule(job) : "Every night"} with chat or orders, the lead adds what it missed to memory, merges overlaps and removes what no longer holds, and lists the changes in the chat, each with Undo.`}
       lineTone={ran !== null && !ran.ok ? "danger" : "quiet"}
-      line={
-        ran !== null ? (
-          <EchoText echo={ran} />
-        ) : (
-          `${job ? refreshSchedule(job) : "Every night"} with chat or orders, the lead adds what it missed to memory, merges overlaps and removes what no longer holds, and lists the changes in the chat, each with Undo.${job ? ` ${refreshRuns(job)}.` : ""}`
-        )
-      }
+      line={ran !== null ? <EchoText echo={ran} /> : job ? `${refreshRuns(job)}.` : null}
       control={
         <Button variant="secondary" disabled={running} onClick={run}>
           {running ? "Refreshing…" : "Run now"}
@@ -368,7 +357,8 @@ function EnvInVault({ count, projectRef }: { count: number; projectRef: Ref }) {
     <SettingsRow
       reveal="projects.env"
       title="Environment variables"
-      line={`Given to every agent the project starts, and kept in the project's vault now. ${count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}`}
+      hint="Given to every agent the project starts. They are kept in the project's vault."
+      line={count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}
       control={
         <Button variant="secondary" onClick={() => navigate({ id: "settings", tab: "project-vault", for: `${projectRef.machineId}/${projectRef.projectId}` })}>
           Open Vault
@@ -393,15 +383,8 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
     <SettingsRow
       reveal="projects.env"
       title="Environment variables"
-      line={
-        echo !== null ? (
-          <EchoText echo={echo} />
-        ) : full ? (
-          `Given to every agent the project starts. It holds the most it can, ${String(ENV_MAX)}: remove one to add another.`
-        ) : (
-          "Given to every agent the project starts. Secrets are never shown again."
-        )
-      }
+      hint="Given to every agent the project starts. Secrets are never shown again."
+      line={echo !== null ? <EchoText echo={echo} /> : full ? `It holds the most it can, ${String(ENV_MAX)}: remove one to add another.` : null}
       lineTone={echo !== null && !echo.ok ? "danger" : "quiet"}
       control={
         <>

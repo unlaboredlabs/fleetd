@@ -8,7 +8,7 @@ import { Button, copyText, Input, Radio, RadioGroup, Text, Truncate } from "../.
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { expiresLine, nameProblem, ROLE_HELP, roleWord } from "./model";
-import { SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
+import { HintLines, SettingsListRow, SettingsRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -22,7 +22,7 @@ export function InviteSection() {
   const ref = useReveal<HTMLDivElement>("hub.invite");
   return (
     <div ref={ref}>
-      <SettingsSection title="Invite someone" intro="A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.">
+      <SettingsSection title="Invite someone" hint="A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.">
         <InviteForm onCreated={setCreated} />
         {created === null ? null : <CreatedLink created={created} />}
       </SettingsSection>
@@ -77,17 +77,18 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
         lineTone="danger"
         control={<Input id={nameId} className={a.inviteName} value={name} placeholder="Alice" autoComplete="off" onChange={(e) => setName(e.target.value)} />}
       />
-      <SettingsRow title="Role" titleId="invite-role">
+      <SettingsRow title="Role" titleId="invite-role" hint={<HintLines lines={INVITE_ROLES.map((r) => [roleWord(r), ROLE_HELP[r]] as const)} />}>
         <RadioGroup value={role} onValueChange={(v) => setRole(v)} aria-labelledby="invite-role">
           {INVITE_ROLES.map((r) => (
-            <Radio key={r} value={r} label={roleWord(r)} description={ROLE_HELP[r]} />
+            <Radio key={r} value={r} label={roleWord(r)} />
           ))}
         </RadioGroup>
       </SettingsRow>
       <SettingsRow
         title={several ? `For ${hub.label}` : "The link"}
-        line={error === undefined ? "Shown once, to send them yourself." : <span role="alert">{`No invite: ${error}`}</span>}
-        lineTone={error === undefined ? "quiet" : "danger"}
+        hint="Shown once, to send them yourself."
+        line={error === undefined ? null : <span role="alert">{`No invite: ${error}`}</span>}
+        lineTone="danger"
         control={
           <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}

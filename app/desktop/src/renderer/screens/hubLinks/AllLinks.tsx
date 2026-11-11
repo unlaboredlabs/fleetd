@@ -19,7 +19,7 @@ export function AllLinks() {
   const [now] = useState(() => Date.now());
   const links = read.data === undefined ? [] : sortIssued(read.data.issued);
   return (
-    <SettingsSection title="Hub links" reveal="hub.links" intro="Other hubs that can see work here, each as the person who made the link.">
+    <SettingsSection title="Hub links" reveal="hub.links" hint="Other hubs that can see work here, each as the person who made the link.">
       {!live ? null : lacksLinks(read.error) ? (
         <SettingsRow
           title="This hub needs updating to link hubs."

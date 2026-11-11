@@ -50,15 +50,8 @@ export function BotColorSetting({ project }: { project: Colored }) {
       reveal="projects.color"
       title="Color"
       titleId="bot-color-title"
-      line={
-        problem !== null ? (
-          <span role="alert">{problem}</span>
-        ) : project.avatar !== undefined ? (
-          "Its bot's color, which shows when you remove its image."
-        ) : (
-          "Its bot's color, wherever it shows, on every device."
-        )
-      }
+      hint={project.avatar !== undefined ? "Its bot's color, which shows when you remove its image." : "Its bot's color, wherever it shows, on every device."}
+      line={problem !== null ? <span role="alert">{problem}</span> : null}
       lineTone={problem === null ? "quiet" : "danger"}
       control={
         <div className={c.swatches} role="radiogroup" aria-labelledby="bot-color-title">

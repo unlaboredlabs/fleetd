@@ -29,7 +29,17 @@
   min-width: 0;
 }
 .label {
+  align-self: flex-start;
   margin: 0;
+}
+/* A label or a title with a hint takes keyboard focus: its ring around its own words, clear of its letters. */
+.title {
+  align-self: flex-start;
+}
+.label:focus-visible,
+.title:focus-visible {
+  border-radius: var(--radius-sm);
+  outline-offset: 2px;
 }
 .head .add {
   margin: 0 calc(-1 * var(--space-1)) -2px 0;
@@ -51,8 +61,18 @@
   padding: 0 var(--space-4);
 }
 
-/* A row: its title and quiet line on the left, its one control at the right end; what it holds under them. */
+/* A row: its title on the left and its one control at the right end (its head, which its hint hangs under); what it
+   holds under them. */
 .row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  scroll-margin-top: var(--space-4);
+}
+.row:focus {
+  outline: none;
+}
+.rowHead {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -60,10 +80,6 @@
   min-width: 0;
   min-height: 48px;
   padding: var(--space-3) var(--space-4);
-  scroll-margin-top: var(--space-4);
-}
-.row:focus {
-  outline: none;
 }
 .rowText {
   display: flex;
@@ -83,23 +99,22 @@
   min-width: 0;
 }
 .below {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  margin-top: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
 }
 .below:empty {
   display: none;
 }
 /* A narrow window: the control goes under its words rather than squeezing them. */
 @media (max-width: 640px) {
-  .row {
+  .rowHead {
     grid-template-columns: minmax(0, 1fr);
     row-gap: var(--space-2);
   }
-  .row > .control {
+  .rowHead > .control {
     justify-content: flex-start;
   }
 }
@@ -258,4 +273,12 @@
 }
 .note:empty {
   display: none;
+}
+
+/* A hint that explains several choices (parts.tsx, HintLines): one line each. */
+.hintLine {
+  display: block;
+}
+.hintLine + .hintLine {
+  margin-top: var(--space-1);
 }

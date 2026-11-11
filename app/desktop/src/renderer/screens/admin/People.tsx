@@ -62,9 +62,7 @@ export function People({ me }: { me: Person | undefined }) {
               </span>
             ) : undefined
           }
-        >
-          Who is on this hub.
-        </PageHead>
+        />
         {canInvite && inviting ? <InviteSection /> : null}
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
@@ -122,7 +120,7 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
         </SettingsList>
       </SettingsSection>
       {others.length === 0 ? null : (
-        <SettingsSection title="Waiting to join" intro="Invites for one more device of someone already here.">
+        <SettingsSection title="Waiting to join" hint="Invites for one more device of someone already here.">
           <SettingsList label="Open invites">
             {others.map((i) => (
               <OpenInvite key={i.inviteId} invite={i} role={list.people.find((p) => p.personId === i.person.personId)?.role} me={me} />
@@ -145,7 +143,7 @@ function LeftProjects({ left }: { left: ReadonlyArray<LeftProject> }) {
   return (
     <SettingsSection
       title="Left by removed people"
-      intro="Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them."
+      hint="Their own projects, archived when they were removed: nothing runs in them, and only their owner could open them."
     >
       <SettingsList label="Left by removed people">
         {left.map((p) => (

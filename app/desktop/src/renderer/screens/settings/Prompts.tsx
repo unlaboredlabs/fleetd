@@ -247,11 +247,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
     <div className={s.scroll} data-screen={screen}>
       {selected === null ? (
         <div className={s.column}>
-          <PageHead title="Built-in prompts" lead={<Back to="Instructions" onClick={toInstructions} />}>
-            {where === "hub"
-              ? "What fleetd itself tells every project's agents. An edit here replaces its text for every project without its own."
-              : `What fleetd itself tells ${here}'s agents. An edit here replaces its text for ${here} only.`}
-          </PageHead>
+          <PageHead title="Built-in prompts" lead={<Back to="Instructions" onClick={toInstructions} />} />
           {list.data === undefined ? (
             <SettingsSection>
               {list.isError ? (
@@ -281,7 +277,9 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         </div>
       ) : gone ? (
         <div className={cx(s.column, s.wide)}>
-          <PageHead title={name} lead={toList}>{`${whyLine(gone)} ${orphanAdvice(gone)}`}</PageHead>
+          <PageHead title={name} lead={toList}>
+            {orphanAdvice(gone)}
+          </PageHead>
           <Retired
             o={gone}
             onOpen={(id) => request({ scope, id })}
@@ -302,7 +300,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
         <div className={cx(s.column, s.wide)}>
           <PageHead title={name} lead={toList}>
-            {`${describe(d).description} One text for every project on this hub: only the hub's owners and admins change it, from Hub › Every project › Instructions & memory.`}
+            One text for every project: the hub&apos;s owners and admins change it in Hub › Every project › Instructions &amp; memory.
           </PageHead>
           <SettingsSection bare>
             <div data-text="code">
@@ -313,7 +311,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
       ) : (
         <div className={cx(s.column, s.wide)}>
           <PageHead title={name} lead={toList}>
-            {`${describe(d).description} ${effectLine(d, scope, scope.kind === "project" ? here : null)}`}
+            {effectLine(d, scope, scope.kind === "project" ? here : null)}
           </PageHead>
           <Editor
             d={d}
@@ -402,11 +400,7 @@ function PromptList(props: {
   const { edited, rest } = listed(props.prompts, props.level);
   const any = edited.length + props.retired.length > 0;
   const row = (r: CatalogRow, state?: { word: string; tone: "warning" }) => (
-    <SettingsListRow key={r.summary.id} name={r.name} label={r.name} state={state} open={{ onClick: () => props.onOpen(r.summary.id) }}>
-      <Text size="sm" tone="quiet">
-        {r.description}
-      </Text>
-    </SettingsListRow>
+    <SettingsListRow key={r.summary.id} name={r.name} label={r.name} state={state} hint={r.description} open={{ onClick: () => props.onOpen(r.summary.id) }} />
   );
   return (
     <>
@@ -420,12 +414,9 @@ function PromptList(props: {
                 name={orphanTitle(o)}
                 label={orphanTitle(o)}
                 state={{ word: "no longer sent", tone: "quiet" }}
+                hint={whyLine(o)}
                 open={{ onClick: () => props.onOpen(o.id) }}
-              >
-                <Text size="sm" tone="quiet">
-                  {whyLine(o)}
-                </Text>
-              </SettingsListRow>
+              />
             ))}
           </SettingsList>
         </SettingsSection>
@@ -437,11 +428,7 @@ function PromptList(props: {
               const open = props.unfolded.has(group.key);
               return (
                 <Fragment key={group.key}>
-                  <SettingsListRow name={group.title} label={group.title} meta={String(rows.length)} open={{ onClick: () => props.onFold(group.key) }} expanded={open}>
-                    <Text size="sm" tone="quiet">
-                      {group.blurb}
-                    </Text>
-                  </SettingsListRow>
+                  <SettingsListRow name={group.title} label={group.title} meta={String(rows.length)} hint={group.blurb} open={{ onClick: () => props.onFold(group.key) }} expanded={open} />
                   {open ? (
                     <SettingsList nested label={group.title}>
                       {rows.map((r) => row(r))}

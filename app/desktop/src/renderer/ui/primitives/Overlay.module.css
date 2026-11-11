@@ -97,6 +97,20 @@
   overflow-wrap: anywhere;
   animation: fade var(--dur-fast) var(--ease-out);
 }
+/* A sentence or two (a Settings row's explanation): the floating surface's own look, quieter than the dark label, with
+   room to read. */
+.tooltip.prose {
+  max-width: min(400px, calc(100vw - 2 * var(--edge-inset)));
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: var(--float-shadow);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  white-space: normal;
+  pointer-events: none;
+}
 .popover {
   padding: var(--space-3);
   min-width: 220px;

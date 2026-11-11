@@ -144,7 +144,7 @@ export function HubInstructions() {
   const t = useText(null, "global");
   if (!t.live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
   return (
-    <SettingsRow title="Every project" line="Added to every agent's first message on this hub, the lead's too, before a project's own.">
+    <SettingsRow title="Every project" hint="Added to every agent's first message on this hub, the lead's too, before a project's own.">
       <LoadProblem t={t} />
       <Editor t={t} label="Instructions for every project" placeholder="e.g. Keep pull requests under 400 changed lines." whose="for every project" />
     </SettingsRow>
@@ -169,13 +169,13 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory">What {name ?? "a project"}&apos;s agents are told, and what its leads remember.</PageHead>
+        <PageHead title="Instructions & memory" />
         {!t.live ? (
-          <SettingsSection title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too.">
+          <SettingsSection title="Instructions" reveal="instructions" hint="What every agent of this project is told, the lead too.">
             <GroupNote>Not connected. Connect to a hub to add instructions for its agents.</GroupNote>
           </SettingsSection>
         ) : (
-          <SettingsSection title="Instructions" reveal="instructions" intro="What every agent of this project is told, the lead too." bare>
+          <SettingsSection title="Instructions" reveal="instructions" hint="What every agent of this project is told, the lead too." bare>
             {project === null ? (
               <NoProject />
             ) : (
@@ -208,11 +208,13 @@ export function BuiltInPrompts({ project }: { project: Scope | null }) {
   return (
     <SettingsSection part="builtin-prompts">
       <SettingsList label="Built-in prompts">
-        <SettingsListRow name="Built-in prompts" label="Built-in prompts" meta={edits > 0 ? `${edits} edited` : undefined} open={{ href }}>
-          <Text size="sm" tone="quiet">
-            What fleetd itself tells {project ? "this project's" : "every project's"} agents. Most changes belong in the instructions above.
-          </Text>
-        </SettingsListRow>
+        <SettingsListRow
+          name="Built-in prompts"
+          label="Built-in prompts"
+          meta={edits > 0 ? `${edits} edited` : undefined}
+          open={{ href }}
+          hint={`What fleetd itself tells ${project ? "this project's" : "every project's"} agents. Most changes belong in the instructions above.`}
+        />
       </SettingsList>
     </SettingsSection>
   );

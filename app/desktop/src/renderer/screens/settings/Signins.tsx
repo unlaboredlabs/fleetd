@@ -27,13 +27,8 @@ export function SigninsSetting({ projectRef, kept }: { projectRef: Ref; kept: bo
     <SettingsRow
       reveal="projects.signins"
       title="Sign-ins"
-      line={
-        done ? (
-          <span role="status">Forgotten. Its next browser session starts signed out of every site.</span>
-        ) : (
-          `Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.${kept === false ? " No sign-ins kept yet." : ""}`
-        )
-      }
+      hint={`Its browser stays signed in to the sites it signed into, on ${machine}, for this project alone.`}
+      line={done ? <span role="status">Forgotten. Its next browser session starts signed out.</span> : kept === false ? "None kept yet." : null}
       control={
         kept === false || done ? undefined : (
           <DangerButton
@@ -112,7 +107,7 @@ export function SkillsSetting({ projectRef }: { projectRef: Ref }) {
     <SettingsRow
       reveal="projects.skills"
       title="Skills"
-      line="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
+      hint="What this project's lead has learned to do. It saves and improves its own skills as it works; you see every change, edit, undo or turn one off."
       control={
         <Button
           variant="secondary"

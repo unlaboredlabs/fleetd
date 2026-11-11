@@ -90,7 +90,7 @@ function YourAccounts() {
   return (
     <div className={s.scroll} data-screen="settings.accounts">
       <div className={s.column}>
-        <PageHead title="Your accounts">The accounts the work you start runs on. Nobody else&apos;s work ever uses them.</PageHead>
+        <PageHead title="Your accounts" />
         <ClaudeSettings />
         <GithubSettings />
         <OnePasswordSettings />
@@ -104,7 +104,7 @@ function YourMemoryPage() {
   return (
     <div className={s.scroll} data-screen="settings.your-memory">
       <div className={s.column}>
-        <PageHead title="Your memory">What the lead remembers about how you work. Only you see it.</PageHead>
+        <PageHead title="Your memory" />
         <YourMemory />
         <ImportMemory />
       </div>
@@ -117,7 +117,7 @@ function YourDevicesPage() {
   return (
     <div className={s.scroll} data-screen="settings.devices">
       <div className={s.column}>
-        <PageHead title="Your devices">The apps signed in as you.</PageHead>
+        <PageHead title="Your devices" />
         <DevicesSettings />
       </div>
     </div>
@@ -129,7 +129,7 @@ function Hubs() {
   return (
     <div className={s.scroll} data-screen="settings.hubs">
       <div className={s.column}>
-        <PageHead title="Hubs">The hubs this app is paired with.</PageHead>
+        <PageHead title="Hubs" />
         <HubsSettings />
         <HubLinksSettings />
       </div>

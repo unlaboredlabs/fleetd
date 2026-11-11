@@ -85,7 +85,7 @@ function UserServers({ on }: { on: boolean }) {
       <SwitchRow
         reveal="mcp.user"
         title="Agents also get their own MCP servers"
-        line="The servers in the claude setup where an agent runs (~/.claude.json, a repo's .mcp.json). Off: agents get fleetd's tools and the servers here only. fleetd's own tools are always there."
+        hint="The servers in the claude setup where an agent runs (~/.claude.json, a repo's .mcp.json). Off: agents get fleetd's tools and the servers here only. fleetd's own tools are always there."
         checked={on}
         disabled={busy}
         onCheckedChange={(next) => {
@@ -122,7 +122,7 @@ function ServersSetting(props: { label: string; help: string; scope: Ref | null;
   };
   return (
     <>
-      <SettingsRow title={props.label} line={props.help} control={<AddButton label="Add server" onClick={() => setEditing({ kind: "new" })} />} />
+      <SettingsRow title={props.label} hint={props.help} control={<AddButton label="Add server" onClick={() => setEditing({ kind: "new" })} />} />
       {props.servers.length === 0 ? (
         <GroupNote>None yet.</GroupNote>
       ) : (

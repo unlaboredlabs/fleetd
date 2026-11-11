@@ -220,7 +220,7 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
 it("shows where the key is, the members switch and the owner's subscription; each person's account, with a pause and their GitHub, on People", async () => {
   await render(withKey);
   const key = section("Hub API key");
-  expect(key.textContent).toContain("Saved. Sealed on devbox. Through https://gateway.devbox.example.");
+  expect(key.textContent).toContain("Sealed on devbox. Through https://gateway.devbox.example.");
   expect(key.textContent).toContain("Not on buildbox: nothing runs on it there.");
   expect(key.textContent).toContain("Worked on devbox");
   expect(key.textContent).toContain("Leads and automations run on this key, else your subscription.");

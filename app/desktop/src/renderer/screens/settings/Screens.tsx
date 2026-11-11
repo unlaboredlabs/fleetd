@@ -115,6 +115,7 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
       {kind.echo}
       <SettingsRow
         title="At once"
+        hint={`The most screens it hosts at once. ${idleLine(m)}`}
         line={sessionsLine(m)}
         control={
           <Select
@@ -134,7 +135,6 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
         )}
       </SettingsRow>
       {cap.echo}
-      <GroupNote>{idleLine(m)}</GroupNote>
     </div>
   );
 }

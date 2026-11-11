@@ -309,7 +309,7 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
     <SettingsRow
       reveal="projects.mcp"
       title="MCP servers"
-      line={help}
+      hint={help}
       control={
         <>
           <Button variant="ghost" onClick={() => open(DOCS)}>
@@ -340,7 +340,7 @@ export function McpServersSection({ projectRef }: { projectRef: Ref }) {
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
-            For every project, from Hub › Every project › Tools &amp; skills:
+            For every project:
           </Text>
           {globals.map(({ server, replaced }) => (
             <Text key={server.name} size="sm" tone="quiet">
@@ -402,6 +402,15 @@ function Row(props: {
       icon={<Plug />}
       name={props.title}
       state={{ word: agents && server.enabled ? `${rolesText(server.roles)} · unasked` : status.text, tone: status.tone }}
+      hint={
+        line === null
+          ? sealed
+            ? `Its key is sealed on ${props.machine}. It never goes in the chat.`
+            : undefined
+          : server.oauth?.status === "connected"
+            ? "fleetd renews the sign-in by itself, and it never goes in the chat."
+            : undefined
+      }
       controls={
         <>
           {signIn ? (
@@ -426,13 +435,7 @@ function Row(props: {
       <Truncate size="sm" tone="quiet">
         {props.what}
       </Truncate>
-      {line !== null ? (
-        <Prose size="sm" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} />
-      ) : sealed ? (
-        <Text size="sm" tone="quiet">
-          Key sealed on {props.machine}. It never goes in the chat.
-        </Text>
-      ) : null}
+      {line !== null ? <Prose size="sm" tone={line.tone === "quiet" ? "quiet" : "danger"} text={line.text} /> : null}
       {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} brief={agents} />}
     </SettingsListRow>
   );
