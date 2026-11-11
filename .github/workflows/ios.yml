@@ -1,0 +1,108 @@
+name: iOS
+
+# The phone app's iOS simulator build on macOS, by hand or called: never on a push (ci.no-macos-on-prs). A pull request's
+# and main's checks of the phone app (CI's `mobile` and `mobile (android)`) check the same JavaScript, typed, tested and
+# bundled into the APK. mac.yml calls this workflow nightly and before each release; a manual run (Actions › iOS › Run
+# workflow, or `gh workflow run ios.yml --ref <branch>`) builds it for a fork or for trying a change on a simulator, with
+# `metro` for a Debug build. No EAS and no Expo service: `expo prebuild` makes the native project, then xcodebuild builds
+# it. Signed builds are mobile-release.yml's; nothing here reads a secret.
+on:
+  workflow_dispatch:
+    inputs:
+      metro:
+        description: >-
+          A Metro server (host:port) the iOS simulator build loads its JavaScript from: a Debug build, for trying
+          changes on a simulator with `expo start` on that host. Empty: the Release build, the JavaScript bundled in.
+        required: false
+        default: ""
+  workflow_call:
+
+# A newer manual run on a branch cancels its running one; main's and mac.yml's call each get a group. In a called
+# workflow github.workflow is the caller's name (Mac), so this workflow's own name tells a manual run.
+concurrency:
+  group: >-
+    ${{ github.workflow != 'iOS' && format('{0}-{1}-ios', github.workflow, github.run_id)
+    || github.ref == 'refs/heads/main' && format('{0}-{1}', github.workflow, github.run_id)
+    || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ github.workflow == 'iOS' && github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    # A Release build for the iOS simulator, its Notification Service and Share extensions embedded, signed to run
+    # locally (no team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual
+    # run with a Metro address builds Debug instead, which loads the JavaScript from there. First, the notification
+    # extension's crypto against the hub's sealed boxes, the share extension's decisions and the Shortcuts actions'.
+    # Its name is an after-merge check in .fleetd/train.json, alone (a manual run) and as `mobile / mobile (ios)`
+    # (mac.yml's call): rename them in one PR.
+    name: mobile (ios)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      METRO: ${{ inputs.metro }}
+      CONFIGURATION: ${{ inputs.metro != '' && 'Debug' || 'Release' }}
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - name: Extension crypto
+        run: |
+          swiftc -O plugins/notification-service/Sealed.swift plugins/notification-service/Payload.swift \
+            plugins/notification-service/test/main.swift \
+            -o "$RUNNER_TEMP/sealed-test"
+          "$RUNNER_TEMP/sealed-test" src/push.fixture.json
+      - name: Share extension
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o "$RUNNER_TEMP/share-test"
+          "$RUNNER_TEMP/share-test"
+      - name: Shortcuts actions
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/app-intents/Actions.swift plugins/app-intents/test/main.swift \
+            -o "$RUNNER_TEMP/actions-test"
+          "$RUNNER_TEMP/actions-test"
+      - run: npm ci --no-audit --no-fund
+      # Installs the pods too.
+      - run: npx expo prebuild --platform ios --clean
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration "$CONFIGURATION" \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build | tail -n 200
+          app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
+          appex=$app/PlugIns/FleetdNotifications.appex
+          test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
+          share=$app/PlugIns/FleetdShare.appex
+          test -x "$share/FleetdShare" || { echo "::error::the app has no Share Extension"; exit 1; }
+          # Xcode's App Intents step writes the actions' metadata into the app: without it, Shortcuts lists none.
+          grep -q SendMessage "$app/Metadata.appintents/extract.actionsdata" || { echo "::error::the app has no Shortcuts actions"; exit 1; }
+          # Signed to run locally, with its entitlements, which a simulator reads from the binary's __entitlements
+          # section: without the keychain group, secure storage fails there, and the share extension finds no pairing.
+          grep -aq keychain-access-groups "$app/fleetd" || { echo "::error::the app is built without its keychain group"; exit 1; }
+          grep -aq keychain-access-groups "$share/FleetdShare" || { echo "::error::the share extension is built without its keychain group"; exit 1; }
+          # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it), sealed in by signing again.
+          if [ -n "$METRO" ]; then
+            printf '%s\n' "$METRO" > "$app/ip.txt"
+            codesign --force --sign - --preserve-metadata=entitlements "$app"
+          fi
+      - name: App Transport Security
+        # The built app's own Info.plist lets plain HTTP reach a hub at any address: arbitrary loads, nothing cancelling them.
+        run: |
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app/Info.plist"
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
+      - name: Pack
+        run: ditto -c -k --keepParent "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app" "$RUNNER_TEMP/fleetd-ios-simulator.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-ios-simulator
+          path: ${{ runner.temp }}/fleetd-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14

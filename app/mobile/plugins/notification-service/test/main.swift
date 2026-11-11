@@ -1,5 +1,5 @@
 // The extension's sealed-box opener against the hub's own boxes (src/push.fixture.json), with CryptoKit's X25519 as
-// on the phone, and what it shows: the payload when it opens, only the generic text when it doesn't. mobile.yml's iOS
+// on the phone, and what it shows: the payload when it opens, only the generic text when it doesn't. ios.yml's iOS
 // job runs it on macOS:
 //   swiftc plugins/notification-service/Sealed.swift plugins/notification-service/Payload.swift \
 //     plugins/notification-service/test/main.swift -o sealed-test

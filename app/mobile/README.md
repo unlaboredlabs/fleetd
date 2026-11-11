@@ -3,14 +3,14 @@
 The fleetd phone app: Expo and React Native, iOS and Android. What it does for its users, and how to build it on
 GitHub, is in [docs/site/src/content/docs/mobile.md](../../docs/site/src/content/docs/mobile.md).
 
-In this directory, with Node 24: `npm ci`, then `npm run typecheck` and `npm test` (vitest), which CI's Mobile
-workflow runs. The phone's JavaScript engine (Hermes) lacks some newer built-ins, such as
+In this directory, with Node 24: `npm ci`, then `npm run typecheck` and `npm test` (vitest), which CI's `mobile`
+job runs. The phone's JavaScript engine (Hermes) lacks some newer built-ins, such as
 `Array.prototype.toSorted`: check a new one before using it (`src/hermes.test.ts`).
 
 ## On a simulator
 
 Phone changes are judged in a real iOS simulator, on the agents' Mac (`mac --help`). Build the app there, as the
-Mobile workflow does:
+iOS workflow (ios.yml) does:
 
 ```sh
 mac sim start          # all in use: try again in a minute

@@ -74,8 +74,8 @@ every check its changes touch has passed on it, in one run or several, so after 
 
 ## The merge train's checks
 
-The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s, `fleetd.yml`'s and
-`mac.yml`'s comments say which run where.
+The train waits for the checks `main` requires and the jobs `.fleetd/train.json` lists; `ci.yml`'s and `mac.yml`'s
+comments say which run where.
 
 ## Hub migrations
 
