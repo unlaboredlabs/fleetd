@@ -484,8 +484,7 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
   // merges. Between them QA takes the phone over and hands it back, as the screens clip shows, so the order runs on.
   lead: async (page) => {
     const { typing, sent } = await ask(page, REQUEST, frames);
-    await sleepUntil(sent + STEPS.screens + 600);
-    await press(page, tab(page, /^Screens/u));
+    // The screens are rows of the Agents list, under its agents.
     await sleepUntil(sent + 10_200);
     await press(page, page.getByRole("link", { name: /iPhone app/u }));
     await sleepUntil(sent + STEPS.phoneAsks + 1200);
@@ -493,11 +492,9 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
     await typeCode(page, sent + STEPS.phoneAsks + 1200);
     await sleepUntil(sent + STEPS.phoneAsks + 3400);
     await press(page, page.getByRole("button", { name: /^Hand back/u }));
-    await sleepUntil(sent + STEPS.batch - 1400);
-    await press(page, tab(page, /^Shipping/u));
     await sleepUntil(sent + STEPS.batch - 800);
-    await press(page, tab(page, /^Merge line/u));
-    await look(page, sent + STEPS.batch + 200, sent + STEPS.merged + 600, page.getByRole("region", { name: "Merging now" }), page.getByRole("region", { name: "Recent" }));
+    await press(page, tab(page, /^Shipping/u));
+    await look(page, sent + STEPS.batch + 200, sent + STEPS.merged + 600, page.locator('[data-screen^="prs"], [data-screen^="train"]'));
     await sleepUntil(sent + STEPS.merged + 2200);
     return { takes: [[typing, sent + 4900], [sent + STEPS.batch - 500, sent + STEPS.merged + 2200]], poster: sent + 4700 };
   },
@@ -513,8 +510,6 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
   // The web writer's browser, live; then the phone asks for you, and you take it over, type the code and hand back.
   screens: async (page) => {
     const { sent } = await ask(page, REQUEST, frames);
-    await sleepUntil(sent + STEPS.screens + 300);
-    await press(page, tab(page, /^Screens/u));
     await sleepUntil(sent + STEPS.screens + 800);
     await press(page, page.getByRole("link", { name: /signed-in shopper/u }));
     await look(page, sent + STEPS.screens + 1500, sent + 8500, page.getByLabel(/^The page/u));

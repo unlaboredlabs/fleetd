@@ -1,6 +1,7 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
 // lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
-// project, and every other tab of panel/tabs.ts likewise); Status, Factory (with its Agent time tab) and Settings are
+// project, and every other view of panel/tabs.ts likewise; the panel's row has fewer tabs than views, and
+// panel/Sections.tsx says which tab each view lands in); Status, Factory (with its Agent time tab) and Settings are
 // secondary.
 // notes/electron-routes.md has the table. With several hubs, a route names its hub as `?at=<id>` (navigation.ts).
 import { HUB_ID, type HubId } from "../../../shared/hubs";
@@ -71,6 +72,12 @@ export const hasItem = (view: PanelView): boolean => {
       return false;
   }
 };
+
+/**
+ * Where Back and Esc lead from a view that opened in a list's place: from an item its own list, and from the
+ * decisions the History they open from; null for a list, which has nowhere to go back to.
+ */
+export const backView = (view: PanelView): PanelView | null => (hasItem(view) ? listView(view.tab) : view.tab === "decisions" ? listView("activity") : null);
 
 /**
  * Settings' pages, in one window (D211): You (General, Your accounts, Vault, Your memory, Hubs & devices); a project's (Project, Agents,

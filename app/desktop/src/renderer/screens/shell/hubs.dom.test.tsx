@@ -208,8 +208,9 @@ it("opens a project on its own hub, and that hub alone gets its calls", async ()
   act(() => {
     window.location.hash = "#/project/devbox/storefront/agents?at=hub";
   });
-  // The panel loads in a chunk of its own.
+  // The panel loads in a chunk of its own, and its tabs' lists in another.
   await act(() => import("../panel/ProjectPanel"));
+  await act(() => import("../panel/panes"));
   await settle();
   await settle();
   expect(host.querySelector('[data-screen="agents"]')).not.toBeNull();

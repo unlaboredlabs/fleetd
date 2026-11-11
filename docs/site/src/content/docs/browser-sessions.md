@@ -29,7 +29,7 @@ projects you can see, in three groups:
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
 right opens a short sentence: the kind, the machine with its slots in use, and the project. A full machine
-gives you its next free slot. **All screens** at the top of a project's **Screens** view (the panel's Agents section) opens the page too.
+gives you its next free slot. **All screens**, the icon beside **Screens** in a project's Agents tab in the panel, opens the page too.
 
 The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
 seconds, shrinks it to at most 640 pixels a side and sends it to each app showing the page. It takes no capture of its
@@ -102,7 +102,7 @@ its recording. MCP clients use `browser_control` to take over and hand back.
 
 ## Open one yourself {#yours}
 
-You can open a screen of your own: **New screen** at the top of a project's **Screens** view, on the
+You can open a screen of your own: **New screen**, the plus beside **Screens** in a project's Agents tab in the panel, on the
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the project on screen. On the phone, **New Screen** is on a project's
 ⓘ page ([Phone app](/docs/mobile#screens)).
 

@@ -353,7 +353,7 @@ no longer holds stops misleading the agents:
 Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
 each to do, doing or done, linked to its pull request or agent. Its start prompt tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
-You see the list in the panel, under Plan › [To-do](/docs/desktop-app#checklist), where you can delete items and clear
+You see the list in the panel, under [Plan](/docs/desktop-app#checklist), where you can delete items and clear
 the done ones. The lead's next wake names what you took off (`- the human took 1 item off the checklist: 3 "Dark
 mode"; leave it off unless they ask again`), its digest shows the list as it is now, and its start prompt tells it
 never to add those back unless you ask. Writers can't change the list, and nothing is worked out from it: no

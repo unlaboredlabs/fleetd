@@ -1,26 +1,25 @@
-// The project's PRs, open ones by default, merged ones or all a click away: each row its title, and under it, quietly,
-// where it stands, its place in line, its checks and reviews, and its repo and number, a page at a time (Load more). A
-// row opens the PR in the list's place; ↑ and ↓ move between rows. A row's right-click menu opens it here or on GitHub,
-// or copies its URL or branch.
-import { useMemo, useState, type KeyboardEvent } from "react";
+// The Shipping list: the project's pull requests in one list. Those that need a look first, then what merges now (the
+// merge train's head, a card: train/MergingNow), the line behind it in the train's order, the other open ones, and the
+// merged and closed ones folded under their count; older ones a page at a time (Load more). Each row its title and,
+// under it, quietly, where it stands, its checks and reviews; its repo, number and branch in its hover. A row opens the
+// PR in the list's place; ↑ and ↓ move between rows. A row's right-click menu opens it here or on GitHub, or copies its
+// URL or branch.
+import type { Virtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useRef, type ComponentProps, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, Segmented, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, Dot, Text, Tooltip, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
+import { FoldLine, GroupLabel, ListNote, PanelEmpty, useFold } from "../panel/folds";
 import { panelRoute, toHash } from "../shell/routes";
-import { ChecksMark, HintText, PaneEmpty } from "./Bits";
+import { MergingNow, type MovingNow } from "../train/MergingNow";
+import { ChecksMark, HintText } from "./Bits";
 import { openExternal } from "./PrDetail";
-import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type Item, type PrFilter } from "./listModel";
+import { listItems, rowMeta, type Item } from "./listModel";
 import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
 
-// The reader's filter per project, kept while the app runs: back from a merged PR, the list still shows the merged
-// ones, and another project's list opens on its own.
-const lastFilter = new Map<string, PrFilter>();
-
-/** Forgets every project's filter (tests start from the default). */
-export const forgetFilters = (): void => lastFilter.clear();
-
-const itemKey = (it: Item): string => (it.kind === "group" ? `group:${it.label}` : it.kind === "cut" ? "cut" : `${it.row.repo}#${it.row.number}`);
+const itemKey = (it: Item): string =>
+  it.kind === "pr" ? `${it.row.repo}#${it.row.number}` : it.kind === "moving" ? `moving:${it.moving.prs.map((p) => p.changeId).join()}` : it.kind === "group" ? `group:${it.label}` : it.kind;
 
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
   toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
@@ -36,86 +35,81 @@ interface PrListProps {
   readonly rows: readonly PrRow[];
   /** There are older PRs past these. */
   readonly more: More | undefined;
+  /** What merges now (train/MergingNow's read). */
+  readonly train: MovingNow;
+  /** Opened at the merge line (`/train`, the palette's Go to Merge line): the list starts there. */
+  readonly at?: "train" | null;
   readonly project: ProjectRef;
   readonly nowMs: number;
 }
 
-export function PrList({ rows, more, project, nowMs }: PrListProps) {
+export function PrList({ rows, more, train, at = null, project, nowMs }: PrListProps) {
   const cut = more !== undefined;
   const key = `${project.machineId}/${project.projectId}`;
-  const [filter, setFilterState] = useState<PrFilter>(() => lastFilter.get(key) ?? "open");
-  const setFilter = (next: PrFilter) => {
-    lastFilter.set(key, next);
-    setFilterState(next);
-  };
-  const counts = useMemo(() => filterCounts(rows), [rows]);
+  const [rest, toggleRest] = useFold(`prs:${key}:rest`);
   useArrivals(`prs:${key}`, rows.map((r) => `${r.repo}#${r.number}`));
-  const items = useMemo(() => listItems(rows, filter, cut), [rows, filter, cut]);
-  const shown = useLeavers(items, itemKey, `${key}:${filter}`);
+  const items = useMemo(() => listItems(rows, { moving: train.moving, rest, cut }), [rows, train.moving, rest, cut]);
+  // Folding is a new view, not rows leaving: its rows go at once, with no fade.
+  const shown = useLeavers(items, itemKey, `${key}:${String(rest)}`);
   // ↑/↓ from a focused row moves to the row above or below; Enter opens it.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     const links = [...e.currentTarget.querySelectorAll<HTMLAnchorElement>("a[data-pr]")];
-    const at = links.findIndex((a) => a === document.activeElement);
-    if (at === -1) return;
-    const next = links[at + (e.key === "ArrowDown" ? 1 : -1)];
+    const from = links.findIndex((a) => a === document.activeElement);
+    if (from === -1) return;
+    const next = links[from + (e.key === "ArrowDown" ? 1 : -1)];
     if (next === undefined) return;
     e.preventDefault();
     next.focus();
   };
-  const empty = items.length === 0 ? emptyWords(filter, counts) : undefined;
+
+  // A link to the merge line opens the list at what merges now, else at the line.
+  const list = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const lineAt = shown?.findIndex((x) => x.item.kind === "group" && (x.item.label === "Merging now" || x.item.label === "In line")) ?? -1;
+  const there = at === "train" && lineAt >= 0;
+  useEffect(() => {
+    if (there) list.current?.scrollToIndex(lineAt, { align: "start" });
+    // Only as the link opens it: the list then scrolls as the reader does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [there]);
+
   return (
     <div className={s.list}>
-      {rows.length > 0 ? (
-        <div className={s.filters}>
-          <Segmented
-            label="Show"
-            value={filter}
-            onChange={setFilter}
-            options={PR_FILTERS.map((f) => ({ ...f, count: counts[f.value] > 0 ? counts[f.value] : undefined }))}
-          />
-        </div>
+      {train.state === "error" ? (
+        <span className={s.liveness} role="alert">
+          <Dot color="var(--warning)" />
+          <Text size="xs">Couldn’t read what merges now</Text>
+          <Button variant="quiet" size="sm" onClick={train.retry}>
+            Retry
+          </Button>
+        </span>
       ) : null}
-      {empty !== undefined ? (
-        <div className={s.listEmpty} data-empty={filter}>
-          <PaneEmpty
-            title={empty.title}
-            action={
-              empty.offer === undefined ? undefined : (
-                <Button variant="secondary" size="sm" onClick={() => setFilter(empty.offer?.filter ?? "all")}>
-                  {empty.offer.label}
-                </Button>
-              )
-            }
-          >
-            {empty.body}
-          </PaneEmpty>
-          {more !== undefined ? <LoadMore more={more} /> : null}
-        </div>
+      {items.length === 0 ? (
+        <PanelEmpty title="No pull requests yet" actions={more !== undefined ? <LoadMore more={more} /> : undefined} />
       ) : (
         <div className={s.listScroll} onKeyDown={onKeyDown}>
           <VirtualList
             items={shown ?? []}
             getKey={(x) => itemKey(x.item)}
-            estimateSize={78}
+            estimateSize={62}
+            virtualizerRef={list}
             aria-label="Pull requests"
             renderItem={({ item: it, leaving }) => {
               const row =
                 it.kind === "group" ? (
-                  <div className={s.group}>
-                    <Text size="xs" tone="quiet" strong>
-                      {it.label}
-                    </Text>
-                    <Text size="xs" tone="faint" tabular>
-                      {it.count}
-                    </Text>
-                  </div>
+                  <GroupLabel label={it.label} count={it.count} />
+                ) : it.kind === "fold" ? (
+                  <FoldLine label={it.label} count={it.count} open={rest} onToggle={toggleRest} />
+                ) : it.kind === "moving" ? (
+                  <MergingNow moving={it.moving} repo={it.repo} project={project} nowMs={nowMs || undefined} />
+                ) : it.kind === "note" ? (
+                  <ListNote>{it.text}</ListNote>
                 ) : it.kind === "cut" ? (
                   more !== undefined ? <LoadMore more={more} /> : null
                 ) : (
                   <Row row={it.row} project={project} nowMs={nowMs} />
                 );
-              // A PR that left the filter (merged out of Open, say) fades where it stood (ui/lib/leaving), then goes.
+              // A PR that left its place (merged out of the line, say) fades where it stood (ui/lib/leaving), then goes.
               return leaving ? (
                 <div data-leaving="" inert aria-hidden>
                   {row}
@@ -131,7 +125,7 @@ export function PrList({ rows, more, project, nowMs }: PrListProps) {
   );
 }
 
-/** Older PRs to read: under the rows, or under an empty filter, since the older ones may hold its PRs. */
+/** Older PRs to read: under the rows, or under an empty list, since the older ones may hold its PRs. */
 function LoadMore({ more }: { more: More }) {
   return (
     <div className={s.cutNote}>
@@ -150,9 +144,6 @@ function LoadMore({ more }: { more: More }) {
 }
 
 function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: number }) {
-  const meta = rowMeta(row);
-  const at = row.mergedAt ?? row.updatedAt;
-  const full = row.checks === undefined ? undefined : checksWord(row.checks)?.text;
   const href = prHref(project, row);
   const branch = row.branch;
   const fresh = useArrived(`prs:${project.machineId}/${project.projectId}`, `${row.repo}#${row.number}`);
@@ -167,7 +158,30 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
   );
   return (
     <ContextMenu menu={menu}>
-      <a className={cx(s.row, !isOpen(row) && s.rowDone, fresh && s.arrive)} href={href} data-pr={row.number}>
+      <RowLink row={row} nowMs={nowMs} className={cx(s.row, !isOpen(row) && s.rowDone, fresh && s.arrive)} href={href} data-pr={row.number} />
+    </ContextMenu>
+  );
+}
+
+/** The row itself, which takes what the menu's trigger hands it; its repo, number, branch and why it waits are its hover's. */
+function RowLink({ row, nowMs, ...rest }: { row: PrRow; nowMs: number } & ComponentProps<"a">) {
+  const meta = rowMeta(row);
+  const at = row.mergedAt ?? row.updatedAt;
+  const full = row.checks === undefined ? undefined : checksWord(row.checks)?.text;
+  const name = row.branch === undefined ? meta.ref : `${meta.ref} · ${row.branch}`;
+  const detail =
+    meta.why === undefined ? (
+      name
+    ) : (
+      <>
+        {meta.why}
+        <br />
+        {name}
+      </>
+    );
+  return (
+    <Tooltip content={detail} side="left">
+      <a {...rest}>
         <span className={s.rowTop}>
           <span className={s.rowTitle}>
             <Truncate lines={2} expand="none" tone="inherit">
@@ -180,22 +194,16 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
             </Text>
           </span>
         </span>
-        <span className={s.rowMeta}>
-          <span className={s.metaParts}>
+        <span className={s.metaParts}>
+          {meta.state.word === "open" ? null : (
             <span className={s.stateWord} data-tone={meta.state.tone}>
               {meta.state.word}
             </span>
-            {meta.place !== undefined ? <HintText hint={{ text: meta.place, tone: "quiet" }} /> : null}
-            {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
-            {meta.review !== undefined ? <HintText hint={meta.review} /> : null}
-          </span>
-          <span className={s.rowRef}>
-            <Text size="xs" tone="faint" tabular>
-              {meta.ref}
-            </Text>
-          </span>
+          )}
+          {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
+          {meta.review !== undefined ? <HintText hint={meta.review} /> : null}
         </span>
       </a>
-    </ContextMenu>
+    </Tooltip>
   );
 }

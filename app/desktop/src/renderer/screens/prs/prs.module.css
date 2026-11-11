@@ -65,66 +65,39 @@
   width: 80%;
 }
 
-/* The list: its filter on top, the rows under it. */
+/* The list: one scroll, its rows inset so a group's label starts on their left edge (panel/folds). */
 .list {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-.filters {
-  flex: none;
-  display: flex;
-  padding: var(--space-2) var(--space-3) 0;
-}
 .listScroll {
   flex: 1;
   min-height: 0;
-  padding: var(--space-1) 0 var(--space-2);
+  padding: 0 var(--space-2);
 }
 .listEmpty {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: var(--space-6) var(--pad);
-}
-.listEmpty .cutNote {
-  padding: var(--space-4) 0 0;
-}
-.paneEmpty {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  max-width: 360px;
-}
-.paneEmpty p {
-  margin: 0;
-}
-.paneEmptyAction {
-  display: flex;
-  margin-top: var(--space-2);
-}
-/* A group's heading: its name and count, with room above it so groups read as blocks. */
-.group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: 20px var(--space-2) var(--space-1);
-  margin: 0 var(--space-2);
+  min-height: 0;
 }
 .cutNote {
-  padding: var(--space-3) var(--pad);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-1);
 }
 /* A PR: rows, not cards (DESIGN.md). The title is the one line in full voice, a touch heavier; under it its state
-   in words (coloured only for failure) and its figures, quiet. A hairline between rows, room above each group.
+   in words (coloured only for failure) and its figures, quiet. Space between rows and no rule; room above each group.
    Merged and closed rows step back a shade, so the open ones lead. */
 .row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin: 0 var(--space-2);
-  padding: 10px var(--space-2);
-  border-bottom: 1px solid var(--hairline);
+  gap: 2px;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
   color: var(--text);
   text-decoration: none;
   transition: background var(--dur-quick) var(--ease-snap);
@@ -153,8 +126,7 @@
   color: var(--warning);
   font-weight: 500;
 }
-.rowTop,
-.rowMeta {
+.rowTop {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
@@ -165,18 +137,20 @@
   min-width: 0;
   font-weight: 500;
 }
-.rowWhen,
-.rowRef {
+.rowWhen {
   flex: none;
 }
 .metaParts {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   column-gap: var(--space-3);
   row-gap: 2px;
+}
+/* An open PR with nothing to say is its title alone. */
+.metaParts:empty {
+  display: none;
 }
 
 /* A checks word behind its icon, and a check's icon alone. */
@@ -223,24 +197,34 @@
   display: flex;
   flex-direction: column;
 }
+/* One PR's top line: the way back, and at its end its changes and GitHub. */
+.prTop {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-2) 0;
+}
+.prTools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+}
+.prCount {
+  margin-inline-start: var(--space-1-5);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
 .prHead {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4) var(--pad) 0;
+  padding: var(--space-2) var(--pad) 0;
 }
-/* In the panel's narrow width, Open on GitHub goes under the title rather than squeezing it. */
-.prTitleRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-2) var(--space-3);
-  min-width: 0;
-}
-.prTitle {
-  flex: 1 1 220px;
-  min-width: 0;
+.prRef {
+  border-radius: var(--radius-sm);
 }
 .prMeta {
   display: flex;
@@ -249,10 +233,6 @@
   column-gap: var(--space-3);
   row-gap: var(--space-1);
   min-width: 0;
-}
-.branch {
-  min-width: 0;
-  max-width: 100%;
 }
 .add {
   color: var(--success);
@@ -458,9 +438,6 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.changesPanel[hidden] {
-  display: none;
 }
 .changes {
   flex: 1;

@@ -1,11 +1,11 @@
-// One question and its answer: the value first, then who decided, where it applies and when, quietly. Opened, its
+// One question and its answer: the question and when it was settled, quietly, over the answer; who decided, where it
+// applies and how many came before in its hover. Opened, its
 // why, what it replaced (or that you revoked it), and for one in force a way to change or revoke it, with a short why
 // the lead reads at its next wake.
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { useId, useState, type SyntheticEvent } from "react";
 import type { Decision } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
-import { Button, Field, StatusChip, Text, Textarea, Truncate, cx } from "../../ui";
+import { Button, Field, Text, Textarea, Tooltip, Truncate, cx } from "../../ui";
 import { fateWord, metaLine, overturnProblem, when, whoWord, type Thread } from "./model";
 import s from "./decisions.module.css";
 
@@ -21,35 +21,29 @@ interface ItemProps {
 export function DecisionItem({ thread, expanded, onToggle, nowMs, onChanged }: ItemProps) {
   const { head } = thread;
   const details = useId();
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <li className={cx(s.item, expanded && s.open)} data-decision={thread.live ? "live" : "revoked"}>
-      <button type="button" className={s.row} aria-expanded={expanded} aria-controls={details} onClick={onToggle}>
-        <Chevron className={s.chevron} aria-hidden />
-        <span className={s.rowBody}>
-          <span className={s.rowKey}>
-            <Truncate size="xs" tone="quiet" expand="none">
-              {thread.words}
-            </Truncate>
-          </span>
-          <span className={cx(s.value, !thread.live && s.revokedValue)}>
-            <Truncate lines={expanded ? 12 : 2} expand="none" tone={thread.live ? "default" : "quiet"}>
-              {head.value}
-            </Truncate>
-          </span>
-          <span className={s.rowMeta}>
-            {!thread.live ? <StatusChip tone="idle" inRow>revoked</StatusChip> : null}
-            <Truncate size="xs" tone="faint" expand="none">
-              {metaLine(thread)}
-            </Truncate>
+      <Tooltip content={metaLine(thread)} side="left">
+        <button type="button" className={s.row} aria-expanded={expanded} aria-controls={details} onClick={onToggle}>
+          <span className={s.rowTop}>
+            <span className={s.rowKey}>
+              <Truncate size="xs" tone="quiet" expand="none">
+                {thread.words}
+              </Truncate>
+            </span>
             <span className={s.rowWhen}>
               <Text size="xs" tone="faint" tabular>
                 {when(head.retired?.at ?? head.at, nowMs)}
               </Text>
             </span>
           </span>
-        </span>
-      </button>
+          <span className={cx(s.value, !thread.live && s.revokedValue)}>
+            <Truncate lines={expanded ? 12 : 2} expand="none" tone={thread.live ? "default" : "quiet"}>
+              {head.value}
+            </Truncate>
+          </span>
+        </button>
+      </Tooltip>
       {expanded ? <Details id={details} thread={thread} nowMs={nowMs} onChanged={onChanged} /> : null}
     </li>
   );

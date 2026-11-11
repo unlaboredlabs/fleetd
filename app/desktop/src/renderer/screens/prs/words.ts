@@ -123,13 +123,6 @@ export const checksShort = (c: ChecksSummary): { readonly text: string; readonly
   return undefined;
 };
 
-/** An open PR's place in line to merge: "next in line", "3rd in line"; undefined when it isn't waiting in it. */
-export const placeWord = (q: PrRow["queue"]): string | undefined => {
-  const at = lineAt(q);
-  if (at === undefined) return undefined;
-  return at === 0 ? "next in line" : `${ordinal(at + 1)} in line`;
-};
-
 /** "7 passed · 2 failed · 1 running". */
 export const checksDetail = (c: ChecksSummary): string =>
   [c.passed > 0 ? `${c.passed} passed` : "", c.failed > 0 ? `${c.failed} failed` : "", c.pending > 0 ? `${c.pending} running` : ""]

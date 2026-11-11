@@ -1,6 +1,8 @@
-// The panel's Activity: what happened in the project while the person was away, newest first. One calm line per event
-// (an icon, what happened, the quieter detail, its time) under its day's name, a divider under what came in since
-// they last looked, and runs of one thing (a PR reviewed again and again) folded into one row that opens. A line
+// The panel's History: what happened in the project while the person was away, newest first. Above the feed one line:
+// the way to the decisions (which open in the feed's place) and, at its end, the one filter (everything, or one kind
+// of event). One calm line per event (an icon, what happened, the quieter detail, its time) under its day's name, a
+// divider under what came in since they last looked, and runs of one thing (a PR reviewed again and again) folded
+// into one row that opens. A line
 // that names an agent or a PR opens it in the panel. Older events load as the list nears its end; new ones stream in
 // from the data layer's events (hooks.ts), so nothing here polls.
 import {
@@ -16,6 +18,7 @@ import {
   GitPullRequestArrow,
   Hand,
   KeyRound,
+  ListFilter,
   ListPlus,
   MessageSquareText,
   Play,
@@ -30,15 +33,17 @@ import {
 import { memo, useEffect, useMemo, useState } from "react";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { Button, Dot, EmptyState, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, Dot, EmptyState, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text, Tooltip, Truncate, VirtualList, cx } from "../../ui";
 import { shortClock } from "../chat/format";
 import { useNow } from "../live/clock";
 import { CallError } from "../../src/data/queries";
 import { panelRoute, toHash, type PanelView, type ProjectKey } from "../shell/routes";
+import { useDecisionCount } from "../decisions/DecisionsPane";
 import { DmLog } from "../dms/DmLog";
 import { useDmsServed } from "../dms/hooks";
+import { PanelEmpty } from "../panel/folds";
 import { useActivityFeed } from "./hooks";
-import { DMS, KINDS, KIND_WORD, layout, toggled, type ActivityKind, type Icon, type KindFilter, type Line, type Row, type Tone } from "./model";
+import { DMS, KINDS, KIND_WORD, layout, type ActivityKind, type Icon, type KindFilter, type Line, type Row, type Tone } from "./model";
 import { activitySeenOf, markActivitySeen } from "./seen";
 import s from "./activity.module.css";
 
@@ -74,6 +79,8 @@ const TONE: Readonly<Record<Tone, string>> = {
 };
 
 const ALL: KindFilter = new Set();
+/** The filter menu's value for no filter. */
+const EVERYTHING = "everything";
 
 type Item = Row | { readonly t: "end"; readonly key: string };
 
@@ -89,7 +96,7 @@ export function ActivityPane({ project, view }: { project: ProjectKey; view?: Pa
 function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
   const key = projectKey(project);
   const fresh = useData((st) => st.fresh);
-  // A hub from before DMs has none to show, and no chip for them.
+  // A hub from before DMs has none to show, and no filter for them.
   const dmsServed = useDmsServed();
   const [chosen, setFilter] = useState<KindFilter>(dms ? ONLY_DMS : ALL);
   const filter = dmsServed || !chosen.has(DMS) ? chosen : ALL;
@@ -111,7 +118,10 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
     return feed.lines.length === 0 ? rows : [...rows, { t: "end", key: "end" }];
   }, [feed.lines, nowMs, seenAtOpen, open]);
 
-  const toggleKind = (kind: ActivityKind | null) => setFilter((f) => toggled(f, kind));
+  // One kind at a time, or everything.
+  const only = KINDS.find((k) => filter.has(k));
+  const shownWord = only === undefined ? "Everything" : KIND_WORD[only];
+  const decided = useDecisionCount(project);
   const toggleRun = (runKey: string) =>
     setOpen((o) => {
       const next = new Set(o);
@@ -122,15 +132,33 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
 
   return (
     <div className={s.pane} data-screen={onDms ? "activity" : items === undefined && feed.error === null ? "activity.loading" : "activity"}>
-      <div className={s.chips} role="group" aria-label="Show">
-        <Button variant={filter.size === 0 ? "secondary" : "quiet"} size="sm" aria-pressed={filter.size === 0} onClick={() => toggleKind(null)}>
-          All
-        </Button>
-        {KINDS.filter((k) => k !== DMS || dmsServed).map((k) => (
-          <Button key={k} variant={filter.has(k) ? "secondary" : "quiet"} size="sm" aria-pressed={filter.has(k)} onClick={() => toggleKind(k)}>
-            {KIND_WORD[k]}
-          </Button>
-        ))}
+      <div className={s.top}>
+        <a className={s.decisions} href={toHash(panelRoute(project, { tab: "decisions" }))} data-decisions="">
+          <span>Decisions</span>
+          {decided !== undefined && decided > 0 ? <span className={s.decisionsCount}>{decided}</span> : null}
+          <ChevronRight aria-hidden size={12} />
+        </a>
+        <Menu>
+          <Tooltip content="Show one kind of event">
+            <MenuTrigger asChild>
+              <Button variant={filter.size === 0 ? "quiet" : "secondary"} size="sm" iconOnly={filter.size === 0} aria-label={`Show: ${shownWord}`} data-filter="">
+                <ListFilter aria-hidden />
+                {filter.size === 0 ? null : shownWord}
+              </Button>
+            </MenuTrigger>
+          </Tooltip>
+          <MenuContent align="end">
+            <MenuRadioGroup value={only ?? EVERYTHING} onValueChange={(v) => setFilter(v === EVERYTHING ? ALL : new Set([v as ActivityKind]))}>
+              <MenuRadioItem value={EVERYTHING}>Everything</MenuRadioItem>
+              <MenuSeparator />
+              {KINDS.filter((k) => k !== DMS || dmsServed).map((k) => (
+                <MenuRadioItem key={k} value={k}>
+                  {KIND_WORD[k]}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuContent>
+        </Menu>
       </div>
       {!fresh ? (
         <span className={s.liveness} role="status">
@@ -150,20 +178,16 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
         <Skeleton />
       ) : items.length === 0 ? (
         filter.size === 0 ? (
-          <EmptyState title="Nothing has happened yet">
-            When agents start and finish, PRs are reviewed and merged, or the lead asks you for something, it shows here.
-          </EmptyState>
+          <PanelEmpty title="Nothing has happened yet" />
         ) : (
-          <EmptyState
+          <PanelEmpty
             title="Nothing of this kind"
             actions={
-              <Button variant="secondary" size="sm" onClick={() => toggleKind(null)}>
+              <Button variant="secondary" size="sm" onClick={() => setFilter(ALL)}>
                 Show everything
               </Button>
             }
-          >
-            Nothing like this happened here in the last 30 days.
-          </EmptyState>
+          />
         )
       ) : (
         <div className={s.list}>

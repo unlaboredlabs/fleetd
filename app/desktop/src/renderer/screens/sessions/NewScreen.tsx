@@ -16,9 +16,9 @@
 // A kind no machine can host stays pickable: its tile says why in a word or two, and picked, the machine list gives way
 // to the reason from the machines' nodes and its one fix. An admin's is a button (Turn on, which sets it on that machine
 // with machine_screens_set, or the place in Settings › Hub › Machines that fixes it); a member's says who to ask.
-import { AppWindow, Globe, Laptop, Monitor, TabletSmartphone } from "lucide-react";
+import { Globe, Laptop, Monitor, Plus, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
+import { Button, Dialog, Radio, RadioGroup, Select, Text, Tooltip, cx } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
@@ -114,14 +114,16 @@ export function NewScreenHost() {
   return project === null ? null : <NewScreenDialog key={`${project.machineId}/${project.projectId}`} project={project} onClose={() => set(null)} />;
 }
 
-/** The New screen button at the top of the Screens tab. */
+/** New screen, a plus at the end of the Agents tab's Screens label. */
 export function NewScreenButton({ project }: { project: ProjectKey }) {
   const served = useData((d) => d.features.includes(NEW_SCREEN));
   if (!served) return null;
   return (
-    <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => openNewScreen(project)}>
-      New screen
-    </Button>
+    <Tooltip content="New screen: a browser or a device of your own, for this project">
+      <Button variant="quiet" size="sm" iconOnly aria-label="New screen" onClick={() => openNewScreen(project)}>
+        <Plus />
+      </Button>
+    </Tooltip>
   );
 }
 

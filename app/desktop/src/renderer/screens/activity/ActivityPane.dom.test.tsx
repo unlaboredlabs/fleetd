@@ -20,6 +20,8 @@ const heightOf = (el: Element): number => (el.getAttribute("role") === "list" ? 
 let host: HTMLDivElement;
 let root: Root;
 const reads: EventsListInput[] = [];
+/** The project's decisions, by state: the feed's first line counts the ones in force. */
+let decided: string[] = [];
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -33,6 +35,7 @@ beforeEach(() => {
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
   window.localStorage.clear();
   reads.length = 0;
+  decided = [];
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -71,6 +74,7 @@ const mount = async (answer: Answer): Promise<Send> => {
         reads.push(input as EventsListInput);
         return Promise.resolve(answer(input as EventsListInput));
       }
+      if (tool === "decisions_list") return Promise.resolve({ ok: true, output: { decisions: decided.map((state, i) => ({ decisionId: `D${i}`, state })), orders: [] } });
       return Promise.resolve({ ok: true, output: { at: new Date(START).toISOString(), orders: [], trains: [] } });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -100,6 +104,16 @@ const mount = async (answer: Answer): Promise<Send> => {
 const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
 const texts = () => [...host.querySelectorAll("[data-event], [data-run], [role=heading], [role=separator]")].map((el) => el.textContent.replace(/\d\d:\d\d$/u, "").trim());
 
+/** The filter's menu, opened from the keyboard, and one of its kinds chosen. */
+const filter = () => host.querySelector<HTMLButtonElement>("[data-filter]");
+const choose = async (kind: string) => {
+  act(() => void filter()?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  const item = [...document.querySelectorAll<HTMLElement>("[role='menuitemradio']")].find((i) => i.textContent === kind);
+  if (item === undefined) throw new Error(`no ${kind}`);
+  act(() => item.click());
+  await settle();
+};
+
 const FIRST = [
   ev(9, "pr.merged", { repo: "acme/storefront", prNumber: 31, base: "main" }),
   ev(8, "review.verdict", { taskId: "T41", blocking: 0, pr: "https://github.com/acme/storefront/pull/31" }),
@@ -125,17 +139,32 @@ it("shows the project's events newest first, a run folded, each linking to its a
   expect(texts()).toContain("Review of #31: 2 blocking findings");
 });
 
-it("reads only the chosen kinds, and says so when there are none", async () => {
-  await mount((input) => page(input.types?.includes("task.completed") === true ? FIRST : []));
-  const chip = [...host.querySelectorAll("button")].find((b) => b.textContent === "Asks you");
-  act(() => chip?.click());
+it("has one line above the feed: the way to the decisions with how many are in force, and one filter; no row of chips", async () => {
+  decided = ["active", "active", "revoked"];
+  await mount(() => page(FIRST));
   await settle();
+  const link = host.querySelector<HTMLAnchorElement>("[data-decisions]");
+  expect(link?.textContent).toBe("Decisions2");
+  expect(link?.getAttribute("href")).toBe("#/project/devbox/storefront/decisions");
+  // Nothing else to press above the feed, and no words but the link's: what the filter does is its hover.
+  expect([...host.querySelectorAll("button:not([data-run])")].map((b) => b.getAttribute("aria-label"))).toEqual(["Show: Everything"]);
+  expect(filter()?.textContent).toBe("");
+  expect(host.querySelector("[role='tablist'], [role='tab'], [aria-pressed]")).toBeNull();
+  act(() => filter()?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Show one kind of event");
+});
+
+it("reads only the chosen kind, names it on the filter, and says so when there are none", async () => {
+  await mount((input) => page(input.types?.includes("task.completed") === true ? FIRST : []));
+  await choose("Asks you");
   expect(reads.at(-1)).toMatchObject({ types: ["request.opened", "request.updated"], hubWide: false });
-  expect(host.textContent).toContain("Nothing of this kind");
+  expect(filter()?.textContent).toBe("Asks you");
+  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing of this kindShow everything");
   const all = [...host.querySelectorAll("button")].find((b) => b.textContent === "Show everything");
   act(() => all?.click());
   await settle();
   expect(texts()[1]).toBe("Merged #31 into main");
+  expect(filter()?.textContent).toBe("");
 });
 
 it("puts a streamed event on top without reading again, and counts it unread until the feed shows it", async () => {
@@ -194,7 +223,7 @@ it("stops asking for an older page that keeps failing, and offers Retry", async 
 
 it("says when nothing has happened, and when the hub can't list activity", async () => {
   await mount(() => page([]));
-  expect(host.textContent).toContain("Nothing has happened yet");
+  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("Nothing has happened yet");
   act(() => root.unmount());
   root = createRoot(host);
   await mount(() => ({ ok: false, error: { code: "not_found", message: "No tool events_list." } }));

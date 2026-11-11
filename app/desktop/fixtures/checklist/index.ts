@@ -1,7 +1,8 @@
 // The panel's Checklist tab. checklist-listed: storefront's lead keeps a list for the work in many-agents, some done
 // (one with its merged PR), two under way (one with the agent on it, at work in many-agents), the rest still to do;
 // Delete and Clear done take items off it.
-// checklist-empty: a project whose lead has set none.
+// checklist-empty: a project whose lead has set none. The shared `typical` reads the same list, so its Plan tab shows
+// the checklist with the asked work under it.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { AGENT } from "../agents/route.ts";
@@ -45,5 +46,11 @@ const empty = (base: Fixture): Fixture => {
 };
 
 export default defineGroup({
+  // A project at work has a plan: the shared fixture's Plan tab reads the same list.
+  extend: {
+    typical: (f) => {
+      f.answer("checklist_get", { projectRef: STOREFRONT }, { projectRef: STOREFRONT, items: items(f.now), updatedAt: f.now });
+    },
+  },
   fixtures: (base) => [listed(base("many-agents")), empty(base("chat-waiting"))],
 });

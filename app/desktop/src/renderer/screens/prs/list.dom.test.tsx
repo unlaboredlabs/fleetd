@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PrRow } from "../../../shared/contracts";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { PrList, forgetFilters } from "./PrList";
+import { forgetFolds } from "../panel/folds";
+import { PrList } from "./PrList";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,7 +38,7 @@ beforeEach(() => {
     return h > 0 ? new DOMRect(0, 0, 400, h) : rect.call(this);
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
-  forgetFilters();
+  forgetFolds();
   host = document.createElement("div");
   document.body.appendChild(host);
 });
@@ -52,7 +53,7 @@ const mount = async (rows: readonly PrRow[], { project = PROJECT, more = undefin
   act(() => {
     root?.render(
       <TooltipProvider>
-        <PrList rows={rows} more={more === undefined ? undefined : { load: more, loading: false }} project={project} nowMs={NOW} />
+        <PrList rows={rows} more={more === undefined ? undefined : { load: more, loading: false }} train={{ moving: [], state: "ready", retry: () => undefined }} project={project} nowMs={NOW} />
       </TooltipProvider>,
     );
   });
@@ -64,57 +65,72 @@ function unmount() {
 }
 
 const shown = () => [...host.querySelectorAll<HTMLAnchorElement>("a[data-pr]")].map((a) => Number(a.dataset["pr"]));
-const filter = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("[aria-label='Show'] button")].find((b) => b.textContent.startsWith(label));
+const fold = () => host.querySelector<HTMLButtonElement>("[data-group-label] button[aria-expanded]") ?? undefined;
+const labels = () => [...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent);
 const click = async (b: HTMLButtonElement | undefined) => {
   if (b === undefined) throw new Error("no such button");
   act(() => b.click());
   await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-it("opens on the open PRs, filters to merged or all, and keeps the reader's filter for the next list", async () => {
+it("is one list with nothing to choose above it: the open PRs, then the merged and closed ones folded under their count", async () => {
   await mount([row(11, "open"), row(12, "draft"), row(8, "merged"), row(7, "closed")]);
   expect(shown()).toEqual([11, 12]);
-  expect(filter("Open")?.getAttribute("aria-pressed")).toBe("true");
-  expect(filter("Open")?.textContent).toBe("Open2");
+  expect(labels()).toEqual(["Open2", "Merged and closed2"]);
+  expect(fold()?.getAttribute("aria-expanded")).toBe("false");
+  // No filter and no tabs of its own: the fold is the list's one control.
+  expect(host.querySelector("[role='tablist'], [role='tab'], [aria-pressed], select")).toBeNull();
+  expect([...host.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Merged and closed2"]);
 
-  await click(filter("Merged"));
-  expect(shown()).toEqual([8]);
-  expect(filter("Merged")?.getAttribute("aria-pressed")).toBe("true");
-
-  await click(filter("All"));
+  await click(fold());
   expect(shown()).toEqual([11, 12, 8, 7]);
-  expect(host.textContent).toContain("Merged or closed");
+  expect(fold()?.getAttribute("aria-expanded")).toBe("true");
 
+  // What the reader unfolded stays unfolded for the project's next list.
   unmount();
   await mount([row(11, "open"), row(8, "merged")]);
   expect(shown()).toEqual([11, 8]);
+  await click(fold());
+  expect(shown()).toEqual([11]);
 
-  // Another project's list opens on its own filter.
+  // Another project's list starts folded.
   unmount();
   await mount([row(11, "open"), row(8, "merged")], { project: { machineId: "devbox", projectId: "docs" } });
   expect(shown()).toEqual([11]);
 });
 
-it("says a filter with nothing in it is empty, and offers one that has rows", async () => {
+it("keeps a row to its title, when, and where it stands; its repo, number and branch are its hover's", async () => {
+  await mount([{ ...row(11, "open"), branch: "fleetd/T11-fix" }, { ...row(13, "open"), branch: "fleetd/T13-fix", queue: { changeId: "X13", length: 1, position: 0, state: "queued" } }]);
+  const open = host.querySelector<HTMLAnchorElement>("a[data-pr='11']");
+  const waiting = host.querySelector<HTMLAnchorElement>("a[data-pr='13']");
+  // An open PR under Open says nothing more than its title and when.
+  expect(open?.textContent).toBe("PR 1110:00");
+  expect(waiting?.textContent).toBe("PR 1310:00waiting to merge");
+  expect(host.textContent).not.toMatch(/storefront#|fleetd\/T1/u);
+  act(() => waiting?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("storefront#13 · fleetd/T13-fix");
+});
+
+it("says nothing is open in one line when only merged ones are left, with the fold under it", async () => {
   await mount([row(8, "merged")]);
   expect(shown()).toEqual([]);
-  expect(host.textContent).toContain("Nothing open");
-  await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Show merged"));
+  expect(host.querySelector("[data-list-note]")?.textContent).toBe("Nothing open.");
+  await click(fold());
   expect(shown()).toEqual([8]);
 });
 
-it("still offers older PRs when a filter is empty, since they may hold its PRs", async () => {
+it("still offers older PRs under a list with nothing open, since they may hold its PRs", async () => {
   const load = vi.fn();
   await mount([row(8, "merged")], { more: load });
-  expect(host.textContent).toContain("Nothing open");
+  expect(host.textContent).toContain("Nothing open.");
   await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Load more"));
   expect(load).toHaveBeenCalledOnce();
 });
 
-it("has no filter while there are no PRs at all", async () => {
+it("is one short line while there are no PRs at all", async () => {
   await mount([]);
-  expect(host.querySelector("[aria-label='Show']")).toBeNull();
-  expect(host.textContent).toContain("No pull requests yet");
+  expect(host.querySelector("[data-panel-empty]")?.textContent).toBe("No pull requests yet");
+  expect(host.querySelector("button")).toBeNull();
 });
 
 it("a row's right-click menu opens the PR here or on GitHub, and copies its URL and branch", async () => {

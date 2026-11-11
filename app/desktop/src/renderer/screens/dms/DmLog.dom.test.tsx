@@ -78,6 +78,7 @@ const mount = async (features: readonly string[] = ["agent_messages"]) => {
         return Promise.resolve({ ok: true, output: { messages, more: false, total: messages.length } } as never);
       }
       if (tool === "events_list") return Promise.resolve({ ok: true, output: { events: [], more: false } });
+      if (tool === "decisions_list") return Promise.resolve({ ok: true, output: { decisions: [], orders: [] } });
       return Promise.resolve({ ok: true, output: { at: new Date(START).toISOString(), orders: [], trains: [] } } as never);
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -103,10 +104,16 @@ const mount = async (features: readonly string[] = ["agent_messages"]) => {
 };
 
 const rows = () => [...host.querySelectorAll<HTMLElement>("[data-dm] > button")];
+/** History's one filter, and the kinds its menu offers once opened from the keyboard. */
+const filter = () => host.querySelector<HTMLButtonElement>("[data-filter]");
+const kinds = () => {
+  act(() => void filter()?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  return [...document.querySelectorAll<HTMLElement>("[role='menuitemradio']")];
+};
 
 it("opens on the DMs log from the lead chat's count: every DM newest first, and no events read", async () => {
   await mount();
-  expect(host.querySelector("[aria-pressed=true]")?.textContent).toBe("DMs");
+  expect(filter()?.textContent).toBe("DMs");
   expect(reads.some((r) => r.tool === "events_list")).toBe(false);
   expect(reads.find((r) => r.tool === "agent_messages")?.input).toMatchObject({ projectRef: project, limit: 50 });
   expect(rows().map((r) => r.textContent)).toEqual([
@@ -134,15 +141,17 @@ it("opens a row in place to its words, a receipt per recipient, and the lead's c
   expect(host.querySelector("[data-outcome=not_woken]")?.textContent).toBe("wasn’t woken: it has finished and isn’t waiting on T2584. Held for its next run");
 });
 
-it("has no DMs chip on a hub from before DMs, and reads none", async () => {
+it("has no DMs in the filter on a hub from before DMs, and reads none", async () => {
   await mount([]);
-  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "DMs")).toBe(false);
+  const offered = kinds().map((k) => k.textContent);
+  expect(offered).toContain("Merges");
+  expect(offered).not.toContain("DMs");
   expect(reads.some((r) => r.tool === "agent_messages")).toBe(false);
 });
 
-it("goes back to every event with All", async () => {
+it("goes back to every event with the filter's Everything", async () => {
   await mount();
-  const all = [...host.querySelectorAll("button")].find((b) => b.textContent === "All");
+  const all = kinds().find((k) => k.textContent === "Everything");
   act(() => all?.click());
   await act(() => vi.advanceTimersByTimeAsync(0));
   expect(reads.some((r) => r.tool === "events_list")).toBe(true);

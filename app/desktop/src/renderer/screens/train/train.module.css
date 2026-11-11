@@ -1,124 +1,21 @@
 /*
- * The panel's Train: what merges now on a quiet raised card (the one card here), then the line and what landed
- * lately as rows between hairlines. Titles carry the weight; numbers, times and reasons stay small and quiet; states
- * are words. Only what merges now moves: a short band of dither steps along its card's top edge while CI runs
- * (ui/DESIGN.md).
+ * What merges now, in Shipping's list (MergingNow.tsx): a soft block on the rows' own edges, its words on their text
+ * edge. The stage and since when, the PR or batch, then the head's checks, small and quiet. Only this moves: a short
+ * band of dither steps along its top edge while CI runs (ui/DESIGN.md).
  */
-.screen {
-  --pad: var(--space-4);
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-.liveness {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--pad) 0;
-}
-.empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8) var(--pad);
-}
-.note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--pad);
-}
-/* Row outlines while the train loads; nothing shimmers. */
-.skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--pad);
-}
-.skeleton > span {
-  height: var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--selected);
-}
-.skeleton > span:nth-child(2) {
-  width: 70%;
-}
-.skeleton > span:nth-child(3) {
-  width: 55%;
-}
-
-.scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-2) 0 var(--space-8);
-}
-.train + .train {
-  margin-top: var(--space-4);
-  border-top: 1px solid var(--hairline);
-}
-.repo {
-  padding: var(--space-3) var(--pad) 0;
-}
-.section {
-  display: flex;
-  flex-direction: column;
-}
-.group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--pad) var(--space-2);
-}
-.quietLine {
-  padding: var(--space-1) var(--pad);
-}
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .row {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
   color: inherit;
   text-decoration: none;
 }
 .row:hover {
   background: var(--hover);
-}
-.rowTop {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.rowTitle {
-  flex: 1;
-  min-width: 0;
-}
-.rowMeta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  column-gap: var(--space-3);
-  row-gap: 2px;
-  min-width: 0;
-}
-.why {
-  display: flex;
-  min-width: 0;
 }
 
 /* What merges now. */
@@ -127,12 +24,10 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  margin: 0 var(--space-3);
-  padding: var(--space-3) var(--space-2) var(--space-2);
-  border: 1px solid var(--hairline);
+  margin-top: 2px;
+  padding: var(--space-2) 0 var(--space-1);
   border-radius: var(--radius-md);
-  background: var(--raised);
+  background: var(--hover);
 }
 .headTop {
   display: flex;
@@ -145,14 +40,10 @@
   margin-left: auto;
   flex: none;
 }
-.stageLine {
-  padding: 0 var(--space-2);
-}
 .checks {
   list-style: none;
-  margin: var(--space-1) 0 0;
-  padding: var(--space-2) var(--space-2) 0;
-  border-top: 1px solid var(--hairline);
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -169,60 +60,10 @@
   display: flex;
 }
 
-/* A batch: its members under one rule on the left, so they read as one thing. */
+/* A batch: its members one under the other; the block is what makes them one thing. */
 .batch {
   display: flex;
   flex-direction: column;
-  margin-left: var(--space-2);
-  padding-left: var(--space-1);
-  border-left: 2px solid var(--hairline);
-}
-.landedBatch {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0 var(--space-2);
-  padding: var(--space-2) 0;
-}
-.batchMeta {
-  display: flex;
-  align-items: center;
-  column-gap: var(--space-3);
-  padding: 0 var(--space-2);
-}
-
-/* The line: rows between hairlines, each led by its place in tabular figures (DESIGN.md: cards only where they earn
-   it; here only what merges now). */
-.queued {
-  display: flex;
-  align-items: flex-start;
-  margin: 0 var(--space-3);
-  min-width: 0;
-  border-bottom: 1px solid var(--hairline);
-}
-.queued .rowTitle {
-  font-weight: 500;
-}
-.place {
-  flex: none;
-  width: var(--space-6);
-  padding: 9px 0 0 var(--space-1);
-  font-variant-numeric: tabular-nums;
-}
-/* A state in words: quiet, failure in the danger colour, waiting on you in the warning one. No dot. */
-.word {
-  color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  white-space: nowrap;
-}
-.word[data-tone="failed"] {
-  color: var(--danger);
-  font-weight: 500;
-}
-.word[data-tone="needs-you"] {
-  color: var(--warning);
-  font-weight: 500;
 }
 .stage {
   display: inline-flex;
@@ -307,20 +148,4 @@
 }
 :root[data-beat] .progress[data-step="17"]::after {
   transform: translateX(420%);
-}
-/* What landed lately: plain rows between hairlines. */
-.recent > li {
-  margin: 0 var(--space-3);
-  border-bottom: 1px solid var(--hairline);
-}
-.list.recent > li > .row {
-  margin: 0;
-}
-.list > li > .row {
-  margin: 0 var(--space-2);
-}
-.merged {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1-5);
 }

@@ -1,13 +1,14 @@
-// One PR: its title and where it stands, then Overview (a summary of where it is and what it waits on, the
-// description, checks, reviews and their findings, its way to main so far) or Changes (the files and their diff). Open
-// on GitHub stays one click away.
-import { ExternalLink } from "lucide-react";
+// One PR, in the list's place: one line with the way back and, at its end, Changes (the files and their diff, in the
+// panel's wide width) and Open on GitHub; then its title and where it stands, and under them a summary of where it is
+// and what it waits on, the description, checks, reviews and their findings, and its way to main so far. No tabs of
+// its own: Changes is one switch on the top line, and pressing it again is back to the PR.
+import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents } from "../../src/data/selectors";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { codeRuns, machineCode } from "../chat/format";
-import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast, type TextTone } from "../../ui";
+import { Button, InlineCode, Markdown, StatusChip, Text, Tooltip, Truncate, cx, toast, type TextTone } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsPane";
 import { CheckIcon, ChecksMark } from "./Bits";
 import { DiffPane } from "./DiffPane";
@@ -51,11 +52,25 @@ interface PrDetailProps {
   readonly nowMs: number | undefined;
   readonly tab: PrTab;
   readonly onTab: (tab: PrTab) => void;
+  /** To the list it opened from. */
+  readonly onBack: () => void;
   /** The screen already says GitHub wasn't reached. */
   readonly githubSaid: boolean;
 }
 
-export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: PrDetailProps) {
+/** One PR's top line: the way back to the list, and at its end what the PR's view adds. */
+export function PrTop({ onBack, children }: { onBack: () => void; children?: ReactNode }) {
+  return (
+    <div className={s.prTop}>
+      <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={onBack}>
+        All pull requests
+      </Button>
+      {children === undefined ? null : <span className={s.prTools}>{children}</span>}
+    </div>
+  );
+}
+
+export function PrDetail({ repo, number, row, nowMs, tab, onTab, onBack, githubSaid }: PrDetailProps) {
   const query = useToolQuery("pr_get", { repo, number });
   const fresh = useData((st) => st.fresh);
   const data = query.data;
@@ -63,19 +78,24 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
 
   if (pr === undefined) {
     // Nothing held and no hub to ask: "Loading" would never finish.
-    return !fresh ? (
-      <div className={s.paneNote} data-screen="prs.detail.offline">
-        <Text tone="quiet">#{number} shows once you’re connected.</Text>
-      </div>
-    ) : query.isError ? (
-      <div className={s.paneNote} data-screen="prs.detail.error" role="alert">
-        <Text tone="quiet">Couldn’t load #{number}.</Text>
-        <Button onClick={() => void query.refetch()}>Retry</Button>
-      </div>
-    ) : (
-      <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy="true">
-        <Text tone="quiet">Loading #{number}…</Text>
-      </div>
+    return (
+      <>
+        <PrTop onBack={onBack} />
+        {!fresh ? (
+          <div className={s.paneNote} data-screen="prs.detail.offline">
+            <Text tone="quiet">#{number} shows once you’re connected.</Text>
+          </div>
+        ) : query.isError ? (
+          <div className={s.paneNote} data-screen="prs.detail.error" role="alert">
+            <Text tone="quiet">Couldn’t load #{number}.</Text>
+            <Button onClick={() => void query.refetch()}>Retry</Button>
+          </div>
+        ) : (
+          <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy="true">
+            <Text tone="quiet">Loading #{number}…</Text>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -85,73 +105,71 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
   const additions = data?.additions;
   const deletions = data?.deletions;
   const files = data?.changedFiles;
+  const changes = tab === "changes";
+  const where = pr.branch === undefined ? `${pr.repo}#${pr.number}` : `${pr.repo}#${pr.number} · ${data?.baseBranch === undefined ? pr.branch : `${pr.branch} → ${data.baseBranch}`}`;
   return (
-    <Tabs
-      className={s.pr}
-      value={tab}
-      onValueChange={(v) => onTab(v === "changes" ? v : "overview")}
-      data-screen={data !== undefined ? "prs.detail" : query.isError ? "prs.detail.error" : "prs.detail.loading"}
-    >
-      <div className={s.prHead}>
-        <div className={s.prTitleRow}>
-          <span className={s.prTitle}>
-            <Truncate as="h2" size="lg" strong lines={3} expand="inline">
-              {pr.title === "" ? `#${pr.number}` : pr.title}
-            </Truncate>
-          </span>
-          <Button variant="secondary" size="sm" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
-            Open on GitHub
+    <div className={s.pr} data-screen={data !== undefined ? "prs.detail" : query.isError ? "prs.detail.error" : "prs.detail.loading"}>
+      <PrTop onBack={onBack}>
+        <Tooltip content={changes ? "Back to the pull request" : "The files it changes, and their diff"}>
+          <Button variant={changes ? "secondary" : "quiet"} size="sm" aria-pressed={changes} data-changes="" onClick={() => onTab(changes ? "overview" : "changes")}>
+            Changes
+            {files === undefined ? null : <span className={s.prCount}>{stat(files)}</span>}
           </Button>
-        </div>
+        </Tooltip>
+        <Tooltip content="Open on GitHub">
+          <Button variant="quiet" size="sm" iconOnly aria-label="Open on GitHub" onClick={() => openExternal(pr.url)}>
+            <ExternalLink aria-hidden />
+          </Button>
+        </Tooltip>
+      </PrTop>
+      <div className={s.prHead}>
+        <Truncate as="h2" size="lg" strong lines={3} expand="inline">
+          {pr.title === "" ? `#${pr.number}` : pr.title}
+        </Truncate>
         <div className={s.prMeta}>
           <StatusChip tone={state.tone}>{state.word}</StatusChip>
-          <Text size="xs" tone="quiet" tabular>
-            {pr.repo}#{pr.number}
-          </Text>
-          {pr.branch !== undefined ? (
-            <span className={s.branch} data-text="code">
-              <Truncate mono size="xs" tone="quiet">
-                {data?.baseBranch === undefined ? pr.branch : `${pr.branch} → ${data.baseBranch}`}
-              </Truncate>
+          {/* Its repo and branch are its number's hover: the line says where it stands. */}
+          <Tooltip content={<span data-text="code">{where}</span>}>
+            <span className={s.prRef} tabIndex={0}>
+              <Text size="xs" tone="quiet" tabular>
+                #{pr.number}
+              </Text>
             </span>
-          ) : null}
+          </Tooltip>
           {additions !== undefined && deletions !== undefined ? (
             <Text size="xs" tone="quiet" tabular>
               <span className={s.add}>+{stat(additions)}</span> <span className={s.del}>−{stat(deletions)}</span>
             </Text>
           ) : null}
         </div>
-        <TabList aria-label="Pull request">
-          <Tab value="overview">Overview</Tab>
-          <Tab value="changes" count={files === undefined ? undefined : stat(files)}>
-            Changes
-          </Tab>
-        </TabList>
       </div>
-      <TabPanel value="overview" className={s.overview}>
-        {data === undefined ? (
-          !fresh ? (
-            <div className={s.paneNote}>
-              <Text tone="quiet">The rest of #{number} shows once you’re connected.</Text>
-            </div>
-          ) : query.isError ? (
-            <div className={s.paneNote} role="alert">
-              <Text tone="quiet">Couldn’t load the rest of #{number}.</Text>
-              <Button onClick={() => void query.refetch()}>Retry</Button>
-            </div>
+      {changes ? (
+        <div className={s.changesPanel}>
+          <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} />
+        </div>
+      ) : (
+        <div className={s.overview}>
+          {data === undefined ? (
+            !fresh ? (
+              <div className={s.paneNote}>
+                <Text tone="quiet">The rest of #{number} shows once you’re connected.</Text>
+              </div>
+            ) : query.isError ? (
+              <div className={s.paneNote} role="alert">
+                <Text tone="quiet">Couldn’t load the rest of #{number}.</Text>
+                <Button onClick={() => void query.refetch()}>Retry</Button>
+              </div>
+            ) : (
+              <div className={s.paneNote} aria-busy="true">
+                <Text tone="quiet">Loading…</Text>
+              </div>
+            )
           ) : (
-            <div className={s.paneNote} aria-busy="true">
-              <Text tone="quiet">Loading…</Text>
-            </div>
-          )
-        ) : (
-          <Overview data={data} now={now} githubSaid={githubSaid} />
-        )}
-      </TabPanel>
-      <TabPanel value="changes" className={s.changesPanel}>
-        {tab === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} /> : null}
-      </TabPanel>
-    </Tabs>
+            <Overview data={data} now={now} githubSaid={githubSaid} />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

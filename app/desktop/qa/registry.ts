@@ -397,7 +397,12 @@ const openUpdates = async (page: Page) => {
 // #10 (checks failed), #8 (merged), #14 (a person's, review asked for) and #13 (240 files) open.
 const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
-const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/** A PR's changes, by the switch on its top line. */
+const openChanges = async (page: Page) => {
+  const changes = page.locator("button[data-changes]");
+  await changes.click();
+  await expect(changes).toHaveAttribute("aria-pressed", "true");
+};
 /**
  * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
  * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
@@ -1041,7 +1046,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="artifacts.empty"]').waitFor();
     },
   },
-  // The panel's Checklist tab: how far along, doing and to do, done folded; done unfolded; and none set yet.
+  // The panel's Plan: how far along, doing and to do, done folded; done unfolded; and none set yet.
   {
     id: "shell",
     route: `${CHAT}/checklist`,
@@ -1093,13 +1098,21 @@ export const screens: readonly Screen[] = [
     fixtures: ["checklist-empty"],
     variant: "panel-checklist-empty",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).getByText("No checklist yet").waitFor();
+      await page.getByRole("complementary", { name: "Project panel" }).getByText("No plan yet").waitFor();
     },
   },
-  // The panel's Train: a PR in CI with its checks, the line with its held and sent-back PRs, merges and a refusal; a
-  // batch of three in CI; the shared fixtures' train (fixtures/prs's PRs); nothing on it; on its way; and failing.
+  // Shipping at its merge line (a link to the train): a PR in CI as a card with its checks among the PRs, the ones that
+  // need a look above it and the line behind it, what landed folded; a batch of three in CI; the shared fixtures' train
+  // (fixtures/prs's PRs); nothing on it; on its way (the PRs listed, the card still to come); and failing.
   { id: "train", route: `${CHAT}/train`, fixtures: ["train-full", "train-batch", "train-empty", "typical", "long-text"] },
-  { id: "train", route: `${CHAT}/train`, fixtures: ["train-error"], expect: "error" },
+  // The PRs are listed while the train's read retries; the alert over them comes once it has given up.
+  {
+    id: "train",
+    route: `${CHAT}/train`,
+    fixtures: ["train-error"],
+    expect: "error",
+    open: (page) => page.locator('[data-screen="train.error"]').waitFor({ timeout: 15_000 }),
+  },
   {
     id: "train",
     route: CHAT,
@@ -1109,9 +1122,10 @@ export const screens: readonly Screen[] = [
       await page.evaluate((r) => {
         window.location.hash = r;
       }, `${CHAT}/train`);
-    }, (page) => page.getByLabel("Loading the merge train")),
+    }, (page) => page.locator('[data-screen="train.loading"]')),
   },
-  // The panel's Activity: storefront's feed; nothing yet; failing; a hub without events_list; and on its way.
+  // History: storefront's feed under the way to its decisions; nothing yet; failing; a hub without events_list; and on
+  // its way.
   { id: "activity", route: `${CHAT}/activity`, fixtures: ["typical", "long-text", "activity-none", "activity-error", "activity-old-hub"] },
   {
     id: "activity",
@@ -1146,7 +1160,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: /3 DMs/u })).toHaveAttribute("aria-expanded", "true");
     },
   },
-  // The panel's Decisions: what the lead and you settled; none yet; failing; and on its way.
+  // History's decisions, a row away from it: what the lead and you settled; none yet; failing; and on its way.
   { id: "decisions", route: `${CHAT}/decisions`, fixtures: ["typical", "long-text", "decisions-none"] },
   { id: "decisions", route: `${CHAT}/decisions`, fixtures: ["decisions-error"], expect: "error" },
   {
@@ -1161,7 +1175,7 @@ export const screens: readonly Screen[] = [
     }, (page) => page.getByLabel("Loading the decisions")),
   },
   // Only-me projects (fixtures/only-me): Ada and Home first in the one Projects list, Taxes archived and out of it;
-  // Ada's chat with its booking to approve, beside the work it asked other projects for (Plan › Asked).
+  // Ada's chat with its booking to approve, beside the work it asked other projects for (under its plan).
   {
     id: "chat",
     route: `${ADA_ROUTE}/asked`,
@@ -2091,16 +2105,16 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-secret", "chat-gated", "long-text"],
     variant: "inline-chat",
   },
-  // A9 (F9): Max agents beside the panel's working count ("6 working · max 12"), a link to the project's slider in
-  // Settings, which it opens focused (Settings has the slider itself under settings.agents).
+  // The gear at the end of the panel's row opens the project's settings (its Max agents is a tab from there, under
+  // settings.agents; the panel's list carries no count line).
   {
-    id: "settings.agents",
-    route: `${CHAT}/agents`,
-    fixtures: ["settings-agents"],
+    id: "settings.projects",
+    route: `${ADA_ROUTE}/agents`,
+    fixtures: ["only-me-links"],
     variant: "from-panel",
     open: async (page) => {
-      await page.getByRole("link", { name: /^Max agents: \d+$/u }).click();
-      await expect(page.getByRole("slider", { name: "Max agents" })).toBeFocused();
+      await page.getByRole("complementary", { name: "Project panel" }).getByRole("button", { name: "Project settings" }).click();
+      await expect(page.getByRole("link", { name: /^Max agents/u })).toHaveCount(0);
     },
   },
   // W89 and W550: one header row. The panel runs from the window's top, its tabs beside the chat's floating title: the
@@ -2671,12 +2685,12 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
-  // W46: the Agents section's Sessions from a hub that serves them (fixtures/sessions): needs you, live and recent; one
+  // W46: the Agents list's screens from a hub that serves them (fixtures/sessions), under its agents; one
   // live (the page the full width, no Steps beside it), one asking you to take over, one taken over (the page yours),
   // handed back with ⌘⇧↩; recorded ones replayed the full width, their steps closed, then opened with Steps, with a
   // video and without, a step's page snapshot open; one being saved, one lost and one expired.
   { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
-  // ...and a hub that doesn't serve them (every other fixture's): the link opens Agents, with no Sessions beside it.
+  // ...and a hub that doesn't serve them (every other fixture's): the link opens Agents, with no screens under them.
   {
     id: "agents",
     route: `${CHAT}/sessions`,
@@ -2684,7 +2698,7 @@ export const screens: readonly Screen[] = [
     variant: "no-sessions",
     open: async (page) => {
       await expect(page.locator('[data-screen="agents"]')).toBeVisible();
-      await expect(page.getByRole("tab", { name: /^Screens/u })).toHaveCount(0);
+      await expect(page.getByRole("complementary", { name: "Project panel" }).getByRole("button", { name: "New screen", exact: true })).toHaveCount(0);
     },
   },
   {
@@ -2742,7 +2756,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-page"],
     variant: "view",
   },
-  // D239: New screen at the top of Screens: the kind as four tiles (no iOS, D298), the machines that can host it with
+  // D239: New screen, the plus beside Screens in the Agents list: the kind as four tiles (no iOS, D298), the machines that can host it with
   // their slots; the agents' Mac, its one screen in use, offers to wait, and the wait shows in the list until cancelled.
   {
     id: "sessions",
@@ -2946,32 +2960,21 @@ export const screens: readonly Screen[] = [
     fixtures: ["agents-elsewhere"],
     variant: "elsewhere-idle",
     open: async (page) => {
-      await expect(page.getByText("No agents are working here.")).toBeVisible();
+      await expect(page.getByText("No agents are working.")).toBeVisible();
       await page.getByRole("button", { name: /^Also on this repo/u }).click();
       await expect(page.getByText("storefront’s agent · running")).toBeVisible();
     },
   },
-  // ...and with All projects, it gives way to every project's agents.
+  // ...and Other projects, the fold under them when another project has agents at work, opened: each project's agents
+  // under its name, checkout's first as one waits on you.
   {
     id: "agents",
     route: `${CHAT}/agents`,
-    fixtures: ["agents-elsewhere"],
-    variant: "elsewhere-all",
-    open: async (page) => {
-      await expect(page.getByRole("button", { name: /^Also on this repo/u })).toBeVisible();
-      await page.getByRole("button", { name: "All projects" }).click();
-      await expect(page.getByRole("button", { name: /^Also on this repo/u })).toBeHidden();
-    },
-  },
-  // ...and with All projects, every project's agents under its name, checkout's first as one waits on you.
-  {
-    id: "agents",
-    route: `${CHAT}/agents`,
-    fixtures: ["agents-work", "long-text", "many-agents"],
+    fixtures: ["agents-work"],
     variant: "all",
     open: async (page) => {
-      await page.getByRole("button", { name: "All projects" }).click();
-      await expect(page.getByRole("button", { name: "All projects" })).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: /^Other projects/u }).click();
+      await expect(page.getByRole("button", { name: /^Other projects/u })).toHaveAttribute("aria-expanded", "true");
     },
   },
   // Every live state's glyph at once (ui/DESIGN.md): working, thinking, waiting on you, queued and paused; a queued

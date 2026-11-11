@@ -1,7 +1,6 @@
 // Small pieces the PR list and the PR share: a checks mark (an icon with a short word) and a quiet hint. Kept here until
 // another screen needs them. (The segmented filter moved to ui/primitives/Segmented once Settings → Machines needed it.)
 import { CircleCheck, CircleDashed, CircleX } from "lucide-react";
-import type { ReactNode } from "react";
 import { Text, cx } from "../../ui";
 import type { Hint } from "./listModel";
 import type { Tone } from "./words";
@@ -37,22 +36,5 @@ export function HintText({ hint }: { hint: Hint }) {
     <Text size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
       {hint.text}
     </Text>
-  );
-}
-
-/** What a pane has instead of rows (none in a filter, an error): a line, a quieter one under it, and what to do. */
-export function PaneEmpty({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
-  return (
-    <div className={s.paneEmpty}>
-      <Text as="h2" size="md" strong>
-        {title}
-      </Text>
-      {children !== undefined ? (
-        <Text as="p" size="sm" tone="quiet">
-          {children}
-        </Text>
-      ) : null}
-      {action !== undefined ? <div className={s.paneEmptyAction}>{action}</div> : null}
-    </div>
   );
 }

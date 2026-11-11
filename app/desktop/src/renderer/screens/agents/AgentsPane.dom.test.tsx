@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-// The panel's agents as the app routes to them: the list under its orders' titles, each row a link to the same route
-// chat, Status and the palette open, and that route opening the agent's live view, whose PR opens in the PRs tab.
+// The panel's agents as the app routes to them: one list under its orders' titles with the project's screens under
+// them, each row a link to the same route chat, Status and the palette open, and that route opening the agent's live
+// view, whose PR opens in the PRs tab.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentRow, SlotState } from "../../../shared/contracts";
+import type { AgentRow } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, card, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -48,6 +49,8 @@ const answer = (tool: string): unknown => {
       return { at: AT, trains: [], orders: [card("W1", { title: "Dark mode" }), card("W2", { title: "Receipts in the store's zone" })] };
     case "agents_list":
       return { at: AT, agents: AGENTS };
+    case "browser_sessions":
+      return { sessions: [], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } };
     case "work_list":
       return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: elsewhere, recentLandings: [] };
     default:
@@ -97,15 +100,15 @@ const settle = async () => {
 /** The pane at the agent the window's hash names, as the panel mounts it. */
 function Harness() {
   const screen = parseHash(window.location.hash);
-  const agent = screen.id === "project" && screen.panel?.tab === "agents" ? screen.panel.agent : null;
+  const panel = screen.id === "project" ? screen.panel : null;
   return (
     <TooltipProvider>
-      <AgentsPane project={project} agent={agent} scope="project" onScope={() => undefined} />
+      <AgentsPane project={project} agent={panel?.tab === "agents" ? panel.agent : null} at={panel?.tab === "sessions" ? "screens" : null} />
     </TooltipProvider>
   );
 }
 
-const mount = async (slots?: SlotState) => {
+const mount = async (features?: readonly string[]) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
     call: (tool) => Promise.resolve({ ok: true, output: answer(tool) }),
@@ -125,9 +128,8 @@ const mount = async (slots?: SlotState) => {
   root = createRoot(host);
   act(render);
   act(() => {
-    send(live());
-    const snap = snapshot(1);
-    send(slots === undefined || snap.t !== "snapshot" ? snap : { ...snap, snapshot: { ...snap.snapshot, slots } });
+    send(live(features));
+    send(snapshot(1));
   });
   await settle();
   return async (hash: string) => {
@@ -142,36 +144,49 @@ const mount = async (slots?: SlotState) => {
 it("lists the project's agents under their orders' titles, the order waiting on you first, without the lead", async () => {
   await mount();
   const list = host.querySelector("[data-screen='agents']");
-  const lines = [...(list?.querySelectorAll("[aria-label='Agents'] a, [aria-label='Agents'] [data-group]") ?? [])].map((el) =>
+  const lines = [...(list?.querySelectorAll("[aria-label='Agents'] a, [aria-label='Agents'] [data-group-label]") ?? [])].map((el) =>
     el.tagName === "A" ? el.getAttribute("data-state") : el.textContent,
   );
-  expect(lines).toEqual(["Receipts in the store's zone1 needs you2", "waiting", "working", "Dark mode1", "working"]);
-  expect(list?.textContent).toContain("#12 · in CI");
-  expect(list?.textContent).toContain("1 needs you");
+  expect(lines).toEqual(["Receipts in the store's zone2", "waiting", "working", "Dark mode1", "working"]);
   expect(list?.querySelector("[role='img'][aria-label='needs you']")).not.toBeNull();
 });
 
-it("says the project's Max agents beside its working count, a link to its slider in Settings", async () => {
-  await mount({ cap: 20, used: 2, queued: 0, perProject: [{ projectRef: project, maxAgents: 6, own: true, running: 2, queued: 0 }] });
-  const max = host.querySelector<HTMLAnchorElement>("[data-screen='agents'] a[aria-label^='Max agents']");
-  expect(max?.parentElement?.textContent).toBe("2 working · max 6");
-  expect(max?.getAttribute("href")).toBe("#/settings/agents?for=devbox/storefront");
+it("is the list alone: no sentence above it, no tabs or switches of its own, and no counts line", async () => {
+  await mount(["browser_sessions", "screen_open"]);
+  const pane = host.querySelector("[data-screen='agents']");
+  expect(pane?.querySelectorAll("[role='tab'], [role='tablist'], [role='radio'], [role='radiogroup'], [role='switch'], select")).toHaveLength(0);
+  expect(pane?.firstElementChild?.querySelector("[aria-label='Agents']")).not.toBeNull();
+  expect(pane?.textContent).not.toMatch(/All projects|This project|\d+ working|max \d/u);
 });
 
-it("shows no internal ids in its rows: a writer's branch by its slug, the full branch in its tooltip", async () => {
+it("puts the project's screens under its agents where the hub serves them, All screens and New screen at their label", async () => {
+  const go = await mount(["browser_sessions", "screen_open"]);
+  const labels = () => [...host.querySelectorAll("[data-group-label]")].map((el) => el.textContent);
+  expect(labels()).toEqual(["Receipts in the store's zone2", "Dark mode1", "Screens"]);
+  const screens = [...host.querySelectorAll("[data-group-label]")].at(-1);
+  expect([...(screens?.querySelectorAll("button") ?? [])].map((b) => b.getAttribute("aria-label"))).toEqual(["All screens", "New screen"]);
+  // The old Screens tab's route, and the palette's Go to Screens, open the same list at them.
+  await go(`${CHAT}/sessions`);
+  expect(host.querySelector("[data-screen='sessions'] [aria-label='Agents']")).not.toBeNull();
+  expect(labels()).toContain("Screens");
+  act(() => screens?.querySelector<HTMLButtonElement>("button[aria-label='All screens']")?.click());
+  expect(window.location.hash).toBe("#/screens");
+});
+
+it("has no Screens group on a hub that doesn't serve them", async () => {
+  await mount();
+  expect([...host.querySelectorAll("[data-group-label]")].map((el) => el.textContent)).toEqual(["Receipts in the store's zone2", "Dark mode1"]);
+});
+
+it("keeps ids, branches and PR numbers out of its rows: an agent's role and where its work is are its hover", async () => {
   await mount();
   const list = host.querySelector("[data-screen='agents']");
   expect(list?.textContent).not.toMatch(/\b[WTXPCDSQ]\d+\b/u);
-  const branch = list?.querySelector("[title='fleetd/T1-dark-mode']");
-  expect(branch?.textContent).toBe("dark-mode");
-});
-
-it("leaves the PR out of an agent's row on that PR's own page", async () => {
-  const go = await mount();
-  await go(`${CHAT}/prs/12`);
-  expect(host.querySelector("[data-screen='agents']")?.textContent).not.toContain("#12 · in CI");
-  await go(`${CHAT}/prs/7`);
-  expect(host.querySelector("[data-screen='agents']")?.textContent).toContain("#12 · in CI");
+  expect(list?.textContent).not.toMatch(/dark-mode|#12|in CI/u);
+  const row = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Checking: Receipts"));
+  act(() => row?.focus());
+  await settle();
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("reviewer · #12 in CI");
 });
 
 it("links each row to the agent's panel route, which opens its live view with its order and its PR", async () => {

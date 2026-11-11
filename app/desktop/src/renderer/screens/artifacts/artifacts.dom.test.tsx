@@ -156,21 +156,28 @@ it("gives the panel an Artifacts section once the hub serves it and the chat has
   expect(host.querySelector("[data-section=artifacts]")).toBeNull();
 });
 
-it("lists the artifacts newest first, each its title over its format, who and version, and opens one", async () => {
+it("lists the artifacts newest first, each one line: its title and when; its format, who and version are its hover's", async () => {
   await mount(view(null));
-  const rows = [...host.querySelectorAll("[data-artifact]")];
+  const rows = [...host.querySelectorAll<HTMLElement>("[data-artifact]")];
   expect(rows.map((r) => r.getAttribute("data-artifact"))).toEqual(["dependency-sweep", "build-times"]);
-  expect(rows[0]?.textContent).toMatch(/^Dependency sweepMarkdown · Sweep the dependencies · .+ · version 2$/u);
-  expect(rows[1]?.textContent).toMatch(/^Build timesHTML · Lead · /u);
+  expect(rows[0]?.textContent).toMatch(/^Dependency sweep[^·]+$/u);
+  expect(rows[1]?.textContent).toMatch(/^Build times[^·]+$/u);
+  expect(host.textContent).not.toMatch(/Markdown|HTML|version/u);
+  act(() => rows[0]?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Markdown · Sweep the dependencies · version 2");
   await click(rows[0]);
   expect(window.location.hash).toBe("#/project/devbox/shop/artifacts/dependency-sweep");
 });
 
 it("lists the files sent in the chat under the artifacts, each opening in this computer's app or saved", async () => {
   await mount(view(null));
-  expect(host.querySelector("h3")?.textContent).toBe("Files");
-  const rows = [...host.querySelectorAll("[data-file]")];
-  expect(rows.map((r) => r.textContent)).toEqual([expect.stringMatching(/^itinerary\.pdfPDF · 2 KB · /u), expect.stringMatching(/^checkout-after\.png/u)]);
+  expect(host.querySelector("section[aria-label='Files'] [data-group-label]")?.textContent).toBe("Files2");
+  const rows = [...host.querySelectorAll<HTMLElement>("[data-file]")];
+  expect(rows.map((r) => r.textContent)).toEqual([expect.stringMatching(/^itinerary\.pdf[^·]+$/u), expect.stringMatching(/^checkout-after\.png[^·]+$/u)]);
+  // What kind of file and how big is its hover's.
+  act(() => rows[0]?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("PDF · 2 KB");
+  act(() => rows[0]?.blur());
   await click(rows[0]);
   await click(host.querySelector("[aria-label='Save checkout-after.png']"));
   expect(opened).toEqual(["open F7", "save F3"]);
@@ -185,7 +192,7 @@ it("shows the files alone when nothing is published, and the empty state only wh
   root = createRoot(host);
   files = [];
   await mount(view(null));
-  expect(host.querySelector("[data-screen='artifacts.empty']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='artifacts.empty']")?.textContent).toBe("No artifacts yet");
 });
 
 it("renders a Markdown report in the app's style, raw HTML dropped, with every version to pick", async () => {

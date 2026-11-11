@@ -9,7 +9,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { forgetFilters } from "./PrList";
+import { forgetFolds } from "../panel/folds";
 import { PrsPane } from "./PrsPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -43,7 +43,7 @@ beforeEach(() => {
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
-  forgetFilters();
+  forgetFolds();
   host = document.createElement("div");
   document.body.appendChild(host);
 });
@@ -65,6 +65,7 @@ it("loads older PRs past the first page, and stops at the last", async () => {
   const asked: PrListInput[] = [];
   const hub: HubApi = {
     call: (tool, input) => {
+      if (tool === "changes_list") return Promise.resolve({ ok: true, output: { changes: [] } });
       if (tool !== "pr_list") return Promise.resolve({ ok: true, output: {} });
       const { cursor } = input as PrListInput;
       asked.push(input as PrListInput);
@@ -95,9 +96,11 @@ it("loads older PRs past the first page, and stops at the last", async () => {
     send(snapshot(1));
   });
   await settle();
-  // Every PR, not only the open ones the list starts on.
-  const all = [...host.querySelectorAll<HTMLButtonElement>("[aria-label='Show'] button")].find((b) => b.textContent.startsWith("All"));
-  act(() => all?.click());
+  expect(numbers()).toEqual([12]);
+  // Every PR, the merged ones too: they sit folded under the open ones.
+  const merged = host.querySelector<HTMLButtonElement>("[data-group-label] button[aria-expanded]");
+  expect(merged?.textContent).toBe("Merged2");
+  act(() => merged?.click());
   await settle();
   expect(numbers()).toEqual([12, 10, 9]);
   const more = loadMore();

@@ -1,28 +1,29 @@
-// A project's panel, Asked work: each message its lead sent another project's lead (project_message), newest first,
-// as one row: the ask in a line, how its order is going as a chip, the project and how long ago. A row opens in place
+// A project's asked work, a group at the foot of its Plan (checklist/ChecklistPane): each message its lead sent another
+// project's lead (project_message), newest first, as one row: the ask in a line, how its order is going as a chip, the
+// project and how long ago. A row opens in place
 // to the whole message and the orders opened for it, each by its title, linked to its page; the project's name opens
 // its chat. No fleetd ids. Read from the hub's project_asks for this project (#649), again whenever the order board
 // changes, since the same events move both.
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useState } from "react";
 import { callKey } from "../../src/data/queries";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useToolQuery } from "../../src/data/react";
 import { PROJECT_TOOLS } from "../projects/model";
-import { Button, EmptyState, StatusChip, Text, cx } from "../../ui";
+import { StatusChip, Text, cx } from "../../ui";
 import { orderHref } from "../automations/model";
 import { navigate } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
 import { age, fullWhen } from "../live/when";
-import { ASK_STATE, askRows, orderState, type AskRow } from "./askedModel";
+import { ASK_STATE, orderState, type AskRow } from "./askedModel";
 import s from "./asked.module.css";
 
 const BOARD = {} as const;
 
 /** This project's asks. */
-export const useAskedWork = (project: ProjectKey) => {
+export const useAskedWork = (project: ProjectKey, enabled = true) => {
   const client = useQueryClient();
   const input = useMemo(() => ({ navi: { machineId: project.machineId, projectId: project.projectId } }), [project.machineId, project.projectId]);
-  const query = useToolQuery(PROJECT_TOOLS.asks, input);
+  const query = useToolQuery(PROJECT_TOOLS.asks, input, { enabled });
   // An order opening, merging or closing moves the board and this read alike: read again when the board does.
   const board = useToolQuery("orders_board", BOARD).dataUpdatedAt;
   useEffect(() => {
@@ -31,53 +32,14 @@ export const useAskedWork = (project: ProjectKey) => {
   return query;
 };
 
-export function AskedPane({ project }: { project: ProjectKey }) {
-  const fresh = useData((st) => st.fresh);
-  const query = useAskedWork(project);
-  const asks = query.data?.asks;
-  const rows = useMemo(() => (asks === undefined ? undefined : askRows(asks)), [asks]);
-  // "2d ago": read once a mount.
-  const [now] = useState(() => Date.now());
-
+/** The asks as rows, under the Plan list's own label. */
+export function AskedRows({ rows, now }: { rows: readonly AskRow[]; now: number }) {
   return (
-    <div className={s.screen} data-screen={asks !== undefined ? "asked" : query.isError ? "asked.error" : "asked.loading"}>
-      {asks === undefined ? (
-        !fresh ? (
-          <div className={s.note}>
-            <Text tone="quiet">Asked work shows once you’re connected.</Text>
-          </div>
-        ) : query.isError ? (
-          <div className={s.note} role="alert">
-            <Text tone="quiet">Couldn’t read the asked work.</Text>
-            <Button onClick={() => void query.refetch()}>Retry</Button>
-          </div>
-        ) : (
-          <div className={s.skeleton} aria-busy="true" aria-label="Loading the asked work">
-            <span />
-            <span />
-          </div>
-        )
-      ) : asks.length === 0 ? (
-        <div className={s.empty}>
-          <EmptyState title="Nothing asked yet">
-            Ask this project’s lead to get something done in another of your projects. Its message goes to that project’s lead, and the order shows here as it moves.
-          </EmptyState>
-        </div>
-      ) : (
-        <div className={s.scroll}>
-          <ul className={s.rows} aria-label="Asked work">
-            {(rows ?? []).map((r) => (
-              <AskItem key={r.ask.handle} row={r} now={now} />
-            ))}
-          </ul>
-          {query.data?.truncated === true ? (
-            <Text as="p" size="xs" tone="quiet" className={s.note}>
-              {`The newest ${String(asks.length)}.`}
-            </Text>
-          ) : null}
-        </div>
-      )}
-    </div>
+    <ul className={s.rows} aria-label="Asked work">
+      {rows.map((r) => (
+        <AskItem key={r.ask.handle} row={r} now={now} />
+      ))}
+    </ul>
   );
 }
 

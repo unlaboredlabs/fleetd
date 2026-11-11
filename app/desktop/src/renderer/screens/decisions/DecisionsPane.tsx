@@ -1,12 +1,16 @@
 // The panel's Decisions: everything settled in the project so far, by its lead or by you, one row per question with
-// the answer in force on top; what it replaced, or that you revoked it, folds under it. Search and two filters (who
-// decided, where it applies) narrow the list, a row opens to its why and history, and you can change or revoke a
-// decision there. Read through the data layer (decisions_list, refetched on the hub's decision events); nothing polls.
+// the answer in force on top; what it replaced, or that you revoked it, folds under it, and the revoked ones fold at
+// the list's end. One line narrows the list: a search with, at its end, one filter menu (who decided, where it
+// applies). A row opens to its why and history, and you can change or revoke a decision there. It opens from History's
+// first line, and the way back is on its own one line, before the search. Read through the data layer (decisions_list, refetched on the hub's decision events); nothing polls.
 import { useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, Dot, EmptyState, Input, Select, Text } from "../../ui";
+import { ChevronLeft, ListFilter } from "lucide-react";
+import { Button, Dot, Input, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text, Tooltip } from "../../ui";
+import { FoldLine, GroupLabel, ListNote, PanelEmpty, useFold } from "../panel/folds";
 import { useNow } from "../live/clock";
-import type { ProjectKey } from "../shell/routes";
+import { navigate } from "../shell/navigation";
+import { panelRoute, type ProjectKey } from "../shell/routes";
 import { DecisionItem } from "./DecisionItem";
 import { NO_FILTERS, applyFilters, filtered, liveCount, placesOf, threadsOf, type Filters, type Thread, type WhoFilter } from "./model";
 import s from "./decisions.module.css";
@@ -46,7 +50,10 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
   if (missing) {
     return (
       <div className={s.screen} data-screen="decisions.missing">
-        <EmptyState title="This project isn’t on the hub">It may have been removed.</EmptyState>
+        <div className={s.toolbar}>
+          <Back project={project} />
+        </div>
+        <PanelEmpty title="This project isn’t on the hub" />
       </div>
     );
   }
@@ -59,6 +66,13 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
           <Text size="xs">Not live: reconnecting</Text>
         </span>
       ) : null}
+      {threads !== undefined && threads.length > 0 ? (
+        <Toolbar project={project} threads={threads} filters={filters} onFilters={setFilters} />
+      ) : (
+        <div className={s.toolbar}>
+          <Back project={project} />
+        </div>
+      )}
       {threads === undefined || shown === undefined ? (
         !fresh ? (
           // Nothing held and no hub to ask: "Loading" would never finish.
@@ -74,31 +88,43 @@ export function DecisionsPane({ project }: { project: ProjectKey }) {
           <Skeleton />
         )
       ) : threads.length === 0 ? (
-        <div className={s.empty}>
-          <EmptyState title="Nothing decided yet">When you answer the lead, or it settles a question itself, the answer is kept here.</EmptyState>
-        </div>
+        <PanelEmpty title="Nothing decided yet" />
       ) : (
-        <>
-          <Toolbar threads={threads} filters={filters} onFilters={setFilters} />
-          <List
+        <List
             threads={shown}
             cut={data?.truncated === true}
             open={open}
             onToggle={(id) => setOpen((at) => (at === id ? null : id))}
             onClear={filtered(filters) ? () => setFilters(NO_FILTERS) : undefined}
             onChanged={() => void list.refetch()}
-          />
-        </>
+            fold={`${project.machineId}/${project.projectId}`}
+        />
       )}
     </div>
   );
 }
 
-function Toolbar({ threads, filters, onFilters }: { threads: readonly Thread[]; filters: Filters; onFilters: (next: Filters) => void }) {
+/** The way back to History: a chevron before the search, with its word where there is nothing to search. */
+function Back({ project, bare = false }: { project: ProjectKey; bare?: boolean }) {
+  const back = () => navigate(panelRoute(project, { tab: "activity" }));
+  return bare ? (
+    <Tooltip content="Back to History">
+      <Button variant="quiet" size="sm" iconOnly aria-label="History" icon={<ChevronLeft aria-hidden />} onClick={back} />
+    </Tooltip>
+  ) : (
+    <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={back}>
+      History
+    </Button>
+  );
+}
+
+/** The one line above the list: the way back, the search, and at its end who decided and where it applies as one filter menu. */
+function Toolbar({ project, threads, filters, onFilters }: { project: ProjectKey; threads: readonly Thread[]; filters: Filters; onFilters: (next: Filters) => void }) {
   const places = useMemo(() => placesOf(threads), [threads]);
-  const where = [{ value: "all", label: "Everywhere" }, ...places.map((p) => ({ value: p.id, label: p.label }))];
+  const narrowed = filters.who !== NO_FILTERS.who || filters.where !== NO_FILTERS.where;
   return (
     <div className={s.toolbar}>
+      <Back project={project} bare />
       <Input
         type="search"
         className={s.search}
@@ -107,10 +133,33 @@ function Toolbar({ threads, filters, onFilters }: { threads: readonly Thread[]; 
         value={filters.query}
         onChange={(e) => onFilters({ ...filters, query: e.currentTarget.value })}
       />
-      <div className={s.filters}>
-        <Select aria-label="Decided by" className={s.filter} value={filters.who} options={WHO} onValueChange={(who) => onFilters({ ...filters, who })} />
-        <Select aria-label="Applies to" className={s.filter} value={filters.where} options={where} onValueChange={(w) => onFilters({ ...filters, where: w })} />
-      </div>
+      <Menu>
+        <Tooltip content="Who decided, and where it applies">
+          <MenuTrigger asChild>
+            <Button variant={narrowed ? "secondary" : "quiet"} size="sm" iconOnly aria-label="Filter decisions" aria-pressed={narrowed}>
+              <ListFilter aria-hidden />
+            </Button>
+          </MenuTrigger>
+        </Tooltip>
+        <MenuContent align="end">
+          <MenuRadioGroup aria-label="Decided by" value={filters.who} onValueChange={(who) => onFilters({ ...filters, who: who as WhoFilter })}>
+            {WHO.map((w) => (
+              <MenuRadioItem key={w.value} value={w.value}>
+                {w.label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+          <MenuSeparator />
+          <MenuRadioGroup aria-label="Applies to" value={filters.where} onValueChange={(where) => onFilters({ ...filters, where })}>
+            <MenuRadioItem value="all">Everywhere</MenuRadioItem>
+            {places.map((p) => (
+              <MenuRadioItem key={p.id} value={p.id}>
+                {p.label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuContent>
+      </Menu>
     </div>
   );
 }
@@ -124,11 +173,16 @@ interface ListProps {
   /** Present while a search or filter narrows the list. */
   readonly onClear: (() => void) | undefined;
   readonly onChanged: () => void;
+  /** The project, for what its list keeps unfolded. */
+  readonly fold: string;
 }
 
-function List({ threads, cut, open, onToggle, onClear, onChanged }: ListProps) {
+function List({ threads, cut, open, onToggle, onClear, onChanged, fold }: ListProps) {
   // "14:02" turns into "Mon 14:02" as days pass: a minute's step is enough.
   const nowMs = useNow(true, 60_000);
+  // Revoked ones fold away, and open by themselves while a search or filter narrows the list or nothing is in force.
+  const [unfolded, toggleRevoked] = useFold(`decisions:${fold}:revoked`);
+  const revokedOpen = unfolded || onClear !== undefined || threads.every((t) => !t.live);
   if (threads.length === 0) {
     return (
       <div className={s.paneNote}>
@@ -143,35 +197,28 @@ function List({ threads, cut, open, onToggle, onClear, onChanged }: ListProps) {
   }
   const live = threads.filter((t) => t.live);
   const revoked = threads.filter((t) => !t.live);
-  const group = (label: string, items: readonly Thread[]) =>
-    items.length === 0 ? null : (
-      <section className={s.section} aria-label={label}>
-        <div className={s.group}>
-          <Text size="xs" tone="quiet" strong>
-            {label}
-          </Text>
-          <Text size="xs" tone="quiet" tabular>
-            {items.length}
-          </Text>
-        </div>
-        <ul className={s.rows}>
-          {items.map((t) => (
-            <DecisionItem key={t.id} thread={t} expanded={open === t.id} onToggle={() => onToggle(t.id)} nowMs={nowMs} onChanged={onChanged} />
-          ))}
-        </ul>
-      </section>
-    );
+  const rows = (items: readonly Thread[]) => (
+    <ul className={s.rows}>
+      {items.map((t) => (
+        <DecisionItem key={t.id} thread={t} expanded={open === t.id} onToggle={() => onToggle(t.id)} nowMs={nowMs} onChanged={onChanged} />
+      ))}
+    </ul>
+  );
   return (
     <div className={s.listScroll}>
-      {group("In force", live)}
-      {group("Revoked", revoked)}
-      {cut ? (
-        <div className={s.group}>
-          <Text size="xs" tone="quiet">
-            Only the most recent decisions are here.
-          </Text>
-        </div>
-      ) : null}
+      {live.length === 0 ? null : (
+        <section aria-label="In force">
+          <GroupLabel label="In force" count={live.length} />
+          {rows(live)}
+        </section>
+      )}
+      {revoked.length === 0 ? null : (
+        <section aria-label="Revoked">
+          <FoldLine label="Revoked" count={revoked.length} open={revokedOpen} onToggle={toggleRevoked} />
+          {revokedOpen ? rows(revoked) : null}
+        </section>
+      )}
+      {cut ? <ListNote>Only the most recent decisions are here.</ListNote> : null}
     </div>
   );
 }

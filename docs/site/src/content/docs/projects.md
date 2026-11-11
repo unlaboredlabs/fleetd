@@ -651,7 +651,7 @@ notice says so: its link stays listed there until someone revokes it, but nothin
 
 ## Asked {#asked}
 
-**Asked**, beside **To-do** under Plan in the panel beside the chat, lists the work this project's lead asked your
+**Asked of other projects**, under the to-do list in the panel's Plan tab beside the chat, lists the work this project's lead asked your
 other projects for (`project_message`), newest first: one row each, with the ask in a line, its state (*Waiting* for
 an order, *Working*, *Merged*, *Done* or *Stopped*), the project and how long ago. A follow-up its lead took into the
 order of an earlier ask says *Folded into an earlier ask*. Click a row for the whole message and the orders opened for
@@ -753,7 +753,7 @@ lead plans to them.
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
 | Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | The machine's page in Settings › Hub › Machines → Max agents; "Use auto" goes back. Owners and admins only. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap: it follows a change to it at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Projects → Agents. Once set it is the project's own, which no machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap: it follows a change to it at once | Settings → Projects → Agents: the gear at the end of the panel's row opens the project's settings, and **Max agents** in the command palette its slider. Once set it is the project's own, which no machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
 | Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Only from a terminal or an MCP client, with an admin key (below); the app has no slider for it. A fleet cap saved before stays until you change it, and while it holds the machines below their total, Settings › Hub › Machines says so. |
 
 New agents on a machine also wait for disk: 5 GB each above the free-space floor (`minFreeGb`), with agents started
@@ -774,7 +774,7 @@ applies when you let go, with Undo.
 Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
-![Settings › Projects › Agents, opened from "max 12" in storefront's Agents tab: Max agents per project, with storefront set to 12 ("Set for this project. The default is 16.", Use the default, "6 agents running now"), billing at 3 with 3 running and 2 queued, and checkout following the hub's fleet cap of 16.](/docs/img/max-agents.png)
+![Settings › Projects › Agents: Max agents per project, with storefront set to 12 ("Set for this project. The default is 16.", Use the default, "6 agents running now"), billing at 3 with 3 running and 2 queued, and checkout following the hub's fleet cap of 16.](/docs/img/max-agents.png)
 
 From a terminal:
 

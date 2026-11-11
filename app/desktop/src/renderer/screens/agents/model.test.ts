@@ -4,17 +4,15 @@ import type { LiveAgent } from "../../src/data/selectors";
 import {
   actionLine,
   agentState,
-  allAgents,
+  agentDetail,
   alsoOnRepo,
   elsewhere,
-  headline,
   landedHow,
   nextExpiry,
-  onItsPr,
+  otherProjects,
   projectAgents,
   projectGroups,
   STATE_WORD,
-  tally,
   workPlace,
   type GroupLine,
   type WorkListAnswer,
@@ -64,31 +62,12 @@ describe("the agents list", () => {
     expect(words(projectGroups([agent("api", "T1", "working", "W9"), loose], "devbox/api"))).toEqual(["T1", "T2"]);
   });
 
-  it("lists every project's agents under its name and then its orders, the projects with one waiting on you first, without the leads", () => {
+  it("lists the other projects' agents under their names, the projects with one waiting on you first, without the leads or its own", () => {
     const lead: LiveAgent = { ...agent("web", "lead:devbox/web"), row: { ...agent("web", "lead:devbox/web").row, role: "lead" } };
-    const list = allAgents([agent("api", "T1"), agent("ops", "T5"), agent("ops", "T6", "waiting", "W7"), lead, agent("web", "T2"), agent("web", "T3", "waiting")], (id) => id);
-    expect(words(list)).toEqual(["[ops]", "[W7]", "T6", "[W1]", "T5", "[web]", "[W1]", "T3", "T2", "[api]", "[W1]", "T1"]);
+    const list = otherProjects([agent("api", "T1"), agent("ops", "T5"), agent("ops", "T6", "waiting", "W7"), lead, agent("web", "T2"), agent("web", "T3", "waiting"), agent("docs", "T9")], "devbox/api");
+    expect(words(list)).toEqual(["[ops]", "T6", "T5", "[web]", "T3", "T2", "[docs]", "T9"]);
     expect(list[0]).toEqual({ group: "project:devbox/ops", title: "ops", level: "project", count: 2, waiting: 1 });
-    // Group keys stay unique across projects that share a workstream id.
-    const keys = list.filter((a): a is GroupLine => "group" in a).map((a) => a.group);
-    expect(new Set(keys).size).toBe(keys.length);
-    expect(allAgents([lead])).toEqual([]);
-  });
-
-  it("heads the view with what works, what waits on you and what is queued", () => {
-    expect(headline([agent("api", "T1"), agent("api", "T2", "starting"), agent("api", "T3", "waiting"), agent("web", "T4", "queued")])).toBe(
-      "2 working · 1 needs you · 1 queued",
-    );
-    expect(headline([agent("api", "T1", "waiting")])).toBe("1 needs you");
-    const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
-    expect(headline([lead, agent("api", "T1", "stalled"), agent("api", "T2")])).toBe("2 working");
-    expect(headline([])).toBe("");
-    // As the dots count: stalled works, parked and idle wait their turn.
-    expect(tally([agent("api", "T1"), agent("api", "T2", "waiting"), agent("api", "T3", "parked"), agent("api", "T4", "idle"), agent("api", "T5", "stalled")])).toEqual({
-      working: 2,
-      waiting: 1,
-      queued: 2,
-    });
+    expect(otherProjects([lead, agent("api", "T1")], "devbox/api")).toEqual([]);
   });
 });
 
@@ -124,19 +103,11 @@ describe("an agent's state and where its work is", () => {
     expect(workPlace({})).toBeUndefined();
   });
 
-  it("knows when the window is on the agent's own PR, by number alone or with its repo", () => {
-    const pr = { changeId: "X1", number: 212, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/212", state: "ci" } as const;
-    const row = { projectRef: { machineId: "devbox", projectId: "api" }, pr };
-    const on = (repo: string | null, number: number, projectId = "api") =>
-      onItsPr({ id: "project", project: { machineId: "devbox", projectId }, message: null, panel: { tab: "prs", pr: { repo, number } } }, row);
-    expect(on("acme/shop", 212)).toBe(true);
-    expect(on(null, 212)).toBe(true);
-    expect(on("acme/other", 212)).toBe(false);
-    expect(on("acme/shop", 7)).toBe(false);
-    expect(on("acme/shop", 212, "web")).toBe(false);
-    expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "agents", agent: null } }, row)).toBe(false);
-    expect(onItsPr({ id: "home" }, row)).toBe(false);
-    expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "prs", pr: { repo: null, number: 212 } } }, { projectRef: row.projectRef })).toBe(false);
+  it("says in a row's hover its role, an unusual profile and where its work is", () => {
+    const pr = { changeId: "X1", number: 57, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/57", state: "ci" } as const;
+    expect(agentDetail({ role: "reviewer", pr }, "reviewer")).toBe("reviewer · #57 in CI");
+    expect(agentDetail({ role: "implementer", profile: "medium", branch: "fleetd/T1-receipt-dates" }, "writer")).toBe("writer · medium · receipt-dates");
+    expect(agentDetail({ role: "reader" }, "reader")).toBe("reader");
   });
 });
 

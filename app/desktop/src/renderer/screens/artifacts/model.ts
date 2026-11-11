@@ -1,4 +1,4 @@
-// A chat's Artifacts (W367, D292), kept pure: a format's word, the lines under a row, a file and a version, the version a route
+// A chat's Artifacts (W367, D292), kept pure: a format's word, a row's and a file's hover, an artifact's line, a version's, the version a route
 // opens, and the chat text's artifact links (`[Title](artifact:<name>)`, `artifact:<name>@<version>`) as routes to
 // the panel's tab.
 import type { ArtifactFormat, ArtifactVersion, ChatFile } from "../../../shared/contracts";
@@ -13,8 +13,11 @@ export const formatWord = (f: ArtifactFormat): string => (f === "md" ? "Markdown
 export const metaLine = (v: ArtifactVersion, now: number): string =>
   [v.by, when(v.at, now), ...(v.version > 1 ? [`version ${String(v.version)}`] : [])].join(" · ");
 
-/** A file's line under its name: its kind, size and when it was sent. */
-export const fileLine = (f: ChatFile, now: number): string => [kindOf(f.mime), fmtBytes(f.bytes), when(f.at, now)].join(" · ");
+/** A row's hover: its format, who published it, and which version, once there is more than one. */
+export const rowDetail = (v: ArtifactVersion): string => [formatWord(v.format), v.by, ...(v.version > 1 ? [`version ${String(v.version)}`] : [])].join(" · ");
+
+/** A file's hover: its kind and size. */
+export const fileDetail = (f: ChatFile): string => [kindOf(f.mime), fmtBytes(f.bytes)].join(" · ");
 
 /** A version in its picker: "Version 2 · Lead · 3h ago", the newest one so marked. */
 export const versionLabel = (v: ArtifactVersion, newest: number, now: number): string =>

@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
-import { describe, groups, hubWideFor, inFeed, layout, linesOf, toggled, typesFor, type ActivityKind, type Row } from "./model";
+import { describe, groups, hubWideFor, inFeed, layout, linesOf, typesFor, type ActivityKind, type Row } from "./model";
 
 const project = { machineId: "devbox", projectId: "storefront" } as const;
 const NOW = Date.parse("2026-10-19T15:00:00.000Z");
@@ -262,16 +262,5 @@ group("agents' DMs", () => {
     expect(lines[1]).toMatchObject({ icon: "noWake", strong: true, text: "T2584 didn’t wake T2567", detail: "T2567 has finished and isn’t waiting on T2584" });
     expect(lines[1]?.run).toBeUndefined();
     expect(shape(layout(lines, { nowMs: NOW, timeZone: TZ }))).toEqual(["day:Today", "line:T2584 → T2567", "line:T2584 didn’t wake T2567", "line:T2584 → T2567"]);
-  });
-
-  it("shows DMs alone: choosing it leaves the other kinds, and another kind leaves it", () => {
-    const some = toggled(new Set<ActivityKind>(["agents", "merges"]), "dms");
-    expect([...some]).toEqual(["dms"]);
-    expect([...toggled(some, "reviews")]).toEqual(["reviews"]);
-    expect(toggled(some, "dms").size).toBe(0);
-    expect(toggled(some, null).size).toBe(0);
-    // Every kind but DMs chosen is All.
-    const most = new Set<ActivityKind>(["agents", "reviews", "merges"]);
-    expect(toggled(toggled(most, "asks"), "other").size).toBe(0);
   });
 });

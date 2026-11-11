@@ -1,60 +1,73 @@
-// The PR list's model: which rows a filter keeps, in what order and under which headings, what a row says under its
-// title, and what an empty filter says instead. No React here, so the tests read it directly.
+// The Shipping list's model: the project's pull requests in one list, in what order and under which labels, with what
+// merges now among them, and what a row says under its title. No React here, so the tests read it directly.
 import type { PrRow } from "../../../shared/contracts";
-import { checksShort, isOpen, placeWord, reviewsWord, stateLine, type StateLine, type Tone } from "./words";
-
-export type PrFilter = "open" | "merged" | "all";
-
-export const PR_FILTERS: readonly { readonly value: PrFilter; readonly label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "merged", label: "Merged" },
-  { value: "all", label: "All" },
-];
-
-export const inFilter = (row: Pick<PrRow, "state">, filter: PrFilter): boolean =>
-  filter === "all" || (filter === "open" ? isOpen(row) : row.state === "merged");
-
-export const filterCounts = (rows: readonly Pick<PrRow, "state">[]): Readonly<Record<PrFilter, number>> => ({
-  open: rows.filter(isOpen).length,
-  merged: rows.filter((r) => r.state === "merged").length,
-  all: rows.length,
-});
+import type { Moving } from "../train/model";
+import { checksShort, isOpen, reviewsWord, stateLine, type StateLine, type Tone } from "./words";
 
 export type Item =
   | { readonly kind: "group"; readonly label: string; readonly count: number }
+  /** What merges now on one repo's train: a card, not a row. `repo` names it when the project has more than one. */
+  | { readonly kind: "moving"; readonly moving: Moving; readonly repo?: string }
   | { readonly kind: "pr"; readonly row: PrRow }
-  | { readonly kind: "cut"; readonly count: number };
+  /** The merged and closed ones, folded under their count until opened. */
+  | { readonly kind: "fold"; readonly label: string; readonly count: number }
+  | { readonly kind: "note"; readonly text: string }
+  | { readonly kind: "cut" };
 
-/** Where an open PR stands, for its group: it needs a look (failed, or changes asked for), the train has it, or neither. */
+/** The train's prefix on a hold it keeps a ready PR under (the `hold` label, a base rule): it waits for a person. */
+const HELD = "held: ";
+const held = (row: PrRow): boolean => row.queue?.state === "ready" && row.queue.reason?.startsWith(HELD) === true;
+
+/** Why the train holds a PR or sent it back, as a person reads it: without the "held: " tag or markdown code marks. */
+const whyOf = (row: PrRow): string | undefined => {
+  const said = row.queue?.reason?.trim().replaceAll(/`([^`]*)`/gu, "$1");
+  if (said === undefined || said === "") return undefined;
+  return said.startsWith(HELD) ? said.slice(HELD.length) : said;
+};
+
+/** Where an open PR stands, for its group: it needs a look (failed, held, or changes asked for), the train has it, or neither. */
 export const openGroup = (row: PrRow): "look" | "train" | "open" => {
   const meta = rowMeta(row);
-  if (meta.state.tone === "failed" || meta.checks?.tone === "failed" || meta.review?.tone === "failed") return "look";
+  if (held(row) || meta.state.tone === "failed" || meta.checks?.tone === "failed" || meta.review?.tone === "failed") return "look";
   return row.queue !== undefined ? "train" : "open";
 };
 
-const OPEN_GROUPS = [
-  ["look", "Needs a look"],
-  ["train", "On the merge train"],
-  ["open", "Open"],
-] as const;
+const keyOf = (pr: { readonly repo: string; readonly number: number }): string => `${pr.repo.toLowerCase()}#${pr.number}`;
+const byPlace = (a: PrRow, b: PrRow): number => (a.queue?.position ?? Number.MAX_SAFE_INTEGER) - (b.queue?.position ?? Number.MAX_SAFE_INTEGER);
+
+export interface ListOptions {
+  /** What merges now, one per repo with something moving (train/model): each shows as a card, its PRs not as rows. */
+  readonly moving?: readonly { readonly repo: string; readonly moving: Moving }[];
+  /** The merged and closed ones are unfolded. */
+  readonly rest?: boolean;
+  /** The hub sent only these: a Load more, last. */
+  readonly cut?: boolean;
+}
 
 /**
- * The rows a filter keeps, in the hub's order within a group. Open PRs by where they stand: those that need a look
- * first, then those on the merge train, then the rest (drafts too); one group needs no heading. All adds the merged and
- * closed ones after, under their own. `cut`: the hub sent only these, said last.
+ * The whole list, top to bottom in the order someone acts on it: the PRs that need a look, what merges now, the line
+ * behind it in the train's order, the other open ones (drafts too), then the merged and closed ones folded under their
+ * count. Each group under its label, in the hub's order unless said. Nothing at all is an empty list.
  */
-export const listItems = (rows: readonly PrRow[], filter: PrFilter = "all", cut = false): Item[] => {
-  const tail = cut ? [{ kind: "cut" as const, count: rows.length }] : [];
-  const kept = rows.filter((r) => inFilter(r, filter));
-  if (kept.length === 0) return [];
-  const prs = (list: readonly PrRow[]) => list.map((row) => ({ kind: "pr" as const, row }));
-  const open = kept.filter(isOpen);
-  const rest = kept.filter((r) => !isOpen(r));
-  const groups = OPEN_GROUPS.map(([id, label]) => ({ label, rows: open.filter((r) => openGroup(r) === id) })).filter((g) => g.rows.length > 0);
-  const headed = groups.length > 1 || (filter === "all" && rest.length > 0);
-  const openItems = groups.flatMap((g) => [...(headed ? [{ kind: "group" as const, label: g.label, count: g.rows.length }] : []), ...prs(g.rows)]);
-  if (filter !== "all") return [...(filter === "open" ? openItems : prs(kept)), ...tail];
-  return [...openItems, ...(rest.length > 0 ? [{ kind: "group" as const, label: "Merged or closed", count: rest.length }, ...prs(rest)] : []), ...tail];
+export const listItems = (rows: readonly PrRow[], { moving = [], rest = false, cut = false }: ListOptions = {}): Item[] => {
+  if (rows.length === 0 && moving.length === 0) return [];
+  const inCard = new Set(moving.flatMap((m) => m.moving.prs.map(keyOf)));
+  const open = rows.filter((r) => isOpen(r) && !inCard.has(keyOf(r)));
+  const done = rows.filter((r) => !isOpen(r));
+  const of = (id: ReturnType<typeof openGroup>) => open.filter((r) => openGroup(r) === id);
+  const group = (label: string, list: readonly PrRow[]): Item[] =>
+    list.length === 0 ? [] : [{ kind: "group", label, count: list.length }, ...list.map((row): Item => ({ kind: "pr", row }))];
+  const cards = moving.map((m): Item => ({ kind: "moving", moving: m.moving, ...(moving.length > 1 ? { repo: m.repo } : {}) }));
+  return [
+    ...group("Needs a look", of("look")),
+    ...(cards.length === 0 ? [] : [{ kind: "group" as const, label: "Merging now", count: 0 }, ...cards]),
+    ...group("In line", of("train").toSorted(byPlace)),
+    ...group("Open", of("open")),
+    ...(open.length === 0 && cards.length === 0 ? [{ kind: "note" as const, text: "Nothing open." }] : []),
+    ...(done.length === 0 ? [] : [{ kind: "fold" as const, label: done.some((r) => r.state !== "merged") ? "Merged and closed" : "Merged", count: done.length }]),
+    ...(rest ? done.map((row): Item => ({ kind: "pr", row })) : []),
+    ...(cut ? [{ kind: "cut" as const }] : []),
+  ];
 };
 
 export interface Hint {
@@ -64,11 +77,11 @@ export interface Hint {
 
 /** What a row says under its title, each part quiet unless it failed. */
 export interface RowMeta {
-  /** "storefront#11": the repo's own name; the project names its owner. */
+  /** "storefront#11": the repo's own name; the project names its owner. The row's hover says it, not the row. */
   readonly ref: string;
+  /** Why the train holds it or sent it back, for the hover too: the conflict, the failing checks, the hold. */
+  readonly why: string | undefined;
   readonly state: StateLine;
-  /** Its place in line to merge. */
-  readonly place: string | undefined;
   readonly checks: Hint | undefined;
   readonly review: Hint | undefined;
 }
@@ -76,28 +89,15 @@ export interface RowMeta {
 export const rowMeta = (row: PrRow): RowMeta => {
   const open = isOpen(row);
   // The state word already says the checks failed or are running for the merge; a closed PR's checks don't matter.
+  const review = reviewsWord(row.review);
   const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
   return {
     ref: `${row.repo.slice(row.repo.lastIndexOf("/") + 1)}#${row.number}`,
-    state: stateLine(row),
-    place: open ? placeWord(row.queue) : undefined,
+    why: open ? whyOf(row) : undefined,
+    // A held PR is ready, and waits for a person rather than its turn: it says so.
+    state: held(row) ? { word: "held", sentence: "Held until someone lets it merge.", tone: "needs-you" } : stateLine(row),
     checks: row.checks === undefined || checksSaid || !open ? undefined : checksShort(row.checks),
-    review: open ? reviewsWord(row.review) : undefined,
+    // On the train, its state word already says it passed review.
+    review: !open || (row.queue !== undefined && review?.tone === "done") ? undefined : review,
   };
-};
-
-/** What a filter with nothing in it says, and the filter it offers instead. */
-export const emptyWords = (
-  filter: PrFilter,
-  counts: Readonly<Record<PrFilter, number>>,
-): { readonly title: string; readonly body: string; readonly offer: { readonly filter: PrFilter; readonly label: string } | undefined } => {
-  if (counts.all === 0) return { title: "No pull requests yet", body: "Open PRs show here, and those merged or closed.", offer: undefined };
-  if (filter === "open") {
-    return counts.merged > 0
-      ? { title: "Nothing open", body: `${counts.merged} merged.`, offer: { filter: "merged", label: "Show merged" } }
-      : { title: "Nothing open", body: "Nothing merged either.", offer: { filter: "all", label: "Show all" } };
-  }
-  return counts.open > 0
-    ? { title: "Nothing merged", body: "Nothing merged yet.", offer: { filter: "open", label: "Show open" } }
-    : { title: "Nothing merged", body: "Nothing merged yet.", offer: { filter: "all", label: "Show all" } };
 };

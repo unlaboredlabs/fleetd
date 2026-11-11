@@ -10,79 +10,14 @@
   min-height: 0;
 }
 
-/* Whose agents, then what works and what waits (or that the list isn't live), above the rows. */
-.top {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-3) var(--space-1);
-}
-
-/* This project or All projects, as one segmented control. */
-.scope {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 2px;
-  border-radius: var(--radius-md);
-  background: var(--hover);
-}
-/* Compact, as every segmented control in the panel (DESIGN.md). */
-.scopeOption {
-  height: 22px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: 22px;
-  transition: color var(--dur-quick) var(--ease-snap);
-}
-.scopeOption:hover {
-  color: var(--text);
-}
-.scopeOption[aria-pressed="true"] {
-  background: var(--raised);
-  color: var(--text);
-  font-weight: 500;
-  box-shadow: 0 0 0 1px var(--hairline);
-}
-
+/* That the list isn't live, or couldn't be read: the one line that may stand above the rows. */
 .liveness {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--row);
-}
-
-.counts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-  min-height: var(--row);
-}
-.count {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1-5);
-}
-.countWaiting {
-  color: var(--warning);
-}
-/* Max agents beside the count: quiet until pointed at, a link to its slider. */
-.max {
-  color: inherit;
-  text-decoration: none;
-}
-.max:hover {
-  color: var(--accent);
-  text-decoration: underline;
+  padding: var(--space-1) var(--space-4) 0;
 }
 
 .list {
@@ -94,27 +29,9 @@
   padding: 0 var(--space-2);
 }
 
-/* An order's title above its agents; a project's name above its orders in All projects, a step louder. */
-.group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-3) var(--space-2) var(--space-1);
-}
-.projectGroup {
-  margin-top: var(--space-2);
-  padding-bottom: 0;
-  border-top: 1px solid var(--hairline);
-}
-.groupTitle {
-  flex: 1;
-  display: flex;
-  min-width: 0;
-}
-
-/* One agent: its glyph in a gutter, title and role; under them what it is doing now and where its work is. Rows
-   stand a step apart; one that has ended (done, failed, paused) steps back a shade so the live ones lead. */
+/* One agent: its glyph in a gutter and its title; under it what it is doing now. Its role and where its work is are
+   in its hover. Rows stand a step apart; one that has ended (done, failed, paused) steps back a shade so the live
+   ones lead. */
 .row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
@@ -343,9 +260,6 @@
 }
 
 /* Elsewhere: work on the repo that isn't this project's, laid out as an agent's row but not a link. */
-.none {
-  padding: var(--space-3) var(--space-2) 0;
-}
 .other:hover {
   background: none;
 }
@@ -385,33 +299,6 @@
   }
 }
 
-/* Also on this repo: a fold, shut until asked; its chevron turns as it opens. */
-.fold {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  width: 100%;
-  margin-top: var(--space-3);
-  padding: var(--space-1-5) var(--space-2);
-  border: none;
-  border-top: 1px solid var(--hairline);
-  border-radius: 0;
-  background: none;
-  text-align: left;
-}
-.fold:hover {
-  background: var(--hover);
-}
-.foldIcon {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  color: var(--faint);
-  transition: transform var(--dur-quick) var(--ease-snap);
-}
-.fold[aria-expanded="true"] .foldIcon {
-  transform: rotate(90deg);
-}
 .otherMark {
   width: 7px;
   height: 7px;

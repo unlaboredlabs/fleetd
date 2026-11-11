@@ -1,9 +1,10 @@
-// The panel's tabs, in the order its tab bar shows them: the one list the bar, the routes (`/<tab>` after a project),
-// the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
-// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions, Pull requests,
-// Skills and Artifacts also name an item in their routes (one agent's work, one session, one PR, one skill, one
-// artifact); every other tab's view is `{ tab }`. Skills is only its one skill, with no tab or Go to command: the
-// list is in the project's settings.
+// The panel's views, each with its route (`/<id>` after a project): the one list the routes, the palette's Go to
+// commands and the remembered view all read. The panel's row has fewer tabs than this (Sections.tsx): a tab is one
+// list, and several of these land in it, so no tab has tabs of its own. Screens is the Agents tab's Screens group,
+// Train the head of Shipping's list, Asked work the foot of Plan's, and Decisions opens from History's first row.
+// Agents, Sessions, Pull requests, Skills and Artifacts also name an item in their routes (one agent's work, one
+// session, one PR, one skill, one artifact); every other view is `{ tab }`. Skills is only its one skill, with no tab
+// or Go to command: the list is in the project's settings.
 import { Activity, AppWindow, BookOpen, Bot, FileText, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
@@ -15,7 +16,7 @@ export interface PaneProps {
   readonly onWide: (wide: boolean) => void;
 }
 
-/** A tab's badge: renders null until it knows a number worth showing. */
+/** A tab's badge, on the row: renders null until it knows a number worth showing. */
 export interface CountProps {
   readonly project: ProjectKey;
   /** Its tab is on view, so a count may read what only its pane would. */
@@ -29,9 +30,8 @@ export interface PanelTabEntry {
   /** The palette's line under its Go to command. */
   readonly detail: string;
   readonly keywords: readonly string[];
-  /** Back's words above one of its items, for a tab whose route names items. */
+  /** Back's words above one of its items, for a view whose route names items. A PR and the decisions have their own, on their top line. */
   readonly back?: string;
-  readonly pane: () => Promise<ComponentType<PaneProps>>;
   readonly count?: () => Promise<ComponentType<CountProps>>;
   /** The hub feature it needs (its ready frame's `features`): a hub that doesn't serve it shows no such tab. */
   readonly feature?: string;
@@ -47,7 +47,6 @@ export const PANEL_TABS = [
     detail: "This project’s agents at work",
     keywords: ["live", "work", "running"],
     back: "All agents",
-    pane: () => import("./panes").then((m) => m.AgentsTab),
     count: () => import("./panes").then((m) => m.AgentCount),
   },
   {
@@ -57,8 +56,6 @@ export const PANEL_TABS = [
     detail: "The browsers and devices this project’s agents use: watch live, take over, replay",
     keywords: ["screen", "browser", "session", "device", "desktop", "chrome", "takeover", "take over", "replay", "recording", "web"],
     back: "All screens",
-    pane: () => import("./panes").then((m) => m.SessionsTab),
-    count: () => import("./panes").then((m) => m.SessionCount),
     feature: "browser_sessions",
   },
   {
@@ -67,8 +64,6 @@ export const PANEL_TABS = [
     icon: GitPullRequest,
     detail: "This project’s PRs: checks, reviews and changes",
     keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
-    back: "All pull requests",
-    pane: () => import("./panes").then((m) => m.PrsTab),
     count: () => import("./panes").then((m) => m.PrCount),
   },
   {
@@ -77,8 +72,6 @@ export const PANEL_TABS = [
     icon: TrainFront,
     detail: "This project’s merge train: what merges now, what waits, what landed",
     keywords: ["merge", "queue", "merging", "ci", "batch", "landed"],
-    pane: () => import("../train/TrainPane").then((m) => m.TrainPane),
-    count: () => import("../train/TrainPane").then((m) => m.TrainCount),
   },
   {
     id: "checklist",
@@ -86,7 +79,6 @@ export const PANEL_TABS = [
     icon: ListChecks,
     detail: "The lead’s to-do list for this project",
     keywords: ["todo", "to-do", "tasks", "progress", "plan", "list"],
-    pane: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistPane),
     count: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistCount),
   },
   {
@@ -96,7 +88,6 @@ export const PANEL_TABS = [
     detail: "Reports the lead and its agents published in this chat, every version kept",
     keywords: ["report", "reports", "artifact", "document", "page", "html", "markdown", "published", "versions"],
     back: "All artifacts",
-    pane: () => import("./panes").then((m) => m.ArtifactsTab),
     feature: "artifacts",
   },
   {
@@ -105,7 +96,6 @@ export const PANEL_TABS = [
     icon: Activity,
     detail: "What happened in this project while you were away",
     keywords: ["events", "feed", "history", "log", "recent", "away"],
-    pane: () => import("../activity").then((m) => m.ActivityPane),
     count: () => import("./counts").then((m) => m.ActivityCount),
   },
   {
@@ -114,8 +104,6 @@ export const PANEL_TABS = [
     icon: Scale,
     detail: "What the lead and you decided in this project",
     keywords: ["decided", "choices", "settled", "why", "revoke"],
-    pane: () => import("../decisions/DecisionsPane").then((m) => m.DecisionsPane),
-    count: () => import("./counts").then((m) => m.DecisionCount),
   },
   {
     id: "asked",
@@ -123,7 +111,6 @@ export const PANEL_TABS = [
     icon: Send,
     detail: "The work this project’s lead asked your other projects for, and how each order is going",
     keywords: ["asked", "orders", "requests", "delegated", "factory"],
-    pane: () => import("../asked/AskedPane").then((m) => m.AskedPane),
   },
   {
     id: "skills",
@@ -132,7 +119,6 @@ export const PANEL_TABS = [
     detail: "What this project’s lead has learned to do, with every change: who, when and why",
     keywords: ["skill", "skills", "learned", "how", "workflow", "history", "versions"],
     back: "All skills",
-    pane: () => import("./panes").then((m) => m.SkillsTab),
     itemOnly: true,
   },
 ] as const satisfies readonly PanelTabEntry[];

@@ -8,6 +8,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
+import { forgetFolds } from "../panel/folds";
 import { DecisionsPane } from "./DecisionsPane";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +43,7 @@ const LIST: DecisionsListOutput = { decisions: [provider, health, before], order
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  forgetFolds();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -109,10 +111,43 @@ describe("the Decisions pane", () => {
     const rows = [...host.querySelectorAll("[data-decision]")];
     expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining("adyen"), expect.stringContaining("/healthz")]);
     expect(rows[0]?.textContent).toContain("Payments provider");
-    expect(rows[0]?.textContent).toContain("You · Checkout v2 · 1 earlier");
     expect(rows[1]?.textContent).toContain("API health path");
-    expect(rows[1]?.textContent).toContain("Lead · Whole project");
+    // Who decided, where it applies and how many came before are a row's hover, not a line under it.
+    expect(host.textContent).not.toMatch(/Checkout v2|Whole project|earlier/u);
+    act(() => rows[0]?.querySelector("button")?.focus());
+    expect(document.querySelector("[role='tooltip']")?.textContent).toBe("You · Checkout v2 · 1 earlier");
+    act(() => rows[1]?.querySelector("button")?.focus());
+    expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Lead · Whole project");
     expect(host.textContent).not.toMatch(/\b[DW]\d+\b/u);
+  });
+
+  it("has one line above the list: the way back to History, the search, and one filter; no selects and no tabs", async () => {
+    await mount(() => ({ ok: true, output: LIST }));
+    const toolbar = host.querySelector("[data-screen] > div");
+    expect([...(toolbar?.querySelectorAll("button, input") ?? [])].map((c) => c.getAttribute("aria-label"))).toEqual(["History", "Search decisions", "Filter decisions"]);
+    expect(host.querySelector("select, [role='tablist'], [role='tab'], [role='combobox']")).toBeNull();
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["In force2"]);
+    // The filter is who decided and where it applies, in one menu.
+    act(() => void host.querySelector("[aria-label='Filter decisions']")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    const choices = [...document.querySelectorAll<HTMLElement>("[role='menuitemradio']")];
+    expect(choices.map((i) => i.textContent)).toEqual(["Anyone", "The lead", "You", "Everywhere", "Whole project", "Checkout v2"]);
+    act(() => choices[2]?.click());
+    await settle();
+    expect([...host.querySelectorAll("[data-decision]")].map((r) => r.textContent)).toEqual([expect.stringContaining("adyen")]);
+    expect(host.querySelector("[aria-label='Filter decisions']")?.getAttribute("aria-pressed")).toBe("true");
+
+    window.location.hash = "";
+    act(() => host.querySelector<HTMLButtonElement>("[aria-label='History']")?.click());
+    expect(window.location.hash).toBe("#/project/devbox/storefront/activity");
+  });
+
+  it("folds the revoked ones under their count at the list's end", async () => {
+    const gone: Decision = { ...health, decisionId: "D9", key: "api.port", value: "8080", state: "retired", retired: { by: "human:desk", at: "2026-10-19T11:00:00.000Z", why: "moved" } };
+    await mount(() => ({ ok: true, output: { ...LIST, decisions: [...LIST.decisions, gone] } }));
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["In force2", "Revoked1"]);
+    expect(host.querySelectorAll("[data-decision='revoked']")).toHaveLength(0);
+    act(() => button(/^Revoked/u).click());
+    expect([...host.querySelectorAll("[data-decision='revoked']")].map((r) => r.textContent)).toEqual([expect.stringContaining("8080")]);
   });
 
   it("opens a row to its why and what it replaced", async () => {
@@ -186,7 +221,8 @@ describe("the Decisions pane", () => {
 
   it("has an empty state, an error with Retry, and a loading state", async () => {
     await mount(() => ({ ok: true, output: { decisions: [], orders: [] } }));
-    expect(host.textContent).toContain("Nothing decided yet");
+    // The way back, by its word where there is nothing to search, and one short line.
+    expect(host.textContent).toBe("HistoryNothing decided yet");
     act(() => root.unmount());
     root = createRoot(host);
     await mount(() => ({ ok: false, error: { code: "invalid", message: "no" } }));
