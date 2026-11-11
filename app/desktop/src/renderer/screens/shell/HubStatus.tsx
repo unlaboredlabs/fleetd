@@ -36,15 +36,32 @@ const pair = (hash: string): void => {
 const Mark = ({ mark }: { mark: LineMark }) =>
   mark === "update" ? <ArrowUp aria-hidden /> : mark === "ring" ? <span className={h.ring} aria-hidden /> : <Dot color={TONE[mark]} />;
 
+/** A row's words. A hub's or machine's `name` in them is the one part cut short when the row is too narrow (a label runs to 40 characters), whole on hover; what is wrong always shows. */
+function Words({ children, name }: { children: string; name: string | undefined }) {
+  const at = name === undefined || name === "" ? -1 : children.indexOf(name);
+  if (name === undefined || at < 0) return <span className={h.words}>{children}</span>;
+  const before = children.slice(0, at);
+  const after = children.slice(at + name.length);
+  return (
+    <span className={h.named}>
+      {before === "" ? null : <span className={h.part}>{before}</span>}
+      <span className={h.name} title={name}>
+        {name}
+      </span>
+      {after === "" ? null : <span className={h.part}>{after}</span>}
+    </span>
+  );
+}
+
 /**
  * One row of the menu: a mark under your picture, words in the name's column, and at its end what a click does (or
  * a quiet word). A button when there is something to do, plain text when not.
  */
-export function MenuRow({ mark, end, onClick, children, ...rest }: { mark: ReactNode; end?: ReactNode; onClick?: (() => void) | undefined; children: string } & Record<`data-${string}`, string | undefined>) {
+export function MenuRow({ mark, end, onClick, name, children, ...rest }: { mark: ReactNode; end?: ReactNode; onClick?: (() => void) | undefined; name?: string | undefined; children: string } & Record<`data-${string}`, string | undefined>) {
   const body = (
     <>
       <span className={h.mark}>{mark}</span>
-      <span className={h.words}>{children}</span>
+      <Words name={name}>{children}</Words>
       {end}
     </>
   );
@@ -132,6 +149,7 @@ export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
             mark={<Mark mark={line.mark} />}
             data-line={line.key}
             data-mark={line.mark}
+            name={line.name}
             onClick={does === undefined ? undefined : () => act(does)}
             end={
               line.action !== undefined ? (

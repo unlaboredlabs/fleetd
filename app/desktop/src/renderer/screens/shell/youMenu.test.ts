@@ -21,7 +21,7 @@ const read = (over: Partial<MenuInput> = {}) => menu(over).map((l) => [l.text, l
 
 describe("the hub's line", () => {
   it("is a dot and the hub's short name while all is well, and opens Settings › You › Hubs", () => {
-    expect(menu()).toEqual([{ key: "hub", mark: "success", text: "devbox", does: { to: "hubs" } }]);
+    expect(menu()).toEqual([{ key: "hub", mark: "success", text: "devbox", name: "devbox", does: { to: "hubs" } }]);
     expect(menu({ admin: false })).toEqual(menu());
     expect(read({ label: "Personal" })).toEqual(["Personal"]);
     // A hub reached by address has no shorter name.
@@ -43,14 +43,14 @@ describe("the hub's line", () => {
   });
 
   it("is calm on the first dial, and out of reach in the same words from the second on", () => {
-    expect(menu({ hub: { phase: "connecting", hub: HUB, attempt: 1 } })).toEqual([{ key: "hub", mark: "quiet", text: "Connecting to devbox…", does: { to: "hubs" } }]);
+    expect(menu({ hub: { phase: "connecting", hub: HUB, attempt: 1 } })).toEqual([{ key: "hub", mark: "quiet", text: "Connecting to devbox…", name: "devbox", does: { to: "hubs" } }]);
     expect(read({ hub: { phase: "connecting", hub: HUB, attempt: 2 } })).toEqual(["Can't reach devbox · Trying…"]);
     expect(read({ hub: { phase: "connecting", hub: "", attempt: 1 } })).toEqual(["Connecting to the hub…"]);
   });
 
   it("keeps its name through a restart, its dot opened to a ring; an update's turns to Retry after 30 s and an outage after 2 minutes", () => {
     const away = (ms: number, updatingTo?: string): HubState => ({ ...down, restarting: NOW - ms, ...(updatingTo === undefined ? {} : { updatingTo }) });
-    expect(menu({ hub: away(1_000, "0.9.3") })).toEqual([{ key: "hub", mark: "ring", text: "devbox", aside: "Updating…", does: { to: "hubs" } }]);
+    expect(menu({ hub: away(1_000, "0.9.3") })).toEqual([{ key: "hub", mark: "ring", text: "devbox", name: "devbox", aside: "Updating…", does: { to: "hubs" } }]);
     expect(read({ hub: away(1_000) })).toEqual(["devbox · Restarting…"]);
     expect(read({ hub: away(40_000, "0.9.3") })).toEqual(["devbox is still updating · Retry"]);
     expect(read({ hub: away(130_000, "0.9.3") })).toEqual(["Can't reach devbox · Retry"]);
@@ -60,6 +60,19 @@ describe("the hub's line", () => {
     expect(read({ quiet: quiet("updating", {}) })).toEqual(["devbox · Updating…"]);
     expect(read({ quiet: quiet("updated", { aside: "09:00" }) })).toEqual(["devbox · Updated 09:00"]);
     expect(read({ quiet: quiet("updated", {}) })).toEqual(["devbox · Updated"]);
+  });
+
+  it("marks the hub's name in its words, the one part a long name may cut short; never the words that say what is wrong", () => {
+    const label = "Acme Robotics shared build hub, Berlin 2"; // 40 characters, the longest a label can be
+    const states: HubState[] = [live, down, { phase: "refused", hub: HUB, message: "" }, { phase: "unpaired" }, { phase: "connecting", hub: HUB, attempt: 1 }, { phase: "connecting", hub: HUB, attempt: 3 }, { ...down, restarting: NOW - 40_000, updatingTo: "0.9.3" }];
+    for (const hub of states) {
+      const [line] = menu({ hub, label });
+      expect(line?.name).toBe(label);
+      expect(line?.text).toContain(label);
+    }
+    expect(hubLine({ phase: "unpaired" }, null, null, NOW).name).toBeUndefined();
+    expect(machinesLine([machine("devbox"), machine("buildbox", "offline")], true)?.name).toBe("buildbox");
+    expect(machinesLine([machine("a", "offline"), machine("b", "offline")], true)?.name).toBeUndefined();
   });
 
   it("says nothing else while the hub doesn't answer: what it alone knows would be stale", () => {
@@ -86,7 +99,7 @@ describe("an update that needs someone", () => {
 
 describe("machines and setup", () => {
   it("names an admin the one machine that needs them and opens its page, or counts several", () => {
-    expect(machinesLine([machine("devbox"), machine("buildbox", "offline")], true)).toEqual({ key: "machines", mark: "warning", text: "buildbox is offline", action: "Open", does: { to: "machines", machineId: "buildbox" } });
+    expect(machinesLine([machine("devbox"), machine("buildbox", "offline")], true)).toEqual({ key: "machines", mark: "warning", text: "buildbox is offline", name: "buildbox", action: "Open", does: { to: "machines", machineId: "buildbox" } });
     expect(machinesLine([machine("devbox"), machine("buildbox", "degraded")], true)).toMatchObject({ text: "buildbox needs a look" });
     expect(machinesLine([machine("a", "offline"), machine("b", "offline"), machine("c")], true)).toMatchObject({ text: "2 machines offline", does: { to: "machines" } });
     expect(machinesLine([machine("a", "offline"), machine("b", "degraded")], true)).toMatchObject({ text: "2 machines need a look" });
@@ -98,6 +111,11 @@ describe("machines and setup", () => {
   it("tells a member only when no machine is online, and who to ask", () => {
     expect(machinesLine([machine("devbox"), machine("buildbox", "offline")], false)).toBeNull();
     expect(machinesLine([machine("devbox", "offline"), machine("buildbox", "offline")], false)).toEqual({ key: "machines", mark: "warning", text: "All machines offline", aside: "Ask an admin" });
+  });
+
+  it("says what is true of them in the Machines page's words: connected but degraded isn't offline", () => {
+    expect(machinesLine([machine("devbox", "degraded"), machine("buildbox", "degraded")], false)).toEqual({ key: "machines", mark: "warning", text: "All machines degraded", aside: "Ask an admin" });
+    expect(machinesLine([machine("devbox", "degraded"), machine("buildbox", "offline")], false)).toEqual({ key: "machines", mark: "warning", text: "No machine online", aside: "Ask an admin" });
   });
 
   it("counts an admin's setup steps left, and never shows a member", () => {
