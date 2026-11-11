@@ -1,4 +1,4 @@
-// `node isolation.ts [--impl <name>] [--bin <fleetd>] [--target <module>] [--two-hubs] [--json <file>]`: one team
+// `node isolation.ts [--impl <name>] [--bin <fleetd>] [--target <module>] [--areas] [--two-hubs] [--json <file>]`: one team
 // can't reach another's data. The two-team cases (twoTeams.ts) are made from the target's own tools/list: every tool
 // that takes an id is called with team A's key and team B's ids and must answer as it answers an id nobody holds.
 //
@@ -9,6 +9,9 @@
 // made and counted and the row is skipped, saying how many. `--two-hubs` runs them on two hubs of the build, which
 // checks the cases, not the hub (hubBuild.ts).
 //
+// `--areas`, for a target that serves some areas and joins no machine (areas.ts): no fleet, each team seeded through
+// the tools the target lists and its own `seed`, and the cases made of exactly those tools.
+//
 // The rows under LATER are a hosted service's other isolation checks. They need more than an address and two teams,
 // so they are named here and skipped with what they need. Exit 0 unless a case failed.
 import { randomBytes } from "node:crypto";
@@ -16,7 +19,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { type Factory, withFactory } from "../lab/factory/kit.ts";
 import { openTarget } from "./hubBuild.ts";
-import { arg, REPO, scratch } from "./lib.ts";
+import { areasTwoTeams } from "./areas.ts";
+import { arg, has, REPO, scratch } from "./lib.ts";
 import { openSession, type Session } from "./mcp.ts";
 import type { Team } from "./target.ts";
 import { type Contract, readIds, type Report, reportLines, runTwoTeams, twoTeamCases } from "./twoTeams.ts";
@@ -65,6 +69,8 @@ try {
     const made = twoTeamCases(await (await session(a)).tools());
     const tools = new Set(made.map((c) => c.tool)).size;
     cases.check = { name: "two-team cases", ok: true, skipped: `${made.length} cases over ${tools} tools not run: ${target.name} makes one team` };
+  } else if (has("--areas")) {
+    cases.report = await areasTwoTeams(target, a, contract, `canary-${randomBytes(6).toString("hex")}`, dir);
   } else {
     const canary = `canary-${randomBytes(6).toString("hex")}`;
     await withFactory(
@@ -86,8 +92,10 @@ try {
       },
       { hub: a },
     );
-    const failed = cases.report!.cases.filter((c) => c.verdict === "fail");
-    cases.check = { name: "two-team cases", ok: failed.length === 0, detail: reportLines(cases.report!)[0]!.replace("two-team cases: ", "") };
+  }
+  if (cases.report !== undefined) {
+    const failed = cases.report.cases.filter((c) => c.verdict === "fail");
+    cases.check = { name: "two-team cases", ok: failed.length === 0, detail: reportLines(cases.report)[0]!.replace("two-team cases: ", "") };
   }
 } catch (e) {
   cases.check = { name: "two-team cases", ok: false, detail: (e instanceof Error ? (e.stack ?? e.message) : String(e)).trim() };

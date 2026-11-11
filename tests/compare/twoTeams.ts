@@ -337,17 +337,26 @@ function couldBe(value: unknown, branch: Schema, defs: Record<string, Schema>): 
   return Object.entries((schema.properties ?? {}) as Record<string, Schema>).every(([key, sub]) => !("const" in sub) || (value as Record<string, unknown>)[key] === sub.const);
 }
 
+/** Reads that take more than ids (a search's words), as `[tool, input]`: called first, when the tool is listed. */
+export type Reads = ReadonlyArray<readonly [tool: string, input: unknown]>;
+
 /**
- * A team's ids, by kind, as its own key reads them: every read-only tool that needs nothing but ids is called, first
- * the ones that need none, then again with what those answered, until nothing new comes back.
+ * A team's ids, by kind, as its own key reads them: `reads` first, then every read-only tool that needs nothing but
+ * ids, first the ones that need none, then again with what those answered, until nothing new comes back.
  */
-async function harvest(session: Session, tools: ReadonlyArray<Tool>, contract: Contract) {
+export async function harvest(session: Session, tools: ReadonlyArray<Tool>, contract: Contract, reads: Reads = []) {
   const outputs = (contract.$defs.McpTools?.properties ?? {}) as Record<string, Schema>;
   const bag: Bag = new Map();
   /** The tool that first answered with an id: `<kind> <id>` → its name. */
   const from = new Map<string, string>();
   const answers: Array<{ tool: string; answer: Answer }> = [];
   const asked = new Set<string>();
+  for (const [tool, input] of reads.filter(([tool]) => tools.some((t) => t.name === tool))) {
+    const answer = await session.call(tool, input);
+    answers.push({ tool, answer });
+    if (answer.isError || !collect(answer.body, outputs[`${tool}.output`], contract.$defs, tool, bag)) continue;
+    for (const [kind, values] of bag) for (const value of values) if (!from.has(`${kind} ${value}`)) from.set(`${kind} ${value}`, tool);
+  }
   const readers = tools.filter((t) => t.annotations?.readOnlyHint === true).map((tool) => ({ tool, shapes: [...inputShapes(tool, false), ...inputShapes(tool, true)].filter((s) => !hasFree(s)) }));
   for (let round = 0, grew = true; grew && round < 6; round++) {
     grew = false;
@@ -375,7 +384,13 @@ export type Ids = ReadonlyMap<string, ReadonlyArray<string>>;
  * A team's ids by kind, as its own key reads them now. runTwoTeams takes team A's as they were before team B had any
  * rows: what A held then is its own, whoever else comes to hold the same (a number each team counts, a built-in name).
  */
-export const readIds = async (session: Session, contract: Contract): Promise<Ids> => (await harvest(session, await session.tools(), contract)).bag;
+export const readIds = async (session: Session, contract: Contract, reads?: Reads): Promise<Ids> => (await harvest(session, await session.tools(), contract, reads)).bag;
+
+/** An input for `tool` that needs only what it requires: ids from `ids` (undefined when a kind is missing), text made up. */
+export function inputFrom(tool: Tool, ids: Ids): unknown {
+  const shape = inputShapes(tool, false).find((s) => kinds(s).every((k) => ids.has(k)));
+  return shape === undefined ? undefined : fill(shape, (slot) => ids.get(slot.kind)![0]!);
+}
 
 const shuffled = (value: string) => {
   const chars = [...value].filter((c) => /[a-z0-9]/iu.test(c)).sort(() => Math.random() - 0.5);
@@ -432,11 +447,11 @@ const show = (leaf: string | undefined) => (leaf === undefined ? "nothing" : lea
 /**
  * Runs the cases: `a` and `b` are sessions under each team's key, on the same target. `own` is team A's ids as read
  * (readIds) before team B had any rows. `canaries` are strings planted in team B's rows, which nothing team A is told
- * may contain.
+ * may contain. `reads` are read each time either team's ids are (harvest), as readIds was given them.
  */
-export async function runTwoTeams(opts: { readonly a: Session; readonly b: Session; readonly contract: Contract; readonly own: Ids; readonly canaries?: ReadonlyArray<string> }): Promise<Report> {
+export async function runTwoTeams(opts: { readonly a: Session; readonly b: Session; readonly contract: Contract; readonly own: Ids; readonly canaries?: ReadonlyArray<string>; readonly reads?: Reads }): Promise<Report> {
   const tools = await opts.a.tools();
-  const others = (await harvest(opts.b, tools, opts.contract)).bag;
+  const others = (await harvest(opts.b, tools, opts.contract, opts.reads)).bag;
   const holds = (answer: Answer) => (opts.canaries ?? []).some((c) => JSON.stringify(answer.body ?? null).includes(c));
 
   /** What team A holds: what it held before team B had rows, and what its own writes here have made since. */
@@ -454,7 +469,7 @@ export async function runTwoTeams(opts: { readonly a: Session; readonly b: Sessi
    * the cases send have come back too, a write kept the id it was sent, B's as theirs, and all three go on being asked.
    */
   const reread = async (written: boolean) => {
-    const now = await harvest(opts.a, tools, opts.contract);
+    const now = await harvest(opts.a, tools, opts.contract, opts.reads);
     reads += now.answers.length;
     const blame = (tool: string, what: string) => shown.set(tool, new Set([...(shown.get(tool) ?? []), what]));
     for (const r of now.answers) if (holds(r.answer)) blame(r.tool, "its canary");

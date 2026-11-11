@@ -12,6 +12,11 @@ export interface Team {
   readonly key: (opts: { readonly name: string; readonly role: KeyRole; readonly human?: boolean }) => Promise<string>;
   /** A join code for a machine called `machineId`: what `fleetd node join --token` takes. */
   readonly enrol: (machineId: string) => Promise<string>;
+  /**
+   * `--areas` only: rows no listed tool can make (a task, whose start is a lead call). The target makes them, `times`
+   * of each, `mark` in every text.
+   */
+  readonly seed?: (mark: string, times: number) => Promise<void>;
   /** The hub's process, when the target started one here (the benches measure it). */
   readonly pid?: number;
 }
