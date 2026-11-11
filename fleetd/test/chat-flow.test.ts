@@ -77,6 +77,22 @@ test("chat_send starts the lead with the message, then sends the next into its s
   done();
 });
 
+test("a message the lead took is announced again as delivered, stamped after its queued copy, so the apps keep it", async () => {
+  const { hub, call, done } = withFlow();
+  // The clock stands still: the lead takes it within the millisecond the message was stored in.
+  const out = await call(human, "chat_send", { projectRef: PROJECT, text: "1yes", clientRequestId: "c1" });
+  const copies = events(hub)
+    .page(0)
+    .events.filter((e) => e.type === "chat.message")
+    .map((e) => (e.data as { message: { delivery?: string; createdAt: string; updatedAt?: string } }).message);
+  expect(copies.map((m) => m.delivery)).toEqual(["queued", "turn"]);
+  // The apps' rule (app/desktop chat.ts `newer`): a later stamp wins, an equal one keeps what they had.
+  const stamp = (m: { createdAt: string; updatedAt?: string }) => m.updatedAt ?? m.createdAt;
+  expect(stamp(copies[1]!) > stamp(copies[0]!)).toBe(true);
+  expect(out.message).toMatchObject({ delivery: "turn", updatedAt: copies[1]!.updatedAt });
+  done();
+});
+
 test("chat_send refuses an empty message, an agent's `now`, and an unknown project", async () => {
   const { call, done } = withFlow();
   expect(call(human, "chat_send", { projectRef: PROJECT, text: "", clientRequestId: "c1" })).rejects.toThrow("text is empty");

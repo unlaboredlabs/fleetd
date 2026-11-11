@@ -373,6 +373,20 @@ export class Chat {
     return message;
   }
 
+  /**
+   * How a held message went in, in place. The apps keep the copy with the later stamp, and its first copy (queued) was
+   * announced as it was stored, so this one is stamped after it even within the same millisecond: an unchanged stamp
+   * kept a delivered message drawn as queued (2026-11-11).
+   */
+  setDelivery(message: ChatMessage, delivery: ChatDelivery): ChatMessage {
+    if (message.delivery === delivery) return message;
+    const before = parseMs(message.updatedAt ?? message.createdAt) ?? 0;
+    const out = { ...message, delivery, updatedAt: isoMs(Math.max(this.now(), before + 1)) };
+    this.put(out);
+    this.announce(out);
+    return out;
+  }
+
   /** A "Memory refreshed" line's changes, in place, as Undo marks them. */
   setMemoryRefreshed(message: ChatMessage, refreshed: MemoryRefreshed): ChatMessage {
     message.memoryRefreshed = refreshed;
