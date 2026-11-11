@@ -58,6 +58,8 @@ export async function openSession(url: string, key: string): Promise<Session> {
         return { isError: true, body: { code: "no_answer", message: e instanceof Error ? e.name : String(e) } };
       }
       if (frame.error !== undefined) return { isError: true, body: { code: "rpc", message: frame.error.message, rpc: frame.error.code } };
+      // Not JSON-RPC at all: the server's own refusal of the request (a revoked key's 401 is `{ code, message }`).
+      if (frame.result === undefined) return { isError: true, body: frame };
       const result = frame.result as Record<string, any>;
       const text = (result.content as Array<Record<string, any>> | undefined)?.find((c) => c.type === "text")?.text as string | undefined;
       const body: unknown = result.structuredContent !== undefined ? result.structuredContent : text === undefined ? null : parsed(text);

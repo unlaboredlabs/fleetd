@@ -341,12 +341,13 @@ function couldBe(value: unknown, branch: Schema, defs: Record<string, Schema>): 
 export type Reads = ReadonlyArray<readonly [tool: string, input: unknown]>;
 
 /**
- * A team's ids, by kind, as its own key reads them: `reads` first, then every read-only tool that needs nothing but
- * ids, first the ones that need none, then again with what those answered, until nothing new comes back.
+ * A team's ids, by kind, as its own key reads them: `known` (ids it was told otherwise) and `reads` first, then every
+ * read-only tool that needs nothing but ids, first the ones that need none, then again with what those answered, until
+ * nothing new comes back.
  */
-export async function harvest(session: Session, tools: ReadonlyArray<Tool>, contract: Contract, reads: Reads = []) {
+export async function harvest(session: Session, tools: ReadonlyArray<Tool>, contract: Contract, reads: Reads = [], known: Ids = new Map()) {
   const outputs = (contract.$defs.McpTools?.properties ?? {}) as Record<string, Schema>;
-  const bag: Bag = new Map();
+  const bag: Bag = new Map([...known].map(([kind, ids]) => [kind, [...ids]]));
   /** The tool that first answered with an id: `<kind> <id>` → its name. */
   const from = new Map<string, string>();
   const answers: Array<{ tool: string; answer: Answer }> = [];
@@ -385,6 +386,14 @@ export type Ids = ReadonlyMap<string, ReadonlyArray<string>>;
  * rows: what A held then is its own, whoever else comes to hold the same (a number each team counts, a built-in name).
  */
 export const readIds = async (session: Session, contract: Contract, reads?: Reads): Promise<Ids> => (await harvest(session, await session.tools(), contract, reads)).bag;
+
+/** The ids in tools' answers, by kind, where their output schemas say. */
+export function idsIn(answers: ReadonlyArray<{ readonly tool: string; readonly answer: Answer }>, contract: Contract): Ids {
+  const outputs = (contract.$defs.McpTools?.properties ?? {}) as Record<string, Schema>;
+  const bag: Bag = new Map();
+  for (const { tool, answer } of answers.filter((a) => !a.answer.isError)) collect(answer.body, outputs[`${tool}.output`], contract.$defs, tool, bag);
+  return bag;
+}
 
 /** An input for `tool` that needs only what it requires: ids from `ids` (undefined when a kind is missing), text made up. */
 export function inputFrom(tool: Tool, ids: Ids): unknown {
