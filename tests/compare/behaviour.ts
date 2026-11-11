@@ -1,4 +1,4 @@
-// `node behaviour.ts [--impl bun[=<bin>]]… [--target <module>] [--two-hubs] [--only <suite>,…]`: black-box tests
+// `node behaviour.ts [--impl bun[=<bin>]]… [--target <module>] [--areas] [--two-hubs] [--only <suite>,…]`: black-box tests
 // against each build given (two builds of fleetd, say, before and after a change), pass/fail side by side. An impl's
 // binary defaults to its impls.json `bin`. Every suite but blackbox runs on a team of the target (target.ts): a hub of
 // the build, or what `--target` makes. Suites:
@@ -9,6 +9,8 @@
 //   row per check, plus the surface (MCP tools, ready's features, snapshot keys) diffed between the builds;
 // - isolation: isolation.ts, the two-team cases made from the tool list. Skipped, with their count, on a target that
 //   makes one team, as a hub build does (--two-hubs: on two hubs of the build, which checks the cases themselves).
+// `--areas` (areas.ts) runs contract and isolation on the tools the target lists, with no node: the factory rows,
+// which need one, are skipped.
 // Not here: testLab.ts's `demo`, which needs the real claude, a login and GitHub (run it by hand with FLEETD_BIN).
 // Writes results/<impl>/behaviour.json for each; exit 0 only when every suite passed on every implementation. A row
 // that was skipped says why, there and in the table, and the last line counts them.
@@ -22,11 +24,13 @@ interface Suite {
   readonly command: (bin: string, dir: string, impl: string) => string;
   /** Why it can't run on a target a module makes. */
   readonly hubBuildOnly?: string;
+  /** Why it can't run with `--areas`. */
+  readonly needsNode?: string;
 }
 const targetModule = arg("--target", "COMPARE_TARGET");
-const on = (bin: string, impl: string) => `--impl ${impl} --bin '${bin}'${targetModule === undefined ? "" : ` --target '${path.resolve(targetModule)}'`}`;
+const on = (bin: string, impl: string) => `--impl ${impl} --bin '${bin}'${targetModule === undefined ? "" : ` --target '${path.resolve(targetModule)}'`}${has("--areas") ? " --areas" : ""}`;
 const SUITES: ReadonlyArray<Suite> = [
-  ...SCENARIOS.map((s) => ({ name: `factory:${s.name}`, command: (bin: string, dir: string, impl: string) => `node '${path.join(HERE, "factory.ts")}' ${s.name} --dir '${dir}/r' ${on(bin, impl)}` })),
+  ...SCENARIOS.map((s) => ({ name: `factory:${s.name}`, command: (bin: string, dir: string, impl: string) => `node '${path.join(HERE, "factory.ts")}' ${s.name} --dir '${dir}/r' ${on(bin, impl)}`, needsNode: "--areas: a scenario drives a node, and none joins" })),
   { name: "blackbox", command: (bin: string) => `cd '${REPO}/fleetd' && FLEETD_BIN='${bin}' bun test test/blackbox test/node/session_host.test.ts`, hubBuildOnly: "these tests start hubs of the binary themselves" },
   { name: "contract", command: (bin, dir, impl) => `node '${path.join(HERE, "contract.ts")}' ${on(bin, impl)} --json '${dir}/contract.json'` },
   { name: "isolation", command: (bin, dir, impl) => `node '${path.join(HERE, "isolation.ts")}' ${on(bin, impl)}${has("--two-hubs") ? " --two-hubs" : ""} --json '${dir}/isolation.json'` },
@@ -57,9 +61,10 @@ for (const t of targets) {
       if (!table.has(name)) table.set(name, new Map());
       table.get(name)!.set(t.name, { ok, wallMs, ...(skipped === undefined ? {} : { skipped }), log: logFile });
     };
-    if (targetModule !== undefined && suite.hubBuildOnly !== undefined) {
-      row(suite.name, true, 0, suite.hubBuildOnly);
-      console.log(`  skipped: ${suite.hubBuildOnly}`);
+    const skipped = (targetModule !== undefined ? suite.hubBuildOnly : undefined) ?? (has("--areas") ? suite.needsNode : undefined);
+    if (skipped !== undefined) {
+      row(suite.name, true, 0, skipped);
+      console.log(`  skipped: ${skipped}`);
       continue;
     }
     const r = timed(suite.command(t.bin, dir, t.name), { cwd: REPO, env: { FLEETD_BIN: t.bin }, logFile });

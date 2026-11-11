@@ -14,8 +14,8 @@ desktop QA, `pnpm install && pnpm qa:build` in `app/desktop`. Node 24 and Bun.
 |---|---|---|
 | `node behaviour.ts [--impl <name>[=<bin>]]… [--target <module>]` | the factory lab's scenarios, fleetd's black-box tests (`fleetd/test/blackbox`, the session host's), `contract.ts` and `isolation.ts`, pass/fail side by side, and what one surface (MCP tools, `ready`'s features, snapshot keys) has that the other lacks. A skipped row says why, and the last line counts them | `behaviour.json` |
 | `node factory.ts <scenario>` | one factory lab scenario (`tests/lab/factory`), its node joined to a team of the target | (part of behaviour) |
-| `node contract.ts` | every frame and tool answer the apps read, checked against `app/desktop/src/shared/contracts/schema` | (part of behaviour) |
-| `node isolation.ts [--two-hubs]` | the two-team cases: every tool that takes an id, called with one team's key and another team's ids | (part of behaviour) |
+| `node contract.ts [--areas]` | every frame and tool answer the apps read, checked against `app/desktop/src/shared/contracts/schema` | (part of behaviour) |
+| `node isolation.ts [--two-hubs] [--areas]` | the two-team cases: every tool that takes an id, called with one team's key and another team's ids | (part of behaviour) |
 | `node desktop.ts` | the desktop app's QA build on a live hub of the binary: 20 screens (QA's own state, liveness and DOM checks), a chat answered by the lead, a spawned writer in the agents panel | `desktop.json` |
 | `node build.ts [--jobs N]` | clean and one-file-edit build, check and test times, and the test suite's run, from `impls.json`, on N pinned CPUs (default 2) | `build-j<N>.json` |
 | `node bench.ts [size startup hub-ready idle sessions fanout sql weaknet]` | the runtime numbers (each bench's header comment says how it measures) | `<bench>.json` |
@@ -36,9 +36,9 @@ Rules the scripts keep, and a run by hand should too:
 ## Targets
 
 A target (`target.ts`) is a name, how many teams it can make, and `team(dir)`, which gives a team: its address, `key`
-(a new key of the team, of a role, a person's or not) and `enrol` (a join code for a machine). That is all the suites
-ask of what they run against: the factory kit's node joins the team with `enrol`, and every call is made with a key
-from `key`.
+(a new key of the team, of a role, a person's or not), `enrol` (a join code for a machine) and, for `--areas`, an
+optional `seed`. That is all the suites ask of what they run against: the factory kit's node joins the team with
+`enrol`, and every call is made with a key from `key`.
 
 - `hubBuild.ts` is the target the scripts always had: a hub of the build on a home of its own. It makes one team.
 - `--target <module>` (or `COMPARE_TARGET`) runs `behaviour.ts`, `factory.ts`, `contract.ts` and `isolation.ts` against
@@ -55,6 +55,33 @@ from `key`.
   The node that joins a team, and the CLI, are still the build's (`--bin`). The black-box tests start hubs of the
   binary themselves, so with `--target` their row is skipped. The benches (`bench.ts`, `soak.ts`, `desktop.ts`) measure
   a hub process and stay on the hub build.
+
+### Areas only
+
+`--areas` is for a target that serves some areas of the hub, not all of it, and takes no machine (a service built a
+module at a time). It is a flag, not read from a short tool list, so a hub that stops listing a tool still fails the
+full run. With it, `isolation.ts` and `contract.ts` start no node and add no project (`areas.ts`):
+
+- each team is seeded through the tools the target lists (`decisions_record`, global, when listed), then by the team's
+  own `seed(mark, times)`, if it has one, for rows no listed tool makes (a task, whose start is a lead call). Team A
+  once, team B twice with the canary as `mark`;
+- the two-team cases are made of exactly the tools the target lists, and reads that take words besides ids
+  (`decisions_search` for "decision") are made beside the generated ones;
+- the contract checks `/healthz`, that every listed tool is in `McpTools.json`, and each listed tool's answer as its
+  `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it, then the other writes with
+  the team's own ids. The CLI's and `/app`'s rows are skipped.
+
+A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
+unless `--bin` gives one:
+
+```sh
+cd tests/compare && npm ci && (cd ../lab && npm ci)
+node isolation.ts --target ../../../service/target.ts --areas
+node contract.ts --target ../../../service/target.ts --areas
+```
+
+`behaviour.ts --areas` passes the flag on and skips the factory rows; it still wants a binary.
+`fleetd/test/compare/areas.test.ts` proves the mode on the stand-in listing only the decisions tools.
 
 ## Two-team cases
 

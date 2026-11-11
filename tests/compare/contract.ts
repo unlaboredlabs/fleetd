@@ -1,18 +1,21 @@
-// `node contract.ts [--impl <name>] [--bin <fleetd>] [--target <module>] [--json <file>]`: the wire contract, checked
+// `node contract.ts [--impl <name>] [--bin <fleetd>] [--target <module>] [--areas] [--json <file>]`: the wire contract, checked
 // from outside. On a throwaway fleet (node, project) of the fleetd under test, on a team of the target (a hub of that
 // build unless --target gives another), it checks that every frame and tool answer the apps read decodes as its type
 // in app/desktop/src/shared/contracts/schema (the JSON Schemas the hub decodes calls with, kept with the apps'
 // TypeScript): /healthz, `--version` and `help`, MCP's tool list and a read of each tool below as its `<tool>.output`,
 // /app's `ready`, `snapshot` and a call's `result` as AppServerMessage, a hub event on /app after a write, and
 // `fleetd status --json`. It also prints the surface (tool names, ready's features, snapshot keys) so behaviour.ts can
-// diff two implementations. Exit 0 when every check passed.
+// diff two implementations. `--areas`, for a target that serves some areas and joins no machine (areas.ts): no fleet,
+// and the output check is made of exactly the tools the target lists, on a team seeded through them; the CLI's and
+// /app's rows are skipped. Exit 0 when every check passed.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { connectApp, type Frame } from "./app.ts";
+import { areasContract } from "./areas.ts";
 import { withFleet } from "./fleet.ts";
 import { openTarget } from "./hubBuild.ts";
-import { arg, REPO, scratch } from "./lib.ts";
+import { arg, has, REPO, scratch } from "./lib.ts";
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020") as new (o: object) => { compile: (s: object) => ((x: unknown) => boolean) & { errors?: unknown } };
@@ -34,9 +37,15 @@ const appFrame = validator(schemaFile("AppServerMessage"), schemaFile("AppServer
 interface Check {
   readonly name: string;
   readonly ok: boolean;
+  /** Why it didn't run. */
+  readonly skipped?: string;
   readonly detail?: string;
 }
 const checks: Array<Check> = [];
+const skip = (name: string, why: string) => {
+  checks.push({ name, ok: true, skipped: why });
+  console.log(`skip ${name}: ${why}`);
+};
 const record = (name: string, ok: boolean, detail?: string) => {
   checks.push({ name, ok, ...(detail === undefined ? {} : { detail: detail.slice(0, 400) }) });
   console.log(`${ok ? "pass" : "FAIL"} ${name}${detail === undefined || ok ? "" : `: ${detail.slice(0, 400)}`}`);
@@ -64,7 +73,19 @@ const commandCheck = (name: string, run: () => string, pass: (out: string) => bo
 
 const { name, bin, target } = await openTarget();
 const surface: Record<string, unknown> = {};
-await withFleet(path.join(scratch(`ct-${name}`), "f"), target, async (fleet) => {
+const areas = async () => {
+  const valid = (tool: string, body: unknown) => {
+    const check = toolOutput(tool);
+    if (check === undefined) return "no schema";
+    return check(body) ? undefined : JSON.stringify(check.errors);
+  };
+  for (const c of await areasContract(await target.team(path.join(scratch(`ct-${name}`), "f")), tools as Parameters<typeof areasContract>[1], valid)) {
+    if (c.skipped !== undefined) skip(c.name, c.skipped);
+    else record(c.name, c.ok, c.detail);
+  }
+  for (const row of ["fleetd --version", "fleetd help", "/app", "fleetd status --json reads the hub"]) skip(row, "--areas: no machine joins, and the target serves only the tools it lists");
+};
+await (has("--areas") ? areas() : withFleet(path.join(scratch(`ct-${name}`), "f"), target, async (fleet) => {
   const { f } = fleet;
   const ref = f.ref;
   const healthz = await fetch(`${f.hubUrl}/healthz`);
@@ -150,12 +171,13 @@ await withFleet(path.join(scratch(`ct-${name}`), "f"), target, async (fleet) => 
     const status = JSON.parse(out) as unknown;
     return typeof status === "object" && status !== null;
   });
-})
+}))
   .catch((e: unknown) => record("the fleet runs to the end", false, failure(e)))
   .finally(() => target.close());
 
 const failed = checks.filter((c) => !c.ok);
 const out = arg("--json");
 if (out !== undefined) fs.writeFileSync(out, `${JSON.stringify({ impl: name, bin, checks, surface }, null, 2)}\n`);
-console.log(`${checks.length - failed.length} of ${checks.length} contract checks passed`);
+const skipped = checks.filter((c) => c.skipped !== undefined).length;
+console.log(`${checks.length - failed.length - skipped} of ${checks.length} contract checks passed${skipped === 0 ? "" : `, ${skipped} skipped`}`);
 process.exitCode = failed.length === 0 ? 0 : 1;

@@ -38,14 +38,17 @@ export type MakeTarget = (build: { readonly name: string; readonly bin: string }
 /**
  * The target a script runs against, with the build under test (lib.ts's `target()`): its machines and its CLI are that
  * build's whatever the target. `--target <module>` (or COMPARE_TARGET) is a module whose default export is a
- * MakeTarget; without it, a hub of the build.
+ * MakeTarget; without it, a hub of the build. With `--areas` too no machine joins, so the build is optional: `bin` is
+ * "" when none is given.
  */
 export async function openTarget(): Promise<{ readonly name: string; readonly bin: string; readonly target: Target }> {
-  const { name, bin } = build();
   const given = arg("--target", "COMPARE_TARGET");
-  if (given === undefined || given === "") return { name, bin, target: hubBuild(name, bin, has("--two-hubs") ? 2 : 1) };
-  process.env.FLEETD_BIN = bin;
-  const made = (await import(pathToFileURL(path.resolve(given)).href)) as { default?: MakeTarget };
-  if (typeof made.default !== "function") throw new Error(`${given} has no default export: export a function that makes the target`);
+  const file = given === "" ? undefined : given;
+  const binless = file !== undefined && has("--areas") && arg("--bin", "FLEETD_BIN") === undefined;
+  const { name, bin } = binless ? { name: arg("--impl", "COMPARE_IMPL", "bun")!, bin: "" } : build();
+  if (file === undefined) return { name, bin, target: hubBuild(name, bin, has("--two-hubs") ? 2 : 1) };
+  if (bin !== "") process.env.FLEETD_BIN = bin;
+  const made = (await import(pathToFileURL(path.resolve(file)).href)) as { default?: MakeTarget };
+  if (typeof made.default !== "function") throw new Error(`${file} has no default export: export a function that makes the target`);
   return { name, bin, target: await made.default({ name, bin }) };
 }

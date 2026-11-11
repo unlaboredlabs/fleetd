@@ -6,6 +6,7 @@
 // `leak` breaks the wall on purpose, the ways a real one breaks: `row` reads a thing whoever's it is, `forbidden`
 // finds another team's thing and refuses it (so the caller learns it exists), `list` lists every team's things,
 // `ids` lists them too but with another team's titles blanked: its ids and nothing a canary is in.
+// `only` replaces those tools with others, as a service that serves some areas lists only theirs (areas.ts).
 // Imports nothing of the lab's: fleetd's own tests start it.
 import { randomBytes } from "node:crypto";
 import http from "node:http";
@@ -33,7 +34,7 @@ export interface StandInTeam {
 export interface StandInTool {
   readonly name: string;
   readonly readOnly: boolean;
-  /** Its input and output, as McpTools.json would hold them; ids are `$ref`s into the stand-in's types (DEFS). */
+  /** Its input and output, as McpTools.json would hold them; ids are `$ref`s into the stand-in's types (DEFS), or into the input's own `$defs`. */
   readonly input: Schema;
   readonly output: Schema;
   /** Answers for `team`; `all` is every team, which only a leak reads. Refuses by throwing a Refusal. */
@@ -132,9 +133,12 @@ export interface StandIn extends Target {
   readonly data: (team: Team) => StandInTeam;
 }
 
-/** Starts the stand-in on a free local port. `tools` are added to its list: what a new tool is to the real one. */
-export async function standIn(opts: { readonly leak?: Leak; readonly tools?: ReadonlyArray<StandInTool> } = {}): Promise<StandIn> {
-  const list = [...tools(opts.leak), ...(opts.tools ?? [])];
+/**
+ * Starts the stand-in on a free local port. `tools` are added to its list: what a new tool is to the real one. `only`
+ * is its whole list instead.
+ */
+export async function standIn(opts: { readonly leak?: Leak; readonly tools?: ReadonlyArray<StandInTool>; readonly only?: ReadonlyArray<StandInTool> } = {}): Promise<StandIn> {
+  const list = opts.only ?? [...tools(opts.leak), ...(opts.tools ?? [])];
   const teams: Array<StandInTeam> = [];
   const byKey = new Map<string, StandInTeam>();
   const made = new Map<Team, StandInTeam>();
@@ -142,7 +146,7 @@ export async function standIn(opts: { readonly leak?: Leak; readonly tools?: Rea
 
   const answer = (team: StandInTeam, method: string, params: Record<string, any>): unknown => {
     if (method === "initialize") return { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "stand-in", version: "0" } };
-    if (method === "tools/list") return { tools: list.map((t) => ({ name: t.name, description: "", inputSchema: { ...t.input, $defs: DEFS }, annotations: { readOnlyHint: t.readOnly } })) };
+    if (method === "tools/list") return { tools: list.map((t) => ({ name: t.name, description: "", inputSchema: { $defs: DEFS, ...t.input }, annotations: { readOnlyHint: t.readOnly } })) };
     const tool = list.find((t) => t.name === params.name);
     if (method !== "tools/call" || tool === undefined) throw new Error(`no ${method} ${params.name ?? ""}`);
     try {
@@ -157,6 +161,7 @@ export async function standIn(opts: { readonly leak?: Leak; readonly tools?: Rea
     const chunks: Array<Buffer> = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
+      if (req.method === "GET" && req.url === "/healthz") return void res.writeHead(200).end("ok");
       const team = byKey.get((req.headers.authorization ?? "").replace(/^Bearer /u, ""));
       if (req.method !== "POST" || req.url !== "/mcp" || team === undefined) return void res.writeHead(team === undefined ? 401 : 404).end();
       const call = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { id?: number; method: string; params?: Record<string, any> };
