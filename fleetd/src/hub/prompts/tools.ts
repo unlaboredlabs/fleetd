@@ -66,7 +66,7 @@ function mayEdit(caller: Caller, scope: PromptScope, r: ProjectRef | undefined):
   throw new ToolError(
     "forbidden",
     "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
-    "Ask an owner or admin (Settings › Hub › Every project › Instructions & memory), or edit this project's own text instead.",
+    "Ask an owner or admin (Settings › Hub › Every project › Instructions), or edit this project's own text instead.",
   );
 }
 

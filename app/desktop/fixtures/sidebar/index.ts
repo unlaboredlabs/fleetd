@@ -6,7 +6,7 @@
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
-import { projectSections } from "../kit/sections.ts";
+import { projectSections, yourDevices } from "../kit/sections.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
 
@@ -165,6 +165,9 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
     ? { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 }
     : { phase: "live", hub: "https://hub.acme.example", protocol: f.state.phase === "live" ? f.state.protocol : 1 };
   f.hubs = [{ label: "Acme", color: "amber", fixture: acme }];
+  // Settings › Hubs & devices lists your devices on each.
+  yourDevices(f);
+  yourDevices(acme);
   return f;
 };
 

@@ -1,4 +1,4 @@
-// The task profiles' page (Settings › Hub › Every project › Profiles) and a project's allowed ones, kept free of
+// The task profiles' page (Settings › Hub › Every project › Agents) and a project's allowed ones, kept free of
 // React: a profile's draft, what it checks before the hub does, and the calls it makes.
 import type { Effort, Profile, ProfileCreateInput, ProfileModel, ProfileUpdateInput } from "../../../shared/contracts";
 

@@ -32,7 +32,7 @@ export function General() {
   );
 }
 
-/** Where updates stand, in the same words as Hub › Updates: an admin updates everything from either. */
+/** Where updates stand, in the same words as Hub › Machines › Updates: an admin updates everything from either. */
 function Versions() {
   const status = useUpdateStatus();
   return (

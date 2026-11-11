@@ -1,4 +1,4 @@
-// Restart Hub from the phone, for admins (Settings › Hub): the desktop app's Restart hub (Settings › You › Hubs).
+// Restart Hub from the phone, for admins (Settings › Hub): the desktop app's Restart hub (Settings › You › Hubs & devices).
 // It asks first, the hub restarts in place (hub_restart) and the row says so until the link is live again. Members
 // never see the row; the hub refuses them all the same. Pure, so tested.
 import type { HubError, HubRestartOutput, HubState } from "./desktop";

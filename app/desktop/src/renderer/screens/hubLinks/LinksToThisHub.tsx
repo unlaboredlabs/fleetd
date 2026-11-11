@@ -1,4 +1,4 @@
-// Links to this hub (Settings › You › Hubs, under Hub links, one per paired hub): a person makes a link key that lets
+// Links to this hub (Settings › You › Hubs & devices, under Hub links, one per paired hub): a person makes a link key that lets
 // their project on another hub open and follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
 // hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that project's
 // Linked hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until

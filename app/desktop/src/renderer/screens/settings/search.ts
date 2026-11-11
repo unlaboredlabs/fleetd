@@ -2,7 +2,7 @@
 // typing in the sidebar's field narrows to the option and opening one lands on it. Matching is pure and tested; the
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
 import { revealNext } from "./reveal";
-import { isHubTab, tabHref, type Tab } from "./route";
+import { isEveryProject, isHubTab, pageOf, tabHref, type Tab } from "./route";
 
 export { revealNext, useReveal } from "./reveal";
 
@@ -20,7 +20,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   vault: "Vault",
   "your-memory": "Your memory",
   devices: "Your devices",
-  hubs: "Hubs",
+  hubs: "Hubs & devices",
   projects: "Project",
   agents: "Agents",
   instructions: "Instructions & memory",
@@ -30,18 +30,25 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "hub.people": "People",
   "hub.machines": "Machines",
   "hub.updates": "Updates",
-  "hub.profiles": "Profiles",
+  "hub.profiles": "Agents",
   "hub.tools": "Tools & skills",
-  "hub.instructions": "Instructions & memory",
+  "hub.instructions": "Instructions",
   "hub.prompts": "Built-in prompts",
   "hub.accounts": "Hub accounts",
   "hub.vault": "Vault",
   "hub.setup": "Setup",
 };
 
-/** Where a search result is, beside its name: the page, and for a Hub page its group, as the sidebar nests them. */
-export const pagePath = (tab: Tab): string =>
-  tab === "project-vault" ? "Project › Vault" : !isHubTab(tab) ? PAGE_LABEL[tab] : tab === "hub.profiles" || tab === "hub.tools" || tab === "hub.instructions" || tab === "hub.prompts" ? `Every project › ${PAGE_LABEL[tab]}` : `Hub › ${PAGE_LABEL[tab]}`;
+/**
+ * Where a search result is, beside its name: the page that holds it (route.ts's pageOf, for what was a page once),
+ * and for a Hub page its group, as the sidebar and Every project's tabs nest them.
+ */
+export const pagePath = (tab: Tab): string => {
+  const on = pageOf(tab);
+  if (on === "project-vault") return "Project › Vault";
+  if (!isHubTab(on)) return PAGE_LABEL[on];
+  return `${isEveryProject(on) ? "Every project" : "Hub"} › ${PAGE_LABEL[on]}`;
+};
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
@@ -70,11 +77,11 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
-  page("devices", ["devices", "phone", "signed in", "keys"]),
-  { key: "devices.pair", label: "Pair a phone", tab: "devices", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
   { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove", "restart"] },
   { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
+  { key: "devices", label: PAGE_LABEL.devices, tab: "hubs", keywords: ["devices", "phone", "signed in", "keys"] },
+  { key: "devices.pair", label: "Pair a phone", tab: "hubs", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   { key: "hubs.links", label: "Hub links", tab: "hubs", keywords: ["hub link", "links to this hub", "link key", "other hub", "revoke"] },
   page("projects", ["project settings", "repo", "repository"]),
   { key: "projects.picture", label: "Project icon", tab: "projects", keywords: ["avatar", "photo", "image", "picture", "face"] },
@@ -112,20 +119,21 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
-  page("hub.updates", ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"]),
-  page("hub.profiles", ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"]),
+  { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
+  { key: "hub.profiles", label: "Agents for every project", tab: "hub.profiles", keywords: ["every project", "hub-wide"] },
+  { key: "hub.task-profiles", label: "Profiles", tab: "hub.profiles", keywords: ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"] },
   { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
-  page("hub.tools", ["every project", "hub-wide", "global"]),
-  { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
-  { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.tools", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
-  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.tools", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
+  { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.profiles", keywords: ["every project", "hub-wide", "global"] },
+  { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.profiles", keywords: ["mcp", "tools", "servers", "global", "every project"] },
+  { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.profiles", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
+  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.profiles", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
   { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
+  { key: "hub.vault", label: "Vault for every project", tab: "hub.vault", keywords: ["vault", "team card", "shared login", "every project", "hub-wide", "cards", "logins", "addresses"] },
+  { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
   page("hub.accounts", ["connections", "claude api key", "api key", "github app", "guided setup"]),
   { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
   { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.accounts", keywords: ["claude", "api key", "members", "allow"] },
   { key: "admin.github", label: "GitHub App", tab: "hub.accounts", keywords: ["github", "app", "manifest", "installation", "webhook"] },
-  page("hub.vault", ["vault", "team card", "shared login", "every project", "hub-wide", "cards", "logins", "addresses"]),
-  { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
   page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps"]),
 ];
 

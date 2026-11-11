@@ -15,7 +15,7 @@ import { ADA, HOME, TAXES } from "./ids.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
 import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
-import { projectSections } from "../kit/sections.ts";
+import { projectSections, yourDevices } from "../kit/sections.ts";
 
 
 const CREATOR = { keyId: "k-laptop", name: "laptop" };
@@ -311,6 +311,8 @@ const links = (from: Fixture): Fixture => {
     ],
   });
   f.answer("hub_link_mint", undefined, { key: `flk_${"q7m2xk4v".repeat(6)}abcd`, link: issued("hl_newaaaaa", "home", { createdAt: f.now }) });
+  // The page these links are on (Settings › Hubs & devices) lists Sam's devices over them.
+  yourDevices(f);
   return f;
 };
 

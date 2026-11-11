@@ -44,7 +44,7 @@ export const runApp = (action: "check" | "install"): void => {
   else void window.fleetd.updates.install();
 };
 
-/** Where the hub's updates are read and run: Settings › Hub › Updates for an admin; General (this app's own) for
+/** Where the hub's updates are read and run: Settings › Hub › Machines › Updates for an admin; General (this app's own) for
  * anyone else. `at`: which hub's, with several; the screen's when absent. */
 export const openUpdates = (admin: boolean, at?: string): void =>
   navigate(admin ? { id: "settings", tab: "hub.updates", ...(at === undefined ? {} : { at }) } : { id: "settings", tab: "general" });

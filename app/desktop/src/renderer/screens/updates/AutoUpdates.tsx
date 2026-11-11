@@ -1,4 +1,4 @@
-// Update automatically, on Hub › Updates: one switch the hub's owners and admins turn, which says nothing more unless
+// Update automatically, on Hub › Machines › Updates: one switch the hub's owners and admins turn, which says nothing more unless
 // automatic updates hold back, and then why in the hub's words.
 import { useState } from "react";
 import { toast } from "../../ui";

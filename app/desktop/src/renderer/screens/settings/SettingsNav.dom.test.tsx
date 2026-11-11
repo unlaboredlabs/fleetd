@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// Settings in one window (D211), its sidebar one flat list: You (General, Your accounts, Hubs) and Projects (the list
+// Settings in one window (D211), its sidebar one flat list: You (General, Your accounts, Your memory, Hubs & devices) and Projects (the list
 // of projects, each opening its Project, Agents, Instructions & memory and Automations under tabs, all of that one
 // project, and its built-in prompts from the foot of its Instructions) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
-// page that has their option now. General's Version & updates says which fleetd this app,
-// the hub and each machine run, with Check for updates for everyone and Hub › Updates for an owner or admin only.
+// page that has their option now: a page that became a part of another (route.ts) opens that page at the part. General's Version & updates says which fleetd this app,
+// the hub and each machine run, with Check for updates for everyone and Hub › Machines › Updates for an owner or admin only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AppFrame, TopBar, UiProvider } from "../../ui";
+import { SETTINGS_TABS } from "../shell/routes";
 import { SettingsScreen, SettingsSidebar } from "./SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -72,7 +73,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (hash: string, admin: boolean, live = true) => {
+const render = async (hash: string, admin: boolean, live = true, features: ReadonlyArray<string> = []) => {
   window.location.hash = hash;
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -82,8 +83,10 @@ const render = async (hash: string, admin: boolean, live = true) => {
         tool === "hub_info"
           ? { version: "0.9.0", protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
           : tool === "people_list"
-            ? { people: [{ personId: "p_bbbbbbbb", name: "Ana", role: "owner", createdAt: AT }] }
-            : undefined;
+            ? { people: [{ personId: "p_bbbbbbbb", name: "Ana", role: "owner", createdAt: AT }], devices: [], invites: [] }
+            : tool === "setup_list"
+              ? { steps: [], requiredLeft: 0 }
+              : undefined;
       return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -105,7 +108,7 @@ const render = async (hash: string, admin: boolean, live = true) => {
   });
   await act(async () => {
     if (!live) return;
-    listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1, version: "0.9.0" } });
+    listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1, version: "0.9.0", features } });
     listener(snapshot);
     await new Promise((r) => setTimeout(r, 0));
   });
@@ -141,7 +144,7 @@ const pickTab = async (set: string, name: string) => {
 
 it("has You and Projects for a member as one flat list, Projects listing the projects, each opening its four pages under tabs", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Your devices", "Hubs", "Projects"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
   // Nothing to pick and nothing nested in the sidebar.
   expect(nav()?.querySelector("[role='combobox'], [role='group'], select")).toBeNull();
@@ -211,7 +214,7 @@ it("opens a project's built-in prompts from the one row at the foot of its Instr
   expect(screen()).toBe("settings.instructions");
 });
 
-it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs", async () => {
+it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs, your devices and hub links on Hubs & devices", async () => {
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
   await render("#/settings/accounts", false);
   expect(screen()).toBe("settings.accounts");
@@ -220,12 +223,84 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
   root = createRoot(host);
   await render("#/settings/hubs", false);
   expect(screen()).toBe("settings.hubs");
-  expect(parts()).toEqual(["hubs.add", "hubs.hub-links"]);
+  expect(parts()).toEqual(["hubs.add", "devices.pair", "hubs.hub-links"]);
+  // Your devices keeps its own name inside the page, so its screenshots and tests still find it.
+  expect(host.querySelector("[data-screen='settings.hubs'] [data-screen='settings.devices']")).not.toBeNull();
+});
+
+const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']") ?? [])].map((b) => b.textContent.trim());
+
+it("has eleven rows for an admin and six for a member, one fewer each on a hub without the vault", async () => {
+  await render("#/settings/general", true);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Hub accounts", "Setup"]);
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render("#/settings/general", true, true, ["vault"]);
+  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects", "People", "Machines", "Every project", "Hub accounts", "Setup"]);
+  act(() => root.unmount());
+  root = createRoot(host);
+  await render("#/settings/general", false, true, ["vault"]);
+  expect(rows().slice(1)).toEqual(["General", "Your accounts", "Vault", "Your memory", "Hubs & devices", "Projects"]);
+});
+
+// Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of
+// that page it lands on when its own page is gone, and the sidebar row shown as current.
+const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: string | null, row: string]> = [
+  ["#/settings", "settings.general", null, "General"],
+  ["#/settings/general", "settings.general", null, "General"],
+  ["#/settings/accounts", "settings.accounts", null, "Your accounts"],
+  ["#/settings/vault", "settings.vault", null, "Vault"],
+  ["#/settings/your-memory", "settings.your-memory", null, "Your memory"],
+  ["#/settings/devices", "settings.hubs", "settings.devices", "Hubs & devices"],
+  ["#/settings/hubs", "settings.hubs", null, "Hubs & devices"],
+  ["#/settings/projects", "settings.projects.list", null, "Projects"],
+  ["#/settings/agents?for=devbox/docs", "settings.agents", null, "Projects"],
+  ["#/settings/instructions?for=devbox/docs", "settings.instructions", null, "Projects"],
+  ["#/settings/automations?for=devbox/docs", "settings.automations", null, "Projects"],
+  ["#/settings/project-vault?for=devbox/docs", "settings.project-vault", null, "Projects"],
+  ["#/settings/prompts?for=devbox/docs", "settings.prompts", null, "Projects"],
+  ["#/settings/hub/people", "settings.hub.people", null, "People"],
+  ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
+  ["#/settings/hub/updates", "settings.hub.machines", "settings.hub.updates", "Machines"],
+  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Every project"],
+  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Every project"],
+  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every project"],
+  ["#/settings/hub/vault", "settings.hub.vault", null, "Every project"],
+  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every project"],
+  ["#/settings/hub/accounts", "settings.hub.accounts", null, "Hub accounts"],
+  ["#/settings/hub/setup", "settings.hub.setup", null, "Setup"],
+];
+
+it.each(OLD_LINKS)("opens %s on %s, at %s, with %s current in the sidebar", async (hash, page, part, row) => {
+  await render(hash, true, true, ["vault"]);
+  expect(screen()).toBe(page);
+  expect(current()).toEqual([row]);
+  if (part === null) return;
+  // The part is inside the page, and the one the arrival goes to: it holds the focus, never one of its buttons.
+  const el = host.querySelector<HTMLElement>(`[data-screen='${page}'] [data-screen='${part}']`);
+  expect(el).not.toBeNull();
+  expect(document.activeElement).toBe(el);
+});
+
+it("covers every tab the routes know with a link that still opens", () => {
+  const path = (tab: string) => `#/settings/${tab.startsWith("hub.") ? `hub/${tab.slice(4)}` : tab}`;
+  const covered = new Set(OLD_LINKS.map(([hash]) => hash.split("?")[0]));
+  expect(SETTINGS_TABS.map(path).filter((h) => !covered.has(h))).toEqual([]);
+});
+
+it("keeps a member out of every Hub link, whichever page holds it now", async () => {
+  for (const [hash] of OLD_LINKS.filter(([h]) => h.startsWith("#/settings/hub/"))) {
+    await render(hash, false);
+    expect(screen(), hash).toBe("settings.hub.denied");
+    expect(current(), hash).toEqual([]);
+    act(() => root.unmount());
+    root = createRoot(host);
+  }
 });
 
 const STATUS = "Up to datefleetd 0.9.0";
 
-it("says in General's Version the one status Hub › Updates shows; a member gets no machines and no switch", async () => {
+it("says in General's Version the one status Hub › Machines › Updates shows; a member gets no machines and no switch", async () => {
   await render("#/settings/general", false);
   const part = host.querySelector<HTMLElement>("[data-part='general.updates']");
   expect(part?.querySelector("[data-update-status]")?.textContent).toBe(STATUS);

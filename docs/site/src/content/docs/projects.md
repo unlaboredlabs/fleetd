@@ -582,7 +582,7 @@ A project's lead can open and follow work in projects on another hub, such as a 
 your personal one. You make a link key on the hub it reaches and add it to the project. It acts as you there, and
 either side can revoke it. [Security](/docs/security#hub-links) has the rules.
 
-**On the hub it reaches.** Open **Settings › Hubs**, **Hub links**, **Links to this hub** (with several hubs, *Links
+**On the hub it reaches.** Open **Settings › Hubs & devices**, **Hub links**, **Links to this hub** (with several hubs, *Links
 to* that hub), and click **Make a link key**:
 
 1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home" there.
@@ -795,7 +795,7 @@ profile.
 |---|---|
 | Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
 | A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Every project → Profiles → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
+| Which profile leads run on | Settings → Hub → Every project → Agents → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every project's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs & devices; reviews and tasks that name no profile stay on the default. Members see it on a project's Agents page, under Allowed profiles, with who to ask. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -829,7 +829,7 @@ and effort it started on (`lead_start {fresh: true}` starts it again now). Each 
 lane, and its time by profile, name the profile its session started on.
 
 To move every lead to it at once, an admin clicks **Restart hub…** on the hub's row in
-[Settings › Hubs](/docs/several-hubs#restart). Once the hub is back, each lead whose profile changed since it started
+[Settings › Hubs & devices](/docs/several-hubs#restart). Once the hub is back, each lead whose profile changed since it started
 (another profile picked, or its model, effort or fast mode edited) starts again on the current one, as
 `lead_start {fresh: true}` does: it keeps its chat, memory and open orders. A lead in the middle of a turn switches
 when the turn ends, and one whose machine is offline when it comes back. Leads already on the current profile carry on

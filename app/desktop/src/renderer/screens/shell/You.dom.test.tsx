@@ -162,7 +162,7 @@ it("reads the same on sample data: the banner says what it is", async () => {
   expect(open()).toEqual(["devbox", SETTINGS]);
 });
 
-it("opens Settings › You › Hubs from the hub's row, pairing from Pair, and Settings from its own row", async () => {
+it("opens Settings › You › Hubs & devices from the hub's row, pairing from Pair, and Settings from its own row", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 });
   open();
   act(() => row("hub")?.click());

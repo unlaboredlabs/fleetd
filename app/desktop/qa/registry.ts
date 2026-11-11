@@ -384,7 +384,7 @@ const inBackground = async (page: Page) => {
   });
 };
 
-/** Hub › Updates, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+/** Hub › Machines › Updates, as the palette's "Check for updates" opens it (the app menu runs the same command). */
 const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
@@ -934,12 +934,13 @@ export const screens: readonly Screen[] = [
     fixtures: ["sidebar-hubs"],
     variant: "other-hub",
   },
-  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
+  // One hub's page on the owner's hub: it lists your devices under the hub (`typical` has no answer for them).
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "admin-owner"] },
   // Restart hub, on the row of a hub the person administers: its confirm says what a restart does.
   {
     id: "settings.hubs",
     route: "#/settings/hubs",
-    fixtures: ["typical"],
+    fixtures: ["admin-owner"],
     variant: "restart",
     open: async (page) => {
       await page.getByRole("button", { name: "Restart hub…" }).click();
@@ -2121,7 +2122,7 @@ export const screens: readonly Screen[] = [
       await page.locator("#project-panel").getByRole("tablist").first().waitFor();
     },
   },
-  // C1, W38, W521 and W603: updates. The word under your name for each state that has one; and Hub › Updates as the
+  // C1, W38, W521 and W603: updates. The word under your name for each state that has one; and Hub › Machines' Updates as the
   // palette's "Check for updates" opens it, its one status for every state of this app (not checked yet, checking, a
   // build that doesn't update, up to date, found, downloading to restart, ready, the deb's command, a failed check, a
   // failed download), of the hub and its machines (up to date, version unknown, a newer build on the channel, older
@@ -2224,7 +2225,7 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-update-status]:not([data-update-status="available"])').first().waitFor();
     },
   },
-  // W112: a run nothing in the hub drives any more, followed when Hub › Updates opens: The update stopped, Start over.
+  // W112: a run nothing in the hub drives any more, followed when Hub › Machines › Updates opens: The update stopped, Start over.
   {
     id: "updates",
     route: "#/",
@@ -3070,8 +3071,8 @@ export const screens: readonly Screen[] = [
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
   // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the
-  // hub's Claude key and GitHub App); Every project's Tools & skills and Instructions & memory
-  // (the hub-wide built-in prompts open from its foot); Setup; and a member who follows a link.
+  // hub's Claude key and GitHub App); Every project's Agents (at Tools & skills, which was a page once) and
+  // Instructions (the hub-wide built-in prompts open from its foot); Setup; and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
   // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
@@ -3113,7 +3114,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
   },
-  // W469 and W603: Hub › Updates: the everyday page (up to date, Update automatically on), a ready build it installs
+  // W469 and W603: Hub › Machines at its Updates (a page of its own once: its link lands there): the everyday status (up to date, Update automatically on), a ready build it installs
   // by itself, one holding back with why, and the switch off.
   { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-current", "updates-auto-on", "updates-auto-held", "updates-hub-current"] },
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
@@ -3269,7 +3270,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.tools", route: "#/settings/hub/tools", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
-  // Every project › Profiles: the hub's three profiles, high the default and quick in fast mode; medium open in its
+  // Every project › Agents: the hub's three profiles, high the default and quick in fast mode; medium open in its
   // editor, its model, reasoning, fast mode and the default mark. Under them, Lead runs on.
   { id: "settings.hub.profiles", route: "#/settings/hub/profiles", fixtures: ["admin-owner", "settings-agents"] },
   {
@@ -3283,7 +3284,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.instructions", route: "#/settings/hub/instructions", fixtures: ["admin-owner", "settings-agents"] },
-  // Every project › Tools & skills: the hub-wide ones (one installed and pinned), Update on the installed one,
+  // Every project › Agents, at its skills: the hub-wide ones (one installed and pinned), Update on the installed one,
   // and Install.
   {
     id: "settings.hub.tools",
@@ -3448,7 +3449,7 @@ export const screens: readonly Screen[] = [
     },
   },
   // Hub links: a project's Linked hubs (in its settings), working, can't reach and revoked there, and none yet; a
-  // person's Links to this hub (on You › Hubs), and a key just made, shown once. Hub › People's list of everyone's is
+  // person's Links to this hub (on You › Hubs & devices), and a key just made, shown once. Hub › People's list of everyone's is
   // on settings.hub.people.
   {
     id: "settings.projects",
@@ -3503,7 +3504,8 @@ export const screens: readonly Screen[] = [
     variant: "search-none",
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
-  // Your devices: Sam's own two, then Pair a phone's QR with the address and code under it.
+  // Your devices, on You › Hubs & devices (its old link lands there): Sam's own two, then Pair a phone's QR with the
+  // address and code under it.
   { id: "settings.devices", route: "#/settings/devices", fixtures: ["admin-owner", "admin-member", "hub-unreachable"] },
   {
     id: "settings.devices",
@@ -3671,7 +3673,7 @@ export const screens: readonly Screen[] = [
   },
   // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
   // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to
-  // edit, a repo skill open to read, New and Install. The hub-wide ones are on Every project › Tools & skills.
+  // edit, a repo skill open to read, New and Install. The hub-wide ones are on Every project › Agents.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["typical", "empty", "hub-unreachable"], variant: "skills" },
   { id: "settings.agents", route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "skills-project" },
   {

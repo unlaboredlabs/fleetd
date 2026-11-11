@@ -198,7 +198,7 @@ The [table below](#prompts) marks prompt-only rules.
 ## Edit a prompt {#edit}
 
 In the app: Settings › a project › Instructions & memory, then **Built-in prompts** at the foot of the page, for one project's own
-texts. Hub › Every project › Instructions & memory has the same row for the hub-wide ones (owners and admins only: the hub refuses
+texts. Hub › Every project › Instructions has the same row for the hub-wide ones (owners and admins only: the hub refuses
 anyone else). Most changes belong in the instructions above that row. The list shows your edits first and the rest behind their
 groups: open a prompt, edit it and Save. "Reset to the built-in" drops your edit.
 
@@ -232,7 +232,7 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings › a project › Instructions & memory for one project's, and Settings › Hub › Every project › Instructions & memory for every project's (owners
+In the app: Settings › a project › Instructions & memory for one project's, and Settings › Hub › Every project › Instructions for every project's (owners
 and admins only). On the hub machine:
 
 ```sh

@@ -1,15 +1,14 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (the machines, Add machine behind the page's plus, each machine's page with Repair
-// while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; recordings); Updates
-// (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
-// as a project's own pages are: Profiles, Tools & skills
-// and Instructions & memory, each reaching every project on the hub, and the hub-wide built-in prompts from the foot
-// of Instructions; Hub accounts (the hub's Claude API key
-// and its GitHub App, github/AdminGithub.tsx); Vault (the cards, logins and addresses every project uses, and the vault
-// key, settings/Vault.tsx); and Setup, the hub's setup steps still left (SetupPage.tsx), always listed,
-// with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
-// and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
+// while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
+// where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
+// as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide
+// built-in prompts from its foot) and Vault (the cards, logins and addresses every project uses, and the vault key,
+// settings/Vault.tsx), each reaching every project on the hub; Hub accounts (the hub's Claude API key and its GitHub
+// App, github/AdminGithub.tsx); and Setup, the hub's setup steps still left (SetupPage.tsx), always listed, with how
+// many required ones are left. With several hubs the group manages one hub at a time, named above every page, and
+// switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
 import { Button, Text } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
@@ -19,7 +18,7 @@ import { AddMachine, type View } from "../addMachine";
 import { Recordings } from "../settings/Screens";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
-import { EveryProjectFrame } from "../settings/Frames";
+import { EveryProjectFrame, Part } from "../settings/Frames";
 import { AddButton, PageHead, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import { ProfilesEditor } from "../settings/Profiles";
@@ -35,7 +34,7 @@ import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
 import { SetupPage } from "./SetupPage";
-import { UpdatesPage } from "./UpdatesPage";
+import { Updates } from "./Updates";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
 import type { Person } from "../../../shared/contracts";
 import s from "../settings/settings.module.css";
@@ -120,14 +119,14 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
       return <People me={me} />;
     case "hub.machines":
       return route.machine === undefined ? <Machines /> : <MachinePage machineId={route.machine} />;
+    // Updates is a part of Machines, and Tools & skills of Every project › Agents (settings/route.ts).
     case "hub.updates":
-      return <UpdatesPage />;
+      return <Machines />;
     case "hub.profiles":
-      return <Profiles />;
     case "hub.tools":
-      return <ToolsAndSkills />;
+      return <EveryAgents />;
     case "hub.instructions":
-      return <InstructionsAndMemory />;
+      return <EveryInstructions />;
     case "hub.prompts":
       return <Prompts where="hub" route={{ tab: "hub.prompts", prompt: route.prompt, for: null }} />;
     case "hub.accounts":
@@ -141,8 +140,9 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 
 /**
  * The hub's machines, each a row that opens its own page with everything about it; the page's plus adds one (this
- * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then
- * how long recordings are kept, and updates.
+ * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then updates, the one
+ * status of them and the Update automatically switch (a page of its own once: a link to it lands here), and how long
+ * recordings are kept.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -161,6 +161,7 @@ function Machines() {
         />
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
         <MachineList />
+        <Updates />
         <SettingsSection title="Recordings" reveal="hub.recordings">
           <Recordings />
         </SettingsSection>
@@ -170,41 +171,33 @@ function Machines() {
 }
 
 /**
- * Every project › Profiles: the task profiles every project's agents run on, each a model, an effort, fast mode and a
- * note, and the hub's default; each project picks which it allows on its Agents page.
+ * Every project › Agents: what every project's agents run on and get. The task profiles (each a model, an effort, fast
+ * mode and a note, and the hub's default; each project picks which it allows on its own Agents page), then the MCP
+ * servers and the skills, which come before a project's own (Tools & skills, a page of its own once).
  */
-function Profiles() {
+function EveryAgents() {
   return (
     <div className={s.scroll} data-screen="settings.hub.profiles">
       <div className={s.column}>
-        <PageHead title="Profiles" />
+        <PageHead title="Agents" />
         <ProfilesEditor />
+        <Part reveal="hub.tools" screen="settings.hub.tools">
+          <SettingsSection title="MCP servers" reveal="hub.mcp">
+            <HubMcpServers />
+          </SettingsSection>
+          <HubSkills />
+        </Part>
       </div>
     </div>
   );
 }
 
-/** Every project › Tools & skills: the MCP servers and skills every project's agents get, before a project's own. */
-function ToolsAndSkills() {
-  return (
-    <div className={s.scroll} data-screen="settings.hub.tools">
-      <div className={s.column}>
-        <PageHead title="Tools & skills" />
-        <SettingsSection title="MCP servers" reveal="hub.mcp">
-          <HubMcpServers />
-        </SettingsSection>
-        <HubSkills />
-      </div>
-    </div>
-  );
-}
-
-/** Every project › Instructions & memory: the instructions every project's agents get. */
-function InstructionsAndMemory() {
+/** Every project › Instructions: the instructions every project's agents get. */
+function EveryInstructions() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory" />
+        <PageHead title="Instructions" />
         <SettingsSection title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </SettingsSection>

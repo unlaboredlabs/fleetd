@@ -16101,7 +16101,7 @@
       "x-open": true
     },
     "Profile": {
-      "description": "One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on\nthe default when none is.",
+      "description": "One task profile (Settings › Hub › Every project › Agents): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and every review and claude's helper calls run on; leads start on the one marked `lead`, or on\nthe default when none is.",
       "properties": {
         "default": {
           "type": "boolean"

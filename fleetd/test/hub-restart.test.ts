@@ -1,4 +1,4 @@
-// hub_restart (Settings › Hubs › Restart hub): who may ask, the restart handed to the service manager, and the leads
+// hub_restart (Settings › Hubs & devices › Restart hub): who may ask, the restart handed to the service manager, and the leads
 // whose profile changed since they started: marked as the hub goes down, started again on the current profile by the
 // hub that comes up. Fake ports throughout: no service manager, no node.
 import { afterEach, expect, test } from "bun:test";
@@ -91,7 +91,7 @@ async function withLead() {
   return { ...t, launched, next, ...hubWithService(t) };
 }
 
-/** The lead profile gets another model, as Settings › Hub › Every project › Profiles sets it. */
+/** The lead profile gets another model, as Settings › Hub › Every project › Agents sets it. */
 function switchModel(hub: Hub, model = "claude-sonnet-5-5") {
   const s = profiles(hub);
   s.update(s.leadProfile().id, { model, default: false }, isoMs(hub.clock.now()));

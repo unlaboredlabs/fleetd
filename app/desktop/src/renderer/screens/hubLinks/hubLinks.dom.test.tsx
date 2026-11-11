@@ -2,7 +2,7 @@
 // Hub links in the app: a project's Linked hubs (none yet; working, can't reach and revoked there; a key pasted with
 // its address, sealed in main and never in a hub call; removed), a person's Links to this hub (none yet; a key made for
 // chosen projects, shown once and copied with the address; only their own even for an admin; revoked), Hub › People's
-// list of everyone's, a hub too old to link hubs, and You › Hubs, which leaves each project's linked hubs to its
+// list of everyone's, a hub too old to link hubs, and You › Hubs & devices, which leaves each project's linked hubs to its
 // settings.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -352,11 +352,11 @@ describe("Hub › People's hub links", () => {
   it("with none, says so with a way to make one", async () => {
     await render(<AllLinks />);
     expect(text()).toContain("No links to this hub yet.");
-    expect(button("Make one in You › Hubs")).toBeTruthy();
+    expect(button("Make one in You › Hubs & devices")).toBeTruthy();
   });
 });
 
-describe("You › Hubs › Hub links", () => {
+describe("You › Hubs & devices › Hub links", () => {
   it("lists the links to each hub, and leaves each project's linked hubs to its settings", async () => {
     await render(<HubLinksSettings />);
     expect(text()).toContain("Links to this hub");

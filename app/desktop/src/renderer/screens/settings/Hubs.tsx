@@ -1,4 +1,4 @@
-// Settings › You › Hubs: the hubs this app is paired with, each under a name the person picks and an
+// Settings › You › Hubs & devices: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. An admin of a hub also
 // restarts it from its row (hubRestart.ts); a member's row has no such button. Then Hub links: the keys
@@ -19,7 +19,7 @@ import { ColorPick } from "../shell/ColorPick";
 import { restartLine, useHubRestart } from "./hubRestart";
 import { AddButton, DangerButton, GroupNote, SettingsRow, SettingsSection } from "./parts";
 
-/** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
+/** Settings › You › Hubs & devices: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
   const hubs = useHubs();
   return (

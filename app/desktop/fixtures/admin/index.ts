@@ -139,7 +139,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     link: `fleetd://pair?hub=${encodeURIComponent(HUB)}&code=K7QM-4XWD`,
     hubUrl: HUB,
   });
-  // Pair a phone (Settings › Your devices): a 15-minute code, at the address the app reaches the hub at.
+  // Pair a phone (Settings › Hubs & devices): a 15-minute code, at the address the app reaches the hub at.
   f.answer("pair_code_create", undefined, {
     code: "R4TN-8HQC",
     link: `fleetd://pair?hub=${encodeURIComponent(HUB)}&code=R4TN-8HQC`,
@@ -172,7 +172,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     ],
   });
   f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
-  // Every project › Profiles: the hub's task profiles.
+  // Every project › Agents: the hub's task profiles.
   f.answer("profiles_list", {}, profilesList());
   // The hub's GitHub App, and everyone's connection through it, for People's rows: Sam's and Alice's connected,
   // Bob's not yet. A member is answered with their own only.

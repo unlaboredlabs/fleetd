@@ -1,7 +1,7 @@
 // Mounted once by the shell: it asks the hub on connect, every few minutes and whenever the hub says an update began
 // or ended about its run and the build it has downloaded and ready, which the word under your name says (quiet.ts), and it
 // holds the commands that reach updates (the palette, the app menu's "Check for Updates…"), which open Settings ›
-// Hub › Updates for an admin and General, with this app's own, for anyone else.
+// Hub › Machines › Updates for an admin and General, with this app's own, for anyone else.
 import { useEffect } from "react";
 import { useData, useDataLayer } from "../../src/data/react";
 import { useSettledAdministers } from "../admin/role";

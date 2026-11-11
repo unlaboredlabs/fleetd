@@ -1,5 +1,5 @@
 // MCP servers: HubMcpServers, the ones every project's agents get and whether they also get their own (Settings ›
-// Hub › Every project › Tools & skills, owners and admins only, D209); and the editor and remove dialogs a project's
+// Hub › Every project › Agents, owners and admins only, D209); and the editor and remove dialogs a project's
 // own servers use on its Project page (Integrations.tsx), where its one MCP servers list is. Reads
 // mcp_servers_get; saves through main (mcp_server_set, each secret sealed there to each machine's key), removes with
 // mcp_server_remove and tests with mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.

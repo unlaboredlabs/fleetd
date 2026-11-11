@@ -24,7 +24,7 @@ const menu = (over: Partial<MenuInput> = {}) =>
 const read = (over: Partial<MenuInput> = {}) => menu(over).map((l) => [l.text, l.action ?? l.aside].filter((x) => x !== undefined).join(" · "));
 
 describe("the hub's line", () => {
-  it("is a dot and the hub's short name while all is well, and opens Settings › You › Hubs", () => {
+  it("is a dot and the hub's short name while all is well, and opens Settings › You › Hubs & devices", () => {
     expect(menu()).toEqual([{ key: "hub", mark: "success", text: "devbox", name: "devbox", does: { to: "hubs" } }]);
     expect(menu({ admin: false })).toEqual(menu());
     expect(read({ label: "Personal" })).toEqual(["Personal"]);

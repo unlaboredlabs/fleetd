@@ -1,5 +1,5 @@
 // The one status of updates (model.ts), as rows of a Settings group: its title with one quiet line and its one
-// button, then a row per machine to look at, only when there is one. Hub › Updates and General's Version both show it.
+// button, then a row per machine to look at, only when there is one. Hub › Machines › Updates and General's Version both show it.
 import { useState } from "react";
 import { Button, copyText, Dot, InlineCode, Text } from "../../ui";
 import { SettingsList, SettingsListRow, SettingsRow } from "../settings/parts";

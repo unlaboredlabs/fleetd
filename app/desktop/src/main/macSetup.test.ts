@@ -335,7 +335,7 @@ describe("a version difference", () => {
     const { p } = ports({ hubs: { [ANSWER.hubUrl]: () => json(404, {}) } });
     const { outcome } = await redeemMac(p, { code: "123456" });
     expect(outcome).toMatchObject({ ok: false, failure: { message: `The hub at ${ANSWER.hubUrl} runs an older fleetd that doesn't take Mac setup codes yet.` } });
-    expect(outcome.ok ? "" : outcome.failure.fix).toContain("Settings › Hub › Updates");
+    expect(outcome.ok ? "" : outcome.failure.fix).toContain("Settings › Hub › Machines › Updates");
   });
 
   it("an edge release that moved on past the hub's build: the Mac joins on the newer build, and says so in its first step", async () => {
@@ -414,7 +414,7 @@ describe("a version difference", () => {
     const { p } = ports({ exit: 1, output });
     const end = await joinMac(p, edgePending, () => undefined);
     expect(end).toMatchObject({ state: "failed", retry: true, failure: { message: "Your hub runs an older fleetd than this Mac, so this Mac can't join it yet." } });
-    expect(end.failure?.fix).toContain("Settings › Hub › Updates");
+    expect(end.failure?.fix).toContain("Settings › Hub › Machines › Updates");
     expect(words(end.failure)).not.toMatch(/mismatch|protocol/u);
   });
 
@@ -436,7 +436,7 @@ describe("a version difference", () => {
     const elsewhere = signedInPorts(() => [{ ...hub({}), url: "http://other:4790" }]);
     expect(await elsewhere.hubRole(ANSWER.hubUrl)).toBe("unknown");
     const refused = await elsewhere.updateHub(ANSWER.hubUrl);
-    expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Updates");
+    expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Machines › Updates");
   });
 });
 

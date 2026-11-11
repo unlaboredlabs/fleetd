@@ -12,7 +12,7 @@ before it writes ([Integrations](/docs/integrations)), and may sign you in with 
 
 ## Add a server {#add}
 
-Global servers are in Settings › **Hub** › **Every project** › **Tools & skills**, for the hub's owners and admins only:
+Global servers are in Settings › **Hub** › **Every project** › **Agents**, for the hub's owners and admins only:
 click **Add server**. A project's own are in Settings › the project › **Project** › **MCP servers**: click **Add an MCP
 server** and turn on **Agents get it too**, then **Edit** it on its row to pick its roles. The editor has:
 
@@ -70,7 +70,7 @@ has the token renewed and is tested again.
 ## Your own MCP servers {#your-own}
 
 Agents also get the MCP servers of your own claude setup (`~/.claude.json`, a repo's `.mcp.json`), as before. Turn
-**Agents also get their own MCP servers** off in Settings › Hub › Every project › Tools & skills to give them only fleetd's tools and the servers
+**Agents also get their own MCP servers** off in Settings › Hub › Every project › Agents to give them only fleetd's tools and the servers
 configured here: claude then runs with `--strict-mcp-config`. fleetd's own tools (`report`, `ask_lead`, the lead's
 tools) are always there and can't be replaced.
 

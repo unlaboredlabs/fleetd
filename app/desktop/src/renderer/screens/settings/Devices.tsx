@@ -1,4 +1,4 @@
-// Settings › You › Your devices: the devices signed in as you on each hub, and Pair a phone. Pair a phone mints a
+// Your devices, on Settings › You › Hubs & devices: the devices signed in as you on each hub, and Pair a phone. Pair a phone mints a
 // one-time code (pair_code_create, 15 minutes, as `fleetd pair` does) and shows its fleetd://pair link as a QR for the
 // phone app or the Camera to scan, with the hub address and code under it for typing. When the phone has paired (its
 // key.paired event refetches people_list), the QR gives way to the new phone, which also joins the list. Each other
@@ -18,14 +18,14 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { GroupNote, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
 
-/** Each paired hub's part: with one hub, just the list and Pair a phone, under the page's own title. */
+/** Each paired hub's part of You › Hubs & devices: its list and Pair a phone, the hub named when there are several. */
 export function DevicesSettings() {
   const hubs = useHubs();
   return (
     <>
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
-          <YourDevices title={hubs.length === 1 ? "Your devices" : `On ${hub.label}`} reveal={hubs.length === 1 ? "devices.pair" : `devices.${hub.id}`} one={hubs.length === 1} />
+          <YourDevices title={hubs.length === 1 ? "Your devices" : `Your devices on ${hub.label}`} reveal={hubs.length === 1 ? "devices.pair" : `devices.${hub.id}`} />
         </HubScope>
       ))}
     </>
@@ -37,7 +37,7 @@ type Pairing =
   | { readonly phase: "shown"; readonly out: PairCodeCreateOutput; readonly before: ReadonlySet<string> }
   | { readonly phase: "failed"; readonly error: string };
 
-function YourDevices({ title, reveal, one }: { title: string; reveal: string; one: boolean }) {
+function YourDevices({ title, reveal }: { title: string; reveal: string }) {
   const live = useLive();
   const read = usePeople();
   const call = useHubCall();
@@ -59,7 +59,7 @@ function YourDevices({ title, reveal, one }: { title: string; reveal: string; on
   };
   return (
     <SettingsSection
-      title={one ? undefined : title}
+      title={title}
       reveal={reveal}
       hint="The apps signed in as you. Each acts as you on this hub, on every machine."
       aside={

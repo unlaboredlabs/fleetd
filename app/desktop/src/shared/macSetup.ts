@@ -75,7 +75,7 @@ export interface HubBehind {
 }
 
 /** Where an admin updates the hub, for when this app can't do it from the Mac. */
-export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub › Updates and press Update.";
+export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub › Machines › Updates and press Update.";
 
 export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 

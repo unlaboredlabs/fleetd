@@ -18,7 +18,7 @@ export interface Word {
 export interface Note {
   readonly title: string;
   readonly action?: { readonly label: string; readonly act: Act };
-  /** Settings › Hub › Updates has more to read (a machine that didn't update or is behind), for an admin. */
+  /** Settings › Hub › Machines › Updates has more to read (a machine that didn't update or is behind), for an admin. */
   readonly details: boolean;
   /** With "Updated": when, epoch ms. */
   readonly at?: number;

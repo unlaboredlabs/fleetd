@@ -1,6 +1,7 @@
 // Settings' links ride on the shell's route (shell/routes.ts): #/settings[/<tab>][?prompt=<id>&for=<machine>/<project>],
 // and the Hub group's #/settings/hub/<page>. They make a built-in prompt and a project's texts linkable, from the
-// palette or the screenshot suite.
+// palette or the screenshot suite. A tab is a page, or a part of one that was a page once (PART_OF): a link to it opens
+// the page that holds it, at that part.
 import { useRoute } from "../shell/navigation";
 import { isHubTab, parseHash, toHash, type HubTab, type Screen, type SettingsTab } from "../shell/routes";
 
@@ -36,10 +37,20 @@ export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instruct
 /** A project's page: one of its tabs, or its built-in prompts, which open from the foot of Instructions. */
 export const isProjectTab = (tab: Tab): boolean => tab === "prompts" || PROJECT_TABS.includes(tab);
 
-/** Hub › Every project's pages, under tabs as a project's are. */
-export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.tools", "hub.instructions"];
-/** One of them, or the hub-wide built-in prompts, which open from the foot of its Instructions. */
-export const isEveryProject = (tab: Tab): tab is HubTab => tab === "hub.prompts" || EVERY_PROJECT.some((t) => t === tab);
+/** Hub › Every project's pages, under tabs as a project's are: Agents, Instructions and Vault. */
+export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.instructions", "hub.vault"];
+
+/**
+ * The tabs that were pages of their own and are now a part of another: Your devices on Hubs & devices, Updates on
+ * Machines, Tools & skills on Every project › Agents. Every link to one still works: it opens the page at that part,
+ * which is marked for reveal by the tab's own name.
+ */
+const PART_OF: Partial<Record<Tab, Tab>> = { devices: "hubs", "hub.updates": "hub.machines", "hub.tools": "hub.profiles" };
+/** The page a tab is on: itself, unless it is a part of another. */
+export const pageOf = (tab: Tab): Tab => PART_OF[tab] ?? tab;
+
+/** One of Every project's pages, or the hub-wide built-in prompts, which open from the foot of its Instructions. */
+export const isEveryProject = (tab: Tab): tab is HubTab => tab === "hub.prompts" || EVERY_PROJECT.some((t) => t === pageOf(tab));
 
 const last = new Map<Tab, string>();
 /** The project the project pages last showed: each of them opens on it. */

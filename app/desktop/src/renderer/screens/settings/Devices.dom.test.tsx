@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › You › Your devices: only your own devices; Pair a phone mints a code with the address this app reaches the
+// Settings › You › Hubs & devices, at Your devices (its old link opens there): only your own devices; Pair a phone mints a code with the address this app reaches the
 // hub at, shows its link as a QR with the address and code as text and how long it lasts, and notices the phone once
 // it has paired (key.paired); a hub only on loopback is refused with its fix, and an expired code offers a new one.
 // Each device but this one signs out once confirmed (device_revoke), and leaves the list; the confirm says how many hub
@@ -59,7 +59,12 @@ beforeEach(() => {
     ok: true,
     output: { code: "ABCD-2345", link: LINK, hubUrl: "http://devbox.tail1234.ts.net:4790", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() },
   });
-  vi.stubGlobal("fleetd", { platform: "linux", fixture: null, updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) } });
+  vi.stubGlobal("fleetd", {
+    platform: "linux",
+    fixture: null,
+    updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
+    pair: { store: () => new Promise(() => undefined) },
+  });
   window.location.hash = "#/settings/devices";
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -75,7 +80,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** Settings › Your devices, connected to a hub this app reaches at `appUrl`. */
+/** Settings › Hubs & devices, connected to a hub this app reaches at `appUrl`. */
 const render = async (appUrl = "http://devbox.tail1234.ts.net:4790") => {
   send = () => undefined;
   const hub: HubApi = {
@@ -142,8 +147,9 @@ const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c
 it("lists only your own devices", async () => {
   await render();
   expect(rows()).toEqual(["MacBook"]);
-  // With one hub the page's own title says it: no second heading or intro.
-  expect(host.querySelector("section[aria-label='Your devices'] h2")).toBeNull();
+  // The old page's link lands on its part of Hubs & devices, under its own heading; with one hub, no intro.
+  expect(host.querySelector("[data-screen='settings.hubs'] [data-screen='settings.devices'] section[aria-label='Your devices'] h2")?.textContent).toBe("Your devices");
+  expect(document.activeElement?.getAttribute("data-screen")).toBe("settings.devices");
   expect(host.textContent).not.toContain("Each of these acts as you");
 });
 

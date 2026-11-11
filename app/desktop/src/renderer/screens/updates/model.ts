@@ -1,4 +1,4 @@
-// What every updates surface says (Hub › Updates, General's Version, the word under your name and the menu's line,
+// What every updates surface says (Hub › Machines › Updates, General's Version, the word under your name and the menu's line,
 // the phone's Update fleetd): one status. A title, at most one quiet line under it, at most one button, and a row per
 // machine only for one that didn't update or is behind. The most pressing wins: an update going on, the hub's
 // failure, a newer build, a machine to look at, this app's own update, else "Up to date". Pure, so every state is
