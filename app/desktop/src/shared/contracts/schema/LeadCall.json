@@ -2510,6 +2510,19 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ProjectProposeCall",
+          "properties": {
+            "op": {
+              "const": "project_propose",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2850,6 +2863,29 @@
       "required": [
         "project",
         "text"
+      ],
+      "type": "object"
+    },
+    "ProjectProposeCall": {
+      "description": "`project_propose`: a lead proposes a new project to the person: its title, and a GitHub repo to clone or none.\nThe chat shows a card with exactly what would be made. Only a person's approval on the card makes it, and it is\ntheirs; denied or unanswered, nothing is made.",
+      "properties": {
+        "title": {
+          "description": "The new project's name.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "url": {
+          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto your project's machine. Absent: a project\nwith no repo.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
       ],
       "type": "object"
     },

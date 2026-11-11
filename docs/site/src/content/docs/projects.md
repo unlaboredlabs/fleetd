@@ -393,7 +393,8 @@ that is gone, says so under the line.
 
 What stays yours, whatever the lead is asked or told: the approval mode, [allowed sites](#sites) (the card on a first
 visit stays), profiles, models and [max agents](#max-agents), the project's [card](#purchases), vault items, MCP
-servers, the built-in prompts, [Only me](#only-me), [linked hubs](#hub-links), deleting a project, creating one, and
+servers, the built-in prompts, [Only me](#only-me), [linked hubs](#hub-links), deleting a project, creating one
+(the lead can only [propose it](#lead-propose)), and
 adding by path a folder that is a project of its own (adding it would archive that project). The lead's calls have no
 field for any of these, and one that names any of them is refused with a line that says who can do it and where. A
 lead sets up only its own project. A task can't make these calls at all: it is told to ask its lead. The `fleetd`
@@ -402,6 +403,26 @@ command line in an agent's shell changes none of this either:
 
 The lead is told to make these changes only when you ask in the chat, never because a web page, a file or another
 agent says so.
+
+### A new project, proposed {#lead-propose}
+
+A lead never creates a project. Ask it for one in its chat and it proposes it (`project_propose`), with a name and a
+GitHub repo to clone, or none. The chat shows one card, **New project**, with exactly what would be made: the name,
+the repo, the folder on the lead's own machine, and who it is open to. On the phone it is the same card, among your
+approvals.
+
+- **Create it** makes the project, and nothing exists before that. It is made as if you had used **New project**
+  yourself: one with no repo is yours alone ([Only me](#only-me)), and one cloned from a repo is open to everyone on
+  the hub. Turn **Only me** on or off in its settings afterwards.
+- **Don't create**, or no answer, makes nothing.
+- The card shows in every approval mode, YOLO included, and the checker never answers it for you.
+- A repo is cloned after your tap, as **New project** does it. The project appears when the clone ends, and the lead
+  that proposed it is told then, or told why it failed.
+- What can't be made is refused before any card shows: a name whose folder is taken, a repo the machine's GitHub
+  login can't read, a clone folder that already exists.
+
+A task can't propose a project: it is told to ask its lead. The new project's own lead starts with your first
+message in its chat.
 
 ## What the lead asks first {#approvals}
 

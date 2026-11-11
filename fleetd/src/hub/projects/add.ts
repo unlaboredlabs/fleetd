@@ -198,7 +198,10 @@ function checkInput(input: ProjectAddInput): void {
   if (input.path !== undefined && (input.dest !== undefined || input.useExisting !== undefined)) throw bad("dest and useExisting go with url only");
 }
 
-export async function add(hub: Hub, caller: Caller, input: ProjectAddInput): Promise<ProjectAddOutput> {
+/** Hears how a clone `project_add` started ends: the project it became, or why there is none. */
+export type CloneEnd = { added(projectId: ProjectId, path: string): void; failed(problem: ProjectProblem): void };
+
+export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?: CloneEnd): Promise<ProjectAddOutput> {
   checkInput(input);
   if (input.machineId !== undefined) requireRole(caller, "operate", input.machineId);
   const m = targetMachine(hub, input.machineId);
@@ -246,7 +249,7 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput): Pro
   }
   const run = clones(hub).start();
   const path = target.path;
-  void cloneAndRegister(hub, m, repo, path, intoProject(hub, m, title, onlyMe), run);
+  void cloneAndRegister(hub, m, repo, path, intoProject(hub, m, title, onlyMe, end), run);
   return {
     next: `Cloning into ${path} on ${m}. Follow events_wait for project.clone_progress, then project.added or project.add_failed with data.addId ${run.addId}.`,
     machineId: m,
@@ -361,10 +364,19 @@ export type CloneInto = {
   failed?(problem: ProjectProblem): void;
 };
 
-function intoProject(hub: Hub, m: MachineId, title: string | undefined, onlyMe: OnlyMe): (path: string) => CloneInto {
+function intoProject(hub: Hub, m: MachineId, title: string | undefined, onlyMe: OnlyMe, end?: CloneEnd): (path: string) => CloneInto {
   return (path) => ({
-    add: (p, facts, inspect, addId) => registerAt(hub, m, p, title, facts, inspect, addId, onlyMe),
+    add: async (p, facts, inspect, addId) => {
+      const added = await registerAt(hub, m, p, title, facts, inspect, addId, onlyMe);
+      try {
+        end?.added(added.projectId, p);
+      } catch (error) {
+        console.warn("a finished clone was not told on:", error);
+      }
+      return added;
+    },
     fix: `Add the checkout at ${path} on ${m} as a project`,
+    ...(end ? { failed: end.failed } : {}),
   });
 }
 

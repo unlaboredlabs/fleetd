@@ -1,0 +1,111 @@
+{
+  "note": "A lead's proposals for a new project (project_propose, W614): one with a repo to clone and one with none, both waiting; one approved, one declined and one approved that could not be made, each folded. devbox; no personal data.",
+  "opening": [
+    "Can you set up a project for the pricing page? The repo is acme/pricing-page.",
+    "I can't make a project myself, only propose one. This is exactly what would be made, once you approve."
+  ],
+  "items": [
+    {
+      "kind": "command_approval",
+      "requestId": "Q41",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-41",
+        "toolName": "mcp__fleetd__project_propose",
+        "summary": "Proposes a new project",
+        "preview": {
+          "server": "fleetd",
+          "tool": "project_propose",
+          "action": "write",
+          "title": "Create the project “Pricing page”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/pricing-page\",\n  \"repo\": \"acme/pricing-page\",\n  \"title\": \"Pricing page\",\n  \"what\": \"A new project on devbox, cloned from acme/pricing-page once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q42",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-42",
+        "toolName": "mcp__fleetd__project_propose",
+        "summary": "Proposes a new project",
+        "preview": {
+          "server": "fleetd",
+          "tool": "project_propose",
+          "action": "write",
+          "title": "Create the project “Release notes”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": true,\n  \"path\": \"/home/dev/fleetd/projects/release-notes\",\n  \"repo\": null,\n  \"title\": \"Release notes\",\n  \"what\": \"A new project on devbox, once you approve. Only you will see it (Only me). Nothing is made before that.\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q43",
+      "machineId": "devbox",
+      "state": "approved",
+      "answeredAt": "2026-10-19T09:12:00.000Z",
+      "by": "desk",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-43",
+        "toolName": "mcp__fleetd__project_propose",
+        "summary": "Proposes a new project",
+        "preview": {
+          "server": "fleetd",
+          "tool": "project_propose",
+          "action": "write",
+          "title": "Create the project “Docs site”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/docs\",\n  \"repo\": \"acme/docs\",\n  \"title\": \"Docs site\",\n  \"what\": \"A new project on devbox, cloned from acme/docs once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q44",
+      "machineId": "devbox",
+      "state": "denied",
+      "answeredAt": "2026-10-19T09:14:00.000Z",
+      "by": "desk",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-44",
+        "toolName": "mcp__fleetd__project_propose",
+        "summary": "Proposes a new project",
+        "preview": {
+          "server": "fleetd",
+          "tool": "project_propose",
+          "action": "write",
+          "title": "Create the project “Scratch”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": true,\n  \"path\": \"/home/dev/fleetd/projects/scratch\",\n  \"repo\": null,\n  \"title\": \"Scratch\",\n  \"what\": \"A new project on devbox, once you approve. Only you will see it (Only me). Nothing is made before that.\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q45",
+      "machineId": "devbox",
+      "state": "failed",
+      "answeredAt": "2026-10-19T09:16:00.000Z",
+      "by": "desk",
+      "note": "the project was not created: /home/dev/src/billing already exists on devbox. Propose it again once that is sorted, or: The person makes it themselves with New project in the app",
+      "permission": {
+        "threadId": "t-lead",
+        "requestId": "perm-45",
+        "toolName": "mcp__fleetd__project_propose",
+        "summary": "Proposes a new project",
+        "preview": {
+          "server": "fleetd",
+          "tool": "project_propose",
+          "action": "write",
+          "title": "Create the project “Billing”",
+          "input": "{\n  \"machineId\": \"devbox\",\n  \"onlyMe\": false,\n  \"path\": \"/home/dev/src/billing\",\n  \"repo\": \"acme/billing\",\n  \"title\": \"Billing\",\n  \"what\": \"A new project on devbox, cloned from acme/billing once you approve. Everyone on this hub can use it, as with a repo you add yourself. Nothing is made before that.\"\n}"
+        }
+      }
+    }
+  ]
+}

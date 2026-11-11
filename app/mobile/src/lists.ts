@@ -3,7 +3,7 @@
 // your reply. An archived project is in neither, unless an approval of its waits: it is under Archived. Pure, so it is
 // unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, hasHidden, isArchived, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, openTo, proposal, shellWord, type Chat, type ChatItem, type ChatMessage, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -263,6 +263,14 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     // The hub words it to follow "<the project> wants to": "Use create_page on docs".
     wants = `wants to ${preview.title.charAt(0).toLowerCase()}${preview.title.slice(1)}`;
     risk = preview.action === "spend" ? "money" : preview.action === "delete" ? "irreversible" : undefined;
+    // A lead's proposal for a new project: all that approving it makes, on the card's face.
+    const made = proposal(preview);
+    if (made !== undefined) {
+      add("Repo", made.repo ?? "None", made.repo === undefined ? {} : { mono: true });
+      add("Folder", made.path, { mono: true });
+      add("On", made.machineId);
+      add("Open to", openTo(made));
+    }
     add("Input", preview.input, { mono: true, more: true, lines: true });
   } else if (r.permission !== undefined) {
     wants = r.permission.site !== undefined ? `wants to visit ${r.permission.site}` : `wants to use ${r.permission.toolName}`;
