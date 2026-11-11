@@ -82,8 +82,21 @@ export function leadThread(hub: Hub, r: ProjectRef): ThreadRef | undefined {
   return lead ? { machineId: r.machineId, threadId: lead.threadId } : undefined;
 }
 
-/** Whether the project's lead is mid-turn, as its thread last said. */
-export const leadWorking = (hub: Hub, r: ProjectRef) => leads(hub).get(r)?.state === "working";
+/** Whether the thread is mid-turn: running, or held on a permission prompt. */
+const midTurn = (hub: Hub, thread: ThreadRef) => {
+  const status = store(hub).threadGet(thread)?.thread.status;
+  return status === "running" || status === "waiting";
+};
+
+/**
+ * Whether the project's lead is mid-turn, as its thread last said. A prompt holds the turn, not ends it: when the hub
+ * answers it the run goes on with no thread event, so a prompt that read as idle stayed idle until the turn's next
+ * event (2026-11-11).
+ */
+export const leadWorking = (hub: Hub, r: ProjectRef) => {
+  const thread = leadThread(hub, r);
+  return thread !== undefined && midTurn(hub, thread);
+};
 
 /** The project's chat state, announced as `chat.waiting` when it changed. */
 export function state(hub: Hub, r: ProjectRef): ProjectChatState {
@@ -547,11 +560,6 @@ function stopCaller(caller: Caller, tool: string, r: ProjectRef): void {
   requireHuman(caller, tool);
   requireRole(caller, "operate", r.machineId);
 }
-
-const midTurn = (hub: Hub, thread: ThreadRef) => {
-  const status = store(hub).threadGet(thread)?.thread.status;
-  return status === "running" || status === "waiting";
-};
 
 /** Interrupts the lead's turn now, also one held on a permission prompt. True when it had one. */
 export async function stopLead(hub: Hub, r: ProjectRef): Promise<boolean> {
