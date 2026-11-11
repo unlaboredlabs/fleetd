@@ -84,8 +84,8 @@ with **Retry** or **Pair again**. A click on a connected hub's row opens it in S
 hub is out of reach.
 
 A hub that's out of reach only affects its own group. Its projects show as they were last seen, marked "as of 09:02",
-and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its card says
-"Key refused", and Settings › Hubs has **Pair again**.
+and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its row in the menu
+says "Acme refused the key", with **Pair again**.
 
 The app reaches each hub directly, over your tailnet or HTTPS. A hub that only your company network reaches is out of
 reach from home until you're on that network or its VPN.

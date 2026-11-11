@@ -137,6 +137,16 @@ it("says a problem in one row with the one thing to do, and never the hub's addr
   expect(open()).toEqual(["Not paired with a hub · Pair", SETTINGS]);
 });
 
+it("lets only the hub's name give way in a narrow row, whole on hover; what is wrong and its action stay", async () => {
+  await mount({ phase: "refused", hub: HUB, message: "" });
+  open();
+  const name = row("hub")?.querySelector<HTMLElement>("[title]");
+  expect(name?.title).toBe("devbox");
+  expect(name?.textContent).toBe("devbox");
+  // The words after the name and the action are their own, outside the part that is cut short.
+  expect([...(name?.parentElement?.children ?? [])].map((c) => c.textContent)).toEqual(["devbox", " refused the key"]);
+});
+
 it("says the hub is updating through an update's restart, and out of reach only after 2 minutes", async () => {
   const away = (ms: number): HubState => ({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0, restarting: Date.now() - ms, updatingTo: "0.9.3" });
   await mount(away(1_000));

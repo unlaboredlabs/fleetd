@@ -42,12 +42,26 @@ button.row:hover {
   height: 14px;
 }
 
-.words {
-  flex: 1;
+.words,
+.name {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.words {
+  flex: 1;
+}
+
+/* Words around a hub's or machine's name: the name alone gives way, so what is wrong is never cut. */
+.named {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+.part {
+  flex: none;
+  white-space: pre;
 }
 
 /* What a click on the row does: a link's blue, in the row's own size, clear of the words. */

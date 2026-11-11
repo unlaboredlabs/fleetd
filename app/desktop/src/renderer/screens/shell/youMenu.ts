@@ -25,6 +25,8 @@ export interface MenuLine {
   readonly key: "hub" | "update" | "machines" | "setup";
   readonly mark: LineMark;
   readonly text: string;
+  /** The hub's or machine's name in `text`, the one part the row may cut short when it is long; never what is wrong. */
+  readonly name?: string;
   /** What a click does; a line without it is only read. */
   readonly does?: LineDoes;
   /** The action in a word or two, at the line's end ("Retry"). The hub's own line, all being well, has none. */
@@ -59,26 +61,30 @@ const plural = (n: number, one: string, many: string): string => `${String(n)} $
 /** The hub's own line: its name beside a dot while connected, else what is wrong with the link and what to do. */
 export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null, now: number): MenuLine => {
   const line = { key: "hub" } as const;
-  if (hub.phase === "unpaired") return { ...line, mark: "quiet", text: label === null ? "Not paired with a hub" : `${label} isn't paired`, action: "Pair", does: { to: "pair" } };
+  if (hub.phase === "unpaired") {
+    const pair = { action: "Pair", does: { to: "pair" } } as const;
+    return label === null ? { ...line, mark: "quiet", text: "Not paired with a hub", ...pair } : { ...line, mark: "quiet", text: `${label} isn't paired`, name: label, ...pair };
+  }
   const name = label ?? (hub.hub === "" ? "the hub" : hubName(hub.hub));
-  if (hub.phase === "refused") return { ...line, mark: "danger", text: `${name} refused the key`, action: "Pair again", does: { to: "pair" } };
+  const named = { ...line, name };
+  if (hub.phase === "refused") return { ...named, mark: "danger", text: `${name} refused the key`, action: "Pair again", does: { to: "pair" } };
   const hubs = { does: { to: "hubs" } } as const;
   if (hub.phase === "live") {
     // An update going on or just in is a quiet word here, never a line of its own.
     const aside = quiet?.kind === "updating" ? "Updating…" : quiet?.kind === "updated" ? ["Updated", quiet.note?.aside].filter((x) => x !== undefined).join(" ") : undefined;
-    return { ...line, mark: "success", text: name, ...(aside === undefined ? {} : { aside }), ...hubs };
+    return { ...named, mark: "success", text: name, ...(aside === undefined ? {} : { aside }), ...hubs };
   }
   // A restart isn't an outage while it is short (an update's for 2 minutes): the dot opens to a ring.
   const restart = restartOf(hub, now);
   if (restart !== null && restart.phase !== "outage") {
-    if (restart.phase === "long") return { ...line, mark: "ring", text: `${name} is still updating`, action: "Retry", does: { to: "retry" } };
-    return { ...line, mark: "ring", text: name, aside: restart.to === null ? "Restarting…" : "Updating…", ...hubs };
+    if (restart.phase === "long") return { ...named, mark: "ring", text: `${name} is still updating`, action: "Retry", does: { to: "retry" } };
+    return { ...named, mark: "ring", text: name, aside: restart.to === null ? "Restarting…" : "Updating…", ...hubs };
   }
   // The first dial is the usual start. From the second on it is out of reach, in the same words between attempts and
   // during one, so the line doesn't flip on every redial.
-  if (hub.phase === "connecting" && hub.attempt <= 1) return { ...line, mark: "quiet", text: `Connecting to ${name}…`, ...hubs };
-  if (hub.phase === "connecting") return { ...line, mark: "warning", text: `Can't reach ${name}`, aside: "Trying…" };
-  return { ...line, mark: "warning", text: `Can't reach ${name}`, action: "Retry", does: { to: "retry" } };
+  if (hub.phase === "connecting" && hub.attempt <= 1) return { ...named, mark: "quiet", text: `Connecting to ${name}…`, ...hubs };
+  if (hub.phase === "connecting") return { ...named, mark: "warning", text: `Can't reach ${name}`, aside: "Trying…" };
+  return { ...named, mark: "warning", text: `Can't reach ${name}`, action: "Retry", does: { to: "retry" } };
 };
 
 /** An update that needs someone: one to take, or one that didn't go in. One going on or just in is the hub's line's. */
@@ -98,17 +104,22 @@ export const updateLine = (quiet: Quiet | null, admin: boolean): MenuLine | null
 
 /**
  * Machines that need someone, for an admin: the one by name, opening its page, or how many. A member reads of them
- * only when none is online, since then nothing of theirs runs.
+ * only when none is online, since then nothing of theirs runs, in the Machines page's words: all offline, all degraded
+ * (connected, but agents can't run there), or some of each.
  */
 export const machinesLine = (machines: readonly MenuMachine[] | undefined, admin: boolean): MenuLine | null => {
   const line = { key: "machines", mark: "warning" } as const;
   const off = machines?.filter((m) => m.status !== "online") ?? [];
   if (machines === undefined || off.length === 0) return null;
-  if (!admin) return off.length === machines.length ? { ...line, text: "All machines offline", aside: ASK } : null;
+  if (!admin) {
+    if (off.length < machines.length) return null;
+    const text = off.every((m) => m.status === "offline") ? "All machines offline" : off.every((m) => m.status === "degraded") ? "All machines degraded" : "No machine online";
+    return { ...line, text, aside: ASK };
+  }
   const offline = off.every((m) => m.status === "offline");
   const [one] = off;
   if (off.length === 1 && one !== undefined) {
-    return { ...line, text: `${one.name} ${offline ? "is offline" : "needs a look"}`, action: "Open", does: { to: "machines", machineId: one.machineId } };
+    return { ...line, text: `${one.name} ${offline ? "is offline" : "needs a look"}`, name: one.name, action: "Open", does: { to: "machines", machineId: one.machineId } };
   }
   return { ...line, text: `${String(off.length)} machines ${offline ? "offline" : "need a look"}`, action: "Open", does: { to: "machines" } };
 };

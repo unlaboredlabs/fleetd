@@ -1,8 +1,9 @@
 // The menu under your name (screens/shell/You.tsx, W607), a fixture per thing it can say beside "all is well" (which
 // admin-owner and admin-member show): a setup step left, a machine offline, the hub out of reach, a second hub that
 // refused this app's key, an update going on, one just in, one that didn't go in (as the owner, who can try again,
-// and as a member, who is told who to ask), and everything at once. Each is Sam's hub (fixtures/admin) with one
-// thing changed, so the menu's shots differ only in what they are about.
+// and as a member, who is told who to ask, as when no machine is online or every one is degraded), everything at once,
+// and hubs and a machine with the longest names, whose rows cut the name short and never what is wrong. Each is Sam's
+// hub (fixtures/admin) with one thing changed, so the menu's shots differ only in what they are about.
 import { answerHub, bob, sam } from "../admin/index.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -20,12 +21,23 @@ const setupLeft = (f: Fixture): void => {
   f.answer("setup_list", undefined, { steps: guides.map((g) => ({ ...g, ...fresh.list[g.id] })), requiredLeft: fresh.requiredLeft });
 };
 
-/** `machineId` offline, in the snapshot and in the live feed, whose word is the newer one. */
-const offline = (f: Fixture, machineId: string): void => {
-  const off = (machines: JsonValue | undefined) => arr(machines).map((m) => (isObject(m) && m["machineId"] === machineId ? { ...m, status: "offline" } : m));
-  if (f.snapshot !== undefined) f.snapshot["machines"] = off(f.snapshot["machines"]);
-  f.live = f.live.map((frame) => ({ ...frame, machines: off(frame["machines"]) }));
+/** A label as long as a hub's can be (40 characters), and a machine's name as long. */
+const LONG_HUB = "Acme Robotics shared build hub, Berlin 2";
+const LONG_OTHER = "Personal projects and garden experiments";
+const LONG_MACHINE = "buildbox-ci-runner-eu-central-berlin-002";
+
+/** `machineId` changed by `change`, in the snapshot and in the live feed, whose word is the newer one. */
+const machine = (f: Fixture, machineId: string, change: JsonObject): void => {
+  const set = (machines: JsonValue | undefined) => arr(machines).map((m) => (isObject(m) && m["machineId"] === machineId ? { ...m, ...change } : m));
+  if (f.snapshot !== undefined) f.snapshot["machines"] = set(f.snapshot["machines"]);
+  f.live = f.live.map((frame) => ({ ...frame, machines: set(frame["machines"]) }));
 };
+
+/** `machineId` offline. */
+const offline = (f: Fixture, machineId: string): void => machine(f, machineId, { status: "offline" });
+
+/** `machineId` connected, but its claude can't run. */
+const degraded = (f: Fixture, machineId: string): void => machine(f, machineId, { status: "degraded" });
 
 /** The hub's own word on its update (the snapshot's `update`): going on, just in, or put back on buildbox. */
 const update = (f: Fixture, state: "updating" | "updated" | "put_back"): void => {
@@ -76,6 +88,25 @@ export default defineGroup({
         offline(f, "devbox");
         offline(f, "buildbox");
       }, bob),
+      made("member-degraded", "Bob, a member, with every machine connected but degraded: none can run agents, and Bob is told who to ask.", (f) => {
+        degraded(f, "devbox");
+        degraded(f, "buildbox");
+      }, bob),
+      made("long-refused", "Two hubs with 40-character labels, one with a long-named machine offline, the other refusing this app's key: the names are cut short, never what is wrong.", (f) => {
+        f.label = LONG_OTHER;
+        f.color = "green";
+        machine(f, "buildbox", { name: LONG_MACHINE, status: "offline" });
+        const acme = Fixture.from(base("status-rows"), "menu-long-refused-acme", "A hub with a 40-character label, which refused this app's key.");
+        acme.state = { phase: "refused", hub: "https://hub.acme.example", message: "This key was revoked" };
+        f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
+      }),
+      made("long-offline", "Two hubs with 40-character labels; the second can't be reached: its name is cut short, Retry and the words stay whole.", (f) => {
+        f.label = LONG_OTHER;
+        f.color = "green";
+        const acme = Fixture.from(base("status-rows"), "menu-long-offline-acme", "A hub with a 40-character label, out of reach.");
+        acme.state = { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 };
+        f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
+      }),
       made("everything", "Everything at once, as Sam: an update that didn't go in, a machine offline, a setup step left.", (f) => {
         update(f, "put_back");
         offline(f, "buildbox");
