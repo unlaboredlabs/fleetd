@@ -58,15 +58,16 @@ On each repository it is installed on:
 | Permission | Level | Why |
 |---|---|---|
 | Contents | write | Rebase and merge branches |
-| Pull requests | write | Read, update and merge PRs |
-| Issues | write | Find and label PRs (`fleetd:next`): labels go through the issues endpoints |
+| Pull requests | write | Read, update and merge PRs, and read people's reviews on them |
+| Issues | write | Find and label PRs (`fleetd:next`), and post the agent's review as a comment: both go through the issues endpoints |
 | Workflows | write | Merge changes to `.github/workflows` |
 | Commit statuses | write | Post `fleetd/train` |
 | Actions | write | Re-run CI |
 | Checks | read | Read CI's results |
 | Metadata | read | Read the repository |
 
-Webhooks are off. The hub polls GitHub, as the merge train always has.
+Webhooks are off. The hub polls GitHub, as the merge train always has: people's reviews on a PR reach its writer
+within about a minute (see [People's reviews on GitHub](/docs/merge-train#people)).
 
 ## Tokens {#tokens}
 

@@ -1,5 +1,5 @@
 // `review_read`: an author reads every finding of its PRs' latest reviews,
-// whole, and of any other PR of its project it names (one it builds on), a reviewer those of the one PR it reviews, and
+// whole, and people's reviews on GitHub still open on them (people.ts), and of any other PR of its project it names (one it builds on), a reviewer those of the one PR it reviews, and
 // a lead its project's. Read-only; another project's PR is refused, and so is any PR but its own for a reviewer.
 import type { Task } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -9,6 +9,7 @@ import type { LeadCaller } from "../lead_calls/index.ts";
 import type { HubDb } from "../store/db.ts";
 import { projectChanges, projectTasks } from "../prs/index.ts";
 import { clip, isoMs, task as readTask } from "../train/seams.ts";
+import { openOf, type PersonFinding } from "./people.ts";
 import { prKey, type ReviewVerdict } from "./verdicts.ts";
 
 const short = (sha: string) => sha.slice(0, 12);
@@ -23,7 +24,12 @@ export type ReviewFindings = {
   at: string;
 };
 
-export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown }): { prs: { pr: string; reviews: ReviewFindings[] }[]; next?: string } {
+/** A person's review on GitHub still open on the PR, as its last read found it. */
+export type PeopleFinding = { by: string; kind: "changes" | "thread"; where?: string; url: string; said: { by: string; text: string }[] };
+
+type PrReviews = { pr: string; reviews: ReviewFindings[]; people?: PeopleFinding[] };
+
+export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown }): { prs: PrReviews[]; next?: string } {
   const task = caller.agent.kind === "task" ? caller.agent.taskId : undefined;
   const picked = typeof call.pr === "string" ? call.pr.trim() : undefined;
   const { prs: mine, reviewer } = callerPrs(hub, caller, task, picked !== undefined);
@@ -39,8 +45,11 @@ export function reviewRead(hub: Hub, caller: LeadCaller, call: { pr?: unknown })
       );
     }
   }
-  const out: { prs: { pr: string; reviews: ReviewFindings[] }[]; next?: string } = {
-    prs: prs.map((pr) => ({ pr, reviews: latest(hub.db, pr) })),
+  const out: { prs: PrReviews[]; next?: string } = {
+    prs: prs.map((pr) => {
+      const people = openOf(hub.db.conn, pr).map(peopleFinding);
+      return { pr, reviews: latest(hub.db, pr), ...(people.length > 0 ? { people } : {}) };
+    }),
   };
   if (prs.length === 0) {
     out.next =
@@ -88,6 +97,13 @@ function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: 
   return { prs: unique, reviewer: false };
 }
 
+const at = (f: PersonFinding) => (f.path === undefined ? undefined : f.line === undefined ? f.path : `${f.path}:${f.line}`);
+
+function peopleFinding(f: PersonFinding): PeopleFinding {
+  const where = at(f);
+  return { by: f.by, kind: f.kind, ...(where !== undefined ? { where } : {}), url: f.url, said: f.said };
+}
+
 /** Whether `wanted`, a PR's URL or its number (`#7`, `7`), names `pr`. */
 function names(wanted: string, pr: string): boolean {
   const key = prKey(pr);
@@ -110,6 +126,10 @@ export function openBlocking(db: HubDb, pr: string): string {
   const open = latest(db, pr)
     .filter((r) => r.blocking > 0 && !closed(r.taskId))
     .map((r) => `${r.taskId} at ${short(r.prHeadSha ?? "")} (${r.blocking} blocking, ${r.nonBlocking} non-blocking):\n${r.findings}`);
+  for (const f of openOf(db.conn, pr)) {
+    const what = f.kind === "changes" ? `@${f.by} requested changes on GitHub` : `@${f.by}'s unresolved thread on GitHub at ${at(f)}`;
+    open.push(`${what} (blocking) ${f.url}${f.said.map((s) => `\n@${s.by}: ${s.text}`).join("")}`);
+  }
   if (open.length === 0) return "";
   return (
     "Its latest review's blocking findings are still open: fix them too, unless your head already does " +

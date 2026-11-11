@@ -206,6 +206,35 @@ turn ends without a push, its result naming the same PR, starts no review.
 When blocking findings have held a PR at the same commit for 30 minutes with no push, the lead hears once. The message
 says how to start a fresh review, and to check on the writer otherwise.
 
+### People's reviews on GitHub {#people}
+
+People can review a fleetd PR on GitHub as they would any PR. The hub reads each PR in the train about once a minute,
+and again just before it marks a PR ready, so a person's review reaches the writer within about a minute.
+
+| On GitHub | What fleetd does |
+|---|---|
+| A review that requests changes | A blocking finding, sent to the PR's writer with who said it. The PR waits until that person approves, reviews again without requesting changes, or the review is dismissed. |
+| An unresolved review thread a person started (a line comment) | A blocking finding, sent to the writer with its file, line and who said it. Each later comment on it is sent too. The PR waits until the thread is resolved. |
+| A review that only comments, or a comment on the PR | Nothing. Only its line comments count, as threads. |
+| Anything from a bot, or posted by fleetd itself | Nothing. |
+
+The writer gets these the way it gets the agent reviewer's blocking findings, in the same message, and `review_read`
+lists the ones still open. It fixes them, pushes, and replies on each thread or on the PR. It never resolves a
+person's thread or dismisses their review: the person does that. If a person's review arrives after the PR is
+ready or while it is in CI, the PR goes back to review, out of the train's way, and returns to its place once GitHub
+shows the review answered. The PR's line in the train says who it is waiting for.
+
+The hub reads people's reviews by polling, with no webhooks, so this works on a hub GitHub can't reach. If GitHub
+refuses a read (a rate limit, an outage), the hub waits longer before the next one, up to 30 minutes. A failed read
+never holds or fails a PR: what the last read found stays in force.
+
+### The agent's review on the PR {#on-the-pr}
+
+When the agent reviewer records its verdict, fleetd posts it on the PR as a comment: the commit it reviewed, its
+blocking and non-blocking counts, and its findings. A re-review edits the same comment and keeps one line for each
+earlier round, so a PR gets one comment however often it is reviewed. The comment is never an approval or a request
+for changes, so it never counts toward a review GitHub requires. If GitHub refuses the comment, nothing waits on it.
+
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
@@ -483,6 +512,8 @@ its turn. To hold every PR of a repo, label each one.
 Batches only save waiting.
 
 - Every PR in a batch is reviewed at its current patch, or carries an approval of the same changed lines.
+- A person's review that requests changes, or a person's unresolved thread, holds the PR until GitHub shows it
+  answered.
 - The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge.
