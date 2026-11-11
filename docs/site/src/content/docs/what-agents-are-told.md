@@ -176,13 +176,16 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agents`, `stop_agent`, plus `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agents`, `stop_agent`, plus `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run`, `repo_add`, `repo_remove`, `project_setup` and more. |
 | Task | `report` (a review verdict; fleetd fills in the task and the head reviewed) and `ask_lead`. A writer's ready PR goes on the train by itself. |
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
 - A lead has at most 32 tasks open at once, or twice its project's max agents when that is more.
 - A refusal says why and what to do instead.
+- A lead changes its own project's setup when you ask it to (`repo_add`, `repo_remove`, `project_setup`): each change
+  is one chat line with Undo, and what guards people stays yours. See
+  [What the lead sets up](/docs/projects#lead-setup).
 
 Every tool and its inputs: [Agent tools](/docs/reference/agent-tools). The lead-side `fleetd` commands stay, for you.
 

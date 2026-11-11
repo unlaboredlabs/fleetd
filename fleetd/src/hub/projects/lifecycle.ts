@@ -5,6 +5,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Registry } from "../api/registry.ts";
 import { events } from "../store/events.ts";
 import { add, clones, failInterrupted, now } from "./add.ts";
+import * as calls from "./calls.ts";
 import { discover } from "./discover.ts";
 import * as orderEnv from "./order_env.ts";
 import { remove } from "./remove.ts";
@@ -15,6 +16,7 @@ export function register(tools: Registry): void {
   tools.add("project_add", (hub, caller, input) => add(hub, caller, input));
   tools.add("project_remove", (hub, caller, input) => remove(hub, caller, input) as never);
   repos.register(tools);
+  calls.register(tools);
 }
 
 /** At hub start, before any new clone: the clones a previous process never finished fail; then the order_env loop. */

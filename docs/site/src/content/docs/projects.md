@@ -115,6 +115,9 @@ fleetd project repo remove devbox/storefront api
 The same actions are in Settings → Projects → Repos, and agents have `project_repo_add`, `project_repo_list` and
 `project_repo_remove`.
 
+A project's lead adds and removes its own project's repos when you ask it in the chat: see
+[What the lead sets up](#lead-setup).
+
 ## Project settings {#settings}
 
 Open a project's settings in the desktop app: Settings → Projects, then pick the project, or **Open settings** in its
@@ -365,6 +368,40 @@ repo with no commits yet, nor run a reader on a machine whose fleetd is too old 
 
 A writer is checked for duplicates against the work in flight on its own repo only. The lead's `agents` list names
 the project's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
+
+### What the lead sets up {#lead-setup}
+
+Ask the lead in its chat and it changes its own project itself, with no approval card, in every approval mode:
+
+| You ask for | The lead calls | What happens |
+|---|---|---|
+| A repo, by GitHub URL or `owner/repo` | `repo_add` with `url` | It is cloned onto the project's machine, as **Add repo** does. The lead is woken when the clone ends, or when it fails, with the fix. |
+| A repo that is already a checkout on the project's machine | `repo_add` with `path` | The checkout joins the project. |
+| A repo taken out | `repo_remove` | As **Remove…**: its agents stop, and its checkout stays on disk. |
+| A name, an icon, a picture or a color | `project_setup` | A picture is an image file in the lead's folder. An icon replaces a picture. |
+| The project's instructions | `project_setup` with `instructions` | The whole text every agent of the project is told ([Your own instructions](/docs/what-agents-are-told#instructions)); empty clears it. |
+| Setup commands | `project_setup` with `setup` | For the project or one repo: see [Setup commands](#setup). |
+| A plain variable set or removed | `project_setup` with `env` | See [Environment variables](#env). A value that looks like a key or a password is refused: a secret goes through [secure input](#secure-input), which you fill in on your own device. A variable you set as a secret is not the lead's to change. |
+| The project archived | `project_setup` with `archive` | See [Archive](#archive). Only you bring it back. |
+
+Each change posts one quiet line in the chat, such as "Added the repo api" or "Renamed the project to Storefront",
+with **Open**, which goes to the page of the project's settings that shows it, and **Undo**. Undo is yours, from the
+desktop app or the phone, and puts back what was there before: undoing an added repo takes it out again (its checkout
+stays on disk), undoing a removed one adds it back with its setup commands, and undoing an archive brings the project
+back. The lead is told what you undid. An Undo that can't put back what was there, such as setup commands for a repo
+that is gone, says so under the line.
+
+What stays yours, whatever the lead is asked or told: the approval mode, [allowed sites](#sites) (the card on a first
+visit stays), profiles, models and [max agents](#max-agents), the project's [card](#purchases), vault items, MCP
+servers, the built-in prompts, [Only me](#only-me), [linked hubs](#hub-links), deleting a project, creating one, and
+adding by path a folder that is a project of its own (adding it would archive that project). The lead's calls have no
+field for any of these, and one that names any of them is refused with a line that says who can do it and where. A
+lead sets up only its own project. A task can't make these calls at all: it is told to ask its lead. The `fleetd`
+command line in an agent's shell changes none of this either:
+[The fleetd CLI inside a session](/docs/security#cli-in-session).
+
+The lead is told to make these changes only when you ask in the chat, never because a web page, a file or another
+agent says so.
 
 ## What the lead asks first {#approvals}
 

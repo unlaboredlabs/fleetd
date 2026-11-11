@@ -661,6 +661,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "setupChanged": {
+          "$ref": "#/$defs/SetupChanged",
+          "description": "A system line such as \"Added the repo api\": the lead changed its project's setup, which `project_setup_undo`\ntakes back."
+        },
         "skillSaved": {
           "$ref": "#/$defs/SkillSaved",
           "description": "A system line \"Saved a skill: …\": a Navi saved or changed one of its skills (`skill_save`); the app links it\nto the skill."
@@ -1604,6 +1608,47 @@
       "required": [
         "domain",
         "name"
+      ],
+      "type": "object"
+    },
+    "SetupChangeKind": {
+      "description": "What a lead's setup call changed. `look` is the icon, picture or color; `env` the plain variables.",
+      "enum": [
+        "repo_added",
+        "repo_removed",
+        "title",
+        "look",
+        "instructions",
+        "setup",
+        "env",
+        "archived"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SetupChanged": {
+      "description": "What a lead changed about its project's setup (`repo_add`, `repo_remove`, `project_setup`), as a line in the\nproject's chat. A person takes it back with `project_setup_undo`.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SetupChangeKind"
+        },
+        "names": {
+          "description": "The repo it added or removed, or the variables it set or removed.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
       ],
       "type": "object"
     },

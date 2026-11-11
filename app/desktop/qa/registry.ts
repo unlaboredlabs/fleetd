@@ -103,6 +103,8 @@ export const fixtures = [
   "lead-memory",
   // The nightly cleanup's line for the worktrees it kept: its summary, opened to each (fixtures/lead).
   "lead-worktrees",
+  // The lead's setup changes, each a line with Open and Undo (fixtures/lead).
+  "lead-setup",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   "projects-dropped",
@@ -737,6 +739,18 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await page.getByRole("button", { name: "Cleanup kept 6 worktrees with unsaved work" }).click();
       await expect(page.getByRole("list", { name: "Worktrees kept" }).getByRole("listitem")).toHaveCount(6);
+    },
+  },
+  // A lead's setup changes: one quiet line each with Open and Undo, an undone one saying so.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-setup"],
+    variant: "setup-changed",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(2);
+      await expect(page.getByRole("button", { name: "Open" })).toHaveCount(3);
     },
   },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.

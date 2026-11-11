@@ -71,6 +71,8 @@ import { ScreenCards } from "./ScreenCards";
 import { Symbol } from "./manage/parts";
 import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
+import { setupLine } from "./setupChanged";
+import { SetupChangedLine } from "./SetupChangedLine";
 import { TURN_LINE_HEIGHT, TurnLine } from "./TurnLine";
 import { useNow } from "./time";
 
@@ -108,6 +110,8 @@ interface ThreadActions {
   readonly openSkill: (name: string) => void;
   /** An artifact a card or link names, opened over its Info screen: its newest version, or `version`. */
   readonly openArtifact: (name: string, version: number | undefined) => void;
+  /** The project's Info screen, where a setup change its lead made shows. */
+  readonly openInfo: () => void;
 }
 
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
@@ -431,6 +435,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         haptics.tap();
         const key = now.current.chatKey;
         navigation.navigate("ChatInfo", { state: { index: 1, routes: [{ name: "Info", params: { key } }, { name: "Artifact", params: { key, name, version } }] } });
+      },
+      openInfo: () => {
+        haptics.tap();
+        navigation.navigate("ChatInfo", { screen: "Info", params: { key: now.current.chatKey } });
       },
     }),
     [navigation],
@@ -815,6 +823,8 @@ function ItemView({
   }
   const saved = (item.message as { skillSaved?: SkillSaved } | undefined)?.skillSaved;
   if (saved !== undefined) return <SkillLine saved={saved} onPress={() => actions.openSkill(saved.name)} />;
+  const changed = setupLine(item.message);
+  if (changed !== undefined && item.message !== undefined) return <SetupChangedLine chatKey={chatKey} messageId={item.message.messageId} line={changed} onOpen={actions.openInfo} />;
   const vaultImport = (item.message as { vaultImport?: VaultImportCard } | undefined)?.vaultImport;
   if (vaultImport !== undefined)
     return vaultImport.state === "open" ? (

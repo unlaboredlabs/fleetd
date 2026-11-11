@@ -9,81 +9,13 @@ import { link } from "../src/hub/link/index.ts";
 import { start as startNavi } from "../src/hub/navi/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { start as startLoops } from "../src/hub/projects/loops.ts";
-import { addingGh } from "../src/hub/projects/discover.ts";
 import { FOLDER_NEEDS } from "../src/hub/projects/inspect.ts";
 import { dropClosed, orderEnvStore, refusal, saved } from "../src/hub/projects/order_env.ts";
 import * as repos from "../src/hub/repos/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
-import { TrainGitHub } from "../src/hub/train/github.ts";
-import type { SessionCall, SessionReplyFrame } from "../src/shared/sessions.ts";
+import { gh, node, ROOT, settle } from "./project-kit.ts";
 import { AT, key, kit, workstream } from "./work-kit.ts";
-
-const ROOT = "/home/me/fleetd/projects";
-const settle = () => Bun.sleep(5);
-type Answer = (call: SessionCall) => SessionReplyFrame["result"] | undefined;
-
-/** devbox's node, listing `caps`: answers each call with `answer`, else the defaults below, and records them. */
-async function node(k: ReturnType<typeof kit>, caps: string[], answer: Answer = () => undefined) {
-  store(k.hub).machineUpsert({ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT });
-  const ex = executors(k.hub);
-  const calls: SessionCall[] = [];
-  // Each folder made, and whether git init ran in it.
-  const made = new Map<string, boolean>();
-  let seq = 1;
-  const event = (e: unknown) => ex.handleFrame("devbox", { t: "machine_event", seq: ++seq, at: AT, event: e as never });
-  const defaults = (call: SessionCall): SessionReplyFrame["result"] => {
-    switch (call.op) {
-      case "repo_scan":
-        return { ok: { kind: "repos", cloneRoot: "/home/me/src", repos: [], projectsRoot: ROOT } };
-      case "folder_make":
-        if (call.path === `${ROOT}/full`) return { err: { code: "invalid", message: `folder not empty: ${call.path}` } };
-        if (!call.dryRun) made.set(call.path, call.gitInit === true);
-        return { ok: { kind: "folder", path: call.path } };
-      case "repo_inspect": {
-        const git = made.get(call.path);
-        return { ok: { kind: "repo_facts", exists: git !== undefined, isGit: git === true, workflowFiles: [] } };
-      }
-      case "project_upsert":
-        event({ type: "project_upserted", projectId: call.projectId, title: call.title, workspaceRoot: call.workspaceRoot, updatedAt: AT });
-        return { ok: { kind: "done" } };
-      case "project_remove":
-        event({ type: "project_removed", projectId: call.projectId });
-        return { ok: { kind: "done" } };
-      default:
-        return { ok: { kind: "done" } };
-    }
-  };
-  ex.attach("devbox", {
-    linkId: 1,
-    send(frame) {
-      if (frame.call.op !== "subscribe") calls.push(frame.call);
-      queueMicrotask(() => ex.handleFrame("devbox", { t: "session_reply", id: frame.id, result: answer(frame.call) ?? defaults(frame.call) }));
-    },
-  });
-  await ex.awaitLive("devbox");
-  event({ type: "snapshot", projects: [], sessions: [] });
-  (link(k.hub) as unknown as { capabilities: Map<string, Set<string>> }).capabilities.set("devbox", new Set(caps));
-  await settle();
-  return { calls, made, event };
-}
-
-/** gh on the hub answering `paths` (404 for any other), and no `gh repo list`. */
-function gh(k: ReturnType<typeof kit>, paths: Record<string, unknown>) {
-  const noFresh = { expect() {}, forget() {}, touch() {}, fail() {} };
-  const runner = {
-    run: async (args: string[]) => {
-      const path = args[args.length - 1] as string;
-      return path in paths
-        ? { exitCode: 0, stdout: JSON.stringify(paths[path]), stderr: "" }
-        : { exitCode: 1, stdout: '{"message":"Not Found"}', stderr: "gh: Not Found (HTTP 404)" };
-    },
-  };
-  Object.assign(addingGh(k.hub), {
-    github: () => new TrainGitHub(runner, noFresh, Date.now, async () => {}),
-    repoList: async () => ({ owners: [], repos: [], problem: "gh is not logged in" }),
-  });
-}
 
 const operate = key("operate");
 const person = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });

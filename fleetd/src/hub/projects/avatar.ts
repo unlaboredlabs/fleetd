@@ -38,6 +38,32 @@ export function get(db: Database, r: ProjectRef): { avatar: string; mime: "image
   return { avatar: kept.avatar, mime: "image/jpeg", dataB64: Buffer.from(kept.jpeg).toString("base64") };
 }
 
+/** The kept picture's JPEG, as rendered; undefined with none. */
+export function jpegOf(db: Database, r: ProjectRef): Uint8Array | undefined {
+  return (
+    db
+      .query<{ jpeg: Uint8Array }, [string, string]>("SELECT jpeg FROM project_avatars WHERE machine_id = ?1 AND project_id = ?2")
+      .get(r.machineId, r.projectId)?.jpeg ?? undefined
+  );
+}
+
+/** Keeps a rendered JPEG as the project's picture, or none; returns its id. The caller says so in an event. */
+export function keep(hub: Hub, r: ProjectRef, jpeg: Uint8Array | undefined): string | undefined {
+  if (jpeg === undefined) {
+    hub.db.conn.query("DELETE FROM project_avatars WHERE machine_id = ?1 AND project_id = ?2").run(r.machineId, r.projectId);
+    return undefined;
+  }
+  const kept = new Bun.CryptoHasher("sha256").update(jpeg).digest("hex").slice(0, 16);
+  hub.db.conn
+    .query(
+      `INSERT INTO project_avatars (machine_id, project_id, avatar, jpeg, set_ms) VALUES (?1, ?2, ?3, ?4, ?5)
+                   ON CONFLICT (machine_id, project_id) DO UPDATE SET avatar = excluded.avatar, jpeg = excluded.jpeg,
+                     set_ms = excluded.set_ms`,
+    )
+    .run(r.machineId, r.projectId, kept, jpeg, hub.clock.now());
+  return kept;
+}
+
 export { AVATAR_MAX_BYTES, AVATAR_PX, square } from "./avatar-render.ts";
 
 /**
@@ -73,17 +99,9 @@ export async function set(hub: Hub, caller: Caller, input: ProjectAvatarSetInput
   let kept: string | undefined;
   if (input.attachmentId !== undefined) {
     const { bytes } = await take(hub, caller, input.attachmentId);
-    const jpeg = await render(bytes, input.crop);
-    kept = new Bun.CryptoHasher("sha256").update(jpeg).digest("hex").slice(0, 16);
-    hub.db.conn
-      .query(
-        `INSERT INTO project_avatars (machine_id, project_id, avatar, jpeg, set_ms) VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT (machine_id, project_id) DO UPDATE SET avatar = excluded.avatar, jpeg = excluded.jpeg,
-                       set_ms = excluded.set_ms`,
-      )
-      .run(r.machineId, r.projectId, kept, jpeg, hub.clock.now());
+    kept = keep(hub, r, await render(bytes, input.crop));
   } else {
-    hub.db.conn.query("DELETE FROM project_avatars WHERE machine_id = ?1 AND project_id = ?2").run(r.machineId, r.projectId);
+    keep(hub, r, undefined);
   }
   const project = store(hub).projectGet(r);
   if (!project) throw unknownProject(r);

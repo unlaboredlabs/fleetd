@@ -255,6 +255,35 @@ function worktreesKept(f: Fixture): Fixture {
   return f;
 }
 
+/** storefront's lead set the project up as asked: a repo added, the project renamed, and a variable the person undid. */
+function setupChanged(f: Fixture): Fixture {
+  const t = (s: number) => at(f.now, -s * 1000);
+  const msg = (seq: number, author: "human" | "lead" | "system", text: string, s: number, extra: JsonObject = {}): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef: STOREFRONT,
+    seq,
+    author,
+    text,
+    attachments: [],
+    createdAt: t(s),
+    state: "final",
+    ...(author === "human" ? { by: "laptop", clientRequestId: `seed-${seq}`, delivery: "turn" } : {}),
+    ...extra,
+  });
+  const messages = [
+    msg(1, "human", "Add our API repo to this project, call the project Storefront, and point agents at the staging API.", 600),
+    msg(2, "system", "Added the repo api", 540, { setupChanged: { kind: "repo_added", names: ["api"] } }),
+    msg(3, "system", "Renamed the project to Storefront", 530, { setupChanged: { kind: "title" } }),
+    msg(4, "system", "Set the variable API_BASE", 520, { setupChanged: { kind: "env", names: ["API_BASE"], undone: true } }),
+    msg(5, "lead", "The api repo is cloned and part of the project, and the project is called Storefront. Agents get API_BASE for staging.", 500),
+  ];
+  const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 5, lastMessageAt: t(500) });
+  for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
+  f.answer("chat_history", { projectRef: STOREFRONT }, { messages, moreBefore: false, moreAfter: false, state });
+  f.answer("project_setup_undo", undefined, { ok: true });
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     leadAtWork(
@@ -283,5 +312,6 @@ export default defineGroup({
     leadPictures(Fixture.from(base("typical"), "lead-pictures", "storefront's lead thinking, no agents at work, after a reply that ends in two pictures whose bytes come late.")),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
     worktreesKept(Fixture.from(base("typical"), "lead-worktrees", "storefront's chat with the night's cleanup line: 6 worktrees kept for unsaved work.")),
+    setupChanged(Fixture.from(base("typical"), "lead-setup", "storefront's chat with its lead's setup changes: a repo added, the project renamed, a variable undone.")),
   ],
 });

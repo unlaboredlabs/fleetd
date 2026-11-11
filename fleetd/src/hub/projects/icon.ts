@@ -35,6 +35,28 @@ export function of(db: Database, r: ProjectRef): ProjectIcon {
   return known ? { face: picked.face, color: picked.color } : derived(r);
 }
 
+/** The icon picked for the project, undefined while it wears its derived one. */
+export function picked(db: Database, r: ProjectRef): ProjectIcon | undefined {
+  return (
+    db
+      .query<{ face: string; color: string }, [string, string]>("SELECT face, color FROM project_icons WHERE machine_id = ? AND project_id = ?")
+      .get(r.machineId, r.projectId) ?? undefined
+  );
+}
+
+/** Puts a pick back as it was, or none, leaving the picture alone: a setup line's Undo. The caller says so in an event. */
+export function restore(db: Database, r: ProjectRef, icon: ProjectIcon | undefined, at: number): void {
+  if (icon === undefined) {
+    db.query("DELETE FROM project_icons WHERE machine_id = ?1 AND project_id = ?2").run(r.machineId, r.projectId);
+    return;
+  }
+  db.query(
+    `INSERT INTO project_icons (machine_id, project_id, face, color, set_ms) VALUES (?1, ?2, ?3, ?4, ?5)
+           ON CONFLICT (machine_id, project_id) DO UPDATE SET face = excluded.face, color = excluded.color,
+             set_ms = excluded.set_ms`,
+  ).run(r.machineId, r.projectId, icon.face, icon.color, at);
+}
+
 /** `project_icon_set`: picks the project's icon, which forgets its picture. */
 export function set(hub: Hub, r: ProjectRef, icon: ProjectIcon): ProjectSummary {
   if (!store(hub).projectGet(r)) throw unknownProject(r);

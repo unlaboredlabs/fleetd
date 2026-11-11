@@ -2471,6 +2471,45 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RepoAddCall",
+          "properties": {
+            "op": {
+              "const": "repo_add",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RepoRemoveCall",
+          "properties": {
+            "op": {
+              "const": "repo_remove",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ProjectSetupCall",
+          "properties": {
+            "op": {
+              "const": "project_setup",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2814,6 +2853,152 @@
       ],
       "type": "object"
     },
+    "ProjectSetupCall": {
+      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\nOnly me, linked hubs, delete) has no field here.",
+      "properties": {
+        "archive": {
+          "description": "True archives the project: its chat leaves the list and its lead stops. A person brings it back.",
+          "type": "boolean"
+        },
+        "color": {
+          "description": "Its bot's color.",
+          "enum": [
+            "slate",
+            "mono",
+            "blue",
+            "lilac",
+            "coral",
+            "amber",
+            "sage",
+            "teal"
+          ],
+          "type": "string"
+        },
+        "env": {
+          "description": "Plain variables for the project's agents. A secret goes through `request_secret`, never here.",
+          "properties": {
+            "remove": {
+              "default": [],
+              "items": {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "set": {
+              "default": [],
+              "items": {
+                "properties": {
+                  "name": {
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value"
+                ],
+                "type": "object"
+              },
+              "maxItems": 100,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "icon": {
+          "description": "A built-in icon: a face on a color. It replaces a picture.",
+          "properties": {
+            "color": {
+              "enum": [
+                "fleet",
+                "sky",
+                "teal",
+                "mint",
+                "lime",
+                "sun",
+                "ember",
+                "rose",
+                "plum",
+                "lilac",
+                "sand",
+                "graphite"
+              ],
+              "type": "string"
+            },
+            "face": {
+              "enum": [
+                "mo",
+                "wee",
+                "peep",
+                "nap",
+                "cy",
+                "wink",
+                "joy",
+                "huh",
+                "wow"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "face",
+            "color"
+          ],
+          "type": "object"
+        },
+        "instructions": {
+          "description": "The project's Instructions, whole: what every agent of the project is told. Empty clears them.",
+          "maxLength": 64000,
+          "type": "string"
+        },
+        "picture": {
+          "description": "An image file (png, jpeg or webp) inside your working directory, as the project's picture.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "setup": {
+          "description": "What runs in each new worktree before its agent starts. It replaces the setup; no commands turns it off.",
+          "properties": {
+            "commands": {
+              "description": "In order, each with `sh -c` in the worktree.",
+              "items": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            },
+            "repo": {
+              "$ref": "#/$defs/RepoName",
+              "description": "The repo whose own setup to set; absent, the project's."
+            }
+          },
+          "required": [
+            "commands"
+          ],
+          "type": "object"
+        },
+        "title": {
+          "description": "The project's name in fleetd; its folder keeps its own.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "PurchaseClaimCall": {
       "description": "The node's lead call for an agent's `purchase_fill`: claims an approved purchase for one fill. The hub refuses it\nunless the purchase is this Navi's, approved, unfilled and within its window; claimed, nothing else can fill it.",
       "properties": {
@@ -3039,10 +3224,46 @@
       ],
       "type": "object"
     },
+    "RepoAddCall": {
+      "description": "`repo_add`: a lead adds a repo to its own project, by GitHub URL (cloned onto the project's machine) or by the\npath of a checkout already there. The chat gets a quiet line a person can undo; a clone's end wakes the lead.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/RepoName",
+          "description": "Absent: from its remote or folder, e.g. `api`, made unique in the project."
+        },
+        "path": {
+          "description": "A git checkout already on the project's machine.",
+          "maxLength": 1000,
+          "pattern": "^/.",
+          "type": "string"
+        },
+        "url": {
+          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto the project's machine.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "RepoName": {
       "description": "Repo name, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "RepoRemoveCall": {
+      "description": "`repo_remove`: a lead takes a repo out of its own project. Its checkout stays on disk. The chat gets a quiet line\na person can undo.",
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/RepoName",
+          "description": "The repo's name in the project."
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "type": "object"
     },
     "RequestSecretCall": {
       "description": "`request_secret`: the human enters a secret in a masked field in the app; it is sealed to the sink's machine and\nwritten there (0600). The lead only ever sees its fingerprint, in a later wake.",
