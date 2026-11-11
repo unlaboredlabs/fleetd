@@ -296,6 +296,23 @@ describe("sending", () => {
     expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)?.leadWaiting).toBe("The lead is starting; it reads this first.");
   });
 
+  it("takes the hub's delivered copy over the queued echo before it, whichever brings it", async () => {
+    const { fake, layer } = await connected();
+    const out = layer.chat.send(KEY, { text: "1yes" }, "c1");
+    // Stored held and announced as queued, then given to the lead in the same millisecond: the hub stamps that copy after.
+    const queued = msg(3, { author: "human", text: "1yes", clientRequestId: "c1", delivery: "queued" });
+    const delivered = { ...queued, delivery: "turn" as const, updatedAt: "2026-10-19T10:00:00.001Z" };
+    fake.send(messageEvent(2, queued));
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: delivered } });
+    expect(await out).toBe("sent");
+    const last = () => selectChat(KEY)(layer.store.getState())?.items.at(-1);
+    expect(last()).toMatchObject({ id: "m3", state: "sent", delivery: "turn" });
+    // Its event after the answer, and a late queued copy, change nothing.
+    fake.send(messageEvent(3, delivered));
+    fake.send(messageEvent(4, queued));
+    expect(last()).toMatchObject({ id: "m3", delivery: "turn" });
+  });
+
   it("drops why the lead didn't have a message once the lead writes after it", async () => {
     const { fake, layer } = await connected();
     const out = layer.chat.send(KEY, { text: "node is down" }, "c1");

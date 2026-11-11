@@ -350,9 +350,9 @@ function machineAway(hub: Hub, m: MachineId): string | undefined {
 
 /** Records how a message went in and releases it. */
 function sent(hub: Hub, message: ChatMessage, delivery: ChatDelivery): ChatMessage {
-  const out = { ...message, delivery };
+  let out: ChatMessage = { ...message, delivery };
   try {
-    chat(hub).put(out);
+    out = chat(hub).setDelivery(message, delivery);
     chat(hub).release(out);
   } catch (error) {
     console.warn("chat: sent message not released:", error);
