@@ -12,10 +12,14 @@ const machine = (name: string, status: MenuMachine["status"] = "online"): MenuMa
 const quiet = (kind: Quiet["kind"], note?: Partial<NonNullable<Quiet["note"]>>): Quiet => ({
   kind,
   word: { text: "Update", tone: "accent" },
-  note: note === undefined ? null : { title: "", notes: [], details: true, ...note },
+  note: note === undefined ? null : { title: "", details: false, ...note },
 });
+const TRY_AGAIN = { label: "Try again", act: "update" } as const;
+/** An update that didn't go in, as an admin reads it (the status's title and button) and as a member is told. */
+const failed = quiet("failed", { title: "1 machine didn't update", action: TRY_AGAIN, details: true });
+const toldFailed = quiet("failed", { title: "Not updated" });
 const menu = (over: Partial<MenuInput> = {}) =>
-  menuLines({ hub: live, label: null, quiet: null, admin: true, machines: [machine("devbox")], setupLeft: 0, now: NOW, ...over });
+  menuLines({ hub: live, label: null, quiet: null, admin: true, machines: [machine("devbox")], setupLeft: 0, now: NOW, timeZone: "UTC", ...over });
 /** A menu's lines as a person reads them: the words, then the action or the quiet word at the end. */
 const read = (over: Partial<MenuInput> = {}) => menu(over).map((l) => [l.text, l.action ?? l.aside].filter((x) => x !== undefined).join(" · "));
 
@@ -58,7 +62,7 @@ describe("the hub's line", () => {
 
   it("says an update going on or just in as a quiet word at its end, never a line of its own", () => {
     expect(read({ quiet: quiet("updating", {}) })).toEqual(["devbox · Updating…"]);
-    expect(read({ quiet: quiet("updated", { aside: "09:00" }) })).toEqual(["devbox · Updated 09:00"]);
+    expect(read({ quiet: quiet("updated", { at: Date.parse("2026-10-19T09:00:00Z") }) })).toEqual(["devbox · Updated 09:00"]);
     expect(read({ quiet: quiet("updated", {}) })).toEqual(["devbox · Updated"]);
   });
 
@@ -76,24 +80,32 @@ describe("the hub's line", () => {
   });
 
   it("says nothing else while the hub doesn't answer: what it alone knows would be stale", () => {
-    expect(read({ hub: down, quiet: quiet("putBack", { action: { label: "Try again", run: "retry" } }), machines: [machine("buildbox", "offline")], setupLeft: 2 })).toEqual(["Can't reach devbox · Retry"]);
+    expect(read({ hub: down, quiet: failed, machines: [machine("buildbox", "offline")], setupLeft: 2 })).toEqual(["Can't reach devbox · Retry"]);
   });
 });
 
 describe("an update that needs someone", () => {
-  it("offers the one to take: the hub's to an admin, the app's own to anyone", () => {
-    expect(updateLine(quiet("available", { action: { label: "Update", run: "update" } }), true)).toEqual({ key: "update", mark: "update", text: "Update available", action: "Update", does: { to: "update", run: "update" } });
-    expect(updateLine(quiet("available", { action: { label: "Restart", run: "restartApp" } }), false)).toMatchObject({ text: "Update ready", action: "Restart", does: { to: "update", run: "restartApp" } });
-    // A member's note of the hub's update has no action: nothing for them to take.
-    expect(updateLine(quiet("available", {}), false)).toBeNull();
-    expect(updateLine(null, true)).toBeNull();
+  it("offers the one to take in the status's own title and button: the hub's to an admin, the app's own to anyone", () => {
+    const hub = quiet("available", { title: "Update available", action: { label: "Update", act: "update" } });
+    expect(updateLine(hub)).toEqual({ key: "update", mark: "update", text: "Update available", action: "Update", does: { to: "update", act: "update" } });
+    const app = quiet("available", { title: "Update available", action: { label: "Restart to update", act: "app" } });
+    expect(updateLine(app)).toMatchObject({ text: "Update available", action: "Restart to update", does: { to: "update", act: "app" } });
+    // Nothing a button does (a machine to update by hand): an admin's page says what.
+    expect(updateLine(quiet("available", { title: "1 machine is behind", details: true }))).toMatchObject({ text: "1 machine is behind", action: "Open", does: { to: "updates" } });
+    expect(updateLine(quiet("available", { title: "Update available" }))).toBeNull();
+    expect(updateLine(null)).toBeNull();
   });
 
-  it("says one failed: an admin tries again, a member is told who to ask", () => {
-    const failed = quiet("putBack", { action: { label: "Try again", run: "retry" } });
-    expect(updateLine(failed, true)).toEqual({ key: "update", mark: "danger", text: "Update failed", action: "Try again", does: { to: "update", run: "retry" } });
-    expect(updateLine(failed, false)).toEqual({ key: "update", mark: "danger", text: "Update failed", aside: "Ask an admin" });
-    expect(updateLine(quiet("putBack", {}), true)).toMatchObject({ aside: "Ask an admin" });
+  it("says one that didn't go in as the status says it: an admin tries again, a member is told who to ask", () => {
+    expect(updateLine(failed)).toEqual({ key: "update", mark: "danger", text: "1 machine didn't update", action: "Try again", does: { to: "update", act: "update" } });
+    expect(updateLine(quiet("failed", { title: "The update stopped", action: { label: "Start over", act: "startOver" } }))).toMatchObject({ action: "Start over", does: { to: "update", act: "startOver" } });
+    expect(updateLine(toldFailed)).toEqual({ key: "update", mark: "danger", text: "Not updated", aside: "Ask an admin" });
+  });
+
+  it("leaves one going on or just in to the hub's line", () => {
+    expect(updateLine(quiet("updating", { title: "Updating the hub…" }))).toBeNull();
+    expect(updateLine(quiet("updated", { title: "Updated" }))).toBeNull();
+    expect(updateLine(quiet("restarting"))).toBeNull();
   });
 });
 
@@ -126,9 +138,9 @@ describe("machines and setup", () => {
   });
 
   it("orders everything off at once: the hub, the update, machines, setup", () => {
-    const all = { quiet: quiet("putBack", { action: { label: "Try again", run: "retry" } }), machines: [machine("devbox"), machine("buildbox", "offline")], setupLeft: 1 } as const;
-    expect(read(all)).toEqual(["devbox", "Update failed · Try again", "buildbox is offline · Open", "1 setup step left · Finish"]);
-    expect(read({ ...all, admin: false })).toEqual(["devbox", "Update failed · Ask an admin"]);
+    const all = { quiet: failed, machines: [machine("devbox"), machine("buildbox", "offline")], setupLeft: 1 } as const;
+    expect(read(all)).toEqual(["devbox", "1 machine didn't update · Try again", "buildbox is offline · Open", "1 setup step left · Finish"]);
+    expect(read({ ...all, quiet: toldFailed, admin: false })).toEqual(["devbox", "Not updated · Ask an admin"]);
   });
 });
 

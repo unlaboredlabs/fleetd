@@ -14,10 +14,11 @@ against the checksum the release's `release.json` lists for it and keeps it, and
 has its own download that never changes, so a release republished mid-download can't swap in another build. Each
 downloads the build packed, about a third of its size, and checks it once unpacked; a cut-off download goes on from
 where it stopped. Nothing is installed yet. For owners and admins, **Update** then shows under your name at the bottom
-of the sidebar; a click shows what's new in a few lines and **Update now**. Members see nothing until an update runs.
+of the sidebar, and the menu there has one more row: **Update available**, with **Update**, which starts it. Members
+see nothing until an update runs.
 
-Click **Update now**. Since the build is already downloaded and checked, an update only swaps it in and restarts, in
-order:
+Click **Update**. It starts at once, with nothing more to confirm. Since the build is already downloaded and checked,
+an update only swaps it in and restarts, in order:
 
 1. **The hub** checks the kept build against that checksum again, keeps the binary it runs, and restarts on the new one.
    If the new build doesn't come up healthy within 90 seconds, the previous one is put back and restarted. If the
@@ -29,11 +30,10 @@ order:
    mid-step. On a machine without systemd user scopes (macOS, a container), or when the new build's hosts speak
    another protocol, the agents can't carry on, so the node holds every tool call that hasn't started yet and waits
    for the ones running to end, as before. Either way it updates within 2 minutes, whatever still runs: what the
-   restart cuts off carries on by itself. Its line says what it waits for and when it updates at the latest, and Settings › Hub › Updates says
-   **Updating when agents finish their step (*n*), by *time***, with **Update now** beside it, which ends the wait. A
-   screen whose task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A
-   machine already on the new build, or a newer one (updated with `fleetd update` on it, say), is never moved back:
-   its line says which build it runs.
+   restart cuts off carries on by itself. Meanwhile Settings › Hub › Updates says what the machines wait for and when
+   they update at the latest (**Waiting for *n* agents to finish their step, *time* at the latest**). A screen whose
+   task has ended doesn't count. Nothing is installed on a machine before the hub runs the new build. A machine
+   already on the new build, or a newer one (updated with `fleetd update` on it, say), is never moved back.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
    fails, the machine keeps the version it had and the rest of the update goes on. The install downloads about 200 MB
@@ -41,21 +41,21 @@ order:
    [Claude Code's version](/docs/machines#claude-version).
 4. **The app** installs its own update and restarts, once every machine is done. It downloads that update in the
    background, so it is usually ready by then. A message you were typing is still there after the restart. Only the
-   window where you pressed **Update** restarts this way, and it waits for the machines' wait too: its line says
-   **Waiting** until then. Any other app window never restarts by itself: it waits for your click on
-   **Update** or **Restart to update**.
+   window where you pressed **Update** restarts this way, and it waits for the machines' wait too. Any other app
+   window never restarts by itself: it waits for your click on **Restart to update**.
 
 The hub itself never waits: agents don't need it mid-step. A fleetd tool call an agent makes during the hub's few
-seconds of restart fails, and the agent tries it again. Each part shows as updated as soon as its machine is back on
-the new build.
+seconds of restart fails, and the agent tries it again. A machine counts as updated as soon as it is back on the new
+build.
 
 While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
 goes once the hub is back. For an update, your name at the bottom of the sidebar says **Updating…**; past 10 seconds the
-screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**, and once it
-is, counts the machines coming back; past 2 minutes it is shown as offline. Any other restart or stop says nothing of
-updates and is shown as offline once it passes 10 seconds. Back on the new build, it says **Updated** for 15
-minutes, and a click shows what's new. When a part didn't take the new build, it says **Put back**: a click says
-which and why, with **Try again** for owners and admins.
+screens show as loading; past 30 seconds a line at the top says the hub isn't back yet, with **Try now**; past 2
+minutes it is shown as offline. Any other restart or stop says nothing of updates and is shown as offline once it
+passes 10 seconds. Back on the new build, it says **Updated** for 15 minutes. When the hub or a machine didn't take
+the new build, it says **Not updated** to owners and admins, and the menu there has a row saying what didn't update
+(**The hub didn't update**, **1 machine didn't update**) with **Try again**. When the hub itself didn't take it,
+members read **Not updated** too, and their row says to ask an admin.
 
 The 2 minutes are `drainMinutes` in `~/.fleetd/hub/update/settings.json` (`{"drainMinutes": 10}`; `0` doesn't wait),
 read at each update.
@@ -63,12 +63,13 @@ read at each update.
 **Update automatically**, in Settings › Hub › Updates (`"auto": true` in the same file), is off by default.
 On, the hub installs a new build by itself as soon as it is ready, at most one update in 10 minutes: a build that comes
 out within 10 minutes of the last update (yours or its own) waits for those 10 minutes to end, so builds that came out
-in between install once, as the newest. It waits for agents as **Update** does; **Update now** works on it too. A build the hub didn't come up healthy on, and put back,
-isn't tried again by itself: the switch says it skips that build, a newer one installs as usual, and **Update** still
-installs it. A machine an update left behind the hub (offline then, or failed) is brought to the hub's build the same
-way, at the next look, even with nothing newer out. Beside the switch, the hub says how its last automatic update went,
-when it looks at the channel next (every 2 minutes), and why it holds back, if it does: a build it put back, a local
-build of fleetd, or a channel it couldn't read.
+in between install once, as the newest. It waits for agents as **Update** does. While a build waits for those 10
+minutes, the page says **Installs by itself at *time***, with **Update now** to install it at once. A build the hub
+didn't come up healthy on, and put back, isn't tried again by itself: the switch says it skips that build, a newer one
+installs as usual, and **Update** still installs it. A machine an update left behind the hub (offline then, or failed)
+is brought to the hub's build the same way, at the next look, even with nothing newer out. The switch has a line under
+it only while the hub holds back, saying why: a build it put back, a local build of fleetd, or a channel it couldn't
+read.
 
 A machine installs the build it downloaded and checked when the update started, even if the channel has a newer one
 by the time its agents let it restart: edge often does. The next update brings everything to that newer build.
@@ -80,31 +81,34 @@ machine links on the hub's build.
 `fleetd update` on a machine holds its own node's agents and waits for their step, 2 minutes at most;
 `fleetd update --now` doesn't wait.
 
-Settings › Hub › Updates (the popover's **Details**, or **Check for Updates…**) has one overall state at the top and one
-line per part: the hub, each machine, Claude Code and the app. Each line says **Waiting**, **Updating…**, **Done** or
-**Failed**, with the reason in one line, and **Retry** on one that failed. Each part's version is below.
+Settings › Hub › Updates (**Check for Updates…** opens it) says one thing at a time, with at most
+one button: **Up to date** and the build everything runs, **Update available** with **Update**, the update as it goes
+in one line (**Updating the hub…**, then **Updating the machines · 2 of 3**), or what didn't go through. A machine
+gets a line of its own only when it didn't update or runs an older build than the hub: its name and why, in one
+sentence. Under it is the **Update automatically** switch. Settings › General shows the same status under Version.
 
-When a part fails, the others still finish:
+When one part of an update fails, the others still finish:
 
 - A failed download or a checksum mismatch changes nothing on that machine. When GitHub's download link for a release
   file fails (a server error or no answer), the file comes through GitHub's releases API instead, checked against
-  `SHA256SUMS` the same way. When both fail, the line says **GitHub's downloads are failing right now, try again
-  later**.
+  `SHA256SUMS` the same way. When both fail, the machine's line says **GitHub's downloads are failing right now. Try
+  again later.**
 - A build that doesn't come up healthy is put back on its own, and the machine runs its previous build again.
-- A machine that is offline, or runs a fleetd too old to update from the hub, is skipped and says how to update it.
-- If the hub itself didn't update, its machines aren't asked, and **Update** tries the whole update again.
+- A machine that is offline is skipped: its line says it is offline, and it updates when it's back (by itself with
+  **Update automatically** on, else with **Update**). One that runs a fleetd too old to update from the hub is
+  skipped too, and its line says to run `fleetd update` on it once.
+- If the hub itself didn't update, its machines aren't asked, and **Try again** tries the whole update again.
 - If the hub moves to another build before every machine is done (with `fleetd update` on its machine, say), the update
-  ends there: each machine still to go says the hub moved on, and **Update** brings them to the newest build.
+  ends there: the machines still to go show as behind, and **Update** brings them to the hub's build.
 
-An update that stops moving once the hub is done (a machine that never came back, say) gets a quiet **Start
-over** beside it. It shows when nothing has changed for 10 minutes, or at once when nothing in the hub drives the update
-any more. Start over ends that update, with each part still to go skipped, and starts a new one. It never shows while the
-hub itself restarts.
+An update that stops moving once the hub is done (a machine that never came back, say) says **The update stopped**,
+with **Start over**. It shows when nothing has changed for 10 minutes, or at once when nothing in the hub drives the
+update any more. Start over ends that update, with each machine still to go skipped, and starts a new one. It never
+shows while the hub itself restarts.
 
-A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
-Code) to the build the hub runs. If the hub has moved to another build since (with `fleetd update` on its machine,
-say), Retry says so instead, and **Update** brings every machine to the hub's build. After a part failed, the app
-doesn't restart by itself, so the result stays on screen: its line has **Update** instead.
+After machines didn't update, the page says how many, names each with why, and has **Try again**. It runs the update
+again: machines already on the hub's build are left alone, so only the ones behind are updated (their fleetd, then
+their Claude Code). After a failure the app doesn't restart by itself, so the result stays on screen.
 
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
 the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
@@ -145,9 +149,10 @@ on the hub also copies the hub's binary to a worker.
 The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
 in the background; a newer build than one already downloaded replaces it. It downloads only the parts that changed since
 the build it runs: about 7% of the AppImage, and about half of the Mac app (from its third update after an install on,
-as it keeps the previous download to compare with). It has its own line on Settings › Hub › Updates, and its own
-**Update and restart** in Settings › General. Once it is downloaded, **Update** shows under your name for everyone, and
-a click offers **Restart to update**. An update you don't install now installs the next time you quit.
+as it keeps the previous download to compare with). It shows in the same place and the same words as the hub's:
+when the hub and its machines are up to date, Settings › Hub › Updates and Settings › General say **Update available**
+with **Restart to update**, and **Update** shows under your name for everyone, with the same row in the menu there.
+An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
 - The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.

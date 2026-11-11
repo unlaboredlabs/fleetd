@@ -173,10 +173,11 @@ version, **Versions** picks an older one, which says so over the page with the w
 
 ## Update fleetd {#update}
 
-An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a machine runs an older one than the
-hub. It does what the desktop app's Update does: the hub updates itself, then every machine, and the app follows it
-live, machine by machine, to the outcome. A machine that failed or was put back gets **Retry**. Members don't see it,
-and the hub refuses them anyway.
+An admin has **Update** in Settings, which says what the desktop app's Settings › Hub › Updates says, in the same
+words: **Up to date**, **Update available** with **Update**, the update as it goes in one line, or what didn't go
+through, with **Try again**. A machine is named only when it didn't update or runs an older fleetd than the hub.
+**Update** starts at once and does what the desktop app's does: the hub updates itself, then every machine. Members
+get no button, and the hub refuses them anyway; after an update they read **Updated** or **Not updated** there.
 
 Above it, an admin has **Restart Hub**, the desktop app's [Restart hub](/docs/several-hubs#restart): it asks first, the
 hub is back in about a second while agents carry on, and each lead whose profile changed since it started comes back

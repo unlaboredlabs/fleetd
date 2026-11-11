@@ -121,9 +121,9 @@ describe("an admin's run, while the hub is live", () => {
     expect(hubWord(at(s, endMs + UPDATED_FOR_MS, done))).toBeUndefined();
   });
 
-  it("says Put back when a machine went back to its old build, Not Updated when one failed, for an hour", () => {
+  it("says Not Updated when a machine went back to its old build or failed, for an hour", () => {
     const back = run({ finishedAt: ended, parts: [part("done"), part("rolled_back")] as UpdateRun["parts"] });
-    expect(hubWord(at(s, endMs + 1000, back))).toEqual({ text: "Put back", tone: "danger", busy: false });
+    expect(hubWord(at(s, endMs + 1000, back))).toEqual({ text: "Not Updated", tone: "danger", busy: false });
     expect(hubWord(at(s, endMs + 1000, run({ finishedAt: ended, parts: [part("failed")] as UpdateRun["parts"] })))?.text).toBe("Not Updated");
     expect(hubWord(at(s, endMs + FAILED_FOR_MS, back))).toBeUndefined();
     expect(nextChange(at(s, endMs + 1000, back))).toBe(endMs + UPDATED_FOR_MS);
@@ -154,11 +154,11 @@ describe("the hub's own word on its update (hub.update, the snapshot's update), 
     expect(slowLine({ ...at(down, T + SLOW_RESTART_MS), update, hubName: "devbox" })?.text).toBe("Still updating. What you send goes once it's back.");
   });
 
-  it("says Updated, Put back or Not Updated for a while after it ended, and nothing for one that found every machine current", () => {
+  it("says Updated or Not Updated for a while after it ended, and nothing for one that found every machine current", () => {
     const word = (state: string, now: number) => hubWord({ ...at(live1, now), update: { ...base, state, finishedAt: ended } })?.text;
     expect(word("updated", endMs + 1000)).toBe("Updated");
     expect(word("updated", endMs + UPDATED_FOR_MS)).toBeUndefined();
-    expect(word("put_back", endMs + 1000)).toBe("Put back");
+    expect(word("put_back", endMs + 1000)).toBe("Not Updated");
     expect(word("failed", endMs + UPDATED_FOR_MS)).toBe("Not Updated");
     expect(word("failed", endMs + FAILED_FOR_MS)).toBeUndefined();
     expect(word("current", endMs + 1000)).toBeUndefined();

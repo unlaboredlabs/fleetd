@@ -261,7 +261,6 @@ export const registerIpc = (
   handle(IPC.updatesState, () => frame.updates.state());
   handle(IPC.updatesCheck, () => frame.updates.check());
   handle(IPC.updatesInstall, () => frame.updates.install());
-  handle(IPC.updatesKeep, () => frame.updates.keep());
   frame.updates.onChange((state) => {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.updatesChanged, state);
   });

@@ -21,7 +21,7 @@ vi.mock("electron", () => ({
   shell: { openExternal: vi.fn() },
 }));
 vi.mock("./build", () => ({ RELEASE_BUILD: true }));
-const release = { changes: [{ commit: "aaa1111", date: "2026-10-22T10:30:00Z", subject: "feat(desktop): updates show in the app (#268)", areas: ["app"] }], cli: "0.6.0", app: "0.6.0" };
+const release = { cli: "0.6.0", app: "0.6.0" };
 vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve({ ...release, app: fake.feed }) }));
 vi.mock("electron-updater", async () => {
   const { EventEmitter } = await import("node:events");
@@ -68,7 +68,7 @@ describe("updates()", () => {
     vi.restoreAllMocks();
   });
 
-  it("finds an update, reads what's new, and restarts once asked and downloaded", async () => {
+  it("finds an update, reads the release it is, and restarts once asked and downloaded", async () => {
     const handle = updates(null);
     const seen: UpdatesState[] = [];
     handle.onChange((s) => seen.push(s));

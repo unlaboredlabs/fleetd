@@ -2,11 +2,13 @@
 // is off is one more line each, in plain words, with the one thing to do about it: the link (can't reach it, it
 // refused the key, not paired), an update to take or one that didn't go in, and for an admin a machine that is
 // offline and setup steps left. A member never reads an admin's line; where the problem is theirs too, the line ends
-// in who to ask instead of an action. The hub's address, Disconnect, versions and the setup steps themselves are in
-// Settings (You › Hubs, Hub › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
+// in who to ask instead of an action. An update's line is the update status's own title and button (updates/quiet.ts),
+// the words Settings › Hub › Updates says. The hub's address, Disconnect, versions and the setup steps themselves are
+// in Settings (You › Hubs, Hub › Updates, Hub › Setup), never here. Pure, so every state is unit-tested.
 import type { MachineStatus } from "../../../shared/contracts";
 import type { HubState } from "../../../shared/hub";
-import type { NoteAction, Quiet } from "../updates/quiet";
+import { clockAt, type Act } from "../updates/model";
+import type { Quiet } from "../updates/quiet";
 import { hubName, restartOf } from "./model";
 
 /** A dot in its state's colour; `ring`: the dot opened while the hub restarts; `update`: an update to take. */
@@ -19,7 +21,8 @@ export type LineDoes =
   | { readonly to: "retry" }
   | { readonly to: "setup" }
   | { readonly to: "machines"; readonly machineId?: string }
-  | { readonly to: "update"; readonly run: NoteAction };
+  | { readonly to: "updates" }
+  | { readonly to: "update"; readonly act: Act };
 
 export interface MenuLine {
   readonly key: "hub" | "update" | "machines" | "setup";
@@ -52,6 +55,8 @@ export interface MenuInput {
   /** Required setup steps left; 0 for a member. */
   readonly setupLeft: number;
   readonly now: number;
+  /** The clock's zone, for tests; the person's own otherwise. */
+  readonly timeZone?: string;
 }
 
 const ASK = "Ask an admin";
@@ -59,7 +64,7 @@ const ASK = "Ask an admin";
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
 /** The hub's own line: its name beside a dot while connected, else what is wrong with the link and what to do. */
-export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null, now: number): MenuLine => {
+export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null, now: number, timeZone?: string): MenuLine => {
   const line = { key: "hub" } as const;
   if (hub.phase === "unpaired") {
     const pair = { action: "Pair", does: { to: "pair" } } as const;
@@ -71,7 +76,8 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
   const hubs = { does: { to: "hubs" } } as const;
   if (hub.phase === "live") {
     // An update going on or just in is a quiet word here, never a line of its own.
-    const aside = quiet?.kind === "updating" ? "Updating…" : quiet?.kind === "updated" ? ["Updated", quiet.note?.aside].filter((x) => x !== undefined).join(" ") : undefined;
+    const at = quiet?.note?.at;
+    const aside = quiet?.kind === "updating" ? "Updating…" : quiet?.kind === "updated" ? (at === undefined ? "Updated" : `Updated ${clockAt(at, timeZone)}`) : undefined;
     return { ...named, mark: "success", text: name, ...(aside === undefined ? {} : { aside }), ...hubs };
   }
   // A restart isn't an outage while it is short (an update's for 2 minutes): the dot opens to a ring.
@@ -87,19 +93,18 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
   return { ...named, mark: "warning", text: `Can't reach ${name}`, action: "Retry", does: { to: "retry" } };
 };
 
-/** An update that needs someone: one to take, or one that didn't go in. One going on or just in is the hub's line's. */
-export const updateLine = (quiet: Quiet | null, admin: boolean): MenuLine | null => {
-  const line = { key: "update" } as const;
-  const run = quiet?.note?.action?.run;
-  if (quiet?.kind === "putBack") {
-    const text = "Update failed";
-    return admin && run !== undefined ? { ...line, mark: "danger", text, action: "Try again", does: { to: "update", run } } : { ...line, mark: "danger", text, aside: ASK };
-  }
-  if (quiet?.kind !== "available" || run === undefined) return null;
-  // This app's own waits only for a restart; the hub's is an admin's to start.
-  return run === "restartApp"
-    ? { ...line, mark: "update", text: "Update ready", action: "Restart", does: { to: "update", run } }
-    : { ...line, mark: "update", text: "Update available", action: "Update", does: { to: "update", run } };
+/**
+ * An update that needs someone: one to take, or one that didn't go in, in the status's own title with its one button.
+ * One going on or just in is the hub's line's.
+ */
+export const updateLine = (quiet: Quiet | null): MenuLine | null => {
+  const note = quiet?.note;
+  if (note === null || note === undefined || (quiet?.kind !== "failed" && quiet?.kind !== "available")) return null;
+  const line = { key: "update", mark: quiet.kind === "failed" ? "danger" : "update", text: note.title } as const;
+  if (note.action !== undefined) return { ...line, action: note.action.label, does: { to: "update", act: note.action.act } };
+  // Nothing to press from here: an admin's page says which machine and what to do, and anyone else is told who to ask.
+  if (note.details) return { ...line, action: "Open", does: { to: "updates" } };
+  return quiet.kind === "failed" ? { ...line, aside: ASK } : null;
 };
 
 /**
@@ -129,10 +134,10 @@ export const setupLine = (left: number, admin: boolean): MenuLine | null =>
   admin && left > 0 ? { key: "setup", mark: "warning", text: `${plural(left, "setup step", "setup steps")} left`, action: "Finish", does: { to: "setup" } } : null;
 
 /** One hub's lines, its own first. What the hub alone can say (updates, machines, setup) shows only while it answers. */
-export const menuLines = ({ hub, label, quiet, admin, machines, setupLeft, now }: MenuInput): readonly MenuLine[] => {
-  const own = hubLine(hub, label, quiet, now);
+export const menuLines = ({ hub, label, quiet, admin, machines, setupLeft, now, timeZone }: MenuInput): readonly MenuLine[] => {
+  const own = hubLine(hub, label, quiet, now, timeZone);
   if (hub.phase !== "live") return [own];
-  return [own, updateLine(quiet, admin), machinesLine(machines, admin), setupLine(setupLeft, admin)].filter((l) => l !== null);
+  return [own, updateLine(quiet), machinesLine(machines, admin), setupLine(setupLeft, admin)].filter((l) => l !== null);
 };
 
 /** What marks your avatar for one hub: the most pressing thing off, in a few words; null while all is well. */

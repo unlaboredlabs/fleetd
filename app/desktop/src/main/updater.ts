@@ -30,10 +30,8 @@ export interface Updates {
   readonly state: () => UpdatesState;
   /** A check someone asked for: "Checking…", then its answer, failure included. */
   readonly check: () => void;
-  /** "Update and restart": restarts now when the update is in, or as soon as it is; the deb opens its download. */
+  /** "Restart to update": restarts now when the update is in, or as soon as it is; the deb opens its download. */
   readonly install: () => void;
-  /** Takes back "Update and restart" while the download runs. */
-  readonly keep: () => void;
   readonly onChange: (listener: (state: UpdatesState) => void) => void;
 }
 
@@ -72,7 +70,7 @@ const FixtureSection = z.object({
     .object({
       current: z.string().optional(),
       app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
-      release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).nullish(),
+      release: z.custom<Release>((v) => typeof v === "object" && v !== null).nullish(),
     })
     .optional(),
 });
@@ -95,7 +93,6 @@ const fixtureUpdates = (file: string): Updates => {
     // A fixture's answer is the state it starts in.
     check: () => undefined,
     install: () => h.send({ type: "install" }),
-    keep: () => h.send({ type: "keep" }),
     onChange: (listener) => h.onChange((s) => listener(version === undefined ? s : { ...s, current: version })),
   };
 };
@@ -108,14 +105,13 @@ const unsupported = (): Updates => {
     state: h.state,
     check: () => undefined,
     install: () => undefined,
-    keep: () => undefined,
     onChange: h.onChange,
   };
 };
 
 /**
  * Checks the release feed at launch, every 10 minutes and when a window comes to the front. The packaged macOS app
- * and the AppImage download an update in the background; the page offers "Update and restart", and the next quit
+ * and the AppImage download an update in the background; the app offers "Restart to update", and the next quit
  * installs it anyway (Squirrel.Mac requires it signed by the same team). Any other Linux install is the deb (the installer only installs the
  * AppImage), which can't update itself because dpkg needs root: it only checks, and the page offers the download and
  * the command. Dev and test builds have nothing to update to; a fixture (`fixtureFile`) stands in for the feed.
@@ -173,7 +169,7 @@ export const updates = (fixtureFile: string | null): Updates => {
   const run = (manual: boolean): void => {
     checkedAt = Date.now();
     h.send({ type: "check", manual });
-    // What's new and the hub's newest build, read on every check: the hub can fall behind while this app is current.
+    // The hub's newest build, read on every check: the hub can fall behind while this app is current.
     const release = fetchRelease(url).then((r) => {
       h.setRelease(r);
       return r;
@@ -210,7 +206,6 @@ export const updates = (fixtureFile: string | null): Updates => {
     state: h.state,
     check: () => run(true),
     install: () => h.send({ type: "install" }),
-    keep: () => h.send({ type: "keep" }),
     onChange: h.onChange,
   };
 };

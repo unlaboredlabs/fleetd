@@ -54,7 +54,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "notifications", label: "Notifications", tab: "general", keywords: ["alerts", "mute"] },
   { key: "notifications.kinds", label: "Notify me when", tab: "general", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
   { key: "notifications.test", label: "Test notification", tab: "general", keywords: ["notifications", "alerts", "try"] },
-  { key: "general.updates", label: "Version", tab: "general", keywords: ["version", "update", "check for updates", "edge", "stable", "channel", "what's new", "up to date"] },
+  { key: "general.updates", label: "Version", tab: "general", keywords: ["version", "update", "check for updates", "edge", "stable", "up to date"] },
   page("accounts", ["accounts", "connect", "sign in", "connections"]),
   {
     key: "claude",
@@ -112,8 +112,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
-  page("hub.updates", ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release"]),
-  { key: "hub.updates.versions", label: "Hub and machine versions", tab: "hub.updates", keywords: ["version", "hub version", "machine version", "build"] },
+  page("hub.updates", ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"]),
   page("hub.profiles", ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every project"]),
   { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
   page("hub.tools", ["every project", "hub-wide", "global"]),

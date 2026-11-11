@@ -1,67 +1,26 @@
-// Hub › Updates: where the hub and its machines stand, or how an update goes, with its one Update button; one line per
-// part with Retry on one that didn't come through; Update automatically with what it last did and does next; and
-// which fleetd the hub and each machine run. The hub row's popover says the same in short.
+// Hub › Updates: the one status of updates (which fleetd everything runs, a newer one with its Update button, how an
+// update goes, a machine that didn't update and why), and the Update automatically switch. Nothing else to read.
 import { useEffect } from "react";
-import { Text } from "../../ui";
-import { GroupNote, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
+import { PageHead, SettingsSection } from "../settings/parts";
 import { AutoUpdates } from "../updates/AutoUpdates";
-import { loadRun, retryMachine, startOver, startUpdate, updateNow } from "../updates/flow";
-import { useFlowDeps, useUpdatesView } from "../updates/hooks";
-import { hubStanding, type AppAction, type Retry } from "../updates/model";
-import { runApp } from "../updates/UpdatesHost";
-import { HubSection, Line, UpdatesSheet } from "../updates/UpdatesSheet";
+import { loadRun } from "../updates/flow";
+import { useFlowDeps, useUpdateStatus } from "../updates/hooks";
+import { UpdateStatus } from "../updates/UpdateStatus";
 import s from "../settings/settings.module.css";
 
 export function UpdatesPage() {
-  const view = useUpdatesView();
+  const status = useUpdateStatus();
   const deps = useFlowDeps();
-  const standing = hubStanding(view);
-  // Fresh as the page opens: what automatic updates did and do next, not as the last few-minute poll had it.
+  // Fresh as the page opens: not as the last few-minute poll had it.
   useEffect(() => void loadRun(deps), [deps]);
-  const retry = (r: Retry) => {
-    if (r.kind === "machine") void retryMachine(deps, r.machineId);
-    else if (r.kind === "update") void startUpdate(deps);
-    else runApp(r.run);
-  };
   return (
     <div className={s.scroll} data-screen="settings.hub.updates">
       <div className={s.column}>
-        <PageHead title="Updates">Which fleetd the hub and its machines run, and how they move to a newer one.</PageHead>
-        {view.hub === null || standing === null ? (
-          <SettingsSection>
-            <GroupNote>Connect to the hub to see its version and its machines&apos;.</GroupNote>
-          </SettingsSection>
-        ) : (
-          <>
-            {view.update !== null || view.progress !== null ? null : (
-              <SettingsSection>
-                <SettingsRow
-                  label="Where the hub stands"
-                  title={
-                    <Text tone={standing.tone === "quiet" ? "default" : standing.tone}>
-                      <Line text={standing.text} />
-                    </Text>
-                  }
-                  data={{ "data-updates-standing": "" }}
-                />
-              </SettingsSection>
-            )}
-            <UpdatesSheet
-              view={view}
-              onUpdate={() => void startUpdate(deps)}
-              onStartOver={() => void startOver(deps)}
-              onUpdateNow={() => void updateNow(deps)}
-              onRetry={retry}
-              onApp={(a: AppAction) => runApp(a)}
-              auto={<AutoUpdates />}
-              versions={
-                <SettingsSection title="Versions" reveal="hub.updates.versions" intro="Updates go to the hub, then every machine, then this app.">
-                  <HubSection part={view.hub} nodes={view.nodes} />
-                </SettingsSection>
-              }
-            />
-          </>
-        )}
+        <PageHead title="Updates" />
+        <SettingsSection data={{ "data-screen": "updates" }}>
+          <UpdateStatus status={status} />
+        </SettingsSection>
+        <AutoUpdates />
       </div>
     </div>
   );

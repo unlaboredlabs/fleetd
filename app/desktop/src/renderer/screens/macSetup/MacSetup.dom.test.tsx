@@ -30,7 +30,6 @@ const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoi
       subscribe: () => () => undefined,
       check: appCheck,
       install: () => Promise.resolve(),
-      keep: () => Promise.resolve(),
     },
     macSetup: {
       redeem,
