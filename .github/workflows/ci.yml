@@ -5,8 +5,8 @@ name: CI
 #
 # Everything runs on GitHub-hosted runners, which are free for public repos. No job here runs on macOS
 # (ci.no-macos-on-prs). `desktop (mac layout)` packs the mac app and checks its layout on Linux. What only a Mac can run
-# (macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml, and before each release; the iOS
-# simulator build also on a manual run of ios.yml.
+# (macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml (Nightly), and before each release;
+# the iOS simulator build also on its own in a manual run of mac.yml with `only: ios`.
 #
 # Each job has its own scope: one whose paths didn't change reports success at once (fleetd, desktop) or is skipped
 # (the phone app's), so its check reports on every PR and a check that never comes never holds one.
@@ -452,7 +452,7 @@ jobs:
   mobile-scope:
     # The phone app (app/mobile): its checks and an Android APK on Linux. No EAS and no Expo service: `expo prebuild`
     # makes the native project, then gradle builds it. Signed builds are mobile-release.yml's, by hand, and the iOS
-    # simulator build is ios.yml's; nothing here reads a secret.
+    # simulator build is mac.yml's (Nightly); nothing here reads a secret.
     #
     # Whether the app's checks and the Android build have work: each needs this job and is skipped (which passes,
     # required or not) when the paths didn't change: app/mobile, the desktop modules the app imports

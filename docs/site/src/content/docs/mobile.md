@@ -315,23 +315,23 @@ relay and push credentials: an APNs key for your bundle id on the relay, and you
 ## Build it on GitHub {#build}
 
 1. Fork [unlaboredlabs/fleetd](https://github.com/unlaboredlabs/fleetd) and enable Actions on your fork.
-2. Open Actions › **CI** › **Run workflow** for the Android build, and Actions › **iOS** › **Run workflow** for the iOS
-   one.
+2. Open Actions › **CI** › **Run workflow** for the Android build, and Actions › **Nightly** › **Run workflow** with
+   **only** set to `ios` for the iOS one.
 3. When each finishes, download the run's artifact:
 
 | Artifact | Workflow | What it is |
 |---|---|---|
 | `fleetd-android-apk` | CI | A release APK, debug-signed. Open it on an Android phone, or `adb install app-release.apk`. |
-| `fleetd-ios-simulator` | iOS | The app for the iOS simulator. Unzip it and `xcrun simctl install booted fleetd.app`. |
+| `fleetd-ios-simulator` | Nightly | The app for the iOS simulator. Unzip it and `xcrun simctl install booted fleetd.app`. |
 
-To try changes on a simulator without a build each time, run **iOS** with **metro** set to a Metro server the
-simulator reaches, such as `100.64.0.5:8093`, and run `npm exec -- expo start --port 8093` in `app/mobile` there. That run
-builds a Debug app that loads its JavaScript from that server.
+To try changes on a simulator without a build each time, run **Nightly** with **only** set to `ios` and **metro** set
+to a Metro server the simulator reaches, such as `100.64.0.5:8093`, and run `npm exec -- expo start --port 8093` in
+`app/mobile` there. That run builds a Debug app that loads its JavaScript from that server.
 
 The builds run `expo prebuild`, then gradle on an Ubuntu runner (CI's `mobile (android)` job) and xcodebuild on a
-macOS runner (`ios.yml`). On pull requests and on `main`, the app's checks and the Android build run in **CI** when
-`app/mobile`, the workflow, or a desktop module the app imports (`app/mobile/src/desktop.ts` lists them) changes. The
-iOS build runs on a manual run of **iOS**, and nightly and before each release in the **Mac** workflow (`mac.yml`),
+macOS runner (the **Nightly** workflow, `mac.yml`). On pull requests and on `main`, the app's checks and the Android
+build run in **CI** when `app/mobile`, the workflow, or a desktop module the app imports (`app/mobile/src/desktop.ts`
+lists them) changes. The iOS build runs on a manual run of **Nightly**, and nightly and before each release in it,
 never on a pull request: the Android build bundles the same JavaScript, so a change that breaks it fails there.
 
 An iPhone runs only signed apps, so for a real iPhone you need the signed build below.

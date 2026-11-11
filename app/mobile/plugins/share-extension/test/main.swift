@@ -1,5 +1,5 @@
 // The Share Extension's decisions (Shared.swift): the pairing it reads and the not-paired path, the hub's frames, the
-// chats it offers, and what it sends. ios.yml's iOS job runs it on macOS (it builds on Linux too):
+// chats it offers, and what it sends. mac.yml's `mobile (ios)` job runs it on macOS (it builds on Linux too):
 //   swiftc plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o share-test && ./share-test
 import Foundation
 
