@@ -59,8 +59,9 @@ export type FakePull = {
   conversation?: boolean;
 };
 
-/** The approving review a base requires. */
-export type FakeApprovals = { classic?: boolean; dismissStale?: boolean; codeOwners?: boolean };
+/** The approving review a base requires: `count` of them, 1 unless said; 0 is a base that requires a PR and no approval. */
+export type FakeApprovals = { classic?: boolean; dismissStale?: boolean; codeOwners?: boolean; count?: number };
+const needsApproval = (a: FakeApprovals | undefined): a is FakeApprovals => a !== undefined && ((a.count ?? 1) > 0 || a.codeOwners === true);
 
 const ok = (body: unknown): GhOut => ({ exitCode: 0, stdout: JSON.stringify(body), stderr: "" });
 export const httpError = (status: number, message: string): GhOut => ({
@@ -178,7 +179,7 @@ export class FakeGh implements GhRunner {
    * resolved is open (as GitHub answered on the lab repo, 2026-11-11).
    */
   private reviewDecision(p: FakePull): string | null {
-    if (!this.approvals || p.conversation) return null;
+    if (!needsApproval(this.approvals) || p.conversation) return null;
     return p.changesRequested ? "CHANGES_REQUESTED" : p.approved ? "APPROVED" : "REVIEW_REQUIRED";
   }
 
@@ -239,7 +240,13 @@ export class FakeGh implements GhRunner {
         if (this.unreadable.includes("classic")) return refused;
         const a = this.approvals;
         const rule = a?.classic
-          ? { requiresApprovingReviews: true, requiresCodeOwnerReviews: a.codeOwners === true, dismissesStaleReviews: a.dismissStale === true, requireLastPushApproval: false }
+          ? {
+              requiresApprovingReviews: true,
+              requiredApprovingReviewCount: a.count ?? 1,
+              requiresCodeOwnerReviews: a.codeOwners === true,
+              dismissesStaleReviews: a.dismissStale === true,
+              requireLastPushApproval: false,
+            }
           : null;
         return ok({ data: { repository: { ref: { branchProtectionRule: rule } } } });
       }
@@ -477,7 +484,7 @@ export class FakeGh implements GhRunner {
       if ((ap && !ap.classic) || this.ruleMethods) {
         const review = ap && !ap.classic;
         const parameters: Record<string, unknown> = {
-          required_approving_review_count: review && !ap.codeOwners ? 1 : 0,
+          required_approving_review_count: review && !ap.codeOwners ? (ap.count ?? 1) : 0,
           dismiss_stale_reviews_on_push: review && ap.dismissStale === true,
           require_code_owner_review: review && ap.codeOwners === true,
           require_last_push_approval: false,

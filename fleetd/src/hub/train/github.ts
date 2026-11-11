@@ -394,9 +394,10 @@ export function rulesFromAnswers(rules: unknown, classic: unknown, repo: unknown
       if (Array.isArray(p.allowed_merge_methods)) allowed.push(p.allowed_merge_methods);
     }
   }
-  const c = classic as Record<string, unknown> | null | undefined;
+  const c = classic as Record<string, any> | null | undefined;
   if (c) {
-    if (c.requiresApprovingReviews === true || c.requiresCodeOwnerReviews === true) approval = true;
+    // `requiresApprovingReviews` alone is "a pull request is required": its count may be 0, which asks for no approval.
+    if ((c.requiresApprovingReviews === true && c.requiredApprovingReviewCount > 0) || c.requiresCodeOwnerReviews === true) approval = true;
     if (c.dismissesStaleReviews === true || c.requireLastPushApproval === true) dismissStale = true;
   }
   const r = repo as Record<string, unknown> | null | undefined;
@@ -413,7 +414,7 @@ export type Sleep = (ms: number) => Promise<void>;
 
 const CLASSIC_RULE =
   "query($owner: String!, $name: String!, $ref: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { " +
-  "branchProtectionRule { requiresApprovingReviews requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
+  "branchProtectionRule { requiresApprovingReviews requiredApprovingReviewCount requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
 
 export class TrainGitHub {
   constructor(

@@ -146,6 +146,22 @@ test("classic branch protection that requires an approval waits the same way", a
   expect(k.change(2).state).toBe("merged");
 });
 
+test("a base that requires a pull request and no approval of it, classic or ruleset: PRs batch as today, and no PR's reviews are read", async () => {
+  for (const classic of [true, false]) {
+    const k = kit();
+    k.gh.approvals = { classic, count: 0, dismissStale: true };
+    for (let n = 1; n <= 3; n++) k.pr(n, `fleetd/T${n}-x`, { [`f${n}.md`]: `${n}\n` });
+    for (let n = 1; n <= 3; n++) await k.enqueue(n);
+    await k.settle(4);
+    const batch = [...k.gh.pulls].find(([, p]) => p.branch === "fleetd/train/batch");
+    expect(batch![1].title.split(";").length).toBe(3);
+    expect(merges(k)).toEqual([`merge #${batch![0]}`]);
+    for (let n = 1; n <= 3; n++) expect(k.change(n).state).toBe("merged");
+    expect(k.gh.log.some((l) => l.startsWith("update #"))).toBe(false);
+    expect(asked(k, "reviewDecision")).toEqual([]);
+  }
+});
+
 test("a person asks for changes on a PR that waits for approval: it keeps waiting, and is not merged", async () => {
   const k = kit();
   k.gh.approvals = {};
@@ -497,8 +513,11 @@ test("rulesFromAnswers: an approval from a ruleset or from classic protection, s
   expect(rulesFromAnswers(pullRule({ required_approving_review_count: 1, dismiss_stale_reviews_on_push: true }), null, {})).toEqual({ approval: true, dismissStale: true, method: "squash" });
   expect(rulesFromAnswers(pullRule({ required_approving_review_count: 0, require_code_owner_review: true }), null, {}).approval).toBe(true);
   expect(rulesFromAnswers(pullRule({ required_approving_review_count: 2, require_last_push_approval: true }), null, {}).dismissStale).toBe(true);
-  expect(rulesFromAnswers([], { requiresApprovingReviews: true, dismissesStaleReviews: true }, {})).toMatchObject({ approval: true, dismissStale: true });
+  expect(rulesFromAnswers([], { requiresApprovingReviews: true, requiredApprovingReviewCount: 1, dismissesStaleReviews: true }, {})).toMatchObject({ approval: true, dismissStale: true });
   expect(rulesFromAnswers([], { requiresApprovingReviews: false }, {}).approval).toBe(false);
+  // Classic protection that requires a pull request and no approval of it: the same rule as the ruleset's count of 0.
+  expect(rulesFromAnswers([], { requiresApprovingReviews: true, requiredApprovingReviewCount: 0 }, {}).approval).toBe(false);
+  expect(rulesFromAnswers([], { requiresApprovingReviews: true, requiredApprovingReviewCount: 0, requiresCodeOwnerReviews: true }, {}).approval).toBe(true);
   expect(rulesFromAnswers([], null, { allow_squash_merge: false, allow_rebase_merge: true, allow_merge_commit: true }).method).toBe("rebase");
   expect(rulesFromAnswers([], null, { allow_squash_merge: false, allow_rebase_merge: false, allow_merge_commit: true }).method).toBe("merge");
   expect(rulesFromAnswers(pullRule({ allowed_merge_methods: ["merge", "rebase"] }), null, { allow_squash_merge: true, allow_rebase_merge: true, allow_merge_commit: true }).method).toBe("rebase");
