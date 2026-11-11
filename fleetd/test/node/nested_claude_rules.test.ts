@@ -12,7 +12,7 @@ const parts = (cmd: string) => [cmd, ...[...cmd.matchAll(/[;&|(`\n]/g)].map((m) 
 const matches = (rule: string, part: string) => glob(rule).test(part) || (rule.indexOf("*") === rule.length - 1 && rule.endsWith(" *") && part === rule.slice(0, -2));
 const refused = (cmd: string) => RULES.filter((r) => parts(cmd).some((p) => matches(r, p)));
 
-const BODY = `A node its hub updates takes the hub's flavour, so a cloud machine stops staying on Rust.
+const BODY = `A node its hub updates takes the hub's flavour, so a machine stops staying on Rust.
 
 - **Nodes report their flavour.** The hub's update logic counts a node on the other flavour as behind.
 

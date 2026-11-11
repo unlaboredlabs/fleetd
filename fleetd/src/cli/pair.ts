@@ -253,7 +253,7 @@ export function workerCodes(home: string | undefined): string {
     if (codes.length === 0 && !mac) return "No open worker codes. `fleetd pair --worker <machine-id>` makes one.\n";
     let out = "";
     for (const c of codes) {
-      out += `${c.id}  ${c.machineId}  made ${c.createdAt}  until ${c.expiresAt}${c.pool ? "  (the hub's own, for a cloud machine)" : ""}\n`;
+      out += `${c.id}  ${c.machineId}  made ${c.createdAt}  until ${c.expiresAt}\n`;
     }
     if (mac) {
       const created = new Date(mac.created_ms ?? mac.expires_ms - MAC_CODE_TTL_MS).toISOString();

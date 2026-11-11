@@ -258,27 +258,6 @@ test("a hub on the channel's build only updates its nodes; a node that refuses s
   expect(u.retry("m9", false)).toEqual({ kind: "nothing_to_retry" });
 });
 
-test("an asleep cloud machine isn't told to run fleetd update, and doesn't make an update partial; an offline machine is", async () => {
-  const dir = join(home.dir, "cloud");
-  const fake = new Fake(dir, [{}, { liveSince: undefined, cloud: true }, { liveSince: undefined }]);
-  fake.version = NEW;
-  const u = updatesIn(dir, fake);
-  u.start(undefined, true);
-  await until(() => u.status()?.finishedAt !== undefined);
-  const run = u.status()!;
-  expect(run.parts.filter((p) => p.part === "node").map((p) => [p.machineId, p.state, p.message])).toEqual([
-    ["m0", "done", `runs ${NEW}`],
-    ["m1", "skipped", "asleep: it takes the hub's build when it wakes"],
-    ["m2", "skipped", "offline: press Update again once it's online, or run `fleetd update` on it"],
-  ]);
-  expect(signal(run).state).toBe("updated");
-  expect(lastAutoOf(run)).toMatchObject({ result: "partial", message: "m2: offline: press Update again once it's online, or run `fleetd update` on it" });
-  // Only cloud machines asleep: nothing missed.
-  const asleep = { ...run, parts: run.parts.filter((p) => p.machineId !== "m2") };
-  expect(lastAutoOf(asleep)).toMatchObject({ result: "done" });
-  expect(JSON.stringify(lastAutoOf(asleep))).not.toContain("fleetd update");
-});
-
 test("a node waits for its agents, at most the drain, and Update now doesn't wait", async () => {
   const dir = join(home.dir, "c");
   const fake = new Fake(dir, [{}]);
@@ -539,6 +518,25 @@ test("without scopes, or across a host protocol change, agents are held as befor
   }
 });
 
+// The update that installs the hub without cloud machines was planned by one with them: its cloud machines' parts,
+// skipped as asleep, are of machines this hub no longer has. They neither show nor make the update partial.
+test("a run an older hub planned drops its cloud machines' asleep parts as it loads", () => {
+  const dir = join(home.dir, "gone");
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  const at = new Date(0).toISOString();
+  const asleep = "asleep: it takes the hub's build when it wakes";
+  const parts = [
+    { part: "hub", name: "the hub", from: OLD, state: "done" },
+    { part: "node", machineId: "m0", name: "builder", from: OLD, state: "done" },
+    { part: "node", machineId: "boat-1", name: "boat-1", from: OLD, state: "skipped", message: asleep },
+    { part: "claude", machineId: "boat-1", name: "boat-1", from: "2.1.310", state: "skipped", message: asleep },
+  ];
+  writeFileSync(join(dir, "update", "run.json"), JSON.stringify({ id: "U0", channel: "edge", to: NEW, startedAt: at, finishedAt: at, auto: true, parts }));
+  const run = new Updates(join(dir, "update"), { now: () => 0 }, defaultTiming()).status()!;
+  expect(run.parts.map((p) => p.machineId ?? p.part)).toEqual(["hub", "m0"]);
+  expect(lastAutoOf(run)).toMatchObject({ result: "done" });
+});
+
 test("a node waits 2 minutes at most by default", () => {
   expect(defaultTiming().drain).toBe(120_000);
   const dir = join(home.dir, "l");
@@ -546,57 +544,28 @@ test("a node waits 2 minutes at most by default", () => {
   expect(u.settings().drainMinutes).toBe(2);
 });
 
-test("a cloud machine that wakes mid-run catches up as the run ends", async () => {
-  const dir = join(home.dir, "m");
-  const fake = new Fake(dir, [{ name: "builder" }, { name: "cloud", liveSince: undefined }]);
-  // A Navi mid-step on builder keeps the run going for as long as the test says.
-  fake.hosted.set("m0", [HOSTED, 1]);
-  const { after, resumed } = await restarted(dir, fake);
-  await until(() => byMachine(after.status()!).get("m0")!.installsBy !== undefined);
-  expect(byMachine(after.status()!).get("m1")!.state).toBe("skipped");
-
-  // The cloud machine wakes and links on its old build.
-  fake.facts[1]!.liveSince = 5;
-  let caught: string | undefined;
-  const catching = after.catchUp("m1").then((c) => (caught = c));
-  await Bun.sleep(50);
-  // Not ready for work while the run goes on.
-  expect(caught).toBeUndefined();
-  expect(fake.updated).not.toContain("m1");
-
-  fake.hosted.set("m0", [HOSTED, 0]);
-  await catching;
-  expect(caught).toBe("restarting");
-  expect(after.status()!.finishedAt).toBeDefined();
-  expect(fake.updated).toContain("m1");
-  await resumed;
-});
-
-// boat-2 and boat-3, 9 Nov: Rust cloud machines woke to the Bun hub of the same version, counted as current, and never
-// switched. A node on the other flavour is behind whatever its version: its catch-up and the next update send it the
-// hub's build, flavour named, and it counts as current only once it runs Bun. A node that names no flavour (older than
-// any hub that sends one) is taken at its version.
+// 9 Nov: Rust nodes woke to the Bun hub of the same version, counted as current, and never switched. A node on the
+// other flavour is behind whatever its version: the next update sends it the hub's build, flavour named, and it counts
+// as current only once it runs Bun. A node that names no flavour (older than any hub that sends one) is taken at its
+// version.
 test("a Rust-reporting node is behind a Bun hub of its version, and told to switch to Bun", async () => {
   const dir = join(home.dir, "flavour");
   const fake = new Fake(dir, [
-    { name: "boat-2", version: NEW, flavour: "rust", cloud: true, claude: "2.1.314 (Claude Code)" },
-    { name: "boat-3", version: NEW, cloud: true, claude: "2.1.314 (Claude Code)" },
+    { name: "builder-2", version: NEW, flavour: "rust", claude: "2.1.314 (Claude Code)" },
+    { name: "builder-3", version: NEW, claude: "2.1.314 (Claude Code)" },
   ]);
   fake.version = NEW;
   const u = updatesIn(dir, fake);
   u.setSettings(true, undefined);
   expect(u.autoAt()).toBe(fake.now);
 
-  expect(await u.catchUp("m0")).toBe("restarting");
+  u.start(undefined, true);
+  await until(() => u.status()?.finishedAt !== undefined);
   expect(fake.sent).toEqual([{ version: NEW, channel: "stable", flavour: "bun" }]);
-  await until(() => fake.facts[0]!.flavour === "bun");
-  expect(await u.catchUp("m0")).toBe("current");
+  expect(fake.facts[0]!.flavour).toBe("bun");
+  // No flavour said: current at the hub's version, never asked.
   expect(fake.updated).toEqual(["m0"]);
   expect(u.autoAt()).toBeUndefined();
-
-  // No flavour said: current at the hub's version, never asked.
-  expect(await u.catchUp("m1")).toBe("current");
-  expect(fake.updated).toEqual(["m0"]);
 });
 
 // A node from before flavours (every live one when this shipped) ignores the hub's flavour, installs its own flavour of
@@ -604,7 +573,7 @@ test("a Rust-reporting node is behind a Bun hub of its version, and told to swit
 // in the same run.
 test("a node from before flavours comes back as build_rust and switches to Bun in the same run", async () => {
   const dir = join(home.dir, "before-flavours");
-  const fake = new Fake(dir, [{ name: "boat-2" }]);
+  const fake = new Fake(dir, [{ name: "builder-2" }]);
   fake.ownFlavour.set("m0", "rust");
   const { after, resumed } = await restarted(dir, fake);
   await until(() => after.status()?.finishedAt !== undefined);

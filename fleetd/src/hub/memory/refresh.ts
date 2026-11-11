@@ -26,7 +26,6 @@ import { quietPolicy } from "../attention/index.ts";
 import { accountKey, ClaudeAccountStore, forLead, isRefusal, type NodeAccounts, whoseForLead } from "../claude_accounts/index.ts";
 import { CAP_CLAUDE_ACCOUNTS } from "../claude_accounts/tools.ts";
 import { chat } from "../chat/index.ts";
-import { isPool } from "../cloud/outbox.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { leads } from "../leads/index.ts";
 import { clip } from "../leads/text.ts";
@@ -301,8 +300,7 @@ export async function tick(hub: Hub, launcher: Launcher = refreshPorts(hub).laun
   const [tz, at] = schedule(hub);
   const night = nightDue(now, tz, at);
   if (night === undefined) return;
-  // A cloud machine's checkouts are its projects' twins (D306): their memory is their home checkout's.
-  for (const project of store(hub).projectsList().filter((p) => !isPool(hub, p.machineId))) {
+  for (const project of store(hub).projectsList()) {
     const r = { machineId: project.machineId, projectId: project.projectId };
     const run = getRun(hub.db, r);
     if (run.threadId !== undefined || (run.nightMs !== undefined && run.nightMs >= night)) continue;

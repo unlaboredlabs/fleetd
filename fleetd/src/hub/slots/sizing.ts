@@ -2,8 +2,7 @@
 // Without I/O.
 //
 // - CPU: one agent per logical CPU less a reserve of one in eight (at least one).
-// - Memory: 2 GB per agent, 4 GB on one of the hub's cloud machines, after a quarter of it, 4 to 16 GB, is left to
-//   the OS and the human's own apps.
+// - Memory: 2 GB per agent, after a quarter of it, 4 to 16 GB, is left to the OS and the human's own apps.
 // - At most HARD_TOP without a person's setting.
 //
 // Only the default cap, for a machine no person set a number for. Disk is room, not a cap: the new agents its free
@@ -22,8 +21,6 @@ export const UNMEASURED_WHY = "not measured yet";
 /** Decimal GB, as node.json spoke them. */
 const MEM_PER_AGENT = 2_000_000_000;
 const DISK_PER_AGENT = 5_000_000_000;
-/** A cloud machine's GB an agent. */
-export const CLOUD_MEM_PER_AGENT_GB = 4;
 
 /** A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */
 export type Auto = { cap: number; why: string };
@@ -46,12 +43,10 @@ function gb(n: number): string {
   return tenths % 10 === 0 ? String(tenths / 10) : `${Math.trunc(tenths / 10)}.${tenths % 10}`;
 }
 
-/** `cloud`: one of the hub's cloud machines, sized for builds. */
-export function autoCap(load: NodeLoad, cloud: boolean): Auto {
+export function autoCap(load: NodeLoad): Auto {
   const cpus = load.cpus;
   const cpuTerm = Math.max(cpus - Math.trunc((cpus + 7) / 8), 1);
-  const fallback = cloud ? CLOUD_MEM_PER_AGENT_GB * 1_000_000_000 : MEM_PER_AGENT;
-  const perAgentGb = Math.max(load.memPerAgentBytes ?? fallback, 1) / 1e9;
+  const perAgentGb = Math.max(load.memPerAgentBytes ?? MEM_PER_AGENT, 1) / 1e9;
   let memTerm: number;
   let memWhy: string;
   if (load.memTotalBytes !== undefined && load.memTotalBytes !== null) {

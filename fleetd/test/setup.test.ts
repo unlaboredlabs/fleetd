@@ -93,7 +93,7 @@ test("the 1Password step's Test tests the caller's own token and keeps it as its
   const { Registry } = await import("../src/hub/api/registry.ts");
   const { registerAll } = await import("../src/hub/serve/areas.ts");
   const { HubDb } = await import("../src/hub/store/db.ts");
-  const { fakeNodePort } = await import("../src/hub/cloud/node.ts");
+  const { fakeNodePort } = await import("../src/hub/link/node_port.ts");
   const { store } = await import("../src/hub/store/hub_store.ts");
   const { token } = await import("../src/hub/onepassword/index.ts");
   const at = "2026-11-08T10:00:00.000Z";

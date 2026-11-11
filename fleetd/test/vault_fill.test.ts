@@ -83,7 +83,7 @@ test("refused: off its site, over http, a card, an unknown session, another proj
   expect((await refused(fill({ item: "Visa", field: "password", page: "https://shop.example/" }))).message).toContain("purchase");
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/", sessionId: "B0123456789abcdef0123456789abcdee" }))).code).toBe("not_found");
   expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }, { ...lead, projectRef: OTHER }))).code).toBe("not_found");
-  expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }, { ...lead, via: "cloud-1" }))).code).toBe("forbidden");
+  expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }, { ...lead, via: "builder-1" }))).code).toBe("forbidden");
   // Refusals are audited, never with a value; the third in ten minutes puts one quiet line in the chat.
   const rows = audit();
   expect(rows.filter((r) => r.action === "fill_refused").length).toBeGreaterThanOrEqual(3);

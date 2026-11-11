@@ -43,8 +43,6 @@ export const parseClaimState = (s: string): ClaimState => (s === "held" ? "held"
 export type Claim = {
   holder: string;
   projectRef: ProjectRef;
-  /** The cloud machine it runs on (D306); undefined: its project's own machine. */
-  on?: MachineId;
   priority: SlotPriority;
   threadId?: string;
   state: ClaimState;
@@ -52,16 +50,7 @@ export type Claim = {
 };
 
 /** The machine whose cap a claim counts against: where it runs. */
-export const claimMachine = (c: Claim): MachineId => c.on ?? c.projectRef.machineId;
-
-/** Where `Board.place` put a new task (D306). */
-export type Placed =
-  /** A slot: on its project's own machine (undefined), or on that cloud machine. */
-  | { kind: "granted"; on?: MachineId }
-  /** Its own machine is at its agent limit and no cloud machine it may use has room; the reason is its own machine's. */
-  | { kind: "full"; reason: string }
-  /** Something else holds it back: no cloud machine would help. */
-  | { kind: "queued"; reason: string };
+export const claimMachine = (c: Claim): MachineId => c.projectRef.machineId;
 
 /** A write the service persists, in order. */
 export type Op =
@@ -302,7 +291,7 @@ export class Board {
 
   /**
    * Whether claim `c` counts toward the project's max agents for a slot on machine `m`: a max a person set counts its
-   * agents on every machine; the default only those on the machine the slot is on (D306).
+   * agents on every machine; the default only those on the machine the slot is on.
    */
   private counted(r: ProjectRef, m: MachineId, c: Claim): boolean {
     return same(c.projectRef, r) && (this.ownMax(r) !== undefined || claimMachine(c) === m);
@@ -415,16 +404,14 @@ export class Board {
 
   /**
    * Asking again for a holder that already has a slot returns granted; for one already queued, its current reason.
-   * An idle holder joins the back of the queue. `on`: the cloud machine it runs on (D306).
+   * An idle holder joins the back of the queue.
    */
-  acquire(holder: string, projectRef: ProjectRef, priority: SlotPriority, on?: MachineId): Grant {
+  acquire(holder: string, projectRef: ProjectRef, priority: SlotPriority): Grant {
     let i = this.idx(holder);
     if (i >= 0) {
       const c = this.claims_[i] as Claim;
       if (c.state === "held") return GRANTED;
       c.projectRef = { ...projectRef };
-      if (on === undefined) delete c.on;
-      else c.on = on;
       c.priority = priority;
       if (c.state === "idle") {
         c.state = "queued";
@@ -432,7 +419,6 @@ export class Board {
       }
     } else {
       const c: Claim = { holder, projectRef: { ...projectRef }, priority, state: "queued", order: this.nextOrder++ };
-      if (on !== undefined) c.on = on;
       this.claims_.push(c);
       i = this.claims_.length - 1;
     }
@@ -442,43 +428,6 @@ export class Board {
     if (c.state === "held") return GRANTED;
     const reason = this.blocker(projectRef, claimMachine(c), c.threadId === undefined);
     return reason === undefined ? GRANTED : queuedGrant(reason);
-  }
-
-  /**
-   * A new task's slot (D306), deterministically: on its project's own machine while that has room; else, only when
-   * what holds it back there is that machine's agent limit (its cap, or no disk room), on the cloud machine in `cloud`
-   * with room: one of the first `warm` before the rest, then the one that runs the most agents, the first listed
-   * among equals. Never past the fleet cap or the project's own max agents, which count every machine.
-   */
-  place(holder: string, projectRef: ProjectRef, priority: SlotPriority, cloud: MachineId[], warm: number): Placed {
-    const grant = this.acquire(holder, projectRef, priority);
-    if (grant.granted) return { kind: "granted" };
-    const reason = grant.reason;
-    const i = this.idx(holder);
-    if (i < 0) return { kind: "queued", reason };
-    const claim = this.claims_[i] as Claim;
-    const fresh = claim.threadId === undefined;
-    const home = projectRef.machineId;
-    const block = this.block(projectRef, home, fresh);
-    const own = this.ownMax(projectRef);
-    if ((block !== "machine" && block !== "disk") || (own !== undefined && this.held(projectRef, home)[2] >= own)) {
-      return { kind: "queued", reason };
-    }
-    let best: { k: number; key: [number, number, number] } | undefined;
-    cloud.forEach((m, k) => {
-      if (m === home || this.block(projectRef, m, fresh) !== undefined) return;
-      const key: [number, number, number] = [k < warm ? 1 : 0, this.held(projectRef, m)[1], -k];
-      const better =
-        !best ||
-        key[0] > best.key[0] ||
-        (key[0] === best.key[0] && (key[1] > best.key[1] || (key[1] === best.key[1] && key[2] > best.key[2])));
-      if (better) best = { k, key };
-    });
-    if (!best) return { kind: "full", reason };
-    const m = cloud[best.k] as MachineId;
-    claim.on = m;
-    this.grant(i);
-    return { kind: "granted", on: m };
   }
 
   /** The holder's slot follows the thread from now on. */

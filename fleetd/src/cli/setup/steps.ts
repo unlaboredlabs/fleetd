@@ -97,7 +97,6 @@ function placeWords(place: string): string {
     invites: "Hub › People",
     people: "Hub › People",
     machines: "Hub › Machines",
-    cloud: "Hub › Machines › Cloud machines",
     onepassword: "Your accounts › 1Password",
   };
   return `Settings › ${names[place] ?? place}`;

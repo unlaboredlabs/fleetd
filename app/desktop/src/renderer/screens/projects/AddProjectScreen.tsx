@@ -4,7 +4,7 @@
 // repo is (repos already a project only once the field matches them), and a footer that says in one line what the
 // button will do, with Only me beside it. Then the clone's progress, the ready state with what the lead will need (a new
 // project opens at once), or the error and its fix. Type to filter, Up/Down pick, Enter adds, Esc closes (a clone
-// carries on). Cloud machines and the agents' Mac are never offered: no project lives there (projectHome). With
+// carries on). The agents' Mac is never offered: no project lives there (projectHome). With
 // several hubs a line beside the title says which hub it adds to, and picks another.
 
 import { Dialog as D } from "radix-ui";

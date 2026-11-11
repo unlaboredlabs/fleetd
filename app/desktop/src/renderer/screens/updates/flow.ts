@@ -112,16 +112,9 @@ export const hubUpdated = (r: UpdateRun): boolean => {
   return hub?.state === "done" || hub?.state === "current";
 };
 
-/** The hub's words for a cloud machine an update found asleep (hub/update `ASLEEP`). */
-const ASLEEP = "asleep: it takes the hub's build when it wakes";
-
-/** A cloud machine's part skipped while it slept: it takes the hub's build as it wakes, so nobody need retry it. */
-export const asleep = (p: UpdatePart): boolean => p.state === "skipped" && p.message === ASLEEP;
-
 /** A machine whose update didn't come through: a part failed, was put back or skipped. Claude Code left as it is
- * (installed another way) is a calm note, not one of them, nor is a cloud machine that slept through it. */
-const leftOut = (p: UpdatePart): boolean =>
-  p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude" && !asleep(p));
+ * (installed another way) is a calm note, not one of them. */
+const leftOut = (p: UpdatePart): boolean => p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude");
 
 /** The last run the hub knows and the build it has ready, on connect, every few minutes, and for a sheet opened
  * mid-run or after one; a run going on is followed. */

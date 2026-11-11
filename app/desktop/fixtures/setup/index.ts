@@ -7,7 +7,6 @@ import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 import steps from "./steps.json" with { type: "json" };
-import { cloudNew } from "../kit/cloud.ts";
 
 type Reads = Readonly<Record<string, JsonObject>>;
 interface Scenario {
@@ -44,8 +43,6 @@ export default defineGroup({
         requiredLeft: sc.requiredLeft,
       });
       for (const [id, read] of Object.entries(sc.tests)) f.answer("setup_test", { step: id }, { step: step(id, read) }, 600);
-      // The cloud step's panel: no boat.dev key yet, on a hub only its tailnet reaches (nothing to set up for it).
-      f.answer("cloud_get", undefined, { cloud: cloudNew() });
       return f;
     }),
 });

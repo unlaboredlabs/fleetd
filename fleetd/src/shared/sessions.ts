@@ -181,7 +181,6 @@ export type SessionCall =
   | { op: "navi_signins_forget"; projectId: ProjectId }
   | { op: "order_env_drop"; projectId: ProjectId; orderId: WorkstreamId; name?: EnvVarName; fingerprint?: SecretFingerprint }
   | { op: "claude_account_secret"; account: ClaudeAccount; set?: ClaudeSecretSet }
-  | { op: "claude_account_reseal"; account: ClaudeAccount; to: BoxPublicKey }
   | { op: "claude_account_test"; account: ClaudeAccount }
   | { op: "onepassword_token"; personId: PersonId; sealed?: SealedSecret }
   | { op: "onepassword_test"; personId: PersonId }
@@ -218,7 +217,7 @@ export type SessionCall =
   | { op: "list_files"; projectId: ProjectId; query?: string; limit: number }
   | { op: "repo_scan" }
   | { op: "repo_inspect"; path: string }
-  | { op: "repo_clone"; addId: string; url: string; dest: string; token?: SealedSecret }
+  | { op: "repo_clone"; addId: string; url: string; dest: string }
   | { op: "folder_make"; path: string; gitInit?: boolean; dryRun?: boolean }
   | { op: "gh_repo_list" }
   | { op: "landed_log"; projectId: ProjectId; branch: string; sinceMs: number; stopAt?: string }
@@ -366,7 +365,6 @@ export type SessionOutput =
   | { kind: "mcp_secrets"; secrets: McpSecretSaved[] }
   | ({ kind: "mcp_tested" } & McpTestResult)
   | { kind: "claude_account_saved"; fingerprint?: SecretFingerprint }
-  | { kind: "claude_account_resealed"; sealed?: SealedSecret }
   | { kind: "claude_account_tested"; ok: boolean; error?: string }
   | { kind: "onepassword_saved"; fingerprint?: SecretFingerprint }
   | { kind: "onepassword_tested"; vaults?: string[]; error?: string }

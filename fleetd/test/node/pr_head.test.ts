@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { gitRemote, prHead, prNumber, prRepo, remoteEnv, remoteRepo, TOKEN_MARK, useToken } from "../../src/node/worktree/index.ts";
+import { gitRemote, prHead, prNumber, prRepo, remoteRepo } from "../../src/node/worktree/index.ts";
 import { tempHome } from "../helpers.ts";
 
 const git = (cwd: string, ...args: string[]) => spawnSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
@@ -71,30 +71,3 @@ test("a review's head is fetched from the pr's remote into the object store alon
   }
 });
 
-/** A checkout fleetd cloned with a token (a cloud machine's, D306) authenticates its remote calls with the newest real
- * token an order's launch brought, and git sees it only for github.com, only through the environment. */
-test("only a checkout cloned with a token fetches with its order's token", async () => {
-  const home = tempHome();
-  try {
-    const plain = repo(join(home.dir, "plain"));
-    const cloud = repo(join(home.dir, "cloud"));
-    git(cloud, "config", TOKEN_MARK, "true");
-    await useToken(plain, "ghs_one");
-    await useToken(cloud, "ghs_one");
-    // A placeholder for a token taken back never replaces the last real one.
-    await useToken(cloud, "fleetd-github-not-connected-connect-it-in-settings");
-    const header = async (root: string, url: string) => (await gitRemote(root, ["config", "--get-urlmatch", "http.extraheader", url], 10_000).catch(() => "")).trim();
-    const basic = (t: string) => `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${t}`).toString("base64")}`;
-    expect(await header(cloud, "https://github.com/acme/shop")).toBe(basic("ghs_one"));
-    expect(await header(cloud, "https://gitlab.example.com/acme/shop")).toBe("");
-    expect(await header(plain, "https://github.com/acme/shop")).toBe("");
-    expect(remoteEnv(plain)).toEqual({});
-    // Never in the checkout's own config.
-    expect(git(cloud, "config", "--get-all", "http.https://github.com/.extraheader").status).not.toBe(0);
-    // A newer token replaces it.
-    await useToken(cloud, "ghs_two");
-    expect(await header(cloud, "https://github.com/acme/shop")).toBe(basic("ghs_two"));
-  } finally {
-    home.done();
-  }
-});

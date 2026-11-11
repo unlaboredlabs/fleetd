@@ -109,9 +109,7 @@ doesn't restart by itself, so the result stays on screen: its line has **Update*
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
 the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
 in. Machines that were online when you pressed Update get a while to reconnect after the hub restarts; one that was
-offline, or doesn't come back, is skipped and named in the result. A cloud machine that was asleep when the update
-started is brought to the hub's build as soon as it wakes, or, when it wakes during the update, as soon as the update
-ends; it takes no work before then.
+offline, or doesn't come back, is skipped and named in the result.
 
 An update never waits for work to finish, only for what a restart would cut off (2 minutes at most, by default). What
 a restart cuts off carries on by itself:

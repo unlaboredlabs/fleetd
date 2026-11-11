@@ -683,10 +683,6 @@
           "minLength": 1,
           "type": "string"
         },
-        "ranOn": {
-          "$ref": "#/$defs/MachineId",
-          "description": "The cloud machine it runs on (D306): placed there because its project's own machine was at its agent limit.\nEvery later turn of it runs there too, where its worktree is. Absent for a task on its project's own machine."
-        },
         "recovery": {
           "$ref": "#/$defs/TaskRecovery",
           "description": "Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will."

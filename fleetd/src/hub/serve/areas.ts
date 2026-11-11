@@ -28,7 +28,6 @@ import { register as r24 } from "../onepassword/tools.ts";
 import { register as r25 } from "../orders/tools.ts";
 import { register as r26 } from "../pair/tools.ts";
 import { register as r27 } from "../people/tools.ts";
-import { register as r28 } from "../pool/tools.ts";
 import { register as r29 } from "../projects/tools.ts";
 import { register as r30 } from "../prompts/tools.ts";
 import { register as r31 } from "../prs/tools.ts";
@@ -78,7 +77,6 @@ export function registerAll(tools: Registry): void {
   r25(tools); // hub/orders
   r26(tools); // hub/pair
   r27(tools); // hub/people
-  r28(tools); // hub/pool
   r29(tools); // hub/projects
   r30(tools); // hub/prompts
   r31(tools); // hub/prs

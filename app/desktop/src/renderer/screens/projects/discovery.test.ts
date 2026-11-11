@@ -92,17 +92,17 @@ describe("repos already a project", () => {
   });
 });
 
-describe("cloud machines and the agents' Mac", () => {
+describe("the agents' Mac", () => {
   it("are no project's home: not offered, and their checkouts not listed", () => {
-    const cloud: ProjectDiscoverOutput = {
+    const mac: ProjectDiscoverOutput = {
       ...out,
-      machines: [...out.machines, { machineId: "boat-1", online: true, cloneRoot: "/root/src", repos: [{ path: "/root/src/storefront", name: "storefront", repo: "acme/storefront" }] }],
-      github: { ...out.github, repos: [{ repo: "acme/site", url: "https://github.com/acme/site", private: false, checkouts: [{ machineId: "boat-1", path: "/root/src/site" }] }] },
-      best: "boat-1",
+      machines: [...out.machines, { machineId: "mac", online: true, cloneRoot: "/Users/agents/src", repos: [{ path: "/Users/agents/src/storefront", name: "storefront", repo: "acme/storefront" }] }],
+      github: { ...out.github, repos: [{ repo: "acme/site", url: "https://github.com/acme/site", private: false, checkouts: [{ machineId: "mac", path: "/Users/agents/src/site" }] }] },
+      best: "mac",
     };
-    const d = discovery(cloud, names, (id) => id !== "boat-1");
+    const d = discovery(mac, names, (id) => id !== "mac");
     expect(d.workers.map((w) => w.machineId)).toEqual(["devbox", "buildbox"]);
-    expect(d.found.some((f) => f.source.kind === "checkout" && f.source.machineId === "boat-1")).toBe(false);
+    expect(d.found.some((f) => f.source.kind === "checkout" && f.source.machineId === "mac")).toBe(false);
     expect(d.found.find((f) => f.name === "acme/site")?.detail).toBe("");
     expect(d.best).toBeUndefined();
     expect(target(d, null)?.machineId).toBe("devbox");
@@ -110,7 +110,6 @@ describe("cloud machines and the agents' Mac", () => {
 
   it("are told apart by the machine's own flags", () => {
     expect(projectHome({})).toBe(true);
-    expect(projectHome({ cloud: true })).toBe(false);
     expect(projectHome({ agentsMac: true })).toBe(false);
   });
 });

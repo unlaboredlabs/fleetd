@@ -13,7 +13,6 @@
 // fixture: site/showcase-<still>-<theme>.jpg, at 2x, with a -small twin at 1x.
 // - dms: an agent's work in the panel, its DMs to and from other agents among its steps (dms-relays).
 // - dmlog: the project's log of agents' DMs, who read each and when (dms-relays).
-// - cloud: Settings › Machines, the hub's own machines and the boat.dev cloud machines under them (machines-cloud).
 //
 // Each clip is one run of the app at a person's pace, from which it keeps its takes, a few seconds each, cut together
 // tight; what QA does between them (taking the phone over for the lead's clip, opening the phone for the screens') is
@@ -687,7 +686,6 @@ for (const clip of ["lead", "team", "screens", "navi"] as const) {
 const STILLS = [
   { still: "dms", screen: "agents.work", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 250, width: 400, height: 556 }, holds: ["Will do. Does #214", "Tests pass in en-US"] },
   { still: "dmlog", screen: "activity", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 214, width: 400, height: 556 }, holds: ["Receipt dates now print", "Which locale did you run"] },
-  { still: "cloud", screen: "settings.hub.machines", variant: "cloud", fixture: "machines-cloud", part: { x: 280, y: 424, width: 730, height: 348 }, holds: ["This hub's machines", "Asleep since"] },
 ] as const;
 
 for (const { still, screen, variant, fixture, part, holds } of STILLS) {

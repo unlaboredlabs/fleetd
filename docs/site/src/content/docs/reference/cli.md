@@ -69,7 +69,7 @@ make this machine a worker of that hub, without SSH from the hub: the command `f
 ### fleetd init {#init-step}
 
 ```text
-fleetd init --step <address|machines|claude|github|onepassword|people|mac|cloud>
+fleetd init --step <address|machines|claude|github|onepassword|people|mac>
 ```
 
 open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later. The app's Settings › Hub › Setup has the same steps
@@ -490,14 +490,6 @@ fleetd node grants [--ask accessibility|screen_recording] [--wait <seconds>] [--
 
 on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now; `--ask` has the running node ask macOS for one (waiting up to `--wait`, default 30, for it to), then opens its pane
 
-### fleetd node flush {#node-flush}
-
-```text
-fleetd node flush [--home <dir>] [--wait <seconds>]
-```
-
-ahead of a cloud machine's stop: hold the agents between steps, wait up to `--wait` (default 50) for recordings to reach the hub, checkpoint the node's database and sync the disk
-
 ### fleetd prompts list {#prompts-list}
 
 ```text
@@ -605,14 +597,6 @@ fleetd usage resume <machine> [--json] [--hub <url> --key-file <path>]
 ```
 
 lift the machine's usage pause now and send every parked agent "continue", like Resume in the app; one whose login is still limited parks again with the real reset. `--json` adds pauseLifted (null when the pause couldn't be read first). On the hub machine neither needs `--hub` or `--key-file`
-
-### fleetd cloud stop {#cloud-stop}
-
-```text
-fleetd cloud stop [--json] [--hub <url> --key-file <path>]
-```
-
-the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev lists with this hub's label, whether the hub's ledger knows it or not. They stay off until turned on again in Settings › Hub › Machines. On the hub machine it needs neither `--hub` nor `--key-file`
 
 ### fleetd steer {#steer}
 

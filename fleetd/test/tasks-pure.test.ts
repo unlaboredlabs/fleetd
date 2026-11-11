@@ -189,9 +189,9 @@ describe("render", () => {
     const lines = (since: string | undefined) => taskDigestLines([task], since, "", () => undefined, () => []);
     expect(lines(undefined)[0]?.endsWith("→ Fixed it.")).toBe(true);
     expect(lines("2026-10-25T09:30:00.000Z")[0]?.endsWith(": B")).toBe(true);
-    const running = { ...task, taskId: "T5", state: "running", profile: "high", branch: "fleetd/T5-b", ranOn: "boat-1" } as Task;
-    expect(taskDigestLines([running], undefined, "", (m) => (m === "boat-1" ? "09:10" : undefined), () => [])).toEqual([
-      "- T5 running (write, high): B [fleetd/T5-b]; on boat-1, a cloud machine; boat-1 offline since 09:10 UTC, it resumes when boat-1 is back",
+    const running = { ...task, taskId: "T5", state: "running", profile: "high", branch: "fleetd/T5-b" } as Task;
+    expect(taskDigestLines([running], undefined, "", (m) => (m === task.projectRef.machineId ? "09:10" : undefined), () => [])).toEqual([
+      `- T5 running (write, high): B [fleetd/T5-b]; ${task.projectRef.machineId} offline since 09:10 UTC, it resumes when ${task.projectRef.machineId} is back`,
     ]);
   });
 

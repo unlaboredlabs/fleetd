@@ -253,11 +253,3 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-
-/* The cloud step's settings inline: the page's own rows, a little apart. */
-.inlineSettings {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding-top: var(--space-1);
-}

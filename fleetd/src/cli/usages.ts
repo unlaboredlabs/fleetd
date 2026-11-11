@@ -27,7 +27,7 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              and repairs the rest; --rejoin enrols again with a new code; --mac joins the
              agents' Mac, from Terminal logged in at its screen (no claude there);
              --no-service enrols the node but leaves running it to you, and prints how
-  init --step <address|machines|claude|github|onepassword|people|mac|cloud>
+  init --step <address|machines|claude|github|onepassword|people|mac>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
              then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps
@@ -189,9 +189,6 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
              on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a
              node started now; --ask has the running node ask macOS for one (waiting up to --wait,
              default 30, for it to), then opens its pane
-  node flush [--home <dir>] [--wait <seconds>]
-             ahead of a cloud machine's stop: hold the agents between steps, wait up to --wait (default 50)
-             for recordings to reach the hub, checkpoint the node's database and sync the disk
 `;
 
 export const PROMPTS_USAGE = `  prompts list [--project <machine>/<project>]
@@ -258,13 +255,6 @@ export const USAGE_USAGE = `  usage [<machine>] [--json] [--hub <url> --key-file
              Resume in the app; one whose login is still limited parks again with the real reset.
              --json adds pauseLifted (null when the pause couldn't be read first). On the hub
              machine neither needs --hub or --key-file
-`;
-
-export const CLOUD_USAGE = `  cloud stop [--json] [--hub <url> --key-file <path>]
-             the kill switch: turn cloud machines (boat.dev) off and stop every machine boat.dev
-             lists with this hub's label, whether the hub's ledger knows it or not. They stay off
-             until turned on again in Settings › Hub › Machines. On the hub machine it needs neither --hub
-             nor --key-file
 `;
 
 export const STEER_USAGE = `  steer T<n> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]

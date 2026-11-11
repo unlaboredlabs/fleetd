@@ -52,12 +52,8 @@ const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? tex
 /** The hub's words end without a stop, and the screen says the fix right after the problem: each as a sentence. */
 const problem = (p: ProjectProblem): Problem => (p.fix?.trim() ? { message: sentence(p.message), fix: sentence(p.fix) } : { message: sentence(p.message) });
 
-/**
- * Whether a project can live on the machine: not a cloud machine, which the hub wakes for a project's overflow work and
- * puts to sleep (its checkouts are the pool's copies of projects already added), nor the agents' Mac, which the hub
- * refuses as a project's home.
- */
-export const projectHome = (m: { readonly cloud?: boolean; readonly agentsMac?: boolean } | undefined): boolean => m?.cloud !== true && m?.agentsMac !== true;
+/** Whether a project can live on the machine: not the agents' Mac, which the hub refuses as a project's home. */
+export const projectHome = (m: { readonly agentsMac?: boolean } | undefined): boolean => m?.agentsMac !== true;
 
 /**
  * Each machine's checkouts, then GitHub. Machine ids read as names. `home` leaves out the machines a project can't live

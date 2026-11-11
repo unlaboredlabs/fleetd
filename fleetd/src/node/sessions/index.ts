@@ -986,10 +986,6 @@ export class SessionService {
     // it was left, uncommitted changes included, with its scratch dir; a worktree that is gone comes back first.
     const earlier = ws.type === "worktree" && ws.fromSession ? this.store.session(ws.fromSession) : undefined;
     const taken = earlier?.local.baseRef && ws.type === "worktree" && earlier.local.branch === ws.branch ? earlier : undefined;
-    // A checkout fleetd cloned with a token (a cloud machine's) fetches with its order's, which the hub delivered before
-    // this launch.
-    const token = launch.orderId ? orderVarsForSpawn(this.home, launch.projectId, launch.orderId).vars.find(([n]) => n === "GITHUB_TOKEN") : undefined;
-    if (token) await worktree.useToken(root, token[1]);
     stages.done("checks");
     // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check. The head the
     // hub named needs no remote when this machine has its commit (its writer pushed from here); else the remote is
@@ -2173,9 +2169,8 @@ export class SessionService {
     const started = Date.now();
     const env = runnerEnv(this.config);
     let info = await claude.probe(this.config.claudeBin, env);
-    // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. A cloud
-    // machine has no login of its own, only the hub's, and read as logged out it was degraded and every message to
-    // its agents refused.
+    // Logged out here: the runner as a session on the Claude account the hub sealed to this node runs it. Read as
+    // logged out, the machine would be degraded and every message to its agents refused.
     const account = info.login === "logged_out" ? held(this.home) : undefined;
     if (account) {
       try {

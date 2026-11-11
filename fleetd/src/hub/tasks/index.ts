@@ -66,7 +66,6 @@ import {
   runsOn as runsOnLine,
   TAIL_MAX,
   tailOf,
-  taskCloudWaitsLines,
   taskDigestLines,
   taskMessageNotSentLines,
   taskPrLines,
@@ -242,8 +241,6 @@ export class Tasks {
   private readonly binding = new Set<string>();
   /** Running tasks whose lead was told their machine is away: the machine and the start of that spell. */
   private readonly unreachableTold = new Map<TaskId, [MachineId, string]>();
-  /** Tasks waiting for their cloud machine while none may wake, whose lead was told. */
-  private readonly cloudTold = new Set<TaskId>();
   /** Tasks fleetd resumed whose new run hasn't started yet: what the dead run was doing, and its last rebuild. */
   private readonly resumed = new Map<TaskId, [string, Rebuilt | undefined]>();
   /** Fresh restarts' handoffs by task, for the attempt they were gathered for: undefined while it runs. */
@@ -367,9 +364,7 @@ export class Tasks {
     const r = task.projectRef;
     // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
     const repo = this.repoOf(task);
-    const home = repo?.checkout ?? r;
-    // On a cloud machine (D306), in its twin of that checkout: the clone registered there under the same id.
-    const checkout: ProjectRef = task.ranOn !== undefined ? { machineId: task.ranOn, projectId: home.projectId } : home;
+    const checkout = repo?.checkout ?? r;
     const gone = (p: ProjectRef) => new StartError(false, `No project ${p.projectId} on machine ${p.machineId}.`);
     const project = store(this.hub).projectGet(r);
     if (!project) throw gone(r);
@@ -379,8 +374,8 @@ export class Tasks {
       if (!p) throw gone(checkout);
       workspaceRoot = p.workspaceRoot;
     }
-    // Its rules are the home checkout's, wherever it runs.
-    const policy = await this.ports.policy(home);
+    // Its rules are its checkout's.
+    const policy = await this.ports.policy(checkout);
     const brief = this.workstream(task.workstreamId)?.brief;
     const write = task.kind === "write";
     // Every task gets a worktree of its own from the default branch, a writer's on its branch and a reader's
@@ -491,7 +486,7 @@ export class Tasks {
     );
   }
 
-  /** Runs the queue again soon, off the caller: a cloud machine woke, caught up or finished a clone (hub/pool). */
+  /** Runs the queue again soon, off the caller: a machine's node caught up. */
   retrySoon(): void {
     this.retryLater();
   }
@@ -639,10 +634,6 @@ export class Tasks {
     const task = stored.task;
     const r = task.projectRef;
     const machine = this.runsOn(task);
-    // A cloud machine's task waits for that machine, where its worktree is, and wakes it (D306).
-    if (task.ranOn !== undefined && !(this.ports.isConnected(machine) && this.ports.cloudClaim(machine))) {
-      return { now: this.waitCloud(stored, machine) };
-    }
     // Checked before the slot: taking and releasing one would run the queue again at once.
     if (!this.ports.isConnected(machine)) {
       this.retryWhenLive(machine);
@@ -673,22 +664,11 @@ export class Tasks {
       handoff = this.handoffReady(task);
       if (handoff === undefined) return { now: task };
     }
-    const request: SlotRequest = {
-      holder: task.taskId,
-      projectRef: r,
-      priority: priorityOf(task.kind),
-      ...(task.ranOn !== undefined ? { on: task.ranOn } : {}),
-    };
-    // A new task goes to a cloud machine only when its own machine is at its agent limit (D306).
+    const request: SlotRequest = { holder: task.taskId, projectRef: r, priority: priorityOf(task.kind) };
+    // A machine at its agent limit queues the task until a slot frees.
     let next: StoredTask = { ...stored, task: { ...task } };
-    if (task.threadRef === undefined && task.ranOn === undefined) {
-      const placed = this.place(next, request);
-      if ("queued" in placed) return { now: placed.queued };
-      if (placed.on !== undefined) next.task.ranOn = placed.on;
-    } else {
-      const grant: Grant = slots(this.hub).acquire(request);
-      if (!grant.granted) return { now: this.queue(next, "slot", grant.reason) };
-    }
+    const grant: Grant = slots(this.hub).acquire(request);
+    if (!grant.granted) return { now: this.queue(next, "slot", grant.reason) };
     // A paused agent's thread is still pushing its work: it continues once that turn ended.
     if ((continuing || fresh) && this.asking.has(task.taskId)) return { now: next.task };
     if ((continuing || fresh) && task.threadRef && store(this.hub).threadGet(task.threadRef)?.thread.status === "running") {
@@ -699,75 +679,13 @@ export class Tasks {
     return { go: { stored: next, fromQueue, ...(handoff !== undefined ? { handoff } : {}), recovering, fresh, compact, continuing } };
   }
 
-  /** The machine the task runs on: the cloud machine it was placed on (D306), else its repo checkout's. */
+  /** The machine the task runs on: its repo checkout's. */
   private runsOn(task: Task): MachineId {
-    if (task.ranOn !== undefined) return task.ranOn;
     try {
       return this.checkoutOf(task).machineId;
     } catch {
       return task.projectRef.machineId;
     }
-  }
-
-  /**
-   * A new task's slot (D306): on its own machine while that has room; else on an awake cloud machine with room; else a
-   * cloud machine wakes for it and it waits. `on`: where it goes (undefined: its own machine); `queued`: as it queued.
-   */
-  private place(stored: StoredTask, request: SlotRequest): { on?: MachineId } | { queued: Task } {
-    const task = stored.task;
-    let checkout: ProjectRef;
-    try {
-      checkout = this.checkoutOf(task);
-    } catch {
-      checkout = task.projectRef;
-    }
-    const room = this.ports.cloudRoom(task, checkout);
-    const cloud = room.eligible === true && room.closed === undefined ? room.awake : [];
-    const board = slots(this.hub);
-    const placed = board.place(request, cloud, room.warm);
-    let reason: string;
-    if (placed.kind === "granted" && placed.on === undefined) return {};
-    if (placed.kind === "granted" && placed.on !== undefined && this.ports.cloudClaim(placed.on)) return { on: placed.on };
-    if (placed.kind === "granted") {
-      // It stopped being awake meanwhile: back in line on its own machine.
-      board.release(request.holder);
-      const grant = board.acquire(request);
-      if (grant.granted) return {};
-      reason = grant.reason;
-    } else if (placed.kind === "full") {
-      let why: string | undefined;
-      if (room.eligible !== true) why = room.eligible.why;
-      else if (room.closed !== undefined) why = room.closed;
-      else if (room.cloning !== undefined) why = `cloning its repo on ${room.cloning}, a cloud machine`;
-      // No machine wakes for a repo that can't clone, until its backoff is over.
-      else if (room.cloneFailed !== undefined) why = room.cloneFailed;
-      else {
-        const woke = this.ports.cloudWake(undefined);
-        if ("machine" in woke) {
-          if (!this.ports.isConnected(woke.machine)) this.retryWhenLive(woke.machine);
-          why = `waking ${woke.machine}, a cloud machine, about 30 s`;
-        } else why = woke.why;
-      }
-      reason = why === undefined ? placed.reason : `${placed.reason}; ${why}`;
-    } else reason = placed.reason;
-    return { queued: this.queue(stored, "slot", reason) };
-  }
-
-  /** A task placed on a cloud machine waits for that machine and wakes it; while it can't wake, its lead is told once. */
-  private waitCloud(stored: StoredTask, machine: MachineId): Task {
-    const task = stored.task;
-    if (!this.ports.isConnected(machine)) this.retryWhenLive(machine);
-    const woke = this.ports.cloudWake(machine);
-    let reason: string;
-    if ("machine" in woke) reason = `waiting for ${machine} to wake: its work is there`;
-    else {
-      if (!this.cloudTold.has(task.taskId)) {
-        this.cloudTold.add(task.taskId);
-        this.ports.wake(task.projectRef, "recovery", taskCloudWaitsLines(task, machine, woke.why));
-      }
-      reason = `waiting for ${machine} to wake: ${woke.why}`;
-    }
-    return this.queue(stored, "cloud", reason);
   }
 
   /** A reserved start's node call, off the lock, then its record under the lock; held events apply after it. */
@@ -847,13 +765,7 @@ export class Tasks {
       if (started.offline) {
         slots(this.hub).release(task.taskId);
         this.retryWhenLive(machine);
-        const offline = `machine ${machine} is offline`;
-        // A new task placed on a cloud machine that went away before it ran there is placed again.
-        if (task.threadRef === undefined && task.ranOn !== undefined) {
-          const { ranOn: _r, ...again } = task;
-          return this.queue({ ...stored, task: again }, "offline", offline);
-        }
-        return this.queue(stored, "offline", offline);
+        return this.queue(stored, "offline", `machine ${machine} is offline`);
       }
       // Its thread can't go on (claude's conversation is gone, or its config dir changed): a new one takes over.
       if (continuing && started.message.includes(RESUME_REFUSED)) return this.refused(stored, started.message, fromQueue);
@@ -868,7 +780,6 @@ export class Tasks {
       this.handoffs.delete(task.taskId);
     }
     next.threadRef = threadRef;
-    this.cloudTold.delete(task.taskId);
     if (branch !== undefined) next.branch = branch;
     // Raised once per project while git can't fetch its remote: not again while the last base failed the same way.
     const kind = base ? baseOf.alert(base) : undefined;
@@ -1491,7 +1402,7 @@ export class Tasks {
         const recovering = task.state === "queued" && task.recovery?.nextAt !== undefined;
         if (!recovering && !(task.state === "done" || task.state === "failed" || task.state === "idle")) return;
         const board = slots(this.hub);
-        board.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: priorityOf(task.kind), ...(task.ranOn !== undefined ? { on: task.ranOn } : {}) });
+        board.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: priorityOf(task.kind) });
         board.bind(task.taskId, threadRef);
         const { endedAt: _e, parked: _p, ...rest } = task;
         const next: Task = { ...rest, state: "running" };

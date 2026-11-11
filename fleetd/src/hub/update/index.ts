@@ -38,7 +38,7 @@ import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../up
 import type { Service } from "../../update/service.ts";
 import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
-import { pause } from "../cloud/every.ts";
+import { pause } from "../serve/every.ts";
 import { isoMs } from "../store/time.ts";
 
 /**
@@ -51,10 +51,14 @@ export const UPDATE_PARTS_MAX = 401;
 /** Machines `hub.update` names one by one (mcp.rs `HUB_UPDATE_MACHINES_MAX`); past these, `moreMachines` counts the rest. */
 export const HUB_UPDATE_MACHINES_MAX = 10;
 const OFFLINE = "offline: press Update again once it's online, or run `fleetd update` on it";
-/** A cloud machine's OFFLINE: it sleeps, and its catch-up brings it to the hub's build when it wakes, so nobody need act. */
-const ASLEEP = "asleep: it takes the hub's build when it wakes";
+/** How a hub from before cloud machines were removed skipped one asleep: the machine is gone, and so is its part. */
+const GONE_ASLEEP = "asleep: it takes the hub's build when it wakes";
+
+/** The run as this hub keeps it: without the parts an older hub planned for machines it no longer has. */
+export const withoutGone = (run: UpdateRun): UpdateRun => ({ ...run, parts: run.parts.filter((p) => p.message !== GONE_ASLEEP) });
+
 /** A part skipped for being offline when it was its turn: asking again once it's online may still work. */
-const away = (p: UpdatePart) => p.state === "skipped" && (p.message === OFFLINE || p.message === ASLEEP);
+const away = (p: UpdatePart) => p.state === "skipped" && p.message === OFFLINE;
 /** How the node's answer to a Claude Code install begins when it's left as it is, or already there (install.rs). */
 const CLAUDE_LEFT = "Claude Code is";
 const CLAUDE_ALREADY = "already runs Claude Code";
@@ -75,8 +79,6 @@ export type NodeFacts = {
   claude?: string;
   canInstallClaude: boolean;
   agentsMac: boolean;
-  /** One of the hub's cloud machines, which update themselves as they wake (hub/cloud/catch_up). */
-  cloud?: boolean;
   /** What runs on it that can't carry on through its node's restart, in words. */
   busy?: string;
 };
@@ -302,8 +304,7 @@ export function signal(run: UpdateRun): HubUpdateData {
 export function lastAutoOf(run: UpdateRun): LastAutoUpdate {
   const hubOk = run.parts.some((p) => p.part === "hub" && (p.state === "done" || p.state === "current"));
   const missed = (p: UpdatePart) =>
-    // A sleeping cloud machine missed nothing: it takes the hub's build as it wakes.
-    p.part === "hub" || p.message === ASLEEP
+    p.part === "hub"
       ? false
       : p.part === "node"
         ? !(p.state === "done" || p.state === "current")
@@ -342,8 +343,6 @@ export class Updates {
   /** Held while a build downloads to `kept` and while Update installs it. */
   private fetching: Promise<void> = Promise.resolve();
   private nextCheck_: number | undefined;
-  /** Woken at each write of the run: a cloud machine's catch-up waits on it for the run going on to end. */
-  private readonly saved = new Set<() => void>();
   private checkFailed: string | undefined;
   /** What `UpdatePorts.announce` last told the apps, so a write that changes nothing they show sends nothing. */
   private announced: string | undefined;
@@ -355,7 +354,7 @@ export class Updates {
     private readonly stopSignal?: AbortSignal,
   ) {
     try {
-      this.run = JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun;
+      this.run = withoutGone(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun);
     } catch {
       this.run = undefined;
     }
@@ -458,8 +457,6 @@ export class Updates {
       })
       .finally(() => {
         this.drives.delete(entry);
-        // A drive that ended without a last write still ends the wait of a catch-up.
-        for (const wake of [...this.saved]) wake();
       });
   }
 
@@ -696,7 +693,7 @@ export class Updates {
         // Offline now: not waited for. One online now is, through the hub's restart.
         if (n.liveSince === undefined) {
           p.state = "skipped";
-          p.message = n.cloud ? ASLEEP : OFFLINE;
+          p.message = OFFLINE;
         }
         parts.push(p);
       }
@@ -750,7 +747,6 @@ export class Updates {
   private save(run: UpdateRun): void {
     if (run.auto === true && run.finishedAt !== undefined) this.saveLastAuto(run);
     this.announce(run);
-    for (const wake of [...this.saved]) wake();
     try {
       mkdirSync(this.dir, { recursive: true });
       replaceFile(join(this.dir, "run.json"), runText(run));
@@ -797,41 +793,6 @@ export class Updates {
   onHurry(f: () => void): () => void {
     this.hurry.add(f);
     return () => this.hurry.delete(f);
-  }
-
-  /**
-   * A cloud machine's catch-up at its hello: one that slept through an update gets it now. While an update runs, which
-   * takes every node it saw online itself, it waits for the run to end first; nothing from a hub built by hand, which
-   * updates nobody.
-   */
-  async catchUp(machineId: string): Promise<"current" | "restarting"> {
-    const ports = this.ports_;
-    if (!ports) throw new Error("the hub's updates aren't wired");
-    if (!ports.releaseBuild()) return "current";
-    // A machine that wakes while an update goes on (it slept through the run's start, so the run skipped it) waits for
-    // the run to end, not ready for work meanwhile, then comes to the build the hub runs by then: at once, not at the
-    // next automatic update.
-    while (this.run && this.run.finishedAt === undefined && this.going(this.run)) {
-      await new Promise<void>((resolve) => {
-        const wake = () => (this.saved.delete(wake), resolve());
-        this.saved.add(wake);
-      });
-    }
-    const node = ports.nodes().find((n) => n.machineId === machineId);
-    if (!node) throw new Error(`${machineId} isn't linked`);
-    const running = ports.running();
-    if (!runs(node, running)) {
-      if (!node.canUpdate) throw new Error(`its fleetd ${buildLabel(node)} can't update itself: run \`fleetd update\` on it`);
-      const [answer] = await ports.updateNode(machineId, nodeUpdate(running, channelOf(running, true) === "edge" ? "edge" : "stable"));
-      if (!answer.ok) throw new Error(answer.message);
-      return "restarting";
-    }
-    const target = ports.claudeTarget();
-    const have = node.claude !== undefined ? claudeNumber(node.claude) : undefined;
-    if (node.agentsMac || !node.canInstallClaude || have === target) return "current";
-    const answer = await ports.installClaude(machineId, target);
-    if (!answer.ok) throw new Error(answer.message);
-    return "current";
   }
 
   clockNow(): number {
@@ -1127,7 +1088,7 @@ class Drive {
     // It was online when the run started, and the hub's own restart dropped every link: it gets a while to reconnect.
     const deadline = this.u.clockNow() + this.u.timing.nodeBack;
     while (node.liveSince === undefined) {
-      if (this.u.clockNow() >= deadline) return this.setPart(machineId, "skipped", undefined, node.cloud ? ASLEEP : OFFLINE);
+      if (this.u.clockNow() >= deadline) return this.setPart(machineId, "skipped", undefined, OFFLINE);
       if (this.stopped()) return;
       await this.nodeWait(changed);
       changed = ports.nodeChanged(machineId);

@@ -1,7 +1,7 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (Add machine, the machines with Remove, and Repair for one that isn't well, each one's
-// page with its checklist, its role, its screens and its max agents; recordings and cloud machines); Updates
+// page with its checklist, its role, its screens and its max agents; recordings); Updates
 // (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
 // as a project's own pages are: Profiles, Tools & skills
 // and Instructions & memory, each reaching every project on the hub, and the hub-wide built-in prompts from the foot
@@ -32,7 +32,6 @@ import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
-import { CloudPart } from "./Cloud";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
@@ -143,7 +142,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 /**
  * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
  * Remove, Repair (which opens in Add machine) while it isn't well, and a page of its own with everything about it; then
- * how long recordings are kept, cloud machines on boat.dev, and updates.
+ * how long recordings are kept, and updates.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
@@ -162,7 +161,6 @@ function Machines() {
         <SettingsSection title="Recordings" reveal="hub.recordings">
           <Recordings />
         </SettingsSection>
-        <CloudPart />
       </div>
     </div>
   );

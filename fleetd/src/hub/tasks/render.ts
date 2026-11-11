@@ -262,16 +262,12 @@ export const GITHUB_DOWN =
 /** What those agents hear once when it can again. */
 export const GITHUB_BACK = "This machine reaches GitHub again: push what you committed meanwhile, and go on.";
 
-/** The machine a task runs on, as its lead reads it: its cloud machine (D306), else its project's. */
-export const runsOn = (task: Task): MachineId => task.ranOn ?? task.projectRef.machineId;
+/** The machine a task runs on, as its lead reads it: its project's. */
+export const runsOn = (task: Task): MachineId => task.projectRef.machineId;
 
 /** The lead's quiet line for a running task whose machine has been offline for `minutes`. */
 export const taskUnreachableLines = (task: Task, minutes: number) =>
   renderEvent({ kind: "agent_unreachable", task: task.taskId, title: task.title, place: branchPlace(task), machine: runsOn(task), minutes });
-
-/** The lead's quiet line for a task whose cloud machine can't wake now, and why. */
-export const taskCloudWaitsLines = (task: Task, machine: MachineId, why: string) =>
-  renderEvent({ kind: "agent_cloud_waits", task: task.taskId, title: task.title, place: branchPlace(task), machine, why });
 
 /** The lead's quiet line for a finished writer whose PR lookup the host refused. */
 export const taskPrSkippedLines = (taskId: string, why: string) => renderEvent({ kind: "agent_pr_skipped", task: taskId, why });
@@ -311,8 +307,7 @@ export function taskDigestLines(
     const machine = runsOn(t);
     const at = t.state === "running" ? offline(machine) : undefined;
     const away = at !== undefined ? `; ${machine} offline since ${at} UTC, it resumes when ${machine} is back` : "";
-    const cloud = t.ranOn !== undefined ? `; on ${t.ranOn}, a cloud machine` : "";
-    out.push(`- ${t.taskId} ${state} (${t.kind}, ${t.profile ?? "high"}): ${title(t)}${branch}${cloud}${recovered}${away}`);
+    out.push(`- ${t.taskId} ${state} (${t.kind}, ${t.profile ?? "high"}): ${title(t)}${branch}${recovered}${away}`);
   }
   for (const t of tasks.filter((t) => t.state === "queued")) {
     out.push(`- ${t.taskId} queued (${t.kind}): ${title(t)}; ${t.queuedReason ?? "waiting"}`);

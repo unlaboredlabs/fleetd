@@ -12,10 +12,8 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import type { RunnerInfo } from "../../shared/sessions.ts";
 import { isSealedSecret } from "../approvals/sink.ts";
-import { endpointChanged, endpointOn } from "../cloud/claude.ts";
 import { claudeAccountOverride } from "../doctor/checks.ts";
-import { linked, nodeCan, offline, sessionCall } from "../cloud/node.ts";
-import { missed } from "../cloud/outbox.ts";
+import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { accountKey, ClaudeAccountStore } from "./index.ts";
@@ -66,7 +64,6 @@ export function register(tools: Registry): void {
       updatedBy: refOf(by),
     };
     s.putHubApi(api);
-    endpointChanged(hub);
     return {
       hubApi: api,
       missingOn: missingOn(hub, api.sealedOn),
@@ -80,7 +77,6 @@ export function register(tools: Registry): void {
     const before = s.hubApi();
     if (before) {
       s.removeHubApi();
-      endpointChanged(hub);
       await forget(hub, { kind: "hub" }, before.sealedOn.map((x) => x.machineId));
     }
     return {
@@ -301,14 +297,9 @@ async function relay(
 ): Promise<[ClaudeSealedOn[], string[]]> {
   const held: ClaudeSealedOn[] = [];
   const problems: string[] = [];
-  const on = (m: string) => {
-    const e = endpointOn(hub, m, endpoint);
-    return e !== undefined ? { endpoint: e } : {};
-  };
+  const on = endpoint !== undefined ? { endpoint } : {};
   const sends: [string, Record<string, unknown>][] =
-    seals.length === 0
-      ? before.map((s) => [s.machineId, on(s.machineId)])
-      : seals.map((s) => [s.machineId, { sealed: s.sealed, ...on(s.machineId) }]);
+    seals.length === 0 ? before.map((s) => [s.machineId, on]) : seals.map((s) => [s.machineId, { sealed: s.sealed, ...on }]);
   for (const [m, set] of sends) {
     try {
       nodeReady(hub, m);
@@ -330,16 +321,10 @@ async function relay(
   return [held, problems];
 }
 
-/**
- * Each online node of `machines` forgets the account's secret. One offline keeps it unused; a sleeping cloud machine
- * forgets it as it wakes (hub/cloud).
- */
+/** Each online node of `machines` forgets the account's secret. One offline keeps it unused. */
 export async function forget(hub: Hub, account: ClaudeAccount, machines: string[]): Promise<void> {
   for (const m of machines) {
-    if (!readyOk(hub, m)) {
-      missed(hub, m, { kind: "claude_forget", account });
-      continue;
-    }
+    if (!readyOk(hub, m)) continue;
     try {
       await sessionCall(hub, m, { op: "claude_account_secret", account });
     } catch (e) {

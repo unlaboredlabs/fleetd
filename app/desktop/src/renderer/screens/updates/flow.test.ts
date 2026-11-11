@@ -136,9 +136,7 @@ describe("the Update button's run", () => {
     const run = runOf("done", true);
     const skipped = { ...run, parts: [...run.parts, { part: "node", machineId: "mac", name: "mac", from: "0.0.0", state: "skipped", message: "offline" }] };
     const calm = { ...run, parts: [...run.parts, { part: "claude", machineId: "mac", name: "mac", from: "2.1.310", state: "skipped", message: "Claude Code is managed by Homebrew" }] };
-    // A cloud machine that slept through it takes the hub's build as it wakes.
-    const asleep = { ...run, parts: [...run.parts, { part: "node", machineId: "boat-1", name: "boat-1", from: "0.0.0", state: "skipped", message: "asleep: it takes the hub's build when it wakes" }] };
-    for (const [r, updated] of [[run, true], [skipped, false], [calm, true], [asleep, true]] as const) {
+    for (const [r, updated] of [[run, true], [skipped, false], [calm, true]] as const) {
       resetFlow();
       const { d } = deps({ ok: true, run: r }, [], { kind: "current" });
       await startUpdate(d);

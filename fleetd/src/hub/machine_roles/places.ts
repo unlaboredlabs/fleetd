@@ -1,7 +1,6 @@
 // Machine roles (W46) and where each session runs: table `machine_roles`
 // (agents, sessions or both, and a session cap; no row means both, auto) and `session_places`, one row per session
-// the hub placed. A session the agent's machine can't take goes to the online machine with the most free slots; a
-// cloud machine only when every other is full, while it is awake, never woken for one.
+// the hub placed. A session the agent's machine can't take goes to the online machine with the most free slots.
 import type { Database } from "bun:sqlite";
 import type { HostCheck, MachineRole, MachineRolesEntry, SessionHost } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
@@ -163,8 +162,6 @@ export type Runner = {
   max: number;
   /** People waiting for a slot here: the next ones free are theirs, before any agent's. */
   held: number;
-  /** A cloud machine: true while it is awake for work. undefined on any other machine. */
-  cloud: boolean | undefined;
 };
 
 export const ready = (r: Runner, host: SessionHost) => r.hosts?.some((h) => h.host === host && h.ready);
@@ -201,19 +198,12 @@ export function place(origin: string, host: SessionHost, runners: Runner[], remo
   if (own && able(own, host, origin) && free(own) > 0) return own.machineId;
   if (!remote) throw hereOnly(origin, host, own);
   const ables = runners.filter((r) => r.machineId !== origin && able(r, host, origin));
-  // A cloud machine that isn't awake for work is as good as offline: a screen never wakes one.
-  const online = ables.filter((r) => r.online && r.cloud !== false);
+  const online = ables.filter((r) => r.online);
   const best = maxBy(
-    online.filter((r) => free(r) > 0 && r.cloud === undefined),
+    online.filter((r) => free(r) > 0),
     (a, b) => free(a) - free(b) || byName(a, b),
   );
   if (best) return best.machineId;
-  // Every other machine is full: an awake cloud machine with room, the busiest first, so screens pack like agents.
-  const cloud = maxBy(
-    online.filter((r) => free(r) > 0 && r.cloud === true),
-    (a, b) => a.live - b.live || byName(a, b),
-  );
-  if (cloud) return cloud.machineId;
   const ownFull = own && able(own, host, origin) ? [own] : [];
   const full = [...ownFull, ...online];
   if (full.length > 0) {
@@ -285,11 +275,6 @@ function agentCap(c: Database, m: string, roles: Roles): number {
   return row ? (row.max_agents ?? row.auto) : AGENTS_UNMEASURED;
 }
 
-/** Whether `m` is a cloud machine (hub/auth `is_pool`). */
-export function isPool(c: Database, m: string): boolean {
-  return (c.query<{ pool: number }, [string]>("SELECT pool FROM node_keys WHERE machine_id = ?").get(m)?.pool ?? 0) !== 0;
-}
-
 export type RunnerRow = { runner: Runner; roles: Roles; why: string };
 
 /** Every machine as placement and Hub › Machines' roles see it. */
@@ -315,8 +300,6 @@ export function runners(hub: Hub): RunnerRow[] {
           : "Its fleetd is older: it hosts only its own agents' screens until it is updated.";
     }
     const [max, why] = roles.maxSessions !== undefined ? [roles.maxSessions, "set"] : [auto, autoWhy];
-    // A cloud machine counts as awake for work while its node is linked (hub/pool's own wake state is the pool's).
-    const cloud = isPool(c, m.machineId) ? nodes.linkId(m.machineId) !== undefined : undefined;
     // The node link keeps its own wire shape of a heartbeat's checks: the contracts' HostCheck, field for field.
     const hosts = load?.hosts as HostCheck[] | undefined;
     const runner: Runner = {
@@ -331,7 +314,6 @@ export function runners(hub: Hub): RunnerRow[] {
       live: liveOn(c, m.machineId, now),
       max,
       held: heldOn(c, m.machineId, now),
-      cloud,
     };
     return { runner, roles, why };
   });

@@ -17,7 +17,6 @@ import { errorText, useRefetch } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
-import { CloudSettings, useCloud } from "../admin/Cloud";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
 import s from "./setup.module.css";
 
@@ -196,7 +195,6 @@ function StepPane({
   const data = useDataLayer();
   const hub = useHub();
   const keep = useKeep();
-  const refetch = useRefetch();
   const [busy, setBusy] = useState<"test" | null>(null);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const index = steps.indexOf(step);
@@ -211,8 +209,6 @@ function StepPane({
       return;
     }
     keep(out.output.step);
-    // The cloud step's Test asked boat.dev with the key: its panel reads what boat.dev said.
-    if (step.id === "cloud") refetch(["cloud_get"]);
     setTested({ ok: out.output.step.status === "done", text: out.output.step.said ?? "Nothing answered for this step yet." });
   };
   const places = placesOf(step);
@@ -232,11 +228,7 @@ function StepPane({
 
       <GuideParts parts={step.parts} />
 
-      {step.place === "cloud" ? (
-        <Part n={step.parts.length + 1} title="Save it in fleetd">
-          <CloudInline />
-        </Part>
-      ) : places.length === 0 && step.fieldsNote === undefined ? null : (
+      {places.length === 0 && step.fieldsNote === undefined ? null : (
         <Part n={step.parts.length + 1} title="Save it in fleetd">
           {step.fieldsNote === undefined ? null : (
             <Text as="p" size="sm" tone="quiet">
@@ -286,18 +278,6 @@ function StepPane({
         )}
       </footer>
     </article>
-  );
-}
-
-/** The cloud step's own settings, here rather than a page away: the key's sealed field and Test, the address, the pool. */
-function CloudInline() {
-  const cloud = useCloud();
-  if (cloud === null) return <Text size="sm" tone="quiet">This hub is too old for cloud machines. Update fleetd on the hub first.</Text>;
-  if (cloud === undefined) return <Text size="sm" tone="quiet">Loading…</Text>;
-  return (
-    <div className={s.inlineSettings}>
-      <CloudSettings cloud={cloud} />
-    </div>
   );
 }
 

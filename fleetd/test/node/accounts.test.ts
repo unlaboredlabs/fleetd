@@ -4,7 +4,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { openSealed, publicKeyOf } from "../../src/shared/sealed_box.ts";
 import { HELPER, installDir, SDK_VERSION } from "../../src/node/actions/onepassword.ts";
 import { endpointSilent, tried } from "../../src/node/actions/accounts.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
@@ -106,12 +105,6 @@ test("the hub's key keeps its endpoint, lists the gateway's models, and reseals 
   } finally {
     api.stop(true);
   }
-  const theirs = new Uint8Array(32).fill(7);
-  const resealed = await ok("claude_account_reseal", { account: { kind: "hub" }, to: Buffer.from(publicKeyOf(theirs)).toString("base64") });
-  expect(Buffer.from(openSealed(theirs, Buffer.from(resealed.sealed, "base64"))!).toString()).toBe("sk-hub");
-  expect(await ok("claude_account_reseal", { account: { kind: "person", personId: "p_zzzzzzzz" }, to: resealed.sealed.slice(0, 44) })).toEqual({
-    kind: "claude_account_resealed",
-  });
   expect(await ok("claude_account_secret", { account: { kind: "hub" } })).toEqual({ kind: "claude_account_saved" });
   expect(existsSync(join(nodeHome, "claude-accounts", "hub.json"))).toBe(false);
 });

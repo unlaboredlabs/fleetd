@@ -174,7 +174,7 @@ export function createEnrollToken(db: HubDb, machineId: string): { token: string
   const token = secret(ENROLL_PREFIX);
   db.transaction((c) => {
     c.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(machineId, now);
-    c.query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms, pool) VALUES (?, ?, ?, 0)").run(
+    c.query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)").run(
       sha256(token),
       machineId,
       expires,
@@ -183,12 +183,12 @@ export function createEnrollToken(db: HubDb, machineId: string): { token: string
   return { token, expiresAt: isoMs(expires) };
 }
 
-export type OpenEnrollCode = { id: string; machineId: string; createdAt: string; expiresAt: string; pool: boolean };
+export type OpenEnrollCode = { id: string; machineId: string; createdAt: string; expiresAt: string };
 
 export function openEnrollTokens(db: HubDb): OpenEnrollCode[] {
   return db.conn
-    .query<{ id: string; machine_id: string; expires_ms: number; pool: number }, [number, number]>(
-      `SELECT substr(hash, 1, ?1) AS id, machine_id, expires_ms, pool FROM enroll_tokens
+    .query<{ id: string; machine_id: string; expires_ms: number }, [number, number]>(
+      `SELECT substr(hash, 1, ?1) AS id, machine_id, expires_ms FROM enroll_tokens
        WHERE used_ms IS NULL AND expires_ms > ?2 ORDER BY expires_ms, hash`,
     )
     .all(ENROLL_CODE_ID_LEN, Date.now())
@@ -197,7 +197,6 @@ export function openEnrollTokens(db: HubDb): OpenEnrollCode[] {
       machineId: r.machine_id,
       createdAt: isoMs(r.expires_ms - ENROLL_TTL_MS),
       expiresAt: isoMs(r.expires_ms),
-      pool: r.pool !== 0,
     }));
 }
 

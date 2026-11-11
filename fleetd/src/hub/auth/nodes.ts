@@ -67,7 +67,7 @@ function enrolledAs(theirs: string): Unauthorized {
 }
 
 export type EnrollToken = { token: string; expiresAt: string };
-export type OpenEnrollCode = { id: string; machineId: string; createdAt: string; expiresAt: string; pool: boolean };
+export type OpenEnrollCode = { id: string; machineId: string; createdAt: string; expiresAt: string };
 
 export class NodeKeys {
   constructor(
@@ -77,15 +77,6 @@ export class NodeKeys {
 
   /** One-time, valid for 15 minutes; replaces the machine's open one. `by` names the caller in the hub log. */
   createEnrollToken(machineId: string, by: string): EnrollToken {
-    return this.mint(machineId, false, by);
-  }
-
-  /** A pool enroll token, minted by the hub itself for one of its cloud machine slots (hub/pool). */
-  createPoolEnrollToken(machineId: string): EnrollToken {
-    return this.mint(machineId, true, "a cloud machine slot");
-  }
-
-  private mint(machineId: string, pool: boolean, by: string): EnrollToken {
     const now = this.clock.now();
     const expires = now + ENROLL_TTL_MS;
     const token = secret(ENROLL_PREFIX);
@@ -94,8 +85,8 @@ export class NodeKeys {
         .query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?")
         .run(machineId, now);
       conn
-        .query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms, pool) VALUES (?, ?, ?, ?)")
-        .run(sha256(token), machineId, expires, pool ? 1 : 0);
+        .query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)")
+        .run(sha256(token), machineId, expires);
       return changes;
     });
     // Never the code: its id is what `fleetd pair --worker-codes` lists.
@@ -105,8 +96,8 @@ export class NodeKeys {
 
   /** Every enroll code that can still be used, oldest first. */
   openEnrollTokens(): OpenEnrollCode[] {
-    const rows = this.db.all<{ id: string; machine_id: string; expires_ms: number; pool: number }>(
-      `SELECT substr(hash, 1, ?) AS id, machine_id, expires_ms, pool FROM enroll_tokens
+    const rows = this.db.all<{ id: string; machine_id: string; expires_ms: number }>(
+      `SELECT substr(hash, 1, ?) AS id, machine_id, expires_ms FROM enroll_tokens
        WHERE used_ms IS NULL AND expires_ms > ? ORDER BY expires_ms, hash`,
       [ENROLL_CODE_ID_LEN, this.clock.now()],
     );
@@ -115,7 +106,6 @@ export class NodeKeys {
       machineId: r.machine_id,
       createdAt: isoMs(r.expires_ms - ENROLL_TTL_MS),
       expiresAt: isoMs(r.expires_ms),
-      pool: r.pool !== 0,
     }));
   }
 
@@ -141,22 +131,6 @@ export class NodeKeys {
       .run(this.clock.now() - SPENT_CODE_KEPT_MS).changes;
   }
 
-  private poolTokenOpen(token: string, machineId: string): boolean {
-    return (
-      this.db.conn
-        .query(
-          "SELECT 1 FROM enroll_tokens WHERE hash = ? AND machine_id = ? AND pool = 1 AND used_ms IS NULL AND expires_ms > ?",
-        )
-        .get(sha256(token), machineId, this.clock.now()) !== null
-    );
-  }
-
-  /** Whether the machine's node enrolled with a pool enroll token: one of the hub's cloud machines. */
-  isPool(machineId: string): boolean {
-    const row = this.db.conn.query<{ pool: number }, [string]>("SELECT pool FROM node_keys WHERE machine_id = ?").get(machineId);
-    return (row?.pool ?? 0) !== 0;
-  }
-
   /** Burns the token and records `pubKey` as the machine's node key; throws Unauthorized with why it can't. */
   consumeEnrollToken(token: string, machineId: string, pubKey: string): void {
     const now = this.clock.now();
@@ -164,16 +138,16 @@ export class NodeKeys {
     const burned = this.db.transaction((conn) => {
       // One statement, so two nodes racing on one token cannot both win.
       const row = conn
-        .query<{ pool: number }, Record<string, string | number>>(
-          "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now RETURNING pool",
+        .query<{ hash: string }, Record<string, string | number>>(
+          "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now RETURNING hash",
         )
         .get({ now, hash, machine: machineId });
       if (!row) return false;
       conn
         .query(
-          "INSERT INTO node_keys (machine_id, pub_key, pool) VALUES (?, ?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key, pool = excluded.pool",
+          "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
         )
-        .run(machineId, pubKey, row.pool);
+        .run(machineId, pubKey);
       return true;
     });
     if (burned) return;
@@ -210,7 +184,7 @@ export class NodeKeys {
 
   /**
    * Enrolls the machine's node from the computer `fingerprint` names: refused when that id is already another
-   * computer's (unless it is a pool machine with an open pool token), or the key is enrolled under another id.
+   * computer's, or the key is enrolled under another id.
    */
   enrollNode(token: string, machineId: string, pubKey: string, fingerprint?: string): void {
     const theirs = this.db.conn
@@ -220,12 +194,7 @@ export class NodeKeys {
       .get(pubKey, machineId);
     if (theirs) throw enrolledAs(theirs.machine_id);
     const ours = this.nodeFingerprint(machineId);
-    if (
-      fingerprint !== undefined &&
-      ours !== undefined &&
-      fingerprint !== ours &&
-      !(this.isPool(machineId) && this.poolTokenOpen(token, machineId))
-    ) {
+    if (fingerprint !== undefined && ours !== undefined && fingerprint !== ours) {
       throw refusal([
         [`${machineId} is another computer's machine id`, `use an id of its own, or fleetd machine remove ${machineId} first`],
         ["this id is another computer's", `use another id, or fleetd machine remove ${machineId} first`],

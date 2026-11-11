@@ -74,8 +74,6 @@ export const fixtures = [
   // logged out.
   "machines-joined",
   "machines-checklist",
-  // ...and cloud machines on boat.dev beside the hub's own: one awake, one asleep, one broken (W407).
-  "machines-cloud",
   // F2: the lead chat's live strip with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -2404,14 +2402,14 @@ export const screens: readonly Screen[] = [
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  // The optional cloud step: its parts, then the key's sealed field inline (nothing to set up for the way to the hub).
+  // A link to the cloud step, which is gone: it opens the first step left to do.
   {
     id: "setup",
     route: "#/setup/cloud",
     fixtures: ["setup-fresh"],
-    variant: "cloud",
+    variant: "old-cloud-link",
     open: async (page) => {
-      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
+      await page.locator("article[data-step='claude']").waitFor();
     },
   },
   // The optional Mac step: from the account at the Mac's screen, with a user of its own last and optional (D309).
@@ -3001,43 +2999,6 @@ export const screens: readonly Screen[] = [
   { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-on", "updates-auto-held", "updates-hub-current"] },
   // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
-  // Cloud machines: the boat.dev group under the hub's own, then its settings with what the pool can cost.
-  {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-cloud"],
-    variant: "cloud",
-    open: async (page) => {
-      await page.getByRole("list", { name: "Cloud machines" }).waitFor();
-      await page.locator('[data-cloud-machine="boat-3"]').getByRole("button", { name: "Reset" }).waitFor();
-      await page.locator("[data-cost]").waitFor();
-    },
-  },
-  // ...and its settings: the key with what boat.dev said to it, the address, the pool, the budgets, the projects and
-  // what it can cost.
-  {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-cloud"],
-    variant: "cloud-settings",
-    open: async (page) => {
-      const part = page.locator('[data-part="hub.cloud"]');
-      await part.waitFor();
-      await page.locator("[data-key-test]").waitFor();
-      await part.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    },
-  },
-  // The kill switch asks first, naming the machines awake.
-  {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-cloud"],
-    variant: "cloud-stop",
-    open: async (page) => {
-      await page.getByRole("button", { name: "Stop all cloud machines" }).click();
-      await page.getByText("boat-1 is awake now").waitFor();
-    },
-  },
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",

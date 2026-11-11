@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { olderNodes, stuckCloud } from "../../../shared/pairing";
+import { olderNodes } from "../../../shared/pairing";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { useNow } from "../live/clock";
@@ -18,8 +18,7 @@ const listed = (names: ReadonlyArray<string>) => (names.length === 1 ? names.joi
 /**
  * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update. A
  * planned restart isn't out of reach until it has run 2 minutes. A machine is named only when it is linked and still
- * behind once the hub's update of it should have ended, never while that update is on its way. A cloud machine takes
- * the hub's build itself as it wakes, so it is never told to run `fleetd update`.
+ * behind once the hub's update of it should have ended, never while that update is on its way.
  * Offline, the project list and the chats stay on screen marked with the time they were last current (this banner
  * names it too); every other screen shows its skeleton, so nothing held is presented as live.
  */
@@ -42,28 +41,19 @@ export function ConnectionBanner() {
   const probe = useHubProbe(state.phase === "live" && ready === undefined ? state.hub : null);
   const version = ready ?? (probe?.answers === true ? probe.version : undefined);
   const behind = version === undefined ? [] : olderNodes(machines, version, nowMs);
-  const stuck = version === undefined ? [] : stuckCloud(machines, version, nowMs);
   // A hub that closed to restart is said by the hub row, then the restart line (shell/RestartLine), until it has
   // been away 2 minutes: an outage from then on. Read against the clock at each redial's state.
   // eslint-disable-next-line react-hooks/purity
   const restart = useMemo(() => restartOf(state, Date.now()), [state]);
   if (restart !== null && restart.phase !== "outage") return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
-  if (behind.length === 0 && stuck.length === 0) return null;
+  if (behind.length === 0) return null;
   const one = behind.length === 1;
-  const cloudOne = stuck.length === 1;
   return (
     <div className={s.banner} data-tone="quiet" role="status" data-banner="nodes-behind">
-      {behind.length === 0 ? null : (
-        <Prose
-          text={`${listed(behind)} ${one ? "runs" : "run"} an older fleetd than the hub. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
-        />
-      )}
-      {stuck.length === 0 ? null : (
-        <Prose
-          text={`${listed(stuck)} woke on an older fleetd than the hub and didn't take the hub's build, so no work goes to ${cloudOne ? "it" : "them"} yet. ${cloudOne ? "It tries" : "They try"} again at each wake.`}
-        />
-      )}
+      <Prose
+        text={`${listed(behind)} ${one ? "runs" : "run"} an older fleetd than the hub. Run \`fleetd update\` on ${one ? "it" : "each"} so new work can reach ${one ? "it" : "them"}.`}
+      />
     </div>
   );
 }

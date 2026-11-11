@@ -21,7 +21,7 @@ ${U.SETUP_USAGE}${U.machineUsage()}${U.PAIR_USAGE}${U.PEOPLE_USAGE}${U.GITHUB_AP
 projects:
 ${U.PROJECT_USAGE}${U.NAVI_USAGE}
 running by hand:
-${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.CLOUD_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
+${U.HUB_START_USAGE}${U.HUB_KEY_USAGE}${U.NODE_USAGE}${U.PROMPTS_USAGE}${U.PUSH_RELAY_USAGE}${U.TIME_USAGE}${U.METRICS_USAGE}${U.STATUS_USAGE}${U.USAGE_USAGE}${U.STEER_USAGE}${U.CHAT_USAGE}${U.WORK_USAGE}${U.VAULT_USAGE}`;
 
 /** `fleetd <command> … --help` (or `-h`): that command's usage. After `--` they are arguments. */
 export function helpFor(argv: string[]): string | undefined {
@@ -73,8 +73,6 @@ export function helpFor(argv: string[]): string | undefined {
         return U.STATUS_USAGE;
       case "usage":
         return U.USAGE_USAGE;
-      case "cloud":
-        return U.CLOUD_USAGE;
       case "steer":
       case "steers":
         return U.STEER_USAGE;
@@ -121,8 +119,6 @@ async function longRunning(command: string, rest: string[]): Promise<number | un
       return (await import("./status.ts")).statusCommand(rest);
     case "usage":
       return (await import("./usage.ts")).usageCommand(rest);
-    case "cloud":
-      return (await import("./cloud.ts")).cloudCommand(rest);
     case "steer":
     case "steers":
       return (await import("./steer.ts")).steerCommand(rest, command === "steers");

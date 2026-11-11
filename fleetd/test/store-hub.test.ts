@@ -8,7 +8,7 @@ import type { ProjectSummary, ThreadSummary } from "../src/shared/contracts.ts";
 
 type Column = { name: string; type: string; nullable: boolean };
 
-const MACHINE_COLUMNS = ["machine_id", "checkout_machine_id", "from_machine_id", "to_machine_id", "origin_machine", "on_machine"];
+const MACHINE_COLUMNS = ["machine_id", "checkout_machine_id", "from_machine_id", "to_machine_id", "origin_machine"];
 
 /** Every table that names a machine, with its columns. */
 function machineTables(c: Database): [string, Column[]][] {

@@ -1,6 +1,6 @@
 // What the doctor's checks read from the hub ("What the doctor's checks read
 // from the hub"): each through its area's own exported reads. The few that live in memory in an area not ported yet
-// (the tasks sweep's recovery breakers and unowned sessions, the cloud pool's facts) answer "all clear" until that
+// (the tasks sweep's recovery breakers and unowned sessions) answer "all clear" until that
 // area's owner sets its own: `doctor(hub).sources.recoveryPaused = …`.
 import type { MachineId } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
@@ -19,7 +19,6 @@ import { changeRecords } from "../train/index.ts";
 import { readLogin, usage } from "../usage/wire.ts";
 import type {
   ClaudeSetupView,
-  CloudFacts,
   MachineView,
   ProbeRead,
   RecoveryPaused,
@@ -52,7 +51,6 @@ export type DoctorSources = {
   recoveryPaused(machineId: string): RecoveryPaused | undefined;
   claudeSetup(): ClaudeSetupView | undefined;
   unownedSessions(machineId: string): UnownedSession[];
-  cloudFacts(): CloudFacts | undefined;
 };
 
 /** Logged and empty, as the Rust ports log a failed read and go on. */
@@ -132,7 +130,6 @@ export function hubSources(hub: Hub): DoctorSources {
     setupFacts: () => ({
       joined: logged("people", [], () => people(hub).joined()),
       ...optional("githubApp", logged("the GitHub App", undefined, () => githubApps(hub).get())),
-      ...optional("cloud", sources.cloudFacts()),
       onepassword: logged("1Password tokens", [], () =>
         active(hub.db).flatMap((p) => {
           const saved = token(hub.db, p.personId);
@@ -165,8 +162,6 @@ export function hubSources(hub: Hub): DoctorSources {
         return view;
       }),
     unownedSessions: () => [],
-    // The cloud pool's facts need its ledger and budget (hub/pool/view.rs `facts`); none before it is ported.
-    cloudFacts: () => undefined,
   };
   return sources;
 }

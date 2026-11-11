@@ -13,9 +13,9 @@ import { tempHome } from "../helpers.ts";
 setDefaultTimeout(30_000);
 
 /**
- * A cloud machine's claude has no login of its own: the hub seals its Claude account to the node, and its sessions run
- * on that. Read as logged out, the hub showed boat-1 degraded and refused every message to its agents. Its runner is
- * logged in on the account the node holds, and logged out again once the hub takes it back.
+ * A machine whose claude has no login of its own runs on the Claude account the hub sealed to its node. Read as logged
+ * out, the hub would show it degraded and refuse every message to its agents. Its runner is logged in on the account the
+ * node holds, and logged out again once the hub takes it back.
  */
 test("a machine whose claude isn't logged in runs on the account the hub sealed to it", async () => {
   const home = tempHome();

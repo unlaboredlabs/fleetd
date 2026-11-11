@@ -125,15 +125,15 @@ test("each line the hub logs starts with its time and level, unless it carries i
   for (const m of methods) console[m] = (...args: unknown[]) => void said.push([m, ...args]);
   try {
     stampLogs();
-    console.warn("pool: boat's cost of %s unread:", "bx_1", { kind: "not_found" });
+    console.warn("usage: the limits of %s unread:", "devbox", { kind: "not_found" });
     console.error({ kind: "failed" });
     console.log("2026-11-09T08:48:45.015Z INFO the hub's OOM score");
   } finally {
     methods.forEach((m, i) => (console[m] = saved[i]!));
   }
   const stamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z /;
-  expect(said[0]).toEqual(["warn", expect.stringMatching(stamp), "bx_1", { kind: "not_found" }]);
-  expect(said[0]![1]).toEndWith(" WARN pool: boat's cost of %s unread:");
+  expect(said[0]).toEqual(["warn", expect.stringMatching(stamp), "devbox", { kind: "not_found" }]);
+  expect(said[0]![1]).toEndWith(" WARN usage: the limits of %s unread:");
   expect(said[1]).toEqual(["error", expect.stringMatching(/Z ERROR$/), { kind: "failed" }]);
   expect(said[2]).toEqual(["log", "2026-11-09T08:48:45.015Z INFO the hub's OOM score"]);
 });

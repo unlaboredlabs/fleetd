@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
-import { fakeNodePort, type Link } from "../src/hub/cloud/node.ts";
+import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
 import { getRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";

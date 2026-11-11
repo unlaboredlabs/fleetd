@@ -37,7 +37,6 @@ fixture, `showcase-<still>-<theme>.jpg` at 2x with a `-small` twin at 1x, in `li
 |---|---|---|
 | `dms` | Agents message each other, in the open | an agent's work, its DMs to and from other agents among its steps (`dms-relays`) |
 | `dmlog` | Agents message each other, in the open | the project's log of DMs, who read each and when (`dms-relays`) |
-| `cloud` | Cloud machines that sleep until there's work | Settings › Machines: the hub's machines and the boat.dev ones under them (`machines-cloud`) |
 
 Each is `showcase-<clip>-<theme>.webm` (VP9, 2800x1800, 60 fps) with an H.264 `.mp4` twin for browsers without VP9
 (1792x1152 at 60 fps, level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,

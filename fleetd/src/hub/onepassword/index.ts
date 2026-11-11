@@ -8,8 +8,7 @@
 import type { OnePasswordToken, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { ClaudeAccountStore, type Whose, whoseForLead, whoseForTask } from "../claude_accounts/index.ts";
-import { linked, nodeCan, sessionCall } from "../cloud/node.ts";
-import { missed } from "../cloud/outbox.ts";
+import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
 import type { HubDb } from "../store/db.ts";
 
 export const CAP_ONEPASSWORD = "onepassword";
@@ -69,13 +68,10 @@ export function forLead(db: HubDb, r: ProjectRef): string | undefined {
 /** The node can take the token: online and new enough. */
 export const ready = (hub: Hub, m: string) => linked(hub, m) && nodeCan(hub, m, CAP_ONEPASSWORD);
 
-/** Each online node of `machines` forgets the person's token; a sleeping cloud machine forgets it as it wakes. */
+/** Each online node of `machines` forgets the person's token. */
 export async function forget(hub: Hub, person: string, machines: string[]): Promise<void> {
   for (const m of machines) {
-    if (!ready(hub, m)) {
-      missed(hub, m, { kind: "one_password_forget", personId: person });
-      continue;
-    }
+    if (!ready(hub, m)) continue;
     try {
       await sessionCall(hub, m, { op: "onepassword_token", personId: person });
     } catch (e) {

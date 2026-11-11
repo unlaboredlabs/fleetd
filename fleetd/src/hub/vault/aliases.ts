@@ -11,7 +11,7 @@ import { openSealed, publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { parseContractSink, secretEnvName } from "../approvals/sink.ts";
-import { nodeCan } from "../cloud/node.ts";
+import { nodeCan } from "../link/node_port.ts";
 import { boxKey } from "../hub_links/store.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries } from "./deliver.ts";

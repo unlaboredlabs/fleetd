@@ -112,7 +112,7 @@
         },
         {
           "const": "machine.down",
-          "description": "The machine has been offline 10 minutes with nothing to explain it (an update restarting its node, a cloud\nmachine the hub put to sleep): the hub's admins are paged, once per outage. `data.offlineMs`.",
+          "description": "The machine has been offline 10 minutes with nothing to explain it (an update restarting its node): the hub's admins are paged, once per outage. `data.offlineMs`.",
           "type": "string"
         },
         {

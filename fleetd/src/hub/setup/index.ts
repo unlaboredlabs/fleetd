@@ -73,10 +73,6 @@ sudo dseditgroup -o edit -a agents -t user _developer
 # Your own home closed to other users, agents included.
 chmod 700 ~`;
 
-/** The actions the hub's boat.dev key needs, and no more. */
-export const BOAT_KEY_ACTIONS =
-  "sandbox.create sandbox.read sandbox.update sandbox.stop sandbox.resume sandbox.delete ssh account.read";
-
 /** 1Password's page that makes a service account, and the one listing them. */
 export const ONEPASSWORD_NEW = "https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/";
 export const ONEPASSWORD_ACCOUNTS = "https://start.1password.com/developer-tools/active";
@@ -360,78 +356,6 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         test: "Read the Mac's checks, which its node runs every 30 seconds (its grants every 2 while one is off)",
         // The hub's own too: no other node on the same computer (doctor/checks.rs).
         ways: [{ checks: [...MAC_CHECKS.map((id) => `*/mac_${id}`), "*/mac_one_node"] }],
-      },
-    ),
-    // Cloud machines on boat.dev (D306): optional, on the owner's own boat account.
-    step(
-      "cloud",
-      "hub",
-      "Cloud machines (boat.dev)",
-      "When every machine of yours is at its agent limit, work runs on a few sleeping boat.dev machines of your own " +
-        "account, within budgets you set.",
-      { kind: "optional" },
-      {
-        parts: [
-          part(
-            "Make a boat.dev organization with one seat",
-            "It costs the same as a personal plan, and its owner can cap their own seat, so boat.dev itself stops " +
-              "everything at your cap whatever fleetd does. Leave auto top-up and extra starts off: past the plan, " +
-              "starts are refused rather than billed.",
-            [
-              link("boat.dev", "https://boat.dev"),
-              link("Seats and limits", "https://docs.boat.dev/organizations/seats-and-limits"),
-              link("Control your spend", "https://docs.boat.dev/billing#control-your-spend"),
-            ],
-            [
-              plain("Plan", "$20 a month: it includes $20 of machine time and 200 starts a day"),
-              plain("Billing › Auto top-up", "Off"),
-              plain("Billing › Extra starts on invoice", "Off"),
-              noted("Members › you › Machine time cap", "300 hours a month", "Recommended: boat.dev stops your machines within a minute of it."),
-              noted("Members › you › Machines at once", "3", "Your pool size: 3 unless you change it below."),
-            ],
-          ),
-          part(
-            "Make an environment for fleetd",
-            "Cloud machines are made in it, with none of your account's secrets, AI logins or in-machine boat.dev key.",
-            [link("Environments", "https://docs.boat.dev/environments")],
-            [value("Name", `fleetd-${host}`), plain("Safe for third parties", "On")],
-          ),
-          part(
-            "Make the hub's API key",
-            "Only what the hub needs to make, wake, stop and delete its machines, and ssh for its tunnel: the hub dials " +
-              "each machine it wakes and holds an SSH tunnel its node reaches the hub through, so the hub needs no public " +
-              "address. No exec, file or snapshot actions: the hub never runs anything on a cloud machine.",
-            [link("API key scopes", "https://docs.boat.dev/api-keys/scopes")],
-            [
-              value("Name", `fleetd-${host}`),
-              noted("Actions", BOAT_KEY_ACTIONS, "Not the presets: ci and admin give far more."),
-              value("Scope: environment", `fleetd-${host}`),
-              plain("Expires", "365 days"),
-            ],
-          ),
-          part(
-            "Choose the pool, the budgets and the projects",
-            "Paste the key, Test it, then pick these and turn cloud machines on. Before you do, fleetd shows the most the " +
-              "pool can cost a day and a typical day. Work goes to a cloud machine only when every machine of yours is at " +
-              "its agent limit.",
-            [],
-            [
-              noted("boat.dev environment", `fleetd-${host}`, "The one you made in part 2: machines are made in it, where the key reaches."),
-              plain("Machines", "3 × large (8 vCPUs, 16 GB, $0.072 an hour each)"),
-              plain("Day budget", "$3"),
-              plain("Month budget", "your plan's included dollars ($20)"),
-              plain("Projects", "the ones you tick: their code, transcripts and the secrets sealed there go to boat.dev"),
-            ],
-          ),
-        ],
-        fieldsNote:
-          "Cloud machines run on boat.dev: boat.dev can see what runs on them, as any host can. Paste the key, set the " +
-          "pool and turn it on in Settings › Hub › Machines › Cloud machines.",
-        place: "cloud",
-        test:
-          "Ask boat.dev what the key may read, then wake (or make) a cloud machine and check the hub's tunnel to it and " +
-          "its node's hello",
-        ways: [way(undefined, ["hub/cloud_key", "hub/cloud_network", "hub/cloud_machines", "hub/cloud_budget"])],
       },
     ),
   ];

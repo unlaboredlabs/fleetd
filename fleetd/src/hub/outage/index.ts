@@ -4,16 +4,14 @@
 // only state: a machine is paged while its newest machine.down is newer than its last link (machine.online or
 // machine.degraded), so a hub restart mid-outage neither pages twice nor forgets the outage.
 //
-// Nothing explains an outage except an update whose node part has no result yet (its node restarts) and a cloud
-// machine the pool stopped or put to sleep. Both are looked at again each sweep. A removed machine has no row, so it
-// never pages. The agents' Mac counts like any machine.
+// Nothing explains an outage except an update whose node part has no result yet (its node restarts), looked at
+// again each sweep. A removed machine has no row, so it never pages. The agents' Mac counts like any machine.
 import type { Machine } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { durationText } from "../link/server.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
-import { pool } from "../pool/tools.ts";
 import { updates } from "../update/tools.ts";
 
 /** How long a machine stays offline before its admins are paged. */
@@ -66,16 +64,7 @@ function outageFrom(hub: Hub, machine: string, before: number): number | undefin
 
 /** Whether something explains the machine being away, so it needs nobody. */
 function explained(hub: Hub, m: Machine): boolean {
-  if (updates(hub).updating(m.machineId)) return true;
-  if (m.cloud !== true) return false;
-  try {
-    const state = pool(hub).ledger.slot(m.machineId)?.state;
-    // No slot: the pool no longer keeps it, so it isn't meant to be up.
-    return state === undefined || state === "stopping" || state === "asleep" || state === "gone";
-  } catch (error) {
-    console.warn("outage: pool slot not read:", error);
-    return true;
-  }
+  return updates(hub).updating(m.machineId);
 }
 
 function append(hub: Hub, type: "machine.down" | "machine.back", m: Machine, now: number, summary: string, offlineMs: number): void {

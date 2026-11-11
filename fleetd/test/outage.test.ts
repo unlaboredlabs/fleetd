@@ -1,14 +1,12 @@
 // Machines down over an in-memory hub and a fake push relay (never the real one): a machine offline past 10 minutes
-// pushes once to the admins and once more when it is back; one back sooner, one an update restarts, and a cloud machine
-// asleep push nothing. Ports crates/fleetd/src/hub/outage/tests.rs.
+// pushes once to the admins and once more when it is back; one back sooner and one an update restarts push
+// nothing. Ports crates/fleetd/src/hub/outage/tests.rs.
 import { afterAll, expect, test } from "bun:test";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import { Follow, step, type PushPayload } from "../src/hub/push/index.ts";
 import { sweep } from "../src/hub/outage/index.ts";
 import { sweep as sweepOf } from "../src/hub/sweep/index.ts";
 import { updates } from "../src/hub/update/tools.ts";
-import { pool } from "../src/hub/pool/tools.ts";
-import { newSlot, type State } from "../src/hub/pool/ledger.ts";
 import { people } from "../src/hub/people/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -155,20 +153,6 @@ test("an update restart back in time pages nobody", async () => {
   updates(w.hub).driveForTest(updateRun("done"));
   w.wait(20 * MINUTE);
   expect(await w.pushed()).toEqual([]);
-});
-
-test("a cloud machine asleep pages nobody and a broken one does", async () => {
-  const w = await world();
-  const m = store(w.hub).machineGet("devbox") as Machine;
-  store(w.hub).machineUpsert({ ...m, cloud: true });
-  const putSlot = (state: State) => pool(w.hub).ledger.put({ ...newSlot("devbox", 0), state });
-  putSlot("asleep");
-  w.set("offline", "machine.offline");
-  w.wait(30 * MINUTE);
-  expect(await w.pushed()).toEqual([]);
-  putSlot("broken");
-  w.wait(MINUTE);
-  expect(await w.pushed()).toEqual(["aa11"]);
 });
 
 test("a removed machine pages nobody", async () => {

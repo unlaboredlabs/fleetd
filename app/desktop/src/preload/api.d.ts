@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, CloudKeyRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
@@ -58,11 +58,6 @@ export interface FleetdApi {
      * onepassword_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
     onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
-    /**
-     * The hub's boat.dev API key: main seals it to the hub's own key and calls cloud_key_set. The output has the pool
-     * as the hub keeps it; nothing returns the key.
-     */
-    cloudKey(hub: HubId, request: CloudKeyRequest): Promise<CallOutcome>;
   };
   /** The vault's values (main/vault.ts): sealed on the way in, shown only after Touch ID or a confirm. */
   readonly vault: {

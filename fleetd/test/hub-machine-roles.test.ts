@@ -51,18 +51,15 @@ const runner = (r: Partial<Runner> & { machineId: string }): Runner => ({
   live: 0,
   max: 4,
   held: 0,
-  cloud: undefined,
   ...r,
 });
 
-test("placement: its own machine first, else the one with most free slots, a cloud machine last", () => {
+test("placement: its own machine first, else the one with most free slots", () => {
   const own = runner({ machineId: "a" });
   expect(place("a", "browser", [own, runner({ machineId: "b" })], true)).toBe("a");
   const full = runner({ machineId: "a", live: 4 });
   const roomy = runner({ machineId: "c", live: 1 });
-  const cloud = runner({ machineId: "d", cloud: true });
-  expect(place("a", "browser", [full, runner({ machineId: "b", live: 3 }), roomy, cloud], true)).toBe("c");
-  expect(place("a", "browser", [full, runner({ machineId: "b", live: 4 }), cloud], true)).toBe("d");
+  expect(place("a", "browser", [full, runner({ machineId: "b", live: 3 }), roomy], true)).toBe("c");
   expect(() => place("a", "browser", [full], false)).toThrow("a's session slots are full: 4 of 4.");
   expect(() => place("a", "browser", [full, runner({ machineId: "b", online: false })], true)).toThrow(
     "Every machine that can host a browser session is full: a 4 of 4.",
