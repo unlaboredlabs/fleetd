@@ -4,8 +4,8 @@
 // mcp_servers_get; saves through main (mcp_server_set, each secret sealed there to each machine's key), removes with
 // mcp_server_remove and tests with mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.
 import { useState } from "react";
-import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
-import type { McpRoles, McpScope, McpServer, McpTestResult } from "../../../shared/contracts";
+import { Button, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
+import type { McpScope, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -62,7 +62,7 @@ export function HubMcpServers() {
         <>
           <ServersSetting
             label="Global MCP servers"
-            help="Given to every project's agents of the roles you pick, as commands on their machine or services over HTTP. A project's own replaces one of the same name."
+            help="Given to every project's lead, and its agents too when you say so, as commands on their machine or services over HTTP. A project's own replaces one of the same name."
             scope={null}
             servers={data.global}
           />
@@ -248,12 +248,6 @@ const KINDS: ReadonlyArray<{ kind: TransportKind; label: string }> = [
   { kind: "sse", label: "SSE" },
 ];
 
-const ROLES: ReadonlyArray<{ key: keyof McpRoles; label: string; description: string }> = [
-  { key: "lead", label: "Lead", description: "The project's lead." },
-  { key: "writers", label: "Writers", description: "Agents of write tasks." },
-  { key: "reviewers", label: "Reviewers", description: "Agents of review and read tasks." },
-];
-
 export function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; taken: ReadonlyArray<string>; onClose: () => void; onSaved: (name: string, missing: string[]) => void }) {
   const { hub } = useDataLayer();
   const [draft, setDraft] = useState<Draft>(() => (props.editing ? draftOf(props.editing) : emptyDraft()));
@@ -360,12 +354,17 @@ export function ServerEditor(props: { scope: Ref | null; editing: McpServer | nu
             {stdio ? "Add variable" : "Add header"}
           </Button>
         </div>
-        <Text strong size="sm">
-          Who gets it
-        </Text>
-        {ROLES.map((r) => (
-          <Checkbox key={r.key} label={r.label} description={r.description} checked={draft.roles[r.key]} disabled={busy} onCheckedChange={(on) => set({ roles: { ...draft.roles, [r.key]: on === true } })} />
-        ))}
+        <Switch
+          label="Agents get it too"
+          description={
+            draft.agents
+              ? "Its writers and reviewers get it as well, and none of its tools asks you: agents can't stop to ask."
+              : `Only ${props.scope === null ? "each project's lead" : "its lead"} gets it.`
+          }
+          checked={draft.agents}
+          disabled={busy}
+          onCheckedChange={(agents) => set({ agents })}
+        />
         <Switch label="On" checked={draft.enabled} disabled={busy} onCheckedChange={(on) => set({ enabled: on })} />
         {!built.ok && draft.name.trim() !== "" ? (
           <Text size="sm" tone="quiet">

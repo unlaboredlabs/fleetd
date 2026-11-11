@@ -1,16 +1,25 @@
-// Settings › Projects › Project › Setup, its own section under Code (the default setup, once a repo has its own): what runs in each new worktree of a repo with no setup of its
-// own before its agent starts (install dependencies, generate code), saved with project_settings_set. Each run shows on the agent's thread, a command at a
-// time with the end of its output; a failure fails the agent's start unless the project starts it anyway.
+// Settings › Projects › Project › Setup, its own section under Code: what runs in each new worktree of a repo before its
+// agent starts (install dependencies, generate code), saved with project_settings_set. Each repo has its own: the
+// project's directory's is the project's, another repo's is saved with `repo`. Each run shows on the agent's thread, a
+// command at a time with the end of its output, each within 10 minutes; when one fails the agent starts anyway and is
+// told what failed.
 import { useState } from "react";
-import { Button, Input, Textarea } from "../../ui";
-import type { ProjectSettings as Settings } from "../../../shared/contracts";
+import { Button, Textarea } from "../../ui";
+import type { ProjectSettings as Settings, RepoName } from "../../../shared/contracts";
+import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
-import { GroupNote, SettingsRow, SettingsSection, SwitchRow } from "./parts";
-import { changed, draftOf, SETUP_TIMEOUT_MAX_SEC, setupFrom, type SetupDraft } from "./setupModel";
-import s from "./settings.module.css";
+import { GroupNote, SettingsRow, SettingsSection } from "./parts";
+import { changed, draftOf, setupFrom, type SetupDraft } from "./setupModel";
 
-/** The project's setup, under its repos: each repo without its own runs it. `isDefault`: some repo has its own. */
-export function DefaultSetup({ settings, isDefault }: { settings: Settings; isDefault: boolean }) {
+/** One of the project's other repos' setup, read with `repo`, once the hub answers. */
+export function RepoSetup({ settings, repo }: { settings: Settings; repo: RepoName }) {
+  const read = useToolQuery("project_settings_get", { machineId: settings.machineId, projectId: settings.projectId, repo });
+  const own = read.data?.settings;
+  return own === undefined ? null : <Setup settings={own} title={`Setup: ${repo}`} repo={repo} />;
+}
+
+/** A repo's setup: the project's own directory's without `repo`. */
+export function Setup({ settings, title, repo, reveal }: { settings: Settings; title: string; repo?: RepoName; reveal?: string }) {
   const [draft, setDraft] = useState<SetupDraft>(() => draftOf(settings.setup));
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
@@ -25,7 +34,7 @@ export function DefaultSetup({ settings, isDefault }: { settings: Settings; isDe
     if (!next.ok) return;
     setBusy(true);
     setEcho(null);
-    hubCall("project_settings_set", { machineId: settings.machineId, projectId: settings.projectId, setup: next.setup }).then(
+    hubCall("project_settings_set", { machineId: settings.machineId, projectId: settings.projectId, ...(repo === undefined ? {} : { repo }), setup: next.setup }).then(
       (out) => {
         setBusy(false);
         const off = next.setup.commands.length === 0;
@@ -41,11 +50,14 @@ export function DefaultSetup({ settings, isDefault }: { settings: Settings; isDe
   const dirty = changed(draft, settings.setup);
   return (
     <SettingsSection
-      title={isDefault ? "Default setup" : "Setup"}
-      reveal="projects.setup"
-      intro={`Runs in each new worktree${isDefault ? " of a repo without setup of its own" : ""}, before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent.`}
+      title={title}
+      reveal={reveal}
+      intro="Runs in each new worktree, before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent."
     >
-      <SettingsRow title="Commands" line="One a line, in order, each run with sh -c in the worktree. The first that fails stops the rest.">
+      <SettingsRow
+        title="Commands"
+        line="One a line, in order, each run with sh -c in the worktree, for up to 10 minutes. The first that fails stops the rest, and the agent starts anyway, told what failed."
+      >
         <Textarea
           mono
           aria-label="Commands"
@@ -57,11 +69,6 @@ export function DefaultSetup({ settings, isDefault }: { settings: Settings; isDe
           onChange={(e) => edit({ commands: e.target.value })}
         />
       </SettingsRow>
-      <SettingsRow
-        title="Time limit per command"
-        line={`Seconds, up to ${SETUP_TIMEOUT_MAX_SEC}. A command past it is stopped and counts as failed.`}
-        control={<Input inputMode="numeric" aria-label="Time limit per command" className={s.narrow} value={draft.timeout} disabled={busy} onChange={(e) => edit({ timeout: e.target.value })} />}
-      />
       <SettingsRow
         title="Skip when unchanged"
         line="Files whose contents decide what setup makes, one a line, such as lockfiles. A worktree set up before with the same commands and the same contents of these is not set up again. None: setup always runs."
@@ -77,13 +84,6 @@ export function DefaultSetup({ settings, isDefault }: { settings: Settings; isDe
           onChange={(e) => edit({ inputs: e.target.value })}
         />
       </SettingsRow>
-      <SwitchRow
-        title="Start the agent anyway when setup fails"
-        line="Off: the agent doesn't start, and its task fails naming the command and the end of its output. On: it starts and hears what failed."
-        checked={draft.runAnyway}
-        disabled={busy}
-        onCheckedChange={(runAnyway) => edit({ runAnyway })}
-      />
       {/* Save shows once there is something to save; while it can't save, its line says why. */}
       {dirty ? (
         <SettingsRow

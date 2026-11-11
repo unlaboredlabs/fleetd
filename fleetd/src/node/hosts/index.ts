@@ -35,15 +35,11 @@ function fixed(c: HostCheck, fix: string | undefined): HostCheck {
 }
 
 /** The check with its switch in Settings (`on`) and its idle timeout. */
-const withSwitch = (c: HostCheck, on: boolean, idleMinutes: number | undefined): HostCheck => ({
-  ...c,
-  on,
-  idleMinutes: Math.max(1, Math.min(1440, idleMinutes ?? IDLE_MINUTES)),
-});
+const withSwitch = (c: HostCheck, on: boolean, idleMinutes = IDLE_MINUTES): HostCheck => ({ ...c, on, idleMinutes });
 
-export function browser(home: string, section: Section, idleMinutes?: number): HostCheck {
+export function browser(home: string, section: Section): HostCheck {
   const on = section.enabled !== false;
-  return withSwitch(browserCheck(home, section), on, idleMinutes);
+  return withSwitch(browserCheck(home, section), on);
 }
 
 function browserCheck(home: string, section: Section): HostCheck {
@@ -68,9 +64,9 @@ function browserCheck(home: string, section: Section): HostCheck {
  * fleetd's own Android emulator (node/device): ready where it is installed, or the machine is opted in so the first
  * session installs it (again, after an install that failed), and /dev/kvm opens; else what stands in the way.
  */
-export function android(home: string, config: DeviceConfig, idleMinutes?: number, kvm: KvmCheck = kvmNow): HostCheck {
+export function android(home: string, config: DeviceConfig, kvm: KvmCheck = kvmNow): HostCheck {
   const health = androidHealth(home, config, kvm);
-  return withSwitch(androidCheck(config, health, kvm), health !== undefined, idleMinutes);
+  return withSwitch(androidCheck(config, health, kvm), health !== undefined);
 }
 
 function androidCheck(config: DeviceConfig, health: ReturnType<typeof androidHealth>, kvm: KvmCheck): HostCheck {
@@ -149,11 +145,10 @@ export function lines(
   if (kept && now - kept.at < FRESH_MS) return kept.checks;
   const section = (key: string) => ((config as Record<string, unknown> | undefined)?.[key] ?? {}) as Section;
   const mac = macScreen(section("mac"), blocked);
-  const idle = config?.screenIdleMinutes;
   const checks =
     config?.agentsMac === true
       ? { before: [], after: [mac] }
-      : { before: [browser(home, section("browser"), idle), android(home, section("device") as DeviceConfig, idle, kvm)], after: [mac] };
+      : { before: [browser(home, section("browser")), android(home, section("device") as DeviceConfig, kvm)], after: [mac] };
   last.set(home, { at: now, checks });
   return checks;
 }

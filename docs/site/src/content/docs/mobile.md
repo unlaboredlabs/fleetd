@@ -115,8 +115,8 @@ The **ⓘ** at the top of a chat opens its project's page:
 - **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the project's
   [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
   and what it learned, as in the desktop app's settings.
-- **Artifacts**: the chat's [artifacts](#artifacts). The checker's model and linking a hub are done
-  in the desktop app.
+- **Artifacts**: the chat's [artifacts](#artifacts). Linking a hub is done in the desktop
+  app.
 - **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
 - **Archive Project** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
   again while an approval of its waits); **Unarchive Project** brings it back.

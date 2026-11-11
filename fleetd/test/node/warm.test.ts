@@ -74,10 +74,9 @@ test("a reader installs for each lockfile whose app its commits touch, time-boxe
     expect(await readerSetup(undefined, root, base)).toEqual({
       commands: ["cd 'app/web' && pnpm install --frozen-lockfile --prefer-offline"],
       inputs: ["app/web/pnpm-lock.yaml"],
-      runAnyway: true,
       timeoutSec: 300,
     });
-    expect(await readerSetup({ commands: ["make deps"], timeoutSec: 900 }, root, base)).toEqual({ commands: ["make deps"], runAnyway: true, timeoutSec: 300 });
+    expect(await readerSetup({ commands: ["make deps"] }, root, base)).toEqual({ commands: ["make deps"], inputs: [], timeoutSec: 300 });
     expect(await readerSetup(undefined, root, "HEAD")).toBeUndefined();
   } finally {
     home.done();

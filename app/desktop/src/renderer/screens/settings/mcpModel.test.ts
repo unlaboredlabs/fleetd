@@ -20,10 +20,10 @@ const github: McpServer = {
 
 describe("MCP servers' model", () => {
   it("says who gets a server, how it is reached, and its values without a secret's", () => {
-    expect(rolesText(github.roles)).toBe("Lead and writers");
-    expect(rolesText({ lead: true, writers: true, reviewers: true })).toBe("Lead, writers and reviewers");
-    expect(rolesText({ lead: false, writers: false, reviewers: true })).toBe("Reviewers");
-    expect(rolesText({ lead: false, writers: false, reviewers: false })).toBe("No one");
+    // One switch: any agent besides the lead is every agent, as the hub saves it.
+    expect(rolesText(github.roles)).toBe("Lead and agents");
+    expect(rolesText({ lead: true, writers: true, reviewers: true })).toBe("Lead and agents");
+    expect(rolesText({ lead: true, writers: false, reviewers: false })).toBe("Lead only");
     expect(transportText(github)).toBe("HTTP https://api.example.com/mcp");
     expect(transportText({ ...github, transport: { type: "stdio", command: "npx", args: ["-y", "@acme/mcp"] } })).toBe("npx -y @acme/mcp");
     expect(valuesText(github)).toBe("Authorization=secret · X-Team=core");
@@ -48,7 +48,7 @@ describe("MCP servers' model", () => {
         scope: { kind: "global" },
         name: "github",
         enabled: true,
-        roles: github.roles,
+        roles: { lead: true, writers: true, reviewers: true },
         transport: { type: "http", url: "https://api.example.com/mcp" },
         env: [],
         headers: [

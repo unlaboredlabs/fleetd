@@ -58,12 +58,6 @@ function fakeHub() {
         if (refresh.why === undefined) refresh.job = { ...refresh.job, lastRun: { at: AT, trigger: "manual", state: "running", added: 0, replaced: 0, removed: 0 } };
         return ok({ memoryRefresh: refresh.job, ...(refresh.why === undefined ? {} : { why: refresh.why }) });
       }
-      if (name === "project_settings_set") {
-        const on = (raw as ToolInput<"project_settings_set">).memoryRefresh ?? true;
-        const { nextRunAt: _, ...rest } = refresh.job;
-        refresh.job = on ? { ...rest, on, nextRunAt: "2026-10-18T02:00:00.000Z" } : { ...rest, on };
-        return ok({});
-      }
       if (name === "automation_create") {
         const input = raw as ToolInput<"automation_create">;
         const a: Automation = {

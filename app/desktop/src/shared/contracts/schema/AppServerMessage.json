@@ -765,7 +765,7 @@
           "$ref": "#/$defs/SessionHost"
         },
         "idleMinutes": {
-          "description": "Minutes without a command before a screen of this kind ends (node.json's `screenIdleMinutes`). Absent from a\nnode before it.",
+          "description": "Minutes without a command before a screen of this kind ends: 30, the agents' Mac's 5. Absent from a node before\nit.",
           "maximum": 1440,
           "minimum": 1,
           "type": "integer"

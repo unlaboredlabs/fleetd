@@ -56,6 +56,15 @@ export const isOauthToken = (s: McpServer, field: McpField, v: McpValue) =>
 const anyRole = (s: McpServer) => s.roles.lead || s.roles.writers || s.roles.reviewers;
 
 /**
+ * A server's one switch, "Agents get it too": its lead alone, or its writers and reviewers as well. Roles from an
+ * older app that named some kinds of agent count as on; a server for no one is its lead's, and off.
+ */
+export function oneSwitch(roles: McpRoles, enabled: boolean): { roles: McpRoles; enabled: boolean } {
+  const agents = roles.writers || roles.reviewers;
+  return { roles: { lead: true, writers: agents, reviewers: agents }, enabled: enabled && (agents || roles.lead) };
+}
+
+/**
  * A server as a session on `machineId` gets it: plain values as they are, a secret by name. Undefined when that
  * machine's node doesn't hold all of its secrets, or when it signs in with OAuth and is signed out or tokenless. An
  * integration reaches the lead alone.

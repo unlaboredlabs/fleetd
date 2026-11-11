@@ -85,7 +85,7 @@ const colors = (base: Fixture): Fixture => {
   const storefront = obj(arr(f.snapshot?.["projects"]).find((p) => obj(p)["title"] === "storefront"));
   const ref = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };
   f.answer("project_settings_get", ref, {
-    settings: { ...ref, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] }, env: [] },
+    settings: { ...ref, title: "storefront", workspaceRoot: "/home/dev/src/storefront", setup: { commands: [], inputs: [] }, env: [] },
   });
   f.answer(PROJECT_TOOLS.approvals, ref, { approvals: { mode: "yolo", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] });
   f.answer(PROJECT_TOOLS.purchases, ref, { purchases: [] });

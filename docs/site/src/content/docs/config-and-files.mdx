@@ -27,7 +27,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
     memory/people/<id>.md   what the agents remember about how one person works, theirs alone
-    memory/user.md       the shared memory of a hub from before people; its owner got a copy
+    memory/user.md       the shared memory of a hub with no people yet; once it has some, its owner got a copy
     memory/<machine>/<project>/MEMORY.md   one project's memory, with its topic files beside it
   node/                  the node's home (every worker)
     node.json            the node's settings (below)
@@ -94,7 +94,6 @@ after you change it.
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and usage](/docs/machines#guard). |
 | `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
 | `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. A test build of a lib's tests beside its other targets takes two. Absent: one per 16 GB of the machine's memory, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
-| `screenIdleMinutes` | Minutes without a command before a browser, Android or Linux desktop screen ends. Absent: 30. A machine's page in Settings › Hub › Machines doesn't pick it; `machine_screens_set` writes it. The agents' Mac's screen ends after 5. |
 | `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `sandbox`. |
 | `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`. |
 | `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled` (ignored on the agents' Mac, where simulators are always on), `deviceType`. |

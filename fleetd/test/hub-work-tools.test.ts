@@ -65,10 +65,3 @@ test("prompt_get lists and shows; prompt_set saves, warns, resets; only admins e
   done();
 });
 
-test("the shared memory is a hub admin's", async () => {
-  const { hub, done } = testHub();
-  expect(await tools.call(hub, caller("admin", true), "memory_shared_set", { text: "- Old hub.\n" })).toMatchObject({ output: { file: { text: "- Old hub.\n" } } });
-  expect(await tools.call(hub, caller("read"), "memory_shared_get", {})).toMatchObject({ error: { error: { code: "forbidden" } } });
-  expect(await tools.call(hub, caller("admin"), "memory_shared_get", {})).toMatchObject({ output: { file: { text: "- Old hub.\n" } } });
-  done();
-});

@@ -21,7 +21,7 @@ server** and turn on **Agents get it too**, then **Edit** it on its row to pick 
 | Name | How agents see its tools: `mcp__<name>__<tool>`. Letters, digits, `_` and `-`. `fleetd` is taken by fleetd's own tools. |
 | How agents reach it | **Command**: a program each agent's claude starts on its machine, speaking MCP over stdin and stdout, with its arguments one per line and its environment. **HTTP** (MCP's streamable HTTP) or **SSE** (its older event-stream transport): a URL, with headers. |
 | Environment or headers | Each value plain or secret. See [Secrets](#secrets). |
-| Who gets it | **Lead**, **Writers** (write tasks' agents), **Reviewers** (review and read tasks' agents). A thread you start yourself gets none. |
+| Agents get it too | Off: only each project's lead gets it. On: its writers and reviewers get it as well, and none of its tools asks you, since an agent can't stop to ask. A thread you start yourself gets none. A server saved for some kinds of agent before this switch is on. |
 | On | Off keeps it saved but gives it to no one. |
 
 A project's server replaces a global one of the same name in that project, for every role, even while the project's

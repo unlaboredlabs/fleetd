@@ -14,7 +14,7 @@ import { useHubRows } from "./hubRows";
 import { useHubEvents } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, Requests, type DueContext, type Policy } from "./notifier";
-import { notificationPrefs, useNotificationPrefs } from "./notificationPrefs";
+import { notificationPrefs } from "./notificationPrefs";
 import { projectId } from "./model";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 
@@ -136,7 +136,7 @@ export const useNotifications = (live: boolean): void => {
     // One notification per hub at a time: a later one replaces only its own hub's.
     const tag = hub.id === FIRST_HUB ? "needs-you" : `needs-you-${hub.id}`;
     const target = onItsHub(due.target, hub.id);
-    void window.fleetd.app.notify({ tag, ...due, title: named ? `${label} · ${due.title}`.slice(0, 120) : due.title, target, silent: !prefs.sound });
+    void window.fleetd.app.notify({ tag, ...due, title: named ? `${label} · ${due.title}`.slice(0, 120) : due.title, target });
   });
   const [requests] = useState(() => new Requests());
   const [onEvent] = useState(() => (event: HubEvent) => {
@@ -166,15 +166,13 @@ export const useNotifications = (live: boolean): void => {
 };
 
 /**
- * The Dock badge: how many projects need you, on every hub. While a count isn't known (connecting, resyncing) the
- * last one stays rather than blinking to nothing; main clears it when the window closes.
+ * The Dock badge: how many projects need you, on every hub (the system's own switch hides it). While a count isn't
+ * known (connecting, resyncing) the last one stays rather than blinking to nothing; main clears it when the window closes.
  */
 export const useDockBadge = (): void => {
   const rows = useHubRows();
   const counts = [...rows.values()].map((r) => r.needsYou);
-  const total = counts.length === 0 || counts.some((n) => n === undefined) ? undefined : counts.reduce<number>((a, n) => a + (n ?? 0), 0);
-  const { badge } = useNotificationPrefs();
-  const count = badge ? total : 0;
+  const count = counts.length === 0 || counts.some((n) => n === undefined) ? undefined : counts.reduce<number>((a, n) => a + (n ?? 0), 0);
   useEffect(() => {
     if (count !== undefined) void window.fleetd.app.setBadge(count);
   }, [count]);

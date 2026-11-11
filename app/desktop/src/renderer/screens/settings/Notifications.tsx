@@ -1,5 +1,5 @@
-// Settings → General → Notifications: which kinds alert you, with a sound or not, the Dock badge, and a test. The shell reads
-// these when it posts (shell/effects.ts); nothing here talks to the fleet.
+// Settings → General → Notifications: which kinds alert you, and a test. The shell reads these when it posts
+// (shell/effects.ts); nothing here talks to the fleet. A sound and the Dock badge are the system's own per-app switches.
 import { useState } from "react";
 import { Button } from "../../ui";
 import { setNotificationPrefs, useNotificationPrefs, type NotificationPrefs } from "../shell/notificationPrefs";
@@ -28,7 +28,6 @@ export function Notifications() {
       title: "fleetd",
       body: "Notifications are on. This is how fleetd tells you something needs you.",
       target: { kind: "notifications" },
-      silent: !prefs.sound,
     });
     setTest(shown ? "sent" : "unsupported");
   };
@@ -38,14 +37,6 @@ export function Notifications() {
       {KINDS.map(({ kind, label }) => (
         <SwitchRow key={kind} title={label} checked={prefs.kinds[kind]} onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })} />
       ))}
-      <SwitchRow reveal="notifications.sound" title="Play a sound" line="The system's notification sound." checked={prefs.sound} onCheckedChange={(on) => set({ sound: on })} />
-      <SwitchRow
-        reveal="notifications.badge"
-        title="Count the projects that need you"
-        line={mac ? "As a badge on the fleetd icon in the Dock." : "As a badge where your desktop shows them."}
-        checked={prefs.badge}
-        onCheckedChange={(on) => set({ badge: on })}
-      />
       <SettingsRow
         reveal="notifications.test"
         title="Test"

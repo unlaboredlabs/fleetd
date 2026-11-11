@@ -17,7 +17,6 @@ import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { FleetCapNote } from "../settings/Agents";
 import { Recordings } from "../settings/Screens";
-import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame } from "../settings/Frames";
@@ -198,7 +197,7 @@ function ToolsAndSkills() {
   );
 }
 
-/** Every project › Instructions & memory: the instructions every project's agents get, and the old shared memory while it has text. */
+/** Every project › Instructions & memory: the instructions every project's agents get. */
 function InstructionsAndMemory() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
@@ -207,7 +206,6 @@ function InstructionsAndMemory() {
         <SettingsSection title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </SettingsSection>
-        <SharedMemory />
       </div>
     </div>
   );
