@@ -7,6 +7,7 @@ import type { MacCodeCreateOutput } from "../../../shared/contracts";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall } from "../settings/hub";
+import { Head } from "./Head";
 import { macCodeOver, macCodeState, macCodeWords, spacedCode } from "./model";
 import s from "./addMachine.module.css";
 
@@ -20,7 +21,7 @@ const useNow = (): number => {
   return now;
 };
 
-export function MacCode(props: { onLine: () => void; onDone: () => void }) {
+export function MacCode(props: { onLine: () => void; onBack: () => void; onDone: () => void }) {
   const call = useHubCall();
   const layer = useDataLayer();
   const appUrl = useData((st) => (st.hub.phase === "unpaired" ? undefined : st.hub.hub));
@@ -76,12 +77,7 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
   }, [watching, code, now]);
   return (
     <>
-      <div className={s.head}>
-        <Text strong>A Mac for agents</Text>
-        <Text size="xs" tone="quiet">
-          {"It runs no agents and holds none of your keys. Your own account on it is fine."}
-        </Text>
-      </div>
+      <Head title="A Mac for agents" line="It runs no agents and holds none of your keys. Your own account on it is fine." />
       <ol className={s.macSteps}>
         <li>
           <Text size="sm">On the Mac, open the fleetd app (download it from fleetd.sh) and choose Set up this Mac for agents.</Text>
@@ -124,14 +120,16 @@ export function MacCode(props: { onLine: () => void; onDone: () => void }) {
             {busy ? "Making…" : "New code"}
           </Button>
         ) : null}
-        {state === "joined" ? null : (
-          <Button variant="ghost" onClick={props.onLine}>
-            Use Terminal instead
-          </Button>
+        {state === "joined" ? (
+          <Button onClick={props.onDone}>Done</Button>
+        ) : (
+          <>
+            <Button onClick={props.onBack}>Back</Button>
+            <Button variant="ghost" onClick={props.onLine}>
+              Use Terminal instead
+            </Button>
+          </>
         )}
-        <Button variant={state === "joined" ? "secondary" : "ghost"} onClick={props.onDone}>
-          {state === "joined" ? "Done" : "Back"}
-        </Button>
       </div>
     </>
   );

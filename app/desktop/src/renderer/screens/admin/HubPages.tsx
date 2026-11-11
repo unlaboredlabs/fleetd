@@ -1,7 +1,7 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
-// and every hub link); Machines (Add machine, the machines with Remove, and Repair for one that isn't well, each one's
-// page with its checklist, its role, its screens and its max agents; recordings); Updates
+// and every hub link); Machines (the machines, Add machine behind the page's plus, each machine's page with Repair
+// while it isn't well, its checklist, its role, its screens, its max agents and Remove; recordings); Updates
 // (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
 // as a project's own pages are: Profiles, Tools & skills
 // and Instructions & memory, each reaching every project on the hub, and the hub-wide built-in prompts from the foot
@@ -16,12 +16,12 @@ import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
-import { FleetCapNote } from "../settings/Agents";
 import { Recordings } from "../settings/Screens";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame } from "../settings/Frames";
-import { PageHead, SettingsSection } from "../settings/parts";
+import { AddButton, PageHead, SettingsSection } from "../settings/parts";
+import { useReveal } from "../settings/search";
 import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
 import { isEveryProject, type SettingsRoute } from "../settings/route";
@@ -140,24 +140,29 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
 }
 
 /**
- * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
- * Remove, Repair (which opens in Add machine) while it isn't well, and a page of its own with everything about it; then
+ * The hub's machines, each a row that opens its own page with everything about it; the page's plus adds one (this
+ * computer, one the hub reaches over SSH, or any other), its steps opening above the list. Then
  * how long recordings are kept, and updates.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
+  // A search for "add machine" lands on the plus.
+  const addRef = useReveal<HTMLSpanElement>("hub.add-machine");
   return (
     <div className={s.scroll} data-screen="settings.hub.machines">
       <div className={s.column}>
-        <PageHead title="Machines">The computers that run this hub&apos;s agents.</PageHead>
-        <AddMachine open={open} />
-        <MachineList
-          onRepair={(r) => {
-            setOpen({ view: r, at: Date.now() });
-            document.querySelector("section[aria-label='Add machine']")?.scrollIntoView({ block: "nearest" });
-          }}
-        />
-        <FleetCapNote />
+        <PageHead
+          title="Machines"
+          aside={
+            <span ref={addRef}>
+              <AddButton label="Add machine" onClick={() => setOpen({ view: { kind: "choose" }, at: Date.now() })} />
+            </span>
+          }
+        >
+          The computers that run this hub&apos;s agents.
+        </PageHead>
+        <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
+        <MachineList />
         <SettingsSection title="Recordings" reveal="hub.recordings">
           <Recordings />
         </SettingsSection>

@@ -35,7 +35,14 @@ export const lockedWhy = (m: MachineRolesEntry, check: HostCheck | undefined): s
   return null;
 };
 
-/** The line under a kind's switch: ready, off, or what stands in the way, in the node's words. */
+/**
+ * A kind this machine can never host, whose switch stays off: the Mac's own screen on a machine that isn't a Mac. Why,
+ * and how to get one, in place of the node's words.
+ */
+export const elsewhereLine = (m: Pick<MachineRolesEntry, "mac">, host: SessionHost, check: HostCheck | undefined): string | null =>
+  host === "mac" && m.mac === undefined && check?.off === "unsupported" ? "Only a Mac has this screen. Add one from Machines: the plus, then A Mac for agents." : null;
+
+/** The line under a kind's switch: ready, off, or what stands in the way, in the node's words (as a sentence starts). */
 export const stateLine = (check: HostCheck | undefined): string => {
   if (check === undefined) return "Not known yet";
   if (check.ready) return "Ready";
@@ -45,7 +52,7 @@ export const stateLine = (check: HostCheck | undefined): string => {
     case "restarting":
       return "Starts after the screens open now end";
     default:
-      return check.detail;
+      return check.detail.charAt(0).toUpperCase() + check.detail.slice(1);
   }
 };
 

@@ -1,5 +1,5 @@
-// Settings › Hub › Machines, apart from React: how a machine's Repair goes, what Remove says it does, and the
-// checklist a machine's page shows once it has joined, read from the hub's own checks (doctor_list).
+// Settings › Hub › Machines, apart from React: a machine's state in words, the list's dot, how its Repair goes, what
+// Remove says it does, and the checklist its page shows once it has joined, read from the hub's own checks (doctor_list).
 import type { DoctorCheck, DoctorFix, Machine, MachineHost } from "../../../shared/contracts";
 import { when } from "../live/when";
 
@@ -25,20 +25,30 @@ export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> 
     ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its projects are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
     : `The hub revokes ${machineId}'s key and forgets it, and its projects are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
-/**
- * What a machine that isn't simply online needs, under its name in the list: why it is degraded and where its fix
- * is, or for one offline, what brings its node back. Null while it is online.
- */
-export const statusLine = (m: Pick<Machine, "name" | "status" | "degradedReason"> & { lastSeenAt?: string | undefined }, nowMs = Date.now()): string | null => {
-  if (m.status === "online") return null;
-  if (m.status === "offline") {
-    const since = m.lastSeenAt === undefined ? "" : when(m.lastSeenAt, nowMs);
-    return `${since === "" ? "Its" : `Offline since ${since}: its`} node isn't connected. If the machine is on, Repair sets its node up again.`;
-  }
-  // The page has the fix: the reason alone here, without the hub's own "Fix: …".
+/** What Remove does, in a line on the machine's page; the dialog says the rest (removeLine). */
+export const REMOVE_LINE = "Its projects are deleted from fleetd with their chats and orders. Its repos and worktrees stay.";
+
+type Seen = Pick<Machine, "name" | "status" | "degradedReason"> & { lastSeenAt?: string | undefined };
+
+/** Why the hub calls it degraded, as a sentence's words without the hub's own "Fix: …" (the page has the fix). */
+const degradedWhy = (m: Seen): string => {
   const why = m.degradedReason?.split(/\s+Fix:/u)[0]?.trim().replace(/[.:]$/u, "");
-  return `${why === undefined || why === "" ? "Something needs a look" : why.charAt(0).toUpperCase() + why.slice(1)}. Open ${m.name} for the fix.`;
+  return why === undefined || why === "" ? "Needs a look" : why.charAt(0).toUpperCase() + why.slice(1);
 };
+
+/**
+ * A machine's state, the first words of its page and its row's tooltip: Online, what the hub says is wrong with one
+ * that is degraded, or since when it last heard from one that is offline.
+ */
+export const statusWords = (m: Seen, nowMs = Date.now()): string => {
+  if (m.status === "online") return "Online";
+  if (m.status === "degraded") return degradedWhy(m);
+  const since = m.lastSeenAt === undefined ? "" : when(m.lastSeenAt, nowMs);
+  return since === "" ? "Offline" : `Offline since ${since}`;
+};
+
+/** What Repair does, its button's tooltip beside the state of a machine that isn't online. */
+export const REPAIR_LINE = "Sets this machine's node up again, with its fleetd and a new code.";
 
 /**
  * Where a check's fix runs, for its "Run on …" row: the machine itself, or the hub's machine, as the hub says. Null
@@ -84,7 +94,7 @@ const item = (key: ChecklistItem["key"], title: string, checks: ReadonlyArray<Do
 
 /**
  * A machine's checklist after it joined: claude installed and logged in, the commit identity its agents use, GitHub
- * (git fetches its projects' remotes), and the sessions it can host (no iOS: the agents' Mac lends its simulators,
+ * (git fetches its projects' remotes), and the screens it can host (no iOS: the agents' Mac lends its simulators,
  * D298). Each item waits until the hub has checked it.
  */
 export const checklistOf = (checks: ReadonlyArray<DoctorCheck>, machineId: string): ReadonlyArray<ChecklistItem> => {
@@ -96,7 +106,17 @@ export const checklistOf = (checks: ReadonlyArray<DoctorCheck>, machineId: strin
     item("identity", "Git identity", named(checks, machineId, ["commit_identity"]), "Waiting for its node to report the identity its commits carry."),
     item("github", "GitHub access", named(checks, machineId, ["git_fetch"]), "Checked when an agent first starts in one of its projects."),
     devices.length === 0
-      ? { key: "capabilities", title: "Capabilities", state: "done", lines: ["Agents and their browsers. No Android or Linux desktop sessions are set up here."], screens: true }
-      : item("capabilities", "Capabilities", devices, ""),
+      ? { key: "capabilities", title: "Screens", state: "done", lines: ["Browsers. No Android or Linux desktop screens are set up here."], screens: true }
+      : item("capabilities", "Screens", devices, ""),
   ];
+};
+
+/**
+ * Why a machine needs someone, for the list's one dot and its tooltip: offline, degraded, or online with a check that
+ * failed (claude logged out). Undefined while nothing does: a healthy row is its name alone.
+ */
+export const needsOf = (m: Seen & Pick<Machine, "machineId">, checks: ReadonlyArray<DoctorCheck> | undefined, nowMs = Date.now()): string | undefined => {
+  if (m.status !== "online") return statusWords(m, nowMs);
+  const failed = checks === undefined ? undefined : checklistOf(checks, m.machineId).find((i) => i.state === "failed");
+  return failed === undefined ? undefined : `${failed.title}: ${failed.lines[0] ?? "needs a look"}`;
 };

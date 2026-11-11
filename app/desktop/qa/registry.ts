@@ -74,6 +74,8 @@ export const fixtures = [
   // logged out.
   "machines-joined",
   "machines-checklist",
+  "machines-one",
+  "machines-unwell",
   // F2: the lead chat's live strip with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
   // (fixtures/live).
   "live-0",
@@ -3033,14 +3035,27 @@ export const screens: readonly Screen[] = [
   // W469: Hub › Updates: Update now beside the ready build, Update automatically with its last update and next one,
   // and one holding back with why; each machine's version below.
   { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-on", "updates-auto-held", "updates-hub-current"] },
-  // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
-  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
+  // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
+  // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the plus.
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },
+  // The plus opens Add machine's ways in over the list.
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["machines-add"],
+    variant: "add",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
+      await page.getByRole("button", { name: "Choose…" }).waitFor();
+    },
+  },
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",
     fixtures: ["machines-add"],
     variant: "hosts",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Choose…" }).click();
       await page.getByRole("list", { name: "Hosts" }).waitFor();
     },
@@ -3051,6 +3066,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-add"],
     variant: "plan",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Choose…" }).click();
       await page.getByRole("button", { name: "Plan…" }).first().click();
       await page.getByRole("button", { name: "Add builder-1" }).waitFor();
@@ -3063,6 +3079,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-add"],
     variant: "mac-code",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Set up…" }).click();
       await page.getByText("482 913").waitFor();
     },
@@ -3074,6 +3091,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-add"],
     variant: "line",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Get the line…" }).click();
       await page.getByRole("textbox", { name: "Name" }).fill("laptop");
       await page.getByRole("button", { name: "Make the line" }).click();
@@ -3086,6 +3104,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-joined"],
     variant: "joined",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Get the line…" }).click();
       await page.getByRole("textbox", { name: "Name" }).fill("laptop");
       await page.getByRole("button", { name: "Make the line" }).click();
@@ -3100,27 +3119,39 @@ export const screens: readonly Screen[] = [
     fixtures: ["machines-add"],
     variant: "mac",
     open: async (page) => {
+      await page.getByRole("button", { name: "Add machine" }).click();
       await page.getByRole("button", { name: "Set up…" }).click();
       await page.getByRole("button", { name: "Use Terminal instead" }).click();
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("Waiting for mac…").waitFor();
     },
   },
-  // The machine list's Remove asks first.
+  // A machine's page: its checklist, and Claude's login from the app with the page to sign in at and the code field.
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-checklist"] },
+  // A machine that needs someone says why where its state is, with Repair beside it: buildbox offline for three days.
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-unwell"], variant: "offline" },
+  // Repair opens in place: buildbox joined by itself, so its line again and the wait for it.
   {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
-    fixtures: ["machines-add"],
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/buildbox",
+    fixtures: ["machines-unwell"],
+    variant: "repair",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Repair…" }).click();
+      await page.getByText("Waiting for buildbox…").waitFor();
+    },
+  },
+  // Remove, at the page's end, asks first.
+  {
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/buildbox",
+    fixtures: ["machines-unwell"],
     variant: "remove",
     open: async (page) => {
-      const list = page.getByRole("list", { name: "Machines" });
-      await list.scrollIntoViewIfNeeded();
-      await list.getByRole("button", { name: "Remove" }).first().click();
+      await page.getByRole("button", { name: "Remove…" }).click();
       await page.getByRole("dialog").waitFor();
     },
   },
-  // A machine's page: its checklist, and Claude's login from the app with the page to sign in at and the code field.
-  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-checklist"] },
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines/laptop",
@@ -3277,7 +3308,7 @@ export const screens: readonly Screen[] = [
       await storefront.getByText("Follows the default: the hub's fleet cap.").waitFor();
     },
   },
-  // A fleet cap the CLI set below the machines' total: no slider, a line under the list saying it and how to change it.
+  // A fleet cap the CLI set below the machines' total: no slider, a line in the machines' group saying it and how to change it.
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",

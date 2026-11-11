@@ -219,7 +219,9 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   window.location.hash = "#/settings/hub/machines";
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
-  expect(host.querySelector("section[aria-label=\"This hub's machines\"]")).not.toBeNull();
+  // The page's plus is the way to add one; this hub has none yet, and the list says so.
+  expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
+  expect(host.textContent).toContain("No machines yet. Add one with the plus above.");
   expect(parts()).toEqual(["hub.recordings"]);
 
   await click(button("Hub accounts", nav() ?? document));
@@ -237,7 +239,7 @@ it("gathers what reaches every project on Every project's pages, and saves its i
   await settle();
   // The old shared memory shows only while it has text: this hub's has none.
   expect(parts()).toEqual(["hub.instructions", "builtin-prompts"]);
-  expect(host.querySelector("section[aria-label=\"This hub's machines\"]")).toBeNull();
+  expect(host.querySelector("button[aria-label='Add machine']")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");
   await type(text, "Write tests first.");

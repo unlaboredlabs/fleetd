@@ -15,8 +15,11 @@ breaks a rule changes this page in the same PR and says why.
   - a row is a title in regular weight, an optional quiet line, and **one control at its right end** (`SettingsRow`);
     a row that holds a list or a form puts it under its title, full width;
   - a switch's own words are its row (`SwitchRow`), so nothing is said twice; three short choices are a segmented control;
-  - a list row is a glyph, the name with a quiet word beside it, quiet lines under it, and its controls; its state is
-    the word itself, coloured, never a dot (`SettingsListRow`); a row that opens a page trails a chevron;
+  - a list row is the name with a quiet word beside it, quiet lines under it, and its controls, with a glyph before
+    it only where the glyph tells rows apart; its state is the word itself, coloured (`SettingsListRow`). A row that
+    opens a page trails a chevron, and when all it has to say is that it needs someone, it says so with one dot at
+    its end in the warning's colour, why in its tooltip (`needs`: a machine that is offline or wants a login), never
+    a dot and a word;
   - **add is a plus** (`AddButton`), at the end of its row or section label; **danger is one red pill**
     (`DangerButton`, `--danger-fill`), and what it does is confirmed in a dialog;
   - **Save shows once there is something to save**, and a control that can't be used says why in its row's line;
@@ -40,7 +43,8 @@ breaks a rule changes this page in the same PR and says why.
   - done: settled to the floor (the bottom row lit)
   - failed: a cross
 - One dot is fine where it is the whole message (an unread chat, or one that waits on you in the warning's colour, why
-  in its tooltip: the sidebar's rows). Never a dot beside a word that already says it.
+  in its tooltip: the sidebar's rows; a Settings list row whose page has the rest, as a machine's does). Never a dot
+  beside a word that already says it.
 - A sent message's receipt is a mark beside the bubble, its words in the tooltip: the open ring while the lead hasn't
   taken it, a plain check once it has. Never a sentence under the bubble unless there is something to do.
 - **No halo, pulse or glow** on any mark.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { checklistOf, fixPlace, removeLine, repairOf, statusLine } from "./machines";
+import { checklistOf, fixPlace, needsOf, removeLine, repairOf, statusWords } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -19,15 +19,25 @@ describe("Administration › Machines' model", () => {
     expect(repairOf("laptop", undefined)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
   });
 
-  it("says under a machine that isn't online what it needs, and where", () => {
-    expect(statusLine({ name: "laptop", status: "online" })).toBeNull();
-    expect(statusLine({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in. Open laptop for the fix.");
-    expect(statusLine({ name: "laptop", status: "degraded" })).toBe("Something needs a look. Open laptop for the fix.");
-    expect(statusLine({ name: "laptop", status: "offline" })).toContain("Repair sets its node up again");
-    // An offline machine says since when: the hub last heard from it then.
-    expect(statusLine({ name: "laptop", status: "offline", lastSeenAt: "2026-10-27T10:00:00.000Z" }, Date.parse("2026-11-07T12:00:00.000Z"))).toBe(
-      "Offline since Oct 27: its node isn't connected. If the machine is on, Repair sets its node up again.",
-    );
+  it("says a machine's state in a few words: online, what the hub says is wrong, or offline since when", () => {
+    expect(statusWords({ name: "laptop", status: "online" })).toBe("Online");
+    // The hub's reason without its own "Fix: …": the page's checklist has the fix.
+    expect(statusWords({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in");
+    expect(statusWords({ name: "laptop", status: "degraded" })).toBe("Needs a look");
+    expect(statusWords({ name: "laptop", status: "offline" })).toBe("Offline");
+    // The hub last heard from it then.
+    expect(statusWords({ name: "laptop", status: "offline", lastSeenAt: "2026-10-27T10:00:00.000Z" }, Date.parse("2026-11-07T12:00:00.000Z"))).toBe("Offline since Oct 27");
+  });
+
+  it("gives a list row its dot only where the machine needs someone, with why", () => {
+    const laptop = { machineId: "laptop", name: "laptop" };
+    expect(needsOf({ ...laptop, status: "online" }, undefined)).toBeUndefined();
+    expect(needsOf({ ...laptop, status: "online" }, [check("laptop/claude_login", "ok"), check("laptop/android", "warn")])).toBeUndefined();
+    // Online, but a check of its own failed; another machine's doesn't mark it.
+    expect(needsOf({ ...laptop, status: "online" }, [check("laptop/claude_login", "fail", "claude is not logged in")])).toBe("Claude: claude is not logged in");
+    expect(needsOf({ ...laptop, status: "online" }, [check("devbox/claude_login", "fail")])).toBeUndefined();
+    expect(needsOf({ ...laptop, status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" }, [])).toBe("Claude is not logged in");
+    expect(needsOf({ ...laptop, status: "offline" }, undefined)).toBe("Offline");
   });
 
   it("says where a fix runs as the hub says: the machine, or the hub's machine", () => {

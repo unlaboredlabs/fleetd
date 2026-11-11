@@ -16,7 +16,7 @@ import { RunOn } from "../setup/Guide";
 import { navigate } from "../shell/navigation";
 import { GroupNote, SettingsRow } from "./parts";
 import { capChoices, hostsNote, sessionsLine } from "./machinesModel";
-import { daysChoices, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
+import { daysChoices, elsewhereLine, fixOf, idleLine, kindsOf, lockedWhy, nodeWait, stateLine, switchOn } from "./screensModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -75,6 +75,8 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
   const note = hostsNote(m);
   return (
     <div data-screens={m.machineId}>
+      {/* Offline is the one reason a switch can't move that its line doesn't already say: said once, over them all. */}
+      {m.online ? null : <GroupNote>{`${m.name} is offline: these change once it's back.`}</GroupNote>}
       {kinds.map(({ host, label }) => {
         const c = check(host);
         const locked = lockedWhy(m, c);
@@ -83,8 +85,7 @@ export function MachineScreens({ machine: m }: { machine: MachineRolesEntry }) {
           <SettingsRow
             key={host}
             title={label}
-            // Offline is the one reason a switch can't move that its line doesn't already say (the rest are below).
-            line={m.online ? stateLine(c) : `${stateLine(c)}. ${m.name} is offline: it changes once it's back.`}
+            line={elsewhereLine(m, host, c) ?? stateLine(c)}
             control={<Toggle checked={switchOn(c)} disabled={kind.disabled || locked !== null} onCheckedChange={(on) => kind.set({ host, on })} aria-label={`${label} screens on ${m.name}`} />}
           >
             {fix === null ? null : <RunOn where={`${m.name}, for ${label}`} command={fix} />}

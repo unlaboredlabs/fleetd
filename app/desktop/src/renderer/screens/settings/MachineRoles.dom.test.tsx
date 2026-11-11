@@ -125,7 +125,9 @@ it("shows each machine's role in plain words", async () => {
   await render();
   const box = row("devbox");
   expect(pressed(box)).toBe("Both");
-  expect(box?.textContent).toContain("Runs agents and hosts screens, its own agents' first.");
+  // What it does as chosen is the row's title; the rest of it is the quiet line under.
+  expect(box?.textContent).toContain("Runs agents and hosts screens");
+  expect(box?.textContent).toContain("Its own agents' screens come first.");
   expect(pressed(row("mac1"))).toBe("Screens");
 });
 

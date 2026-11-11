@@ -1,6 +1,6 @@
 import { ChevronRight, Plus } from "lucide-react";
 import { createContext, useContext, useId, type ReactNode } from "react";
-import { Button, cx, Dialog, FrameTitle, Text, Toggle, type ButtonProps, type TextTone } from "../../ui";
+import { Button, cx, Dialog, Dot, FrameTitle, Text, Toggle, type ButtonProps, type TextTone } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
@@ -192,9 +192,10 @@ export function SwitchRow(props: {
 
 /**
  * One row of a list in a group (People, Machines, Devices, a project's repos): a glyph, the name with what it is beside
- * it, quiet lines under it, and its controls at the right end. A state is its word, coloured (`state`), never a dot.
- * With `open`, the whole row opens what it names, and a chevron trails it; a row that unfolds rows under it instead
- * says so with `expanded`, and its chevron turns down while they show.
+ * it, quiet lines under it, and its controls at the right end. A state is its word, coloured (`state`). A row that
+ * only needs someone says so with one dot at its end instead (`needs`), why in its tooltip, as the sidebar's rows
+ * do; never both. With `open`, the whole row opens what it names, and a chevron trails it; a row that unfolds rows
+ * under it instead says so with `expanded`, and its chevron turns down while they show.
  */
 export function SettingsListRow(props: {
   name: ReactNode;
@@ -204,6 +205,8 @@ export function SettingsListRow(props: {
   /** A quiet word beside the name ("you", a role). */
   meta?: ReactNode | undefined;
   state?: { word: string; tone: TextTone } | undefined;
+  /** In place of `state`: why the row needs someone, as one dot at the row's end; the words are its name and the row's tooltip. */
+  needs?: string | undefined;
   children?: ReactNode | undefined;
   controls?: ReactNode | undefined;
   open?: { href: string } | { onClick: () => void } | undefined;
@@ -224,11 +227,11 @@ export function SettingsListRow(props: {
           {props.open === undefined ? (
             name
           ) : "href" in props.open ? (
-            <a className={g.opener} href={props.open.href}>
+            <a className={g.opener} href={props.open.href} title={props.needs}>
               {name}
             </a>
           ) : (
-            <button type="button" className={g.opener} aria-expanded={props.expanded} onClick={props.open.onClick}>
+            <button type="button" className={g.opener} aria-expanded={props.expanded} onClick={props.open.onClick} title={props.needs}>
               {name}
             </button>
           )}
@@ -243,8 +246,13 @@ export function SettingsListRow(props: {
         </div>
         {props.children}
       </div>
-      {props.controls === undefined && props.open === undefined ? null : (
+      {props.controls === undefined && props.open === undefined && props.needs === undefined ? null : (
         <div className={g.control}>
+          {props.needs === undefined ? null : (
+            <span className={g.needs}>
+              <Dot color="var(--warning)" label={props.needs} />
+            </span>
+          )}
           {props.controls}
           {props.open === undefined ? null : <ChevronRight className={g.chevron} data-open={props.expanded === true ? "" : undefined} aria-hidden />}
         </div>
