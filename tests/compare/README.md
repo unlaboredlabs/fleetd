@@ -73,7 +73,10 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   write, whatever its annotation), then the other writes with the team's own ids, then the ones that take away what
   others need (`person_remove`, `invite_revoke`, `device_revoke`), each only on what the run made: the invited person
   and invite, and a spare device key (`areas-spare`: `key` makes the same person more than one), never the caller
-  or the key it calls with. The CLI's and `/app`'s rows are skipped.
+  or the key it calls with. Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub
+  keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`, `hub_info` or
+  `people_list` first), and a call of a name the team doesn't list, which must come back as an `error` with the call's
+  id; each frame decoded as `AppServerMessage`. The CLI's rows are skipped.
 
 A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
 unless `--bin` gives one:
