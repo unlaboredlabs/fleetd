@@ -1322,7 +1322,8 @@ export class Train {
     if (ruleRefusal(message)) {
       // A rule no retry satisfies: said once, with GitHub's words, and left with its author.
       this.mergeRefusals.delete(inCi.changeId);
-      const rule = `${why}${RULE_HELD}`;
+      // The note keeps its end however long GitHub's words are: an enqueue reads it (`enqueueFrom`).
+      const rule = `${[...why].slice(0, 1800).join("")}${RULE_HELD}`;
       this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ci_failed", lastError: errorText(rule) }));
       await this.wakeLead(inCi.projectRef, prNote(inCi.changeId, inCi.prUrl, `not merged: ${rule}. The train won't try again by itself; once the rule or the PR has changed, call \`change_enqueue\` for it again`));
       return;
