@@ -150,6 +150,45 @@ describe("the Decisions pane", () => {
     expect([...host.querySelectorAll("[data-decision='revoked']")].map((r) => r.textContent)).toEqual([expect.stringContaining("8080")]);
   });
 
+  it("lists the revoked ones under a plain label while a search narrows the list, and leaves their fold as you left it", async () => {
+    const gone: Decision = { ...health, decisionId: "D9", key: "api.port", value: "8080", state: "retired", retired: { by: "human:desk", at: "2026-10-19T11:00:00.000Z", why: "moved" } };
+    await mount(() => ({ ok: true, output: { ...LIST, decisions: [...LIST.decisions, gone] } }));
+    const fold = () => host.querySelector<HTMLButtonElement>("[data-group-label] button[aria-expanded]");
+    const revoked = () => [...host.querySelectorAll("[data-decision='revoked']")].map((r) => r.textContent);
+    expect(fold()?.getAttribute("aria-expanded")).toBe("false");
+
+    const search = host.querySelector<HTMLInputElement>("input[type=search]");
+    if (search === null) throw new Error("no search");
+    // "balancer" is the why of both /healthz and the revoked 8080.
+    type(search, "balancer");
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["In force1", "Revoked1"]);
+    expect(revoked()).toEqual([expect.stringContaining("8080")]);
+    // Nothing to click that would do nothing: the label is no button while the list is narrowed.
+    expect(fold()).toBeNull();
+    expect(host.querySelector("[aria-label='Revoked'] [role='heading']")?.textContent).toBe("Revoked");
+
+    // Cleared, the fold is back, closed as it was left.
+    type(search, "");
+    expect(fold()?.getAttribute("aria-expanded")).toBe("false");
+    expect(revoked()).toEqual([]);
+
+    // And open as it was left: unfolded, searched, cleared.
+    act(() => fold()?.click());
+    type(search, "balancer");
+    expect(fold()).toBeNull();
+    type(search, "");
+    expect(fold()?.getAttribute("aria-expanded")).toBe("true");
+    expect(revoked()).toEqual([expect.stringContaining("8080")]);
+  });
+
+  it("lists the revoked ones under a plain label when nothing is in force", async () => {
+    const gone: Decision = { ...health, state: "retired", retired: { by: "human:desk", at: "2026-10-19T11:00:00.000Z", why: "moved" } };
+    await mount(() => ({ ok: true, output: { decisions: [gone], orders: [] } }));
+    expect([...host.querySelectorAll("[data-group-label]")].map((l) => l.textContent)).toEqual(["Revoked1"]);
+    expect(host.querySelector("[data-group-label] button")).toBeNull();
+    expect(host.querySelectorAll("[data-decision='revoked']")).toHaveLength(1);
+  });
+
   it("opens a row to its why and what it replaced", async () => {
     await mount(() => ({ ok: true, output: LIST }));
     act(() => button(/adyen/u).click());

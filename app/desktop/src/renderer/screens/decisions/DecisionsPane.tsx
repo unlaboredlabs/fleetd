@@ -180,9 +180,10 @@ interface ListProps {
 function List({ threads, cut, open, onToggle, onClear, onChanged, fold }: ListProps) {
   // "14:02" turns into "Mon 14:02" as days pass: a minute's step is enough.
   const nowMs = useNow(true, 60_000);
-  // Revoked ones fold away, and open by themselves while a search or filter narrows the list or nothing is in force.
+  // Revoked ones fold away. While a search or filter narrows the list, or nothing is in force, they are simply listed
+  // under a plain label: a fold that couldn't close would be a dead click, and would flip the fold you left for later.
   const [unfolded, toggleRevoked] = useFold(`decisions:${fold}:revoked`);
-  const revokedOpen = unfolded || onClear !== undefined || threads.every((t) => !t.live);
+  const listed = onClear !== undefined || threads.every((t) => !t.live);
   if (threads.length === 0) {
     return (
       <div className={s.paneNote}>
@@ -214,8 +215,8 @@ function List({ threads, cut, open, onToggle, onClear, onChanged, fold }: ListPr
       )}
       {revoked.length === 0 ? null : (
         <section aria-label="Revoked">
-          <FoldLine label="Revoked" count={revoked.length} open={revokedOpen} onToggle={toggleRevoked} />
-          {revokedOpen ? rows(revoked) : null}
+          {listed ? <GroupLabel label="Revoked" count={revoked.length} /> : <FoldLine label="Revoked" count={revoked.length} open={unfolded} onToggle={toggleRevoked} />}
+          {listed || unfolded ? rows(revoked) : null}
         </section>
       )}
       {cut ? <ListNote>Only the most recent decisions are here.</ListNote> : null}
