@@ -76,7 +76,7 @@ Every lead gets these.
 | [`confirm_step`](#confirm_step) | A lead's call, right before the final Confirm or Submit click on a site that doesn't pay or order (booking a table, cancelling a subscription, sending a form, an expense, a return, a post): site, the button's label, what clicking it does, the page's details and a screenshot from chat_file. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
-| [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
+| [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line, and people's reviews on GitHub still open on them (people). | No |
 | [`chat_file`](#chat_file) | Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`artifact_read`](#artifact_read) | Read a report published in this project (publish_artifact), yours or another agent's or the lead's: its Markdown or HTML source as published, with its title, who published it and every version kept. | No |
@@ -882,7 +882,7 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 
 ### review_read
 
-Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line, and people's reviews on GitHub still open on them (people). pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1285,7 +1285,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`agent_message`](#agent_message) | Write to one to five other agents of your project by id (to: [T&lt;n>]; `agents` lists them): an overlap, your PR's number, a finding they need. | No |
 | [`wait_ci`](#wait_ci) | Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. | No |
-| [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
+| [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line, and people's reviews on GitHub still open on them (people). | No |
 | [`chat_file`](#chat_file-task) | Put a file you made in this project's chat: a screenshot of a UI change (instead of a link), a PDF, a CSV, a document. | No |
 | [`publish_artifact`](#publish_artifact-task) | Publish a report for the human: Markdown (format md) or a whole HTML page (html), too long or too rich for a chat message, such as a sweep's findings or a chart. | No |
 | [`artifact_read`](#artifact_read-task) | Read a report published in this project (publish_artifact), yours or another agent's or the lead's: its Markdown or HTML source as published, with its title, who published it and every version kept. | No |
@@ -1439,7 +1439,7 @@ Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current
 
 ### review_read (task)
 
-Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line, and people's reviews on GitHub still open on them (people). pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR it reviews, and a lead its project's PRs in the merge queue. A task may name any PR of its project (one it builds on, say), a reviewer only the PR it reviews. Another project's reviews are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

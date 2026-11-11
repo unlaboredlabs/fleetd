@@ -14,6 +14,12 @@
 // fleetd tools failed is not counted against `RETRIES`: a new one starts after a doubling wait, or at once after any
 // review records a verdict. The lead resolving blocking findings without a new patch enqueues the Change again: those
 // findings count no more (`resolved`), and a fresh full review of the same patch starts.
+//
+// People's reviews on GitHub (people.ts) hold a Change as blocking findings do: a clean patch is ready only once a read
+// at most `FRESH_MS` old shows none of theirs open. Each new one goes to the author task as review findings, and one that
+// opens while the Change is in the train sends it back to review, and a held Change's re-review never rides the train
+// (`rereview`). The hold lifts when GitHub says it is answered: the person approved, or their review was dismissed, or
+// their threads were resolved. Each verdict is also posted on the PR (post.ts).
 import type { Database } from "bun:sqlite";
 import type { Change, ChangeReview } from "../../shared/contracts.ts";
 import { prNote, prReviewNotRecorded, prReviewStalled } from "../train/events.ts";
@@ -21,7 +27,10 @@ import type { TrainGitHub } from "../train/github.ts";
 import type { EventView, TrainHost } from "../train/host.ts";
 import { Mutex } from "../train/mutex.ts";
 import { short } from "../train/rules.ts";
-import type { ReviewGate, Train, Verdict } from "../train/service.ts";
+import { reviewed } from "../train/batch.ts";
+import { fixYourPr, type ReviewGate, type Train, type Verdict } from "../train/service.ts";
+import { findingsText, FRESH_MS, holdWhy, PEOPLE_HOLD, People, type PersonFinding, POLL_MS, WATCHED } from "./people.ts";
+import { postVerdict } from "./post.ts";
 import { compare, type Rebase } from "./rebase.ts";
 import {
   type BoundReview,
@@ -73,11 +82,16 @@ export class Reviews implements ReviewGate {
   /** The patches whose lead heard that their reviewer's tools failed. */
   private readonly toldBroken = new Set<string>();
   private readonly stopped = new AbortController();
+  readonly people: People;
+  /** The verdicts being posted on their PRs, one after another. */
+  private posting: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly host: TrainHost,
     private readonly train: Train,
-  ) {}
+  ) {
+    this.people = new People(train);
+  }
 
   private get db(): Database {
     return this.train.records.db.conn;
@@ -115,6 +129,87 @@ export class Reviews implements ReviewGate {
         }
       }
     })();
+    void (async () => {
+      while (!this.stopped.signal.aborted) {
+        try {
+          await this.peoplePass();
+        } catch (error) {
+          console.warn("reviews: people's reviews pass failed:", error);
+        }
+        await this.train.options.sleep(POLL_MS);
+      }
+    })();
+  }
+
+  /** Reads people's reviews on every train's PRs that are due, and acts on what each read found. */
+  async peoplePass(): Promise<void> {
+    for (const t of this.train.records.trains()) {
+      if (!(await this.people.read(t.repo, FRESH_MS))) continue;
+      for (const change of this.train.records.inTrain(t.repo, WATCHED)) {
+        await this.lock.run(() => this.afterPeopleRead(change.changeId));
+      }
+    }
+  }
+
+  /**
+   * New findings of people's go to the writer; open ones send a reviewed Change in the train back to review (one whose
+   * re-review still runs is sent back by the gate, when the train asks it); answered, it is ready.
+   */
+  private async afterPeopleRead(changeId: string): Promise<void> {
+    const change = this.train.records.get(changeId);
+    if (!change || !WATCHED.includes(change.state)) return;
+    const open = this.people.open(change.prUrl);
+    if (open.length > 0 && ["ready", "rebasing", "ci", "merging"].includes(change.state) && reviewed(change)) {
+      this.train.toReview(change, `${PEOPLE_HOLD}${holdWhy(open)}`);
+    }
+    await this.sendPeople(change, open);
+    if (open.length === 0 && change.state === "reviewing" && change.lastError?.startsWith(PEOPLE_HOLD)) {
+      this.note(change.changeId, "people's reviews on GitHub are answered");
+      await this.evaluate(change.changeId);
+    }
+  }
+
+  /** People's findings on the Change's PR not sent yet go to its author task, as the reviewer's blocking ones do. */
+  private async sendPeople(change: Change, open: PersonFinding[]): Promise<void> {
+    const fresh = this.people.unsent(change.prUrl, open);
+    if (fresh.length === 0) return;
+    const why = `${PEOPLE_HOLD}${holdWhy(open)}`;
+    const author = change.taskId;
+    if (author === undefined) {
+      this.people.markSent(change.prUrl, fresh);
+      return this.holdNote(change, `${why}; no author task to send them to`);
+    }
+    const problem = `people reviewed it on GitHub: ${holdWhy(fresh)}`;
+    const text = fixYourPr(this.train.prompts.forTask(change.projectRef, author), change, problem, findingsText(change, fresh));
+    try {
+      await this.host.messageTask(change.projectRef, REVIEWS_BY, author, text);
+    } catch (error) {
+      return this.holdNote(change, `${why}; sending them to ${author} failed: ${(error as Error).message}`);
+    }
+    this.people.markSent(change.prUrl, fresh);
+    this.holdNote(change, `${why}; sent to ${author}`);
+  }
+
+  /**
+   * The hold's note on a Change in review, unless the reviewer's blocking findings already say why it waits. Anywhere
+   * else its note is the train's own (a failed or timed-out CI, a conflict), which the train reads back.
+   */
+  private holdNote(change: Change, text: string): void {
+    const now = this.train.records.get(change.changeId);
+    if (now?.state === "reviewing" && !now.lastError?.startsWith(BLOCKED)) this.note(change.changeId, text);
+  }
+
+  /** `v`, a ready verdict, unless people's reviews on GitHub hold the Change: then pending in review, else blocked. */
+  private async unlessHeld(change: Change, v: Verdict): Promise<Verdict> {
+    await this.people.read(change.repo, FRESH_MS);
+    const open = this.people.open(change.prUrl);
+    if (open.length === 0) return v;
+    await this.sendPeople(change, open);
+    const why = `${PEOPLE_HOLD}${holdWhy(open)}`;
+    if (!this.train.records.get(change.changeId)?.lastError?.startsWith(why)) this.holdNote(change, why);
+    // In review it waits there; in the train, `blocked` sends it back to review rather than holding the line.
+    const state = this.train.records.get(change.changeId)?.state ?? change.state;
+    return state === "reviewing" ? { kind: "pending" } : { kind: "blocked" };
   }
 
   /** Whether the review gate spawned this task. */
@@ -385,7 +480,7 @@ export class Reviews implements ReviewGate {
   private async round(change: Change, patchId: string): Promise<Verdict> {
     await this.supersede(change, patchId);
     const [before, reviews] = this.gateFor(change, patchId);
-    if (before.ready) return { kind: "ready", reviews };
+    if (before.ready) return this.unlessHeld(change, { kind: "ready", reviews });
     if (before.waitingForHead) return { kind: "blocked" };
     const rounds = this.rounds(change.changeId, patchId);
     // One still at work owes the verdict.
@@ -393,7 +488,7 @@ export class Reviews implements ReviewGate {
     const lastRound = rounds.at(-1);
     if (!lastRound) {
       if (!this.resolvedOn(change.changeId, patchId) && (await this.carried(change, patchId))) {
-        return { kind: "ready", reviews: this.gateFor(change, patchId)[1] };
+        return this.unlessHeld(change, { kind: "ready", reviews: this.gateFor(change, patchId)[1] });
       }
       await this.spawnReviewer(change, patchId);
       return { kind: "pending" };
@@ -488,12 +583,12 @@ export class Reviews implements ReviewGate {
     return this.lock.run(async () => (change.patchId === undefined ? { kind: "pending" } : this.round(change, change.patchId)));
   }
 
-  /** Marks the Change ready once its current patch has a clean review. */
-  private evaluate(changeId: string): void {
+  /** Marks the Change ready once its current patch has a clean review and people's reviews hold it no more. */
+  private async evaluate(changeId: string): Promise<void> {
     const change = this.train.records.get(changeId);
     if (!change || change.state !== "reviewing" || change.patchId === undefined) return;
     const [g, reviews] = this.gateFor(change, change.patchId);
-    if (!g.ready) return;
+    if (!g.ready || (await this.unlessHeld(change, { kind: "ready", reviews })).kind !== "ready") return;
     try {
       this.train.markReady(changeId, reviews);
     } catch (error) {
@@ -535,6 +630,7 @@ export class Reviews implements ReviewGate {
     this.train.reviewRecorded();
     // Findings on an older patch were already overtaken by a new head, unless its approval carried to this one.
     patchId = carriedTo ?? patchId;
+    if (change.patchId === patchId || change.headSha === sha) this.post(change, taskId, sha, blocking, nonBlocking);
     // Sent back mid-review, the Change keeps no patch, but its writer is at work on that very head: they go to it.
     const parked = change.state === "needs_rebase" && change.patchId === undefined && change.headSha === sha;
     if (blocking > 0 && (parked || change.patchId === patchId)) {
@@ -559,7 +655,24 @@ export class Reviews implements ReviewGate {
       }
       return;
     }
-    this.evaluate(round.changeId);
+    await this.evaluate(round.changeId);
+  }
+
+  /** Posts the verdict on the PR, after the ones before it; a refusal is logged and holds nothing. */
+  private post(change: Change, taskId: string, sha: string, blocking: number, nonBlocking: number): void {
+    const summary = this.summaryOf(taskId, sha);
+    this.posting = this.posting.then(async () => {
+      try {
+        await postVerdict(this.train.github, this.db, change, { sha, blocking, nonBlocking, summary });
+      } catch (error) {
+        console.warn(`reviews: ${taskId}'s verdict not posted on ${change.prUrl}: ${(error as Error).message}`);
+      }
+    });
+  }
+
+  /** Every verdict posted so far is on its PR, or was refused. */
+  posted(): Promise<void> {
+    return this.posting;
   }
 
   /** What `taskId` recorded at `sha`, whole. */
@@ -590,7 +703,7 @@ export class Reviews implements ReviewGate {
     const round = this.roundOf(taskId);
     if (!round) return;
     const bound = this.db.query("SELECT 1 FROM review_bindings WHERE task_id = ?1 LIMIT 1").get(taskId) !== null;
-    this.evaluate(round.changeId);
+    await this.evaluate(round.changeId);
     if (bound || round.ignored) return;
     const how = event.eventType.startsWith("task.") ? event.eventType.slice(5) : event.eventType;
     const tail = this.finalText(taskId);
@@ -613,7 +726,7 @@ export class Reviews implements ReviewGate {
       const text = `its reviewer ${taskId} couldn't use fleetd's tools to record a verdict ("${oneLine(tail, 200)}"); fleetd starts a new one by itself, and once the tools work it reviews again at once`;
       await this.host.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, text));
     }
-    if ((await this.round(change, round.patchId)).kind === "ready") this.evaluate(round.changeId);
+    if ((await this.round(change, round.patchId)).kind === "ready") await this.evaluate(round.changeId);
   }
 
   async handle(event: EventView): Promise<void> {
@@ -630,7 +743,7 @@ export class Reviews implements ReviewGate {
 
   rereview(change: Change): boolean {
     const patchId = change.patchId;
-    if (patchId === undefined) return false;
+    if (patchId === undefined || this.people.open(change.prUrl).length > 0) return false;
     return !this.gateFor(change, patchId)[0].waitingForHead && this.reviewers(change.changeId, patchId).some((t) => this.live(t));
   }
 }

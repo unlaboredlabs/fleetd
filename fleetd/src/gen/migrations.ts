@@ -157,6 +157,7 @@ import m153 from "../hub/store/migrations/202611091900_project_avatar_color.sql"
 import m154 from "../hub/store/migrations/202611092050_lead_profile_switch.sql" with { type: "text" };
 import m155 from "../hub/store/migrations/202611092223_chat_sections.sql" with { type: "text" };
 import m156 from "../hub/store/migrations/202611110954_small_settings_gone.sql" with { type: "text" };
+import m157 from "../hub/store/migrations/202611111200_review_people.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -316,4 +317,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611092050_lead_profile_switch", sql: m154 },
   { name: "202611092223_chat_sections", sql: m155 },
   { name: "202611110954_small_settings_gone", sql: m156 },
+  { name: "202611111200_review_people", sql: m157 },
 ];
