@@ -16,6 +16,8 @@ paths=(
   # The docs pages generated from the code.
   docs/site/src/content/docs/reference/cli.md docs/site/src/content/docs/reference/agent-tools.md
   docs/site/src/content/docs/what-agents-are-told.md
+  # What another repository imports (fleetd/test/pkg).
+  package.json
 )
 
 run=true

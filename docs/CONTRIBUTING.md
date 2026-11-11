@@ -89,6 +89,42 @@ main, so every hub runs them in the order a fresh one does; `scripts/check.sh` r
 onto a fresh `origin/main`. After a rebase onto a newer migration, rename yours to a later time (the merge train does it
 for you).
 
+## The package
+
+Another Bun and TypeScript repository, such as the private one for fleetd hosted, can import parts of this one at a
+commit it pins. The repo's root `package.json` is that package, and its `exports` is the whole list: each entry is a
+TypeScript source Bun runs as it is, so nothing is published or built, and a file `exports` doesn't name can't be
+imported.
+
+| Entry | What |
+|---|---|
+| `fleetd/contracts`, `fleetd/contracts/schema/<Name>.json` | the wire contract: `contracts.ts` and its JSON Schemas |
+| `fleetd/shared/<module>` | `src/shared`'s pure modules: the node link's frames (`node_link`) and tags (`wire_tags`), `ToolError` (`errors`), the rest |
+| `fleetd/tools` | the MCP tools (`src/pkg/tools.ts`): `TOOL_LIST`, each with its description, role and schemas in tools/list's order, `SCHEMAS` (McpTools.json, parsed) and `decodeInput` |
+| `fleetd/fakes/app`, `fleetd/fakes/node` | the stand-in app and node the hub's tests drive (`test/fake-app.ts`, `test/fake-node.ts`) |
+| `fleetd/gen/migrations` | the hub's migrations in order, each with its SQL |
+| `fleetd/hub/<area>/<module>` | the hub's pure modules, each at its own path under `src/hub` |
+
+An exported module is pure: neither it nor anything it imports, a type included, touches the database, the
+filesystem, a process, the network, the machine's environment, the `Hub` or an npm package (the fakes open sockets,
+nothing else). Pure isn't stateless: `Board` or `Breakers` keep state in the object, and a second server holds one per
+process as the hub does. In `fleetd/`, `bun test/pkg/purity.ts` prints where every module of `src/hub`, `src/shared`
+and `src/gen` stands: exported, pure and left out with why (`LEFT_OUT`), pure but for a type it imports, impure only
+through an import.
+
+- **Adding one.** One line in `exports`, the module at its own path. `test/pkg/purity.test.ts` fails while it or
+  anything it imports isn't pure; `test/pkg/outside.test.ts` installs the package in a throwaway project outside the
+  repo, imports every entry and typechecks it. Don't export a module by copying it: split what is pure into its own
+  file, which the hub then imports too.
+- **Changing one.** An exported module that needs the database or the `Hub` loses its line, and one that moves gets
+  its new path; say so in the PR. The other repository meets either at its next bump, where its typecheck fails.
+- **Pinning.** The other repository's `package.json` has `"fleetd": "github:unlaboredlabs/fleetd#<full commit sha>"`
+  and its `bun.lock` records it; a bump changes the sha and runs `bun install`. Bun fetches the whole repo at that
+  commit, about 190 MB in `node_modules`, most of it the site's media. Its tsconfig takes `fleetd/tsconfig.json`'s
+  compiler options, since the package's sources are checked under the importer's, and it typechecks with tsc-rs, which
+  types a `with { type: "text" }` import by itself. It reads `McpTools.json` and `LeadCall.json` as text too, as the
+  package's modules do (a bundle keeps one loader per file), or takes `SCHEMAS` from `fleetd/tools`.
+
 ## Conventions
 
 - TypeScript on Bun, checked with tsc-rs (`bun run typecheck`).
