@@ -520,6 +520,41 @@ const turnLineInCapsule = async (page: Page) => {
   if (band.atEnd) expect(band.lastBottom, `at the end, the last message ends above it: ${seen}`).toBeLessThan(band.capsule?.top ?? 0);
 };
 
+/**
+ * History's filter while it names a kind (the human's report, W621: a 24 px icon over the button's top edge with "DMs"
+ * pushed under it): its icon at the button's 14 px and its label lie inside its box on one centre line, the icon
+ * before the label, and the button is as tall as the picker under it and ends where it ends.
+ */
+const filterIsOneLine = async (page: Page) => {
+  const seen = await page.locator("[data-filter]").evaluate((button) => {
+    const box = (r: DOMRect | undefined) => (r === undefined ? undefined : { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height });
+    const label = button.querySelector("span");
+    const words = document.createRange();
+    if (label !== null) words.selectNodeContents(label);
+    return {
+      button: box(button.getBoundingClientRect()),
+      icon: box(button.querySelector("svg")?.getBoundingClientRect()),
+      words: box(label === null ? undefined : words.getBoundingClientRect()),
+      picker: box(document.querySelector('[aria-label="Whose DMs"]')?.getBoundingClientRect()),
+    };
+  });
+  const said = JSON.stringify(seen, null, 1);
+  const { button, icon, words, picker } = seen;
+  if (button === undefined || icon === undefined || words === undefined || picker === undefined) throw new Error(`the filter, its icon, its label or the picker has no box: ${said}`);
+  expect([icon.width, icon.height], `the icon's size: ${said}`).toEqual([14, 14]);
+  for (const part of [icon, words]) {
+    expect(part.top, `inside the button: ${said}`).toBeGreaterThanOrEqual(button.top);
+    expect(part.bottom, `inside the button: ${said}`).toBeLessThanOrEqual(button.bottom);
+    expect(part.left, `inside the button: ${said}`).toBeGreaterThanOrEqual(button.left);
+    expect(part.right, `inside the button: ${said}`).toBeLessThanOrEqual(button.right);
+    expect(Math.abs((part.top + part.bottom) / 2 - (button.top + button.bottom) / 2), `on the button's centre line: ${said}`).toBeLessThanOrEqual(1);
+  }
+  expect(icon.right, `the icon before the label: ${said}`).toBeLessThanOrEqual(words.left);
+  expect(button.height, `as tall as the picker: ${said}`).toBe(picker.height);
+  expect(Math.abs(button.right - picker.right), `ends where the picker ends: ${said}`).toBeLessThanOrEqual(0.5);
+  expect(button.bottom, `over the picker: ${said}`).toBeLessThanOrEqual(picker.top);
+};
+
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
@@ -1141,7 +1176,8 @@ export const screens: readonly Screen[] = [
     }, (page) => page.getByLabel("Loading the activity")),
   },
   // W533: Activity's DMs log, as the strip's count opens it, with a DM to three and the guard's refused wake opened;
-  // and All, where a pair's DMs of an hour fold into one row and the refused wake has its own line.
+  // and All, where a pair's DMs of an hour fold into one row and the refused wake has its own line. The filter names
+  // DMs there: one line in its box at every size, the panel 320 px wide in the small window and 420 in the medium.
   {
     id: "activity",
     route: `${CHAT}/activity/dms`,
@@ -1151,6 +1187,7 @@ export const screens: readonly Screen[] = [
       for (const id of ["M5", "M1"]) await page.locator(`[data-dm="${id}"] > button`).click();
       await expect(page.getByRole("definition").filter({ hasText: "wasn’t woken" })).toBeVisible();
     },
+    check: filterIsOneLine,
   },
   {
     id: "activity",

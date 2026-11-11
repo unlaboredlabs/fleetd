@@ -71,7 +71,7 @@
 .pick {
   flex: none;
   width: auto;
-  height: 22px;
+  height: var(--control);
   max-width: 40%;
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
