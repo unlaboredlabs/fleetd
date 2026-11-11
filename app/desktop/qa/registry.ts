@@ -3761,7 +3761,18 @@ export const screens: readonly Screen[] = [
     fixtures: ["integrations-approvals"],
     check: async (page) => {
       const part = page.getByRole("region", { name: "Approvals" });
-      await part.scrollIntoViewIfNeeded();
+      // A hint leaves when its page scrolls, and the page hears of a scroll a frame or more after it happened. So the
+      // scroll that brings the part into view has been heard before the title takes focus: heard after it, it closed
+      // the hint the focus had just opened.
+      await part.evaluate(
+        (el) =>
+          new Promise((heard) => {
+            const { top } = el.getBoundingClientRect();
+            el.scrollIntoView({ block: "center" });
+            if (el.getBoundingClientRect().top === top) heard(null);
+            else addEventListener("scroll", () => requestAnimationFrame(() => heard(null)), { capture: true, once: true });
+          }),
+      );
       const title = part.getByText("Approvals", { exact: true }).first();
       await title.blur();
       await title.focus();
