@@ -213,10 +213,10 @@ and again just before it marks a PR ready, so a person's review reaches the writ
 
 | On GitHub | What fleetd does |
 |---|---|
-| A review that requests changes | A blocking finding, sent to the PR's writer with who said it. The PR waits until that person approves, reviews again without requesting changes, or the review is dismissed. |
-| An unresolved review thread a person started (a line comment) | A blocking finding, sent to the writer with its file, line and who said it. Each later comment on it is sent too. The PR waits until the thread is resolved. |
+| A review that requests changes | A blocking finding, sent to the PR's writer with who said it. The PR waits until that person approves or the review is dismissed. A later review that only comments doesn't lift it, as on GitHub. |
+| An unresolved review thread a person started (a line comment) | A blocking finding, sent to the writer with its file, line and who said it. Each later comment on it is sent too, except the PR author's: the writer replies as the PR's author, so those are shown with the thread but never sent as new. The PR waits until the thread is resolved. |
 | A review that only comments, or a comment on the PR | Nothing. Only its line comments count, as threads. |
-| Anything from a bot, or posted by fleetd itself | Nothing. |
+| Anything from a bot, from someone who isn't the repo's owner, a member of its organization or a collaborator, or posted by fleetd itself | Nothing. On a public repo, a passer-by's review never reaches the writer. |
 
 The writer gets these the way it gets the agent reviewer's blocking findings, in the same message, and `review_read`
 lists the ones still open. It fixes them, pushes, and replies on each thread or on the PR. It never resolves a

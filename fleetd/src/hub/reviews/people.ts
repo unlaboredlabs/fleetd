@@ -1,7 +1,9 @@
 // People's reviews on GitHub, on the PRs in the train. One GraphQL query reads every open Change's PR of a repo (20 to
 // a query): each person's latest say on it and its review threads. A person's say is open, as GitHub counts it, while
 // their latest review that approves, requests changes or was dismissed requests changes; a thread is open while it is
-// unresolved and a person started it. Bots, and what fleetd itself posted (marked), are never a person's. A plain
+// unresolved and a person started it. A person is the repo's owner, a member of its organization or a collaborator, as
+// GitHub counts a review: anyone else's say, on a public repo, is no finding. Bots, and what fleetd itself posted
+// (marked), are never a person's. A plain
 // comment, or a review that only comments, is no finding: only its line comments are, as threads. The writer replies as
 // the PR's author, so the author's later comments on a thread are shown with it but never sent as new: nothing loops.
 //
@@ -61,6 +63,12 @@ export function isBot(author: Author): boolean {
   return login === "" || author?.__typename === "Bot" || login.endsWith("[bot]");
 }
 
+/** Whom GitHub lets review the repo: its owner, its organization's members, its collaborators. */
+const REVIEWERS = ["OWNER", "MEMBER", "COLLABORATOR"];
+
+/** A person who reviews the repo, not a bot or a passer-by. */
+const reviewer = (n: { author?: Author; authorAssociation?: unknown }) => !isBot(n.author) && REVIEWERS.includes(text(n.authorAssociation));
+
 /** What fleetd posted itself: the agent's review, the train's comments. */
 const ours = (body: string) => body.includes(REVIEW_MARK) || body.includes(TRAIN_MARK);
 
@@ -69,14 +77,14 @@ export function peopleQuery(numbers: number[]): string {
   const prs = numbers.map((n) => `p${n}: pullRequest(number: ${Math.trunc(n)}) { ...F }`).join(" ");
   return (
     `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${prs} } } ` +
-    "fragment F on PullRequest { author { login } reviews(last: 100) { nodes { databaseId state body url author { login __typename } } } " +
-    `reviewThreads(first: ${THREADS}) { nodes { isResolved isOutdated path line originalLine ` +
-    `comments(first: ${COMMENTS}) { nodes { databaseId body url author { login __typename } } } } } }`
+    "fragment F on PullRequest { author { login } reviews(last: 100) { nodes { databaseId state body url authorAssociation author { login __typename } } } " +
+    `reviewThreads(last: ${THREADS}) { nodes { isResolved isOutdated path line originalLine ` +
+    `comments(first: ${COMMENTS}) { nodes { databaseId body url authorAssociation author { login __typename } } } } } }`
   );
 }
 
-type ReviewNode = { databaseId?: unknown; state?: unknown; body?: unknown; url?: unknown; author?: Author };
-type CommentNode = { databaseId?: unknown; body?: unknown; url?: unknown; author?: Author };
+type ReviewNode = { databaseId?: unknown; state?: unknown; body?: unknown; url?: unknown; authorAssociation?: unknown; author?: Author };
+type CommentNode = { databaseId?: unknown; body?: unknown; url?: unknown; authorAssociation?: unknown; author?: Author };
 type ThreadNode = { isResolved?: unknown; isOutdated?: unknown; path?: unknown; line?: unknown; originalLine?: unknown; comments?: { nodes?: CommentNode[] } };
 type PullNode = { author?: Author; reviews?: { nodes?: ReviewNode[] }; reviewThreads?: { nodes?: ThreadNode[] } } | null;
 
@@ -98,7 +106,7 @@ export function openFindings(pull: PullNode): PersonFinding[] {
   // Each person's latest say, in the order GitHub gave the reviews: a review that only comments says nothing.
   const latest = new Map<string, ReviewNode>();
   for (const r of pull?.reviews?.nodes ?? []) {
-    if (!r || isBot(r.author) || ours(text(r.body))) continue;
+    if (!r || !reviewer(r) || ours(text(r.body))) continue;
     if (r.state === "APPROVED" || r.state === "CHANGES_REQUESTED" || r.state === "DISMISSED") latest.set(text(r.author?.login), r);
   }
   for (const [by, r] of latest) {
@@ -110,8 +118,8 @@ export function openFindings(pull: PullNode): PersonFinding[] {
     if (!t || t.isResolved !== false) continue;
     const comments = (t.comments?.nodes ?? []).filter((c): c is CommentNode => c != null);
     const first = comments[0];
-    if (!first || isBot(first.author) || ours(text(first.body))) continue;
-    const people = comments.filter((c) => !isBot(c.author) && !ours(text(c.body)) && num(c.databaseId) !== undefined);
+    if (!first || !reviewer(first) || ours(text(first.body))) continue;
+    const people = comments.filter((c) => reviewer(c) && !ours(text(c.body)) && num(c.databaseId) !== undefined);
     const author = text(pull?.author?.login);
     const sent = people.filter((c, i) => i === 0 || author === "" || text(c.author?.login) !== author);
     const line = num(t.line);

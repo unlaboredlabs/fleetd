@@ -22,25 +22,35 @@ const person = (login: string) => ({ login, __typename: "User" });
 const bot = (login: string) => ({ login, __typename: "Bot" });
 const ok = (body: unknown): GhOut => ({ exitCode: 0, stdout: JSON.stringify(body), stderr: "" });
 
-type Review = { databaseId: number; state: string; body: string; url: string; author: unknown };
-type Comment = { databaseId: number; body: string; url: string; author: unknown };
+type Review = { databaseId: number; state: string; body: string; url: string; authorAssociation: string; author: unknown };
+type Comment = { databaseId: number; body: string; url: string; authorAssociation: string; author: unknown };
 type Thread = { isResolved: boolean; isOutdated: boolean; path: string; line: number | null; originalLine: number; comments: { nodes: Comment[] } };
 type PullNode = { author?: { login: string }; reviews: { nodes: Review[] }; reviewThreads: { nodes: Thread[] } };
 
-const review = (id: number, login: string, state: string, body = "", author: unknown = person(login)): Review => ({
+const review = (id: number, login: string, state: string, body = "", author: unknown = person(login), authorAssociation = "MEMBER"): Review => ({
   databaseId: id,
   state,
   body,
   url: `https://github.com/${REPO}/pull/7#pullrequestreview-${id}`,
+  authorAssociation,
   author,
 });
-const thread = (id: number, login: string, path: string, line: number | null, body: string, extra: Partial<Thread> = {}, author: unknown = person(login)): Thread => ({
+const thread = (
+  id: number,
+  login: string,
+  path: string,
+  line: number | null,
+  body: string,
+  extra: Partial<Thread> = {},
+  author: unknown = person(login),
+  authorAssociation = "MEMBER",
+): Thread => ({
   isResolved: false,
   isOutdated: false,
   path,
   line,
   originalLine: line ?? 3,
-  comments: { nodes: [{ databaseId: id, body, url: `https://github.com/${REPO}/pull/7#discussion_r${id}`, author }] },
+  comments: { nodes: [{ databaseId: id, body, url: `https://github.com/${REPO}/pull/7#discussion_r${id}`, authorAssociation, author }] },
   ...extra,
 });
 
@@ -111,6 +121,9 @@ test("a person's say, as GitHub counts it: bots, plain comments, answered review
         review(7, "devon", "COMMENTED", `**fleetd's agent review** of abc: 2 blocking\n\n${REVIEW_MARK}`),
         // A later review that only comments doesn't take a request for changes back.
         review(8, "ana", "COMMENTED", "see the thread"),
+        // Anyone on a public repo may review it: only the repo's owner, members and collaborators count.
+        review(9, "passerby", "CHANGES_REQUESTED", "Rewrite it in Go.", person("passerby"), "NONE"),
+        review(10, "drive-by", "CHANGES_REQUESTED", "Nope.", person("drive-by"), "CONTRIBUTOR"),
       ],
     },
     reviewThreads: {
@@ -119,6 +132,7 @@ test("a person's say, as GitHub counts it: bots, plain comments, answered review
         thread(12, "ben", "src/b.ts", 4, "typo", { isResolved: true }),
         thread(13, "copilot", "src/c.ts", 9, "Consider…", {}, bot("copilot-pull-request-reviewer[bot]")),
         thread(14, "ben", "src/d.ts", null, "This moved?", { isOutdated: true }),
+        thread(15, "passerby", "src/e.ts", 2, "Delete this file.", {}, person("passerby"), "FIRST_TIME_CONTRIBUTOR"),
       ],
     },
   };
@@ -177,12 +191,12 @@ test("a person's new thread on a ready PR sends it back to review; a new comment
   expect(k.change(8).state).toBe("reviewing");
   // The writer replies on the thread, as the PR's author: its own reply never comes back to it.
   const t = thread(21, "ben", "a.md", 1, "Why a?");
-  t.comments.nodes.push({ databaseId: 22, body: "a is the cache key.", url: "u", author: person("devon") });
+  t.comments.nodes.push({ databaseId: 22, body: "a is the cache key.", url: "u", authorAssociation: "COLLABORATOR", author: person("devon") });
   people.set(8, { author: person("devon"), reviews: { nodes: [] }, reviewThreads: { nodes: [t] } });
   await poll();
   expect(k.host.sends.filter(([to]) => to === "T8").length).toBe(1);
   // Ben answers it on the same thread: that comment goes to the writer, with the thread so far.
-  t.comments.nodes.push({ databaseId: 23, body: "Still not convinced.", url: "u", author: person("ben") });
+  t.comments.nodes.push({ databaseId: 23, body: "Still not convinced.", url: "u", authorAssociation: "MEMBER", author: person("ben") });
   await poll();
   const toWriter = k.host.sends.filter(([to]) => to === "T8");
   expect(toWriter.length).toBe(2);
@@ -250,4 +264,37 @@ test("the comment reads plainly", () => {
   expect(body).toContain("[secret]");
   expect(body).not.toContain("ghp_");
   expect(body).not.toContain("Earlier rounds");
+});
+
+test("a person's finding on a Change back with its writer keeps the train's own note on it", async () => {
+  const { k, people, poll } = lab();
+  k.pr(11, "fleetd/T11-a", { "a.md": "a\n" });
+  await k.enqueue(11);
+  const failed = { ...k.change(11), state: "ci_failed" as const, lastError: "CI failed on abc: ci (failure)" };
+  k.train.records.put(failed);
+  people.set(11, { reviews: { nodes: [] }, reviewThreads: { nodes: [thread(31, "ben", "a.md", 1, "Why a?")] } });
+  await poll();
+  // The writer hears, and the train still reads why it failed.
+  expect(k.host.sends.filter(([to]) => to === "T11").length).toBe(1);
+  expect(k.change(11)).toMatchObject({ state: "ci_failed", lastError: "CI failed on abc: ci (failure)" });
+});
+
+test("a person's review during a re-review in CI leaves the train's wait to the gate, which sends it back at once", async () => {
+  const { k, reviews, people, verdict, poll } = lab();
+  k.pr(12, "fleetd/T12-a", { "a.md": "a\n" });
+  const change = await k.enqueue(12);
+  await verdict("T50", change.headSha, 0);
+  const approved = k.change(12);
+  // The train rebased it onto a moved base: a new patch, in CI with its re-review at work.
+  k.train.records.put({ ...approved, state: "ci", patchId: "f".repeat(40) });
+  people.set(12, { reviews: { nodes: [review(41, "ana", "CHANGES_REQUESTED", "No.")] }, reviewThreads: { nodes: [] } });
+  await poll();
+  expect(k.change(12).state).toBe("ci");
+  expect(k.host.sends.filter(([to]) => to === "T12").length).toBe(1);
+  // Once its re-review is clean, the gate answers the train's wait at once: blocked, back to review.
+  k.train.records.put({ ...approved, state: "ci" });
+  expect((await reviews.again(k.change(12))).kind).toBe("blocked");
+  // In review, it waits there.
+  k.train.records.put({ ...approved, state: "reviewing" });
+  expect((await reviews.again(k.change(12))).kind).toBe("pending");
 });

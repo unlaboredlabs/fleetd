@@ -27,6 +27,7 @@ import type { TrainGitHub } from "../train/github.ts";
 import type { EventView, TrainHost } from "../train/host.ts";
 import { Mutex } from "../train/mutex.ts";
 import { short } from "../train/rules.ts";
+import { reviewed } from "../train/batch.ts";
 import { fixYourPr, type ReviewGate, type Train, type Verdict } from "../train/service.ts";
 import { findingsText, FRESH_MS, holdWhy, PEOPLE_HOLD, People, type PersonFinding, POLL_MS, WATCHED } from "./people.ts";
 import { postVerdict } from "./post.ts";
@@ -150,12 +151,15 @@ export class Reviews implements ReviewGate {
     }
   }
 
-  /** New findings of people's go to the writer; open ones send a Change in the train back to review; answered, it is ready. */
+  /**
+   * New findings of people's go to the writer; open ones send a reviewed Change in the train back to review (one whose
+   * re-review still runs is sent back by the gate, when the train asks it); answered, it is ready.
+   */
   private async afterPeopleRead(changeId: string): Promise<void> {
     const change = this.train.records.get(changeId);
     if (!change || !WATCHED.includes(change.state)) return;
     const open = this.people.open(change.prUrl);
-    if (open.length > 0 && ["ready", "rebasing", "ci", "merging"].includes(change.state)) {
+    if (open.length > 0 && ["ready", "rebasing", "ci", "merging"].includes(change.state) && reviewed(change)) {
       this.train.toReview(change, `${PEOPLE_HOLD}${holdWhy(open)}`);
     }
     await this.sendPeople(change, open);
@@ -186,9 +190,13 @@ export class Reviews implements ReviewGate {
     this.holdNote(change, `${why}; sent to ${author}`);
   }
 
-  /** The hold's note, unless the reviewer's blocking findings already say why the Change waits. */
+  /**
+   * The hold's note on a Change in review, unless the reviewer's blocking findings already say why it waits. Anywhere
+   * else its note is the train's own (a failed or timed-out CI, a conflict), which the train reads back.
+   */
   private holdNote(change: Change, text: string): void {
-    if (!this.train.records.get(change.changeId)?.lastError?.startsWith(BLOCKED)) this.note(change.changeId, text);
+    const now = this.train.records.get(change.changeId);
+    if (now?.state === "reviewing" && !now.lastError?.startsWith(BLOCKED)) this.note(change.changeId, text);
   }
 
   /** `v`, a ready verdict, unless people's reviews on GitHub hold the Change: then pending in review, else blocked. */
@@ -198,9 +206,10 @@ export class Reviews implements ReviewGate {
     if (open.length === 0) return v;
     await this.sendPeople(change, open);
     const why = `${PEOPLE_HOLD}${holdWhy(open)}`;
-    if (!this.train.records.get(change.changeId)?.lastError?.startsWith(why)) this.note(change.changeId, why);
+    if (!this.train.records.get(change.changeId)?.lastError?.startsWith(why)) this.holdNote(change, why);
     // In review it waits there; in the train, `blocked` sends it back to review rather than holding the line.
-    return change.state === "reviewing" ? { kind: "pending" } : { kind: "blocked" };
+    const state = this.train.records.get(change.changeId)?.state ?? change.state;
+    return state === "reviewing" ? { kind: "pending" } : { kind: "blocked" };
   }
 
   /** Whether the review gate spawned this task. */
