@@ -167,6 +167,17 @@ it("reads only the chosen kind, names it on the filter, and says so when there a
   expect(filter()?.textContent).toBe("");
 });
 
+// The human's report (W621): the icon lay inside the label, where the button's 14 px doesn't reach it, so it drew at
+// its own 24 px over the button's edge with the kind's name pushed under it.
+it("keeps the filter's icon the button's own, beside its label and never in it, with a kind named or not", async () => {
+  await mount(() => page(FIRST));
+  const parts = () => [...(filter()?.children ?? [])].map((c) => c.tagName.toLowerCase());
+  expect(parts()).toEqual(["svg"]);
+  await choose("Asks you");
+  expect(parts()).toEqual(["svg", "span"]);
+  expect(filter()?.querySelector("span")?.innerHTML).toBe("Asks you");
+});
+
 it("puts a streamed event on top without reading again, and counts it unread until the feed shows it", async () => {
   const send = await mount(() => page(FIRST));
   const before = reads.length;

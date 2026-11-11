@@ -46,6 +46,10 @@
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
+/* The filter while it names a kind is a bordered box: its end on the line the picker and the rows under it end on. */
+.named {
+  margin-right: var(--space-2);
+}
 
 .liveness {
   flex: none;

@@ -141,8 +141,16 @@ function Feed({ project, dms }: { project: ProjectKey; dms: boolean }) {
         <Menu>
           <Tooltip content="Show one kind of event">
             <MenuTrigger asChild>
-              <Button variant={filter.size === 0 ? "quiet" : "secondary"} size="sm" iconOnly={filter.size === 0} aria-label={`Show: ${shownWord}`} data-filter="">
-                <ListFilter aria-hidden />
+              {/* The icon is the button's own (`icon`): among its children it would lie in the label, at its full size. */}
+              <Button
+                variant={filter.size === 0 ? "quiet" : "secondary"}
+                size="sm"
+                iconOnly={filter.size === 0}
+                icon={<ListFilter aria-hidden />}
+                className={cx(filter.size > 0 && s.named)}
+                aria-label={`Show: ${shownWord}`}
+                data-filter=""
+              >
                 {filter.size === 0 ? null : shownWord}
               </Button>
             </MenuTrigger>
