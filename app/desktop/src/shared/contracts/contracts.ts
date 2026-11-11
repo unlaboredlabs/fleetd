@@ -3849,13 +3849,14 @@ export type MachineId = string;
 export type MachineJoinInput = {
   /** The agents' Mac (`--mac`): the installer refuses an admin user, and the node runs as a tool, never a runner. */
   mac?: boolean;
-  machineId: MachineId;
+  /** Left out, the computer that runs the line joins under its own name, made unique in the hub. */
+  machineId?: MachineId;
   /** A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it. */
   rejoin?: boolean;
 };
 
 export type MachineJoinOutput = {
-  /** Single use; it enrolls only this machine id. */
+  /** Single use; it enrolls only this machine id, or any name when the call named none. */
   code: string;
   expiresAt: Timestamp;
   /** `Name <email>`, the hub's commit identity for its nodes. */
@@ -3864,7 +3865,8 @@ export type MachineJoinOutput = {
   hubUrl: string;
   /** The one line to run on the machine: it installs fleetd and joins. */
   line: string;
-  machineId: MachineId;
+  /** The machine the code is for; absent when the call named none. */
+  machineId?: MachineId;
   next?: string;
   truncated?: boolean;
 };

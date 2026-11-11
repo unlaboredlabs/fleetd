@@ -1,5 +1,6 @@
 // Node enrollment tokens and node keys: one-time `fle_` codes from
-// `fleetd pair --worker` and `machine add`, burned by a node's first hello, which records its ed25519 key.
+// `fleetd pair --worker` and `machine add`, burned by a node's first hello, which records its ed25519 key. A code
+// minted with no machine (the app's Connect a computer) takes the name the node asks for, made unique.
 import type { Clock } from "../../shared/clock.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs, sha256 } from "./index.ts";
@@ -11,6 +12,8 @@ const ENROLL_TTL_MS = 15 * 60_000;
 export const SPENT_CODE_KEPT_MS = 24 * 60 * 60_000;
 /** Hex digits of an enroll code's hash that name it in `fleetd pair --worker-codes` and `--worker-revoke`. */
 export const ENROLL_CODE_ID_LEN = 12;
+/** An enroll code's machine_id when it names no machine: never a valid machine id. */
+export const NAMELESS = "";
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
 /** RFC 4648 base32, lowercase, unpadded. */
@@ -75,22 +78,24 @@ export class NodeKeys {
     private readonly clock: Clock,
   ) {}
 
-  /** One-time, valid for 15 minutes; replaces the machine's open one. `by` names the caller in the hub log. */
-  createEnrollToken(machineId: string, by: string): EnrollToken {
+  /** One-time, valid for 15 minutes; replaces the machine's open one. With no machine, it enrolls a node under the
+   * name it asks for, made unique (freeId), and replaces none. `by` names the caller in the hub log. */
+  createEnrollToken(machineId: string | undefined, by: string): EnrollToken {
     const now = this.clock.now();
     const expires = now + ENROLL_TTL_MS;
     const token = secret(ENROLL_PREFIX);
     const replaced = this.db.transaction((conn) => {
-      const { changes } = conn
-        .query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?")
-        .run(machineId, now);
+      const { changes } =
+        machineId === undefined
+          ? { changes: 0 }
+          : conn.query("DELETE FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?").run(machineId, now);
       conn
         .query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)")
-        .run(sha256(token), machineId, expires);
+        .run(sha256(token), machineId ?? NAMELESS, expires);
       return changes;
     });
     // Never the code: its id is what `fleetd pair --worker-codes` lists.
-    console.info(`enroll code minted machine_id=${machineId} by=${by} id=${sha256(token).slice(0, ENROLL_CODE_ID_LEN)} replaced=${replaced}`);
+    console.info(`enroll code minted machine_id=${machineId ?? "(any)"} by=${by} id=${sha256(token).slice(0, ENROLL_CODE_ID_LEN)} replaced=${replaced}`);
     return { token, expiresAt: isoMs(expires) };
   }
 
@@ -131,7 +136,8 @@ export class NodeKeys {
       .run(this.clock.now() - SPENT_CODE_KEPT_MS).changes;
   }
 
-  /** Burns the token and records `pubKey` as the machine's node key; throws Unauthorized with why it can't. */
+  /** Burns the token and records `pubKey` as the machine's node key; throws Unauthorized with why it can't. A nameless
+   * token takes any id: enrollNode settles which. */
   consumeEnrollToken(token: string, machineId: string, pubKey: string): void {
     const now = this.clock.now();
     const hash = sha256(token);
@@ -139,9 +145,10 @@ export class NodeKeys {
       // One statement, so two nodes racing on one token cannot both win.
       const row = conn
         .query<{ hash: string }, Record<string, string | number>>(
-          "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now RETURNING hash",
+          `UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id IN ($machine, $nameless)
+           AND used_ms IS NULL AND expires_ms > $now RETURNING hash`,
         )
-        .get({ now, hash, machine: machineId });
+        .get({ now, hash, machine: machineId, nameless: NAMELESS });
       if (!row) return false;
       conn
         .query(
@@ -171,6 +178,7 @@ export class NodeKeys {
         [`the code is for ${machine}`, `--machine-id ${machine}`],
       ]);
     }
+    if (row?.machine_id === NAMELESS) throw refusal([[why, "ask the hub for a new join line"]]);
     throw refusal([
       [why, `on the hub, run fleetd pair --worker ${m} for a new code`],
       [why, `fleetd pair --worker ${m} on the hub`],
@@ -184,9 +192,11 @@ export class NodeKeys {
 
   /**
    * Enrolls the machine's node from the computer `fingerprint` names: refused when that id is already another
-   * computer's, or the key is enrolled under another id.
+   * computer's, or the key is enrolled under another id. The id it enrolled under: `machineId`, or for a nameless
+   * token the one freeId settles.
    */
-  enrollNode(token: string, machineId: string, pubKey: string, fingerprint?: string): void {
+  enrollNode(token: string, machineId: string, pubKey: string, fingerprint?: string): string {
+    if (this.nameless(token)) machineId = this.freeId(machineId, pubKey, fingerprint);
     const theirs = this.db.conn
       .query<{ machine_id: string }, [string, string]>(
         "SELECT machine_id FROM node_keys WHERE pub_key = ? AND machine_id != ? LIMIT 1",
@@ -202,6 +212,41 @@ export class NodeKeys {
     }
     this.consumeEnrollToken(token, machineId, pubKey);
     if (fingerprint !== undefined) this.setNodeFingerprint(machineId, fingerprint);
+    return machineId;
+  }
+
+  /** Whether `token` was minted with no machine: a spent one too, so its refusal says it was used. */
+  private nameless(token: string): boolean {
+    return this.db.conn.query("SELECT 1 FROM enroll_tokens WHERE hash = ? AND machine_id = ?").get(sha256(token), NAMELESS) !== null;
+  }
+
+  /**
+   * The id a nameless code enrolls `pubKey` under: the one that key holds already (the computer joins again), else
+   * `wish`, or `wish-2`, `wish-3`… when another computer's machine or an open code for one has it.
+   */
+  private freeId(wish: string, pubKey: string, fingerprint: string | undefined): string {
+    const held = this.db.conn
+      .query<{ machine_id: string }, [string]>("SELECT machine_id FROM node_keys WHERE pub_key = ? LIMIT 1")
+      .get(pubKey);
+    if (held) return held.machine_id;
+    const taken = (id: string) => {
+      const key = this.db.conn
+        .query<{ fingerprint: string | null }, [string]>("SELECT fingerprint FROM node_keys WHERE machine_id = ?")
+        .get(id);
+      if (key) return fingerprint === undefined || key.fingerprint !== fingerprint;
+      return (
+        this.db.conn.query("SELECT 1 FROM machines WHERE machine_id = ?").get(id) !== null ||
+        this.db.conn
+          .query("SELECT 1 FROM enroll_tokens WHERE machine_id = ? AND used_ms IS NULL AND expires_ms > ?")
+          .get(id, this.clock.now()) !== null
+      );
+    };
+    let id = wish;
+    for (let k = 2; taken(id); k++) {
+      const suffix = `-${k}`;
+      id = `${wish.slice(0, 32 - suffix.length).replace(/-+$/, "")}${suffix}`;
+    }
+    return id;
   }
 
   nodeFingerprint(machineId: string): string | undefined {

@@ -620,9 +620,10 @@ export async function execute(
     stepsDone = Date.now();
     progress.done(result.stdout);
   }
+  const machineId = await settledId(r, plan, runner);
   if (plan.runByHand !== undefined) {
     progress.say(
-      `${r.machineId} is enrolled; with --no-service, start its node yourself${r.local ? "" : ` on ${r.host}`}:\n  ${plan.runByHand}`,
+      `${machineId} is enrolled; with --no-service, start its node yourself${r.local ? "" : ` on ${r.host}`}:\n  ${plan.runByHand}`,
     );
   } else if (hub !== undefined) {
     const m = new HubStore(hub.db).machineGet(r.machineId) as { status?: string } | undefined;
@@ -645,12 +646,12 @@ export async function execute(
   if (!ok) {
     const login = loginCommand(claude, r.claudeConfigDir);
     notes.push(
-      `claude on ${r.machineId} is not logged in, so its sessions can't start. Fix: ${r.local ? login : `ssh -t ${r.host} ${q(login)}`}`,
+      `claude on ${machineId} is not logged in, so its sessions can't start. Fix: ${r.local ? login : `ssh -t ${r.host} ${q(login)}`}`,
     );
   }
   for (const n of notes) progress.say(`note: ${n}`);
   return {
-    machineId: r.machineId,
+    machineId,
     target: r.target,
     layout: plan.layout,
     claude,
@@ -659,6 +660,19 @@ export async function execute(
     ...(r.claudeConfigDir === undefined ? {} : { claudeConfigDir: r.claudeConfigDir }),
     notes,
   };
+}
+
+/** The id a joining machine's node enrolled as, from its config: a code minted for no machine takes the one the hub
+ * settled on, which may not be the name asked for. */
+async function settledId(r: Resolved, plan: MachinePlan, runner: Runner): Promise<string> {
+  if (r.enroll.kind !== "token" || !plan.steps.some((s) => s.stdin?.kind === "enrollToken")) return r.machineId;
+  try {
+    const read = await runner.run(r.target, `cat ${q(plan.layout.nodeConfig)}`);
+    const id = (JSON.parse(read.stdout) as { machineId?: unknown }).machineId;
+    return typeof id === "string" && isMachineId(id) ? id : r.machineId;
+  } catch {
+    return r.machineId;
+  }
 }
 
 /** `machine add`, returning what it set up (undefined for a dry run); throws a Stop. */

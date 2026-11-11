@@ -132,8 +132,8 @@ export type RunNodeOptions = {
   machineFingerprint?: string;
   /** Sent on links until the hub first welcomes this node, then forgotten. */
   enrollToken?: string;
-  /** Runs after the first welcome of a link that carried the enroll token. */
-  onEnrolled?: () => void;
+  /** Runs after the first welcome of a link that carried the enroll token, with the id the hub enrolled it as. */
+  onEnrolled?: (machineId: string) => void;
   /** What the hello lists, at each link. */
   capabilities: () => string[];
   /** The heartbeat's fields beyond `at`, every 15 s. */
@@ -167,7 +167,7 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
   let downSince: number | undefined;
   let linkedOnce = false;
   while (!options.signal?.aborted) {
-    const end = await runLinkOnce(options, enrollToken, (hubId) => {
+    const end = await runLinkOnce(options, enrollToken, (hubId, machineId) => {
       redial.linked();
       const since = downSince;
       downSince = undefined;
@@ -180,7 +180,7 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
         enrollToken = undefined;
         const enrolled = onEnrolled;
         onEnrolled = undefined;
-        enrolled?.();
+        enrolled?.(machineId);
       }
     });
     if (end.kind === "fatal") return end.fatal;
@@ -207,7 +207,11 @@ export async function runNode(options: RunNodeOptions): Promise<LinkFatal | unde
 }
 
 /** One link, from the dial to its end. */
-function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, onWelcome: (hubId: string) => void): Promise<LinkEnd> {
+function runLinkOnce(
+  options: RunNodeOptions,
+  enrollToken: string | undefined,
+  onWelcome: (hubId: string, machineId: string) => void,
+): Promise<LinkEnd> {
   const quiet = options.quiet ?? { probeMs: QUIET_PROBE_MS, deadMs: QUIET_DEAD_MS };
   return new Promise<LinkEnd>((resolve) => {
     let url: string;
@@ -340,7 +344,8 @@ function runLinkOnce(options: RunNodeOptions, enrollToken: string | undefined, o
           const hubId = String(frame.hubId ?? "");
           stage = "live";
           live = ctx(hubId, caps);
-          onWelcome(hubId);
+          // A code minted for no machine: the hub says which id it settled on.
+          onWelcome(hubId, typeof frame.machineId === "string" ? frame.machineId : options.settings.machineId);
           detach = options.attach(live);
           heartbeat();
           watchQuiet();

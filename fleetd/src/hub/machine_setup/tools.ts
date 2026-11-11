@@ -120,14 +120,16 @@ export function register(tools: Registry): void {
     } catch (e) {
       throw new ToolError("failed", e instanceof Error ? e.message : String(e));
     }
+    const on = input.machineId ?? (mac ? "the Mac" : "the computer to add");
+    const as = input.machineId === undefined ? " under its own name" : "";
     let next = mac
-      ? `Paste the line in Terminal on ${input.machineId}, logged in at its screen (an admin's account is fine): it installs fleetd and joins as the agents' Mac. The code works once, until ${join.expiresAt}; the Mac must reach the hub at ${join.hub}, and needs no claude.`
-      : `Run the line on ${input.machineId}: it installs fleetd and joins. The code works once, until ${join.expiresAt}; the machine needs claude and must reach the hub at ${join.hub}.`;
+      ? `Paste the line in Terminal on ${on}, logged in at its screen (an admin's account is fine): it installs fleetd and joins as the agents' Mac${as}. The code works once, until ${join.expiresAt}; the Mac must reach the hub at ${join.hub}, and needs no claude.`
+      : `Run the line on ${on}: it installs fleetd and joins${as}. The code works once, until ${join.expiresAt}; the machine needs claude and must reach the hub at ${join.hub}.`;
     const note = workerReachNote(join.hub);
     if (note !== undefined) next += ` ${note}`;
     return {
       next,
-      machineId: input.machineId,
+      ...(input.machineId === undefined ? {} : { machineId: input.machineId }),
       hubUrl: join.hub,
       code: join.code,
       expiresAt: join.expiresAt,

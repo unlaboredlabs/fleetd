@@ -85,6 +85,24 @@ test("an enroll token links once; the machine is online once its runner answers"
   await again.closed;
 });
 
+test("a code minted for no machine links the node under its name, or a free one, and the welcome says which", async () => {
+  const nameless = () => hub.auth.nodes.createEnrollToken(undefined, "test").token;
+  const first = new FakeNode(url, { machineId: "spare", enrollToken: nameless(), fingerprint: "fp-a" });
+  expect(await first.tag("welcome")).toMatchObject({ machineId: "spare" });
+  const second = new FakeNode(url, { machineId: "spare", enrollToken: nameless(), fingerprint: "fp-b" });
+  expect(await second.tag("welcome")).toMatchObject({ machineId: "spare-2" });
+  await until(() => store(hub).machineGet("spare-2") !== undefined);
+  expect(store(hub).machineGet("spare-2")).toMatchObject({ machineId: "spare-2", name: "spare-2" });
+  expect(hub.auth.nodes.nodeFingerprint("spare")).toBe("fp-a");
+  expect(hub.auth.nodes.nodeFingerprint("spare-2")).toBe("fp-b");
+  // Both stay linked: the second took a name of its own rather than the first's link.
+  expect(links.linkId("spare")).toBeNumber();
+  expect(links.linkId("spare-2")).toBeNumber();
+  first.close();
+  second.close();
+  await Promise.all([first.closed, second.closed]);
+});
+
 test("a logged-out runner leaves the machine degraded with its problem", async () => {
   const node = await linked("worker-3", { runner: "logged_out" });
   await until(() => types().includes("machine.degraded worker-3"));

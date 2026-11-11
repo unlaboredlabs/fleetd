@@ -514,7 +514,12 @@ export class Link {
     const fingerprint = hello.machineFingerprint ?? undefined;
     if (hello.enrollToken) {
       try {
-        nodes.enrollNode(hello.enrollToken, machineId, hello.pubKey, fingerprint);
+        // A code minted for no machine settles the id: the node learns it from the welcome.
+        const settled = nodes.enrollNode(hello.enrollToken, machineId, hello.pubKey, fingerprint);
+        if (settled !== machineId) {
+          if (hello.name === machineId) hello.name = settled;
+          hello.machineId = settled;
+        }
         return;
       } catch (error) {
         if (error instanceof Unauthorized) throw new Refused(CLOSE.UNAUTHORIZED, error.reason());
@@ -593,6 +598,7 @@ export class Link {
     this.write(ws, state, {
       t: "welcome",
       hubId: this.hubId,
+      machineId,
       protocol: PROTOCOL_VERSION,
       capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE],
     });

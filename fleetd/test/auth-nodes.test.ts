@@ -64,6 +64,48 @@ test("enroll codes: one open per machine, burned once, and each refusal says how
   expect(nodes.nodePubKey("devbox")).toBeUndefined();
 });
 
+test("a nameless code enrolls the computer under the name it asks for, made unique, and only once", () => {
+  const db = HubDb.memory();
+  const nodes = new Auth(db, at(1_792_000_000_000)).nodes;
+  const code = () => nodes.createEnrollToken(undefined, "test").token;
+  const refusal = (fn: () => void) => {
+    try {
+      fn();
+    } catch (error) {
+      return (error as Unauthorized).reason();
+    }
+    return "accepted";
+  };
+  // A nameless code replaces no other: one line per computer, several open at once.
+  const [first, second] = [code(), code()];
+  expect(nodes.openEnrollTokens().map((c) => c.machineId)).toEqual(["", ""]);
+  expect(nodes.enrollNode(first, "laptop", "k1", "fp1")).toBe("laptop");
+  expect(nodes.nodePubKey("laptop")).toBe("k1");
+  expect(refusal(() => nodes.enrollNode(first, "laptop", "k9", "fp9"))).toBe(
+    "enrollment token was already used. Fix: ask the hub for a new join line",
+  );
+  // Another computer by that name gets the next free one.
+  expect(nodes.enrollNode(second, "laptop", "k2", "fp2")).toBe("laptop-2");
+  expect(nodes.nodePubKey("laptop-2")).toBe("k2");
+  // The same computer joins again under its own id: by its key, whatever it asks for, or by its fingerprint.
+  expect(nodes.enrollNode(code(), "renamed", "k1", "fp1")).toBe("laptop");
+  expect(nodes.enrollNode(code(), "laptop", "k3", "fp1")).toBe("laptop");
+  expect(nodes.nodePubKey("laptop")).toBe("k3");
+  // A name a known machine or an open code for one holds is taken too; a long one is cut to fit its suffix.
+  db.conn.run("INSERT INTO machines (machine_id, data) VALUES ('mini', '{}')");
+  expect(nodes.enrollNode(code(), "mini", "k4", "fp4")).toBe("mini-2");
+  nodes.createEnrollToken("studio", "test");
+  expect(nodes.enrollNode(code(), "studio", "k5", "fp5")).toBe("studio-2");
+  const long = `${"a".repeat(29)}-bc`;
+  expect(nodes.enrollNode(code(), long, "k6", "fp6")).toBe(long);
+  expect(nodes.enrollNode(code(), long, "k7", "fp7")).toBe(`${"a".repeat(29)}-2`);
+  // A code minted for a name still admits only that name.
+  const named = nodes.createEnrollToken("builder-1", "test").token;
+  expect(refusal(() => nodes.enrollNode(named, "laptop-3", "k8", "fp8"))).toBe(
+    "enrollment token is for machine builder-1, not laptop-3. Fix: join as builder-1 (--machine-id builder-1)",
+  );
+});
+
 test("base32 is RFC 4648's, lowercase and unpadded", () => {
   expect(base32(new TextEncoder().encode("foobar"))).toBe("mzxw6ytboi");
   expect(base32(new Uint8Array(32)).length).toBe(52);

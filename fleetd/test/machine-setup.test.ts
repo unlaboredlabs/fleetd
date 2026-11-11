@@ -324,6 +324,16 @@ test("a join code comes with the line to paste", async () => {
   expect(mac.next).toStartWith("Paste the line in Terminal on studio");
 });
 
+test("a join code with no machine named joins whichever computer runs its line, under its own name", async () => {
+  const out = await call("machine_join", {});
+  expect(out.machineId).toBeUndefined();
+  expect(out.line).toBe(
+    `curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code ${out.code} --git-identity 'ada-lovelace <1+ada-lovelace@users.noreply.github.com>'`,
+  );
+  expect(out.next).toStartWith("Run the line on the computer to add: it installs fleetd and joins under its own name.");
+  expect(t.hub.auth.nodes.enrollNode(out.code, "laptop", "k1", "fp1")).toBe("laptop");
+});
+
 test("a repair connects with the ssh_config it was set up with", async () => {
   const s = setupJson();
   s.machines["builder-1"] = { sshHost: "builder-1", sshConfig: "/home/dev/.ssh/fleet_config", platform: "linux", home: "/home/dev", configHome: "/home/dev/.config", uid: 1000 };

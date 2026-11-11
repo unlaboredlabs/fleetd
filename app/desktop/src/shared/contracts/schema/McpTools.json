@@ -9784,22 +9784,20 @@
           "type": "boolean"
         },
         "machineId": {
-          "$ref": "#/$defs/MachineId"
+          "$ref": "#/$defs/MachineId",
+          "description": "Left out, the computer that runs the line joins under its own name, made unique in the hub."
         },
         "rejoin": {
           "description": "A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it.",
           "type": "boolean"
         }
       },
-      "required": [
-        "machineId"
-      ],
       "type": "object"
     },
     "MachineJoinOutput": {
       "properties": {
         "code": {
-          "description": "Single use; it enrolls only this machine id.",
+          "description": "Single use; it enrolls only this machine id, or any name when the call named none.",
           "type": "string"
         },
         "expiresAt": {
@@ -9818,7 +9816,8 @@
           "type": "string"
         },
         "machineId": {
-          "$ref": "#/$defs/MachineId"
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine the code is for; absent when the call named none."
         },
         "next": {
           "type": "string"
@@ -9828,7 +9827,6 @@
         }
       },
       "required": [
-        "machineId",
         "hubUrl",
         "code",
         "expiresAt",

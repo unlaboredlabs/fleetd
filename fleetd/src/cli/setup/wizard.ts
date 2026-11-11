@@ -338,7 +338,7 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
     failedWithLog(list, machineId, "could not join", said, `a used or expired code: on the hub, fleetd pair --worker ${machineId} prints a new command`);
     return workerEnd(list, "", false);
   }
-  nodeLine(list, machineId, added, `joined ${hub.trim()}`);
+  nodeLine(list, added.machineId, added, `joined ${hub.trim()}`);
   notes(list, said);
   if (opts.mac) {
     // At a terminal too, until the grants' own prompts (src/node/agents_mac) are here to walk through: the same note.
