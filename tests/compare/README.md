@@ -62,14 +62,18 @@ optional `seed`. That is all the suites ask of what they run against: the factor
 module at a time). It is a flag, not read from a short tool list, so a hub that stops listing a tool still fails the
 full run. With it, `isolation.ts` and `contract.ts` start no node and add no project (`areas.ts`):
 
-- each team is seeded through the tools the target lists (`decisions_record`, global, when listed), then by the team's
-  own `seed(mark, times)`, if it has one, for rows no listed tool makes (a task, whose start is a lead call). Team A
-  once, team B twice with the canary as `mark`;
+- each team is seeded through the tools the target lists (`areas.ts`'s SEEDS: a global decision, an invited person, a
+  file and the caller's picture made of it, the caller's name, a prompt's hub-wide text, a claim on a repo, the
+  agents cap), then by the team's own `seed(mark, times)`, if it has one, for rows no listed tool makes (a task, whose
+  start is a lead call). Team A once, team B twice with the canary as `mark`;
 - the two-team cases are made of exactly the tools the target lists, and reads that take words besides ids
-  (`decisions_search` for "decision") are made beside the generated ones;
+  (`decisions_search` for "decision", `work_list` for the seeded repo) are made beside the generated ones;
 - the contract checks `/healthz`, that every listed tool is in `McpTools.json`, and each listed tool's answer as its
-  `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it, then the other writes with
-  the team's own ids. The CLI's and `/app`'s rows are skipped.
+  `<tool>.output`: the seeds' writes, each read-only tool as the team's own reads call it (a tool a seed calls is a
+  write, whatever its annotation), then the other writes with the team's own ids, then the ones that take away what
+  others need (`person_remove`, `invite_revoke`, `device_revoke`), each only on what the run made: the invited person
+  and invite, and a spare device key (`areas-spare`: `key` makes the same person more than one), never the caller
+  or the key it calls with. The CLI's and `/app`'s rows are skipped.
 
 A team needs only `url` and `key` (`enrol` is never called), `teams` at least 2 for the cases, and no binary is needed
 unless `--bin` gives one:
@@ -81,7 +85,7 @@ node contract.ts --target ../../../service/target.ts --areas
 ```
 
 `behaviour.ts --areas` passes the flag on and skips the factory rows; it still wants a binary.
-`fleetd/test/compare/areas.test.ts` proves the mode on the stand-in listing only the decisions tools.
+`fleetd/test/compare/areas.test.ts` proves the mode on stand-ins listing only the decisions tools, and only the people tools.
 
 ## Two-team cases
 

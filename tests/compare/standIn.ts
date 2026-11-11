@@ -37,8 +37,11 @@ export interface StandInTool {
   /** Its input and output, as McpTools.json would hold them; ids are `$ref`s into the stand-in's types (DEFS), or into the input's own `$defs`. */
   readonly input: Schema;
   readonly output: Schema;
-  /** Answers for `team`; `all` is every team, which only a leak reads. Refuses by throwing a Refusal. */
-  readonly run: (team: StandInTeam, input: any, all: ReadonlyArray<StandInTeam>) => unknown;
+  /**
+   * Answers for `team`; `all` is every team, which only a leak reads, and `key` the key it was called with (who calls,
+   * for a tool that answers by it). Refuses by throwing a Refusal.
+   */
+  readonly run: (team: StandInTeam, input: any, all: ReadonlyArray<StandInTeam>, key: string) => unknown;
 }
 
 export class Refusal extends Error {
@@ -144,13 +147,13 @@ export async function standIn(opts: { readonly leak?: Leak; readonly tools?: Rea
   const made = new Map<Team, StandInTeam>();
   const result = (value: unknown, isError: boolean) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value, isError });
 
-  const answer = (team: StandInTeam, method: string, params: Record<string, any>): unknown => {
+  const answer = (team: StandInTeam, key: string, method: string, params: Record<string, any>): unknown => {
     if (method === "initialize") return { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "stand-in", version: "0" } };
     if (method === "tools/list") return { tools: list.map((t) => ({ name: t.name, description: "", inputSchema: { $defs: DEFS, ...t.input }, annotations: { readOnlyHint: t.readOnly } })) };
     const tool = list.find((t) => t.name === params.name);
     if (method !== "tools/call" || tool === undefined) throw new Error(`no ${method} ${params.name ?? ""}`);
     try {
-      return result(tool.run(team, params.arguments ?? {}, teams), false);
+      return result(tool.run(team, params.arguments ?? {}, teams, key), false);
     } catch (e) {
       if (e instanceof Refusal) return result({ code: e.code, message: e.message }, true);
       throw e;
@@ -162,13 +165,14 @@ export async function standIn(opts: { readonly leak?: Leak; readonly tools?: Rea
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       if (req.method === "GET" && req.url === "/healthz") return void res.writeHead(200).end("ok");
-      const team = byKey.get((req.headers.authorization ?? "").replace(/^Bearer /u, ""));
+      const key = (req.headers.authorization ?? "").replace(/^Bearer /u, "");
+      const team = byKey.get(key);
       if (req.method !== "POST" || req.url !== "/mcp" || team === undefined) return void res.writeHead(team === undefined ? 401 : 404).end();
       const call = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { id?: number; method: string; params?: Record<string, any> };
       if (call.id === undefined) return void res.writeHead(202).end();
       let body: Record<string, unknown>;
       try {
-        body = { jsonrpc: "2.0", id: call.id, result: answer(team, call.method, call.params ?? {}) };
+        body = { jsonrpc: "2.0", id: call.id, result: answer(team, key, call.method, call.params ?? {}) };
       } catch (e) {
         body = { jsonrpc: "2.0", id: call.id, error: { code: -32602, message: e instanceof Error ? e.message : String(e) } };
       }
