@@ -17,9 +17,9 @@
 //
 // People's reviews on GitHub (people.ts) hold a Change as blocking findings do: a clean patch is ready only once a read
 // at most `FRESH_MS` old shows none of theirs open. Each new one goes to the author task as review findings, and one that
-// opens while the Change is in the train sends it back to review. The hold lifts when GitHub says it is answered: the
-// person approved, re-reviewed or dismissed their review, or resolved their threads. Each verdict is also posted on the
-// PR (post.ts).
+// opens while the Change is in the train sends it back to review, and a held Change's re-review never rides the train
+// (`rereview`). The hold lifts when GitHub says it is answered: the person approved, or their review was dismissed, or
+// their threads were resolved. Each verdict is also posted on the PR (post.ts).
 import type { Database } from "bun:sqlite";
 import type { Change, ChangeReview } from "../../shared/contracts.ts";
 import { prNote, prReviewNotRecorded, prReviewStalled } from "../train/events.ts";
@@ -743,7 +743,7 @@ export class Reviews implements ReviewGate {
 
   rereview(change: Change): boolean {
     const patchId = change.patchId;
-    if (patchId === undefined) return false;
+    if (patchId === undefined || this.people.open(change.prUrl).length > 0) return false;
     return !this.gateFor(change, patchId)[0].waitingForHead && this.reviewers(change.changeId, patchId).some((t) => this.live(t));
   }
 }

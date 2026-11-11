@@ -298,3 +298,27 @@ test("a person's review during a re-review in CI leaves the train's wait to the 
   k.train.records.put({ ...approved, state: "reviewing" });
   expect((await reviews.again(k.change(12))).kind).toBe("pending");
 });
+
+test("a held PR's re-review after the writer's fix never rides the train: the ready PR behind it merges alone, at once", async () => {
+  const { k, people, verdict, poll } = lab();
+  k.pr(13, "fleetd/T13-a", { "a.md": "a\n" });
+  const held = await k.enqueue(13);
+  await verdict("T50", held.headSha, 0);
+  people.set(13, { reviews: { nodes: [review(51, "ana", "CHANGES_REQUESTED", "Not like this.")] }, reviewThreads: { nodes: [] } });
+  await poll();
+  expect(k.change(13).state).toBe("reviewing");
+  k.pr(14, "fleetd/T14-b", { "b.md": "b\n" });
+  const ready = await k.enqueue(14);
+  await verdict("T51", ready.headSha, 0);
+  expect(k.change(14).state).toBe("ready");
+  // The writer pushes its fix; ana hasn't looked again. Its re-review starts, and is still at work.
+  k.pr(13, "fleetd/T13-a", { "a.md": "fixed\n" });
+  const before = k.clock.ms;
+  await k.settle();
+  expect(k.change(13).state).toBe("reviewing");
+  expect(k.change(13).headSha).not.toBe(held.headSha);
+  expect(k.change(14).state).toBe("merged");
+  // No batch PR was opened with the held one in it, and the ready one didn't wait out a re-review.
+  expect([...k.gh.pulls.keys()].every((n) => n < 100)).toBe(true);
+  expect(k.clock.ms - before).toBeLessThan(5 * 61_000);
+});
