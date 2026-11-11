@@ -1,7 +1,7 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
 // one flat list of pages in three groups (D211), with nothing to pick or unfold. You: General, Your accounts, Vault,
 // Your memory, Your devices, Hubs. Projects: the list of projects, each opening its pages under tabs (Frames.tsx). Hub,
-// for the hub's owners and admins only: People, Machines, Updates, Every project (its four pages under tabs), Hub
+// for the hub's owners and admins only: People, Machines, Updates, Every project (its three pages under tabs), Hub
 // accounts, Vault (the items every project uses), and Setup, always, saying how many required steps are left. Vault's
 // rows show only on a hub that serves it.
 import { ArrowLeft, Brain, CircleArrowUp, FolderGit2, KeyRound, Layers, ListChecks, LockKeyhole, Network, Server, SlidersHorizontal, Smartphone, UserRound, Users } from "lucide-react";

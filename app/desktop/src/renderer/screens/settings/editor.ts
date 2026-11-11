@@ -33,41 +33,29 @@ export interface Filled {
   readonly ref: string;
   readonly text: string;
   /**
-   * The default the text was written against, which a save sends as `base`: the hub keeps an override whose base
-   * is not the current default stale and shows the 3-way update, so fleetd's change is never dropped silently. Null
-   * when the hub has no record of it (a hand-made file).
+   * The built-in text the editor's was written against, which a save sends as `base`: the hub keeps an edit whose base
+   * is not the current built-in out of date and answers with both changes to merge, so fleetd's change is never
+   * dropped silently.
    */
-  readonly base: string | null;
+  readonly base: string;
 }
 
-/** The default the hub's text for `d` was written against: a stale override's own base, else today's default. */
-export const fillBase = (d: PromptDetail): string | null => (d.stale ? (d.stale.base?.ref ?? null) : d.default.ref);
-
 /**
- * What the editor holds after the hub sent `d` (see `refill`). A draft the hub's answer doesn't replace keeps the
- * base it was written against, even when fleetd's default moved meanwhile (a hub upgrade).
+ * What the editor holds after the hub sent `d` (see `refill`): the text in effect, or for an edit whose built-in
+ * changed since, both changes together, written against the new built-in. A draft the hub's answer doesn't replace
+ * keeps the base it was written against, even when fleetd's built-in moved meanwhile (a hub upgrade), so a save of it
+ * comes back out of date with the newer change to merge.
  */
 export function synced(before: Filled | null, d: PromptDetail, scope: string, editor: string): { filled: Filled; refill: boolean } {
-  return keepBase(before, { scope, id: d.id, ref: d.effective.ref, text: d.effective.text, base: fillBase(d) }, editor);
-}
-
-/**
- * The same for the Update view's merge: it is written against the new default it merges in, and a merge in
- * progress keeps that base when fleetd's default moves again, so a save of it comes back stale with the newer
- * change to merge instead of dropping it. Null when there is nothing stale to merge.
- */
-export function syncedMerge(before: Filled | null, d: PromptDetail, scope: string, merged: string): { filled: Filled; refill: boolean } | null {
-  if (!d.stale) return null;
-  return keepBase(before, { scope, id: d.id, ref: d.stale.current.ref, text: d.stale.merged, base: d.stale.current.ref }, merged);
-}
-
-function keepBase(before: Filled | null, now: Filled, editor: string): { filled: Filled; refill: boolean } {
+  const now: Filled = d.stale
+    ? { scope, id: d.id, ref: d.stale.current.ref, text: d.stale.merged, base: d.stale.current.ref }
+    : { scope, id: d.id, ref: d.effective.ref, text: d.effective.text, base: d.default.ref };
   const take = refill(before, now, editor);
   if (take || before === null || editor === before.text) return { filled: now, refill: take };
   return { filled: { ...now, base: before.base }, refill: false };
 }
 
-/** The level and project an Update action changes: the one that owns the stale override, whatever scope is shown. */
+/** The level and project a save or reset of an out-of-date edit changes: the one that owns it, whatever scope is shown. */
 export function updateTarget(d: PromptDetail, s: Scope): { scope: PromptScope; projectRef?: ProjectRef } {
   return d.stale?.scope === "project" && s.kind === "project" ? { scope: "project", projectRef: s.ref } : { scope: "global" };
 }
@@ -75,12 +63,11 @@ export function updateTarget(d: PromptDetail, s: Scope): { scope: PromptScope; p
 /** Where the page opens: the route, unless a kept draft for another prompt or scope would be dropped, in which case
  * it opens on the draft and asks before following the route. */
 export function startOn(
-  kept: { filled: Filled; text: string; mergedFilled?: Filled | null; merged?: string } | null,
+  kept: { filled: Filled; text: string } | null,
   route: Pick<SettingsRoute, "prompt" | "for">,
 ): { scope: Scope; id: string | null; ask: { scope: Scope; id: string | null } | null } {
   const target = { scope: parseScope(route.for), id: route.prompt };
-  const draft = kept !== null && (kept.text !== kept.filled.text || (kept.mergedFilled != null && kept.merged !== kept.mergedFilled.text));
-  if (!kept || !draft) return { ...target, ask: null };
+  if (!kept || kept.text === kept.filled.text) return { ...target, ask: null };
   const here = { scope: parseScope(kept.filled.scope), id: kept.filled.id };
   const to = { scope: target.scope, id: target.id ?? here.id };
   const same = scopeKey(to.scope) === kept.filled.scope && to.id === here.id;
@@ -136,7 +123,7 @@ export function warningLine(w: PromptWarning): string {
 export function resetLine(level: PromptScope, projectName: string): string {
   return level === "project"
     ? `${projectName}'s own edit is gone; it uses the hub-wide text again. New agents get it; running ones keep theirs.`
-    : "Your hub-wide edit is gone; fleetd's default applies to every project without its own edit. New agents get it; running ones keep theirs.";
+    : "The hub-wide edit is gone; fleetd's built-in text applies to every project without its own edit. New agents get it; running ones keep theirs.";
 }
 
 export function savedLine(o: PromptSetOutput): string {
@@ -145,18 +132,17 @@ export function savedLine(o: PromptSetOutput): string {
   return `Saved${warned}. New agents get it; running ones keep the text they started with.`;
 }
 
-/** What the "In effect" line says, and where a save lands. */
-export function effectLines(d: PromptDetail, s: Scope, projectName: string | null): { inEffect: string; lands: string } {
+/** The editor's one quiet line: which text is in effect, and where a save lands. */
+export function effectLine(d: PromptDetail, s: Scope, projectName: string | null): string {
   const name = projectName ?? "this project";
-  const inEffect =
-    d.scope === "default" ? "In effect: fleetd's default." : d.scope === "global" ? "In effect: your hub-wide edit." : `In effect: your edit for ${name}.`;
+  const inEffect = d.scope === "default" ? "fleetd's built-in text" : d.scope === "global" ? "the hub-wide edit" : `${name}'s own edit`;
   const lands =
     editScope(d, s) === "project"
       ? `Saving changes it for ${name} only.`
       : s.kind === "project"
         ? "This prompt has one hub-wide text: saving changes it for every project."
         : "Saving changes it for every project without its own edit.";
-  return { inEffect, lands };
+  return `In effect: ${inEffect}. ${lands}`;
 }
 
 export const hasConflictMarkers = (text: string): boolean => /^(<{7}|>{7})( |$)/mu.test(text);

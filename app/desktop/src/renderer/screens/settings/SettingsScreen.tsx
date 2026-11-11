@@ -2,9 +2,10 @@
 // (appearance, time in the app, notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs
 // on), Vault (the logins, cards, addresses and variables your agents use), Your memory (and Import memory), Your
 // devices (and Pair a phone) and Hubs (this app's hubs and their links). Projects: the list of projects, each opening
-// its Project, Agents, Instructions & memory, Automations, Prompts and Vault pages under tabs (Frames.tsx). Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every
-// teammate's work. The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into
-// one prompt. The shell shows SettingsSidebar in the sidebar's place while Settings is open.
+// its Project, Agents, Instructions & memory, Automations and Vault pages under tabs (Frames.tsx), and its built-in
+// prompts from the foot of its Instructions. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what
+// reaches every teammate's work. The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for
+// the links into one prompt. The shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
 import { HubPage } from "../admin/HubPages";
 import { AgentsSettings } from "./Agents";
@@ -32,8 +33,8 @@ export function SettingsScreen() {
   const route = useSettingsRoute();
   const projects = useProjects();
   // Projects without a project is the list; a project's pages are of the project opened from it (else the one shown
-  // last, or the first). Each starts afresh on another, except Prompts, which stays mounted so it can ask before a
-  // switch drops a draft.
+  // last, or the first). Each starts afresh on another, except its built-in prompts, a page of their own with the way
+  // back to Instructions, which stays mounted so it can ask before a switch drops a draft.
   const tab = route.tab;
   const list = tab === "projects" && route.for === null;
   const project = isProjectTab(tab) && !list ? projectFor(route, projects) : route.for;
@@ -73,7 +74,7 @@ export function SettingsScreen() {
     <div className={s.frame}>
       {list ? (
         <ProjectList />
-      ) : isProjectTab(tab) && project !== null ? (
+      ) : tab !== "prompts" && isProjectTab(tab) && project !== null ? (
         <ProjectFrame project={project} tab={tab}>
           {page}
         </ProjectFrame>

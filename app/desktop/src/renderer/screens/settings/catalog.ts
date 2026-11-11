@@ -1,7 +1,8 @@
-// How the Prompts list presents the hub's editable prompts (event lines are facts the hub fills in, not prompts):
-// a few groups by what a person is looking for, a plain name, and one line on what it is for. The hub's own title
-// and `sentWhen` stay the fallback, so a prompt a newer hub adds still shows up, in "Other", with the hub's words.
-import type { PromptSummary } from "./contracts";
+// How the built-in prompts' list presents the hub's editable prompts (event lines are facts the hub fills in, not
+// prompts): the edited ones first, the rest behind a few groups by what a person is looking for, each a plain name and
+// one line on what it is for. The hub's own title and `sentWhen` stay the fallback, so a prompt a newer hub adds still
+// shows up, in "Other", with the hub's words.
+import type { PromptSummary, RetiredPromptOverride } from "./contracts";
 
 export interface CatalogGroup {
   readonly key: string;
@@ -10,9 +11,9 @@ export interface CatalogGroup {
 }
 
 export const GROUPS = [
-  { key: "lead", title: "The lead", blurb: "Each project's lead: its role, its rules, and how it runs each kind of work." },
-  { key: "tasks", title: "Task agents", blurb: "The first message of the agents that write the code." },
-  { key: "reviews", title: "Reviews and checks", blurb: "The reviewer of each pull request." },
+  { key: "lead", title: "The lead", blurb: "Its role and rules, how it talks, and what it is sent as work comes in." },
+  { key: "tasks", title: "Task agents", blurb: "The first message of each agent the lead starts." },
+  { key: "reviews", title: "Reviews and checks", blurb: "What a pull request's reviewer is told." },
   { key: "messages", title: "Messages", blurb: "What reaches an agent while it runs." },
   { key: "other", title: "Other", blurb: "Prompts this version of the app has no description for yet." },
 ] as const satisfies ReadonlyArray<CatalogGroup>;
@@ -28,7 +29,7 @@ interface Entry {
 const e = (group: GroupKey, name: string, description: string): Entry => ({ group, name, description });
 
 /** Keyed by registry id: the editable prompts (the instructions have their own page). Order within a group follows this table. */
-export const ENTRIES: Readonly<Record<string, Entry>> = {
+const ENTRIES: Readonly<Record<string, Entry>> = {
   "lead.start": e("lead", "Lead's role, rules and playbooks", "What the lead does, what it must never do, and how it runs a bug fix, a feature or research."),
   "lead.voice": e("lead", "Voice", "How the lead talks in chat: short bubbles, exact details, and the blocks it can show."),
   "lead.profiles": e("lead", "Task profiles", "How the lead picks a profile for a task; added to its first message with the project's allowed profiles."),
@@ -99,4 +100,20 @@ export function sections(prompts: ReadonlyArray<PromptSummary>): CatalogSection[
     rows.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
     return [{ group, rows }];
   });
+}
+
+/**
+ * The page's one list: the prompts edited at `level` (a project's own edits on its page, the hub-wide ones on the
+ * hub's) first, in the groups' order, then the rest by group.
+ */
+export function listed(prompts: ReadonlyArray<PromptSummary>, level: "project" | "global"): { edited: CatalogRow[]; rest: CatalogSection[] } {
+  return {
+    edited: sections(prompts.filter((p) => p.scope === level)).flatMap((s) => s.rows),
+    rest: sections(prompts.filter((p) => p.scope !== level)),
+  };
+}
+
+/** How many edits `level` holds, for the row that opens the page: its prompts' and those of prompts fleetd no longer sends. */
+export function editCount(prompts: ReadonlyArray<PromptSummary>, orphans: ReadonlyArray<RetiredPromptOverride>, level: "project" | "global"): number {
+  return prompts.filter((p) => p.kind !== "instructions" && p.scope === level).length + orphans.filter((o) => o.scope === level).length;
 }

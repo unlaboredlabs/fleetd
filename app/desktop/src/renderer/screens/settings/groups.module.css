@@ -154,6 +154,11 @@
   padding-inline: 0;
 }
 
+/* The rows a row unfolds: set in under its name. */
+.nested {
+  padding: 0 0 var(--space-1) var(--space-4);
+}
+
 /* A row that opens what it names: the name's link covers the row, which lights on hover, deepens while pressed and
    takes the focus ring. Its controls sit above the link. */
 .opens {
@@ -203,7 +208,12 @@
   width: 16px;
   height: 16px;
   color: var(--faint);
-  transition: color var(--dur-quick);
+  transition:
+    color var(--dur-quick),
+    transform var(--dur-quick) var(--ease-snap);
+}
+.chevron[data-open] {
+  transform: rotate(90deg);
 }
 .opens:has(.opener:hover) .chevron,
 .opens:has(.opener:focus-visible) .chevron {

@@ -1,26 +1,19 @@
-// Prompts: every text fleetd sends a model. Under a project, its own texts (the project picked under Projects); under
-// Hub › Every project, the hub-wide ones every project gets, which only owners and admins change (D209, D211). The page
-// lists the prompts, grouped, and one opens in the editor with the way back to the list above it. Warnings come from
-// the hub's dry run as you type and never block a save. A running session keeps the text it started with.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dialog, Dot, IdChip, Tab, TabList, TabPanel, Tabs, Text, Textarea, copyText } from "../../ui";
+// Built-in prompts: every text fleetd itself sends a model. No tab of their own: a project's open from the foot of its
+// Instructions, and the hub-wide ones every project gets, which only owners and admins change (D209, D211), from the
+// foot of Hub › Every project › Instructions. One list, the edited prompts first and the rest behind their groups; a
+// prompt opens in a plain editor: its text, Save, Reset to the built-in. An edit whose built-in text changed since it
+// was made shows both changes there, to save together. Warnings come from the hub's dry run as you type and never
+// block a save. A running session keeps the text it started with.
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Button, cx, Dialog, Dot, Text, Textarea, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
-import { describe, sections } from "./catalog";
-import {
-  type ProjectRef,
-  type ProjectSummary,
-  type PromptDetail,
-  type PromptSummary,
-  type PromptScope,
-  type PromptWarning,
-  type RetiredPromptOverride,
-} from "./contracts";
+import { describe, listed, type CatalogRow } from "./catalog";
+import { type PromptDetail, type PromptSummary, type PromptWarning, type RetiredPromptOverride } from "./contracts";
 import { DiffBlock } from "./DiffBlock";
-import { counts, diffLines, sameProse } from "./diff";
 import {
   canSave,
   editScope,
-  effectLines,
+  effectLine,
   hasConflictMarkers,
   hasOverride,
   insertAt,
@@ -32,7 +25,6 @@ import {
   scopeKey,
   startOn,
   synced,
-  syncedMerge,
   token,
   updateTarget,
   warningLine,
@@ -40,29 +32,28 @@ import {
   type Scope,
 } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { ConfirmDiscard, GroupNote, PageHead, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
-import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
-import { hashFor } from "../shell/navigation";
-import { replaceHash, replaceRoute, type SettingsRoute, type View } from "./route";
+import { ConfirmDiscard, GroupNote, NoProject, PageHead, scopeName, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
+import { orphanAdvice, orphanTitle, targetName, whyLine } from "./orphans";
+import { hashFor, navigate } from "../shell/navigation";
+import { formatRoute, replaceHash, replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
 
 type Switch = { scope: Scope; id: string | null };
 type Echo = { ok: boolean; text: string };
-/** Which reset the confirm is for: the Edit tab's level, or the stale override's (Update → Use the new default). */
-type ResetFor = "edit" | "update";
+type Checked = { text: string; warnings: ReadonlyArray<PromptWarning> };
 
-/** A project's own prompts, or Every project's: the hub-wide ones. */
+/** A project's own prompts, or the hub-wide ones. */
 export type PromptsWhere = "project" | "hub";
 
-type Kept = { filled: Filled; text: string; mergedFilled: Filled | null; merged: string };
+type Kept = { filled: Filled; text: string };
 
 /** Each place's unsaved draft, kept while the page is closed or another one is open, so leaving does not lose it. */
 const kept: Record<PromptsWhere, Kept | null> = { project: null, hub: null };
 
-/** Where the page is, in the address bar: a project's Prompts, or Hub › Every project › Prompts. */
-function placeRoute(where: PromptsWhere, prompt: string | null, project: string | null, view: View) {
-  if (where === "project") replaceRoute({ tab: "prompts", prompt, for: project, view });
-  else replaceHash(hashFor({ id: "settings", tab: "hub.prompts", ...(prompt === null ? {} : { prompt }), ...(view === "edit" ? {} : { view }) }));
+/** Where the page is, in the address bar: a project's built-in prompts, or the hub-wide ones. */
+function placeRoute(where: PromptsWhere, prompt: string | null, project: string | null) {
+  if (where === "project") replaceRoute({ tab: "prompts", prompt, for: project });
+  else replaceHash(hashFor({ id: "settings", tab: "hub.prompts", ...(prompt === null ? {} : { prompt }) }));
 }
 
 export function Prompts({ route, where = "project" }: { route: SettingsRoute; where?: PromptsWhere }) {
@@ -86,90 +77,67 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
 
   const [editor, setEditor] = useState(() => kept[where]?.text ?? "");
   const [filled, setFilled] = useState<Filled | null>(() => kept[where]?.filled ?? null);
-  const [merged, setMerged] = useState(() => kept[where]?.merged ?? "");
-  const [mergedFilled, setMergedFilled] = useState<Filled | null>(() => kept[where]?.mergedFilled ?? null);
-  const [view, setView] = useState<View>(route.view);
   const [seen, setSeen] = useState<PromptDetail | null>(null);
-  const [checked, setChecked] = useState<{ text: string; warnings: ReadonlyArray<PromptWarning> } | null>(null);
+  const [checked, setChecked] = useState<Checked | null>(null);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
-  const [confirmReset, setConfirmReset] = useState<ResetFor | null>(null);
-  /** A save went out against an older default: show the 3-way update as soon as the hub answers with it. */
-  const [toUpdate, setToUpdate] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  /** The groups unfolded in the list; they stay so while a prompt is open. */
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
 
-  // Fill the editors from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
+  // Fill the editor from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
   // first paint of a new prompt already shows its text.
-  // A project's page never offers a hub-wide change: an update to a hub-wide edit is Every project's to merge.
+  // A project's page never offers a hub-wide change: an out-of-date hub-wide edit is the hub's page's to bring up to date.
   const raw = detail.data?.prompt ?? null;
-  const d = useMemo((): PromptDetail | null => {
-    if (!raw || where === "hub" || !raw.stale || raw.stale.scope === "project") return raw;
-    const { stale: _stale, ...rest } = raw;
-    return rest;
-  }, [raw, where]);
+  const d = !raw || where === "hub" || !raw.stale || raw.stale.scope === "project" ? raw : withoutStale(raw, seen);
   if (d && d !== seen) {
     setSeen(d);
     const next = synced(filled, d, sk, editor);
     if (next.refill) {
       setEditor(next.filled.text);
-      setChecked({ text: next.filled.text, warnings: d.warnings });
+      // The hub's warnings are the text in effect's; both changes together get the dry run's.
+      setChecked(d.stale ? null : { text: next.filled.text, warnings: d.warnings });
     }
     setFilled(next.filled);
-    const m = syncedMerge(mergedFilled, d, sk, merged);
-    if (m) {
-      if (m.refill) setMerged(m.filled.text);
-      setMergedFilled(m.filled);
-      if (toUpdate) {
-        setToUpdate(false);
-        setView("update");
-      }
-    } else {
-      setMergedFilled(null);
-      if (view === "update") setView("edit");
-    }
   }
   const onScreen = d !== null && filled?.id === d.id && filled.scope === sk;
   // Known without the hub's answer, so a switch asked for before the prompt loads still asks first.
-  const mine = (f: Filled | null): f is Filled => f !== null && f.id === selected && f.scope === sk;
-  const dirty = (mine(filled) && isDirty(filled, editor)) || (mine(mergedFilled) && isDirty(mergedFilled, merged));
+  const dirty = filled !== null && filled.id === selected && filled.scope === sk && isDirty(filled, editor);
 
   useEffect(() => {
-    kept[where] = filled ? { filled, text: editor, mergedFilled, merged } : null;
-  }, [where, filled, editor, mergedFilled, merged]);
+    kept[where] = filled ? { filled, text: editor } : null;
+  }, [where, filled, editor]);
 
   const forKey = scope.kind === "project" ? sk : null;
   useEffect(() => {
-    placeRoute(where, selected, forKey, view);
-  }, [where, selected, forKey, view]);
+    placeRoute(where, selected, forKey);
+  }, [where, selected, forKey]);
 
   // The dry run, after a pause in typing: what saving this text would warn about.
-  const editorText = view === "update" ? merged : editor;
   useEffect(() => {
-    if (!d || !onScreen || editorText.trim() === "" || checked?.text === editorText) return;
+    if (!d || !onScreen || editor.trim() === "" || checked?.text === editor) return;
     const scopeOut = editScope(d, scope);
     const timer = window.setTimeout(() => {
       hubCall("prompt_set", {
         id: d.id,
         scope: scopeOut,
         ...(scopeOut === "project" && projectRef ? { projectRef } : {}),
-        text: editorText,
+        text: editor,
         dryRun: true,
       }).then(
-        (o) => setChecked({ text: editorText, warnings: o.warnings }),
+        (o) => setChecked({ text: editor, warnings: o.warnings }),
         // A hub without the dry run: the save still answers with the warnings.
         () => undefined,
       );
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [d, onScreen, editorText, checked?.text, scope, projectRef, hubCall]);
+  }, [d, onScreen, editor, checked?.text, scope, projectRef, hubCall]);
 
   const go = (to: Switch) => {
     setPending(null);
     setEcho(null);
     setScope(to.scope);
-    if (to.id !== selected) {
-      setSelected(to.id);
-      setView("edit");
-    }
+    setSelected(to.id);
   };
   const request = (to: Switch) => {
     if (scopeKey(to.scope) === sk && to.id === selected) return;
@@ -177,38 +145,35 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
     else go(to);
   };
 
-  // A link from elsewhere (the palette, the sidebar, a notice): open that prompt and scope, asking first if it would
-  // drop a draft. Only a change of the route is a request; the page's own state changes are not.
+  // A link from elsewhere (the row on Instructions, the palette, an old link to one prompt): open that prompt and
+  // scope, asking first if it would drop a draft. Only a change of the route is a request; the page's own state
+  // changes are not.
   const routeKey = `${route.prompt ?? ""}|${route.for ?? "hub"}`;
   const [seenRoute, setSeenRoute] = useState(routeKey);
   if (routeKey !== seenRoute) {
     setSeenRoute(routeKey);
     request({ scope: parseScope(route.for), id: route.prompt ?? selected });
   }
-  // Settings edits a project's own texts: with none picked yet, the first project's.
-  const first = where === "project" && scope.kind === "hub" && pending === null ? projects?.[0] : undefined;
-  if (first !== undefined) go({ scope: { kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } }, id: selected });
 
-  /** Saves `text` at `target`, written against the default `base` (null: the one shipped now). */
-  const save = (text: string, target: { scope: PromptScope; projectRef?: ProjectRef | undefined }, base: string | null) => {
-    if (!d || busy) return;
+  /** The level a save or reset changes: an out-of-date edit's own, else the one this page edits. */
+  const target = (p: PromptDetail) => (p.stale ? updateTarget(p, scope) : { scope: editScope(p, scope), projectRef });
+
+  /** Saves `text`, written against the built-in the editor was filled with. */
+  const save = (text: string) => {
+    if (!d || !filled || busy) return;
+    const to = target(d);
+    const [typed, base] = [editor, filled.base];
     setBusy(true);
     setEcho(null);
-    hubCall("prompt_set", {
-      id: d.id,
-      scope: target.scope,
-      ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
-      text,
-      ...(base !== null ? { base } : {}),
-    }).then(
+    hubCall("prompt_set", { id: d.id, scope: to.scope, ...(to.scope === "project" && to.projectRef ? { projectRef: to.projectRef } : {}), text, base }).then(
       (o) => {
         setBusy(false);
-        // The hub keeps an edit whose base is not today's default stale, and answers with both changes to merge.
-        const behind = base !== null && base !== d.default.ref;
-        setEcho({ ok: true, text: behind ? `${savedLine(o)} fleetd changed its default meanwhile: merge both changes below.` : savedLine(o) });
+        // The hub keeps an edit whose base is not today's built-in out of date, and answers with both changes to merge.
+        const behind = !d.stale && base !== d.default.ref;
+        setEcho({ ok: true, text: behind ? `${savedLine(o)} fleetd changed its built-in text meanwhile: both changes are below.` : savedLine(o) });
         setChecked({ text, warnings: o.warnings });
-        setToUpdate(behind);
-        if (view === "update") setView("edit");
+        // What was typed is saved, so the editor takes the hub's answer; anything typed since stays a draft.
+        setFilled((f) => (f === null ? f : { ...f, text: typed }));
         refetchPrompts();
       },
       (e: unknown) => {
@@ -217,31 +182,18 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
       },
     );
   };
-  const saveEdit = (text: string) => {
-    if (d && filled) save(text, { scope: editScope(d, scope), projectRef }, filled.base);
-  };
-  const saveUpdate = (text: string) => {
-    // The default the merge was written against: if fleetd's moved again meanwhile, the save comes back stale.
-    if (d?.stale) save(text, updateTarget(d, scope), mine(mergedFilled) ? mergedFilled.base : d.stale.current.ref);
-  };
 
-  const reset = (which: ResetFor) => {
+  const reset = () => {
     if (!d || busy) return;
-    const target = which === "update" ? updateTarget(d, scope) : { scope: editScope(d, scope), projectRef };
+    const to = target(d);
     setBusy(true);
     setEcho(null);
-    hubCall("prompt_set", {
-      id: d.id,
-      scope: target.scope,
-      ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
-      reset: true,
-    }).then(
+    hubCall("prompt_set", { id: d.id, scope: to.scope, ...(to.scope === "project" && to.projectRef ? { projectRef: to.projectRef } : {}), reset: true }).then(
       () => {
         setBusy(false);
         // The editor takes whatever is in effect now, from the refetch.
         setFilled(null);
-        setEcho({ ok: true, text: resetLine(target.scope, scopeName(scope, projects)) });
-        setView("edit");
+        setEcho({ ok: true, text: resetLine(to.scope, scopeName(scope, projects)) });
         refetchPrompts();
       },
       (e: unknown) => {
@@ -252,120 +204,132 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
   };
 
   const screen = where === "hub" ? "settings.hub.prompts" : "settings.prompts";
-  if (!live) {
+  const toInstructions = () => {
+    if (where === "hub") navigate({ id: "settings", tab: "hub.instructions" });
+    else window.location.hash = formatRoute({ tab: "instructions", for: forKey });
+  };
+  const toList = <Back to="Built-in prompts" onClick={() => request({ scope, id: null })} />;
+  const here = scopeName(scope, projects);
+
+  if (!live || (where === "project" && scope.kind === "hub")) {
     return (
       <div className={s.scroll} data-screen={screen}>
         <div className={s.column}>
-          <PageHead title="Prompts" />
-          <SettingsSection>
-            <GroupNote>Not connected. Connect to a hub to see and edit the prompts it sends its agents.</GroupNote>
-          </SettingsSection>
+          <PageHead title="Built-in prompts" lead={<Back to="Instructions" onClick={toInstructions} />} />
+          {live ? (
+            <SettingsSection bare>
+              <NoProject />
+            </SettingsSection>
+          ) : (
+            <SettingsSection>
+              <GroupNote>Not connected. Connect to a hub to see and edit the prompts it sends its agents.</GroupNote>
+            </SettingsSection>
+          )}
         </div>
       </div>
     );
   }
 
-  const here = scopeName(scope, projects);
+  // Each place shows only the edits it may change: a project's on its page, the hub-wide ones on the hub's.
+  const level = where === "project" ? "project" : "global";
+  const retired = (list.data?.orphans ?? []).filter((o) => o.scope === level);
+  const gone = retired.find((o) => o.id === selected);
+  const summary = list.data?.prompts?.find((p) => p.id === selected);
+  const name = gone ? orphanTitle(gone) : d ? describe(d).name : summary ? describe(summary).name : "this prompt";
   const pendingWhy =
     pending && pending.id === null
       ? "Going back to the list drops them."
       : pending && pending.id !== selected
         ? "Opening another prompt drops them."
         : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
-  const listed = list.data?.prompts?.find((p) => p.id === selected);
-  // Each place deletes only the edits it may change: a project's on its page, the hub-wide ones on Every project's.
-  const orphans = (list.data?.orphans ?? []).filter((o) => (o.scope === "project") === (where === "project"));
-  // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
-  const hubOnly = where === "project" && d !== null && editScope(d, scope) === "global";
-  const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
-  const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
   return (
-    <div className={s.scroll} data-screen={view === "edit" ? screen : `${screen}.${view}`}>
-      {/* The list in the page's column; a prompt's editor, the wider column it reads in. */}
-      <div className={selected === null ? s.column : s.detail}>
-        <PageHead title="Prompts">
-          {where === "hub"
-            ? "Hub-wide texts: every project gets them unless it has an edit of its own."
-            : scope.kind === "hub"
-              ? "A project's own texts. Add a project to edit them."
-              : `${here}'s own texts; the prompts it hasn't edited use the hub-wide text.`}
-        </PageHead>
-        {orphans.length > 0 ? (
-          <Orphans orphans={orphans} projects={projects} onOpen={(id) => request({ scope, id })} onDeleted={refetchPrompts} />
-        ) : null}
-        {selected === null ? (
-          where === "project" && scope.kind === "hub" ? null : (
-            <>
-              {list.data === undefined ? (
-                <SettingsSection>
-                  {list.isError ? (
-                    <SettingsRow
-                      title={<Text tone="danger">{errorText(list.error)}</Text>}
-                      label="Couldn't read the prompts"
-                      control={
-                        <Button size="sm" onClick={() => void list.refetch()}>
-                          Try again
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <GroupNote>Loading prompts…</GroupNote>
-                  )}
-                </SettingsSection>
+    <div className={s.scroll} data-screen={screen}>
+      {selected === null ? (
+        <div className={s.column}>
+          <PageHead title="Built-in prompts" lead={<Back to="Instructions" onClick={toInstructions} />}>
+            {where === "hub"
+              ? "What fleetd itself tells every project's agents. An edit here replaces its text for every project without its own."
+              : `What fleetd itself tells ${here}'s agents. An edit here replaces its text for ${here} only.`}
+          </PageHead>
+          {list.data === undefined ? (
+            <SettingsSection>
+              {list.isError ? (
+                <SettingsRow
+                  title={<Text tone="danger">{errorText(list.error)}</Text>}
+                  label="Couldn't read the prompts"
+                  control={
+                    <Button size="sm" onClick={() => void list.refetch()}>
+                      Try again
+                    </Button>
+                  }
+                />
               ) : (
-                <PromptList prompts={list.data.prompts ?? []} scope={scope} onOpen={(id) => request({ scope, id })} />
+                <GroupNote>Loading prompts…</GroupNote>
               )}
-              <SettingsSection bare>
-                <div className={s.inline}>
-                  <Text size="xs" tone="quiet">
-                    What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so it isn&apos;t
-                    a prompt and isn&apos;t listed.
-                  </Text>
-                  <Button size="sm" variant="link" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
-                    How event lines read
-                  </Button>
-                </div>
-              </SettingsSection>
-            </>
-          )
-        ) : (
-          <span>
-            <Button variant="link" size="sm" onClick={() => request({ scope, id: null })}>
-              ← Prompts
-            </Button>
-          </span>
-        )}
-        {selected === null ? null : detail.isLoadingError ? (
-          <Text tone="danger">{errorText(detail.error)}</Text>
-        ) : where === "project" && scope.kind === "hub" ? null : !d || !onScreen ? (
-          <Text tone="quiet">Loading…</Text>
-        ) : hubOnly ? (
-          <HubOnly d={d} />
-        ) : (
-          <Detail
+            </SettingsSection>
+          ) : (
+            <PromptList
+              prompts={list.data.prompts ?? []}
+              retired={retired}
+              level={level}
+              unfolded={unfolded}
+              onFold={(key) => setUnfolded((was) => new Set(was.has(key) ? [...was].filter((k) => k !== key) : [...was, key]))}
+              onOpen={(id) => request({ scope, id })}
+            />
+          )}
+        </div>
+      ) : gone ? (
+        <div className={cx(s.column, s.wide)}>
+          <PageHead title={name} lead={toList}>{`${whyLine(gone)} ${orphanAdvice(gone)}`}</PageHead>
+          <Retired
+            o={gone}
+            onOpen={(id) => request({ scope, id })}
+            onDeleted={() => {
+              refetchPrompts();
+              go({ scope, id: null });
+            }}
+          />
+        </div>
+      ) : !d || !onScreen ? (
+        <div className={cx(s.column, s.wide)}>
+          <PageHead title={name} lead={toList} />
+          <SettingsSection>
+            {detail.isLoadingError && list.data !== undefined ? <GroupNote tone="danger">{errorText(detail.error)}</GroupNote> : <GroupNote>Loading…</GroupNote>}
+          </SettingsSection>
+        </div>
+      ) : where === "project" && editScope(d, scope) === "global" ? (
+        // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
+        <div className={cx(s.column, s.wide)}>
+          <PageHead title={name} lead={toList}>
+            {`${describe(d).description} One text for every project on this hub: only the hub's owners and admins change it, from Hub › Every project › Instructions & memory.`}
+          </PageHead>
+          <SettingsSection bare>
+            <div data-text="code">
+              <Textarea aria-label={`${name}: text`} value={d.effective.text} readOnly minRows={10} maxRows={28} />
+            </div>
+          </SettingsSection>
+        </div>
+      ) : (
+        <div className={cx(s.column, s.wide)}>
+          <PageHead title={name} lead={toList}>
+            {`${describe(d).description} ${effectLine(d, scope, scope.kind === "project" ? here : null)}`}
+          </PageHead>
+          <Editor
             d={d}
-            scope={scope}
-            scopeLabel={here}
-            view={view}
-            setView={setView}
+            name={name}
+            edited={hasOverride(d, editScope(d, scope))}
             editor={editor}
             setEditor={setEditor}
             filledText={filled.text}
-            defaultMoved={filled.base !== null && filled.base !== d.default.ref && !d.stale && editor !== filled.text}
-            noBase={filled.base === null}
-            merged={merged}
-            setMerged={setMerged}
             checked={checked}
             busy={busy}
             echo={echo}
-            onSave={saveEdit}
-            onSaveUpdate={saveUpdate}
-            onReset={() => setConfirmReset("edit")}
-            onUseDefault={() => setConfirmReset("update")}
+            onSave={save}
+            onReset={() => setConfirmReset(true)}
           />
-        )}
-      </div>
+        </div>
+      )}
       <ConfirmDiscard
         open={pending !== null}
         what={`${name} (${here})`}
@@ -373,28 +337,27 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         onKeep={() => {
           setPending(null);
           // The link that asked already moved the hash; put it back on what is on screen, so the sidebar says so too.
-          placeRoute(where, selected, forKey, view);
+          placeRoute(where, selected, forKey);
         }}
         onDiscard={() => pending && go(pending)}
       />
       <Dialog
-        open={confirmReset !== null}
-        onOpenChange={(open) => !open && setConfirmReset(null)}
-        title={confirmReset === "update" ? `Use fleetd's new default for ${name}?` : `Reset ${name} to fleetd's default?`}
+        open={confirmReset}
+        onOpenChange={(open) => !open && setConfirmReset(false)}
+        title={`Reset ${name} to fleetd's built-in text?`}
         description={
-          resetScope === "project"
+          d && target(d).scope === "project"
             ? `Your edit for ${here} is deleted; ${here} gets the hub-wide text again. New agents get it; running ones keep theirs.`
-            : "Your hub-wide edit is deleted. Projects with their own edit keep it. New agents get the default; running ones keep theirs."
+            : "The hub-wide edit is deleted. Projects with their own edit keep it. New agents get the built-in text; running ones keep theirs."
         }
         footer={
           <>
-            <Button onClick={() => setConfirmReset(null)}>Cancel</Button>
+            <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
             <Button
               variant="danger"
               onClick={() => {
-                const which = confirmReset;
-                setConfirmReset(null);
-                if (which) reset(which);
+                setConfirmReset(false);
+                reset();
               }}
             >
               Reset
@@ -406,144 +369,131 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
   );
 }
 
-const EVENTS_DOC = "https://fleetd.sh/docs/what-agents-are-told#wake-events";
+/** The same object for the same answer, so the page fills its editor once per answer. */
+function withoutStale(raw: PromptDetail, seen: PromptDetail | null): PromptDetail {
+  if (seen !== null && shown.get(seen) === raw) return seen;
+  const { stale: _stale, ...rest } = raw;
+  shown.set(rest, raw);
+  return rest;
+}
+const shown = new WeakMap<PromptDetail, PromptDetail>();
 
-function badge(summary: PromptSummary, scope: Scope): { label: string; update?: true } | null {
-  if (summary.stale) return { label: "update", update: true };
-  if (summary.scope === "project") return { label: "edited" };
-  if (summary.scope === "global") return { label: scope.kind === "project" ? "hub-wide edit" : "edited" };
-  return null;
+/** The way back, in the window's top row before the page's name. */
+function Back({ to, onClick }: { to: string; onClick: () => void }) {
+  return (
+    <Button variant="ghost" size="sm" onClick={onClick}>
+      {`‹ ${to}`}
+    </Button>
+  );
 }
 
-/** The prompts, grouped, each with when fleetd sends it and its edited or update mark for the scope on screen. */
-function PromptList({ prompts, scope, onOpen }: { prompts: ReadonlyArray<PromptSummary>; scope: Scope; onOpen: (id: string) => void }) {
+/**
+ * The page's one list: what is edited here first (an edit whose built-in text changed since says so, and so does one
+ * of a prompt fleetd no longer sends), then the rest, each group folded until it is opened.
+ */
+function PromptList(props: {
+  prompts: ReadonlyArray<PromptSummary>;
+  retired: ReadonlyArray<RetiredPromptOverride>;
+  level: "project" | "global";
+  unfolded: ReadonlySet<string>;
+  onFold: (group: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const { edited, rest } = listed(props.prompts, props.level);
+  const any = edited.length + props.retired.length > 0;
+  const row = (r: CatalogRow, state?: { word: string; tone: "warning" }) => (
+    <SettingsListRow key={r.summary.id} name={r.name} label={r.name} state={state} open={{ onClick: () => props.onOpen(r.summary.id) }}>
+      <Text size="sm" tone="quiet">
+        {r.description}
+      </Text>
+    </SettingsListRow>
+  );
   return (
     <>
-      {sections(prompts).map(({ group, rows }) => (
-        <SettingsSection key={group.key} title={group.title}>
-          <SettingsList label={group.title}>
-            {rows.map((row) => {
-              const b = badge(row.summary, scope);
+      {any ? (
+        <SettingsSection title="Edited">
+          <SettingsList label="Edited">
+            {edited.map((r) => row(r, r.summary.stale ? { word: "built-in changed", tone: "warning" } : undefined))}
+            {props.retired.map((o) => (
+              <SettingsListRow
+                key={`retired:${o.id}`}
+                name={orphanTitle(o)}
+                label={orphanTitle(o)}
+                state={{ word: "no longer sent", tone: "quiet" }}
+                open={{ onClick: () => props.onOpen(o.id) }}
+              >
+                <Text size="sm" tone="quiet">
+                  {whyLine(o)}
+                </Text>
+              </SettingsListRow>
+            ))}
+          </SettingsList>
+        </SettingsSection>
+      ) : null}
+      {rest.length > 0 ? (
+        <SettingsSection title={any ? "Not edited" : undefined}>
+          <SettingsList label={any ? "Not edited" : "Built-in prompts"}>
+            {rest.map(({ group, rows }) => {
+              const open = props.unfolded.has(group.key);
               return (
-                <SettingsListRow
-                  key={row.summary.id}
-                  name={row.name}
-                  label={row.name}
-                  {...(b ? { state: { word: b.label, tone: b.update ? ("warning" as const) : ("quiet" as const) } } : {})}
-                  open={{ onClick: () => onOpen(row.summary.id) }}
-                >
-                  <Text size="sm" tone="quiet">
-                    {row.description}
-                  </Text>
-                </SettingsListRow>
+                <Fragment key={group.key}>
+                  <SettingsListRow name={group.title} label={group.title} meta={String(rows.length)} open={{ onClick: () => props.onFold(group.key) }} expanded={open}>
+                    <Text size="sm" tone="quiet">
+                      {group.blurb}
+                    </Text>
+                  </SettingsListRow>
+                  {open ? (
+                    <SettingsList nested label={group.title}>
+                      {rows.map((r) => row(r))}
+                    </SettingsList>
+                  ) : null}
+                </Fragment>
               );
             })}
           </SettingsList>
         </SettingsSection>
-      ))}
+      ) : null}
     </>
   );
 }
 
-/** A prompt without a project level, in Settings: the hub-wide text in effect, which owners and admins change. */
-function HubOnly({ d }: { d: PromptDetail }) {
-  const row = describe(d);
-  return (
-    <>
-      <div className={s.head}>
-        <IdChip label={row.name} id={d.id} kind="prompt" strong />
-        <Text tone="quiet">{row.description}</Text>
-        <Text size="xs" tone="quiet">
-          One text for every project on this hub: only the hub&apos;s owners and admins change it, in Hub › Every project › Prompts.
-        </Text>
-      </div>
-      <div data-text="code">
-        <Textarea aria-label={`${row.name}: text`} value={d.effective.text} readOnly minRows={10} maxRows={40} />
-      </div>
-    </>
-  );
-}
-
-/** Edits of prompts fleetd no longer has: what each said, where it could go, and Delete. */
-function Orphans(props: {
-  orphans: ReadonlyArray<RetiredPromptOverride>;
-  projects: ReadonlyArray<ProjectSummary> | undefined;
-  onOpen: (id: string) => void;
-  onDeleted: () => void;
-}) {
+/** An edit of a prompt fleetd no longer sends: what it said, where its intent could go, and Delete. */
+function Retired(props: { o: RetiredPromptOverride; onOpen: (id: string) => void; onDeleted: () => void }) {
+  const { o } = props;
   const hubCall = useHubCall();
-  const [shownText, setShownText] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<RetiredPromptOverride | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [echo, setEcho] = useState<Echo | null>(null);
-  const key = (o: RetiredPromptOverride) => `${o.id}|${o.scope}|${o.projectRef?.machineId ?? ""}/${o.projectRef?.projectId ?? ""}`;
-  const remove = (o: RetiredPromptOverride) => {
-    setEcho(null);
+  const [confirm, setConfirm] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const target = targetName(o);
+  const remove = () => {
+    setProblem(null);
     hubCall("prompt_set", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}), reset: true }).then(
-      () => {
-        setEcho({ ok: true, text: `Deleted your edit to ${oldPromptName(o)}.` });
-        props.onDeleted();
-      },
-      (e: unknown) => setEcho({ ok: false, text: errorText(e) }),
+      props.onDeleted,
+      (e: unknown) => setProblem(errorText(e)),
     );
   };
   return (
-    <SettingsSection title="Edits that no longer apply">
-      {props.orphans.map((o) => {
-        const k = key(o);
-        const target = targetName(o);
-        const open = shownText === k;
-        return (
-          <SettingsRow key={k} title={orphanHeadline(o, props.projects)} line={`${whyLine(o)} ${orphanAdvice(o)}`}>
-            {open ? (
-              <pre className={s.orphanText} data-text="code">
-                {o.text}
-              </pre>
-            ) : null}
-            <div className={s.actions}>
-              <Button size="sm" onClick={() => setShownText(open ? null : k)}>
-                {open ? "Hide your text" : "Show your text"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void copyText(o.text).then((ok) => setCopied(ok ? k : null));
-                }}
-              >
-                {copied === k ? "Copied" : "Copy your text"}
-              </Button>
-              {target && o.suggestedTarget ? (
-                <Button size="sm" variant="ghost" onClick={() => o.suggestedTarget && props.onOpen(o.suggestedTarget)}>
-                  {`Open ${target}`}
-                </Button>
-              ) : null}
-              <Button size="sm" variant="ghost" onClick={() => setConfirm(o)}>
-                Delete this edit
-              </Button>
-            </div>
-          </SettingsRow>
-        );
-      })}
-      {echo ? (
-        <div role="status">
-          <GroupNote tone={echo.ok ? "quiet" : "danger"}>{echo.text}</GroupNote>
-        </div>
-      ) : null}
+    <SettingsSection bare>
+      <div data-text="code">
+        <Textarea aria-label={`${orphanTitle(o)}: your text`} value={o.text} readOnly minRows={4} maxRows={28} />
+      </div>
+      <div className={s.actions}>
+        {target && o.suggestedTarget ? <Button onClick={() => o.suggestedTarget && props.onOpen(o.suggestedTarget)}>{`Open ${target}`}</Button> : null}
+        <Button onClick={() => setConfirm(true)}>Delete this edit</Button>
+        <EchoLine echo={problem === null ? null : { ok: false, text: problem }} />
+      </div>
       <Dialog
-        open={confirm !== null}
-        onOpenChange={(o) => !o && setConfirm(null)}
-        title={confirm ? `Delete your edit to ${oldPromptName(confirm)}?` : ""}
+        open={confirm}
+        onOpenChange={(open) => !open && setConfirm(false)}
+        title={`Delete your edit to ${orphanTitle(o)}?`}
         description="fleetd doesn't send this prompt any more, so deleting it changes nothing agents are told. Copy the text first if you want to keep it."
         footer={
           <>
-            <Button onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button onClick={() => setConfirm(false)}>Cancel</Button>
             <Button
               variant="danger"
               onClick={() => {
-                const o = confirm;
-                setConfirm(null);
-                if (o) remove(o);
+                setConfirm(false);
+                remove();
               }}
             >
               Delete
@@ -555,32 +505,26 @@ function Orphans(props: {
   );
 }
 
-function Detail(props: {
+/**
+ * A prompt's text, with Save once it differs and Reset to the built-in once it is an edit. An edit whose built-in
+ * text changed since it was made opens on both changes together, under what each side changed.
+ */
+function Editor(props: {
   d: PromptDetail;
-  scope: Scope;
-  scopeLabel: string;
-  view: View;
-  setView: (v: View) => void;
+  name: string;
+  /** There is an edit at the level this page changes. */
+  edited: boolean;
   editor: string;
   setEditor: (t: string) => void;
   filledText: string;
-  merged: string;
-  setMerged: (t: string) => void;
-  checked: { text: string; warnings: ReadonlyArray<PromptWarning> } | null;
+  checked: Checked | null;
   busy: boolean;
   echo: Echo | null;
-  /** The draft was written against an older default than the one the hub ships now. */
-  defaultMoved: boolean;
-  /** The text in effect is a stale edit with no record of its base: only the Update view can save it. */
-  noBase: boolean;
   onSave: (text: string) => void;
-  onSaveUpdate: (text: string) => void;
   onReset: () => void;
-  onUseDefault: () => void;
 }) {
-  const { d, scope, editor, busy } = props;
-  const row = describe(d);
-  const { inEffect, lands } = effectLines(d, scope, scope.kind === "project" ? props.scopeLabel : null);
+  const { d, editor, busy } = props;
+  const stale = d.stale;
   const area = useRef<HTMLTextAreaElement>(null);
   const insert = (name: string) => {
     const el = area.current;
@@ -594,129 +538,102 @@ function Detail(props: {
   const dirty = editor !== props.filledText;
 
   return (
-    <>
-      <div className={s.head}>
-        <IdChip label={row.name} id={d.id} kind="prompt" strong />
-        <Text tone="quiet">{row.description}</Text>
-        <Text size="xs" tone="quiet">
-          {`${inEffect} ${lands}`}
-        </Text>
+    <SettingsSection bare>
+      {stale ? (
+        <>
+          <Text tone="warning">fleetd changed its built-in text since this edit was made. Your text stays in effect until you choose.</Text>
+          {stale.base ? (
+            <>
+              <DiffLabel>What fleetd changed</DiffLabel>
+              <DiffBlock before={stale.base.text} after={stale.current.text} label="What fleetd changed" />
+              <DiffLabel>What you changed</DiffLabel>
+              <DiffBlock before={stale.base.text} after={stale.yours.text} label="What you changed" />
+            </>
+          ) : (
+            <>
+              <DiffLabel>The new built-in text compared with yours (there is no record of the one your edit started from)</DiffLabel>
+              <DiffBlock before={stale.current.text} after={stale.yours.text} label="The new built-in text compared with yours" />
+            </>
+          )}
+          <DiffLabel>Both changes together. Edit before you save.</DiffLabel>
+          {hasConflictMarkers(editor) ? (
+            <div className={s.warning}>
+              <Dot color="var(--warning)" />
+              <Text>Both changed the same lines. Keep one side between the &lt;&lt;&lt;&lt;&lt;&lt;&lt; and &gt;&gt;&gt;&gt;&gt;&gt;&gt; markers; left in, they are sent as written.</Text>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {/* The prompt exactly as sent, markdown and placeholders included: a code view to the QA text rule. */}
+      <div data-text="code">
+        <Textarea
+          ref={area}
+          aria-label={stale ? "Both changes together" : `${props.name}: text`}
+          value={editor}
+          minRows={10}
+          maxRows={stale ? 20 : 28}
+          placeholder="An empty prompt can't be saved."
+          onChange={(e) => props.setEditor(e.target.value)}
+        />
       </div>
-
-      {d.stale && props.view !== "update" ? (
-        <div className={s.inline}>
-          <Text tone="warning">fleetd's default changed since you edited this. Your text stays in effect until you save it again.</Text>
-          <Button onClick={() => props.setView("update")}>Review the update</Button>
+      <Warnings text={editor} checked={props.checked} />
+      {stale ? (
+        <div className={s.actions}>
+          <Button variant="primary" disabled={busy || editor.trim() === ""} onClick={() => props.onSave(editor)}>
+            {busy ? "Saving…" : "Save both changes"}
+          </Button>
+          <Button disabled={busy} title="Keeps your text as it is, now up to date with the new built-in text" onClick={() => props.onSave(stale.yours.text)}>
+            Keep mine
+          </Button>
+          <Button disabled={busy} onClick={props.onReset}>
+            Use the new built-in
+          </Button>
+          <EchoLine echo={props.echo} />
+        </div>
+      ) : dirty || busy || props.edited || props.echo ? (
+        <div className={s.actions}>
+          {/* Save shows once there is a change to save. */}
+          {dirty || busy ? (
+            <>
+              <Button variant="primary" disabled={!canSave(editor, d.effective.text, busy)} onClick={() => props.onSave(editor)}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => props.setEditor(props.filledText)}>
+                Discard changes
+              </Button>
+            </>
+          ) : null}
+          {props.edited ? (
+            <Button disabled={busy} onClick={props.onReset}>
+              Reset to the built-in
+            </Button>
+          ) : null}
+          <EchoLine echo={props.echo} />
         </div>
       ) : null}
-
-      <Tabs value={props.view} onValueChange={(v) => props.setView(v === "compare" || v === "update" ? v : "edit")}>
-        <TabList aria-label="Prompt views">
-          <Tab value="edit">Edit</Tab>
-          <Tab value="compare">Compare with default</Tab>
-          {d.stale ? <Tab value="update">Update</Tab> : null}
-        </TabList>
-
-        <TabPanel value="edit" className={s.panel}>
-          {props.defaultMoved ? (
-            <div className={s.warning}>
-              <Dot color="var(--warning)" />
-              <Text>fleetd changed this prompt's default while you were editing. Saving keeps your text and then shows both changes to merge.</Text>
-            </div>
-          ) : null}
-          {props.noBase ? (
-            <div className={s.warning}>
-              <Dot color="var(--warning)" />
-              <Text>fleetd's default changed since this edit, and there is no record of the default it started from. Save it from Update.</Text>
-            </div>
-          ) : null}
-          {/* The prompt exactly as sent, markdown and placeholders included: a code view to the QA text rule. */}
-          <div data-text="code">
-            <Textarea
-              ref={area}
-              aria-label={`${row.name}: text`}
-              value={editor}
-              minRows={10}
-              maxRows={40}
-              placeholder="An empty prompt can't be saved."
-              onChange={(e) => props.setEditor(e.target.value)}
-            />
-          </div>
-          <Warnings text={editor} checked={props.checked} />
-          <div className={s.actions}>
-            <Button variant="primary" disabled={props.noBase || !canSave(editor, d.effective.text, busy)} onClick={() => props.onSave(editor)}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-            <Button disabled={busy || !hasOverride(d, editScope(d, scope))} onClick={props.onReset}>
-              Reset to default
-            </Button>
-            <Button variant="ghost" disabled={busy || !dirty} onClick={() => props.setEditor(props.filledText)}>
-              Discard changes
-            </Button>
-            <EchoLine echo={props.echo} />
-          </div>
-          {d.placeholders.length > 0 ? (
-            <div className={s.stack}>
-              <Text size="xs" strong tone="quiet">
-                Placeholders: fleetd fills these in. Click one to insert it at the cursor.
-              </Text>
-              <div className={s.placeholders}>
-                {d.placeholders.map((p) => {
-                  const present = editor.includes(token(p.name));
-                  return (
-                    <PlaceholderRow
-                      key={p.name}
-                      name={p.name}
-                      status={p.required ? (present ? "required" : "required, missing") : "optional"}
-                      missing={p.required && !present}
-                      description={p.description}
-                      onInsert={() => insert(p.name)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </TabPanel>
-
-        <TabPanel value="compare" className={s.panel}>
-          <Compare base={d.default.text} text={editor} />
-        </TabPanel>
-
-        {d.stale ? (
-          <TabPanel value="update" className={s.panel}>
-            <Update
-              d={d}
-              merged={props.merged}
-              setMerged={props.setMerged}
-              checked={props.checked}
-              busy={busy}
-              echo={props.echo}
-              scope={scope}
-              scopeLabel={props.scopeLabel}
-              onSave={props.onSaveUpdate}
-              onUseDefault={props.onUseDefault}
-            />
-          </TabPanel>
-        ) : null}
-      </Tabs>
-    </>
+      {d.placeholders.length > 0 ? (
+        <div className={s.placeholders}>
+          <Text size="xs" tone="quiet">
+            fleetd fills these in:
+          </Text>
+          {d.placeholders.map((p) => (
+            <Tooltip key={p.name} content={`${p.description}${p.required ? " Required." : ""} Click to insert it at the cursor.`}>
+              <button type="button" className={s.chipButton} onClick={() => insert(p.name)} aria-label={`Insert the ${p.name} placeholder`}>
+                <code>{token(p.name)}</code>
+              </button>
+            </Tooltip>
+          ))}
+        </div>
+      ) : null}
+    </SettingsSection>
   );
 }
 
-function PlaceholderRow(props: { name: string; status: string; missing: boolean; description: string; onInsert: () => void }) {
+function DiffLabel({ children }: { children: string }) {
   return (
-    <div className={s.placeholder}>
-      <button type="button" className={s.chipButton} onClick={props.onInsert} aria-label={`Insert the ${props.name} placeholder`}>
-        <code>{token(props.name)}</code>
-      </button>
-      <Text size="xs" tone={props.missing ? "warning" : "quiet"} strong={props.missing}>
-        {props.status}
-      </Text>
-      <Text size="xs" tone="quiet">
-        {props.description}
-      </Text>
-    </div>
+    <Text size="sm" strong tone="quiet">
+      {children}
+    </Text>
   );
 }
 
@@ -731,133 +648,27 @@ function EchoLine({ echo }: { echo: Echo | null }) {
   );
 }
 
-/** The warnings for `text`: the dry run's once it answered for this exact text, else the last ones known. */
-function Warnings({ text, checked }: { text: string; checked: { text: string; warnings: ReadonlyArray<PromptWarning> } | null }) {
-  if (text.trim() === "") {
-    return (
-      <Text size="xs" tone="warning">
-        An empty prompt can't be saved. Reset to default brings fleetd's text back.
-      </Text>
-    );
-  }
-  const current = checked?.text === text;
-  const warnings = checked?.warnings ?? [];
-  if (warnings.length === 0) {
-    return (
-      <div role="status">
-        <Text size="xs" tone="quiet">
-          {current ? "No warnings." : "Checking…"}
-        </Text>
-      </div>
-    );
-  }
+/** What a save of `text` would lose: the dry run's warnings once it answered, the last ones known until then. Quiet when there are none. */
+function Warnings({ text, checked }: { text: string; checked: Checked | null }) {
+  const warnings = text.trim() === "" ? [] : (checked?.warnings ?? []);
   return (
     <div className={s.warnings} role="status">
+      {text.trim() === "" ? (
+        <Text size="xs" tone="warning">
+          An empty prompt can&apos;t be saved.
+        </Text>
+      ) : null}
       {warnings.map((w, ix) => (
         <div key={ix} className={s.warning}>
           <Dot color="var(--warning)" />
           <Text>{warningLine(w)}</Text>
         </div>
       ))}
-      <Text size="xs" tone="quiet">
-        {current ? "Warnings never stop a save." : "Checking the latest change… Warnings never stop a save."}
-      </Text>
-    </div>
-  );
-}
-
-function Compare({ base, text }: { base: string; text: string }) {
-  const n = useMemo(() => counts(diffLines(base, text)), [base, text]);
-  if (text === base) return <Text tone="quiet">Same as fleetd's default.</Text>;
-  if (sameProse(base, text)) return <Text tone="quiet">Same words as fleetd's default; only the line breaks or spacing differ.</Text>;
-  return (
-    <>
-      <Text size="xs" tone="quiet">
-        {`fleetd's default → the text in the editor: ${n.added} ${n.added === 1 ? "line" : "lines"} added, ${n.removed} removed.`}
-      </Text>
-      <DiffBlock before={base} after={text} label="fleetd's default compared with the text in the editor" />
-    </>
-  );
-}
-
-function Update(props: {
-  d: PromptDetail;
-  scope: Scope;
-  scopeLabel: string;
-  merged: string;
-  setMerged: (t: string) => void;
-  checked: { text: string; warnings: ReadonlyArray<PromptWarning> } | null;
-  busy: boolean;
-  echo: Echo | null;
-  onSave: (text: string) => void;
-  onUseDefault: () => void;
-}) {
-  const stale = props.d.stale;
-  if (!stale) return null;
-  const conflicts = hasConflictMarkers(props.merged);
-  const level =
-    updateTarget(props.d, props.scope).scope === "project"
-      ? `These buttons change ${props.scopeLabel}'s own edit.`
-      : props.scope.kind === "project"
-        ? `The out-of-date edit is your hub-wide one, which ${props.scopeLabel} uses: these buttons change it for every project without its own edit.`
-        : "These buttons change your hub-wide edit, used by every project without its own.";
-  return (
-    <>
-      <Text tone="quiet">{level}</Text>
-      {stale.base ? (
-        <>
-          <Text size="xs" strong tone="quiet">
-            What fleetd changed in its default
-          </Text>
-          <DiffBlock before={stale.base.text} after={stale.current.text} label="What fleetd changed in its default" />
-          <Text size="xs" strong tone="quiet">
-            What you changed
-          </Text>
-          <DiffBlock before={stale.base.text} after={stale.yours.text} label="What you changed" />
-        </>
-      ) : (
-        <>
-          <Text tone="quiet">This edit has no record of the default it started from, so only the new default and yours can be compared.</Text>
-          <Text size="xs" strong tone="quiet">
-            The new default compared with yours
-          </Text>
-          <DiffBlock before={stale.current.text} after={stale.yours.text} label="The new default compared with yours" />
-        </>
-      )}
-      <Text size="xs" strong tone="quiet">
-        Both changes together. Edit before you save.
-      </Text>
-      {conflicts ? (
-        <div className={s.warning}>
-          <Dot color="var(--warning)" />
-          <Text>Both changed the same lines. Keep one side between the &lt;&lt;&lt;&lt;&lt;&lt;&lt; and &gt;&gt;&gt;&gt;&gt;&gt;&gt; markers; left in, they are sent as written.</Text>
-        </div>
+      {warnings.length > 0 ? (
+        <Text size="xs" tone="quiet">
+          Warnings never stop a save.
+        </Text>
       ) : null}
-      <div data-text="code">
-        <Textarea
-          aria-label="Both changes together"
-          value={props.merged}
-          minRows={10}
-          maxRows={40}
-          onChange={(e) => props.setMerged(e.target.value)}
-        />
-      </div>
-      <Warnings text={props.merged} checked={props.checked} />
-      <div className={s.actions}>
-        <Button variant="primary" disabled={props.busy || props.merged.trim() === ""} onClick={() => props.onSave(props.merged)}>
-          {props.busy ? "Saving…" : "Save both changes"}
-        </Button>
-        <Button disabled={props.busy} onClick={() => props.onSave(stale.yours.text)}>
-          Keep mine
-        </Button>
-        <Button disabled={props.busy} onClick={props.onUseDefault}>
-          Use the new default
-        </Button>
-        <EchoLine echo={props.echo} />
-      </div>
-      <Text size="xs" tone="quiet">
-        Keep mine marks your text as up to date with this default. Use the new default deletes your edit at this level.
-      </Text>
-    </>
+    </div>
   );
 }

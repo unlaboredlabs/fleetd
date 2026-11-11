@@ -115,7 +115,7 @@ const render = async (avatar: string | undefined, icon: { face: string; color: s
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1", view: "edit" }} />
+          <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1" }} />
         </DataProvider>
       </UiProvider>,
     );

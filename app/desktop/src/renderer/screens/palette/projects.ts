@@ -16,7 +16,7 @@ import type { Command, Source } from "./registry";
 const itemId = (p: { readonly machineId: string; readonly projectId: string }, hub: string = FIRST_HUB): string => `project:${hubKey(hub, projectKey(p))}`;
 
 /** A settings page scoped to one project, in the form Settings' own links use (`for=<machine>/<project>`). */
-const settingsFor = (tab: "projects" | "agents" | "prompts" | "instructions", p: { readonly machineId: string; readonly projectId: string }): string =>
+const settingsFor = (tab: "projects" | "agents" | "instructions", p: { readonly machineId: string; readonly projectId: string }): string =>
   `#/settings/${tab}?${new URLSearchParams({ for: projectKey(p) }).toString().replaceAll("%2F", "/")}`;
 
 /** `hash` on hub `on`, when there are several. */
@@ -44,7 +44,6 @@ export const projectItems = (state: DataState, go: (hash: string) => void, on?: 
         { title: "Pull requests in this project", run: () => there(toHash(panelRoute(p, { tab: "prs", pr: null }))) },
         { title: "Settings for this project", run: () => there(settingsFor("projects", p)) },
         { title: "Instructions for this project", run: () => there(settingsFor("instructions", p)) },
-        { title: "Prompts for this project", run: () => there(settingsFor("prompts", p)) },
         {
           title: "Max agents for this project",
           run: () => {

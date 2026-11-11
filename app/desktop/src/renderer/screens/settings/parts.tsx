@@ -48,13 +48,14 @@ export const PageFrame = createContext<{ title: string; lead?: ReactNode } | nul
 
 /**
  * Every Settings page's title, in the window's top row like every page's. Its one-line description opens the page,
- * with a control for the whole page beside it (a full-size field, too tall for the top row).
+ * with a control for the whole page beside it (a full-size field, too tall for the top row). A page opened from
+ * another (a project's built-in prompts, from its Instructions) names its way back in `lead`.
  */
-export function PageHead(props: { title: string; children?: ReactNode; aside?: ReactNode }) {
+export function PageHead(props: { title: string; lead?: ReactNode; children?: ReactNode; aside?: ReactNode }) {
   const frame = useContext(PageFrame);
   return (
     <>
-      <FrameTitle title={frame?.title ?? props.title} lead={frame?.lead} />
+      <FrameTitle title={frame?.title ?? props.title} lead={frame?.lead ?? props.lead} />
       {props.children || props.aside ? (
         <div className={s.pageIntro}>
           {props.children ? <Text tone="quiet">{props.children}</Text> : null}
@@ -192,7 +193,8 @@ export function SwitchRow(props: {
 /**
  * One row of a list in a group (People, Machines, Devices, a project's repos): a glyph, the name with what it is beside
  * it, quiet lines under it, and its controls at the right end. A state is its word, coloured (`state`), never a dot.
- * With `open`, the whole row opens what it names, and a chevron trails it.
+ * With `open`, the whole row opens what it names, and a chevron trails it; a row that unfolds rows under it instead
+ * says so with `expanded`, and its chevron turns down while they show.
  */
 export function SettingsListRow(props: {
   name: ReactNode;
@@ -205,6 +207,7 @@ export function SettingsListRow(props: {
   children?: ReactNode | undefined;
   controls?: ReactNode | undefined;
   open?: { href: string } | { onClick: () => void } | undefined;
+  expanded?: boolean | undefined;
   /** Marks for tests and the QA screens (`data-…`). */
   data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
 }) {
@@ -225,7 +228,7 @@ export function SettingsListRow(props: {
               {name}
             </a>
           ) : (
-            <button type="button" className={g.opener} onClick={props.open.onClick}>
+            <button type="button" className={g.opener} aria-expanded={props.expanded} onClick={props.open.onClick}>
               {name}
             </button>
           )}
@@ -243,17 +246,17 @@ export function SettingsListRow(props: {
       {props.controls === undefined && props.open === undefined ? null : (
         <div className={g.control}>
           {props.controls}
-          {props.open === undefined ? null : <ChevronRight className={g.chevron} aria-hidden />}
+          {props.open === undefined ? null : <ChevronRight className={g.chevron} data-open={props.expanded === true ? "" : undefined} aria-hidden />}
         </div>
       )}
     </div>
   );
 }
 
-/** A list's rows in their group: no lines between them. */
-export function SettingsList(props: { label: string; children: ReactNode }) {
+/** A list's rows in their group: no lines between them. `nested`: the rows a row of another list unfolds, set in under it. */
+export function SettingsList(props: { label: string; nested?: boolean | undefined; children: ReactNode }) {
   return (
-    <div className={g.list} role="list" aria-label={props.label}>
+    <div className={cx(g.list, props.nested === true && g.nested)} role="list" aria-label={props.label}>
       {props.children}
     </div>
   );

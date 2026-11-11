@@ -2,8 +2,7 @@
 // typing in the sidebar's field narrows to the option and opening one lands on it. Matching is pure and tested; the
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
 import { revealNext } from "./reveal";
-import { ENTRIES } from "./catalog";
-import { isHubTab, promptHref, tabHref, type Tab } from "./route";
+import { isHubTab, tabHref, type Tab } from "./route";
 
 export { revealNext, useReveal } from "./reveal";
 
@@ -13,8 +12,6 @@ export interface SettingsOption {
   readonly label: string;
   readonly tab: Tab;
   readonly keywords?: ReadonlyArray<string>;
-  /** A prompt opens in the editor rather than being revealed on a page. */
-  readonly prompt?: string;
 }
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
@@ -28,7 +25,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   agents: "Agents",
   instructions: "Instructions & memory",
   automations: "Automations",
-  prompts: "Prompts",
+  prompts: "Built-in prompts",
   "project-vault": "Vault",
   "hub.people": "People",
   "hub.machines": "Machines",
@@ -36,7 +33,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "hub.profiles": "Profiles",
   "hub.tools": "Tools & skills",
   "hub.instructions": "Instructions & memory",
-  "hub.prompts": "Prompts",
+  "hub.prompts": "Built-in prompts",
   "hub.accounts": "Hub accounts",
   "hub.vault": "Vault",
   "hub.setup": "Setup",
@@ -104,8 +101,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "memory", label: "Project memory", tab: "instructions", keywords: ["memory", "remember", "remembered", "MEMORY.md", "forget", "rules", "refresh", "nightly", "tidy"] },
   { key: "project-vault", label: "Project vault", tab: "project-vault", keywords: ["vault", "env", ".env", "variables", "secrets", "api key", "token", "logins", "cards"] },
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
-  page("prompts", ["templates", "system prompt"]),
-  ...Object.entries(ENTRIES).map(([id, e]) => ({ key: `prompt:${id}`, label: e.name, tab: "prompts" as const, keywords: ["prompt", id], prompt: id })),
+  page("prompts", ["prompt", "templates", "system prompt", "lead", "reviewer", "writer", "voice"]),
   page("hub.people", ["team", "roles", "admin", "owner", "member", "remove", "claude account", "github account", "everyone's account", "usage"]),
   { key: "hub.invite", label: "Invite someone", tab: "hub.people", keywords: ["invite", "team", "join", "link", "add person"] },
   { key: "hub.invites", label: "Waiting to join", tab: "hub.people", keywords: ["invites", "open", "pending", "revoke"] },
@@ -133,7 +129,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.tools", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
   { key: "hub.skills", label: "Hub-wide skills", tab: "hub.tools", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
   { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
-  page("hub.prompts", ["templates", "system prompt", "hub-wide", "global", "every project"]),
   page("hub.accounts", ["connections", "claude api key", "api key", "github app", "guided setup"]),
   { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
   { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.accounts", keywords: ["claude", "api key", "members", "allow"] },
@@ -176,11 +171,8 @@ export function searchSettings(query: string, options: ReadonlyArray<SettingsOpt
     .map((x) => x.o);
 }
 
-/** A prompt opens in the project the Prompts page was last showing: dropping it would make Save write hub-wide. */
-export const optionHref = (o: SettingsOption): string => (o.prompt !== undefined ? promptHref(o.prompt) : tabHref(o.tab));
-
-/** Opens an option: its page (or prompt), then focus on the option itself. */
+/** Opens an option: its page, then focus on the option itself. */
 export function openOption(o: SettingsOption) {
-  revealNext(o.prompt === undefined && o.key !== o.tab ? o.key : null);
-  window.location.hash = optionHref(o);
+  revealNext(o.key !== o.tab ? o.key : null);
+  window.location.hash = tabHref(o.tab);
 }

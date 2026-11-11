@@ -35,7 +35,7 @@ describe("routes", () => {
       { id: "settings", tab: "accounts" },
       { id: "settings", tab: "hubs" },
       { id: "settings", tab: "your-memory" },
-      { id: "settings", tab: "prompts", prompt: "lead.start", for: "devbox/storefront", view: "compare" },
+      { id: "settings", tab: "prompts", prompt: "lead.start", for: "devbox/storefront" },
       { id: "settings", tab: "hub.people" },
       { id: "settings", tab: "hub.machines" },
       { id: "settings", tab: "hub.machines", machine: "laptop" },
@@ -44,7 +44,6 @@ describe("routes", () => {
       { id: "settings", tab: "hub.instructions" },
       { id: "settings", tab: "hub.prompts" },
       { id: "settings", tab: "hub.prompts", prompt: "lead.start" },
-      { id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "compare" },
       { id: "settings", tab: "hub.accounts" },
       { id: "settings", tab: "hub.setup" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
@@ -68,8 +67,16 @@ describe("routes", () => {
   it("writes the Hub group's pages under #/settings/hub", () => {
     expect(toHash({ id: "settings", tab: "hub.accounts" })).toBe("#/settings/hub/accounts");
     expect(toHash({ id: "settings", tab: "hub.machines", machine: "laptop" })).toBe("#/settings/hub/machines/laptop");
-    expect(toHash({ id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "update" })).toBe("#/settings/hub/prompts?prompt=lead.start&view=update");
-    // Only Every project's prompts open one, and only Machines a machine.
+    expect(toHash({ id: "settings", tab: "hub.prompts", prompt: "lead.start" })).toBe("#/settings/hub/prompts?prompt=lead.start");
+    // A link of before the prompt's compare and update views went still opens the prompt.
+    expect(parseHash("#/settings/hub/prompts?prompt=lead.start&view=update")).toEqual({ id: "settings", tab: "hub.prompts", prompt: "lead.start" });
+    expect(parseHash("#/settings/prompts?prompt=lead.start&for=devbox/storefront&view=compare")).toEqual({
+      id: "settings",
+      tab: "prompts",
+      prompt: "lead.start",
+      for: "devbox/storefront",
+    });
+    // Only the built-in prompts open one, and only Machines a machine.
     expect(parseHash("#/settings/hub/people?prompt=lead.start")).toEqual({ id: "settings", tab: "hub.people" });
     expect(parseHash("#/settings/hub/people/laptop")).toEqual({ id: "settings", tab: "hub.people" });
     expect(parseHash("#/settings/hub")).toEqual({ id: "settings", tab: "hub.people" });

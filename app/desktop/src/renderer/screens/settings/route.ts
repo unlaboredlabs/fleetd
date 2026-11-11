@@ -1,46 +1,45 @@
-// Settings' links ride on the shell's route (shell/routes.ts): #/settings[/<tab>][?prompt=<id>&for=<machine>/<project>
-// &view=compare|update], and the Hub group's #/settings/hub/<page>. They make a prompt, a project's texts and a
-// prompt's update linkable, from the palette, a "default changed" notice or the screenshot suite.
+// Settings' links ride on the shell's route (shell/routes.ts): #/settings[/<tab>][?prompt=<id>&for=<machine>/<project>],
+// and the Hub group's #/settings/hub/<page>. They make a built-in prompt and a project's texts linkable, from the
+// palette or the screenshot suite.
 import { useRoute } from "../shell/navigation";
-import { isHubTab, parseHash, toHash, type HubTab, type Screen, type SettingsTab, type SettingsView } from "../shell/routes";
+import { isHubTab, parseHash, toHash, type HubTab, type Screen, type SettingsTab } from "../shell/routes";
 
 export { isHubTab };
 export type Tab = SettingsTab;
-export type View = SettingsView;
 
 export interface SettingsRoute {
   readonly tab: Tab;
   readonly prompt: string | null;
   readonly for: string | null;
-  readonly view: View;
   /** Hub › Machines: the machine whose page is open. */
   readonly machine?: string;
 }
 
 const settingsOf = (s: Screen): SettingsRoute =>
   s.id === "settings"
-    ? { tab: s.tab, prompt: s.prompt ?? null, for: s.for ?? null, view: s.view ?? "edit", ...(s.machine === undefined ? {} : { machine: s.machine }) }
-    : { tab: "general", prompt: null, for: null, view: "edit" };
+    ? { tab: s.tab, prompt: s.prompt ?? null, for: s.for ?? null, ...(s.machine === undefined ? {} : { machine: s.machine }) }
+    : { tab: "general", prompt: null, for: null };
 
 export const parseRoute = (hash: string): SettingsRoute => settingsOf(parseHash(hash));
 
 export const useSettingsRoute = (): SettingsRoute => settingsOf(useRoute());
 
-type RouteParts = { tab: Tab; prompt?: string | null; for?: string | null; view?: View };
+type RouteParts = { tab: Tab; prompt?: string | null; for?: string | null };
 
-export const formatRoute = (r: RouteParts): string =>
-  toHash({ id: "settings", tab: r.tab, ...(r.prompt ? { prompt: r.prompt } : {}), ...(r.for ? { for: r.for } : {}), ...(r.view ? { view: r.view } : {}) });
+export const formatRoute = (r: RouteParts): string => toHash({ id: "settings", tab: r.tab, ...(r.prompt ? { prompt: r.prompt } : {}), ...(r.for ? { for: r.for } : {}) });
 
 /**
  * A project's pages, under tabs once a project is opened from Settings › Projects: all of that one project (`for`).
  * Projects without `for` is the list of projects.
  */
-export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations", "prompts", "project-vault"];
-export const isProjectTab = (tab: Tab): boolean => PROJECT_TABS.includes(tab);
+export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations", "project-vault"];
+/** A project's page: one of its tabs, or its built-in prompts, which open from the foot of Instructions. */
+export const isProjectTab = (tab: Tab): boolean => tab === "prompts" || PROJECT_TABS.includes(tab);
 
 /** Hub › Every project's pages, under tabs as a project's are. */
-export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.tools", "hub.instructions", "hub.prompts"];
-export const isEveryProject = (tab: Tab): tab is HubTab => EVERY_PROJECT.some((t) => t === tab);
+export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.tools", "hub.instructions"];
+/** One of them, or the hub-wide built-in prompts, which open from the foot of its Instructions. */
+export const isEveryProject = (tab: Tab): tab is HubTab => tab === "hub.prompts" || EVERY_PROJECT.some((t) => t === tab);
 
 const last = new Map<Tab, string>();
 /** The project the project pages last showed: each of them opens on it. */
@@ -57,9 +56,6 @@ export const projectFor = (route: Pick<SettingsRoute, "for">, projects: Readonly
   const first = projects?.[0];
   return first ? `${first.machineId}/${first.projectId}` : null;
 };
-
-/** A link to one prompt, of the project the project pages last showed. */
-export const promptHref = (id: string): string => formatRoute({ tab: "prompts", prompt: id, for: lastProject });
 
 /**
  * Records where the page is without a history entry: a reload or a copied link lands here again. replaceState fires no
