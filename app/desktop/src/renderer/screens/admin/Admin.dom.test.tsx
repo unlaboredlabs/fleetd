@@ -203,7 +203,7 @@ it("lists the Hub group's pages flat, and Setup always, saying how many required
   setupLeft = 2;
   await render({ me: sam, admin: true }, "settings");
   const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-  expect(rows()).toEqual(["People", "Machines", "Every project", "Hub accounts", "Setup2 left"]);
+  expect(rows()).toEqual(["People", "Machines", "Every project", "Setup2 left"]);
   act(() => root.unmount());
   root = createRoot(host);
   setupLeft = 0;
@@ -268,7 +268,7 @@ it("never counts setup left for a member", async () => {
 });
 
 it("tells a member who follows a link to a Hub page that it isn't theirs, and reads nothing of it", async () => {
-  for (const hash of ["#/settings/hub/people", "#/settings/hub/accounts", "#/settings/hub/tools"]) {
+  for (const hash of ["#/settings/hub/people", "#/settings/hub/accounts", "#/settings/hub/setup", "#/settings/hub/tools"]) {
     window.location.hash = hash;
     await render({ me: bob, admin: false });
     expect(host.querySelector("[data-screen='settings.hub.denied']"), hash).not.toBeNull();

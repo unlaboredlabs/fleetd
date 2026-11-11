@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeFirstUse, guides, read, requiredLeft } from "../src/hub/setup/index.ts";
 import { claudeKey, claudeOwner, ghAuth, hubReachable, macOneNode, setupChecks } from "../src/hub/doctor/checks.ts";
-import type { ClaudeSetupView } from "../src/hub/doctor/checks.ts";
+import type { ClaudeSetupView, SetupFacts } from "../src/hub/doctor/checks.ts";
 import type { DoctorCheck, DoctorStatus, GithubApp, HubSetupStep } from "../src/shared/contracts.ts";
 
 const ROOT = join(import.meta.dir, "../..");
@@ -56,7 +56,24 @@ const GITHUB_APP = {
   lastTest: { at: AT, ok: true, said: "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work." },
 } as GithubApp;
 
-function doctorAt(p: Point): DoctorCheck[] {
+/** What the hub reads from its own state at `p`. */
+const factsAt = (p: Point): SetupFacts => ({
+  joined: p.rest ? ["Ada"] : [],
+  githubApp: p.github ? GITHUB_APP : undefined,
+  onepassword: p.rest ? [["Dev", { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] }]] : [],
+});
+
+/**
+ * Sam's hub in use (app/desktop/fixtures/admin): the hub's key works and gh is logged in; its GitHub App is made and
+ * installed nowhere yet, Alice and Bob have joined, and Sam's 1Password token reads two vaults.
+ */
+const TEAM: SetupFacts = {
+  joined: ["Alice", "Bob"],
+  githubApp: { ...GITHUB_APP, installations: [], lastTest: undefined },
+  onepassword: [["Sam", { at: AT, machineId: "devbox", ok: true, vaults: ["Agents", "Shared logins"] }]],
+};
+
+function doctorAt(p: Point, facts: SetupFacts = factsAt(p)): DoctorCheck[] {
   return [
     hubReachable("http://127.0.0.1:4790/healthz", { ok: true }, ""),
     {
@@ -71,29 +88,25 @@ function doctorAt(p: Point): DoctorCheck[] {
       ? machine("claude_login", "ok", "devbox: claude is logged in.")
       : machine("claude_login", "fail", "devbox: claude is not logged in, so its sessions can't start."),
     ...claude(p.key),
-    ...setupChecks({
-      joined: p.rest ? ["Ada"] : [],
-      githubApp: p.github ? GITHUB_APP : undefined,
-      onepassword: p.rest ? [["Dev", { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] }]] : [],
-    }),
+    ...setupChecks(facts),
     ...(p.rest ? [macOneNode("mac", [])] : []),
   ];
 }
 
 /** The checks at `p`, on a hub with no project yet (the fixtures' empty hub). */
-const checksAt = (p: Point) => beforeFirstUse(doctorAt(p), 0);
+const checksAt = (p: Point, facts?: SetupFacts) => beforeFirstUse(doctorAt(p, facts), 0);
 
 /** What a read adds to a step's guide: its status and what its checks say. The guides are written once. */
 const reads = (steps: HubSetupStep[]) =>
   Object.fromEntries(steps.map((s) => [s.id, { status: s.status, said: s.said, way: s.way, fix: s.fix, failing: s.failing }]));
 
 /** One fixture: `setup_list` now, and `setup_test` of each step as `after` finds it. */
-function scenario(now: Point, after: Point) {
-  const steps = read(guides(HUB, VERSION), checksAt(now));
+function scenario(now: Point, after: Point, facts?: SetupFacts) {
+  const steps = read(guides(HUB, VERSION), checksAt(now, facts));
   return {
     requiredLeft: steps.filter(requiredLeft).length,
     list: reads(steps),
-    tests: reads(read(guides(HUB, VERSION), checksAt(after))),
+    tests: reads(read(guides(HUB, VERSION), checksAt(after, facts))),
   };
 }
 
@@ -119,6 +132,8 @@ export function fixtures(): string {
       "setup-done": scenario(github, github),
       "setup-all": scenario({ ...github, rest: true }, { ...github, rest: true }),
     },
+    // Not a first run: the steps of the hub the admin fixtures show.
+    team: scenario({ ...github, logins: true }, { ...github, logins: true }, TEAM),
   };
   return `${JSON.stringify(sorted(all), null, 2)}\n`;
 }

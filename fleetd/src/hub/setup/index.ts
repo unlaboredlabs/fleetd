@@ -159,7 +159,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             value("Key name", name),
             plain(
               "Where",
-              "Paste it on Settings › Hub accounts › Claude, with an endpoint if you use a gateway; the app seals it on your device.",
+              "Paste it on Settings › Hub › Setup › Claude, with an endpoint if you use a gateway; the app seals it on your device.",
             ),
           ],
         ),
@@ -190,7 +190,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       parts: [
         part(
           "Create the hub's GitHub App",
-          "On Settings › Hub accounts › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+          "On Settings › Hub › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
           [],
           [command("Or on the hub, from a terminal", "fleetd github-app create")],
         ),

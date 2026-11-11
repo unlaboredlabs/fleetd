@@ -1,12 +1,12 @@
 // The hub admin's setup: the steps the hub serves (setup_list), the same ones `fleetd init`
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
-// Setup lists only the steps left and opens one at a time (StepGuide). Each step's status is the hub's, read from its
-// checks; Test runs that step's checks now (setup_test), and a step's result is saved
-// where it lives already (Settings › Hub accounts › Claude, › GitHub, …), which its place opens. Only owners and admins
-// see any of it.
+// Setup lists the hub's accounts and the steps left, and opens one at a time (StepGuide). Each step's status is the
+// hub's, read from its checks; Test runs that step's checks now (setup_test), and a step's result is saved
+// where it lives already (Settings › Hub › Setup › Claude, › GitHub, Hub › Machines, …), which its place opens. Only
+// owners and admins see any of it.
 
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { SetupListOutput, SetupStepId } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError, callKey } from "../../src/data/queries";
@@ -29,8 +29,8 @@ const go = (view: string | null) => {
 type Steps = { readonly steps: ReadonlyArray<SetupStep> } | { readonly problem: string; readonly old: boolean } | null;
 
 /**
- * Asks the hub for its steps again each time a setup view opens: what was saved elsewhere meanwhile (Settings › Hub ›
- * Claude, `fleetd init`) shows at once, rather than at the doctor's next run.
+ * Asks the hub for its steps again each time a setup view opens: what was saved elsewhere meanwhile (Settings › Your
+ * accounts, `fleetd init`) shows at once, rather than at the doctor's next run.
  */
 export function useFreshSetup(enabled = true) {
   const refetch = useRefetch();
@@ -201,17 +201,35 @@ function useTest(step: SetupStep) {
   return { busy, tested, run };
 }
 
-/** What a step asks for: what its checks say, its numbered parts, where its result is saved, and its Test. */
-function StepBody({ step, test }: { step: SetupStep; test: ReturnType<typeof useTest> }) {
+/**
+ * What a step asks for: what its checks say, its numbered parts, where its result is saved, and its Test. `account`,
+ * on the step's own page in Settings: the hub's account itself, its controls, which come first; once the step is done
+ * its guide and its Test fold into one line under them, so the account's own Test is the one in sight.
+ */
+function StepBody({ step, test, account }: { step: SetupStep; test: ReturnType<typeof useTest>; account?: ReactNode }) {
   const hub = useHub();
-  const places = placesOf(step);
+  const here = account !== undefined;
+  const places = placesOf(step, here);
+  // Open while the step is being done, and it stays so when its Test finds it done.
+  const [shown, setShown] = useState(step.status !== "done");
+  const folded = here && step.status === "done" && !shown;
   return (
     <>
       <Said step={step} />
 
-      <GuideParts parts={step.parts} />
+      {account}
 
-      {places.length === 0 && step.fieldsNote === undefined ? null : (
+      {here && step.status === "done" ? (
+        <span>
+          <Button variant="link" size="sm" aria-expanded={shown} onClick={() => setShown(!shown)}>
+            {shown ? "Hide the guide" : "Show the guide"}
+          </Button>
+        </span>
+      ) : null}
+
+      {folded ? null : <GuideParts parts={step.parts} />}
+
+      {folded || (places.length === 0 && step.fieldsNote === undefined) ? null : (
         <Part n={step.parts.length + 1} title="Save it in fleetd">
           {step.fieldsNote === undefined ? null : (
             <Text as="p" size="sm" tone="quiet">
@@ -236,7 +254,7 @@ function StepBody({ step, test }: { step: SetupStep; test: ReturnType<typeof use
         </Part>
       )}
 
-      {step.test === undefined ? null : (
+      {folded || step.test === undefined ? null : (
         <div className={s.test}>
           <Button onClick={() => void test.run()} disabled={test.busy}>
             {test.busy ? "Testing…" : "Test"}
@@ -255,12 +273,15 @@ function StepBody({ step, test }: { step: SetupStep; test: ReturnType<typeof use
   );
 }
 
-/** One step by itself, as Settings › Hub › Setup opens it: the page names it, so this is the rest. */
-export function StepGuide({ step }: { step: SetupStep }) {
+/**
+ * One step by itself, as Settings › Hub › Setup opens it: the page names it, so this is the rest. `account`: the
+ * controls of the hub's account the step sets up (Claude's key, the GitHub App), which this page holds.
+ */
+export function StepGuide({ step, account }: { step: SetupStep; account?: ReactNode }) {
   const test = useTest(step);
   return (
     <article className={cx(s.pane, s.guide)} aria-label={step.title} data-step={step.id}>
-      <StepBody step={step} test={test} />
+      <StepBody step={step} test={test} account={account} />
     </article>
   );
 }

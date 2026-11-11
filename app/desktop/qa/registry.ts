@@ -3126,23 +3126,14 @@ export const screens: readonly Screen[] = [
   { id: "settings.projects", variant: "list", route: "#/settings/projects", fixtures: ["admin-owner", "admin-member", "empty", "hub-unreachable"] },
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
-  // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the
-  // hub's Claude key and GitHub App); Every project's Agents (at Tools & skills, which was a page once) and
-  // Instructions (the hub-wide built-in prompts open from its foot); Setup; and a member who follows a link.
+  // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Every project's
+  // Agents (at Tools & skills, which was a page once) and Instructions (the hub-wide built-in prompts open from its
+  // foot); Setup, which holds the hub's accounts (Hub accounts once); and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
-  // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
-  // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
-  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
-  {
-    id: "settings.hub.accounts",
-    route: "#/settings/hub/accounts",
-    fixtures: ["admin-owner"],
-    variant: "change",
-    open: async (page) => {
-      await page.getByRole("button", { name: "Change" }).click();
-      await page.getByRole("textbox", { name: "API key" }).waitFor();
-    },
-  },
+  // Hub accounts is a part of Setup: its old link lands on Setup's accounts, each a row. A hub too old to serve its
+  // steps says so and still lists its own two accounts.
+  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-owner", "admin-admin"] },
+  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-old-hub"], expect: "error" },
   // Your accounts › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
   // and Bob with nothing to run on, told to connect.
   { id: "settings.accounts", route: "#/settings/accounts", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"] },
@@ -3364,10 +3355,13 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  // Hub › Setup reads the hub's steps (setup_list) and shows only those left, a row each: a fresh hub with a required
-  // step left, one with only later steps left, and one with every step done, which is one line. The done steps shown
-  // again; and a step's guide opened in place, its paste values and Test.
-  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done", "setup-all"] },
+  // Hub › Setup reads the hub's steps (setup_list), a row each: its accounts always, each saying what it uses or
+  // what it needs, then the other steps left. A fresh hub with a required step left, one with only later steps left,
+  // one with every step done, and a hub in use whose 1Password asks for a look. The done steps shown again. A row
+  // opens its step in place: an account's page is its controls over its guide (Claude, teams step 8: the hub's key
+  // sealed and tested and the members switch, Change opening the key's form, which never shows the key; GitHub's App,
+  // and GitHub on a fresh hub, its guide open); any other step is its guide.
+  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done", "setup-all", "admin-owner"] },
   {
     id: "settings.hub.setup",
     route: "#/settings/hub/setup",
@@ -3379,13 +3373,44 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "settings.hub.setup",
+    id: "settings.hub.setup.step",
+    route: "#/settings/hub/setup",
+    fixtures: ["admin-owner", "setup-fresh"],
+    variant: "claude",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "Claude" }).click();
+      await page.getByRole("article", { name: "Claude" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.setup.step",
+    route: "#/settings/hub/setup",
+    fixtures: ["admin-owner"],
+    variant: "claude-change",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "Claude" }).click();
+      await page.getByRole("button", { name: "Change" }).click();
+      await page.getByRole("textbox", { name: "API key" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.setup.step",
+    route: "#/settings/hub/setup",
+    fixtures: ["admin-owner", "setup-done", "setup-fresh"],
+    variant: "github",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Accounts" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("article", { name: "GitHub" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.setup.step",
     route: "#/settings/hub/setup",
     fixtures: ["setup-fresh"],
-    variant: "step",
+    variant: "people",
     open: async (page) => {
-      await page.getByRole("list", { name: "Steps left" }).getByRole("button", { name: "GitHub" }).click();
-      await page.getByRole("article", { name: "GitHub" }).getByRole("button", { name: "Test" }).waitFor();
+      await page.getByRole("list", { name: "Steps left" }).getByRole("button", { name: "People" }).click();
+      await page.getByRole("article", { name: "People" }).waitFor();
     },
   },
   { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },

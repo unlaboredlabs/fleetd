@@ -11,15 +11,16 @@ vi.hoisted(() => {
 describe("Settings' search for a member", () => {
   it("offers no Hub page or option", () => {
     expect(optionsFor(false).some((o) => isHubTab(o.tab))).toBe(false);
-    for (const q of ["machine cap", "max agents", "machine roles", "people", "invite", "github app", "setup"]) {
+    for (const q of ["machine cap", "max agents", "machine roles", "people", "invite", "github app", "hub accounts", "claude api key", "setup"]) {
       expect(searchSettings(q, optionsFor(false)).filter((o) => isHubTab(o.tab)), q).toEqual([]);
     }
   });
 
   it("offers an owner or admin every Hub page, and what was a page once on the page that holds it", () => {
     const pages = new Set(optionsFor(true).filter((o) => isHubTab(o.tab)).map((o) => o.tab));
-    expect([...pages].sort()).toEqual(["hub.accounts", "hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.vault"]);
+    expect([...pages].sort()).toEqual(["hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.vault"]);
     const at = (key: string) => optionsFor(true).find((o) => o.key === key)?.tab;
     expect([at("hub.updates"), at("hub.tools"), at("hub.mcp"), at("hub.skills")]).toEqual(["hub.machines", "hub.profiles", "hub.profiles", "hub.profiles"]);
+    expect([at("hub.accounts"), at("admin.claude"), at("admin.claude.members"), at("admin.github")]).toEqual(["hub.setup", "hub.setup", "hub.setup", "hub.setup"]);
   });
 });

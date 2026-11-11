@@ -1,8 +1,9 @@
-// Settings › Hub accounts › Claude (teams step 8, D200): the hub's API configuration (its Claude API key, sealed in main to
-// every machine and never shown back, and an optional endpoint), with Test, and a line under it on what leads and
-// automations run on (the key, else the hub owner's own subscription); whether members may run their work on it (on by
-// default). Each person's account, with any usage pause on it, is on their People row; their own choice and
-// subscription are theirs, in Settings › Your accounts › Claude.
+// Settings › Hub › Setup › Claude (teams step 8, D200; the Claude step's own page, SetupPage.tsx): the hub's API
+// configuration (its Claude API key, sealed in main to every machine and never shown back, and an optional endpoint),
+// with Test, and a line under it on what leads and automations run on (the key, else the hub owner's own
+// subscription); whether members may run their work on it (on by default). Each person's account, with any usage
+// pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Your accounts ›
+// Claude.
 import { useState, type ReactNode } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, UsageStatus } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -26,11 +27,7 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   return (
-    <SettingsSection
-      title="Claude"
-      reveal="admin.claude"
-      hint="The hub's Claude API key, and who may use it. Each person picks their own in You › Your accounts."
-    >
+    <SettingsSection reveal="admin.claude">
       {!live ? (
         <GroupNote>Connect to a hub to see and change this.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (

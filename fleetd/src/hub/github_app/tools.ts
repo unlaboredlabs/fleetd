@@ -1,5 +1,5 @@
 // `github_app_get` for everyone; `github_app_manifest`, `github_app_create`, `github_app_test` and `github_app_remove`
-// for an owner's or admin's device (Settings › Hub accounts › GitHub); `github_connect` and `github_disconnect` for a
+// for an owner's or admin's device (Settings › Hub › Setup › GitHub); `github_connect` and `github_disconnect` for a
 // person's own devices (Settings › Your accounts › GitHub). No key, secret or token crosses any of them.
 import type { Person, PersonGithub, PersonId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -119,7 +119,7 @@ function me(hub: Hub, caller: Caller): PersonId {
 }
 
 const noneYet = () =>
-  new ToolError("not_found", "This hub has no GitHub App yet.", "Create one in Settings › Hub accounts › GitHub.");
+  new ToolError("not_found", "This hub has no GitHub App yet.", "Create one in Settings › Hub › Setup › GitHub.");
 
 async function get(hub: Hub, caller: Caller) {
   requireRole(caller, "read");

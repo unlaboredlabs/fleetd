@@ -130,11 +130,12 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
   { key: "hub.vault", label: "Vault for every project", tab: "hub.vault", keywords: ["vault", "team card", "shared login", "every project", "hub-wide", "cards", "logins", "addresses"] },
   { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
-  page("hub.accounts", ["connections", "claude api key", "api key", "github app", "guided setup"]),
-  { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
-  { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.accounts", keywords: ["claude", "api key", "members", "allow"] },
-  { key: "admin.github", label: "GitHub App", tab: "hub.accounts", keywords: ["github", "app", "manifest", "installation", "webhook"] },
   page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps"]),
+  // Hub accounts was a page once: its name still finds the accounts, on Setup, and each of its options the account that holds it.
+  { key: "hub.accounts", label: PAGE_LABEL["hub.accounts"], tab: "hub.setup", keywords: ["accounts", "connections", "claude api key", "api key", "github app", "guided setup"] },
+  { key: "admin.claude", label: "Hub Claude API key", tab: "hub.setup", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
+  { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.setup", keywords: ["claude", "api key", "members", "allow"] },
+  { key: "admin.github", label: "GitHub App", tab: "hub.setup", keywords: ["github", "app", "manifest", "installation", "webhook"] },
 ];
 
 const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];

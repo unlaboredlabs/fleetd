@@ -1938,7 +1938,7 @@ export type ClaudeSealedOn = {
   machineId: MachineId;
 };
 
-/** Hub-wide Claude settings (Settings › Hub accounts). */
+/** Hub-wide Claude settings (Settings › Hub › Setup › Claude). */
 export type ClaudeSettings = {
   /**
    * Members may run their work on the hub's API configuration (on by default). Off, each member connects their

@@ -88,7 +88,7 @@ function show(apps: GithubApps) {
   if (app) describe(app);
   else {
     println(
-      "This hub has no GitHub App yet: `fleetd github-app create`, or Settings › Hub accounts › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.",
+      "This hub has no GitHub App yet: `fleetd github-app create`, or Settings › Hub › Setup › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.",
     );
   }
 }

@@ -17,6 +17,12 @@ export function revealNext(key: string | null) {
   for (const l of listeners) l();
 }
 
+/**
+ * The option waiting for its page, for a page that must open something first to show it (Hub › Setup opens the
+ * account that holds it). Reading it leaves it for the element marked with it.
+ */
+export const useWanted = (): string | null => useSyncExternalStore(subscribe, () => wanted);
+
 const FOCUSABLE = 'input, textarea, button:not([disabled]), [role="slider"]';
 // What a person does that takes the page over from a reveal still holding its place.
 const TAKEN = ["wheel", "pointerdown", "keydown", "touchstart"] as const;

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// Settings' Hub group (D211): People, Machines (Updates under them), Every project (Agents, Instructions, Vault),
-// Hub accounts, and Setup, always; Machines a list with Add machine and recordings, each machine's role,
-// screens and caps on its own page; Claude and
-// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, MCP
+// Settings' Hub group (D211): People, Machines (Updates under them), Every project (Agents, Instructions, Vault)
+// and Setup, always; Machines a list with Add machine and recordings, each machine's role, screens and caps on its
+// own page; Claude and GitHub each one row of Setup's accounts, opening its controls (Hub accounts, a page once, is
+// that part of Setup); and the hub-wide instructions, MCP
 // servers and skills on Every project's pages, the hub-wide built-in prompts a page opened from the foot of its
 // Instructions and saved hub-wide. A project's pages keep its own: its built-in prompts never offer a hub-wide save,
 // and its Instructions are a project's.
@@ -199,7 +199,7 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Every project", "Hub accounts", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Every project", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
   expect(host.querySelector("nav[aria-label='Settings'] [role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
@@ -215,9 +215,9 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   expect(button("Every project", nav() ?? document).getAttribute("aria-current")).toBe("page");
 });
 
-it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub on Hub accounts", async () => {
+it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub each a row of Setup that opens its controls", async () => {
   window.location.hash = "#/settings/hub/machines";
-  await render(admin);
+  await render(framed);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   // The page's plus is the way to add one; this hub has none yet, and the list says so.
   expect(host.querySelector("button[aria-label='Add machine']")).not.toBeNull();
@@ -226,11 +226,29 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();
   expect(parts()).toEqual(["hub.recordings"]);
 
-  await click(button("Hub accounts", nav() ?? document));
-  expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
-  expect(parts()).toEqual(["admin.claude", "admin.github"]);
-  await click(button("Run guided setup again"));
+  const setup = () => [...(nav()?.querySelectorAll("button") ?? [])].find((b) => b.textContent.startsWith("Setup")) as HTMLElement;
+  await click(setup());
   expect(window.location.hash).toBe("#/settings/hub/setup");
+  // Each account once, as one row: no control of it on the list, all of them on its own page.
+  const accounts = () => host.querySelector<HTMLElement>("[data-screen='settings.hub.setup'] [data-screen='settings.hub.accounts']");
+  expect([...(accounts()?.querySelectorAll("[data-step]") ?? [])].map((r) => r.textContent)).toEqual(["Claude", "GitHub"]);
+  expect(parts()).toEqual([]);
+  await click(button("Claude", accounts() ?? document));
+  expect(host.querySelector("[data-screen='settings.hub.setup.step']")).not.toBeNull();
+  expect(parts()).toEqual(["admin.claude"]);
+  expect(setup().getAttribute("aria-current")).toBe("page");
+  await click(button("‹ Setup"));
+  await click(button("GitHub", accounts() ?? document));
+  expect(parts()).toEqual(["admin.github"]);
+  // Hub accounts' old link opens Setup, at its accounts, whatever was open on it.
+  await act(async () => {
+    window.location.hash = "#/settings/hub/accounts";
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 3; i++) await settle();
+  expect(document.activeElement).toBe(accounts());
+  expect(parts()).toEqual([]);
+  expect(setup().getAttribute("aria-current")).toBe("page");
 });
 
 it("gathers what reaches every project on Every project's pages, and saves its instructions hub-wide", async () => {

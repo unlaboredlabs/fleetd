@@ -40,12 +40,15 @@ it("opens each Settings command on the page that holds it now", () => {
   expect(lands("go:hub.profiles")).toEqual(["hub.profiles", "hub.profiles"]);
   expect(lands("go:hub.tools")).toEqual(["hub.tools", "hub.profiles"]);
   expect(lands("go:hub.instructions")).toEqual(["hub.instructions", "hub.instructions"]);
-  expect(lands("go:hub.accounts")).toEqual(["hub.accounts", "hub.accounts"]);
+  // Hub accounts is a part of Hub › Setup: its command still opens it, by its old name, and Setup has one of its own.
+  expect(lands("go:hub.accounts")).toEqual(["hub.accounts", "hub.setup"]);
+  expect(commandFor("go:hub.accounts")?.title).toBe("Hub accounts");
+  expect(lands("go:hub.setup")).toEqual(["hub.setup", "hub.setup"]);
   expect(commandFor("go:settings.hubs")?.title).toBe("Hubs & devices");
 });
 
 it("offers a member no Hub page", () => {
   off = registerSettingsCommands(layer(false));
-  for (const id of ["go:hub.machines", "go:hub.profiles", "go:hub.tools", "go:hub.instructions", "go:hub.accounts"]) expect(commandFor(id), id).toBeUndefined();
+  for (const id of ["go:hub.machines", "go:hub.profiles", "go:hub.tools", "go:hub.instructions", "go:hub.accounts", "go:hub.setup"]) expect(commandFor(id), id).toBeUndefined();
   expect(lands("go:settings.devices")).toEqual(["devices", "hubs"]);
 });

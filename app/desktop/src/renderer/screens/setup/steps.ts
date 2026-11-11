@@ -1,6 +1,6 @@
 // The hub admin's setup steps as the hub serves them (setup_list, hub/setup): `fleetd init`,
 // the first run and Settings › Hub › Setup render the same ones, and the app keeps no catalog of its own. These are
-// the words around them, and where in the app each step's result is saved.
+// the words around them, where in the app each step's result is saved, and how Settings › Hub › Setup lays them out.
 
 import type { HubSetupStep, SetupGroup, SetupNeed, SetupStatus } from "../../../shared/contracts";
 import type { Screen } from "../shell/routes";
@@ -37,11 +37,19 @@ export interface Place {
   readonly reveal?: string;
 }
 
+/**
+ * The hub's own accounts, saved on the step's own page in Settings › Hub › Setup, which holds their controls
+ * (admin/SetupPage.tsx): the reveal opens that page.
+ */
+const HUB_ACCOUNTS: Readonly<Record<string, Place>> = {
+  claude: { label: "Open Hub › Setup › Claude", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.claude" },
+  github: { label: "Open Hub › Setup › GitHub", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.github" },
+};
+
 const ADMIN: Readonly<Record<string, Place>> = {
   machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
   invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
-  claude: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.claude" },
-  github: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.github" },
+  ...HUB_ACCOUNTS,
 };
 
 /** Beside the Hub page, each person's own side of a step; 1Password is only a person's own. */
@@ -54,9 +62,39 @@ const OWN: Readonly<Record<string, Place>> = {
 /**
  * The step's `place` as the pages to open: a page of Settings' Hub group, and for Claude and GitHub also your own
  * account under You; for 1Password, only yours. A place this app doesn't know (a newer hub's step) opens nothing; the
- * step's guide still says it.
+ * step's guide still says it. `here`: on the step's own page in Settings, which is the hub's side of an account
+ * already, so only yours is left to open.
  */
-export const placesOf = (step: SetupStep): ReadonlyArray<Place> => {
+export const placesOf = (step: SetupStep, here = false): ReadonlyArray<Place> => {
   if (step.place === undefined) return [];
-  return [ADMIN[step.place], OWN[step.place]].filter((p): p is Place => p !== undefined);
+  const hub = here && step.place in HUB_ACCOUNTS ? undefined : ADMIN[step.place];
+  return [hub, OWN[step.place]].filter((p): p is Place => p !== undefined);
 };
+
+/** Wants the admin now: required and not set up, or its checks ask for a look. */
+export const needsNow = (step: SetupStep): boolean => isRequiredLeft(step) || step.status === "look";
+
+/**
+ * Settings › Hub › Setup's page: the hub's accounts, every one always (each row is the account's state and opens its
+ * controls), then the other steps still left, and those done, which fold into one line. What needs the admin now
+ * comes first: within each list, and the other steps before the accounts when only they need someone.
+ */
+export interface SetupLayout {
+  readonly accounts: ReadonlyArray<SetupStep>;
+  readonly others: ReadonlyArray<SetupStep>;
+  readonly done: ReadonlyArray<SetupStep>;
+  readonly othersFirst: boolean;
+}
+
+export const setupLayout = (steps: ReadonlyArray<SetupStep>): SetupLayout => {
+  // Otherwise each keeps the hub's order, so an account is where it was the last time.
+  const sorted = (of: ReadonlyArray<SetupStep>) => [...of.filter(needsNow), ...of.filter((st) => !needsNow(st))];
+  const accounts = sorted(steps.filter((st) => st.group === "accounts"));
+  const rest = steps.filter((st) => st.group !== "accounts");
+  const others = sorted(rest.filter((st) => st.status !== "done"));
+  return { accounts, others, done: rest.filter((st) => st.status === "done"), othersFirst: others.some(needsNow) && !accounts.some(needsNow) };
+};
+
+/** An account's row once it is set up: which of its ways it is done with, as the hub's checks say, else that it is done. */
+export const doneWords = (step: SetupStep): string | undefined =>
+  step.status !== "done" ? undefined : step.way === undefined || step.way === "" ? "Done" : `Uses ${step.way}`;
