@@ -199,7 +199,6 @@ const api: FleetdApi = {
     },
     check: () => ipcRenderer.invoke(IPC.updatesCheck) as Promise<void>,
     install: () => ipcRenderer.invoke(IPC.updatesInstall) as Promise<void>,
-    keep: () => ipcRenderer.invoke(IPC.updatesKeep) as Promise<void>,
   },
   app: {
     onMenuCommand: (listener) => {

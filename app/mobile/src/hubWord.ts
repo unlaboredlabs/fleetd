@@ -1,7 +1,7 @@
 // What the chats list's bar says about the hub, the phone's quiet hub row (the desktop's sidebar footer): one word in
 // the title's place, only while there is something to say. "Updating…" while the hub updates (its `hub.update` says
 // so, its close said "updating to <version>", or an admin's run goes on), "Updated" for a while after it came back on a new
-// build, "Put back" when a machine didn't take it, and today's "Connecting…" for a link that dropped by itself. A
+// build, "Not Updated" when the hub or a machine didn't take it, and today's "Connecting…" for a link that dropped by itself. A
 // planned restart isn't an outage: the screens keep what they show and nothing says the hub can't be reached for
 // RESTART_HOLD_MS (a restart that isn't an update says nothing at all till then), and one calm line under the bar
 // says an update is taking a while only past SLOW_RESTART_MS. Members see the same words; the run (an admin's) only
@@ -79,16 +79,10 @@ export const hubWord = (input: WordInput): HubWord | undefined => {
   if (updating(input)) return { text: "Updating…", tone: "quiet", busy: false };
   // How the hub's last update ended, as it told everyone; an admin's run says the same where it doesn't.
   const told = endedUpdate(update);
-  if (told !== undefined && now - told.at < FAILED_FOR_MS) {
-    if (told.state === "put_back") return { text: "Put back", tone: "danger", busy: false };
-    if (told.state === "failed") return { text: "Not Updated", tone: "danger", busy: false };
-  }
+  if (told !== undefined && now - told.at < FAILED_FOR_MS && (told.state === "put_back" || told.state === "failed")) return { text: "Not Updated", tone: "danger", busy: false };
   if (told?.state === "updated" && now - told.at < UPDATED_FOR_MS) return { text: "Updated", tone: "quiet", busy: false };
   const ended = run?.finishedAt === undefined ? undefined : Date.parse(run.finishedAt);
-  if (run !== null && ended !== undefined && now - ended < FAILED_FOR_MS) {
-    if (run.parts.some((p) => p.state === "rolled_back")) return { text: "Put back", tone: "danger", busy: false };
-    if (run.parts.some((p) => p.state === "failed")) return { text: "Not Updated", tone: "danger", busy: false };
-  }
+  if (run !== null && ended !== undefined && now - ended < FAILED_FOR_MS && run.parts.some((p) => p.state === "rolled_back" || p.state === "failed")) return { text: "Not Updated", tone: "danger", busy: false };
   if (restart?.t === "updated" && now - restart.at < UPDATED_FOR_MS) return { text: "Updated", tone: "quiet", busy: false };
   if (run !== null && ended !== undefined && now - ended < UPDATED_FOR_MS && run.parts.some((p) => p.state === "done")) return { text: "Updated", tone: "quiet", busy: false };
   return undefined;

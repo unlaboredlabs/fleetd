@@ -84,7 +84,7 @@ const pages: Command[] = [
   {
     id: "go:settings.updates",
     title: "Version",
-    detail: "Which fleetd this app runs, and whether the hub is up to date",
+    detail: "Whether fleetd is up to date",
     group: "settings",
     keywords: ["version", "update", "upgrade", "edge", "channel"],
     run: () => {

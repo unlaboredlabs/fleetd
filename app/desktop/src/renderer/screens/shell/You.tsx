@@ -1,7 +1,7 @@
 // The sidebar's foot (W530): you, and two places to go. Your picture and name open a small menu (W607): who you are,
 // a row per hub (a dot and its name, all being well; HubStatus.tsx) and Settings. What is off is one more row each,
 // with the one thing to do, and shows without opening anything, quietly: an update's one word under your name while
-// it runs and a while after (updates/quiet.ts: "Updating…", "Updated", "Put back", or "Update" with one to take), and
+// it runs and a while after (updates/quiet.ts: "Updating…", "Updated", "Not updated", or "Update" with one to take), and
 // a small mark on your picture while a hub is really unreachable or refused your key (for an admin, also while a
 // machine is offline or setup steps are left), its words in the tooltip. Screens and Factory are the round buttons
 // beside: Screens marked while one needs you.

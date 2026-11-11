@@ -34,12 +34,9 @@ describe("the app update", () => {
     });
   });
 
-  it("restarts the moment the download is in once asked, and not once taken back", () => {
+  it("restarts the moment the download is in once asked", () => {
     const asked = run([{ type: "available", version: "0.6.0" }, { type: "install" }, { type: "downloaded", version: "0.6.0" }]);
     expect(asked.effects).toEqual(["quit-and-install"]);
-    const kept = run([{ type: "available", version: "0.6.0" }, { type: "install" }, { type: "keep" }, { type: "downloaded", version: "0.6.0" }]);
-    expect(kept.effects).toEqual([]);
-    expect(run([{ type: "install" }], false, kept.app).effects).toEqual(["quit-and-install"]);
   });
 
   it("keeps a ready update offered while a newer one downloads", () => {

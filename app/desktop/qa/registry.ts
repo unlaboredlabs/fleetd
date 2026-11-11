@@ -269,6 +269,7 @@ export const fixtures = [
   "updates-run-left-over",
   "updates-auto-on",
   "updates-auto-held",
+  "updates-auto-current",
   "updates-put-back",
   "updates-updated",
   // Only-me projects (fixtures/only-me): Ada and Home first in the sidebar and Taxes archived, Ada asking to book a
@@ -2058,12 +2059,13 @@ export const screens: readonly Screen[] = [
       await page.locator("#project-panel").getByRole("tablist").first().waitFor();
     },
   },
-  // C1, W38 and W521: updates. The hub row's word for each state that has one, and its popover's note; and Hub ›
-  // Updates as the palette's "Check for updates" opens it, for every state of this app (not checked yet, checking, a
+  // C1, W38, W521 and W603: updates. The word under your name for each state that has one; and Hub › Updates as the
+  // palette's "Check for updates" opens it, its one status for every state of this app (not checked yet, checking, a
   // build that doesn't update, up to date, found, downloading to restart, ready, the deb's command, a failed check, a
   // failed download), of the hub and its machines (up to date, version unknown, a newer build on the channel, older
-  // than this app, one machine behind), and of an Update run already going when it opens (the hub restarting, the
-  // machines).
+  // than this app, machines behind), of an Update run already going when it opens (the hub restarting, the machines),
+  // and of one that ended before it opened (the hub's own automatic update: a machine that didn't update, and
+  // everything updated a few minutes ago).
   {
     id: "shell",
     route: "#/",
@@ -2072,10 +2074,10 @@ export const screens: readonly Screen[] = [
   },
   // The menu under your name, open (W607). All being well it is who you are, a dot beside the hub's name and Settings,
   // for the owner and for a member. What is off is one more row with the one thing to do: a setup step left, a
-  // machine offline, the hub out of reach, a second hub out of reach or refusing this app's key, an update to take,
-  // going on, just in, or one that didn't go in (a member is told who to ask, as when no machine is online or every
-  // one is degraded), everything at once, and hubs and a machine with 40-character names, where only the name is cut
-  // short. One size: the menu is as wide in every window.
+  // machine offline, the hub out of reach, a second hub out of reach or refusing this app's key, an update to take
+  // (the hub's, and this app's own to restart into), going on, just in, or one that didn't go in (a member is told who
+  // to ask, as when no machine is online or every one is degraded), everything at once, and hubs and a machine with
+  // 40-character names, where only the name is cut short. One size: the menu is as wide in every window.
   {
     id: "shell",
     route: "#/",
@@ -2088,6 +2090,7 @@ export const screens: readonly Screen[] = [
       "menu-refused",
       "sidebar-hubs-offline",
       "updates-hub-ready",
+      "updates-ready",
       "menu-updating",
       "menu-updated",
       "menu-update-failed",
@@ -2140,11 +2143,14 @@ export const screens: readonly Screen[] = [
       "updates-run-nodes",
       "updates-auto-on",
       "updates-auto-held",
+      "updates-put-back",
+      "updates-updated",
     ],
     open: openUpdates,
   },
-  // W38: the one Update button, pressed: how each part ended (all updated and this app last; the hub's download
-  // refused by its checksum; the hub put back; machines put back, failed or offline), and a key the hub refuses.
+  // W38: the one Update button, pressed: how it ended (all updated and this app last; the hub's download refused by
+  // its checksum; the hub back on its old build; machines that didn't update or were offline), and a key the hub
+  // refuses.
   {
     id: "updates",
     route: "#/",
@@ -2153,10 +2159,10 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await openUpdates(page);
       await page.getByRole("button", { name: "Update", exact: true }).click();
-      await page.locator('[data-updates-part="all"] [role="alert"], [data-updates-part="all"] [role="status"]').first().waitFor();
+      await page.locator('[data-update-status]:not([data-update-status="available"])').first().waitFor();
     },
   },
-  // W112: a run nothing in the hub drives any more, followed when Hub › Updates opens: Start over, quiet beside it.
+  // W112: a run nothing in the hub drives any more, followed when Hub › Updates opens: The update stopped, Start over.
   {
     id: "updates",
     route: "#/",
@@ -3045,9 +3051,9 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
   },
-  // W469: Hub › Updates: Update now beside the ready build, Update automatically with its last update and next one,
-  // and one holding back with why; each machine's version below.
-  { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-on", "updates-auto-held", "updates-hub-current"] },
+  // W469 and W603: Hub › Updates: the everyday page (up to date, Update automatically on), a ready build it installs
+  // by itself, one holding back with why, and the switch off.
+  { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-current", "updates-auto-on", "updates-auto-held", "updates-hub-current"] },
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
   // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the plus.
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-one", "machines-unwell", "machines-running", "machines-failed"] },

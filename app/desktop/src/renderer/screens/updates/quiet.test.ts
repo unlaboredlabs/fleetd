@@ -3,22 +3,14 @@ import type { HubUpdateData, UpdatePart, UpdateRun } from "../../../shared/contr
 import type { HubState } from "../../../shared/hub";
 import type { AppUpdate, Release } from "../../../shared/updates";
 import { restartOf } from "../shell/model";
-import { updatesView, type MachineInput } from "./model";
+import { updateStatus, type MachineInput } from "./model";
 import { quietOf } from "./quiet";
 
 const MINE = "0.0.0-edge.202610221030+abc1234";
 const NEXT = "0.0.0-edge.202610231030+def5678";
 const NOW = Date.parse("2026-10-26T10:00:00.000Z");
 
-const release: Release = {
-  changes: [
-    { commit: "def5678ffff", date: "2026-10-23T10:30:00Z", subject: "feat(hub): agents keep working while fleetd updates (#300)", areas: ["hub"] },
-    { commit: "ccc3333cccc", date: "2026-10-22T18:00:00Z", subject: "fix(hub): status loads faster (#277)", areas: ["hub"] },
-    { commit: "abc1234aaaa", date: "2026-10-22T10:30:00Z", subject: "fix(hub): the hub says its version (#275)", areas: ["hub"] },
-  ],
-  cli: NEXT,
-  app: MINE,
-};
+const release: Release = { cli: NEXT, app: MINE };
 
 const LIVE: HubState = { phase: "live", hub: "http://devbox:4790", protocol: 1, version: MINE };
 const machines: MachineInput[] = [{ machineId: "builder", name: "builder", nodeVersion: MINE, online: true }];
@@ -32,26 +24,30 @@ const quiet = (over: {
   hub?: HubState;
   run?: UpdateRun | null;
   ready?: string | null;
+  auto?: { on: boolean; at: string | null; held: string | null };
   administers?: boolean;
   updated?: { from: string; to: string; at: number };
   update?: HubUpdateData;
   version?: string;
+  nodes?: string;
 }) => {
   const administers = over.administers ?? true;
   const version = over.version ?? MINE;
-  const view = updatesView({
+  const status = updateStatus({
     app: { current: MINE, app: over.app ?? { kind: "current" }, release },
     hub: { url: "http://devbox:4790", version },
-    machines: machines.map((m) => ({ ...m, nodeVersion: version })),
+    machines: machines.map((m) => ({ ...m, nodeVersion: over.nodes ?? version })),
     run: over.run ?? null,
     ready: over.ready ?? null,
+    auto: over.auto ?? null,
     administers,
     now: NOW,
+    timeZone: "UTC",
   });
-  return quietOf({ view, hub: over.hub ?? LIVE, updated: over.updated, update: over.update, release, administers, now: NOW, timeZone: "UTC" });
+  return quietOf({ status, hub: over.hub ?? LIVE, updated: over.updated, update: over.update, administers, now: NOW });
 };
 
-describe("the hub row's word", () => {
+describe("the word under your name", () => {
   it("says nothing while all is current", () => {
     expect(quiet({ version: NEXT })).toBeNull();
   });
@@ -67,124 +63,75 @@ describe("the hub row's word", () => {
     expect(quiet({ hub: { phase: "retrying", hub: "http://devbox:4790", reason: "x", retryAt: NOW }, version: NEXT })).toBeNull();
   });
 
-  it("offers an admin the build the hub has ready, with what's new and Update now; a member hears nothing of it", () => {
+  it("offers an admin the newer build with its one button; a member hears nothing of it, nor does anyone when it installs by itself", () => {
     const admin = quiet({ ready: NEXT });
-    expect(admin?.word).toEqual({ text: "Update", tone: "accent" });
-    expect(admin?.note).toMatchObject({ title: "fleetd Edge · Oct 23, 10:30 UTC is ready", action: { label: "Update now", run: "update" }, details: true });
-    expect(admin?.note?.notes).toEqual(["Agents keep working while fleetd updates", "Status loads faster"]);
+    expect(admin).toEqual({
+      kind: "available",
+      word: { text: "Update", tone: "accent" },
+      note: { title: "Update available", action: { label: "Update", act: "update" }, details: false },
+    });
     expect(quiet({ ready: NEXT, administers: false })).toBeNull();
+    expect(quiet({ ready: NEXT, auto: { on: true, at: "2026-10-26T10:10:00.000Z", held: null } })).toBeNull();
+    // Held back, it is the admin's to take again.
+    expect(quiet({ ready: NEXT, auto: { on: true, at: null, held: "An update someone started is still running." } })?.word.text).toBe("Update");
   });
 
   it("offers anyone this app's own update, ready to restart into", () => {
-    const q = quiet({ app: { kind: "ready", version: NEXT }, administers: false });
+    const q = quiet({ app: { kind: "ready", version: NEXT }, administers: false, version: NEXT });
     expect(q?.word.text).toBe("Update");
-    expect(q?.note).toMatchObject({ action: { label: "Restart to update", run: "restartApp" }, details: false });
+    expect(q?.note).toEqual({ title: "Update available", action: { label: "Restart to update", act: "app" }, details: false });
   });
 
-  it("says Updating… while a run goes, with its progress for an admin only", () => {
+  it("says Updating… while a run goes, in the status's title, to anyone", () => {
     const run = runOf([HUB_DONE, part({ state: "restarting" })], false);
-    const admin = quiet({ run, version: NEXT });
-    expect(admin?.word.text).toBe("Updating…");
-    expect(admin?.note).toMatchObject({ title: "Updating to Edge · Oct 23, 10:30 UTC", body: "Updating the machines: 0 of 1 done" });
-    const member = quiet({ run, version: NEXT, administers: false });
-    expect(member?.word.text).toBe("Updating…");
-    expect(member?.note?.body).toBeUndefined();
-    expect(member?.note?.details).toBe(false);
+    for (const administers of [true, false]) {
+      const q = quiet({ run, version: NEXT, administers });
+      expect(q?.word).toEqual({ text: "Updating…", tone: "quiet" });
+      expect(q?.note).toEqual({ title: "Updating builder…", details: false });
+    }
   });
 
-  it("says Updated once a link came back on a newer build, with what changed since the old one, for 15 minutes", () => {
+  it("says Updated for 15 minutes once an update came through, with when: one this window followed, or a link back on a newer build", () => {
+    const followed = quiet({ run: runOf([HUB_DONE, part({})], true), version: NEXT, nodes: NEXT });
+    expect(followed).toEqual({
+      kind: "updated",
+      word: { text: "Updated", tone: "quiet" },
+      note: { title: "Updated", details: false, at: Date.parse("2026-10-26T09:59:00.000Z") },
+    });
     const updated = { from: MINE, to: NEXT, at: NOW - 60_000 };
-    const q = quiet({ updated, version: NEXT });
-    expect(q?.word).toEqual({ text: "Updated", tone: "quiet" });
-    expect(q?.note).toMatchObject({ title: "Updated to Edge · Oct 23, 10:30 UTC", aside: "09:59", notes: ["Agents keep working while fleetd updates", "Status loads faster"] });
-    expect(quiet({ updated, version: NEXT, administers: false })?.note?.notes).toEqual([]);
+    expect(quiet({ updated, version: NEXT })?.note).toMatchObject({ title: "Updated", at: NOW - 60_000 });
     expect(quiet({ updated: { ...updated, at: NOW - 16 * 60_000 }, version: NEXT })).toBeNull();
   });
 
-  it("says Put back when a machine didn't take the build: why and Try again for an admin, only the fact for a member", () => {
-    const run = runOf(
-      [HUB_DONE, part({ state: "rolled_back", stage: "health", message: "didn't answer" })],
-      true,
-    );
-    const admin = quiet({ run, version: NEXT });
-    expect(admin?.word).toEqual({ text: "Put back", tone: "danger" });
-    expect(admin?.note).toMatchObject({
-      title: "Edge · Oct 23, 10:30 UTC didn't go in on builder",
-      danger: true,
-      body: "builder: Didn't start, so it was put back. It runs its old build, and nothing was lost.",
-      action: { label: "Try again", run: "retry" },
+  it("says Not updated when a machine didn't take the build: the status's title and Try again for an admin", () => {
+    const run = runOf([HUB_DONE, part({ state: "rolled_back", stage: "health", message: "didn't answer" })], true);
+    const admin = quiet({ run, version: NEXT, nodes: MINE });
+    expect(admin).toEqual({
+      kind: "failed",
+      word: { text: "Not updated", tone: "danger" },
+      note: { title: "1 machine didn't update", action: { label: "Try again", act: "update" }, details: true },
     });
-    const member = quiet({ run, version: NEXT, administers: false });
-    expect(member?.word.text).toBe("Put back");
-    expect(member?.note?.action).toBeUndefined();
-    expect(member?.note?.body).toBe("It runs its old build, and nothing was lost. An admin can try it again.");
-  });
-});
-
-describe("the hub's own word on its update (hub.update)", () => {
-  const said = (over: Partial<HubUpdateData>): HubUpdateData => ({
-    runId: "U1",
-    state: "updating",
-    hub: "done",
-    from: MINE,
-    to: NEXT,
-    startedAt: "2026-10-26T09:58:00.000Z",
-    machines: [
-      { machineId: "builder", name: "builder", state: "done" },
-      { machineId: "mac", name: "mac", state: "restarting" },
-    ],
-    ...over,
+    expect(quiet({ run, version: NEXT, nodes: MINE, administers: false })).toBeNull();
   });
 
-  it("says Updating… with how many machines are on it, for an admin", () => {
-    const q = quiet({ update: said({}), version: NEXT });
-    expect(q?.word.text).toBe("Updating…");
-    expect(q?.note).toMatchObject({ title: "Updating to Edge · Oct 23, 10:30 UTC", body: "1 of 2 machines on it." });
-    expect(quiet({ update: said({}), version: NEXT, administers: false })?.note?.body).toBeUndefined();
+  it("tells a member only that the hub's update didn't go in, by the hub's own word, for a day", () => {
+    const told = (state: string, finishedAt = "2026-10-26T09:59:00.000Z"): HubUpdateData => ({ runId: "U1", from: MINE, to: NEXT, startedAt: "2026-10-26T09:58:00.000Z", finishedAt, state, hub: "done", machines: [] });
+    for (const state of ["put_back", "failed"]) {
+      expect(quiet({ update: told(state), administers: false })).toEqual({ kind: "failed", word: { text: "Not updated", tone: "danger" }, note: { title: "Not updated", details: false } });
+    }
+    expect(quiet({ update: told("updated"), administers: false })).toBeNull();
+    expect(quiet({ update: told("failed", "2026-10-25T09:59:00.000Z"), administers: false })).toBeNull();
+    // An admin reads the run instead, which says what didn't update.
+    expect(quiet({ update: told("failed"), version: NEXT })).toBeNull();
   });
 
-  it("says Updated with what changed since its old build, for 15 minutes after it finished", () => {
-    const update = said({ state: "updated", finishedAt: "2026-10-26T09:59:00.000Z", machines: [] });
-    const q = quiet({ update, version: NEXT });
-    expect(q?.word.text).toBe("Updated");
-    expect(q?.note).toMatchObject({ title: "Updated to Edge · Oct 23, 10:30 UTC", aside: "09:59", notes: ["Agents keep working while fleetd updates", "Status loads faster"] });
-    expect(quiet({ update: { ...update, finishedAt: "2026-10-26T09:44:00.000Z" }, version: NEXT })).toBeNull();
-  });
-
-  it("says Put back, naming the machine that missed the build and the hub's words, for a day", () => {
-    const update = said({ state: "put_back", hub: "rolled_back", finishedAt: "2026-10-26T09:59:00.000Z", message: "the hub didn't come up healthy, so it was put back", machines: [] });
-    const q = quiet({ update, version: NEXT });
-    expect(q?.word).toEqual({ text: "Put back", tone: "danger" });
-    expect(q?.note).toMatchObject({
-      title: "Edge · Oct 23, 10:30 UTC didn't go in on the hub",
-      body: "the hub didn't come up healthy, so it was put back. It runs its old build, and nothing was lost.",
-      action: { label: "Try again", run: "retry" },
+  it("says Not updated when the hub didn't", () => {
+    const run = runOf([{ part: "hub", name: "the hub", from: MINE, state: "failed", stage: "checksum", message: "checksum mismatch" }], true);
+    expect(quiet({ run })?.note).toEqual({
+      title: "The hub didn't update",
+      action: { label: "Try again", act: "update" },
+      details: false,
     });
-    expect(quiet({ update: { ...update, finishedAt: "2026-10-25T09:00:00.000Z" }, version: NEXT })).toBeNull();
-  });
-
-  it("says Put back when the hub updated but a machine didn't take the build, as the hub sends it", () => {
-    // The hub's part done, a machine rolled back and one offline: the hub says `updated`, the machines say the rest.
-    const update = said({
-      state: "updated",
-      finishedAt: "2026-10-26T09:59:00.000Z",
-      machines: [
-        { machineId: "builder", name: "builder", state: "rolled_back" },
-        { machineId: "mac", name: "mac", state: "skipped" },
-        { machineId: "box", name: "box", state: "done" },
-      ],
-    });
-    const q = quiet({ update, version: NEXT });
-    expect(q?.word).toEqual({ text: "Put back", tone: "danger" });
-    expect(q?.note).toMatchObject({ title: "Edge · Oct 23, 10:30 UTC didn't go in on builder", action: { label: "Try again", run: "retry" } });
-    // Still there after 15 minutes, as a put back is: for a day.
-    expect(quiet({ update: { ...update, finishedAt: "2026-10-26T09:30:00.000Z" }, version: NEXT })?.word.text).toBe("Put back");
-    // A machine only skipped (offline, say) isn't one that missed it.
-    expect(quiet({ update: { ...update, machines: [{ machineId: "mac", name: "mac", state: "skipped" }] }, version: NEXT })?.word.text).toBe("Updated");
-  });
-
-  it("leaves a current update to what else there is to say: the build ready, for an admin", () => {
-    expect(quiet({ update: said({ state: "current", finishedAt: "2026-10-26T09:59:00.000Z" }), ready: NEXT })?.word.text).toBe("Update");
   });
 });
 

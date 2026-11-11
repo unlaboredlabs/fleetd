@@ -1,4 +1,4 @@
-// Main's update state (one subscription for the whole window): a tiny external store, so the hub row, Settings and the
+// Main's update state (one subscription for the whole window): a tiny external store, so the sidebar, Settings and the
 // palette share it without a provider. And where updates open.
 import { useSyncExternalStore } from "react";
 import type { UpdatesState } from "../../../shared/updates";
@@ -36,6 +36,13 @@ const subscribe = (listener: () => void) => {
 /** Null until main first answers. */
 export const useAppUpdate = (): UpdatesState | null => useSyncExternalStore(subscribe, () => state);
 export const appUpdate = (): UpdatesState | null => state;
+
+/** This app's own updater, in main: its check again, or its update (it downloads if it must, then restarts; the deb
+ * opens its download). Restarting closes the window; the composer saves every draft as the page goes (pagehide). */
+export const runApp = (action: "check" | "install"): void => {
+  if (action === "check") void window.fleetd.updates.check();
+  else void window.fleetd.updates.install();
+};
 
 /** Where the hub's updates are read and run: Settings › Hub › Updates for an admin; General (this app's own) for
  * anyone else. `at`: which hub's, with several; the screen's when absent. */

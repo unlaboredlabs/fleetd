@@ -1,9 +1,10 @@
 // The menu under your name (screens/shell/You.tsx, W607), a fixture per thing it can say beside "all is well" (which
 // admin-owner and admin-member show): a setup step left, a machine offline, the hub out of reach, a second hub that
-// refused this app's key, an update going on, one just in, one that didn't go in (as the owner, who can try again,
-// and as a member, who is told who to ask, as when no machine is online or every one is degraded), everything at once,
-// and hubs and a machine with the longest names, whose rows cut the name short and never what is wrong. Each is Sam's
-// hub (fixtures/admin) with one thing changed, so the menu's shots differ only in what they are about.
+// refused this app's key, an update going on, one just in, a machine that didn't update (the owner can try again),
+// the hub's own update put back as a member reads it (who to ask, as when no machine is online or every one is
+// degraded), everything at once, and hubs and a machine with the longest names, whose rows cut the name short and
+// never what is wrong. Each is Sam's hub (fixtures/admin) with one thing changed, so the menu's shots differ only in
+// what they are about.
 import { answerHub, bob, sam } from "../admin/index.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -39,24 +40,55 @@ const offline = (f: Fixture, machineId: string): void => machine(f, machineId, {
 /** `machineId` connected, but its claude can't run. */
 const degraded = (f: Fixture, machineId: string): void => machine(f, machineId, { status: "degraded" });
 
-/** The hub's own word on its update (the snapshot's `update`): going on, just in, or put back on buildbox. */
-const update = (f: Fixture, state: "updating" | "updated" | "put_back"): void => {
+/**
+ * An update of the hub and its two machines: going on (buildbox restarts), just in, one buildbox didn't start (its old
+ * build runs again), or one the hub itself didn't start. The hub's own word on it (the snapshot's `update`, which
+ * everyone reads) and, for an admin, its run (hub_update_status), with the builds each then runs.
+ */
+const update = (f: Fixture, how: "updating" | "updated" | "machine" | "hub", admin = true): void => {
   const ago = (ms: number) => new Date(Date.parse(f.now) - ms).toISOString();
   if (f.snapshot === undefined) return;
+  const times = { startedAt: ago(5 * 60_000), ...(how === "updating" ? {} : { finishedAt: ago(3 * 60_000) }) };
+  const hub = how === "hub" ? "rolled_back" : "done";
+  const buildbox = how === "updating" ? "restarting" : how === "updated" ? "done" : how === "machine" ? "rolled_back" : "skipped";
+  const devbox = how === "hub" ? "skipped" : "done";
+  const why = how === "hub" ? "the new build didn't come up healthy within 90 s, so the old one was put back and runs again" : "didn't come up healthy on the new build, so its old one was put back and runs again";
   f.snapshot["update"] = {
     runId: "U1792000000000",
     from: OLDER,
     to: NEXT,
-    startedAt: ago(5 * 60_000),
-    ...(state === "updating" ? {} : { finishedAt: ago(3 * 60_000) }),
-    state,
-    hub: "done",
+    ...times,
+    state: how === "updating" ? "updating" : how === "hub" ? "put_back" : "updated",
+    hub,
     machines: [
-      { machineId: "devbox", name: "devbox", state: "done" },
-      { machineId: "buildbox", name: "buildbox", state: state === "updating" ? "restarting" : state === "updated" ? "done" : "rolled_back" },
+      { machineId: "devbox", name: "devbox", state: devbox },
+      { machineId: "buildbox", name: "buildbox", state: buildbox },
     ],
-    ...(state === "put_back" ? { message: "buildbox didn't come up healthy on the new build" } : {}),
+    ...(how === "hub" ? { message: why } : {}),
   };
+  // What each runs after it: the new build wherever its part is done.
+  const on = (state: string) => (state === "done" ? NEXT : OLDER);
+  const nodes = (machines: JsonValue | undefined) => arr(machines).map((m) => (isObject(m) ? { ...m, nodeVersion: on(m["machineId"] === "buildbox" ? buildbox : devbox) } : m));
+  if (f.state.phase === "live") f.state = { ...f.state, version: on(hub) };
+  // This app already runs the build the update went to, the channel's newest.
+  f.appUpdate = { current: NEXT, app: { kind: "current" }, release: { cli: NEXT, app: NEXT } };
+  f.snapshot["machines"] = nodes(f.snapshot["machines"]);
+  if (!admin) return;
+  const failed = { stage: "health", message: why };
+  f.drop("hub_update_status").answer("hub_update_status", {}, {
+    settings: { auto: false, drainMinutes: 2 },
+    run: {
+      id: "U1792000000000",
+      channel: "edge",
+      to: NEXT,
+      ...times,
+      parts: [
+        { part: "hub", name: "the hub", from: OLDER, state: hub, ...(how === "hub" ? failed : {}) },
+        { part: "node", machineId: "devbox", name: "devbox", from: OLDER, state: devbox },
+        { part: "node", machineId: "buildbox", name: "buildbox", from: OLDER, state: buildbox, ...(how === "machine" ? failed : {}) },
+      ],
+    },
+  });
 };
 
 export default defineGroup({
@@ -82,8 +114,8 @@ export default defineGroup({
       }),
       made("updating", "Sam's hub updating: it runs the new build, buildbox restarts onto it.", (f) => update(f, "updating")),
       made("updated", "Sam's hub and its machines updated themselves three minutes ago.", (f) => update(f, "updated")),
-      made("update-failed", "The hub updated, and buildbox was put back on its old build: Sam can try again.", (f) => update(f, "put_back")),
-      made("member-update-failed", "The same update as Bob, a member: he is told who to ask.", (f) => update(f, "put_back"), bob),
+      made("update-failed", "The hub updated, and buildbox didn't start the new build, so its old one runs again: Sam can try again.", (f) => update(f, "machine")),
+      made("member-update-failed", "The hub's own update was put back, as Bob, a member, reads it: he is told who to ask.", (f) => update(f, "hub", false), bob),
       made("member-no-machine", "Bob, a member, with every machine offline: nothing of his runs, and he is told who to ask.", (f) => {
         offline(f, "devbox");
         offline(f, "buildbox");
@@ -108,7 +140,7 @@ export default defineGroup({
         f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
       }),
       made("everything", "Everything at once, as Sam: an update that didn't go in, a machine offline, a setup step left.", (f) => {
-        update(f, "put_back");
+        update(f, "machine");
         offline(f, "buildbox");
         setupLeft(f);
       }),

@@ -100,8 +100,8 @@ export { addPage as addApprovedPage, FIRST_PAGE as APPROVED_FIRST_PAGE, fold as 
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
-export { updatesView, type Line, type PartLine } from "../../desktop/src/renderer/screens/updates/model";
-export { loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
+export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
+export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
 export {

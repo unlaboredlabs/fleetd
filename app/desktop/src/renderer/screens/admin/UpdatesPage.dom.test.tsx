@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-// Hub › Updates: where the hub and its machines stand with Update now, Update automatically with its last update, next
-// check and why it holds back, and each one's version.
+// Hub › Updates: one status with its one button, and Update automatically, which says only why it holds back.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -32,15 +31,9 @@ let calls: Array<{ tool: string; input: Record<string, unknown> }>;
 let auto: boolean;
 
 const status = () => ({
-  settings: { auto, drainMinutes: 10 },
+  settings: { auto, drainMinutes: 2 },
   ready: READY,
-  ...(auto
-    ? {
-        lastAuto: { at: "2026-11-07T10:30:00.000Z", to: OLD, result: "partial", message: "mac1 didn't come back on it." },
-        nextCheck: "2026-11-07T15:10:00.000Z",
-        skipReason: "A person's update is still running.",
-      }
-    : {}),
+  ...(auto ? { skipReason: "A person's update is still running." } : {}),
 });
 
 beforeEach(() => {
@@ -48,8 +41,8 @@ beforeEach(() => {
   auto = true;
   resetFlow();
   // This app runs the hub's build, and the channel has a newer one: the hub has it ready.
-  const app = { current: OLD, app: { kind: "current" }, release: { changes: [], cli: READY, app: READY } };
-  vi.stubGlobal("fleetd", { platform: "linux", fixture: null, updates: { subscribe: () => () => undefined, state: () => Promise.resolve(app) } });
+  const app = { current: OLD, app: { kind: "current" }, release: { cli: READY, app: READY } };
+  vi.stubGlobal("fleetd", { platform: "linux", fixture: null, updates: { subscribe: () => () => undefined, state: () => Promise.resolve(app), check: () => Promise.resolve(), install: () => Promise.resolve() } });
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -101,33 +94,39 @@ const render = async (node: React.ReactNode, admin = true) => {
   for (let i = 0; i < 4; i++) await settle();
 };
 
-const statusLines = (within: ParentNode) => [...within.querySelectorAll<HTMLElement>("[data-auto-status]")].map((l) => `${l.dataset["autoStatus"] ?? ""}: ${l.textContent}`);
+const text = (within: ParentNode | null | undefined, selector: string) => within?.querySelector(selector)?.textContent;
 
-it("shows Update now, the switch with its last update, next check and why it holds back, and each version", async () => {
+it("shows one status with one button, and the switch with why it holds back", async () => {
   await render(<UpdatesPage />);
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
-  expect(page?.querySelector("[data-updates-part='all']")?.textContent).toContain("is ready");
-  expect(page?.querySelector("[data-updates-part='all'] button")?.textContent).toBe("Update");
-  expect(page?.querySelector("[data-auto-updates='on']")?.textContent).toContain("Update automatically");
-  expect(statusLines(page ?? document)).toEqual([
-    expect.stringMatching(/^last: Last updatePartly updated .*\. mac1 didn't come back on it\.$/u),
-    expect.stringMatching(/^next: Next check.+ at \d{2}:\d{2}\.$/u),
-    "skip: Holding backA person's update is still running.",
-  ]);
-  expect(page?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  expect(text(page, "[data-update-status='available']")).toBe("Update availablefleetd Edge · Nov 7, 14:30Update");
+  // No machine to look at: no rows.
+  expect(page?.querySelector("[data-update-machine]")).toBeNull();
+  expect(text(page, "[data-auto-updates='on']")).toBe("Update automaticallyA person's update is still running.");
 
-  // Off: the hub keeps it, and the page says what off means.
+  // Off: the hub keeps it, and the switch says nothing more.
   await act(async () => {
     page?.querySelector<HTMLElement>("[role='switch']")?.click();
     await Promise.resolve();
   });
   for (let i = 0; i < 3; i++) await settle();
   expect(calls.filter((c) => c.tool === "hub_update_settings").map((c) => c.input)).toEqual([{ auto: false }]);
-  expect(statusLines(page ?? document)).toEqual(["off: Off: the hub and its machines update only when someone presses Update."]);
+  expect(text(page, "[data-auto-updates='off']")).toBe("Update automatically");
+
+  // One click updates: no sheet, nothing to confirm.
+  await act(async () => {
+    page?.querySelector<HTMLElement>("[data-update-status] button")?.click();
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 3; i++) await settle();
+  expect(calls.filter((c) => c.tool === "hub_update").map((c) => c.input)).toEqual([{}]);
+  // This hub refuses it (nothing faked): its words, and the way to press again.
+  expect(text(page, "[data-update-status='failed']")).toBe("The update didn't startHub_update isn't faked.Try again");
+  expect(document.querySelector("[role='dialog']")).toBeNull();
 });
 
-it("tells a member whom to ask", async () => {
+it("shows a member no switch", async () => {
   await render(<AutoUpdates />, false);
-  expect(document.querySelector("[data-auto-updates='member']")?.textContent).toContain("ask Ana.");
+  expect(document.querySelector("[data-auto-updates]")).toBeNull();
   expect(document.querySelector("[role='switch']")).toBeNull();
 });

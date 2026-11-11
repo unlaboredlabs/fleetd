@@ -10,10 +10,8 @@ export type UpdateInput =
   | { readonly type: "progress"; readonly percent: number }
   | { readonly type: "downloaded"; readonly version: string }
   | { readonly type: "error"; readonly reason: string }
-  /** "Update and restart" (or "Restart to update", or the deb's Download). */
-  | { readonly type: "install" }
-  /** "Not now" after "Update and restart": the download goes on, without the restart. */
-  | { readonly type: "keep" };
+  /** "Restart to update" (or Update, or the deb's Download). */
+  | { readonly type: "install" };
 
 /** What main does besides showing the new state. */
 export type UpdateEffect = "quit-and-install" | "open-download" | null;
@@ -61,7 +59,5 @@ export const step = (m: Machine, input: UpdateInput): [AppUpdate, UpdateEffect] 
       if (app.kind === "manual") return [app, "open-download"];
       if (app.kind === "available") return [{ ...app, restart: true }, null];
       return [app, null];
-    case "keep":
-      return [app.kind === "available" ? { ...app, restart: false } : app, null];
   }
 };

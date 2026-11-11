@@ -1,7 +1,7 @@
 // A hub in the menu under your name (You.tsx; W607): its lines as youMenu.ts words them, each one row. All being
 // well that is a dot and the hub's name, which opens Settings › You › Hubs (its address, Pair again, Restart hub and
 // Disconnect are there). What is off is one more row each, plain words then the one action a click takes: Retry, Pair
-// again, Update, Try again, Open (a machine's page), Finish (Hub › Setup). A row a member can do nothing about ends
+// again, Update, Try again, Open (a machine's page, Hub › Updates), Finish (Hub › Setup). A row a member can do nothing about ends
 // in who to ask and isn't a button. With several hubs each has its rows, its own under the name the person gave it.
 // The sidebar has no row for the hub, so the most pressing thing off also marks your avatar (linkMark, useWorkMark).
 import { ArrowUp } from "lucide-react";
@@ -12,11 +12,7 @@ import { selectMachines } from "../../src/data/selectors";
 import { Dot } from "../../ui";
 import { useSettledAdministers } from "../admin/role";
 import { OPTIONS, openOption } from "../settings";
-import { useQuiet } from "../updates";
-import { retryMachines, startUpdate, updateNow } from "../updates/flow";
-import { useFlowDeps, useUpdatesView } from "../updates/hooks";
-import type { NoteAction } from "../updates/quiet";
-import { runApp } from "../updates/UpdatesHost";
+import { useQuiet, useUpdateAct } from "../updates";
 import { navigate } from "./navigation";
 import { machinesLine, menuLines, setupLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
@@ -100,23 +96,6 @@ export const useWorkMark = (): HubMark | null => {
   return live ? workMark([machinesLine(machines, admin), setupLine(setupLeft, admin)], label) : null;
 };
 
-/** An update's action, as its own screens run it. */
-const useUpdateRun = (): ((run: NoteAction) => void) => {
-  const deps = useFlowDeps();
-  const { lines } = useUpdatesView();
-  return (run) => {
-    if (run === "update") void startUpdate(deps);
-    else if (run === "updateNow") void updateNow(deps);
-    else if (run === "restartApp") runApp("install");
-    else {
-      // Each machine that didn't come through, again; with none to retry on its own (the hub's), the whole update.
-      const machines = lines.flatMap((l) => (l.retry?.kind === "machine" ? [l.retry.machineId] : []));
-      if (machines.length === 0) void startUpdate(deps);
-      else void retryMachines(deps, machines);
-    }
-  };
-};
-
 /** One hub's rows in the menu under your name, in its scope. `close` shuts the menu. */
 export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
   const work = useWork();
@@ -127,14 +106,15 @@ export function HubRows({ hub, close }: { hub: HubState; close: () => void }) {
   const layer = useDataLayer();
   const self = useHub();
   const several = work.label !== null;
-  const update = useUpdateRun();
+  const update = useUpdateAct();
   const act = (does: LineDoes) => {
     // Retry and an update's action change the row where it is; the rest go somewhere.
     if (does.to === "retry") return layer.retryNow();
-    if (does.to === "update") return update(does.run);
+    if (does.to === "update") return update(does.act);
     close();
     if (does.to === "pair") pair(several ? `#/onboarding?another&at=${self.id}` : "#/onboarding");
     else if (does.to === "setup") navigate({ id: "settings", tab: "hub.setup", at: self.id });
+    else if (does.to === "updates") navigate({ id: "settings", tab: "hub.updates", at: self.id });
     else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
     else if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
   };

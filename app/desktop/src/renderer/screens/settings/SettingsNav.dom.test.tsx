@@ -41,11 +41,9 @@ const snapshot: HubFrame = {
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: Record<string, unknown> }>;
-let checks: number;
 
 beforeEach(() => {
   calls = [];
-  checks = 0;
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -57,10 +55,7 @@ beforeEach(() => {
     updates: {
       subscribe: () => () => undefined,
       state: () => Promise.resolve({ current: "0.9.0", app: { kind: "idle" }, release: null }),
-      check: () => {
-        checks++;
-        return Promise.resolve();
-      },
+      check: () => Promise.resolve(),
     },
   });
   host = document.createElement("div");
@@ -228,31 +223,19 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
   expect(parts()).toEqual(["hubs.add", "hubs.hub-links"]);
 });
 
-it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Updates", async () => {
+const STATUS = "Up to datefleetd 0.9.0";
+
+it("says in General's Version the one status Hub › Updates shows; a member gets no machines and no switch", async () => {
   await render("#/settings/general", false);
   const part = host.querySelector<HTMLElement>("[data-part='general.updates']");
-  expect(part).not.toBeNull();
-  expect(part?.textContent).toContain("Stable channel");
-  expect(part?.querySelector("[data-updates-part='app']")?.textContent).toContain("fleetd 0.9.0");
-  expect(part?.querySelector("[data-hub-standing]")?.textContent).toBe("The hub and its machines are up to date.");
-  await click(button("Check for updates", part ?? document));
-  expect(checks).toBe(1);
-  // A member updates no hub: no machine rows, no sheet and no way to one.
-  expect(part?.querySelector("[data-updates-row='devbox']")).toBeNull();
-  expect(part?.textContent).not.toContain("Update…");
-  expect(part?.textContent).not.toContain("Open updates…");
-  // …and is told whom to ask.
-  expect(part?.querySelector("[data-auto-updates='member']")?.textContent).toContain("ask Ana.");
+  expect(part?.querySelector("[data-update-status]")?.textContent).toBe(STATUS);
+  expect(part?.querySelector("[data-update-machine]")).toBeNull();
+  expect(part?.querySelector("[data-auto-updates]")).toBeNull();
   expect([...host.querySelectorAll("[data-part]")].map((p) => p.getAttribute("data-part"))).toContain("notifications");
 
   act(() => root.unmount());
   root = createRoot(host);
-  await render("#/settings/general", true);
-  const mine = host.querySelector<HTMLElement>("[data-part='general.updates']");
-  expect(mine?.textContent).not.toContain("Open updates…");
-  expect(mine?.querySelector("[data-auto-updates]")).toBeNull();
-  await click(button("Open Hub › Updates", mine ?? document));
-  expect(window.location.hash).toBe("#/settings/hub/updates");
+  await render("#/settings/hub/updates", true);
   const updates = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
-  expect(updates?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  expect(updates?.querySelector("[data-update-status]")?.textContent).toBe(STATUS);
 });

@@ -108,7 +108,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const swiped = useSwipes();
   useEffect(() => navigation.addListener("blur", swiped.close), [navigation, swiped]);
   // No title: the bar says what the hub is doing only while there is something to say (hubWord.ts), "Connecting…" or
-  // "Updating…" while the link is down, "Updated" or "Put back" after an update, and the avatar's dot says the rest.
+  // "Updating…" while the link is down, "Updated" or "Not Updated" after an update, and the avatar's dot says the rest.
   const link = useLinkDown();
   const hubSays = useHubWord();
   // VoiceOver hears the long restart's line as it comes, as a live region says it on Android.

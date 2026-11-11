@@ -39,7 +39,7 @@ export const installMenu = (
   const mac = process.platform === "darwin";
   app.setAboutPanelOptions(aboutVersions(app.getVersion(), mac));
   const separator = { type: "separator" } as const;
-  // The page's update sheet answers it (screens/updates), so a click never stacks a second dialog.
+  // The page's own updates status answers it (screens/updates), so a click never stacks a dialog.
   const updates = item(opener, "app.checkForUpdates", "Check for Updates…");
   const template: Array<MenuItemConstructorOptions> = [
     ...(mac

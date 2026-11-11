@@ -171,10 +171,8 @@ export const IPC = {
   updatesState: "updates:state",
   /** invoke() → void. A check someone asked for; its answer comes as `updatesChanged`. */
   updatesCheck: "updates:check",
-  /** invoke() → void. "Update and restart": now if downloaded, else once it is; the deb opens its download. */
+  /** invoke() → void. "Restart to update": now if downloaded, else once it is; the deb opens its download. */
   updatesInstall: "updates:install",
-  /** invoke() → void. Takes back "Update and restart" while the download runs. */
-  updatesKeep: "updates:keep",
   /** main → renderer: UpdatesState, on every change. */
   updatesChanged: "updates:changed",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */

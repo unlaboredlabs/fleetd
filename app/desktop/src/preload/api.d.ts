@@ -223,8 +223,6 @@ export interface FleetdApi {
     check(): Promise<void>;
     /** Restarts into the downloaded update, or once it's downloaded; the deb opens its download. */
     install(): Promise<void>;
-    /** Takes back an `install()` whose download still runs. */
-    keep(): Promise<void>;
   };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
