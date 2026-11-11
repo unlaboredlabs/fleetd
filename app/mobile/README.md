@@ -10,7 +10,7 @@ job runs. The phone's JavaScript engine (Hermes) lacks some newer built-ins, suc
 ## On a simulator
 
 Phone changes are judged in a real iOS simulator, on the agents' Mac (`mac --help`). Build the app there, as the
-iOS workflow (ios.yml) does:
+Nightly workflow's `mobile (ios)` job (mac.yml) does:
 
 ```sh
 mac sim start          # all in use: try again in a minute

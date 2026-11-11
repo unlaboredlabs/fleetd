@@ -1,19 +1,38 @@
-name: Mac
+name: Nightly
 
-# What only a Mac can check, off the pull request and merge path (ci.no-macos-on-prs): nightly on main, on demand
-# (`gh workflow run mac.yml --ref <branch>`, for a PR that changes macOS code), and before each release (release.yml
-# builds only once it passes). Pull requests check the same code on Linux instead, in ci.yml: `fleetd` type-checks the
-# node's macOS code, `desktop (mac layout)` packs the mac app, and `mobile` and `mobile (android)` type, test and bundle
-# the phone app's JavaScript.
+# What runs nightly on main's newest commit (04:17 UTC), off the pull request and merge path. The Mac checks
+# (ci.no-macos-on-prs) run here, on demand (`gh workflow run mac.yml --ref <branch>`, for a PR that changes macOS
+# code), and before each release (release.yml builds only once they pass). Pull requests check the same code on Linux
+# instead, in ci.yml: `fleetd` type-checks the node's macOS code, `desktop (mac layout)` packs the mac app, and `mobile`
+# and `mobile (android)` type, test and bundle the phone app's JavaScript. The site's external link check runs here
+# too, nightly and on a manual run of it alone, never in a run of the Mac checks on demand or in release.yml's call.
 #
-# A failed nightly or manual run on main opens an issue labelled `macos-nightly-failed` with the failed jobs and the
-# run's link, or comments on the one already open; the next run on main with every job green closes it. The merge
-# train lists these checks as after-merge only (.fleetd/train.json), so a red one never holds a merge.
+# A manual run's `only` picks a part: `all` (the default) runs the Mac checks, `ios` builds just the iOS simulator app
+# (with `metro` for a Debug build), `links` runs just the link check (Actions › Nightly › Run workflow, or
+# `gh workflow run mac.yml --ref <branch> -f only=ios -f metro=<host:port>`). No EAS, no Expo service and no secret:
+# signed builds are mobile-release.yml's.
+#
+# A failed nightly or manual `all` run on main opens an issue labelled `macos-nightly-failed` with the failed
+# Mac jobs and the run's link, or comments on the one already open; the next such run on main with every Mac job green
+# closes it. The merge train lists these checks as after-merge only (.fleetd/train.json), so a red one never holds a
+# merge.
 
 on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      only:
+        description: "What to run: the Mac checks, only the iOS simulator build, or only the site's external link check."
+        type: choice
+        options: [all, ios, links]
+        default: all
+      metro:
+        description: >-
+          A Metro server (host:port) the iOS simulator build loads its JavaScript from: a Debug build, for trying
+          changes on a simulator with `expo start` on that host. Empty: the Release build, the JavaScript bundled in.
+        required: false
+        default: ""
   workflow_call:
 
 permissions:
@@ -24,6 +43,7 @@ jobs:
     # The node's macOS parts natively: sealed boxes against libsodium, its power code (the sleep assertion and the wake
     # clock), the agents' Mac checks and the Mac screen.
     name: fleetd (macos)
+    if: ${{ (inputs.only || 'all') == 'all' }}
     runs-on: macos-latest
     timeout-minutes: 30
     defaults:
@@ -45,6 +65,7 @@ jobs:
     # that setup itself; the job's timeout bounds it (the Rust `ios sessions` job it replaces took 21-56 minutes on
     # GitHub's 3-vCPU VM, Nov 2026).
     name: ios simulators
+    if: ${{ (inputs.only || 'all') == 'all' }}
     runs-on: macos-latest
     timeout-minutes: 80
     defaults:
@@ -80,6 +101,7 @@ jobs:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build:
     # the packed mac app launches and its screens and recorder load from the asar.
     name: desktop-macos
+    if: ${{ (inputs.only || 'all') == 'all' }}
     runs-on: macos-latest
     timeout-minutes: 15
     defaults:
@@ -119,6 +141,7 @@ jobs:
 
   qa:
     # Desktop QA's macOS shards (desktop-qa.yml): scale 2, traffic lights, menu, fonts.
+    if: ${{ (inputs.only || 'all') == 'all' }}
     uses: ./.github/workflows/desktop-qa.yml
     with:
       macos: true
@@ -127,14 +150,115 @@ jobs:
       actions: read
 
   mobile:
-    # The iOS app's simulator build with its extensions, their Swift tests and its App Transport Security (ios.yml).
-    uses: ./.github/workflows/ios.yml
+    # A Release build for the iOS simulator, its Notification Service and Share extensions embedded, signed to run
+    # locally (no team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual
+    # run with a Metro address builds Debug instead, which loads the JavaScript from there. First, the notification
+    # extension's crypto against the hub's sealed boxes, the share extension's decisions and the Shortcuts actions'.
+    # Its name is an after-merge check in .fleetd/train.json: rename them in one PR.
+    name: mobile (ios)
+    if: ${{ (inputs.only || 'all') != 'links' }}
+    # A newer manual run on a branch cancels this job in its running one; main's runs and release.yml's call each get
+    # a group of their own.
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        && format('ios-{0}', github.ref) || format('ios-{0}', github.run_id) }}
+      cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      METRO: ${{ inputs.metro }}
+      CONFIGURATION: ${{ inputs.metro != '' && 'Debug' || 'Release' }}
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - name: Extension crypto
+        run: |
+          swiftc -O plugins/notification-service/Sealed.swift plugins/notification-service/Payload.swift \
+            plugins/notification-service/test/main.swift \
+            -o "$RUNNER_TEMP/sealed-test"
+          "$RUNNER_TEMP/sealed-test" src/push.fixture.json
+      - name: Share extension
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o "$RUNNER_TEMP/share-test"
+          "$RUNNER_TEMP/share-test"
+      - name: Shortcuts actions
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/app-intents/Actions.swift plugins/app-intents/test/main.swift \
+            -o "$RUNNER_TEMP/actions-test"
+          "$RUNNER_TEMP/actions-test"
+      - run: npm ci --no-audit --no-fund
+      # Installs the pods too.
+      - run: npx expo prebuild --platform ios --clean
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration "$CONFIGURATION" \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build | tail -n 200
+          app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
+          appex=$app/PlugIns/FleetdNotifications.appex
+          test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
+          share=$app/PlugIns/FleetdShare.appex
+          test -x "$share/FleetdShare" || { echo "::error::the app has no Share Extension"; exit 1; }
+          # Xcode's App Intents step writes the actions' metadata into the app: without it, Shortcuts lists none.
+          grep -q SendMessage "$app/Metadata.appintents/extract.actionsdata" || { echo "::error::the app has no Shortcuts actions"; exit 1; }
+          # Signed to run locally, with its entitlements, which a simulator reads from the binary's __entitlements
+          # section: without the keychain group, secure storage fails there, and the share extension finds no pairing.
+          grep -aq keychain-access-groups "$app/fleetd" || { echo "::error::the app is built without its keychain group"; exit 1; }
+          grep -aq keychain-access-groups "$share/FleetdShare" || { echo "::error::the share extension is built without its keychain group"; exit 1; }
+          # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it), sealed in by signing again.
+          if [ -n "$METRO" ]; then
+            printf '%s\n' "$METRO" > "$app/ip.txt"
+            codesign --force --sign - --preserve-metadata=entitlements "$app"
+          fi
+      - name: App Transport Security
+        # The built app's own Info.plist lets plain HTTP reach a hub at any address: arbitrary loads, nothing cancelling them.
+        run: |
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app/Info.plist"
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
+      - name: Pack
+        run: ditto -c -k --keepParent "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app" "$RUNNER_TEMP/fleetd-ios-simulator.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-ios-simulator
+          path: ${{ runner.temp }}/fleetd-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  site-external-links:
+    # Every external link on fleetd.sh and its docs answers (10 s a try, two tries): an external link can break without
+    # a commit here. Links into this repo on GitHub are checked against the checkout by ci.yml's site job instead. Not
+    # in release.yml's call (a called workflow's github.workflow is the caller's name), so it never gates a release,
+    # and not in a manual run of the Mac checks, whose checks the train leaves for after the merge (.fleetd/train.json
+    # doesn't list this one, so a dead link there would hold a PR's head). Not in the issue below either.
+    if: ${{ github.workflow == 'Nightly' && (github.event_name == 'schedule' || inputs.only == 'links') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # The links of the built docs: site/docs isn't committed.
+      - run: |
+          npm ci --prefix docs/site --no-audit --no-fund
+          npm run build --prefix docs/site
+      - run: node .github/docs-links.mjs --external
 
   report:
-    # A failed (or timed out) job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
-    # with every job green closes it. Runs off main, a release's among them, report nothing.
+    # A failed (or timed out) Mac job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
+    # with every Mac job green closes it. Runs off main, a release's among them, and a manual run of one part report
+    # nothing.
     needs: [fleetd-macos, ios-simulators, desktop-macos, qa, mobile]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && (inputs.only || 'all') == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -148,7 +272,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" -q '[.jobs[] | select(.name != "report")]')
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" -q '[.jobs[] | select(.name != "report" and .name != "site-external-links")]')
           failed=$(jq -r '[.[] | select(.conclusion != "success" and .conclusion != "skipped") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$jobs")
           open=$(gh issue list --label macos-nightly-failed --state open --json number -q '.[].number')
           if [ -n "$failed" ]; then

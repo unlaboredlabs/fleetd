@@ -9,8 +9,8 @@ import { parse, PATH } from "../src/hub/train/repo_checks.ts";
 
 const ROOT = join(import.meta.dir, "../..");
 const WORKFLOWS = join(ROOT, ".github/workflows");
-type Job = { name?: string; "runs-on"?: string; uses?: string; strategy?: { matrix?: { include?: string } } };
-type Workflow = { on?: Record<string, { paths?: unknown } | null>; jobs: Record<string, Job> };
+type Job = { name?: string; if?: string; "runs-on"?: string; uses?: string; strategy?: { matrix?: { include?: string } } };
+type Workflow = { name?: string; on?: Record<string, { paths?: unknown } | null>; jobs: Record<string, Job> };
 const workflow = (name: string) => Bun.YAML.parse(readFileSync(join(WORKFLOWS, name), "utf8")) as Workflow;
 const settings = parse(readFileSync(join(ROOT, PATH), "utf8"));
 
@@ -41,21 +41,25 @@ test("the train's fast checks are Linux jobs of ci.yml, and every Linux QA shard
 });
 
 test("the train's after-merge checks are what mac.yml reports, and besides those only Linux jobs of ci.yml", () => {
-  // No PR runs a macOS job: each check mac.yml reports, and the iOS build of a manual ios.yml run, is after merge only.
-  // ios.yml never starts on a push or a pull request by itself.
-  expect(Object.keys(workflow("ios.yml").on ?? {}).sort()).toEqual(["workflow_call", "workflow_dispatch"]);
-  const mac = ["mobile (ios)"];
-  for (const [id, job] of Object.entries(workflow("mac.yml").jobs)) {
+  // No PR runs a macOS job: each check mac.yml (Nightly) reports, the iOS build of a manual run among them, is after
+  // merge only. mac.yml never starts on a push or a pull request by itself.
+  const nightly = workflow("mac.yml");
+  expect(Object.keys(nightly.on ?? {}).sort()).toEqual(["schedule", "workflow_call", "workflow_dispatch"]);
+  const mac: string[] = [];
+  for (const [id, job] of Object.entries(nightly.jobs)) {
     if (job.uses === "./.github/workflows/desktop-qa.yml") {
       const shards = qaShards("macos-latest");
       expect(shards).toHaveLength(3);
       mac.push(...shards.map((s) => `${id} / ${s}`));
-    } else if (job.uses) {
-      for (const [cid, cjob] of Object.entries(workflow(job.uses.replace("./.github/workflows/", "")).jobs)) {
-        if (cjob["runs-on"] === "macos-latest") mac.push(`${id} / ${cjob.name ?? cid}`);
-      }
     } else if (job["runs-on"] === "macos-latest") mac.push(job.name ?? id);
   }
+  expect(mac).toContain("mobile (ios)");
+  // The link check, which the train doesn't leave for after the merge, runs only in the workflow's own nightly or a
+  // manual run of it alone: never in an on-demand run of the Mac checks on a PR's head, nor in release.yml's call
+  // (github.workflow is Release there), so it never holds a PR or gates a release.
+  const links = nightly.jobs["site-external-links"]?.if;
+  expect(links).toContain(`github.workflow == '${nightly.name}'`);
+  expect(links).toContain("(github.event_name == 'schedule' || inputs.only == 'links')");
   const ci = Object.entries(workflow("ci.yml").jobs);
   const linux = (check: string) => ci.some(([id, j]) => (j.name ?? id) === check && j["runs-on"] === "ubuntu-latest");
   expect(settings.afterMerge.filter((c) => !linux(c)).sort()).toEqual(mac.sort());
