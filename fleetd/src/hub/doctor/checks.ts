@@ -163,6 +163,12 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
   return hubEntry("vault_key", "ok", `The vault key is in ${where}; its recovery code is saved.`);
 }
 
+/**
+ * The ids `setupChecks` answers for. Each is there only while its state is (someone joined, an App, a token, the
+ * vault's key), so one missing from a read means it is gone, not that an earlier read still holds.
+ */
+export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key"]);
+
 /** The setup checks the hub reads from its own state: someone else joined, the GitHub App. */
 export function setupChecks(facts: SetupFacts): DoctorCheck[] {
   const out: DoctorCheck[] = [];

@@ -14,7 +14,7 @@ import { githubApps, manifest } from "../src/hub/github_app/index.ts";
 import { BLOCKED_TOKEN, deliver, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
 import { isoMs } from "../src/hub/train/seams.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
-import type { Grant } from "../src/shared/contracts.ts";
+import type { Grant, HubSetupStep } from "../src/shared/contracts.ts";
 import { openHubDb, tempHome } from "./helpers.ts";
 
 const KEY = readFileSync(join(import.meta.dir, "fixtures/app-test-key.pem"), "utf8");
@@ -489,6 +489,20 @@ test("removing the App forgets everyone's connection and takes back what it hand
   expect(kept(l.hub)).toEqual([]);
   expect(l.hub.db.conn.query("SELECT * FROM github_accounts").all()).toEqual([]);
   expect((await call(l, sam, "github_app_get")).app).toBeUndefined();
+});
+
+test("the GitHub setup step stops counting the App the moment it is removed", async () => {
+  const l = lab();
+  const a = admin(l.hub);
+  const github = async () => ((await call(l, a, "setup_list")).steps as HubSetupStep[]).find((s) => s.id === "github")!;
+  await created(l);
+  await call(l, a, "github_app_test");
+  expect(await github()).toMatchObject({ status: "done", way: "the hub's GitHub App" });
+  await call(l, a, "github_app_remove");
+  // The doctor's kept checks still hold the App's; the step no longer reads it, whatever gh says on this machine.
+  const after = await github();
+  expect(after.way).not.toBe("the hub's GitHub App");
+  expect(after.said ?? "").not.toContain("is installed on");
 });
 
 beforeEach(() => {
