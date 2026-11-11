@@ -44,10 +44,14 @@ export function parsePrUrl(url: string): { repo: string; number: number } | unde
 /** A commit the train merged onto `base`, whose checks outside the fast set it watches there. */
 export type Watch = { repo: string; sha: string; base: string; projectRef: ProjectRef; prUrl: string; sinceMs: number };
 
-/** The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration. */
+/**
+ * The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration,
+ * and a person it waits on, told of at the patch id in its `head`.
+ */
 export const WAIT_UNSTARTED = "unstarted";
 export const WAIT_BLOCKED = "blocked";
 export const WAIT_REGEN = "regen";
+export const WAIT_PERSON = "person";
 /** A wait's state before it came to anything. */
 export const WAITING = "waiting";
 

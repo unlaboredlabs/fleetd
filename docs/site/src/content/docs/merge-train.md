@@ -11,10 +11,14 @@ work needs no `change_enqueue`.
 ## What the train does {#steps}
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
-2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
+2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does (or merge the base into it,
+   where a rebase would [cost it an approval](#approval)).
 3. Waits for its [fast set](#fast-set) of checks on that exact commit, and for each check a batch
    [skips](#scarce-runners) there too (see [How long CI may take](#ci-time)).
-4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
+4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit (with another
+   [merge method](#merge-method) where the repo allows no squash).
+
+The train follows [the repo's own rules](#rules) on GitHub: a PR whose base requires a person's approval waits for it.
 
 A PR already on the current base whose own commit already passed its fast set, every check of it reported, merges
 without step 2 and without the `fleetd:next` label: its CI already ran on exactly the tree that lands, so the train
@@ -30,9 +34,9 @@ GitHub runs no CI on it") without waiting for its turn, unless the train can [re
 checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
 lead, once per commit, and keeps its place.
 
-fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
-`fleetd/train`) waits, and its queue entry and `fleetd doctor` say to add one. It goes on by itself once a workflow
-exists.
+fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, no required check but
+`fleetd/train`, and nothing [another CI](#providers) reports on its commit) waits, and its queue entry and
+`fleetd doctor` say to add one. It goes on by itself once there is one.
 
 To keep a PR off the train, [hold it](#hold).
 
@@ -70,6 +74,64 @@ reads `.fleetd/train.json` from the base branch every 10 minutes at most:
 
 Both keys are optional, and there may be no other key. A file the train can't read or use makes it wait for every
 check until the file is fixed.
+
+## The repo's own rules {#rules}
+
+The train reads what GitHub says about the base branch and follows it: its rulesets, its branch protection and the
+repo's merge settings, read every 10 minutes at most. There is nothing to set in fleetd. fleetd never approves a PR
+and never goes around a rule.
+
+### A required approval {#approval}
+
+When the base requires an approving review (in a ruleset or in branch protection, code owners' included), a PR that
+is reviewed by the agent and green waits for a person's approval on GitHub. The train doesn't try to merge it, and
+doesn't push to it. It shows as "waiting for a person's approval" in the train's state, and the lead tells you once per
+reviewed patch that it is reviewed and green. Once GitHub shows it approved, the train merges it by itself, in its
+turn. A review that requests changes keeps it waiting, and goes to its writer as [any person's review](#people) does.
+
+Into such a base:
+
+- PRs merge one at a time, each as itself. A [batch](#batches) lands as a PR of its own, which nobody approved.
+- Where the base drops approvals on new commits, the train never rebases a PR: it has GitHub merge the base into it,
+  as **Update branch** does, which rewrites none of its commits. A PR that still waits for its approval isn't
+  updated at all.
+
+Whether a PR has its approval is GitHub's own answer for that PR (its review decision), never the train's reading
+of the reviews.
+
+### Merge method {#merge-method}
+
+The train merges with the first method the repo allows, and the base's ruleset where it names its own: squash, then
+rebase, then a merge commit. A squash carries the message GitHub would write and the `Fleetd-Change` trailer. A
+merge commit carries the PR's title and the trailer. A rebase lands the PR's commits as they are. Without squash,
+PRs merge one at a time: a batch lands as one squash.
+
+### CI from another provider {#providers}
+
+A check counts whether it reports as a check run (GitHub Actions and most apps) or as a commit status (CircleCI,
+Buildkite, Jenkins and others):
+
+- A check the base requires, or one the repo lists in `fastChecks`, is read from either.
+- On a commit no check run reports on, the commit's statuses are its CI: those of the [fast set](#fast-set) where
+  there is one, and every status in a repo with no GitHub Actions workflow.
+
+In a repo that has workflows, a status that is neither required nor listed is not waited for, since the workflows'
+checks may still come. If such a commit gets only that status, its CI times out, and the message names the status and
+says to require it on the base or list it in `fastChecks`.
+
+### Other rules {#other-rules}
+
+When GitHub refuses a merge for a rule fleetd can't satisfy (signed commits, an unresolved conversation, a push
+restriction, GitHub's merge queue), the lead hears once, with GitHub's own words, and the train doesn't try again by
+itself. Once the rule or the PR has changed, the lead puts it back with `change_enqueue`. Any other refusal is tried
+3 times, as the base may have moved, and then reported with GitHub's words too.
+
+A base that requires GitHub's merge queue is not supported: the train is the only way fleetd merges, and it can't
+merge into such a base.
+
+When GitHub doesn't let the hub read a rule, the train goes on as it did before it read any (it rebases, squashes
+and batches), and the hub's log says which read failed, once an hour. It never stalls on an unread rule: if GitHub
+then refuses a merge for a missing approval, the PR waits for the approval as above.
 
 ## After the merge {#after-merge}
 
@@ -237,8 +299,9 @@ for changes, so it never counts toward a review GitHub requires. If GitHub refus
 
 ## Batches {#batches}
 
-When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
-line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
+When several PRs are ready at once, the train merges them together in one CI run, except into a base that
+[requires approvals](#approval) or in a repo [without squash merges](#merge-method), where they go one at a time. It
+takes up to 8 ready PRs in line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
 PR whose commit has no checks yet stays out. A cancelled or superseded run, and any check outside the fast set, doesn't
 keep a PR out: the batch's own CI decides. A check the batch PR [skips](#scarce-runners) must have passed on the PR's
 own commit too. A fast-set check whose job the PR's own tree doesn't define, because its branch predates the job,
@@ -507,6 +570,26 @@ own. A PR merged outside the train also counts as merged.
 Add the `hold` label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
 its turn. To hold every PR of a repo, label each one.
 
+### People merge here {#people-merge}
+
+When people merge the PRs, not the train, say so in the project's
+[instructions](/docs/what-agents-are-told#instructions):
+
+```text
+People merge here: open every PR with the `hold` label and tell me when it's reviewed and green.
+```
+
+There is no setting for it; the repo needs a `hold` label. Each writer then opens its PR with the label, and for a
+held PR:
+
+- The agent reviewer reviews it as any other, and findings and red CI go back to its writer.
+- The train never merges it.
+- The lead tells you once per reviewed patch that it is reviewed and green, with its link.
+- The train keeps it up to date with its base while it waits, once an hour at most, since each update runs its CI
+  again. Where the base drops approvals on new commits, an approved PR is left as it is, and any other gets the base
+  merged in, so an update never costs an approval.
+- When you merge it on GitHub, the merge is [recorded](#outside), and the PRs behind it carry on.
+
 ## What never relaxes {#guarantees}
 
 Batches only save waiting.
@@ -516,6 +599,6 @@ Batches only save waiting.
   answered.
 - The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
-- GitHub's rules on the base decide every merge.
+- GitHub's rules on the base decide every merge. fleetd never approves a PR, and never goes around a rule.
 - What lands is always a tree CI passed on: a batch on top of another lands only as itself, never stacked onto a squash
   it wasn't tested with.

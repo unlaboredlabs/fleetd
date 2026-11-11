@@ -3,9 +3,10 @@
 // wake, and what is parked with its author.
 import type { Change, ProjectRef, TrainState } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { LEFT_OUT } from "./batch.ts";
+import { HELD, LEFT_OUT } from "./batch.ts";
 import { changeRecords } from "./index.ts";
 import { WAITING_FOR_RUNNERS } from "./next.ts";
+import { APPROVAL } from "./person.ts";
 import { type ChangeRecords, DRAFT, isDraft } from "./records.ts";
 import { TOOLS_FAILED } from "../reviews/rules.ts";
 import { parseMs } from "./seams.ts";
@@ -38,6 +39,9 @@ function stateOf(changes: Change[], train: TrainState): string {
     const c = byId.get(id);
     if (!c) return id;
     if (isDraft(c)) return `${id} ${DRAFT}`;
+    // A ready PR that waits on a person says so.
+    if (c.state === "ready" && c.lastError === APPROVAL) return `${id} waiting for a person's approval`;
+    if (c.state === "ready" && c.lastError === HELD) return `${id} held by its \`hold\` label`;
     // A ready PR the batch left out says why.
     if (c.state === "ready" && c.lastError?.startsWith(LEFT_OUT)) return `${id} ready (${oneLine(c.lastError, 100)})`;
     // A review whose reviewer's tools failed says so.

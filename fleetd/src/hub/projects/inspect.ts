@@ -151,7 +151,7 @@ export function leadNeeds(i: ProjectInspect, ghOk: boolean, unread: string[]): s
   if (!ghOk) return "gh is not logged in on the hub: run `gh auth login` there so the merge train can open and merge PRs";
   if (unread.length > 0) return `CI and merge rules unknown: gh on the hub could not read ${unread.join(", ")} on ${repo}`;
   if (i.merge.squashAllowed === false) {
-    return `squash merges are off on ${repo}: turn them on in its settings, the merge train squash-merges`;
+    return `squash merges are off on ${repo}: the merge train merges with a rebase or a merge commit instead, one PR at a time`;
   }
   const reviews = i.merge.requiredReviews ?? 0;
   if (reviews > 0) {

@@ -52,7 +52,16 @@ export type FakePull = {
   comments: string[];
   mergeable?: boolean;
   headRepo?: string;
+  /** A person approved it; a rebase drops it where the base dismisses stale approvals. */
+  approved?: boolean;
+  changesRequested?: boolean;
+  /** It has an open conversation, on a base whose ruleset wants each resolved. */
+  conversation?: boolean;
 };
+
+/** The approving review a base requires: `count` of them, 1 unless said; 0 is a base that requires a PR and no approval. */
+export type FakeApprovals = { classic?: boolean; dismissStale?: boolean; codeOwners?: boolean; count?: number };
+const needsApproval = (a: FakeApprovals | undefined): a is FakeApprovals => a !== undefined && ((a.count ?? 1) > 0 || a.codeOwners === true);
 
 const ok = (body: unknown): GhOut => ({ exitCode: 0, stdout: JSON.stringify(body), stderr: "" });
 export const httpError = (status: number, message: string): GhOut => ({
@@ -73,6 +82,16 @@ export class FakeGh implements GhRunner {
   required: string[] = [];
   /** No workflows: the repo has no CI. */
   noCi = false;
+  /** Main requires an approving review: through a ruleset, or classic branch protection. */
+  approvals?: FakeApprovals;
+  /** The merge methods the repo's settings allow. */
+  methods: string[] = ["squash", "rebase", "merge"];
+  /** The merge methods main's ruleset allows, when it names them. */
+  ruleMethods?: string[];
+  /** What GitHub doesn't show the train: `classic` (branch protection) and `decision` (a PR's reviews), refused; `methods`, the repo's merge methods, left out of its answer. */
+  unreadable: string[] = [];
+  /** When set, the commit statuses every head has, [context, state], as another CI provider reports them. */
+  provider?: (sha: string) => [string, string][];
   /** Scripted answers to the next merge calls, before the fake merges for real. */
   mergeReplies: GhOut[] = [];
   /** When set, the check runs of every head. */
@@ -137,7 +156,8 @@ export class FakeGh implements GhRunner {
     return git(this.origin, ["commit-tree", tree.split("\n")[0]!, ...parents.flatMap((p) => ["-p", p]), "-m", message]);
   }
 
-  private updateBranch(n: number): GhOut {
+  /** `gh pr update-branch`: a rebase onto the base, or without `--rebase` the base merged into the branch. */
+  private updateBranch(n: number, rebase: boolean): GhOut {
     const p = this.pulls.get(n);
     if (!p) return httpError(404, "Not Found");
     const head = this.headOf(p.branch)!;
@@ -145,11 +165,22 @@ export class FakeGh implements GhRunner {
     if (gitOut(this.origin, ["merge-base", "--is-ancestor", onto, head]) !== undefined) {
       return { exitCode: 0, stdout: "✓ PR branch already up-to-date\n", stderr: "" };
     }
-    const rebased = this.merged(onto, head, [onto], `change ${p.branch}`);
-    if (rebased === undefined) return { exitCode: 1, stdout: "", stderr: "X Cannot update PR branch due to conflicts\n" };
-    git(this.origin, ["update-ref", `refs/heads/${p.branch}`, rebased]);
-    this.log.push(`rebase #${n}`);
+    const updated = rebase ? this.merged(onto, head, [onto], `change ${p.branch}`) : this.merged(head, onto, [head, onto], `Merge branch '${p.base}' into ${p.branch}`);
+    if (updated === undefined) return { exitCode: 1, stdout: "", stderr: "X Cannot update PR branch due to conflicts\n" };
+    git(this.origin, ["update-ref", `refs/heads/${p.branch}`, updated]);
+    // A rebase rewrites the PR's commits: a base that dismisses stale approvals drops them. A merge of the base doesn't.
+    if (rebase && this.approvals?.dismissStale) p.approved = false;
+    this.log.push(rebase ? `rebase #${n}` : `update #${n}`);
     return { exitCode: 0, stdout: "✓ PR branch updated\n", stderr: "" };
+  }
+
+  /**
+   * GitHub's own answer on a PR's reviews: null where its base requires none, and while a conversation its base wants
+   * resolved is open (as GitHub answered on the lab repo, 2026-11-11).
+   */
+  private reviewDecision(p: FakePull): string | null {
+    if (!needsApproval(this.approvals) || p.conversation) return null;
+    return p.changesRequested ? "CHANGES_REQUESTED" : p.approved ? "APPROVED" : "REVIEW_REQUIRED";
   }
 
   private merge(n: number, p: FakePull, fields: Map<string, string>): GhOut {
@@ -161,16 +192,30 @@ export class FakeGh implements GhRunner {
     if (!this.statuses.some(([s, c, st]) => s === sha && c === "fleetd/train" && st === "success")) {
       return httpError(405, 'Required status check "fleetd/train" is expected.');
     }
+    const method = fields.get("merge_method") ?? "merge";
+    const allowed = this.methods.filter((m) => this.ruleMethods?.includes(m) ?? true);
+    if (!allowed.includes(method)) {
+      const named = method === "squash" ? "Squash merges" : method === "rebase" ? "Rebase merges" : "Merge commits";
+      return httpError(405, `${named} are not allowed on this repository.`);
+    }
+    // GitHub's answers on the lab repo, 2026-11-11: a ruleset's refusal names the open conversation alone.
+    if (p.conversation) return httpError(405, "Repository rule violations found\n\nA conversation must be resolved before this pull request can be merged.\n\n");
+    const decision = this.reviewDecision(p);
+    if (decision === "CHANGES_REQUESTED") return httpError(405, "Changes were requested by a reviewer with write access.");
+    if (decision === "REVIEW_REQUIRED") return httpError(405, "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n");
     const main = this.headOf(p.base)!;
     if (git(this.origin, ["merge-base", main, sha]) !== main) return httpError(405, "Base branch was modified. Review and try the merge again.");
-    const squash = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-m", message]);
-    git(this.origin, ["update-ref", `refs/heads/${p.base}`, squash]);
+    let landed: string;
+    if (method === "squash") landed = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-m", message]);
+    else if (method === "rebase") landed = sha;
+    else landed = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-p", sha, "-m", `${title ?? `Merge pull request #${n} from ${p.branch}`}\n\n${body ?? p.title}`]);
+    git(this.origin, ["update-ref", `refs/heads/${p.base}`, landed]);
     p.merged = true;
     p.state = "closed";
-    p.mergeSha = squash;
+    p.mergeSha = landed;
     p.mergedAt = new Date(this.now()).toISOString();
-    this.log.push(`merge #${n}`);
-    return ok({ sha: squash, merged: true, message: "Pull Request successfully merged" });
+    this.log.push(method === "squash" ? `merge #${n}` : `merge #${n} by ${method}`);
+    return ok({ sha: landed, merged: true, message: "Pull Request successfully merged" });
   }
 
   async run(args: string[]): Promise<GhOut> {
@@ -179,13 +224,7 @@ export class FakeGh implements GhRunner {
   }
 
   answer(args: string[]): GhOut {
-    if (args[0] === "pr" && args[1] === "update-branch") return this.updateBranch(Number(args[2]));
-    if (args.includes("graphql")) {
-      // The reverts' histories: none, so no PR undoes the base.
-      return ok({ data: { repository: { object: {} } } });
-    }
-    const method = args[args.indexOf("-X") + 1] ?? "GET";
-    const target = args.find((a) => a.startsWith("repos/")) ?? "";
+    if (args[0] === "pr" && args[1] === "update-branch") return this.updateBranch(Number(args[2]), args.includes("--rebase"));
     const fields = new Map<string, string>();
     for (let i = 0; i < args.length - 1; i++) {
       if (args[i] === "-f" || args[i] === "-F") {
@@ -194,6 +233,33 @@ export class FakeGh implements GhRunner {
         if (eq > 0) fields.set(f.slice(0, eq), f.slice(eq + 1));
       }
     }
+    if (args.includes("graphql")) {
+      const query = fields.get("query") ?? "";
+      const refused = httpError(403, "Resource not accessible by personal access token");
+      if (query.includes("branchProtectionRule")) {
+        if (this.unreadable.includes("classic")) return refused;
+        const a = this.approvals;
+        const rule = a?.classic
+          ? {
+              requiresApprovingReviews: true,
+              requiredApprovingReviewCount: a.count ?? 1,
+              requiresCodeOwnerReviews: a.codeOwners === true,
+              dismissesStaleReviews: a.dismissStale === true,
+              requireLastPushApproval: false,
+            }
+          : null;
+        return ok({ data: { repository: { ref: { branchProtectionRule: rule } } } });
+      }
+      if (query.includes("reviewDecision")) {
+        if (this.unreadable.includes("decision")) return refused;
+        const p = this.pulls.get(Number(query.match(/pullRequest\(number: (\d+)\)/)?.[1]));
+        return ok({ data: { repository: { pullRequest: p ? { reviewDecision: this.reviewDecision(p) } : null } } });
+      }
+      // The reverts' histories: none, so no PR undoes the base.
+      return ok({ data: { repository: { object: {} } } });
+    }
+    const method = args[args.indexOf("-X") + 1] ?? "GET";
+    const target = args.find((a) => a.startsWith("repos/")) ?? "";
     const diff = args.some((a) => a.includes("github.diff"));
     const [path, query = ""] = target.split("?") as [string, string?];
     const parts = path.split("/").slice(3);
@@ -203,7 +269,11 @@ export class FakeGh implements GhRunner {
     const [a, b, c] = parts;
     const pullsOf = (f: (p: FakePull) => boolean) =>
       ok([...this.pulls].filter(([, p]) => f(p) && inRepo(p)).sort(([x], [y]) => y - x).map(([n, p]) => this.pullJson(n, p)));
-    if (parts.length === 0 && method === "GET") return ok({ default_branch: "main" });
+    if (parts.length === 0 && method === "GET") {
+      if (this.unreadable.includes("methods")) return ok({ default_branch: "main" });
+      const allows = (m: string) => this.methods.includes(m);
+      return ok({ default_branch: "main", allow_squash_merge: allows("squash"), allow_rebase_merge: allows("rebase"), allow_merge_commit: allows("merge") });
+    }
     if (a === "pulls" && parts.length === 1 && method === "GET") {
       const head = q("head")?.split(":")[1];
       const state = q("state") ?? "open";
@@ -368,7 +438,9 @@ export class FakeGh implements GhRunner {
       });
     }
     if (a === "commits" && c === "status") {
-      return ok({ statuses: this.statuses.filter(([s]) => s === b).map(([, context, state]) => ({ context, state })) });
+      const own = this.statuses.filter(([s]) => s === b).map(([, context, state]) => ({ context, state }));
+      const theirs = (this.provider?.(b!) ?? []).map(([context, state]) => ({ context, state, target_url: `https://ci.example.invalid/${context}` }));
+      return ok({ statuses: [...own, ...theirs] });
     }
     if (a === "commits" && parts.length === 2 && diff) return { exitCode: 0, stdout: `${git(this.origin, ["diff", `${b}^`, b!])}\n`, stderr: "" };
     if (a === "commits" && parts.length === 2) return ok({ files: [] });
@@ -404,7 +476,24 @@ export class FakeGh implements GhRunner {
     }
     if (a === "branches") return ok({ name: "main", protected: false, protection: { enabled: false, required_status_checks: { contexts: [] } } });
     if (a === "rules") {
-      return ok(this.required.length === 0 ? [] : [{ type: "required_status_checks", ruleset_id: 1, parameters: { required_status_checks: this.required.map((context) => ({ context })) } }]);
+      const rules: unknown[] = [];
+      if (this.required.length > 0) {
+        rules.push({ type: "required_status_checks", ruleset_id: 1, parameters: { required_status_checks: this.required.map((context) => ({ context })) } });
+      }
+      const ap = this.approvals;
+      if ((ap && !ap.classic) || this.ruleMethods) {
+        const review = ap && !ap.classic;
+        const parameters: Record<string, unknown> = {
+          required_approving_review_count: review && !ap.codeOwners ? (ap.count ?? 1) : 0,
+          dismiss_stale_reviews_on_push: review && ap.dismissStale === true,
+          require_code_owner_review: review && ap.codeOwners === true,
+          require_last_push_approval: false,
+          required_review_thread_resolution: false,
+        };
+        if (this.ruleMethods) parameters.allowed_merge_methods = this.ruleMethods;
+        rules.push({ type: "pull_request", ruleset_id: 2, parameters });
+      }
+      return ok(rules);
     }
     if (a === "contents") {
       const at = q("ref") ?? "main";
@@ -670,6 +759,11 @@ export class Kit {
 
   change(n: number): Change {
     return this.train.records.latestFor(REPO, n)!;
+  }
+
+  /** A person approves PR `n` on GitHub. */
+  approve(n: number): void {
+    this.gh.pulls.get(n)!.approved = true;
   }
 
   mainLog(): string[] {

@@ -99,6 +99,42 @@ export function requiredChecks(runs: CheckRun[], statuses: CommitStatus[], requi
   return waiting ? { kind: "pending" } : { kind: "green" };
 }
 
+/**
+ * A head's commit statuses as check runs, for a head no check run reports on: CI another provider reports (CircleCI,
+ * Buildkite, Jenkins). Those of the fast set where there is one, else every status; never the train's own.
+ */
+export function statusRuns(statuses: CommitStatus[], fast: Fast): CheckRun[] {
+  return statuses
+    .filter((s) => s.context !== TRAIN_CONTEXT && (fast.set.length === 0 || fast.holds(s.context)))
+    .map((s) => {
+      const pending = s.state === "pending";
+      return { id: 0, name: s.context, status: pending ? "in_progress" : "completed", conclusion: pending ? null : s.state, html_url: s.target_url ?? null, started_at: null, completed_at: null, head_sha: null };
+    });
+}
+
+/**
+ * GitHub's words for a refusal on one line: a ruleset's come as a heading and a line per rule, blank lines between.
+ */
+export function oneLine(message: string): string {
+  const lines = message
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+  return lines.map((l, i) => (i < lines.length - 1 && !/[.:;!?]$/.test(l) ? `${l}:` : l)).join(" ");
+}
+
+/** GitHub's words for a merge it refuses by a rule no retry of the train's satisfies; each lowercase. */
+const RULE_REFUSALS = ["merge queue", "verified signature", "must be resolved", "not authorized to push"];
+
+/**
+ * Whether GitHub refused a merge for a rule the train can't satisfy and never will by trying again: GitHub's merge
+ * queue, signed commits, unresolved conversations, a push restriction.
+ */
+export function ruleRefusal(message: string): boolean {
+  const words = message.toLowerCase();
+  return RULE_REFUSALS.some((r) => words.includes(r));
+}
+
 /** How many times the train re-runs one job whose required check reads cancelled before it counts it red. */
 export const CANCELLED_RERUNS = 2;
 

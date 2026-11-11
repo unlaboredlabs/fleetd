@@ -4,18 +4,22 @@
 // the task that wrote the code, but a conflict only in generated files, which the train regenerates on a node
 // (regen.ts); a merge goes to the lead inline. A PR merged into a guarded base without the train is reported once
 // (`pr.merged_outside`). The `hold` label holds one PR. Two or more ready Changes go as one batch (batch.ts).
+// The base's own rules on GitHub decide the rest (`rules`): where it requires a person's approval, a PR waits for it
+// (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
+// the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
 import type { Change, ChangeReview, ChangeState, CiInfo, ProjectRef } from "../../shared/contracts.ts";
 import * as batch from "./batch.ts";
 import { prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
-import { type CheckRun, GhError, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
+import { type BaseConfig, type BaseRules, type CheckRun, GhError, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
 import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
+import * as person from "./person.ts";
 import { type PromptSetLike, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BLOCKED, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
@@ -29,11 +33,14 @@ import {
   Fast,
   gated,
   mustReport,
+  oneLine,
   type Refusal,
   requiredChecks,
+  ruleRefusal,
   runningSince,
   short,
   type Stall,
+  statusRuns,
 } from "./rules.ts";
 import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
@@ -140,6 +147,9 @@ export const CI_FINISHED_LATE = "CI finished after the timeout; back in the queu
 /** The reviews' note on a Change its findings block (reviews/service.rs `BLOCKED`). */
 export const BLOCKED_PREFIX = "waiting for a new head: ";
 
+/** How the note of a Change ends whose merge GitHub refused by a rule the train can't satisfy. */
+const RULE_HELD = "; fleetd can't satisfy this rule, and never goes around one";
+
 /** A Change in `ci_failed` because its CI timed out, not because a check went red. */
 export const timedOut = (change: Change) => change.state === "ci_failed" && (change.lastError?.startsWith(CI_TIMED_OUT) ?? false);
 
@@ -227,8 +237,16 @@ export class Train {
   private readonly lateReruns = new Map<string, next.Reruns>();
   /** Per head, what the train read and re-ran of checks GitHub left pending under a finished run (`rerunStale`). */
   readonly staleHeads = new Map<string, StaleHead>();
-  /** Each repo and base branch's CI config and when it was read. */
-  readonly ciConfigs = new Map<string, [number, CiInfo]>();
+  /** Each repo and base branch's CI config and rules, and when they were read. */
+  readonly ciConfigs = new Map<string, [number, BaseConfig | Error]>();
+  /** The bases a merge was refused on for a missing approval: they require one, whatever their rules read. */
+  readonly approvalBases = new Set<string>();
+  /** Per ready Change, GitHub's answer on its reviews: when it was read, at which head, and the answer. */
+  readonly decisions = new Map<string, [number, string, string | undefined]>();
+  /** Per ready Change that waits on a person, when the train last looked at it (`person.waits`). */
+  readonly personChecks = new Map<string, number>();
+  /** Per Change a person merges, when the train last brought it up to date with its base. */
+  readonly heldUpdates = new Map<string, number>();
   readonly nextLabels = new next.NextLabels();
   readonly sync = new GithubSync();
   readonly scheduledReads = new Map<string, number>();
@@ -613,9 +631,19 @@ export class Train {
       let what: string;
       const s = (n: number) => (n === 1 ? "" : "s");
       switch (stall.kind) {
-        case "no_checks":
+        case "no_checks": {
           what = `no check reported within ${min(this.options.ciTimeoutMs)} min`;
+          // Commit statuses alone aren't the CI of a repo with workflows, whose check runs may still come, until named.
+          const statuses = await this.github.statuses(change.repo, change.headSha).catch(() => []);
+          const others = [...new Set(statuses.map((x) => x.context).filter((c) => c !== TRAIN_CONTEXT))];
+          if (others.length > 0) {
+            const one = others.length === 1;
+            what +=
+              `. ${others.join(", ")} reported as ${one ? "a commit status" : "commit statuses"}, which the train counts once the base requires ` +
+              `${one ? "it" : "them"} or the repo's .fleetd/train.json names ${one ? "it" : "them"}`;
+          }
           break;
+        }
         case "queued":
           what = `${stall.count} check${s(stall.count)} waited ${min(this.options.ciQueueCeilingMs)} min for a runner and none started`;
           break;
@@ -713,7 +741,7 @@ export class Train {
       let runsRead: CheckRun[] | undefined;
       try {
         all = await this.github.allCheckRuns(repo, sha);
-        runsRead = latest(all);
+        runsRead = all.length > 0 ? latest(all) : await this.statusRuns(repo, sha, base);
       } catch (error) {
         this.warnHourly([`train: check runs not read (${repo}@${sha})`], ghMessage(error), `train: check runs not read (${repo}@${sha}): ${ghMessage(error)}`);
       }
@@ -924,10 +952,54 @@ export class Train {
       .sort();
   }
 
-  /** Whether PRs into `base` get CI: the repo has a workflow, or `base` requires a check other than the train's own. */
-  async hasCi(repo: string, base: string): Promise<boolean> {
+  /**
+   * Whether PRs into `base` get CI: the repo has a workflow, `base` requires a check other than the train's own, or
+   * some CI already reports on `head`, a check run or a commit status of any provider.
+   */
+  async hasCi(repo: string, base: string, head?: string): Promise<boolean> {
     const ci = await this.ciConfig(repo, base);
-    return ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT);
+    if (ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
+    if (head === undefined) return false;
+    if ((await this.github.checkRuns(repo, head)).length > 0) return true;
+    return (await this.github.statuses(repo, head)).some((s) => s.context !== TRAIN_CONTEXT);
+  }
+
+  /**
+   * The commit statuses on `sha` as check runs, for a head no check run reports on: CI another provider reports. The
+   * fast set's where there is one; else every status, in a repo with no workflow, whose check runs would still be to
+   * come. None while the base's rules can't be read.
+   */
+  async statusRuns(repo: string, sha: string, base: string): Promise<CheckRun[]> {
+    const fast = await this.fast(repo, base);
+    const ci = await this.ciConfigOk(repo, base);
+    if (!fast || !ci || (fast.set.length === 0 && ci.workflows.length > 0)) return [];
+    return statusRuns(await this.github.statuses(repo, sha), fast);
+  }
+
+  /**
+   * `base`'s rules as the train follows them. While they can't be read, what it did before it read any stands in, and
+   * `unread` says so: a squash, and no approval but one a refused merge taught it (`approvalBases`).
+   */
+  async rules(repo: string, base: string): Promise<BaseRules> {
+    let rules: BaseRules;
+    try {
+      rules = (await this.ciConfig(repo, base)).rules;
+    } catch (error) {
+      rules = { approval: false, dismissStale: false, method: "squash", unread: [(error as Error).message] };
+    }
+    for (const what of rules.unread) {
+      this.warnHourly([`train: rules of ${repo} ${base} not read`], what, `train: rules of ${repo} ${base} not read, so the train goes on as before it read them: ${what}`);
+    }
+    // Whether a learned base drops approvals on a push isn't known: the careful answer.
+    return !rules.approval && this.approvalBases.has(`${repo}\u0000${base}`) ? { ...rules, approval: true, dismissStale: true } : rules;
+  }
+
+  /** Why PRs into `base` merge one at a time, never in a batch; undefined where they may batch. */
+  async oneAtATime(repo: string, base: string): Promise<string | undefined> {
+    const rules = await this.rules(repo, base);
+    if (rules.approval) return `PRs into ${base} merge one at a time, as it requires a person's approval of each`;
+    if (rules.method !== "squash") return `PRs into ${base} merge one at a time, as the repo allows no squash merge`;
+    return undefined;
   }
 
   /** The fast set of a head into `base`; undefined while the base's rules or the repo's file can't be read. */
@@ -938,18 +1010,26 @@ export class Train {
     return settings ? new Fast(ci.requiredChecks, settings) : undefined;
   }
 
-  /** `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`. */
-  async ciConfig(repo: string, base: string): Promise<CiInfo> {
+  /** `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`; one that can't be read, at most once per pass. */
+  async ciConfig(repo: string, base: string): Promise<BaseConfig> {
     const key = `${repo}\u0000${base}`;
     const now = this.nowMs();
     const cached = this.ciConfigs.get(key);
-    if (cached && now - cached[0] < CI_CONFIG_TTL_MS) return cached[1];
-    const ci = await this.github.ciConfig(repo, base);
-    this.ciConfigs.set(key, [now, ci]);
-    return ci;
+    if (cached && now - cached[0] < (cached[1] instanceof Error ? this.options.pollIntervalMs : CI_CONFIG_TTL_MS)) {
+      if (cached[1] instanceof Error) throw cached[1];
+      return cached[1];
+    }
+    try {
+      const ci = await this.github.ciConfig(repo, base);
+      this.ciConfigs.set(key, [now, ci]);
+      return ci;
+    } catch (error) {
+      this.ciConfigs.set(key, [now, error as Error]);
+      throw error;
+    }
   }
 
-  private async ciConfigOk(repo: string, base: string): Promise<CiInfo | undefined> {
+  private async ciConfigOk(repo: string, base: string): Promise<BaseConfig | undefined> {
     try {
       return await this.ciConfig(repo, base);
     } catch {
@@ -1102,7 +1182,9 @@ export class Train {
       console.info(`train: ${change.changeId}'s own CI already passed on the current base`);
       label = { kind: "before" };
     } else label = await next.label(this, repo, change.prNumber, hasLabel(pull, NEXT_LABEL));
-    const update = tested ? "current" : await this.github.updateBranch(repo, change.prNumber);
+    // Where a push drops a person's approval, GitHub merges the base into the branch instead: none of its commits change.
+    const rules = await this.rules(repo, base);
+    const update = tested ? "current" : await this.github.updateBranch(repo, change.prNumber, !(rules.approval && rules.dismissStale));
     let rebased: Pull;
     if (update === "conflict") {
       const why = `conflicts with ${base}`;
@@ -1153,7 +1235,8 @@ export class Train {
     const noted = [inCi.changeId];
     const started = this.nowMs();
     const chain: batch.Stage[] = [{ pr: inCi.prNumber, sha: headSha, title: rebased.title, members: [{ change: inCi, pull: rebased }], added: 1, lone: true }];
-    const stack = batch.stacker(this, repo, base, chain);
+    // No batch stacks behind it where each PR merges as itself.
+    const stack = (await this.oneAtATime(repo, base)) === undefined ? batch.stacker(this, repo, base, chain) : undefined;
     const outcome = (await this.watchCi(inCi, repo, headSha, base, lone, noted, undefined, stack)) ?? { kind: "timeout", stall: { kind: "running" } };
     const failed =
       outcome.kind === "green"
@@ -1188,15 +1271,22 @@ export class Train {
     const merging = this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }));
     if (!merging) return;
     await this.github.postTrainStatus(repo, headSha, `${inCi.changeId}: rebased onto ${base}, CI green`);
-    // The squash message GitHub would write by the repo's settings, with the Change's trailer added.
-    const [title, body0] = await this.github.squashMessage(repo, rebased);
-    const body = batch.withTrailers(body0, [merging]);
+    const method = (await this.rules(repo, base)).method;
+    // The squash message GitHub would write by the repo's settings, with the Change's trailer added. A merge commit
+    // carries the PR's title and the trailer; a rebase lands the PR's own commits as they are.
+    let title = "";
+    let body = batch.withTrailers(rebased.title.trim(), [merging]);
+    if (method === "squash") {
+      const [squashTitle, body0] = await this.github.squashMessage(repo, rebased);
+      title = squashTitle;
+      body = batch.withTrailers(body0, [merging]);
+    }
     const mergingSince = this.nowMs();
     let retryWait = MERGE_RETRY_FIRST_MS;
     let status: number;
     let message: string;
     for (;;) {
-      const out = await this.github.merge(repo, inCi.prNumber, headSha, [title, body]);
+      const out = await this.github.merge(repo, inCi.prNumber, headSha, [title, body], method);
       if (out.kind === "merged") {
         watchMerge(this, repo, base, out.sha, merging.prUrl);
         await this.finishMerged(merging, out.sha);
@@ -1220,9 +1310,26 @@ export class Train {
       if (o.kind === "moved") return this.putBack(backInCi, CI_SUPERSEDED);
       if (!this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }))) return;
     }
+    // The rules may have changed since they were read: the next try reads them again.
+    this.ciConfigs.delete(`${repo}\u0000${base}`);
+    const why = `GitHub refused the merge (HTTP ${status}): ${oneLine(message)}`;
+    // No approval yet: it waits for one in line, however long. That is no failed try.
+    if (await person.refusedUnapproved(this, merging, base)) {
+      this.mergeRefusals.delete(inCi.changeId);
+      console.info(`train: merge of ${inCi.changeId} refused until a person approves it: ${oneLine(message)}`);
+      return;
+    }
+    if (ruleRefusal(message)) {
+      // A rule no retry satisfies: said once, with GitHub's words, and left with its author.
+      this.mergeRefusals.delete(inCi.changeId);
+      // The note keeps its end however long GitHub's words are: an enqueue reads it (`enqueueFrom`).
+      const rule = `${[...why].slice(0, 1800).join("")}${RULE_HELD}`;
+      this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ci_failed", lastError: errorText(rule) }));
+      await this.wakeLead(inCi.projectRef, prNote(inCi.changeId, inCi.prUrl, `not merged: ${rule}. The train won't try again by itself; once the rule or the PR has changed, call \`change_enqueue\` for it again`));
+      return;
+    }
     const refusals = (this.mergeRefusals.get(inCi.changeId) ?? 0) + 1;
     this.mergeRefusals.set(inCi.changeId, refusals);
-    const why = `GitHub refused the merge (HTTP ${status}): ${message}`;
     if (refusals < this.options.mergeAttempts) {
       // Usually the base moved between CI and the merge: rebase again. It never left its place in line.
       this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ready", lastError: errorText(why) }));
@@ -1237,8 +1344,9 @@ export class Train {
   async refresh(repo: string): Promise<void> {
     const changes = this.records.inTrain(repo, ["queued", "reviewing", "ready", "needs_rebase", "ci_failed"]);
     const ids = new Set(changes.map((c) => c.changeId));
-    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED], [...ids]);
+    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON], [...ids]);
     for (const id of [...this.lateReruns.keys()]) if (!ids.has(id)) this.lateReruns.delete(id);
+    person.forget(this, repo, ids);
     const live = [...this.records.inTrain(repo, ["rebasing", "ci", "merging"]), ...changes].map((c) => c.changeId);
     forgetRegens(this, repo, live);
     for (const change of changes) {
@@ -1350,14 +1458,15 @@ export class Train {
     let runs: CheckRun[];
     let base: string;
     try {
-      runs = await this.github.checkRuns(change.repo, change.headSha);
-    } catch (error) {
-      return this.warnHourly([`train: check runs of ${change.changeId} not read`], ghMessage(error), `train: check runs of ${change.changeId} not read: ${ghMessage(error)}`);
-    }
-    try {
       base = (await this.github.pull(change.repo, change.prNumber)).base.ref;
     } catch (error) {
       return this.warnHourly([`train: PR of ${change.changeId} not read`], ghMessage(error), `train: PR of ${change.changeId} not read: ${ghMessage(error)}`);
+    }
+    try {
+      runs = await this.github.checkRuns(change.repo, change.headSha);
+      if (runs.length === 0) runs = await this.statusRuns(change.repo, change.headSha, base);
+    } catch (error) {
+      return this.warnHourly([`train: check runs of ${change.changeId} not read`], ghMessage(error), `train: check runs of ${change.changeId} not read: ${ghMessage(error)}`);
     }
     const fast = await this.fast(change.repo, base);
     let judged = checks(gated(runs, fast));
@@ -1759,6 +1868,11 @@ export class Train {
           if (!result && existing.state === "reviewing" && (await this.gate.resolved(existing))) {
             this.note(existing.changeId, RESOLVED);
             this.records.endWait(existing.changeId, WAIT_BLOCKED);
+          }
+          // Enqueued again after a merge GitHub refused by a rule: the rule or the PR has changed, so it is tried again.
+          if (!result && existing.state === "ci_failed" && existing.lastError?.endsWith(RULE_HELD)) {
+            const v = await this.gate.again(existing);
+            if (v.kind === "ready") this.setReady(existing, v.reviews);
           }
           this.kick(repo);
           return this.one(this.records.get(existing.changeId) ?? existing);
