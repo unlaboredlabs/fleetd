@@ -226,15 +226,48 @@ function tellInterrupted(hub: Hub): void {
 const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|PRIVATE|CREDENTIAL|AUTH|DSN|COOKIE|SESSION/u;
 /** A payment provider's secret and restricted keys, which the redaction's shapes leave out. */
 const PAID_KEY = /\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/u;
-/** One unbroken run of eight characters or more with a digit in it, as a key is and a word or a number of seconds isn't. */
+/** One unbroken run of eight characters or more with a digit in it, as a key is and a word or a short number isn't. */
 const OPAQUE = /^(?=\S*[0-9])\S{8,}$/u;
+const NUMBER = /^-?[0-9]+(?:\.[0-9]+)?$/u;
+/** A host as people write one: lowercase dotted names, `localhost` or an IPv4 address, with a port or without. */
+const HOST = /^(?:localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24})(?::[0-9]{1,5})?$/u;
+/** A path from a root, the home or here, in short segments: a base64 key that starts with a slash is one long run. */
+const PATH = /^(?:~|\.{1,2})?(?:\/[A-Za-z0-9._~-]{1,32})+\/?$/u;
+
+/** The URL a value is, with a host: `redis://localhost:6379`, never `user:word`. */
+function urlOf(value: string): URL | undefined {
+  if (!/^[a-z][a-z0-9+.-]*:\/\/[^/]/iu.test(value)) return undefined;
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A URL that carries a password, which is a credential under any name. */
+const hasPassword = (value: string) => (urlOf(value.trim())?.password ?? "") !== "";
 
 /**
- * A value fleetd's own redaction would hide (a key by its shape, or by the name it is set under), or an opaque one
- * under a name that usually holds a credential (`STRIPE_KEY`, `SESSION_COOKIE`).
+ * What a dev variable holds under a name like `NEXTAUTH_URL`, `SESSION_STORE` or `COOKIE_DOMAIN` and no key is: a
+ * number, a host, a path, a URL with nobody's login in it, or a list of them.
  */
-const looksLikeKey = (name: string, value: string) =>
-  redact(value) !== value || redact(`${name}=${value}`) !== `${name}=${value}` || PAID_KEY.test(value) || (SECRETISH.test(name.toUpperCase()) && OPAQUE.test(value.trim()));
+function address(value: string): boolean {
+  return value.split(",").every((part) => {
+    if (NUMBER.test(part) || HOST.test(part) || PATH.test(part)) return true;
+    const url = urlOf(part);
+    return url !== undefined && url.username === "" && url.password === "";
+  });
+}
+
+/**
+ * A value fleetd's own redaction would hide (a key by its shape, or by the name it is set under), a URL with a
+ * password in it, or an opaque value under a name that usually holds a credential (`STRIPE_KEY`, `SESSION_COOKIE`).
+ */
+function looksLikeKey(name: string, raw: string): boolean {
+  const value = raw.trim();
+  if (redact(raw) !== raw || redact(`${name}=${raw}`) !== `${name}=${raw}` || PAID_KEY.test(raw) || hasPassword(value)) return true;
+  return SECRETISH.test(name.toUpperCase()) && OPAQUE.test(value) && !address(value);
+}
 
 const plain = (v: { name: string; value: string }): EnvVarSet => ({ kind: "plain", name: v.name, value: v.value });
 

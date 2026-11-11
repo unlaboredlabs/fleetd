@@ -410,6 +410,13 @@ test("project_setup refuses a value that looks like a key, a secret a person set
     { name: "STRIPE_KEY", value: paid },
     { name: "PAYMENTS", value: paid.replace("sk_live", "rk_test") },
     { name: "SESSION_COOKIE", value: "f3a91c07b2d84e65" },
+    // A URL with a password in it under any name, and what only dresses as an address under a credential's name.
+    { name: "REDIS_URL", value: "redis://:s3cretpw9@localhost:6379" },
+    { name: "SESSION_STORE", value: "redis://app:s3cretpw9@localhost:6379" },
+    { name: "AUTH_HEADER", value: "bearer:f3a91c07b2d84e65" },
+    { name: "API_TOKEN", value: "MTk4NjIyNDgz.Cl2FMQ.ZnCjm1XVW7vRze4b7Cq4se7kKWs" },
+    { name: "PRIVATE_KEY", value: `/${"Zm9vYmFy".repeat(5)}9` },
+    { name: "AUTH_ORIGINS", value: "http://localhost:3000,f3a91c07b2d84e65" },
   ];
   for (const v of keys) {
     const refused = await refusalOf(k.setup({ title: "Storefront", env: { set: [{ name: "REGION", value: "eu" }, v] } }));
@@ -428,9 +435,27 @@ test("project_setup refuses a value that looks like a key, a secret a person set
   expect((await refusalOf(k.setup({ env: { set: [{ name: "FLEETD_HOME", value: "/x" }] } }))).code).toBe("invalid");
   expect((await refusalOf(k.setup({ env: { set: [{ name: "A", value: "1" }], remove: ["A"] } }))).message).toBe("A is both set and removed.");
   expect([k.shop()?.title, projectSettings(k.hub).env(PROJECT).map((v) => [v.name, v.kind]), k.lines()]).toEqual(["Shop", [["STRIPE", "secret"]], []]);
-  // Such a name alone refuses nothing: a word, a number and a plain address under it are plain.
-  const plainOnes = [{ name: "SORT_KEY", value: "createdAt" }, { name: "SESSION_TTL", value: "3600" }, { name: "AUTH_URL", value: "https://login.example.com" }, { name: "PUBLISHABLE", value: paid.replace("sk_", "pk_") }];
-  expect((await k.setup({ env: { set: plainOnes } })).changed).toEqual(["Set 4 variables"]);
+  // Such a name alone refuses nothing: a word, a number, a host, a path and a URL with no login in it are plain,
+  // digits in them or not, and so is a list of them.
+  const plainOnes = [
+    { name: "SORT_KEY", value: "createdAt" },
+    { name: "SESSION_TTL", value: "3600" },
+    { name: "SESSION_MAX_AGE", value: "2592000000" },
+    { name: "AUTH_URL", value: "https://login.example.com" },
+    { name: "NEXTAUTH_URL", value: "http://localhost:3000" },
+    { name: "KEYCLOAK_URL", value: "http://localhost:8080" },
+    { name: "SESSION_STORE", value: "redis://localhost:6379" },
+    { name: "AUTH0_DOMAIN", value: "dev-shop1.us.auth0.com" },
+    { name: "COOKIE_DOMAIN", value: "app1.example.com" },
+    { name: "AUTH_HOST", value: "127.0.0.1:8080" },
+    { name: "AUTH_ORIGINS", value: "http://localhost:3000,http://localhost:5173" },
+    { name: "KEY_FILE", value: "./certs/dev1/server.pem" },
+    { name: "SESSION_DIR", value: "/var/lib/shop1/sessions" },
+    { name: "PUBLISHABLE", value: paid.replace("sk_", "pk_") },
+  ];
+  // One at a time, as one refused variable refuses its whole call.
+  for (const v of plainOnes) expect((await k.setup({ env: { set: [v] } })).changed).toEqual([`Set the variable ${v.name}`]);
+  expect(projectSettings(k.hub).env(PROJECT).filter((v) => v.kind === "plain").map((v) => v.name).sort()).toEqual(plainOnes.map((v) => v.name).sort());
   k.done();
 });
 
