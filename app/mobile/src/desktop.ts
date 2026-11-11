@@ -3,7 +3,7 @@
 // project flow, a project's allowed profiles, its approvals', payments' and linked hubs' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
 // state glyph's frames, the words of the lead's turn line, and the New screen picker's machines. Pure modules that
-// import no packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks
+// import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml runs this app's checks
 // when they change.
 export type {
   ApprovalDecision,

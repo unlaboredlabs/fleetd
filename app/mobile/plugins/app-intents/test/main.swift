@@ -1,5 +1,5 @@
 // The Shortcuts actions' decisions (Actions.swift): their links, the pickers' chats and automations, Send Message
-// and its files, errors and wait, the latest messages and the waiting approvals, against a fake hub. mobile.yml runs
+// and its files, errors and wait, the latest messages and the waiting approvals, against a fake hub. ios.yml runs
 // it (it builds on Linux too):
 //   swiftc plugins/share-extension/Shared.swift plugins/app-intents/Actions.swift plugins/app-intents/test/main.swift \
 //     -o actions-test && ./actions-test

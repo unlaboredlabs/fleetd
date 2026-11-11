@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          # As fleetd.yml's.
+          # As ci.yml's fleetd job's.
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
         working-directory: fleetd

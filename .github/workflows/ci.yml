@@ -1,5 +1,16 @@
 name: CI
 
+# Every pull request's and every main push's checks but Desktop QA's (desktop-qa.yml), in one run: fleetd itself (the
+# hub, the node and the CLI), the site, the desktop app and the phone app. One workflow, so a push starts two runs.
+#
+# Everything runs on GitHub-hosted runners, which are free for public repos. No job here runs on macOS
+# (ci.no-macos-on-prs). `desktop (mac layout)` packs the mac app and checks its layout on Linux. What only a Mac can run
+# (macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml, and before each release; the iOS
+# simulator build also on a manual run of ios.yml.
+#
+# Each job has its own scope: one whose paths didn't change reports success at once (fleetd, desktop) or is skipped
+# (the phone app's), so its check reports on every PR and a check that never comes never holds one.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -19,14 +30,106 @@ concurrency:
 permissions:
   contents: read
 
-# Everything runs on GitHub-hosted runners, which are free for public repos. fleetd itself (hub, node and CLI, in
-# fleetd/) is checked by fleetd.yml; this workflow has the site and the desktop app.
-#
-# No job here runs on macOS (ci.no-macos-on-prs). `desktop (mac layout)` packs the mac app and checks its layout on
-# Linux. What only a Mac can run (macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml, and
-# before each release.
-
 jobs:
+  fleetd:
+    # fleetd itself (fleetd/: the hub, the node and the CLI, in TypeScript on Bun): its generated files and the docs pages
+    # made from the code, the hub migrations, the type check with tsc-rs, its tests, the `bun build --compile` binary run
+    # end to end, and the factory lab's scenarios on that binary. Only when something it reads changed
+    # (.github/fleetd-scope.sh); otherwise it reports success at once. Main always runs it in full. main's required check,
+    # and one of .fleetd/train.json's fastChecks, so the train waits for it on each PR and batch: rename all three in one
+    # PR.
+    name: fleetd
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: fleetd
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: ${{ github.workspace }}
+        run: .github/fleetd-scope.sh
+      - uses: oven-sh/setup-bun@v2
+        if: steps.scope.outputs.run == 'true'
+        with:
+          bun-version: 1.4.3
+      - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      # tsc-rs comes from npm, pinned in bun.lock (its native binary is the @tsc-rs/<platform> package).
+      - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.run == 'true'
+      - name: Hub migrations only add new files, after the base's
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        # Against the merge commit's own first parent, the base it was built on (the train's batch PR's too): a fresh
+        # fetch of the base branch could hold migrations main landed after the merge, which the PR seems to remove.
+        run: node .github/migrations-check.mjs HEAD^1
+      - name: Generated files are current (migrations, docs pages, setup steps)
+        if: steps.scope.outputs.run == 'true'
+        run: bun run gen:check
+      - name: Type check (tsc-rs)
+        if: steps.scope.outputs.run == 'true'
+        run: bun run typecheck
+      # A worker per runner core, each test file in a fresh process of its own (--parallel implies --isolate).
+      - run: bun test --parallel=4
+        if: steps.scope.outputs.run == 'true'
+      - run: bun run compile
+        if: steps.scope.outputs.run == 'true'
+      - name: The binary end to end
+        if: steps.scope.outputs.run == 'true'
+        run: bun run smoke
+      - name: Binary size
+        if: steps.scope.outputs.run == 'true'
+        run: ls -l dist/fleetd
+      # The compiled binary, run as a user runs it: a closed pipe, a second fleet's FLEETD_HOME, the installer and a
+      # node restart that re-adopts a hosted session (test/blackbox).
+      - name: Black-box tests on the binary
+        if: steps.scope.outputs.run == 'true'
+        run: bun run blackbox
+      # The pinned agent-browser (agent_browser.ts's VERSION) on the runner's Chrome: every script its commands send is
+      # one of the pinned shapes (agent_browser_shapes.json), and a sealed session runs it.
+      - name: agent-browser's scripts are pinned shapes
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          version="$(sed -n 's/^export const VERSION = "\(.*\)";$/\1/p' src/node/browser/agent_browser.ts)"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
+          # The package carries each platform's binary itself; its install script only links one, so skipping it
+          # leaves them all in bin/. Fail here, plainly, if this one isn't there or doesn't run.
+          bin="$RUNNER_TEMP/agent-browser/node_modules/agent-browser/bin/agent-browser-linux-x64"
+          test -f "$bin" || { ls -l "$(dirname "$bin")"; echo "no $bin in agent-browser@$version" >&2; exit 1; }
+          chmod +x "$bin"
+          "$bin" --version | grep -F "$version"
+          FLEETD_TEST_AGENT_BROWSER="$bin" FLEETD_TEST_CHROME="$(command -v google-chrome)" FLEETD_REQUIRE_AGENT_BROWSER=1 \
+            bun test test/agent-browser-shapes.test.ts
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+        if: steps.scope.outputs.run == 'true'
+        working-directory: ${{ github.workspace }}
+      - name: Lab scenarios on a project that isn't fleetd
+        id: lab
+        if: steps.scope.outputs.run == 'true'
+        working-directory: ${{ github.workspace }}
+        # tests/lab/factory on the compiled binary: a hub and a node on a generated Python repo with a local ssh-style
+        # origin, and an offline stand-in for claude. No network, GitHub or claude login.
+        run: npm run factory --prefix tests/lab
+        env:
+          FLEETD_BIN: ${{ github.workspace }}/fleetd/dist/fleetd
+          FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory
+      - if: failure() && steps.lab.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-factory-logs
+          path: ${{ runner.temp }}/factory/*/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
   site:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
@@ -50,7 +153,7 @@ jobs:
           npm run build --prefix docs/site
       - uses: oven-sh/setup-bun@v2
         with:
-          # As fleetd.yml's.
+          # As the fleetd job's.
           bun-version: 1.4.3
       - name: fleetd help
         # From source: the commands the site may name are the ones this tree's `fleetd help` lists.
@@ -345,3 +448,138 @@ jobs:
           "$GITHUB_WORKSPACE"/.github/actions/electron-cache/retry.sh pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
           node scripts/mac-layout-check.ts dist-test/mac-arm64/fleetd.app
           ../../.github/release/desktop-fuses-check.sh dist-test/mac-arm64/fleetd.app
+
+  mobile-scope:
+    # The phone app (app/mobile): its checks and an Android APK on Linux. No EAS and no Expo service: `expo prebuild`
+    # makes the native project, then gradle builds it. Signed builds are mobile-release.yml's, by hand, and the iOS
+    # simulator build is ios.yml's; nothing here reads a secret.
+    #
+    # Whether the app's checks and the Android build have work: each needs this job and is skipped (which passes,
+    # required or not) when the paths didn't change: app/mobile, the desktop modules the app imports
+    # (app/mobile/src/desktop.ts), and site/vercel.json, whose update route the checks test. A manual run builds
+    # everything.
+    name: mobile scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: scope
+        run: |
+          # A manual run builds everything: it is how a fork gets its own builds (docs: fleetd.sh/docs/mobile).
+          base=
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then base=$(git rev-parse -q --verify HEAD^1 || true); fi
+          # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed.
+          scope() {
+            out=$1
+            check=$2
+            shift 2
+            run=true
+            if [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$@" .github/workflows/ci.yml; then
+              run=false
+              echo "::notice::no work for $check"
+            fi
+            echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
+          }
+          scope app "mobile" app/mobile app/desktop/src/shared app/desktop/src/renderer/src/data/chat.ts \
+            app/desktop/src/renderer/src/data/chat-contract.ts app/desktop/src/renderer/screens/navi/model.ts \
+            app/desktop/src/renderer/screens/updates/model.ts app/desktop/src/renderer/screens/updates/flow.ts \
+            app/desktop/src/renderer/screens/projects/source.ts app/desktop/src/renderer/screens/projects/discovery.ts \
+            app/desktop/src/renderer/screens/projects/flow.ts app/desktop/src/renderer/screens/projects/contracts.ts \
+            app/desktop/src/renderer/screens/settings/profilesModel.ts app/desktop/src/renderer/screens/settings/projectModel.ts \
+            site/vercel.json
+
+  mobile:
+    # Types (with the desktop modules the app imports) and the client's unit tests. Its name is a fast check in
+    # .fleetd/train.json: rename both in one PR.
+    name: mobile
+    needs: mobile-scope
+    if: ${{ !cancelled() && needs.mobile-scope.outputs.app != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  android:
+    # A release APK, debug-signed (installable with adb or by opening it on the phone). A push to main and a manual run
+    # build it for arm64 phones and x86_64 emulators; a pull request (and the train's batch) for x86_64 alone, what the
+    # hub's Android emulators install: the same code compiled once, not twice. mobile-release.yml keeps every ABI.
+    # Gradle's build cache and ccache (the native code) are main's: a pull request reads them, main saves.
+    name: mobile (android)
+    needs: mobile-scope
+    if: ${{ !cancelled() && needs.mobile-scope.outputs.app != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ABIS: ${{ github.event_name == 'pull_request' && 'x86_64' || 'arm64-v8a,x86_64' }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+      # The compiler by its content, not its file's time: with the default (its time), a run hit none of the 362 objects
+      # in the cache it restored; with this, every one.
+      CCACHE_COMPILERCHECK: content
+      # The libraries' native builds use precompiled headers, which ccache caches only with these; `expo prebuild`
+      # writes the android project anew each run, so its headers' times say nothing.
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+      # CMake reads these as every project's compiler launcher: the libraries' native code and the app's.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: ccache
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends ccache
+          ccache --version | head -n 1
+      - uses: actions/cache/restore@v5
+        with:
+          path: .ccache
+          key: ccache-android-${{ github.sha }}
+          restore-keys: ccache-android-
+      - run: npm ci --no-audit --no-fund
+      - run: npx expo prebuild --platform android --clean --no-install
+      - name: Build
+        working-directory: app/mobile/android
+        run: |
+          ccache --zero-stats
+          ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures="$ABIS"
+          ccache --show-stats
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: .ccache
+          key: ccache-android-${{ github.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-android-apk
+          path: app/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

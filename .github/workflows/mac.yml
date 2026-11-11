@@ -2,9 +2,9 @@ name: Mac
 
 # What only a Mac can check, off the pull request and merge path (ci.no-macos-on-prs): nightly on main, on demand
 # (`gh workflow run mac.yml --ref <branch>`, for a PR that changes macOS code), and before each release (release.yml
-# builds only once it passes). Pull requests check the same code on Linux instead: fleetd.yml type-checks the node's
-# macOS code, ci.yml's `desktop (mac layout)` packs the mac app, and mobile.yml types, tests and bundles the phone
-# app's JavaScript.
+# builds only once it passes). Pull requests check the same code on Linux instead, in ci.yml: `fleetd` type-checks the
+# node's macOS code, `desktop (mac layout)` packs the mac app, and `mobile` and `mobile (android)` type, test and bundle
+# the phone app's JavaScript.
 #
 # A failed nightly or manual run on main opens an issue labelled `macos-nightly-failed` with the failed jobs and the
 # run's link, or comments on the one already open; the next run on main with every job green closes it. The merge
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          # As fleetd.yml's.
+          # As ci.yml's fleetd job's.
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
       - run: bun test test/sealed_box.test.ts test/node/identity.test.ts test/node/power.test.ts test/node-agents-mac.test.ts test/node-desktop-mac.test.ts
@@ -127,10 +127,8 @@ jobs:
       actions: read
 
   mobile:
-    # The iOS app's simulator build with its extensions, their Swift tests and its App Transport Security (mobile.yml).
-    uses: ./.github/workflows/mobile.yml
-    with:
-      ios: true
+    # The iOS app's simulator build with its extensions, their Swift tests and its App Transport Security (ios.yml).
+    uses: ./.github/workflows/ios.yml
 
   report:
     # A failed (or timed out) job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run

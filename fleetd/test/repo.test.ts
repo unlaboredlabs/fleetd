@@ -24,11 +24,10 @@ function qaShards(os: string): string[] {
     .map((entry) => Object.entries(entry).reduce((name, [k, v]) => name.replaceAll(`\${{ matrix.${k} }}`, String(v)), qa.name!));
 }
 
-test("the train's fast checks are Linux jobs of ci.yml, fleetd.yml and mobile.yml, and every Linux QA shard", () => {
-  // fleetd.yml and mobile.yml run on every PR's push as ci.yml does: a scope step or job, never a paths filter, so each
-  // check always reports.
-  for (const name of ["fleetd.yml", "mobile.yml"]) expect(workflow(name).on?.pull_request?.paths).toBeUndefined();
-  const jobs = ["ci.yml", "fleetd.yml", "mobile.yml"].flatMap((name) => Object.entries(workflow(name).jobs));
+test("the train's fast checks are Linux jobs of ci.yml, and every Linux QA shard", () => {
+  // ci.yml runs on every PR's push: a scope step or job, never a paths filter, so each check always reports.
+  expect(workflow("ci.yml").on?.pull_request?.paths).toBeUndefined();
+  const jobs = Object.entries(workflow("ci.yml").jobs);
   const shards = qaShards("ubuntu-latest");
   expect(shards).toHaveLength(4);
   for (const shard of shards) expect(settings.fastChecks).toContain(shard);
@@ -37,12 +36,14 @@ test("the train's fast checks are Linux jobs of ci.yml, fleetd.yml and mobile.ym
   for (const check of settings.fastChecks) {
     if (shards.includes(check)) continue;
     const job = jobs.find(([id, j]) => (j.name ?? id) === check)?.[1];
-    expect(job ? job["runs-on"] : `${PATH} names ${check}, which no job of ci.yml, fleetd.yml or mobile.yml is`).toBe("ubuntu-latest");
+    expect(job ? job["runs-on"] : `${PATH} names ${check}, which no job of ci.yml is`).toBe("ubuntu-latest");
   }
 });
 
 test("the train's after-merge checks are what mac.yml reports, and besides those only Linux jobs of ci.yml", () => {
-  // No PR runs a macOS job: each check mac.yml reports, and the iOS build of a manual Mobile run, is after merge only.
+  // No PR runs a macOS job: each check mac.yml reports, and the iOS build of a manual ios.yml run, is after merge only.
+  // ios.yml never starts on a push or a pull request by itself.
+  expect(Object.keys(workflow("ios.yml").on ?? {}).sort()).toEqual(["workflow_call", "workflow_dispatch"]);
   const mac = ["mobile (ios)"];
   for (const [id, job] of Object.entries(workflow("mac.yml").jobs)) {
     if (job.uses === "./.github/workflows/desktop-qa.yml") {
