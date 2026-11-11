@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CloudState, SignInOutcome } from "../../../shared/cloud";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, useData } from "../../src/data/react";
 import { AT } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { ConnectComputer } from "../setup/ConnectComputer";
@@ -102,6 +102,12 @@ const click = (name: string | RegExp) => {
   act(() => found.click());
 };
 const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
+/** Its children only once the hub is live and fresh, so they mount (twice, under StrictMode) with calls going out at once. */
+function WhenLive({ children }: { children: React.ReactNode }) {
+  const ready = useData((d) => d.fresh && d.hub.phase === "live");
+  return ready ? children : null;
+}
+
 const unpaired: HubFrame = { t: "state", state: { phase: "unpaired" } };
 
 it("on a build without the cloud's values, the first screen is today's connect form, with no Sign in anywhere", async () => {
@@ -146,7 +152,15 @@ it("Sign in waits on the browser; Cancel comes back quietly, and a refusal says 
 
 it("Connect a computer: makes a line with no machine name, opens this computer's terminal, and moves on when a machine joins", async () => {
   const empty: HubFrame = { t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [] } };
-  await mount(<ConnectComputer onAddProject={() => undefined} />, { t: "state", state: { phase: "live", hub: "https://acme.fleetd.dev", protocol: 1 } });
+  // Under StrictMode, as the renderer mounts it: the dev double mount must not drop the hub's answers.
+  await mount(
+    <StrictMode>
+      <WhenLive>
+        <ConnectComputer onAddProject={() => undefined} />
+      </WhenLive>
+    </StrictMode>,
+    { t: "state", state: { phase: "live", hub: "https://acme.fleetd.dev", protocol: 1 } },
+  );
   await act(async () => {
     send(empty);
     await new Promise((r) => setTimeout(r, 0));

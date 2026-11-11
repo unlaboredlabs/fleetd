@@ -42,13 +42,14 @@ function Connect() {
   const [error, setError] = useState<string | null>(null);
   const [here, setHere] = useState<ConnectComputerOutcome | "opening" | null>(null);
   const [copied, setCopied] = useState(false);
+  // Set again on every mount: StrictMode's dev double mount runs the cleanup once in between.
   const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   const request = useCallback(() => {
     call("machine_join", {}).then(
       (out) => mounted.current && setJoin(out),
