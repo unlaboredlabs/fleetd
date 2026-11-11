@@ -3,10 +3,11 @@
 // ways in, with every later step answered: the hosts, builder-1's plan, and machine_add. `machines-running` and
 // `machines-failed` open on a run the hub is following, one at its install step and one stopped at the node's service
 // with its output and Retry. Any other machine's line is answered for laptop; `machines-joined` has laptop's node
-// come online a moment after the line is made, so its wait turns into Joined. `machines-checklist` has laptop joined
-// with claude logged out, and opens its page: the checklist and Claude's login from the app. `machines-one` is a hub
-// just set up, devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with
-// claude logged out, so the list has a row that needs someone of each kind and each one's page says what to do.
+// come online a moment after the line is made, so its wait turns into Joined. laptop's page, once it has joined, says
+// only what needs someone: nothing in `machines-well`, claude logged out with Log in from the app in
+// `machines-logged-out`, and Android's fix to run on it in `machines-warning`. `machines-one` is a hub just set up,
+// devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
+// out, so the list has a row that needs someone of each kind and each one's page says what to do.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
@@ -82,16 +83,22 @@ const check = (name: string, status: string, message: string, fix?: JsonObject):
   ...(fix === undefined ? {} : { fix }),
 });
 
-/** laptop just after it joined: claude installed and logged out, its identity set, no project yet, Android not ready. */
-const LAPTOP_CHECKS: JsonObject[] = [
+/** laptop's checks after it joined: claude installed, its identity set, no project yet; `out` has claude logged out, `kvm` Android not ready. */
+const laptopChecks = (wrong: { out?: boolean; kvm?: boolean }): JsonObject[] => [
   check("online", "ok", "laptop is online."),
   check("claude_version", "ok", "laptop runs claude 2.1.314, the version fleetd was tested with."),
-  check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
+  wrong.out === true
+    ? check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login", on: "machine" })
+    : check("claude_login", "ok", "laptop: claude is logged in."),
   check("runner_conformance", "ok", "claude speaks the stream-json protocol fleetd expects."),
   check("commit_identity", "ok", "laptop commits as dev@example.com, the hub's identity."),
-  check("android", "warn", "Android screens are off: /dev/kvm isn't readable by dev.", { kind: "manual", label: "Let dev use KVM, then log in again", command: "sudo usermod -aG kvm dev" }),
+  wrong.kvm === true
+    ? check("android", "warn", "Android screens are off: /dev/kvm isn't readable by dev.", { kind: "manual", label: "Let dev use KVM, then log in again", command: "sudo usermod -aG kvm dev", on: "machine" })
+    : check("android", "ok", "Android screens run on KVM."),
   check("desktop", "ok", "Linux desktop screens run in docker."),
 ];
+/** Just after it joined: claude logged out and Android not ready. */
+const LAPTOP_CHECKS = laptopChecks({ out: true, kvm: true });
 
 /** The admin's hub with every Add machine call answered; `runs` is what machine_add_status has. */
 function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => JsonObject[]): Fixture {
@@ -159,14 +166,14 @@ function joined(from: Fixture): Fixture {
   return f;
 }
 
-/** laptop has joined; its page shows the checklist with claude logged out. */
-function checklist(from: Fixture): Fixture {
-  const f = hub(from, "machines-checklist", "laptop joined: its checklist with claude logged out, and Log in from the app", () => []);
+/** laptop has joined; its page says what its checks (`mine`) find wrong, and nothing while they find nothing. */
+function joinedWith(from: Fixture, name: string, note: string, mine: JsonObject[]): Fixture {
+  const f = hub(from, name, note, () => []);
   f.snapshot = withLaptop(f);
   // The recorded hub's checks, with laptop's after them; Check again answers the same.
   const recorded = f.output("doctor_list", {});
   const checks = isObject(recorded) && Array.isArray(recorded["checks"]) ? recorded["checks"] : [];
-  for (const input of [{}, { rerun: true }]) f.answer("doctor_list", input, { checks: [...checks, ...LAPTOP_CHECKS], checkedAt: f.now });
+  for (const input of [{}, { rerun: true }]) f.answer("doctor_list", input, { checks: [...checks, ...mine], checkedAt: f.now });
   return f;
 }
 
@@ -216,7 +223,9 @@ export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
     joined(base("typical")),
-    checklist(base("typical")),
+    joinedWith(base("typical"), "machines-well", "laptop joined and well: its page says nothing of its checks", laptopChecks({})),
+    joinedWith(base("typical"), "machines-logged-out", "laptop joined with claude logged out: the one row, and Log in from the app", laptopChecks({ out: true })),
+    joinedWith(base("typical"), "machines-warning", "laptop joined with Android not ready: the one row, and its fix to run on laptop", laptopChecks({ kvm: true })),
     one(base("empty")),
     unwell(base("typical")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [

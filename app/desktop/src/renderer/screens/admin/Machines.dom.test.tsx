@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 // Settings › Hub › Machines: the machine list, each row a name that opens its page with one dot where it needs
 // someone, the projects left from a removed machine (each with Remove), and a machine's page: its state with Repair
-// while it isn't online (over SSH, or a line that enrolls it again), its checklist read from the hub's checks, each
-// item waiting until checked, Claude's login from the app, its code going to the hub once, its role, screens and max
-// agents, and Remove (asked first, then gone).
+// while it isn't online (over SSH, or a line that enrolls it again), only what is wrong with it, read from the hub's
+// checks, a row each with its one fix, Claude's login from the app, its code going to the hub once, its role, screens
+// and max agents, and Remove (asked first, then gone).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -43,6 +43,8 @@ const LOGGED_OUT: DoctorCheck[] = [
   check("git_fetch", "ok", "At each project's last start on laptop: storefront fetched its remote."),
   check("android", "warn", "Android screens are off: /dev/kvm isn't readable by ada.", { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada", on: "machine" }),
 ];
+/** The same checks, another machine's. */
+const checksOf = (machineId: string): DoctorCheck[] => LOGGED_OUT.map((c) => ({ ...c, id: c.id.replace("laptop/", `${machineId}/`), machineId, message: c.message.replaceAll("laptop", machineId) }));
 const READY: DoctorCheck[] = LOGGED_OUT.map((c) => (c.id === "laptop/claude_login" ? check("claude_login", "ok", "laptop: claude is logged in (Max).") : c));
 /** What machine_roles says: builder-1 runs agents and hosts screens; laptop runs agents only. */
 const ROLES: MachineRolesEntry[] = [
@@ -207,9 +209,9 @@ it("lists the machines, each a name that opens its page, with one dot on the one
 });
 
 it("marks a machine that is online with claude logged out, saying which check failed", async () => {
-  checks = LOGGED_OUT.map((c) => ({ ...c, id: c.id.replace("laptop/", "builder-1/"), machineId: "builder-1" }));
+  checks = checksOf("builder-1");
   await render(<MachineList />);
-  expect(row("builder-1")?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Claude: laptop: claude is not logged in, so its sessions can't start.");
+  expect(row("builder-1")?.querySelector("[role='img']")?.getAttribute("aria-label")).toBe("Claude is not logged in, so its sessions can't start");
 });
 
 it("says a machine's state first on its page, and offers Repair only while it isn't online", async () => {
@@ -251,7 +253,7 @@ it("asks before it removes a machine, then says it is removed and goes back to t
   expect(calls.find((c) => c.tool === "machine_remove")?.timeoutMs).toBe(100_000);
   // At once, whatever the snapshot still holds: nothing of the machine left to press.
   expect(host.textContent).toContain("Removed laptop.");
-  expect(host.querySelector("[data-item]")).toBeNull();
+  expect(host.querySelector("[data-problem]")).toBeNull();
   expect(() => button("Remove…")).toThrow();
   // The hub's resync drops it: back to the list.
   window.location.hash = "#/settings/hub/machines/laptop";
@@ -282,23 +284,36 @@ it("says a machine the hub set up loses its service as well as its key", async (
   expect(document.querySelector("[role='dialog']")?.textContent).toContain("its projects are deleted from fleetd with their chats, memory, skills, files and orders");
 });
 
-const items = () => [...host.querySelectorAll("[data-item]")].map((li) => `${li.getAttribute("data-item") ?? ""}:${li.getAttribute("data-state") ?? ""}`);
+const problems = () => [...host.querySelectorAll("[data-problem]")].map((row) => `${row.getAttribute("data-problem") ?? ""}:${row.getAttribute("data-state") ?? ""}`);
 
-it("shows a joined machine's checklist, each item waiting until the hub has checked it", async () => {
-  checks = [];
+it("shows nothing about a machine's checks while they all pass, or before the hub has checked it", async () => {
+  checks = READY.filter((c) => c.id !== "laptop/android");
   await render(<MachinePage machineId="laptop" />);
   expect(host.textContent).toMatch(/Offline since [^·]+ · fleetd 0\.9\.0/u);
-  expect(items()).toEqual(["claude:waiting", "identity:waiting", "github:waiting", "capabilities:done"]);
-  expect(host.textContent).toContain("Checked when an agent first starts in one of its projects.");
+  expect(host.querySelector("[data-problems]")).toBeNull();
+  expect(problems()).toEqual([]);
+  expect(host.textContent).not.toContain("Checklist");
+  expect(host.textContent).not.toContain("laptop runs claude 2.1.314");
+  // Nothing wrong: nothing to check again.
+  expect(() => button("Check again")).toThrow();
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  checks = [];
+  await render(<MachinePage machineId="laptop" />);
+  expect(problems()).toEqual([]);
+  expect(() => button("Check again")).toThrow();
 });
 
-it("says when the hub last checked the machine, under its checklist with Check again: its own run, not a later one of another's", async () => {
-  // The answer's checkedAt (2020, Oct 27 10:00) moves with every machine's run; laptop's own ran on Oct 25.
-  checks = LOGGED_OUT.map((c) => ({ ...c, checkedAt: "2020-10-25T10:00:00.000Z" }));
+it("shows each check that failed or warns as one row, failed first, with Check again under them", async () => {
   await render(<MachinePage machineId="laptop" />);
-  const foot = button("Check again").parentElement;
-  expect(foot?.textContent).toBe("Checked Oct 25, 2020.Check again");
-  expect(host.querySelector("section[aria-label='Checklist']")?.contains(foot ?? null)).toBe(true);
+  expect(problems()).toEqual(["claude_login:failed", "android:warn"]);
+  expect(host.querySelector("[data-problems]")?.getAttribute("data-problems")).toBe("2");
+  // What is wrong in the hub's words, without the machine's name in front; the checks that passed say nothing.
+  expect(host.querySelector("[data-problem='claude_login']")?.textContent).toBe("Claude is not logged in, so its sessions can't startLog in…");
+  expect(host.textContent).not.toContain("laptop commits as");
+  await click(button("Check again"));
+  expect(calls.filter((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true)).toHaveLength(1);
 });
 
 it("checks a machine the hub hasn't checked yet as its page opens, once", async () => {
@@ -328,11 +343,11 @@ it("checks a machine again as its page opens when the hub couldn't answer some o
 
 it("gives each fix as the command to run on the machine, with Copy", async () => {
   await render(<MachinePage machineId="laptop" />);
-  const android = host.querySelector("[data-item='capabilities']");
-  expect(android?.getAttribute("aria-label")).toBe("Screens");
-  expect(android?.querySelector("[data-fix]")?.getAttribute("data-fix")).toBe("laptop");
-  expect(android?.querySelector("[data-fix]")?.textContent).toContain("Let ada use KVM. Run on laptop:");
-  expect(android?.querySelector("[data-fix] > div > span")?.textContent).toBe("sudo usermod -aG kvm ada");
+  const android = host.querySelector("[data-problem='android']");
+  expect(android?.getAttribute("aria-label")).toBe("Android screens are off: /dev/kvm isn't readable by ada");
+  expect(android?.getAttribute("data-fix")).toBe("laptop");
+  expect(android?.textContent).toContain("Let ada use KVM. Run on laptop:");
+  expect(android?.querySelector("button")?.previousElementSibling?.textContent).toBe("sudo usermod -aG kvm ada");
   expect([...(android?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).toEqual(["Copy"]);
 });
 
@@ -348,17 +363,26 @@ it("gives a fix that runs on the hub as the command to run on the hub's machine,
       : c,
   );
   await render(<MachinePage machineId="laptop" />);
-  const identity = host.querySelector("[data-item='identity']");
+  const identity = () => host.querySelector("[data-problem='commit_identity']");
   // Named once the hub has said which machine it runs on (machine_hosts, asked as the fix shows).
-  await vi.waitFor(() => expect(identity?.querySelector("[data-fix]")?.getAttribute("data-fix")).toBe("devbox, the hub"));
-  expect(identity?.querySelector("[data-fix]")?.textContent).toContain("Run on devbox, the hub:");
-  expect(identity?.querySelector("[data-fix] > div > span")?.textContent).toBe("fleetd pair --worker laptop");
+  await vi.waitFor(() => expect(identity()?.getAttribute("data-fix")).toBe("devbox, the hub"));
+  expect(identity()?.textContent).toContain("Commits on laptop use ada@home.example; the hub's identity is 1+ada-lovelace@users.noreply.github.com");
+  expect(identity()?.textContent).toContain("Run on devbox, the hub:");
+  expect(identity()?.querySelector("button")?.previousElementSibling?.textContent).toBe("fleetd pair --worker laptop");
+});
+
+it("points a screen kind the hub has no command for at Screens, where it turns on", async () => {
+  checks = [...checksOf("builder-1").filter((c) => c.status === "ok"), { ...check("desktop", "fail", "Linux desktop screens need docker, which builder-1 doesn't have. Install docker, then turn them on."), id: "builder-1/desktop", machineId: "builder-1" }];
+  await render(<MachinePage machineId="builder-1" />);
+  const desktop = host.querySelector("[data-problem='desktop']");
+  expect(desktop?.textContent).toBe("Linux desktop screens need docker, which builder-1 doesn't haveScreens");
+  expect(desktop?.getAttribute("data-fix")).toBeNull();
 });
 
 it("logs claude in from the app: the URL to sign in at, then the code, once", async () => {
   await render(<MachinePage machineId="laptop" />);
-  expect(items()).toEqual(["claude:failed", "identity:done", "github:done", "capabilities:warn"]);
-  expect(host.textContent).toContain("laptop: claude is not logged in, so its sessions can't start.");
+  expect(problems()).toEqual(["claude_login:failed", "android:warn"]);
+  expect(host.textContent).toContain("Claude is not logged in, so its sessions can't start");
 
   await click(button("Log in…"));
   expect(calls.filter((c) => c.tool === "machine_claude_login").map((c) => c.input)).toEqual([{ machineId: "laptop" }]);
@@ -388,23 +412,23 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
   ]);
   // Each waits as long as the hub waits on the node (90 s), not the app's usual 30 s.
   expect(calls.filter((c) => c.tool === "machine_claude_login").every((c) => c.timeoutMs === 100_000)).toBe(true);
-  // The checks run again, and claude's item is done.
+  // The checks run again, and claude's row goes with its check.
   expect(calls.some((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true)).toBe(true);
-  expect(items()[0]).toBe("claude:done");
+  expect(problems()).toEqual(["android:warn"]);
 });
 
-it("holds a machine's role, screens and max agents on its page, under its checklist", async () => {
-  checks = [];
+it("holds a machine's role, screens and max agents on its page, under what is wrong with it", async () => {
+  checks = checksOf("builder-1");
   await render(<MachinePage machineId="builder-1" />);
   const parts = [...host.querySelectorAll("section[data-part]")].map((s) => s.getAttribute("data-part"));
   expect(parts).toEqual(["hub.roles", "hub.screens", "hub.caps"]);
   expect(host.querySelector("[data-roles='builder-1'] button[aria-pressed='true']")?.textContent).toBe("Both");
   expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("0 of 4 screens now (auto: 8 CPUs, 16 GB)");
   expect(host.querySelector("[data-screens='builder-1']")?.textContent).toContain("An idle screen ends after 30 minutes.");
-  // The checklist comes first.
-  const checklist = host.querySelector("section[aria-label='Checklist']");
+  // What is wrong comes first.
+  const wrong = host.querySelector("[data-problems]");
   const role = host.querySelector("section[data-part='hub.roles']");
-  expect(checklist !== null && role !== null && (checklist.compareDocumentPosition(role) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
+  expect(wrong !== null && role !== null && (wrong.compareDocumentPosition(role) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true);
 
   // A machine that runs agents only has no Screens part.
   act(() => root.unmount());
@@ -416,7 +440,7 @@ it("holds a machine's role, screens and max agents on its page, under its checkl
 it("says so when the hub has no such machine", async () => {
   await render(<MachinePage machineId="ghost" />);
   expect(host.textContent).toContain("This hub has no such machine. It may have been removed.");
-  expect(host.querySelector("[data-item]")).toBeNull();
+  expect(host.querySelector("[data-problem]")).toBeNull();
 });
 
 it("lists the projects left from a removed machine, and Remove only forgets one in fleetd", async () => {

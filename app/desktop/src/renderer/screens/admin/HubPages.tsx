@@ -1,17 +1,17 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (the machines, Add machine behind the page's plus, each machine's page with Repair
-// while it isn't well, its checklist, its role, its screens, its max agents and Remove; recordings); Updates
+// while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; recordings); Updates
 // (UpdatesPage.tsx: where the hub and each machine stand, Update now and Update automatically); Every project, laid out
 // as a project's own pages are: Profiles, Tools & skills
 // and Instructions & memory, each reaching every project on the hub, and the hub-wide built-in prompts from the foot
 // of Instructions; Hub accounts (the hub's Claude API key
 // and its GitHub App, github/AdminGithub.tsx); Vault (the cards, logins and addresses every project uses, and the vault
-// key, settings/Vault.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), always listed,
+// key, settings/Vault.tsx); and Setup, the hub's setup steps still left (SetupPage.tsx), always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every page,
 // and switches between the hubs this person administers: nothing here acts on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Text, cx } from "../../ui";
+import { Button, Text } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
@@ -28,13 +28,13 @@ import { isEveryProject, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
 import { AdminGithub } from "../github/AdminGithub";
-import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
+import { SetupPage } from "./SetupPage";
 import { UpdatesPage } from "./UpdatesPage";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
 import type { Person } from "../../../shared/contracts";
@@ -135,7 +135,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
     case "hub.vault":
       return <HubVault />;
     case "hub.setup":
-      return <Setup />;
+      return <SetupPage />;
   }
 }
 
@@ -237,35 +237,6 @@ function HubAccounts({ me }: { me: Person | undefined }) {
         </PageHead>
         <ClaudeAdmin me={me} />
         <AdminGithub />
-      </div>
-    </div>
-  );
-}
-
-/**
- * The hub's guided setup: the steps the hub serves, the same as `fleetd init` and the first
- * run, with one open beside them. The open step is this page's own: the route names only the page.
- */
-function Setup() {
-  const steps = useSetupSteps();
-  const [open, setOpen] = useState<string | null>(null);
-  const head = (text: string) => <PageHead title="Setup">{text}</PageHead>;
-  if (steps === null || "problem" in steps) {
-    const text = steps === null ? "Loading…" : steps.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : steps.problem;
-    return (
-      <div className={s.scroll} data-screen={steps === null ? "settings.hub.setup.loading" : "settings.hub.setup.error"}>
-        <div className={s.column}>
-          {head("Everything the hub needs, step by step.")}
-          <Text tone={steps === null || steps.old ? "quiet" : "danger"}>{text}</Text>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className={s.scroll} data-screen="settings.hub.setup">
-      <div className={cx(s.column, a.setup)}>
-        {head(progressLine(steps.steps))}
-        <SetupSteps steps={steps.steps} open={open} onOpen={setOpen} />
       </div>
     </div>
   );

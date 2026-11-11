@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeFirstUse, guides, read, requiredLeft } from "../src/hub/setup/index.ts";
-import { claudeKey, claudeOwner, ghAuth, hubReachable, setupChecks } from "../src/hub/doctor/checks.ts";
+import { claudeKey, claudeOwner, ghAuth, hubReachable, macOneNode, setupChecks } from "../src/hub/doctor/checks.ts";
 import type { ClaudeSetupView } from "../src/hub/doctor/checks.ts";
 import type { DoctorCheck, DoctorStatus, GithubApp, HubSetupStep } from "../src/shared/contracts.ts";
 
@@ -44,8 +44,8 @@ function claude(key: boolean): DoctorCheck[] {
   return [claudeKey(view), claudeOwner(view)];
 }
 
-/** Where the hub is after each point of a first run. */
-type Point = { key: boolean; logins: boolean; github: boolean };
+/** Where the hub is after each point of a first run. `rest`: what can wait is done too (Ada joined, 1Password, a Mac). */
+type Point = { key: boolean; logins: boolean; github: boolean; rest?: boolean };
 
 const GITHUB_APP = {
   appId: 1048576, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23liQ4fXk8w2ZsT0aB",
@@ -71,7 +71,12 @@ function doctorAt(p: Point): DoctorCheck[] {
       ? machine("claude_login", "ok", "devbox: claude is logged in.")
       : machine("claude_login", "fail", "devbox: claude is not logged in, so its sessions can't start."),
     ...claude(p.key),
-    ...setupChecks({ joined: [], githubApp: p.github ? GITHUB_APP : undefined, onepassword: [] }),
+    ...setupChecks({
+      joined: p.rest ? ["Ada"] : [],
+      githubApp: p.github ? GITHUB_APP : undefined,
+      onepassword: p.rest ? [["Dev", { at: AT, machineId: "devbox", ok: true, vaults: ["fleetd"] }]] : [],
+    }),
+    ...(p.rest ? [macOneNode("mac", [])] : []),
   ];
 }
 
@@ -112,6 +117,7 @@ export function fixtures(): string {
       "setup-claude-logins": scenario(logins, logins),
       "setup-github": scenario(key, github),
       "setup-done": scenario(github, github),
+      "setup-all": scenario({ ...github, rest: true }, { ...github, rest: true }),
     },
   };
   return `${JSON.stringify(sorted(all), null, 2)}\n`;

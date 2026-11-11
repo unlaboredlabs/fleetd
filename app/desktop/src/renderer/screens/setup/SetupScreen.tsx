@@ -1,7 +1,7 @@
 // The hub admin's setup: the steps the hub serves (setup_list), the same ones `fleetd init`
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
-// Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
-// that step's checks now (setup_test), and a step's result is saved
+// Setup lists only the steps left and opens one at a time (StepGuide). Each step's status is the hub's, read from its
+// checks; Test runs that step's checks now (setup_test), and a step's result is saved
 // where it lives already (Settings › Hub accounts › Claude, › GitHub, …), which its place opens. Only owners and admins
 // see any of it.
 
@@ -119,7 +119,7 @@ function StatusWord({ step }: { step: SetupStep }) {
  * The steps down the left, grouped, and the open one beside them: `open` names it, else the first not done. `onEnd`
  * is Continue past the last step.
  */
-export function SetupSteps({
+function SetupSteps({
   steps,
   open,
   onOpen,
@@ -128,7 +128,7 @@ export function SetupSteps({
   steps: ReadonlyArray<SetupStep>;
   open: string | null;
   onOpen: (id: SetupStepId) => void;
-  onEnd?: () => void;
+  onEnd: () => void;
 }) {
   // With none named, the first not done when the steps came: it stays open when its Test passes.
   const [first] = useState(() => steps.find((st) => st.status !== "done")?.id);
@@ -181,29 +181,16 @@ function StepRail({ steps, open, onOpen }: { steps: ReadonlyArray<SetupStep>; op
   );
 }
 
-function StepPane({
-  step,
-  steps,
-  onOpen,
-  onEnd,
-}: {
-  step: SetupStep;
-  steps: ReadonlyArray<SetupStep>;
-  onOpen: (id: SetupStepId) => void;
-  onEnd: (() => void) | undefined;
-}) {
+/** A step's Test: runs its checks now (setup_test) and keeps the hub's answer in the list. */
+function useTest(step: SetupStep) {
   const data = useDataLayer();
-  const hub = useHub();
   const keep = useKeep();
-  const [busy, setBusy] = useState<"test" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
-  const index = steps.indexOf(step);
-  const next = steps.slice(index + 1).find((st) => st.status !== "done");
-  const onward = () => (next !== undefined ? onOpen(next.id) : onEnd?.());
-  const test = async () => {
-    setBusy("test");
+  const run = async () => {
+    setBusy(true);
     const out = await data.call("setup_test", { step: step.id }, { timeoutMs: testMs(step) });
-    setBusy(null);
+    setBusy(false);
     if (!out.ok) {
       setTested({ ok: false, text: out.error.message });
       return;
@@ -211,19 +198,15 @@ function StepPane({
     keep(out.output.step);
     setTested({ ok: out.output.step.status === "done", text: out.output.step.said ?? "Nothing answered for this step yet." });
   };
+  return { busy, tested, run };
+}
+
+/** What a step asks for: what its checks say, its numbered parts, where its result is saved, and its Test. */
+function StepBody({ step, test }: { step: SetupStep; test: ReturnType<typeof useTest> }) {
+  const hub = useHub();
   const places = placesOf(step);
-  const left = isRequiredLeft(step);
   return (
-    <article className={s.pane} aria-labelledby="setup-step-title" data-step={step.id}>
-      <Text as="p" size="xs" tone="quiet">
-        Step {index + 1} of {steps.length} · {needWords(step.need)}
-      </Text>
-      <Text as="h2" size="lg" strong id="setup-step-title">
-        {step.title}
-      </Text>
-      <Text as="p" tone="quiet">
-        {step.why}
-      </Text>
+    <>
       <Said step={step} />
 
       <GuideParts parts={step.parts} />
@@ -255,27 +238,67 @@ function StepPane({
 
       {step.test === undefined ? null : (
         <div className={s.test}>
-          <Button onClick={() => void test()} disabled={busy !== null}>
-            {busy === "test" ? "Testing…" : "Test"}
+          <Button onClick={() => void test.run()} disabled={test.busy}>
+            {test.busy ? "Testing…" : "Test"}
           </Button>
           <Text size="sm" tone="quiet">
             {step.test}
           </Text>
-          {tested === null ? null : (
-            <Text as="p" size="sm" tone={tested.ok ? "success" : "danger"} className={s.tested}>
-              {tested.ok ? <Check size={14} aria-hidden /> : null} {tested.text}
+          {test.tested === null ? null : (
+            <Text as="p" size="sm" tone={test.tested.ok ? "success" : "danger"} className={s.tested}>
+              {test.tested.ok ? <Check size={14} aria-hidden /> : null} {test.tested.text}
             </Text>
           )}
         </div>
       )}
+    </>
+  );
+}
+
+/** One step by itself, as Settings › Hub › Setup opens it: the page names it, so this is the rest. */
+export function StepGuide({ step }: { step: SetupStep }) {
+  const test = useTest(step);
+  return (
+    <article className={cx(s.pane, s.guide)} aria-label={step.title} data-step={step.id}>
+      <StepBody step={step} test={test} />
+    </article>
+  );
+}
+
+function StepPane({
+  step,
+  steps,
+  onOpen,
+  onEnd,
+}: {
+  step: SetupStep;
+  steps: ReadonlyArray<SetupStep>;
+  onOpen: (id: SetupStepId) => void;
+  onEnd: () => void;
+}) {
+  const test = useTest(step);
+  const index = steps.indexOf(step);
+  const next = steps.slice(index + 1).find((st) => st.status !== "done");
+  const onward = () => (next !== undefined ? onOpen(next.id) : onEnd());
+  const left = isRequiredLeft(step);
+  return (
+    <article className={s.pane} aria-labelledby="setup-step-title" data-step={step.id}>
+      <Text as="p" size="xs" tone="quiet">
+        Step {index + 1} of {steps.length} · {needWords(step.need)}
+      </Text>
+      <Text as="h2" size="lg" strong id="setup-step-title">
+        {step.title}
+      </Text>
+      <Text as="p" tone="quiet">
+        {step.why}
+      </Text>
+      <StepBody step={step} test={test} />
 
       <footer className={s.foot}>
         <span />
-        {next === undefined && onEnd === undefined ? null : (
-          <Button variant="primary" onClick={onward} disabled={busy !== null}>
-            {next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}
-          </Button>
-        )}
+        <Button variant="primary" onClick={onward} disabled={test.busy}>
+          {next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}
+        </Button>
       </footer>
     </article>
   );

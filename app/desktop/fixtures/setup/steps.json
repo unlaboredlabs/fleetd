@@ -427,6 +427,73 @@
   ],
   "hub": "http://devbox:4790",
   "scenarios": {
+    "setup-all": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
+        },
+        "mac": {
+          "said": "No other fleetd node of this hub runs on this Mac.",
+          "status": "done"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "onepassword": {
+          "said": "Dev's 1Password token reads one vault, fleetd.",
+          "status": "done"
+        },
+        "people": {
+          "said": "Ada has joined.",
+          "status": "done"
+        }
+      },
+      "requiredLeft": 0,
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
+        },
+        "mac": {
+          "said": "No other fleetd node of this hub runs on this Mac.",
+          "status": "done"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "onepassword": {
+          "said": "Dev's 1Password token reads one vault, fleetd.",
+          "status": "done"
+        },
+        "people": {
+          "said": "Ada has joined.",
+          "status": "done"
+        }
+      }
+    },
     "setup-claude-logins": {
       "list": {
         "address": {

@@ -70,10 +70,12 @@ export const fixtures = [
   "machines-add",
   "machines-running",
   "machines-failed",
-  // ...any other machine's line with laptop's node online a moment later, and laptop's page: its checklist, claude
-  // logged out.
+  // ...any other machine's line with laptop's node online a moment later, and laptop's page: nothing about its checks
+  // while they pass, a row for claude logged out, and one for a screen kind it can't host yet.
   "machines-joined",
-  "machines-checklist",
+  "machines-well",
+  "machines-logged-out",
+  "machines-warning",
   "machines-one",
   "machines-unwell",
   // F2: the lead chat's live strip with 0, 1, 3 and 20 agents at work, and with 1 or 20 while the lead's turn runs
@@ -110,6 +112,7 @@ export const fixtures = [
   "setup-claude-logins",
   "setup-github",
   "setup-done",
+  "setup-all",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
@@ -3204,8 +3207,10 @@ export const screens: readonly Screen[] = [
       await page.getByText("Waiting for mac…").waitFor();
     },
   },
-  // A machine's page: its checklist, and Claude's login from the app with the page to sign in at and the code field.
-  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-checklist"] },
+  // A machine's page says only what is wrong with it: nothing while its checks pass, one row with Log in while claude
+  // is logged out, one with the command to run while a screen kind is off; and Claude's login from the app with the
+  // page to sign in at and the code field.
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-well", "machines-logged-out", "machines-warning"] },
   // A machine that needs someone says why where its state is, with Repair beside it: buildbox offline for three days.
   { id: "settings.hub.machine", route: "#/settings/hub/machines/buildbox", fixtures: ["machines-unwell"], variant: "offline" },
   // The whole row opens its machine, its right end too: the dot and the chevron are marks, so the pointer falls
@@ -3256,7 +3261,7 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.hub.machine",
     route: "#/settings/hub/machines/laptop",
-    fixtures: ["machines-checklist"],
+    fixtures: ["machines-logged-out"],
     variant: "login",
     open: async (page) => {
       await page.getByRole("button", { name: "Log in…" }).click();
@@ -3302,12 +3307,34 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  // Hub › Setup reads the hub's steps (setup_list): a fresh hub with required steps left, and one done.
-  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done"] },
+  // Hub › Setup reads the hub's steps (setup_list) and shows only those left, a row each: a fresh hub with a required
+  // step left, one with only later steps left, and one with every step done, which is one line. The done steps shown
+  // again; and a step's guide opened in place, its paste values and Test.
+  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done", "setup-all"] },
+  {
+    id: "settings.hub.setup",
+    route: "#/settings/hub/setup",
+    fixtures: ["setup-done"],
+    variant: "done-shown",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show steps" }).click();
+      await page.getByRole("list", { name: "Steps done" }).waitFor();
+    },
+  },
+  {
+    id: "settings.hub.setup",
+    route: "#/settings/hub/setup",
+    fixtures: ["setup-fresh"],
+    variant: "step",
+    open: async (page) => {
+      await page.getByRole("list", { name: "Steps left" }).getByRole("button", { name: "GitHub" }).click();
+      await page.getByRole("article", { name: "GitHub" }).getByRole("button", { name: "Test" }).waitFor();
+    },
+  },
   { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
   { id: "settings.hub.offline", route: "#/settings/hub/people", fixtures: ["hub-unreachable"] },
-  // A machine's page, under its checklist: its role, its screens and its max agents, devbox's auto 22 and where it
+  // A machine's page, under what is wrong with it: its role, its screens and its max agents, devbox's auto 22 and where it
   // comes from.
   {
     id: "settings.hub.machine",

@@ -1,5 +1,5 @@
 // Settings › Hub › Machines, apart from React: a machine's state in words, the list's dot, how its Repair goes, what
-// Remove says it does, and the checklist its page shows once it has joined, read from the hub's own checks (doctor_list).
+// Remove says it does, and what is wrong with it once it has joined, read from the hub's own checks (doctor_list).
 import type { DoctorCheck, DoctorFix, Machine, MachineHost } from "../../../shared/contracts";
 import { when } from "../live/when";
 
@@ -25,7 +25,7 @@ export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> 
     ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its projects are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
     : `The hub revokes ${machineId}'s key and forgets it, and its projects are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
-/** What Remove does, in a line on the machine's page; the dialog says the rest (removeLine). */
+/** What Remove does, on hovering it on the machine's page; the dialog it opens says the rest (removeLine). */
 export const REMOVE_LINE = "Its projects are deleted from fleetd with their chats and orders. Its repos and worktrees stay.";
 
 type Seen = Pick<Machine, "name" | "status" | "degradedReason"> & { lastSeenAt?: string | undefined };
@@ -61,54 +61,55 @@ export const fixPlace = (fix: DoctorFix, machine: string, hosts: ReadonlyArray<M
   return hub === undefined ? "the hub's machine" : `${hub}, the hub`;
 };
 
-export type ItemState = "done" | "failed" | "warn" | "waiting";
-
-export interface ChecklistItem {
-  readonly key: "claude" | "identity" | "github" | "capabilities";
-  readonly title: string;
-  readonly state: ItemState;
-  readonly lines: ReadonlyArray<string>;
+/** One thing wrong with a machine, as its page shows it: a row of its own, with its one action. */
+export interface Problem {
+  /** The check's name: `claude_login`. */
+  readonly key: string;
+  /** What is wrong, in the hub's words: the first sentence of the check's message. */
+  readonly words: string;
+  /** Failed, not a warning: the list's dot counts it. */
+  readonly failed: boolean;
   readonly fix?: DoctorFix | undefined;
   /** Claude's login failed: the page offers to log it in from here. */
   readonly login?: boolean;
-  /** No screens beyond the browser: the page points at Screens, where they turn on. */
+  /** A screen kind is off and the hub has no command for it: the page points at Screens, where it turns on. */
   readonly screens?: boolean;
 }
 
-const RANK: Readonly<Record<DoctorCheck["status"], number>> = { ok: 0, unknown: 1, warn: 2, fail: 3 };
-const STATE: Readonly<Record<DoctorCheck["status"], ItemState>> = { ok: "done", unknown: "waiting", warn: "warn", fail: "failed" };
+/** The checks a machine's page reads: claude, the identity its commits carry, its projects' remotes, its screens. */
+const CHECKS = ["claude_version", "claude_login", "runner_conformance", "commit_identity", "git_fetch", "android", "desktop"];
+const SCREENS = new Set(["android", "desktop"]);
 
-const worst = (checks: ReadonlyArray<DoctorCheck>): DoctorCheck | undefined =>
-  checks.reduce<DoctorCheck | undefined>((w, c) => (w === undefined || RANK[c.status] > RANK[w.status] ? c : w), undefined);
-
-const named = (checks: ReadonlyArray<DoctorCheck>, machineId: string, names: ReadonlyArray<string>): ReadonlyArray<DoctorCheck> =>
-  names.flatMap((n) => checks.filter((c) => c.machineId === machineId && c.id === `${machineId}/${n}`));
-
-/** One item from its checks: the worst one's state and fix; every line when something wants a look, else the first. */
-const item = (key: ChecklistItem["key"], title: string, checks: ReadonlyArray<DoctorCheck>, none: string): ChecklistItem => {
-  const w = worst(checks);
-  if (w === undefined) return { key, title, state: "waiting", lines: [none] };
-  const lines = w.status === "ok" ? [checks[0]?.message ?? ""] : checks.filter((c) => c.status !== "ok").map((c) => c.message);
-  return { key, title, state: STATE[w.status], lines, ...(w.status === "ok" || w.fix === undefined ? {} : { fix: w.fix }) };
+/**
+ * A check's message as a row's few words: its first sentence, without the machine's name in front ("laptop: claude
+ * is not logged in…": the page is the machine's) and without its full stop.
+ */
+const wordsOf = (message: string, machineId: string): string => {
+  const own = message.startsWith(`${machineId}: `) ? message.slice(machineId.length + 2) : message;
+  const first = (own.split(/(?<=[.!?])\s+(?=[A-Z`])/u)[0] ?? own).replace(/\.$/u, "");
+  return first.startsWith(machineId) ? first : first.charAt(0).toUpperCase() + first.slice(1);
 };
 
 /**
- * A machine's checklist after it joined: claude installed and logged in, the commit identity its agents use, GitHub
- * (git fetches its projects' remotes), and the screens it can host (no iOS: the agents' Mac lends its simulators,
- * D298). Each item waits until the hub has checked it.
+ * What is wrong with a machine after it joined, failed checks first: claude not installed or logged out, the commit
+ * identity its agents use, GitHub (git fetches its projects' remotes), a screen kind it can't host. Empty while all is
+ * well: a check that passed, or one the hub hasn't answered yet, is nothing to show.
  */
-export const checklistOf = (checks: ReadonlyArray<DoctorCheck>, machineId: string): ReadonlyArray<ChecklistItem> => {
-  const claude = item("claude", "Claude", named(checks, machineId, ["claude_version", "claude_login", "runner_conformance"]), "Waiting for its node to report claude.");
-  const login = named(checks, machineId, ["claude_login"])[0];
-  const devices = named(checks, machineId, ["android", "desktop"]);
-  return [
-    login?.status === "fail" ? { ...claude, login: true } : claude,
-    item("identity", "Git identity", named(checks, machineId, ["commit_identity"]), "Waiting for its node to report the identity its commits carry."),
-    item("github", "GitHub access", named(checks, machineId, ["git_fetch"]), "Checked when an agent first starts in one of its projects."),
-    devices.length === 0
-      ? { key: "capabilities", title: "Screens", state: "done", lines: ["Browsers. No Android or Linux desktop screens are set up here."], screens: true }
-      : item("capabilities", "Screens", devices, ""),
-  ];
+export const problemsOf = (checks: ReadonlyArray<DoctorCheck>, machineId: string): ReadonlyArray<Problem> => {
+  const wrong = CHECKS.flatMap((name) => {
+    const check = checks.find((c) => c.machineId === machineId && c.id === `${machineId}/${name}`);
+    if (check === undefined || (check.status !== "fail" && check.status !== "warn")) return [];
+    const problem: Problem = {
+      key: name,
+      words: wordsOf(check.message, machineId),
+      failed: check.status === "fail",
+      ...(check.fix === undefined ? {} : { fix: check.fix }),
+      ...(name === "claude_login" && check.status === "fail" ? { login: true } : {}),
+      ...(SCREENS.has(name) && check.fix?.command === undefined ? { screens: true } : {}),
+    };
+    return [problem];
+  });
+  return [...wrong.filter((p) => p.failed), ...wrong.filter((p) => !p.failed)];
 };
 
 /**
@@ -117,6 +118,5 @@ export const checklistOf = (checks: ReadonlyArray<DoctorCheck>, machineId: strin
  */
 export const needsOf = (m: Seen & Pick<Machine, "machineId">, checks: ReadonlyArray<DoctorCheck> | undefined, nowMs = Date.now()): string | undefined => {
   if (m.status !== "online") return statusWords(m, nowMs);
-  const failed = checks === undefined ? undefined : checklistOf(checks, m.machineId).find((i) => i.state === "failed");
-  return failed === undefined ? undefined : `${failed.title}: ${failed.lines[0] ?? "needs a look"}`;
+  return checks === undefined ? undefined : problemsOf(checks, m.machineId).find((p) => p.failed)?.words;
 };

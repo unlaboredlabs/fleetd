@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { checklistOf, fixPlace, needsOf, removeLine, repairOf, statusWords } from "./machines";
+import { fixPlace, needsOf, problemsOf, removeLine, repairOf, statusWords } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -21,7 +21,7 @@ describe("Administration › Machines' model", () => {
 
   it("says a machine's state in a few words: online, what the hub says is wrong, or offline since when", () => {
     expect(statusWords({ name: "laptop", status: "online" })).toBe("Online");
-    // The hub's reason without its own "Fix: …": the page's checklist has the fix.
+    // The hub's reason without its own "Fix: …": the page's row has the fix.
     expect(statusWords({ name: "laptop", status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" })).toBe("Claude is not logged in");
     expect(statusWords({ name: "laptop", status: "degraded" })).toBe("Needs a look");
     expect(statusWords({ name: "laptop", status: "offline" })).toBe("Offline");
@@ -34,7 +34,7 @@ describe("Administration › Machines' model", () => {
     expect(needsOf({ ...laptop, status: "online" }, undefined)).toBeUndefined();
     expect(needsOf({ ...laptop, status: "online" }, [check("laptop/claude_login", "ok"), check("laptop/android", "warn")])).toBeUndefined();
     // Online, but a check of its own failed; another machine's doesn't mark it.
-    expect(needsOf({ ...laptop, status: "online" }, [check("laptop/claude_login", "fail", "claude is not logged in")])).toBe("Claude: claude is not logged in");
+    expect(needsOf({ ...laptop, status: "online" }, [check("laptop/claude_login", "fail", "claude is not logged in")])).toBe("Claude is not logged in");
     expect(needsOf({ ...laptop, status: "online" }, [check("devbox/claude_login", "fail")])).toBeUndefined();
     expect(needsOf({ ...laptop, status: "degraded", degradedReason: "claude is not logged in. Fix: claude auth login" }, [])).toBe("Claude is not logged in");
     expect(needsOf({ ...laptop, status: "offline" }, undefined)).toBe("Offline");
@@ -54,29 +54,37 @@ describe("Administration › Machines' model", () => {
     expect(removeLine("laptop", hosts)).toContain("It joined by itself");
   });
 
-  it("makes four items from the machine's own checks, the worst one deciding each", () => {
-    const items = checklistOf(
+  it("makes a problem of each of the machine's own checks that failed or warns, failed first, and none of one that passed", () => {
+    const fix = { kind: "manual", label: "Let ada use KVM", command: "sudo usermod -aG kvm ada", on: "machine" } as const;
+    const problems = problemsOf(
       [
         check("laptop/claude_version", "ok", "claude 2.1.314"),
-        check("laptop/claude_login", "fail", "not logged in"),
-        check("laptop/commit_identity", "warn", "no identity"),
+        { ...check("laptop/android", "warn", "Android screens are off: /dev/kvm isn't readable by ada."), fix },
+        check("laptop/desktop", "warn", "Linux desktops are off on laptop. Turn them on in Screens."),
+        check("laptop/claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start."),
+        check("laptop/commit_identity", "warn", "laptop has no commit identity. Fix: join it again."),
+        check("laptop/git_fetch", "unknown", "laptop's node is not linked to the hub"),
         check("devbox/git_fetch", "fail"),
-        check("laptop/ios", "ok", "iOS simulators are ready"),
-        check("laptop/android", "ok", "Android screens are ready"),
+        // No iOS: the agents' Mac lends its simulators (D298), so its check isn't a screen here.
+        check("laptop/ios", "fail", "iOS simulators are off"),
       ],
       "laptop",
     );
-    expect(items.map((i) => [i.key, i.state])).toEqual([
-      ["claude", "failed"],
-      ["identity", "warn"],
-      ["github", "waiting"],
-      ["capabilities", "done"],
+    // The hub's own words, cut to their first sentence, without the machine's name in front or the last period.
+    expect(problems.map((p) => [p.key, p.failed, p.words])).toEqual([
+      ["claude_login", true, "Claude is not logged in, so its sessions can't start"],
+      ["commit_identity", false, "laptop has no commit identity"],
+      ["android", false, "Android screens are off: /dev/kvm isn't readable by ada"],
+      ["desktop", false, "Linux desktops are off on laptop"],
     ]);
-    expect(items[0]?.login).toBe(true);
-    expect(items[0]?.lines).toEqual(["not logged in"]);
-    // No iOS: the agents' Mac lends its simulators (D298), so its check isn't a screen here.
-    expect(items[3]?.lines).toEqual(["Android screens are ready"]);
-    const ready = checklistOf([check("laptop/claude_version", "ok", "claude 2.1.314"), check("laptop/claude_login", "ok")], "laptop");
-    expect(ready[0]).toEqual({ key: "claude", title: "Claude", state: "done", lines: ["claude 2.1.314"] });
+    // Claude's login is fixed from the page; a screen kind with no command of the hub's, in Screens.
+    expect(problems.map((p) => [p.login === true, p.screens === true, p.fix?.command])).toEqual([
+      [true, false, undefined],
+      [false, false, undefined],
+      [false, false, "sudo usermod -aG kvm ada"],
+      [false, true, undefined],
+    ]);
+    expect(problemsOf([check("laptop/claude_version", "ok"), check("laptop/claude_login", "ok"), check("laptop/android", "ok")], "laptop")).toEqual([]);
+    expect(problemsOf([], "laptop")).toEqual([]);
   });
 });
