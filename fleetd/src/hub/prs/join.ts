@@ -163,11 +163,16 @@ export function author(task: Task | undefined, login: string | undefined): PrAut
   return out;
 }
 
+/** How a ready Change's `lastError` starts while the train holds it back (train/batch.ts). */
+const HELD = "held: ";
+
 export function queue(change: Change, length: number): PrQueue {
   const held = change.state === "needs_rebase" || change.state === "ci_failed" || change.state === "refused";
   const out: PrQueue = { changeId: change.changeId, state: change.state, length };
   if (change.position !== undefined) out.position = change.position;
   if (held && change.lastError !== undefined) out.reason = clip(redact(change.lastError), 2000);
+  // A ready PR the train holds back says why: its label, a person's approval it waits for, no CI.
+  else if (change.state === "ready" && change.lastError?.startsWith(HELD)) out.reason = clip(redact(change.lastError.slice(HELD.length)), 2000);
   return out;
 }
 

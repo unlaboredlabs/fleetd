@@ -55,6 +55,8 @@ export type FakePull = {
   /** A person approved it; a rebase drops it where the base dismisses stale approvals. */
   approved?: boolean;
   changesRequested?: boolean;
+  /** It has an open conversation, on a base whose ruleset wants each resolved. */
+  conversation?: boolean;
 };
 
 /** The approving review a base requires. */
@@ -85,7 +87,7 @@ export class FakeGh implements GhRunner {
   methods: string[] = ["squash", "rebase", "merge"];
   /** The merge methods main's ruleset allows, when it names them. */
   ruleMethods?: string[];
-  /** The reads GitHub refuses: `classic` (branch protection), `repo` (its settings), `decision` (a PR's reviews). */
+  /** What GitHub doesn't show the train: `classic` (branch protection) and `decision` (a PR's reviews), refused; `methods`, the repo's merge methods, left out of its answer. */
   unreadable: string[] = [];
   /** When set, the commit statuses every head has, [context, state], as another CI provider reports them. */
   provider?: (sha: string) => [string, string][];
@@ -171,9 +173,12 @@ export class FakeGh implements GhRunner {
     return { exitCode: 0, stdout: "✓ PR branch updated\n", stderr: "" };
   }
 
-  /** GitHub's own answer on a PR's reviews: null where its base requires none. */
+  /**
+   * GitHub's own answer on a PR's reviews: null where its base requires none, and while a conversation its base wants
+   * resolved is open (as GitHub answered on the lab repo, 2026-11-11).
+   */
   private reviewDecision(p: FakePull): string | null {
-    if (!this.approvals) return null;
+    if (!this.approvals || p.conversation) return null;
     return p.changesRequested ? "CHANGES_REQUESTED" : p.approved ? "APPROVED" : "REVIEW_REQUIRED";
   }
 
@@ -192,9 +197,11 @@ export class FakeGh implements GhRunner {
       const named = method === "squash" ? "Squash merges" : method === "rebase" ? "Rebase merges" : "Merge commits";
       return httpError(405, `${named} are not allowed on this repository.`);
     }
+    // GitHub's answers on the lab repo, 2026-11-11: a ruleset's refusal names the open conversation alone.
+    if (p.conversation) return httpError(405, "Repository rule violations found\n\nA conversation must be resolved before this pull request can be merged.\n\n");
     const decision = this.reviewDecision(p);
     if (decision === "CHANGES_REQUESTED") return httpError(405, "Changes were requested by a reviewer with write access.");
-    if (decision === "REVIEW_REQUIRED") return httpError(405, "At least 1 approving review is required by reviewers with write access.");
+    if (decision === "REVIEW_REQUIRED") return httpError(405, "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n");
     const main = this.headOf(p.base)!;
     if (git(this.origin, ["merge-base", main, sha]) !== main) return httpError(405, "Base branch was modified. Review and try the merge again.");
     let landed: string;
@@ -256,7 +263,7 @@ export class FakeGh implements GhRunner {
     const pullsOf = (f: (p: FakePull) => boolean) =>
       ok([...this.pulls].filter(([, p]) => f(p) && inRepo(p)).sort(([x], [y]) => y - x).map(([n, p]) => this.pullJson(n, p)));
     if (parts.length === 0 && method === "GET") {
-      if (this.unreadable.includes("repo")) return httpError(403, "Resource not accessible by personal access token");
+      if (this.unreadable.includes("methods")) return ok({ default_branch: "main" });
       const allows = (m: string) => this.methods.includes(m);
       return ok({ default_branch: "main", allow_squash_merge: allows("squash"), allow_rebase_merge: allows("rebase"), allow_merge_commit: allows("merge") });
     }

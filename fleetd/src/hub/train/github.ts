@@ -358,7 +358,62 @@ export function ciFromAnswers(workflows: unknown, branch: unknown, rules: unknow
   return ci;
 }
 
+/** How GitHub merges a PR. */
+export type MergeMethod = "squash" | "rebase" | "merge";
+const METHODS: MergeMethod[] = ["squash", "rebase", "merge"];
+
+/** What a base's rules ask of a merge beyond its checks. */
+export type BaseRules = {
+  /** An approving review is required: a count of them, or the code owners'. */
+  approval: boolean;
+  /** A push to an approved PR may drop its approval. */
+  dismissStale: boolean;
+  /** How the train merges: a squash where the repo allows one, else a rebase, else a merge commit. */
+  method: MergeMethod;
+  /** What couldn't be read, each with why: what the train did before it read these rules stands in. */
+  unread: string[];
+};
+
+/** A base's CI config and its rules. */
+export type BaseConfig = CiInfo & { rules: BaseRules };
+
+/**
+ * A base's rules from its rulesets (`rules/branches/<base>`), its classic protection (GraphQL's `branchProtectionRule`,
+ * null without one) and the repo's settings. An answer left undefined wasn't read.
+ */
+export function rulesFromAnswers(rules: unknown, classic: unknown, repo: unknown): Omit<BaseRules, "unread"> {
+  let approval = false;
+  let dismissStale = false;
+  const allowed: string[][] = [];
+  if (Array.isArray(rules)) {
+    for (const rule of rules as Record<string, any>[]) {
+      if (rule.type !== "pull_request") continue;
+      const p = rule.parameters ?? {};
+      if (p.required_approving_review_count > 0 || p.require_code_owner_review === true) approval = true;
+      if (p.dismiss_stale_reviews_on_push === true || p.require_last_push_approval === true) dismissStale = true;
+      if (Array.isArray(p.allowed_merge_methods)) allowed.push(p.allowed_merge_methods);
+    }
+  }
+  const c = classic as Record<string, unknown> | null | undefined;
+  if (c) {
+    if (c.requiresApprovingReviews === true || c.requiresCodeOwnerReviews === true) approval = true;
+    if (c.dismissesStaleReviews === true || c.requireLastPushApproval === true) dismissStale = true;
+  }
+  const r = repo as Record<string, unknown> | null | undefined;
+  if (r) {
+    const off = (key: string) => r[key] === false;
+    allowed.push(METHODS.filter((m) => !off(m === "merge" ? "allow_merge_commit" : `allow_${m}_merge`)));
+  }
+  // None allowed is GitHub's to refuse: the train asks for a squash, as before.
+  const method = METHODS.find((m) => allowed.every((list) => list.includes(m))) ?? "squash";
+  return { approval, dismissStale, method };
+}
+
 export type Sleep = (ms: number) => Promise<void>;
+
+const CLASSIC_RULE =
+  "query($owner: String!, $name: String!, $ref: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { " +
+  "branchProtectionRule { requiresApprovingReviews requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
 
 export class TrainGitHub {
   constructor(
@@ -585,13 +640,17 @@ export class TrainGitHub {
     await this.json("POST", `repos/${repo}/statuses/${sha}`, fields, (v) => v ?? null);
   }
 
-  /** Squash-merges pinned to `sha`; `message` is the squash commit's title and body when GitHub's default won't do. */
-  async merge(repo: string, n: number, sha: string, message?: [string, string]): Promise<MergeOutcome> {
+  /**
+   * Merges by `method` pinned to `sha`; `message` is the squash commit's title and body when GitHub's default won't do.
+   * A merge commit keeps GitHub's title and takes the body; a rebase lands the PR's own commits, with no message.
+   */
+  async merge(repo: string, n: number, sha: string, message?: [string, string], method: MergeMethod = "squash"): Promise<MergeOutcome> {
     const fields: [string, string][] = [
-      ["merge_method", "squash"],
+      ["merge_method", method],
       ["sha", sha],
     ];
-    if (message) fields.push(["commit_title", message[0]], ["commit_message", message[1]]);
+    if (message && method === "squash") fields.push(["commit_title", message[0]]);
+    if (message && method !== "rebase") fields.push(["commit_message", message[1]]);
     const r = await this.call("PUT", `repos/${repo}/pulls/${n}/merge`, fields);
     if (!r.ok) {
       if (r.status === 405 || r.status === 409) return { kind: "refused", status: r.status, message: r.message };
@@ -626,12 +685,15 @@ export class TrainGitHub {
     return squashText(pull, titleFrom, bodyFrom, messages);
   }
 
-  /** Rebases the PR's branch onto its base on GitHub (`gh pr update-branch --rebase`). */
-  async updateBranch(repo: string, n: number): Promise<BranchUpdate> {
+  /**
+   * Rebases the PR's branch onto its base on GitHub (`gh pr update-branch --rebase`); with `rebase` false GitHub merges
+   * the base into it instead, which rewrites none of its commits.
+   */
+  async updateBranch(repo: string, n: number, rebase = true): Promise<BranchUpdate> {
     const path = `repos/${repo}/pulls/${n}`;
     let out: GhOut;
     try {
-      out = await this.run(["pr", "update-branch", String(n), "--rebase", "--repo", repo]);
+      out = await this.run(["pr", "update-branch", String(n), ...(rebase ? ["--rebase"] : []), "--repo", repo]);
     } catch (error) {
       this.missed(path, (error as Error).message);
       throw error;
@@ -921,12 +983,44 @@ export class TrainGitHub {
     return pulls.map(merged).filter((m): m is MergedPull => m !== undefined);
   }
 
-  /** The repo's workflows and the checks `branch` requires; any read failing is an error, never "no CI". */
-  async ciConfig(repo: string, branch: string): Promise<CiInfo> {
+  /**
+   * GitHub's own answer on PR `n`'s reviews: `APPROVED`, `REVIEW_REQUIRED` or `CHANGES_REQUESTED`; undefined where
+   * its base requires none, and (seen on a ruleset, 2026-11) while a conversation its base wants resolved is open: a
+   * merge is then refused for that rule, whatever its approvals.
+   */
+  async reviewDecision(repo: string, n: number): Promise<string | undefined> {
+    const [owner, name] = repo.split("/") as [string, string];
+    const query = `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { pullRequest(number: ${n}) { reviewDecision } } }`;
+    const data = (await this.graphql(query, [["owner", owner], ["name", name]])) as { repository?: { pullRequest?: { reviewDecision?: unknown } | null } | null } | null;
+    const pull = data?.repository?.pullRequest;
+    if (pull == null) throw GhError.failed(`the reviews of ${repo}#${n} were not answered`);
+    return typeof pull.reviewDecision === "string" ? pull.reviewDecision : undefined;
+  }
+
+  /**
+   * The repo's workflows, the checks `branch` requires and its rules. A read of the workflows or the required checks
+   * failing is an error, never "no CI"; one of the rules' own reads failing is named in `rules.unread`.
+   */
+  async ciConfig(repo: string, branch: string): Promise<BaseConfig> {
     const obj = (v: unknown) => (v !== null && typeof v === "object" ? v : undefined);
     const workflows = await this.json("GET", `repos/${repo}/actions/workflows?per_page=100`, [], obj);
     const protection = await this.json("GET", `repos/${repo}/branches/${branch}`, [], obj);
     const rules = await this.json("GET", `repos/${repo}/rules/branches/${branch}`, [], obj);
-    return ciFromAnswers(workflows, protection, rules);
+    const unread: string[] = [];
+    const soft = async <T>(what: string, read: () => Promise<T>): Promise<T | undefined> => {
+      try {
+        return await read();
+      } catch (error) {
+        unread.push(`${what}: ${(error as Error).message}`);
+        return undefined;
+      }
+    };
+    const classic = await soft("its branch protection", async () => {
+      const [owner, name] = repo.split("/") as [string, string];
+      const data = (await this.graphql(CLASSIC_RULE, [["owner", owner], ["name", name], ["ref", `refs/heads/${branch}`]])) as any;
+      return (data?.repository?.ref?.branchProtectionRule ?? null) as unknown;
+    });
+    const settings = await soft("the repo's merge methods", () => this.json("GET", `repos/${repo}`, [], obj));
+    return { ...ciFromAnswers(workflows, protection, rules), rules: { ...rulesFromAnswers(rules, classic, settings), unread } };
   }
 }

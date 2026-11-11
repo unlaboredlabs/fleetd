@@ -7,6 +7,7 @@
 import type { Change, ChangeState } from "../../shared/contracts.ts";
 import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, held, labelled, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
+import * as person from "./person.ts";
 import { DRAFT, errorText } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
 import { type Fast, isRed, short } from "./rules.ts";
@@ -16,10 +17,10 @@ import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
 
-const HELD = "held: the PR has the `hold` label; the train takes it once the label is gone";
+export const HELD = "held: the PR has the `hold` label; the train takes it once the label is gone";
 export const NO_CI =
-  "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions " +
-  "workflow that runs on pull requests; it goes on by itself once one exists.";
+  "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions workflow that runs on pull " +
+  "requests, or CI of another provider that reports on them; it goes on by itself once one does.";
 const MEMBER_LEFT = "a PR left the batch while it formed; the next pass forms it again";
 const NOT_CLOSED = "landed, but its PR is not closed yet";
 /** The start of a ready Change's `lastError` while the batch forming left it out, followed by why. */
@@ -39,7 +40,8 @@ export type Red = { name: string; url?: string };
 
 /** `ownChecks`, with the checks of it that failed. */
 function ownVerdict(runs: CheckRun[], statuses: CommitStatus[], fast: Fast | undefined, batch: string[]): { why?: string; red: Red[] } {
-  if (runs.length === 0 && statuses.length === 0) return { why: "its own head has no checks yet", red: [] };
+  // Statuses alone are its checks only where the fast set names them (`Train.statusRuns` stands the others in).
+  if (runs.length === 0 && (statuses.length === 0 || (fast?.set.length ?? 0) === 0)) return { why: "its own head has no checks yet", red: [] };
   const judged = ownJudged(runs, fast, batch);
   const red: Red[] = judged.filter(isRed).map((r) => (r.html_url ? { name: r.name, url: r.html_url } : { name: r.name }));
   const set = fast?.set ?? [];
@@ -178,7 +180,11 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   const members: Candidate[] = [];
   const left: [Candidate, string][] = [];
   const reds = new Map<string, Red[]>();
-  if (cands.length >= 2) {
+  const single = await t.oneAtATime(repo, base);
+  if (single !== undefined) {
+    // No batch: each PR merges as itself.
+    for (const c of cands.slice(1)) left.push([c, `${head.change.changeId} goes first: ${single}`]);
+  } else if (cands.length >= 2) {
     for (const c of cands) {
       let why: string | undefined;
       if (members.length === BATCH_MAX) why = `the batch is full (${BATCH_MAX} PRs)`;
@@ -268,14 +274,15 @@ async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Can
       // A read that failed is not "no CI": the head's checks decide, as for any repo.
       let ci: boolean | undefined;
       try {
-        ci = await t.hasCi(repo, pull.base.ref);
+        ci = await t.hasCi(repo, pull.base.ref, change.headSha);
       } catch {
         ci = undefined;
       }
       if (ci === false) hold = NO_CI;
+      else if (await person.awaitsApproval(t, change, pull.base.ref)) hold = person.APPROVAL;
     }
     const shown = change.lastError;
-    const ours = [DRAFT, HELD, NO_CI];
+    const ours = [DRAFT, HELD, NO_CI, person.APPROVAL];
     const wasWaiting = shown?.startsWith(next.WAITING_ON) ?? false;
     if (hold !== shown && (hold !== undefined || wasWaiting || (shown !== undefined && ours.includes(shown)))) {
       t.update(change.changeId, ["ready"], (c) => {
@@ -283,6 +290,7 @@ async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Can
         return hold === undefined ? rest : { ...rest, lastError: errorText(hold) };
       });
     }
+    if (hold === HELD || hold === person.APPROVAL) await person.waits(t, change, pull, hold);
     if (hold !== undefined) continue;
     // Stacked on a PR's branch: once that PR merged, it goes into its base, never into the landed branch.
     try {
@@ -312,10 +320,11 @@ export async function ownCi(t: Train, repo: string, change: Change, base: string
 }
 
 /** `ownCi`, with the checks that failed on the head. */
-async function ownCiRed(t: Train, repo: string, change: Change, base: string): Promise<{ why?: string; red: Red[] }> {
+export async function ownCiRed(t: Train, repo: string, change: Change, base: string): Promise<{ why?: string; red: Red[] }> {
   let runs: CheckRun[];
   try {
     runs = await t.github.checkRuns(repo, change.headSha);
+    if (runs.length === 0) runs = await t.statusRuns(repo, change.headSha, base);
   } catch (error) {
     return { why: `its checks could not be read: GitHub: ${(error as Error).message}`, red: [] };
   }
@@ -359,16 +368,16 @@ async function ownCiRed(t: Train, repo: string, change: Change, base: string): P
 /**
  * Tells the author of a ready Change left out of the batch for its own head's red checks (`red`, each with its log):
  * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, in memory, so a
- * restart may tell one again.
+ * restart may tell one again. `what` when it is out of the line for another reason.
  */
-async function tellOwnRed(t: Train, change: Change, red: Red[]): Promise<void> {
+export async function tellOwnRed(t: Train, change: Change, red: Red[], what = "the merge train leaves it out of every batch"): Promise<void> {
   const head = change.headSha;
   if (t.ownRedTold.get(change.changeId) === head) return;
   t.ownRedTold.set(change.changeId, head);
   const url = red.find((r) => r.url)?.url;
   const log = url ? ` (log: ${url})` : "";
   const names = named(red.map((r) => r.name));
-  await t.tellAuthor(change, `the merge train leaves it out of every batch: its own head's ${names} failed on ${short(head)}${log}`);
+  await t.tellAuthor(change, `${what}: its own head's ${names} failed on ${short(head)}${log}`);
 }
 
 /** Records why this pass left a ready Change out of the batch (`LEFT_OUT`); undefined clears an earlier reason. */
