@@ -6,6 +6,7 @@ import { existsSync, openSync, readFileSync, writeSync, closeSync } from "node:f
 import { join } from "node:path";
 import { mkdirPrivate } from "./config.ts";
 import { openSealed, publicKeyOf, seal } from "../shared/sealed_box.ts";
+import { isUpgradeProofMessage } from "../shared/upgrade_proof.ts";
 
 const KEY_FILE = "node-key.pem";
 const BOX_KEY_FILE = "node-box-key.pem";
@@ -63,9 +64,19 @@ export class NodeIdentity {
     const der = createPublicKey(this.#key).export({ format: "der", type: "spki" });
     return Buffer.from(der.subarray(der.length - 32)).toString("base64");
   }
-  /** Signature over the nonce's UTF-8 bytes, base64. */
+  /** Signature over the hub's challenge nonce's UTF-8 bytes, base64. A nonce shaped as an upgrade proof is refused:
+   * a hub can't have the hello sign one for it. */
   sign(nonce: string): string {
-    return sign(null, Buffer.from(nonce, "utf8"), this.#key).toString("base64");
+    if (isUpgradeProofMessage(nonce)) throw new Error("the hub's challenge is not a nonce");
+    return this.#sign(nonce);
+  }
+  /** Signature over an upgrade proof's message (`makeUpgradeProof`), base64. */
+  signUpgrade(message: string): string {
+    if (!isUpgradeProofMessage(message)) throw new Error("not an upgrade proof");
+    return this.#sign(message);
+  }
+  #sign(message: string): string {
+    return sign(null, Buffer.from(message, "utf8"), this.#key).toString("base64");
   }
 }
 

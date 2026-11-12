@@ -36,6 +36,7 @@
     "./shared/sessions": "./fleetd/src/shared/sessions.ts",
     "./shared/text": "./fleetd/src/shared/text.ts",
     "./shared/tiles": "./fleetd/src/shared/tiles.ts",
+    "./shared/upgrade_proof": "./fleetd/src/shared/upgrade_proof.ts",
     "./shared/wire_tags": "./fleetd/src/shared/wire_tags.ts",
     "./hub/api/decode": "./fleetd/src/hub/api/decode.ts",
     "./hub/api/grants": "./fleetd/src/hub/api/grants.ts",

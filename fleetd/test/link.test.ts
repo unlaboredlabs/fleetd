@@ -6,6 +6,8 @@ import { build } from "../src/hub/serve/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { FakeNode, nodeKey } from "./fake-node.ts";
+import { NodeIdentity } from "../src/node/identity.ts";
+import { runNode, type LinkContext } from "../src/node/link/index.ts";
 import { deflateBomb, hubHome } from "./helpers.ts";
 
 const home = hubHome();
@@ -459,4 +461,34 @@ test("the stop waits for lead calls only so long", async () => {
   expect(Date.now() - started).toBeLessThan(1000);
   expect((await node.closed).code).toBe(1012);
   await t.done();
+});
+
+test("the hub links a node that proves itself in its upgrade, a stale proof alike, and an upgrade with none", async () => {
+  const machineId = "worker-proof";
+  const identity = new NodeIdentity(new Uint8Array(32).fill(3));
+  const { token } = hub.auth.nodes.createEnrollToken(machineId, "test");
+  const welcomed: LinkContext[] = [];
+  const stopNode = new AbortController();
+  // The first join carries its code and no proof; the dial after it, enrolled, carries a proof the hub ignores: this
+  // one's clock is years behind, so its proof is stale too.
+  void runNode({
+    settings: { hub: `http://127.0.0.1:${server.port}`, machineId, name: machineId, nodeVersion: "0.0.0-test" },
+    identity,
+    enrollToken: token,
+    clock: { now: () => 0 },
+    capabilities: () => [],
+    heartbeat: async () => ({}),
+    attach: (l) => (welcomed.push(l), () => {}),
+    handle: () => {},
+    log: () => {},
+    signal: stopNode.signal,
+  });
+  await until(() => welcomed.length === 1);
+  welcomed[0]!.relink("the test dials again");
+  await until(() => welcomed.length === 2);
+  stopNode.abort();
+  // The same machine as a node from before the proof: no headers on its upgrade.
+  const old = new FakeNode(url, { machineId, key: { pubKey: identity.pubKey(), sign: (n) => identity.sign(n) } });
+  expect(await old.tag("welcome")).toMatchObject({ hubId: links.hubId });
+  old.ws.close();
 });

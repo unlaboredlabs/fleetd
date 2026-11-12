@@ -6,9 +6,9 @@
 //
 // `hub.area("link")` is the seam other areas use: `on(tag, fn)` for node frames, `send`/`request` for hub frames,
 // `can(machineId, cap)` for what the node's hello listed, `linkId`, and `onLinked`/`onUnlinked`.
-import { createPublicKey, verify } from "node:crypto";
 import { hostname } from "node:os";
 import { NODE_TO_HUB, type NodeToHubTag } from "../../shared/wire_tags.ts";
+import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
 import { type HubEvent, type Machine, type MachineStatus, PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -103,18 +103,7 @@ type LinkSocket = {
 };
 
 /** Raw 32-byte ed25519 public key (base64) verifying `sig` (base64) over the nonce's UTF-8 bytes. */
-export function verifyNonceSignature(pubKey: string, nonce: string, sig: string): boolean {
-  try {
-    const raw = Buffer.from(pubKey, "base64");
-    const signature = Buffer.from(sig, "base64");
-    if (raw.length !== 32 || signature.length !== 64) return false;
-    const spki = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), raw]);
-    const key = createPublicKey({ key: spki, format: "der", type: "spki" });
-    return verify(null, Buffer.from(nonce), key, signature);
-  } catch {
-    return false;
-  }
-}
+export const verifyNonceSignature = (pubKey: string, nonce: string, sig: string): boolean => verifyEd25519(pubKey, nonce, sig);
 
 const nonce = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 
