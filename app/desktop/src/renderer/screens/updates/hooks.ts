@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer } from "../../src/data/react";
-import { useSettledAdministers } from "../admin/role";
+import { useServes, useSettledAdministers } from "../admin/role";
 import { startUpdate, useAuto, useFlow, useReady, useRun, type FlowDeps } from "./flow";
 import { FAILED_SHOWN_MS, RESULT_SHOWN_MS, shownFor, updateStatus, type Act, type MachineInput, type Status } from "./model";
 import { quietOf, type Quiet } from "./quiet";
@@ -30,6 +30,7 @@ export const useUpdateStatus = (): Status => {
   const ready = useReady(id);
   const auto = useAuto(id);
   const administers = useSettledAdministers();
+  const updates = useServes("hub_update");
   const url = state.phase === "live" ? state.hub : null;
   const version = state.phase === "live" ? state.version : undefined;
   const machines = useMemo(
@@ -40,7 +41,7 @@ export const useUpdateStatus = (): Status => {
   const finished = run?.finishedAt === undefined ? undefined : Date.parse(run.finishedAt);
   const expired = useExpiry(run === null || finished === undefined ? undefined : finished + shownFor(run));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `expired` reads the clock again.
-  return useMemo(() => updateStatus({ app, hub: { url, version }, machines, run, flow, ready, auto, administers }), [app, url, version, machines, run, flow, ready, auto, administers, expired]);
+  return useMemo(() => updateStatus({ app, hub: { url, version }, machines, run, flow, ready, auto, administers, updates }), [app, url, version, machines, run, flow, ready, auto, administers, updates, expired]);
 };
 
 /** The update flow's effects in this window: the hub's calls, its timers and this app's own updater. */

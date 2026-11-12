@@ -83,6 +83,11 @@ export interface State {
   readonly meAvatar: string | undefined;
   /** Their role on the hub, which Settings says under their name; undefined as `me` is. */
   readonly meRole: HubRole | undefined;
+  /**
+   * The tools the hub doesn't serve (hub_info's `leftOut`): on fleetd cloud, its self-update and restart, whose rows
+   * Settings leaves out. Empty until read, and on a self-run hub.
+   */
+  readonly leftOut: readonly string[];
   readonly chats: Readonly<Record<Key, Chat>>;
   /** Why a chat's older page didn't come, which the top of its thread says, until a page of it does. */
   readonly olderErrors: Readonly<Record<Key, HubError>>;
@@ -133,6 +138,7 @@ export const initial = (hub: HubState): State => ({
   meName: undefined,
   meAvatar: undefined,
   meRole: undefined,
+  leftOut: [],
   chats: {},
   olderErrors: {},
   sends: {},
@@ -162,7 +168,7 @@ export type Action =
   | { readonly t: "loading_older"; readonly key: Key }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
-  | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined; readonly meAvatar?: string | undefined; readonly meRole?: HubRole | undefined }
+  | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined; readonly meAvatar?: string | undefined; readonly meRole?: HubRole | undefined; readonly leftOut?: readonly string[] | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
   /** A failed send deleted: it never goes. */
@@ -241,10 +247,12 @@ export const reduce = (s: State, a: Action): State => {
       return withLatest(s, a.key, a.messages);
     case "corpus":
       return { ...s, corpus: { ...s.corpus, [a.key]: a.messages } };
-    case "admin":
-      return s.admin === a.admin && s.me === a.me && s.meName === a.meName && s.meAvatar === a.meAvatar && s.meRole === a.meRole
+    case "admin": {
+      const leftOut = a.leftOut ?? [];
+      return s.admin === a.admin && s.me === a.me && s.meName === a.meName && s.meAvatar === a.meAvatar && s.meRole === a.meRole && s.leftOut.join() === leftOut.join()
         ? s
-        : { ...s, admin: a.admin, me: a.me, meName: a.meName, meAvatar: a.meAvatar, meRole: a.meRole };
+        : { ...s, admin: a.admin, me: a.me, meName: a.meName, meAvatar: a.meAvatar, meRole: a.meRole, leftOut };
+    }
     case "send": {
       const sends = upsertSend(s.sends[a.key] ?? [], a.row);
       return { ...s, sends: { ...s.sends, [a.key]: sends } };

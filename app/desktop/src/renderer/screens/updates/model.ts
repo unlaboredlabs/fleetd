@@ -76,6 +76,9 @@ export interface StatusInput {
   /** An owner or admin, who updates the hub and its machines (hub_update refuses anyone else). A member reads where
    * things stand and takes only this app's own update (D211). True when absent. */
   readonly administers?: boolean;
+  /** The hub is updated from here (it serves hub_update). False on fleetd cloud, which updates itself: only this
+   * app's own update is said. True when absent. */
+  readonly updates?: boolean;
 }
 
 const channelOf = (version: string): "edge" | "stable" => (isEdge(version) ? "edge" : "stable");
@@ -216,9 +219,12 @@ const going = (run: UpdateRun, flow: Flow, now: number, timeZone: string | undef
   };
 };
 
+/** Why fleetd cloud has no Update: said where an admin of a self-run hub finds it. */
+export const CLOUD_UPDATES = "fleetd cloud updates itself.";
+
 const count = (n: number): string => (n === 1 ? "1 machine" : `${String(n)} machines`);
 
-export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true }: StatusInput): Status => {
+export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true, updates = true }: StatusInput): Status => {
   const own = app === null ? null : appStatus(app);
   const connected = hub.url !== null;
   const of = connected ? target(hub, app) : null;
@@ -233,6 +239,7 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
   if (live !== null && live.finishedAt === undefined) return { ...going(live, flow, now, timeZone, administers), rows: [] };
   if (flow.phase === "app" && app?.app.kind !== "failed") return { ...appUpdating(app), rows: [] };
   if (!connected) return { ...(own ?? { kind: "none", title: "Not connected", detail: "Updates show here once the hub answers." }), rows: [] };
+  if (!updates) return { ...(own ?? { kind: "current", title: "Up to date", detail: CLOUD_UPDATES }), rows: [] };
 
   // Up to date, by what the hub says it runs; and for a while after an update came through, when.
   const cameAt = live?.finishedAt !== undefined && !live.parts.some(bad) && live.parts.some((p) => p.state === "done") ? Date.parse(live.finishedAt) : undefined;

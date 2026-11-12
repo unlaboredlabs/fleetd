@@ -6,7 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import type { MacCodeCreateOutput } from "../../../shared/contracts";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, StateGlyph, Text } from "../../ui";
+import { useServes } from "../admin/role";
 import { errorText, useHubCall } from "../settings/hub";
+import { toHash } from "../shell/routes";
 import { Head } from "./Head";
 import { macCodeOver, macCodeState, macCodeWords, spacedCode } from "./model";
 import s from "./addMachine.module.css";
@@ -33,6 +35,8 @@ export function MacCode(props: { onLine: () => void; onBack: () => void; onDone:
   // wrong codes, or revoked.
   const [hubState, setHubState] = useState<string>();
   const machineId = made?.out.machineId;
+  // The Mac's checks are setup's (#/setup/mac); fleetd cloud has none, so its page is the machine's, as any other.
+  const checks = useServes("setup_list");
   const online = useData((d) => (machineId === undefined ? false : (d.machines[machineId]?.status ?? "offline") !== "offline"));
   const linked = useData((d) => (machineId === undefined ? undefined : d.live.machines[machineId]?.linkedSince));
 
@@ -110,9 +114,13 @@ export function MacCode(props: { onLine: () => void; onBack: () => void; onDone:
       )}
       {error !== undefined && made !== undefined ? <Text tone="danger">{error}</Text> : null}
       <div className={s.actions}>
-        {state === "joined" ? (
+        {state === "joined" && checks ? (
           <Button variant="primary" onClick={() => (window.location.hash = "#/setup/mac")}>
             {"Open the Mac's checks"}
+          </Button>
+        ) : state === "joined" ? (
+          <Button variant="primary" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: machineId ?? "mac" }))}>
+            {`Open ${machineId ?? "mac"}`}
           </Button>
         ) : null}
         {(state !== undefined && (macCodeOver(state) || state === "used")) || (made === undefined && error !== undefined) ? (

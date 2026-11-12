@@ -68,6 +68,8 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown; timeoutMs?: number | undefined }>;
 let checks: DoctorCheck[];
+/** hub_info's `leftOut`, as fleetd cloud answers it; undefined, as a self-run hub leaves it out. */
+let leftOut: string[] | undefined;
 let opened: string[];
 /** The hub's next frame, once a page is up. */
 let frame: (frame: HubFrame) => void;
@@ -75,6 +77,7 @@ const MACHINES = [machine("devbox"), machine("builder-1"), machine("laptop", "of
 
 beforeEach(() => {
   calls = [];
+  leftOut = undefined;
   checks = LOGGED_OUT;
   opened = [];
   vi.stubGlobal("fleetd", {
@@ -120,7 +123,9 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
         return Promise.resolve({ ok: false, error: { code: "failed", message: "claude auth login failed: Invalid code", fix: "Start the login again: each sign-in page's code works once." } });
       }
       const output =
-        tool === "machine_hosts"
+        tool === "hub_info"
+          ? { version: "0.9.0", protocol: 1, busy: [], admin: true, ...(leftOut === undefined ? {} : { leftOut }) }
+          : tool === "machine_hosts"
           ? { hosts: HOSTS }
           : tool === "machine_roles"
             ? { machines: ROLES }
@@ -157,6 +162,8 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: MACHINES, projects } });
     await new Promise((r) => setTimeout(r, 0));
   });
+  // The checks and hosts are read once hub_info says the hub serves them.
+  await settle();
   await settle();
 };
 
@@ -303,6 +310,16 @@ it("shows nothing about a machine's checks while they all pass, or before the hu
   await render(<MachinePage machineId="laptop" />);
   expect(problems()).toEqual([]);
   expect(() => button("Check again")).toThrow();
+});
+
+it("reads no checks and no hosts on fleetd cloud, which leaves its doctor and SSH out: no problems, no error, Remove stays", async () => {
+  leftOut = ["doctor_list", "doctor_fix", "machine_add_plan", "machine_add", "machine_add_status", "machine_hosts"];
+  await render(<MachinePage machineId="laptop" />);
+  expect(problems()).toEqual([]);
+  expect(host.textContent).not.toContain("Couldn't read");
+  expect(() => button("Check again")).toThrow();
+  expect(button("Remove…")).toBeDefined();
+  expect(calls.filter((c) => c.tool === "doctor_list" || c.tool === "machine_hosts")).toEqual([]);
 });
 
 it("shows each check that failed or warns as one row, failed first, with Check again under them", async () => {

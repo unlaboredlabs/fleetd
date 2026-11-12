@@ -57,7 +57,8 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (node: React.ReactNode, admin = true) => {
+/** `leftOut`: hub_info's, as fleetd cloud answers it; absent, as a self-run hub does. */
+const render = async (node: React.ReactNode, admin = true, leftOut?: string[]) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -66,7 +67,7 @@ const render = async (node: React.ReactNode, admin = true) => {
       if (tool === "hub_update_settings") auto = args["auto"] === true;
       const output =
         tool === "hub_info"
-          ? { version: OLD, protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
+          ? { version: OLD, protocol: 1, busy: [], admin, ...(leftOut === undefined ? {} : { leftOut }), me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
           : tool === "hub_update_status" || tool === "hub_update_settings"
             ? status()
             : tool === "people_list"
@@ -130,4 +131,13 @@ it("shows a member no switch", async () => {
   await render(<AutoUpdates />, false);
   expect(document.querySelector("[data-auto-updates]")).toBeNull();
   expect(document.querySelector("[role='switch']")).toBeNull();
+});
+
+it("says on fleetd cloud, which leaves its update out, only that it updates itself: no button, no switch, nothing asked", async () => {
+  await render(<Updates />, true, ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart"]);
+  const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
+  expect(page?.querySelector("[data-updates='cloud']")?.textContent).toBe("Updatesfleetd cloud updates itself.");
+  expect(page?.querySelector("button")).toBeNull();
+  expect(page?.querySelector("[role='switch']")).toBeNull();
+  expect(calls.filter((c) => c.tool.startsWith("hub_update"))).toEqual([]);
 });

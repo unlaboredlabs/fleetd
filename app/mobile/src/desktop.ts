@@ -71,6 +71,7 @@ export type {
 } from "../../desktop/src/shared/contracts";
 export { ACCOUNTS_APP_REDIRECT, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, type AccountsSignInInput } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
+export { serves } from "../../desktop/src/shared/hub";
 export { hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
@@ -101,7 +102,7 @@ export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
 export { openTo, proposal, type Proposal } from "../../desktop/src/shared/proposal";
-export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
+export { clockAt, CLOUD_UPDATES, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";

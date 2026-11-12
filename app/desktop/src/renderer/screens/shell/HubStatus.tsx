@@ -10,7 +10,7 @@ import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Dot } from "../../ui";
-import { useSettledAdministers } from "../admin/role";
+import { useServes, useSettledAdministers } from "../admin/role";
 import { OPTIONS, openOption } from "../settings";
 import { useQuiet, useUpdateAct } from "../updates";
 import { navigate } from "./navigation";
@@ -77,8 +77,10 @@ const useMenuMachines = (): readonly MenuMachine[] | undefined => useData(select
 
 /** How many of the hub's required setup steps are left, for an admin; 0 for anyone else and a hub before setup steps. */
 const useSetupLeft = (admin: boolean): number => {
-  const setup = useToolQuery("setup_list", noInput, { enabled: admin });
-  return admin ? (setup.data?.requiredLeft ?? 0) : 0;
+  const served = useServes("setup_list");
+  const steps = admin && served;
+  const setup = useToolQuery("setup_list", noInput, { enabled: steps });
+  return steps ? (setup.data?.requiredLeft ?? 0) : 0;
 };
 
 /** What the hub in scope says of its machines and setup, and to whom. */

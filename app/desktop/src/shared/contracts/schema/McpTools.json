@@ -7608,6 +7608,13 @@
           "$ref": "#/$defs/HubChannel",
           "description": "Absent for a local build."
         },
+        "leftOut": {
+          "description": "The contract's tools this hub doesn't serve, by name (fleetd cloud's self-update, restart, doctor, setup and\nSSH machine add): the apps hide their controls. Absent: it serves every one, as every self-run hub does. An app\nignores a name it doesn't know.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "machineFingerprint": {
           "description": "A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the\nhub. Absent where the OS gives none, and from older hubs.",
           "type": "string"

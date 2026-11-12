@@ -8,7 +8,7 @@ import { Button, Checkbox, Field, Input, Select, Switch, Text } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { toHash } from "../shell/routes";
 import { adminNames, adminWho } from "../sessions/pickScreen";
-import { useHubRole } from "../admin/role";
+import { useHubRole, useServes } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   allowedAfter,
@@ -99,6 +99,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const lead = leadOf(view.profiles);
+  const restarts = useServes("hub_restart");
   const pick = (name: string) => {
     const p = view.profiles.find((q) => q.name === name);
     if (p === undefined || p.id === lead?.id) return;
@@ -116,7 +117,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      hint="Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then, or until Restart hub in Settings › Hubs & devices. Reviews and tasks that name no profile stay on the default."
+      hint={`Every project's lead. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={

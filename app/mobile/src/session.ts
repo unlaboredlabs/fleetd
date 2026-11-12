@@ -4,7 +4,7 @@
 // person's pinned chats and their sections sync with the hub on each snapshot (pins.ts, sections.ts). A project's or
 // agent's live screen is watched one at a time: its frames go to the live view's listener alone (onFrame), never
 // through the state, which would draw the whole app again with each.
-import { loadRun, mergeMessages, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
+import { loadRun, mergeMessages, serves, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -493,13 +493,16 @@ export class Session {
     return lastSeq === undefined || lastSeq > (latest.at(-1)?.seq ?? 0) || latest.some((m) => m.state === "streaming");
   }
 
-  /** Who this phone's person is, and whether an admin, who sees Update; then, for one, the hub's update. */
+  /**
+   * Who this phone's person is, and whether an admin, who sees Update; then, for one, the hub's update, where the hub
+   * serves it (not fleetd cloud, which leaves its update and restart out).
+   */
   async #readInfo(): Promise<void> {
     const r = await this.#client.call("hub_info", {});
     if (!r.ok) return;
     const me = r.output.me;
-    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: me?.personId, meName: me?.name, meAvatar: me?.avatar, meRole: me?.role });
-    if (r.output.admin === true) void loadRun(this.updates);
+    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: me?.personId, meName: me?.name, meAvatar: me?.avatar, meRole: me?.role, leftOut: r.output.leftOut });
+    if (r.output.admin === true && serves(r.output, "hub_update_status")) void loadRun(this.updates);
   }
 
   /** The open orders, for who works where (store.ts running): one read at a time, and one more if asked meanwhile, as
@@ -564,7 +567,7 @@ export class Session {
       void this.#sections.read();
       void this.#readLatest();
       // An admin's: the build the hub has ready, and a run going on, followed.
-      if (this.#state.admin === true) void loadRun(this.updates);
+      if (this.#state.admin === true && serves(this.#state, "hub_update_status")) void loadRun(this.updates);
       // Back from a drop whose events replay, the open chat goes on with them; else its latest page starts it over.
       if (this.#open !== null && frame.replay === true && this.#resumable === this.#open) this.#dispatch({ t: "resume", key: this.#open });
       else if (this.#open !== null) void this.#loadLatest(this.#open);

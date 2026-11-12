@@ -93,3 +93,10 @@ export function administers(info: Pick<HubInfoOutput, "admin" | "me"> | undefine
   if (info.me === undefined) return info.admin !== false;
   return (info.me.role === "owner" || info.me.role === "admin") && info.admin !== false;
 }
+
+/**
+ * Whether the hub serves a tool: every one but those its hub_info leaves out (fleetd cloud's self-update, restart,
+ * doctor, setup and SSH machine add), whose controls the apps hide there. Yes before hub_info answers, and from a hub
+ * that leaves nothing out, as every self-run one does.
+ */
+export const serves = (info: { readonly leftOut?: readonly string[] | undefined } | undefined, tool: string): boolean => info?.leftOut?.includes(tool) !== true;

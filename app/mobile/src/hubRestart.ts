@@ -51,9 +51,12 @@ export interface RestartRow {
   readonly canAsk: boolean;
 }
 
-/** The Restart Hub row, or null where there is none: not an admin, or no hub to ask and no restart going. */
-export const restartRow = (admin: boolean | undefined, hub: HubState, step: RestartStep): RestartRow | null => {
-  if (admin !== true) return null;
+/**
+ * The Restart Hub row, or null where there is none: not an admin, a hub that doesn't serve hub_restart (fleetd cloud),
+ * or no hub to ask and no restart going.
+ */
+export const restartRow = (admin: boolean | undefined, hub: HubState, step: RestartStep, restarts = true): RestartRow | null => {
+  if (admin !== true || !restarts) return null;
   switch (step.at) {
     case "asking":
     case "restarting":

@@ -30,6 +30,7 @@ import { MachineScreens } from "../settings/Screens";
 import { toHash } from "../shell/routes";
 import { fixPlace, MACHINE_WAIT_MS, problemsOf, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
 import { RemoveMachine } from "./RemoveMachine";
+import { useServes } from "./role";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -49,9 +50,10 @@ export function MachinePage({ machineId }: { machineId: string }) {
     return known === undefined || status === undefined || status === known.status ? known : { ...known, status };
   }, [known, status, removed]);
   const fresh = useData((d) => d.fresh);
-  const checks = useToolQuery("doctor_list", allChecks);
+  // fleetd cloud runs no doctor and reaches no machine over SSH: neither is read there, and Repair gives the line.
+  const checks = useToolQuery("doctor_list", allChecks, { enabled: useServes("doctor_list") });
   const roles = useToolQuery("machine_roles", noInput).data?.machines.find((m) => m.machineId === machineId);
-  const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
+  const hosts = useToolQuery("machine_hosts", noInput, { enabled: useServes("machine_hosts") }).data?.hosts;
   const layer = useDataLayer();
   const nowMs = useNow(true, 60_000);
   const [rerunning, setRerunning] = useState(false);
@@ -196,7 +198,7 @@ const marks = (problem: Problem) => ({ "data-problem": problem.key, "data-state"
  * says) and the command with Copy. A screen kind the hub has no command for points at Screens, where it turns on.
  */
 function ProblemRow({ problem, name }: { problem: Problem; name: string }) {
-  const hosts = useToolQuery("machine_hosts", noInput).data?.hosts;
+  const hosts = useToolQuery("machine_hosts", noInput, { enabled: useServes("machine_hosts") }).data?.hosts;
   const fix = problem.fix;
   const where = fix === undefined ? null : fixPlace(fix, name, hosts);
   const run = fix?.command === undefined || where === null ? "" : `Run on ${where}:`;

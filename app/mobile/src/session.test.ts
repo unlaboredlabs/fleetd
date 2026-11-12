@@ -105,6 +105,16 @@ describe("Session", () => {
     expect(member.hub.sentOf("call").filter((c) => c.tool === "hub_update_status")).toEqual([]);
   });
 
+  it("asks fleetd cloud, which leaves its update and restart out, for no update: an admin keeps what hub_info left out", async () => {
+    const { hub, session } = setup();
+    const leftOut = ["hub_update", "hub_update_status", "hub_restart", "machine_add"];
+    hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", admin: true, leftOut });
+    await flush();
+    expect(session.state.admin).toBe(true);
+    expect(session.state.leftOut).toEqual(leftOut);
+    expect(hub.sentOf("call").filter((c) => c.tool === "hub_update_status")).toEqual([]);
+  });
+
   it("reads who the person is again when the hub's people change: a new name shows without a restart", async () => {
     const { hub, session } = setup();
     const sam = { personId: "p_sam", role: "member", createdAt: AT };

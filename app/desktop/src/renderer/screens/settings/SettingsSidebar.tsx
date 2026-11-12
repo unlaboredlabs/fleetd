@@ -9,7 +9,7 @@ import { ArrowLeft, Brain, FolderGit2, Layers, ListChecks, LockKeyhole, Network,
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
-import { useSettledAdministers } from "../admin/role";
+import { useServes, useSettledAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
 import { formatRoute, isEveryProject, isProjectTab, pageOf, tabHref, useSettingsRoute, type SettingsRoute, type Tab } from "./route";
@@ -119,8 +119,9 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
  */
 function HubGroup({ route }: { route: SettingsRoute }) {
   const { id } = useHub();
-  const setup = useToolQuery("setup_list", noInput);
-  const left = setup.data?.requiredLeft ?? 0;
+  const steps = useServes("setup_list");
+  const setup = useToolQuery("setup_list", noInput, { enabled: steps });
+  const left = steps ? (setup.data?.requiredLeft ?? 0) : 0;
   const open = (tab: HubTab) => navigate({ id: "settings", tab, at: id });
   const on = pageOf(route.tab);
   return (
