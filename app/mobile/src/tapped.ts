@@ -24,12 +24,14 @@ export interface TappedRoute {
   readonly state?: object;
 }
 
+/** An existing route's key and nested state, to keep. */
+const keptOf = (routes: readonly StackRoute[], name: string, same: (params: Record<string, unknown>) => boolean): { key?: string; state?: object } => {
+  const r = routes.find((x) => x.name === name && same((x.params ?? {}) as Record<string, unknown>));
+  return r === undefined ? {} : { key: r.key, ...(r.state === undefined ? {} : { state: r.state }) };
+};
+
 export const tappedStack = (routes: readonly StackRoute[], at: ChatAt, tap: number): { index: number; routes: TappedRoute[] } => {
-  // An existing route's key and nested state, to keep.
-  const keyed = (name: string, same: (params: Record<string, unknown>) => boolean): { key?: string; state?: object } => {
-    const r = routes.find((x) => x.name === name && same((x.params ?? {}) as Record<string, unknown>));
-    return r === undefined ? {} : { key: r.key, ...(r.state === undefined ? {} : { state: r.state }) };
-  };
+  const keyed = (name: string, same: (params: Record<string, unknown>) => boolean) => keptOf(routes, name, same);
   const stack: TappedRoute[] = [
     { ...keyed("Home", () => true), name: "Home" },
     { ...keyed("Chat", (p) => p.key === at.key), name: "Chat", params: { key: at.key, ...(at.requestId === undefined ? {} : { requestId: at.requestId }), tap } },
@@ -42,3 +44,12 @@ export const tappedStack = (routes: readonly StackRoute[], at: ChatAt, tap: numb
 
 /** A notification for a chat that's gone (removed since it was sent) opens nothing, once the chats are known. */
 export const tapGoesNowhere = (projects: Readonly<Record<Key, unknown>> | undefined, at: ChatAt): boolean => projects !== undefined && projects[at.key] === undefined;
+
+/** A "New sign-in" notification: Settings' Devices list over the chats list, Back to Settings, then to the list. */
+export const devicesStack = (routes: readonly StackRoute[]): { index: number; routes: TappedRoute[] } => ({
+  index: 1,
+  routes: [
+    { ...keptOf(routes, "Home", () => true), name: "Home" },
+    { name: "Settings", state: { index: 1, routes: [{ name: "Settings" }, { name: "Devices" }] } },
+  ],
+});

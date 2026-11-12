@@ -6,6 +6,7 @@ import { events } from "../src/hub/store/events.ts";
 import { people } from "../src/hub/people/store.ts";
 import { refusal, testHub } from "./people-kit.ts";
 import { tempHome } from "./helpers.ts";
+import { openPayload, shownOf } from "../../app/mobile/src/pushPayload.ts";
 
 /** A fake push relay: answers each push as `answer` says, and keeps what it got. Never the real relay. */
 const got: { body: Record<string, string>; auth: string | null }[] = [];
@@ -137,6 +138,32 @@ test("an approval is approved from the notification only when the body is its wh
   expect(long.length).toBeLessThanOrEqual(PUSH_PAYLOAD_MAX);
   expect(parsed.category).toBe("review");
   expect(parsed.body.endsWith("…")).toBe(true);
+});
+
+test("a payload with the Devices route reaches the phone's own reader whole, and tapping it opens that hub's Devices", () => {
+  const phone = publicKeyOf(new Uint8Array(32).fill(7));
+  const secret = new Uint8Array(32).fill(7);
+  const p: PushPayload = {
+    v: 1,
+    kind: "alert",
+    title: "New sign-in",
+    body: "MacBook signed in to acme as you. If it wasn't you, revoke it under Devices.",
+    hub: "https://acme.fleetd.test",
+    route: "devices",
+    quiet: true,
+    at: "2026-11-12T10:00:00.000Z",
+  };
+  const json = new TextDecoder().decode(payloadJson(p));
+  expect(json).toBe(
+    '{"v":1,"kind":"alert","title":"New sign-in","body":"MacBook signed in to acme as you. If it wasn\'t you, revoke it under Devices.","hub":"https://acme.fleetd.test","route":"devices","quiet":true,"at":"2026-11-12T10:00:00.000Z"}',
+  );
+  const c = Buffer.from(seal(phone, payloadJson(p))).toString("base64");
+  const opened = openPayload(c, (box) => openSealed(secret, box));
+  expect(opened).toEqual(p);
+  expect(shownOf(opened!)).toMatchObject({ title: "New sign-in", channel: "quiet", route: { t: "devices", hub: "https://acme.fleetd.test" } });
+  // A hub that sends no route changes nothing: the alert opens the app, as before.
+  const { route: _, ...plainAlert } = p;
+  expect(shownOf(openPayload(Buffer.from(seal(phone, payloadJson(plainAlert))).toString("base64"), (box) => openSealed(secret, box))!).route).toBeUndefined();
 });
 
 test("an event about no project goes to owners and admins; a project's to who last wrote in its chat", () => {

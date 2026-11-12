@@ -1,6 +1,6 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
-// (how the link is, its address and version), the hubs this phone keeps to switch between and the fleetd account
+// (how the link is, its address and version), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
 // (Cloud.tsx), for an admin Restart Hub and its update, the Vault (screens/vault) on a
 // hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
@@ -136,6 +136,9 @@ export function Settings() {
             chevron={false}
           />
         ) : null}
+      </ListSection>
+      <ListSection>
+        <ListRow title="Devices" onPress={() => navigation.navigate("Devices")} />
       </ListSection>
       <CloudSettings />
       <RestartHub />

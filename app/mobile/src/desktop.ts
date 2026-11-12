@@ -6,6 +6,7 @@
 // call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
+  AgentKeyInfo,
   ApprovalDecision,
   AttachmentGetOutput,
   AttachmentMime,

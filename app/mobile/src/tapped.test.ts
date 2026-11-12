@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tapGoesNowhere, tappedStack, type StackRoute } from "./tapped";
+import { devicesStack, tapGoesNowhere, tappedStack, type StackRoute } from "./tapped";
 
 const home: StackRoute = { key: "Home-1", name: "Home" };
 const chat = (key: string, n = 1): StackRoute => ({ key: `Chat-${key}-${String(n)}`, name: "Chat", params: { key } });
@@ -63,5 +63,21 @@ describe("tapGoesNowhere", () => {
     expect(tapGoesNowhere({ "m1/a": {} }, { key: "m1/b" })).toBe(true);
     expect(tapGoesNowhere({ "m1/a": {} }, { key: "m1/a" })).toBe(false);
     expect(tapGoesNowhere(undefined, { key: "m1/b" })).toBe(false);
+  });
+});
+
+describe("devicesStack", () => {
+  it("opens Settings' Devices over the chats list, whatever was open, with Back to Settings", () => {
+    const list: StackRoute = { key: "Home-1", name: "Home", state: { index: 0 } };
+    for (const top of [chat("m1/a"), { key: "Settings-1", name: "Settings", state: { index: 1 } }, { key: "NewProject-1", name: "NewProject" }]) {
+      expect(devicesStack([list, top])).toEqual({
+        index: 1,
+        routes: [
+          { key: "Home-1", name: "Home", state: { index: 0 } },
+          { name: "Settings", state: { index: 1, routes: [{ name: "Settings" }, { name: "Devices" }] } },
+        ],
+      });
+    }
+    expect(devicesStack([]).routes[0]).toEqual({ name: "Home" });
   });
 });

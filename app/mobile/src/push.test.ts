@@ -159,6 +159,35 @@ describe("tapping a notification", () => {
     expect(shownOf(openPayload(sealedJson({ ...p, sessionId: "../x" }), keys)!).route).toEqual({ t: "chat", key: "devbox/navi-ada" });
   });
 
+  it("opens the Devices list of the hub a new sign-in happened on, where it is signed out", () => {
+    const p = { v: 1, kind: "alert", title: "New sign-in", body: "MacBook signed in to acme as you. If it wasn't you, revoke it under Devices.", hub: "https://acme.fleetd.test", route: "devices", at: "2026-11-12T10:00:00.000Z" };
+    const opened = openPayload(sealedJson(p), keys);
+    expect(opened).toEqual(p);
+    const shown = shownOf(opened!);
+    expect(shown).toEqual({ title: "New sign-in", body: p.body, channel: "other", urgent: false, route: { t: "devices", hub: "https://acme.fleetd.test" }, payload: p });
+    // Android's posted notification carries the route; iOS's opens the payload again.
+    expect(tapRoute({ route: shown.route }, undefined, null)).toEqual(shown.route);
+    expect(tapRoute({}, { c: sealedJson(p) }, keys)).toEqual(shown.route);
+    // Not a chat: it shows even with a chat on screen, and opens no chat.
+    expect(inApp(shown.route, "devbox/navi-ada")).toBe(true);
+    expect(readClears(shown.route, "devbox/navi-ada")).toBe(false);
+    expect(chatAt(shown.route!, undefined)).toBeNull();
+    // A payload that says no hub can't say whose Devices: the app just opens.
+    expect(shownOf(openPayload(sealedJson({ ...p, hub: "" }), keys)!).route).toBeUndefined();
+    expect(tapRoute({ route: { t: "devices" } }, undefined, null)).toBeUndefined();
+  });
+
+  it("just opens the app for a route it doesn't know, as an app from before Devices does for this one", () => {
+    const p = { v: 1, kind: "alert", title: "New sign-in", body: "Signed in", hub: "https://acme.fleetd.test", route: "billing", at: "" };
+    const opened = openPayload(sealedJson(p), keys)!;
+    expect(opened).not.toHaveProperty("route");
+    expect(shownOf(opened)).toEqual({ title: "New sign-in", body: "Signed in", channel: "other", urgent: false, payload: opened });
+    expect(tapRoute({}, { c: sealedJson(p) }, keys)).toBeUndefined();
+    expect(tapRoute({ route: { t: "billing", hub: "https://acme.fleetd.test" } }, undefined, null)).toBeUndefined();
+    // A known route on a payload that is also a chat's still goes where the route says.
+    expect(shownOf({ ...opened, kind: "message", machineId: "devbox", projectId: "navi-ada", route: "devices" }).route).toEqual({ t: "devices", hub: "https://acme.fleetd.test" });
+  });
+
   it("just opens the app for one it can't read", () => {
     expect(tapRoute({}, { c: message!.ciphertext }, null)).toBeUndefined();
     expect(tapRoute({ route: { t: "chat", key: "nokey" } }, {}, keys)).toBeUndefined();

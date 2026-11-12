@@ -4,6 +4,7 @@
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
 import { RESTART_FAST_MS, type HubFrame } from "./hub/client";
+import { keyOf, refOf, type Key } from "./projectKey";
 import {
   afterCall,
   applyDelta,
@@ -39,15 +40,7 @@ import {
 
 export type Machine = FleetStatus["machines"][number];
 
-/** "machineId/projectId". */
-export type Key = string;
-
-export const keyOf = (ref: ProjectRef): Key => `${ref.machineId}/${ref.projectId}`;
-
-export const refOf = (key: Key): ProjectRef => {
-  const at = key.indexOf("/");
-  return { machineId: key.slice(0, at), projectId: key.slice(at + 1) };
-};
+export { keyOf, refOf, type Key } from "./projectKey";
 
 /**
  * The hub's last restart as this phone saw it (hubWord.ts): down since `since` (epoch ms) from the version it ran,

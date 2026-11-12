@@ -5,11 +5,28 @@
 // (plugins/notification-service); on Android the app's background task does and posts it (notifications.ts). A
 // notification's buttons (Approve and Deny, Review, Reply) are its category, which the hub picks inside the sealed
 // payload; what each does is `act`, over a connection of its own, since the app may have been started only for it.
+// Reading a payload and what shows for it is pushPayload.ts's, which the package exports.
 import type { HubError, HumanRequest } from "./desktop";
 import { HubClient, READY_TIMEOUT_MS, type Transport } from "./hub/client";
-import { fromBase64, openSealed, toBase64, utf8, type KeyPair } from "./seal";
+import { categoryOf, openPayload as openWith, readPayload, routeFrom, routeOf, shownOf, type PushPayload, type Route, type Shown } from "./pushPayload";
+import { openSealed, toBase64, type KeyPair } from "./seal";
 import { keyOf, refOf, type Key } from "./store";
 import { deviceZone } from "./zone";
+
+export {
+  CATEGORIES,
+  CATEGORY_SUMMARIES,
+  CHANNELS,
+  categoryOf,
+  shownOf,
+  type Category,
+  type CategoryAction,
+  type Channel,
+  type PushPayload,
+  type PushRoute,
+  type Route,
+  type Shown,
+} from "./pushPayload";
 
 type Platform = "ios" | "android";
 
@@ -74,165 +91,15 @@ export const signOut = async (client: HubClient, deps: Pick<PushDeps, "loadDevic
   return revoked.ok || client.state.phase === "refused" ? { ok: true } : revoked;
 };
 
-/** The plaintext the hub seals (PushPayload in crates/fleetd-contracts/src/push.rs). */
-export interface PushPayload {
-  readonly v: 1;
-  readonly kind: "message" | "approval" | "order" | "alert";
-  readonly title: string;
-  readonly body: string;
-  readonly hub: string;
-  readonly machineId?: string;
-  readonly projectId?: string;
-  readonly threadId?: string;
-  readonly messageId?: string;
-  readonly requestId?: string;
-  /** A screen whose agent asks the person to take it over: tapping opens its live view. */
-  readonly sessionId?: string;
-  readonly urgent?: boolean;
-  readonly quiet?: boolean;
-  /** What can be done from the notification: Approve and Deny, Review in the app, Reply. */
-  readonly category?: "approve" | "review" | "reply";
-  /** How many things need the person: the app icon's badge. */
-  readonly badge?: number;
-  readonly at: string;
-}
-
-const KINDS = new Set(["message", "approval", "order", "alert"]);
-const PAYLOAD_CATEGORIES = new Set(["approve", "review", "reply"]);
-
-const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
-
-/**
- * A sealed notification (`c`, base64) opened with this phone's keys; null when it doesn't open or isn't version 1.
- * Version 1 only ever gains optional fields: what this app doesn't know it leaves out.
- */
-export const openPayload = (sealed: string, keys: KeyPair): PushPayload | null => {
-  const bytes = fromBase64(sealed);
-  const plain = bytes === null ? null : openSealed(bytes, keys);
-  const text = plain === null ? null : utf8(plain);
-  if (text === null) return null;
-  try {
-    return readPayload(JSON.parse(text));
-  } catch {
-    return null;
-  }
-};
-
-/** An opened payload's JSON, as this app reads it; null when it isn't version 1. */
-const readPayload = (value: unknown): PushPayload | null => {
-  if (typeof value !== "object" || value === null) return null;
-  const json = value as Record<string, unknown>;
-  if (json.v !== 1 || typeof json.title !== "string" || typeof json.body !== "string") return null;
-  const optional = (k: string): Record<string, string> => (str(json[k]) === undefined ? {} : { [k]: str(json[k])! });
-  return {
-    v: 1,
-    kind: KINDS.has(json.kind as string) ? (json.kind as PushPayload["kind"]) : "alert",
-    title: json.title,
-    body: json.body,
-    hub: str(json.hub) ?? "",
-    ...optional("machineId"),
-    ...optional("projectId"),
-    ...optional("threadId"),
-    ...optional("messageId"),
-    ...optional("requestId"),
-    ...optional("sessionId"),
-    ...(json.urgent === true ? { urgent: true } : {}),
-    ...(json.quiet === true ? { quiet: true } : {}),
-    ...(PAYLOAD_CATEGORIES.has(json.category as string) ? { category: json.category as NonNullable<PushPayload["category"]> } : {}),
-    ...(typeof json.badge === "number" && Number.isInteger(json.badge) && json.badge >= 0 ? { badge: json.badge } : {}),
-    at: str(json.at) ?? "",
-  };
-};
-
-/** A notification button, as expo-notifications takes it (setNotificationCategoryAsync). */
-export interface CategoryAction {
-  readonly identifier: "approve" | "deny" | "review" | "reply";
-  readonly buttonTitle: string;
-  readonly textInput?: { readonly submitButtonTitle: string; readonly placeholder: string };
-  readonly options: { readonly isDestructive?: boolean; readonly isAuthenticationRequired?: boolean; readonly opensAppToForeground: boolean };
-}
-
-/**
- * The notification categories and their buttons, registered at launch (notifications.ts); the iOS extension sets the
- * same ids (Payload.swift). Every action that calls the hub needs the phone unlocked: it acts with the phone's own key,
- * which the Keychain gives out only then. Review opens the app on the approval's full card.
- */
-export const CATEGORIES = {
-  "fleetd.approve": [
-    { identifier: "approve", buttonTitle: "Approve", options: { isAuthenticationRequired: true, opensAppToForeground: false } },
-    { identifier: "deny", buttonTitle: "Deny", options: { isDestructive: true, isAuthenticationRequired: true, opensAppToForeground: false } },
-  ],
-  "fleetd.review": [{ identifier: "review", buttonTitle: "Review", options: { opensAppToForeground: true } }],
-  "fleetd.reply": [
-    { identifier: "reply", buttonTitle: "Reply", textInput: { submitButtonTitle: "Send", placeholder: "Message" }, options: { isAuthenticationRequired: true, opensAppToForeground: false } },
-  ],
-} as const satisfies Record<string, readonly CategoryAction[]>;
-
-export type Category = keyof typeof CATEGORIES;
-
-/** How iOS words a chat's stacked notifications: "3 more messages". */
-export const CATEGORY_SUMMARIES: Record<Category, string> = {
-  "fleetd.approve": "%u more approvals",
-  "fleetd.review": "%u more approvals",
-  "fleetd.reply": "%u more messages",
-};
-
-/**
- * A payload's category. Approve and Deny only for what the hub marked so; an urgent one (money or irreversible) is
- * always reviewed in the app on its full card, whatever it says (D183/D193).
- */
-export const categoryOf = (p: PushPayload): Category | undefined => {
-  if (p.kind === "approval" && p.requestId !== undefined && p.category !== undefined) {
-    return p.category === "approve" && p.urgent !== true ? "fleetd.approve" : "fleetd.review";
-  }
-  if (p.kind === "message" && p.category === "reply" && routeOf(p)?.t === "chat") return "fleetd.reply";
-  return undefined;
-};
-
-/** Android's channels: what the person turns on and off in the system's settings, one sound each. */
-export const CHANNELS = {
-  chats: { name: "Chats", sound: true },
-  approvals: { name: "Approvals", sound: true },
-  other: { name: "Orders and alerts", sound: true },
-  quiet: { name: "Quiet hours", sound: false },
-} as const;
-
-export type Channel = keyof typeof CHANNELS;
-
-/** Where tapping a notification goes; kept on it as its data. */
-export type Route =
-  | { readonly t: "chat"; readonly key: Key }
-  | { readonly t: "approval"; readonly requestId: string; readonly key?: Key }
-  /** A screen asking for the person: its live view, over its chat. */
-  | { readonly t: "screen"; readonly key: Key; readonly sessionId: string };
-
-export interface Shown {
-  readonly title: string;
-  readonly body: string;
-  readonly channel: Channel;
-  /** Replaces the notification already shown under it: one per chat, one per request. */
-  readonly id?: string;
-  readonly urgent: boolean;
-  readonly route?: Route;
-  readonly category?: Category;
-  readonly badge?: number;
-  /** What it was made from, kept on Android's notification for its buttons. */
-  readonly payload: PushPayload;
-}
-
-const routeOf = (p: PushPayload): Route | undefined => {
-  const key = p.machineId !== undefined && p.projectId !== undefined ? keyOf({ machineId: p.machineId, projectId: p.projectId }) : undefined;
-  if (p.kind === "approval" && p.requestId !== undefined) return key === undefined ? { t: "approval", requestId: p.requestId } : { t: "approval", requestId: p.requestId, key };
-  if (key !== undefined && p.sessionId !== undefined && /^B[0-9a-f]{32}$/u.test(p.sessionId)) return { t: "screen", key, sessionId: p.sessionId };
-  return key === undefined ? undefined : { t: "chat", key };
-};
+/** A sealed notification (`c`, base64) opened with this phone's keys (pushPayload.ts `openPayload`). */
+export const openPayload = (sealed: string, keys: KeyPair): PushPayload | null => openWith(sealed, (box) => openSealed(box, keys));
 
 /**
  * Whether a notification shows while the app is open: not for the chat on screen, nor its approvals, whose messages
  * and cards are already there, as Messages shows no banner for the conversation you're in.
  */
 export const inApp = (route: Route | undefined, onScreen: Key | null): boolean =>
-  onScreen === null || route === undefined || route.t === "screen" || route.key !== onScreen;
+  onScreen === null || route === undefined || route.t === "screen" || route.t === "devices" || route.key !== onScreen;
 
 /** Whether a notification goes from Notification Center once `key` is read: its chat's messages, not what still waits for you. */
 export const readClears = (route: Route | undefined, key: Key): boolean => route?.t === "chat" && route.key === key;
@@ -253,28 +120,11 @@ export interface ChatAt {
 export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefined, read = requests !== undefined): ChatAt | null | undefined => {
   if (route.t === "chat") return { key: route.key };
   if (route.t === "screen") return { key: route.key, sessionId: route.sessionId };
+  // Settings' Devices, not a chat (App.tsx `go`).
+  if (route.t === "devices") return null;
   const key = route.key ?? requests?.find((r) => r.requestId === route.requestId)?.projectRef;
   if (key === undefined) return read ? null : undefined;
   return { key: typeof key === "string" ? key : keyOf(key), requestId: route.requestId };
-};
-
-/** The notification Android posts for a payload (iOS's extension does the same in Swift). */
-export const shownOf = (p: PushPayload): Shown => {
-  const route = routeOf(p);
-  const channel: Channel = p.quiet === true ? "quiet" : p.kind === "message" ? "chats" : p.kind === "approval" ? "approvals" : "other";
-  const id = route?.t === "approval" ? `approval:${route.requestId}` : route?.t === "screen" ? `screen:${route.sessionId}` : p.kind === "message" && route !== undefined ? `chat:${route.key}` : undefined;
-  const category = categoryOf(p);
-  return {
-    title: p.title || "fleetd",
-    body: p.body,
-    channel,
-    urgent: p.urgent === true,
-    ...(id === undefined ? {} : { id }),
-    ...(route === undefined ? {} : { route }),
-    ...(category === undefined ? {} : { category }),
-    ...(p.badge === undefined ? {} : { badge: p.badge }),
-    payload: p,
-  };
 };
 
 /**
@@ -287,23 +137,11 @@ export const androidShown = (data: unknown, keys: KeyPair | null): Shown | null 
   return payload === null ? null : shownOf(payload);
 };
 
-const routeFrom = (v: unknown): Route | undefined => {
-  if (typeof v !== "object" || v === null) return undefined;
-  const r = v as Record<string, unknown>;
-  const key = str(r.key);
-  if (r.t === "chat" && key !== undefined && key.includes("/")) return { t: "chat", key };
-  const requestId = str(r.requestId);
-  if (r.t === "approval" && requestId !== undefined) return key === undefined ? { t: "approval", requestId } : { t: "approval", requestId, key };
-  const sessionId = str(r.sessionId);
-  if (r.t === "screen" && key !== undefined && key.includes("/") && sessionId !== undefined) return { t: "screen", key, sessionId };
-  return undefined;
-};
-
 /** The sealed `c` of a raw push, wherever the OS put it (APNs userInfo, FCM data). */
 const sealedOf = (raw: unknown): string | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
-  return str(r.c) ?? sealedOf(r.data);
+  return typeof r.c === "string" && r.c !== "" ? r.c : sealedOf(r.data);
 };
 
 /**
