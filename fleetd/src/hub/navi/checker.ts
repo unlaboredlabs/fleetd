@@ -2,16 +2,11 @@
 // checker's turn itself comes with the approvals hooks.
 import type { Database } from "bun:sqlite";
 import type { AutoApproved, NaviApprovalMode, NaviApprovals, ProjectRef } from "../../shared/contracts.ts";
+import { AUTO_APPROVED_MAX, CHECKER_EFFORT, CHECKER_MODEL, NEW_PROJECT_MODE } from "./checker_modes.ts";
 
-export const CHECKER_MODEL = "claude-sonnet-5-5";
-export const CHECKER_EFFORT = "medium";
-export const AUTO_APPROVED_MAX = 200;
+export { AUTO_APPROVED_MAX, CHECKER_EFFORT, CHECKER_MODEL, NEW_PROJECT_MODE } from "./checker_modes.ts";
+
 const MODES: NaviApprovalMode[] = ["ask", "checker", "yolo"];
-/**
- * What a project starts in (W588): nothing asks. Stored when it is made, by `startNew`; a project with no row, made
- * before that, still asks its checker.
- */
-export const NEW_PROJECT_MODE: NaviApprovalMode = "yolo";
 
 export function approvals(c: Database, r: ProjectRef): NaviApprovals {
   const mode = c.query<{ mode: string }, [string, string]>("SELECT mode FROM navi_approvals WHERE machine_id = ? AND project_id = ?").get(r.machineId, r.projectId)?.mode;

@@ -3,6 +3,9 @@
 import type { Database } from "bun:sqlite";
 import type { ProjectRef, ProjectRepo, RepoId, RepoName } from "../../shared/contracts.ts";
 import { scopeOf } from "../work/store.ts";
+import { nameFor } from "./names.ts";
+
+export { nameFor } from "./names.ts";
 
 /** The checkout's directory comes from the node's row of it in `projects`. */
 const COLUMNS = `n, name, checkout_machine_id, checkout_project_id, repo_key, base, machine_id, project_id,
@@ -121,17 +124,6 @@ export function ensureOwn(db: Database, project: ProjectRef, gitRoot?: string): 
   return own(db, project);
 }
 
-/** A repo's name from the last part of its repo key or folder: `github.com/acme/My_Shop` → `my-shop`; `repo` when nothing is left. */
-export function nameFor(path: string | undefined): RepoName {
-  const last = path?.replace(/\/+$/, "").split("/").pop() ?? "";
-  let name = "";
-  for (const ch of last.toLowerCase()) {
-    const c = /^[a-z0-9]$/.test(ch) ? ch : "-";
-    if (!(c === "-" && (name === "" || name.endsWith("-")))) name += c;
-  }
-  name = name.slice(0, 32).replace(/-+$/, "");
-  return name === "" ? "repo" : name;
-}
 
 /** `name`, or `name-2`, `name-3`… when the project already has a repo by that name. */
 export function freeName(db: Database, project: ProjectRef, name: RepoName): RepoName {

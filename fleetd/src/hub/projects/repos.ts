@@ -42,6 +42,9 @@ import { appendAdded, bindScope, type CloneInto, cloneAndRegister, clones, destT
 import { checkout, cloneTarget, inspectCheckout, problem, problemError, projectAt, readGithub, repoOf, requireRepoNode } from "./discover.ts";
 import { fitAdded } from "./inspect.ts";
 import { repoNamed } from "./settings.ts";
+import { archivedNote } from "./adding.ts";
+
+export { archivedNote } from "./adding.ts";
 
 const same = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 const stripSlash = (p: string) => (p.endsWith("/") ? p.slice(0, -1) : p);
@@ -52,13 +55,6 @@ const stripSlash = (p: string) => (p.endsWith("/") ? p.slice(0, -1) : p);
  */
 export const holder = (hub: Hub, checkout: ProjectRef) => repos.holders(hub.db.conn, checkout)[0];
 
-/** Why an archived project refuses, and the fix (repos/mod.rs `archived_note`). */
-export function archivedNote(holding: ProjectRef, repo: ProjectRepo): [string, string] {
-  return [
-    `This project is archived: its directory is repo ${repo.name} of project ${holding.projectId} on ${holding.machineId}.`,
-    "Write to that project's lead instead; project_repo_remove takes the repo out of it and brings this project back.",
-  ];
-}
 
 /** Refused for a project archived as another project's repo checkout. */
 function notArchived(hub: Hub, r: ProjectRef): void {

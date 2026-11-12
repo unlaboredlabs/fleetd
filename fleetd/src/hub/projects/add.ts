@@ -51,6 +51,9 @@ import {
 } from "./discover.ts";
 import { build, cutPath, fitAdded, fitFailed, folder, noAnswers, cloneProblem, repoKeyOf } from "./inspect.ts";
 import { setOnlyMe } from "./settings.ts";
+import { type Last, namesFolder, progressDue, slugOr } from "./adding.ts";
+
+export { namesFolder, progressDue, slugOr } from "./adding.ts";
 
 export const now = (hub: Hub) => isoMs(hub.clock.now());
 
@@ -262,11 +265,6 @@ export async function add(hub: Hub, caller: Caller, input: ProjectAddInput, end?
 const cantMake = (m: MachineId) =>
   problemError(problem("node_too_old", `${m}'s node is too old to make a new project's folder`, `Run fleetd update on ${m}, or pick another machine`));
 
-/** Whether the node's message names the folder at `path`: as given, or `~/x` as the node expands it (`/home/me/x`). */
-export function namesFolder(message: string, path: string): boolean {
-  return message.includes(path) || (path.startsWith("~/") && message.includes(path.slice(1)));
-}
-
 /**
  * Why the node didn't make the folder at `path`: it holds files already, or it can't be made there. The node names the
  * folder in each of its own refusals; anything else (a dropped link, no answer) is the machine's problem.
@@ -282,18 +280,6 @@ function folderRefused(m: MachineId, path: string) {
     if (message !== undefined && namesFolder(message, path)) throw new ToolError("invalid", message, "Pick another folder for the new project");
     throw problemError(nodeProblem(m, e));
   };
-}
-
-/** `slug_or` (navi/mod.rs): a folder name from a title, at most 40 bytes, `fallback` when nothing is left. */
-export function slugOr(name: string, fallback: string): string {
-  let out = "";
-  for (const c of name.trim().toLowerCase()) {
-    if (/^[a-z0-9]$/.test(c)) out += c;
-    else if (out !== "" && !out.endsWith("-")) out += "-";
-    if (out.length >= 40) break;
-  }
-  out = out.replace(/-+$/, "");
-  return out === "" ? fallback : out;
 }
 
 /**
@@ -408,18 +394,6 @@ export const clones = (hub: Hub) =>
     executors(h).sinks.clone = (frame) => c.progress(frame);
     return c;
   });
-
-type Last = { atMs: number; phase: CloneProgressData["phase"]; percent: number };
-
-/** Progress events: on each phase change and its 100 %, else every 5 percent at most once a second. */
-export function progressDue(last: Last | undefined, phase: CloneProgressData["phase"], percent: number, nowMs: number): boolean {
-  if (!last) return true;
-  return (
-    last.phase !== phase ||
-    (percent === 100 && last.percent !== 100) ||
-    (percent >= Math.min(last.percent + 5, 255) && nowMs - last.atMs >= 1000)
-  );
-}
 
 export async function cloneAndRegister(
   hub: Hub,

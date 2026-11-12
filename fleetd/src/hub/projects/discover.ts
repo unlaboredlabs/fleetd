@@ -42,6 +42,9 @@ import {
   shortRemote,
   type Worker,
 } from "./inspect.ts";
+import { problem, problemError } from "./adding.ts";
+
+export { problem, problemError } from "./adding.ts";
 
 /** A scan reads at most a few hundred directories; an older node never answers the call at all. */
 export const SCAN_TIMEOUT_MS = 10_000;
@@ -64,19 +67,7 @@ export const addingGh = (hub: Hub) =>
     repoList: ghRepoList,
   }));
 
-export const problem = (code: ProjectProblem["code"], message: string, fix: string): ProjectProblem => ({ code, message, fix });
 
-export function problemError(p: ProjectProblem): ToolError {
-  const code =
-    p.code === "machine_offline"
-      ? "machine_offline"
-      : p.code === "gh_no_access" || p.code === "path_missing"
-        ? "not_found"
-        : p.code === "no_worker" || p.code === "not_a_git_repo" || p.code === "dest_exists"
-          ? "invalid"
-          : "failed";
-  return new ToolError(code, p.message, p.fix ?? "");
-}
 
 /** Whether `m`'s node can take the repo calls now. An older node drops its link on a call it can't decode, so it is never sent one. */
 export const repoNode = (hub: Hub, m: MachineId): ProjectProblem | undefined =>
