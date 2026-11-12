@@ -9,23 +9,13 @@ import type { LeadCaller } from "../lead_calls/index.ts";
 import type { HubDb } from "../store/db.ts";
 import { projectChanges, projectTasks } from "../prs/index.ts";
 import { clip, isoMs, task as readTask } from "../train/seams.ts";
-import { openOf, type PersonFinding } from "./people.ts";
+import { openOf } from "./people.ts";
 import { prKey, type ReviewVerdict } from "./verdicts.ts";
+import { at, names, type PeopleFinding, peopleFinding, type ReviewFindings } from "./findings.ts";
+
+export { names, type PeopleFinding, peopleFinding, type ReviewFindings } from "./findings.ts";
 
 const short = (sha: string) => sha.slice(0, 12);
-
-/** One review task's newest verdict on the newest head reviewed (contracts `ReviewFindings`). */
-export type ReviewFindings = {
-  taskId: string;
-  prHeadSha?: string;
-  blocking: number;
-  nonBlocking: number;
-  findings: string;
-  at: string;
-};
-
-/** A person's review on GitHub still open on the PR, as its last read found it. */
-export type PeopleFinding = { by: string; kind: "changes" | "thread"; where?: string; url: string; said: { by: string; text: string }[] };
 
 type PrReviews = { pr: string; reviews: ReviewFindings[]; people?: PeopleFinding[] };
 
@@ -95,20 +85,6 @@ function callerPrs(hub: Hub, caller: LeadCaller, task: string | undefined, all: 
     return true;
   });
   return { prs: unique, reviewer: false };
-}
-
-const at = (f: PersonFinding) => (f.path === undefined ? undefined : f.line === undefined ? f.path : `${f.path}:${f.line}`);
-
-function peopleFinding(f: PersonFinding): PeopleFinding {
-  const where = at(f);
-  return { by: f.by, kind: f.kind, ...(where !== undefined ? { where } : {}), url: f.url, said: f.said };
-}
-
-/** Whether `wanted`, a PR's URL or its number (`#7`, `7`), names `pr`. */
-function names(wanted: string, pr: string): boolean {
-  const key = prKey(pr);
-  const n = wanted.replace(/^#+/, "");
-  return /^\d+$/.test(n) ? key.endsWith(`/pull/${BigInt(n)}`) : key === prKey(wanted);
 }
 
 /**

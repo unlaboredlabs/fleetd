@@ -4,6 +4,8 @@
 export const TRAIN_CONTEXT = "fleetd/train";
 /** The label the train puts on its batch PR and on the next PRs it will merge. */
 export const NEXT_LABEL = "fleetd:next";
+/** A hidden line on every comment the train posts. */
+export const TRAIN_MARK = "<!-- fleetd:train -->";
 
 /** The first `max` UTF-16 units of `text`, never splitting a surrogate pair (api/grants.rs `clip`). */
 export function clip(text: string, max: number): string {

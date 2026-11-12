@@ -49,6 +49,9 @@ import {
   toolsFailed,
   unreportedMessage,
 } from "./rules.ts";
+import { carries, carryOutcome, filesOf, outcomeOfRow, type Rebased, RETRIES, TOOLS_RETRIES, toolsWait } from "./carry.ts";
+
+export { carries, carryOutcome, filesOf, outcomeOfRow, type Rebased, RETRIES, TOOLS_RETRIES, TOOLS_RETRY_FIRST_MS, TOOLS_RETRY_MAX_MS, toolsWait } from "./carry.ts";
 
 /** Recorded as the spawner of review tasks and the sender of findings. */
 export const REVIEWS_BY = "hub:reviews";
@@ -57,16 +60,9 @@ export const BLOCKED = "waiting for a new head: ";
 /** The start of a Change's `lastError` while its reviewer waits out a usage or rate limit. */
 export const LIMITED = "review limited";
 
-const RETRIES = 1;
-const TOOLS_RETRIES = 6;
-const TOOLS_RETRY_FIRST_MS = 60_000;
-const TOOLS_RETRY_MAX_MS = 15 * 60_000;
 const LANDED_MAX = 100;
 
 export const FOLLOWED = ["review.verdict", "task.completed", "task.failed", "task.cancelled"];
-
-/** How a patch after an approved head is re-reviewed, as `review_rebases` records it. */
-type Rebased = { fromTask: string; fromHead: string; fromBase: string; base: string; outcome: Rebase };
 
 /** How a patch's reviewer that ended without a verdict counts: a try, its tools failing, or a usage or rate limit. */
 type Ending = "reviewer" | "tools_failed" | "limited";
@@ -75,12 +71,6 @@ type Ending = "reviewer" | "tools_failed" | "limited";
 type Round = { changeId: string; patchId: string; ignored: boolean };
 
 const ended = (state: string) => state === "done" || state === "failed" || state === "cancelled";
-
-/** The wait before a new reviewer after the `failed`th whose tools failed. */
-function toolsWait(failed: number): number {
-  const doublings = Math.min(Math.max(failed - 1, 0), 10);
-  return Math.min(TOOLS_RETRY_FIRST_MS * 2 ** doublings, TOOLS_RETRY_MAX_MS);
-}
 
 export class Reviews implements ReviewGate {
   private readonly lock = new Mutex();
@@ -431,10 +421,9 @@ export class Reviews implements ReviewGate {
     const approvedDiff = await github.diff(repo, below, fromHead);
     const now = await github.diff(repo, ownBase, change.headSha);
     const moved = await github.diff(repo, fromBase, ownBase);
-    let outcome = compare(approvedDiff, now, moved);
-    if (outcome.kind === "conflicts" && own.commits.length > rev.commits.length) outcome = { kind: "changed" };
-    // With commits dropped, only the same patch id, context and all, is unchanged.
-    else if (outcome.kind === "unchanged" && dropped.length > 0 && (await github.patchIdFrom(repo, below, fromHead)) !== patchId) outcome = { kind: "changed" };
+    const outcome = await carryOutcome(compare(approvedDiff, now, moved), own.commits.length, rev.commits.length, dropped.length, async () =>
+      (await github.patchIdFrom(repo, below, fromHead)) === patchId,
+    );
     return rebased(outcome);
   }
 
@@ -446,8 +435,7 @@ export class Reviews implements ReviewGate {
       )
       .get(changeId, patchId);
     if (!row) return undefined;
-    const outcome: Rebase =
-      row.outcome === "unchanged" ? { kind: "unchanged" } : row.outcome === "conflicts" ? { kind: "conflicts", files: row.files.split("\n").filter(Boolean) } : { kind: "changed" };
+    const outcome = outcomeOfRow(row.outcome, row.files);
     return { fromTask: row.from_task, fromHead: row.from_head, fromBase: row.from_base, base: row.base, outcome };
   }
 
@@ -462,8 +450,8 @@ export class Reviews implements ReviewGate {
       return false;
     }
     if (!r) return false;
-    const files = r.outcome.kind === "conflicts" ? r.outcome.files.join("\n") : "";
-    const carried = r.outcome.kind === "unchanged";
+    const files = filesOf(r.outcome);
+    const carried = carries(r.outcome);
     const rr = r;
     this.train.records.db.transaction((c) => {
       c.query(
