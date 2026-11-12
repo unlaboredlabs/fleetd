@@ -6,60 +6,35 @@
 // work that exists only there is kept and the person is told once, in one line a sweep listing all it kept there; one
 // the node couldn't remove is tried again the next night, up to MAX_TRIES times, then given up on with one line to the
 // person. Each sweep also cancels tasks still queued under an order that closed.
-import type { KeptWorktree, MachineId, ProjectRef, Task } from "../../shared/contracts.ts";
-import { hubZone, zoned } from "../../cli/steer.ts";
-import { zonedToUtc } from "../../cli/time.ts";
+import type { KeptWorktree, ProjectRef, Task } from "../../shared/contracts.ts";
+import { hubZone } from "../../cli/steer.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../store/time.ts";
 import type { Tasks } from "./index.ts";
 import { PortError } from "./ports.ts";
 import { TaskRecords } from "./records.ts";
+import {
+  AFTER_START_MS,
+  closedOrderReason,
+  DAY_MS,
+  givenUpLine,
+  holdsWork,
+  keptSummary,
+  keptWorktree,
+  MAX_TRIES,
+  nextRunMs,
+  POLICY_TZ_KEY,
+  unsaved,
+  validZone,
+  WORKTREE_DAYS,
+  WORKTREE_DAYS_KEY,
+  WORKTREES_KEPT_MAX,
+} from "./worktree_rules.ts";
 
-/** The global decision setting how many days after its task ended a worktree goes. */
-export const WORKTREE_DAYS_KEY = "policy.worktree_days";
-export const WORKTREE_DAYS = 3;
-/** The global decision naming the hub's zone for its clock times. */
-export const POLICY_TZ_KEY = "policy.tz";
-/** The local hour the sweep runs at. */
-const HOUR = 4;
-/** The first sweep after the hub starts, once its nodes have had time to link. */
-const AFTER_START_MS = 10 * 60_000;
-const DAY_MS = 86_400_000;
-/** Failed tries, one a night, before the sweep gives a worktree up. */
-export const MAX_TRIES = 7;
-/** Kept worktrees in one chat line (fleetd-contracts chat.rs `WORKTREES_KEPT_MAX`). */
-const WORKTREES_KEPT_MAX = 200;
-// The node's words for a worktree it kept (node/worktree.rs).
-const KEPT = "kept ";
-const UNCOMMITTED = "it has uncommitted changes";
-const UNPUSHED = "not pushed";
+export { keptSummary, MAX_TRIES, nextRunMs, POLICY_TZ_KEY, unsaved, WORKTREE_DAYS, WORKTREE_DAYS_KEY };
 
 /** What one sweep did. */
 export type Swept = { removed: number; kept: number; failed: number };
-
-/** Whether the node kept the worktree for work that exists only there, by its own words. */
-const holdsWork = (message: string) => message.includes(KEPT) && (message.includes(UNCOMMITTED) || message.includes(UNPUSHED));
-
-/** "uncommitted changes" or "2 unpushed commits", from the node's `<why>`. */
-export function unsaved(why: string): string {
-  const n = why.endsWith(UNPUSHED) ? why.slice(0, -UNPUSHED.length).trimEnd() : undefined;
-  const count = n?.endsWith("commit(s)") ? n.slice(0, -"commit(s)".length).trim() : undefined;
-  if (count !== undefined && /^[0-9]+$/.test(count)) return Number(count) === 1 ? "1 unpushed commit" : `${Number(count)} unpushed commits`;
-  return why.startsWith("it has ") ? why.slice("it has ".length) : why;
-}
-
-/** A worktree kept for its work, as the person's line lists it. */
-function keptWorktree(task: Task, machine: MachineId, message: string): KeptWorktree {
-  // `... kept <path>: <why>`
-  const at = message.lastIndexOf(KEPT);
-  const kept = at >= 0 ? message.slice(at + KEPT.length) : "";
-  const colon = kept.indexOf(": ");
-  const [path, why] = colon >= 0 ? [kept.slice(0, colon), kept.slice(colon + 2)] : [kept, "work"];
-  return { title: task.title, unsaved: unsaved(why), machineId: machine, path };
-}
-
-/** The text of a line listing `n` kept worktrees. */
-export const keptSummary = (n: number) => `Cleanup kept ${n} ${n === 1 ? "worktree" : "worktrees"} with unsaved work`;
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
@@ -128,10 +103,7 @@ export async function sweepWorktrees(tasks: Tasks): Promise<Swept> {
     }
   }
   for (const [r, ids] of givenUp) {
-    ports.tellPerson(
-      r,
-      `Stopped trying to remove the worktrees of finished agents ${ids.join(", ")} after ${MAX_TRIES} nightly tries: the machine was offline or git refused. If the machine is still in use, delete them by hand under ~/.fleetd/node/worktrees.`,
-    );
+    ports.tellPerson(r, givenUpLine(ids));
   }
   return swept;
 }
@@ -150,7 +122,7 @@ export async function cancelClosedQueued(tasks: Tasks): Promise<number> {
     const order = tasks.ports.workstream(task.workstreamId);
     if (!order || order.state === "open") continue;
     try {
-      await tasks.cancel({ projectRef: task.projectRef, by: "hub" }, task.taskId, `Cancelled: its order ${order.workstreamId} is closed.`);
+      await tasks.cancel({ projectRef: task.projectRef, by: "hub" }, task.taskId, closedOrderReason(order.workstreamId));
       console.info(`a task queued under a closed order was cancelled (${task.taskId}, ${order.workstreamId})`);
       cancelled += 1;
     } catch (error) {
@@ -158,31 +130,6 @@ export async function cancelClosedQueued(tasks: Tasks): Promise<number> {
     }
   }
   return cancelled;
-}
-
-const validZone = (name: string) => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** The next HOUR:00 in `zone` after `nowMs`. A day whose HOUR:00 doesn't exist (a clock change) is skipped. */
-export function nextRunMs(nowMs: number, zone: string): number {
-  const z = zoned(nowMs, zone);
-  let day = Date.UTC(Number(z.year), MONTHS.indexOf(z.month as string), Number(z.day));
-  if (Number(z.hour) >= HOUR) day += DAY_MS;
-  for (;;) {
-    const d = new Date(day);
-    const at = zonedToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), HOUR, 0, zone);
-    const back = zoned(at, zone);
-    if (Number(back.hour) === HOUR && Number(back.minute) === 0 && at > nowMs) return at;
-    day += DAY_MS;
-  }
 }
 
 /** The sweep soon after the start, then nightly, until the hub stops. */

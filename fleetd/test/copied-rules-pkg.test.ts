@@ -10,6 +10,8 @@ import { codeRefusal, NAMELESS, suffixed } from "../src/hub/auth/node_rules.ts";
 import { ftsQuery, searchWords, overturnLine, overturnedNext } from "../src/hub/ledger/rules.ts";
 import { backSummary, downSummary } from "../src/hub/outage/rules.ts";
 import { givenUpLine, mergeLine, ownPr, targetFor, waitingMerge, waitLabel } from "../src/hub/tasks/ci_rules.ts";
+import * as worktrees from "../src/hub/tasks/worktrees.ts";
+import { closedOrderReason, givenUpLine as givenUpWorktrees, holdsWork, keptWorktree, nextRunMs, validZone } from "../src/hub/tasks/worktree_rules.ts";
 import { leadTrainLines } from "../src/hub/train/digest_lines.ts";
 import { asksGitHub, upstreamOf } from "../src/hub/train/next_rules.ts";
 import { cardShown, vaultCardId } from "../src/hub/vault/card_rules.ts";
@@ -33,6 +35,7 @@ const MODULES = [
   "project_lead/purchase_rules",
   "prompts/disallowed",
   "tasks/ci_rules",
+  "tasks/worktree_rules",
   "train/digest_lines",
   "vault/card_rules",
   "watchdog/rules",
@@ -162,4 +165,18 @@ test("a tracker's live parts are what the hub's live lane gives for the same eve
   expect(activity(hub).live({ machineId: "devbox", threadId: "t1" })).toEqual(parts);
   expect(parts).toMatchObject({ activity: { activity: { kind: "edit", path: "src/a.ts" } }, tokens: { input: 40, output: 9, live: true }, runActive: true });
   expect(parts.text?.tail).toBe("Reading");
+});
+
+test("the worktree sweep's rules: a kept worktree, the person's lines, the next sweep", () => {
+  const kept = "worktree remove refused: kept /w/T9: it has uncommitted changes";
+  expect(holdsWork(kept)).toBe(true);
+  expect(holdsWork("worktree remove refused: git failed")).toBe(false);
+  expect(keptWorktree({ title: "Fix it" }, "devbox", kept)).toEqual({ title: "Fix it", unsaved: "uncommitted changes", machineId: "devbox", path: "/w/T9" });
+  expect(givenUpWorktrees(["T1 on devbox", "T2 on devbox"])).toStartWith(
+    "Stopped trying to remove the worktrees of finished agents T1 on devbox, T2 on devbox after 7 nightly tries: ",
+  );
+  expect(closedOrderReason("W3")).toBe("Cancelled: its order W3 is closed.");
+  expect([validZone("Europe/Berlin"), validZone("Mars/Base")]).toEqual([true, false]);
+  expect(nextRunMs(Date.UTC(2031, 0, 2, 5), "UTC")).toBe(Date.UTC(2031, 0, 3, 4));
+  expect(worktrees.nextRunMs).toBe(nextRunMs);
 });

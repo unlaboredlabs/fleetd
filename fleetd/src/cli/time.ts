@@ -10,6 +10,7 @@ import { isFailure } from "./setup/steps.ts";
 import { hubZone, parseRfc3339, zoned } from "./steer.ts";
 import { readFileSync } from "node:fs";
 import { TIME_USAGE } from "./usages.ts";
+import { MONTHS, zonedToUtc } from "./zoned.ts";
 export { TIME_USAGE };
 
 
@@ -20,24 +21,7 @@ const isOrder = (target: string) => /^W[1-9][0-9]*$/.test(target);
 /** ISO with milliseconds and Z, as chrono's `to_rfc3339_opts(Millis, true)`. */
 export const isoZ = (ms: number) => new Date(ms).toISOString();
 
-/** The UTC instant of a wall-clock time in `zone`. */
-export function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, zone: string): number {
-  const guess = Date.UTC(y, mo - 1, d, h, mi);
-  const offsetAt = (ms: number) => {
-    const z = zoned(ms, zone);
-    const wall = Date.UTC(Number(z.year), MONTHS.indexOf(z.month), Number(z.day), Number(z.hour), Number(z.minute));
-    return wall - Math.floor(ms / 60_000) * 60_000;
-  };
-  // Earliest of the candidates either side of a change.
-  const candidates = [guess - offsetAt(guess - 86_400_000), guess - offsetAt(guess + 86_400_000), guess - offsetAt(guess)];
-  const exact = candidates.filter((c) => {
-    const z = zoned(c, zone);
-    return Number(z.day) === d && Number(z.hour) === h && Number(z.minute) === mi;
-  });
-  return exact.length > 0 ? Math.min(...exact) : guess - offsetAt(guess);
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export { zonedToUtc };
 
 /** `7d`, `12h`, a date or an ISO time, as the ISO time it means. */
 export function parseSince(given: string, now: number, zone: string): string {
