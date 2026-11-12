@@ -56,6 +56,8 @@
     "./hub/executor/error": "./fleetd/src/hub/executor/error.ts",
     "./hub/executor/shell_mapper": "./fleetd/src/hub/executor/shell_mapper.ts",
     "./hub/executor/thread_view": "./fleetd/src/hub/executor/thread_view.ts",
+    "./hub/github_app/app_rules": "./fleetd/src/hub/github_app/app_rules.ts",
+    "./hub/github_app/session_rules": "./fleetd/src/hub/github_app/session_rules.ts",
     "./hub/hub_links/answers": "./fleetd/src/hub/hub_links/answers.ts",
     "./hub/hub_links/links": "./fleetd/src/hub/hub_links/links.ts",
     "./hub/info/state": "./fleetd/src/hub/info/state.ts",
