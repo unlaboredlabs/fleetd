@@ -6,9 +6,9 @@
 import type { GithubAccount, GithubApp, PersonId } from "../../shared/contracts.ts";
 import { isoMs } from "../train/seams.ts";
 import { GithubError, type GithubApps } from "./index.ts";
+import { SESSION_MARGIN_MS } from "./session_rules.ts";
 
-/** A token handed to an agent's sessions has at least this long left: one this close to its end is refreshed first. */
-export const SESSION_MARGIN_MS = 2 * 60 * 60_000;
+export { SESSION_MARGIN_MS } from "./session_rules.ts";
 
 /** A person's tokens as kept, still sealed. */
 type Kept = { account: GithubAccount; access: Uint8Array; accessExpiresMs: number; refresh?: Uint8Array };

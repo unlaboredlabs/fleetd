@@ -17,25 +17,14 @@ import type { Hub } from "../api/hub.ts";
 import * as seams from "../train/seams.ts";
 import { GITHUB_CONNECT_REFUSAL, GITHUB_TOKEN_ENV, githubApps } from "./index.ts";
 import { account, disconnect, SESSION_MARGIN_MS, userToken } from "./people.ts";
+import { type Block, BLOCKED_TOKEN, blockedLine, CAP_ORDER_ENV, TOKEN_PENDING, UNRENEWED_TOKEN } from "./session_rules.ts";
+
+export { type Block, BLOCKED_TOKEN, blockedLine, CAP_ORDER_ENV, TOKEN_PENDING, UNRENEWED_TOKEN } from "./session_rules.ts";
 
 /** An App token handed to sessions has at least this long left; it is delivered again once it has less. */
 const APP_MARGIN_MS = 30 * 60_000;
 /** What the hub keeps under an order's variables for its token, in place of a request id. */
 const REQUEST_ID = "github";
-/** The node capability an `order:` sink needs (contracts `CAP_ORDER_ENV`). */
-export const CAP_ORDER_ENV = "order_env";
-
-/** What an order's agents hold as `GH_TOKEN` once their person's token is taken back: GitHub refuses it. */
-export const BLOCKED_TOKEN = "fleetd-github-not-connected-connect-it-in-settings";
-/** What an order's agents hold as `GH_TOKEN` once theirs ended before the hub could renew it. */
-export const UNRENEWED_TOKEN = "fleetd-github-token-not-renewed-ask-your-lead";
-
-/** What a task launched while GitHub gave no token for its order is told, after its prompt: it starts anyway. */
-export const TOKEN_PENDING =
-  "GitHub gave fleetd no token for this order when you started (GitHub may be unreachable from the hub), so GH_TOKEN " +
-  "doesn't work yet and gh and git push fail. fleetd tries again every 5 minutes, and the token reaches your next " +
-  "command once GitHub answers: go on with what doesn't need GitHub, keep your work committed, and push once gh works.";
-
 /** Whose GitHub an order's agents use: the person who started it, or the App's own. */
 export type GithubAs = { kind: "person"; person: PersonId } | { kind: "app" };
 
@@ -52,8 +41,6 @@ export type Kept = {
   /** The agents hold a placeholder: `BLOCKED_TOKEN` or `UNRENEWED_TOKEN`. */
   blocked: boolean;
 };
-
-type Block = { kind: "disconnected" } | { kind: "not_renewed"; why: string };
 
 /** Logs that `what` failed for the order's token at `checkout`, once per change of why; undefined: a try that worked. */
 function warnOnce(hub: Hub, checkout: ProjectRef, order: WorkstreamId, what: string, e: string | undefined): void {
@@ -405,15 +392,7 @@ async function blockAt(hub: Hub, k: Kept, why: Block): Promise<void> {
     console.warn(`github: the blocked token's record not kept: ${error} (order ${k.order})`);
   }
   const name = nameOf(hub, k.person);
-  const text =
-    why.kind === "disconnected"
-      ? `${k.order}: ${name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than ` +
-        `use anyone else's account. Ask ${name} to connect GitHub in Settings › Your accounts › GitHub; their agents get the token back ` +
-        "at their next command."
-      : `${k.order}: its agents' GitHub token ended and the hub couldn't renew it (${why.why}), so their gh fails (GitHub says bad ` +
-        "credentials) rather than use the machine's own login. The hub tries again every 5 minutes and the agents " +
-        "get the new token at their next command; if it keeps failing, an admin runs Test in Settings › Hub " +
-        "accounts › GitHub.";
+  const text = blockedLine(k.order, name, why);
   seams.leadWakes(hub).trigger(k.r, { kind: "line", line: "request", text });
 }
 
