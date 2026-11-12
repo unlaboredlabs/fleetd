@@ -365,7 +365,7 @@ function outsideTools(opts: { relayListed: boolean }) {
     tool("vault_status", true, "VaultStatus", () => status),
     tool("vault_save", false, "VaultSave", (given) => {
       open(given.sealed);
-      return { item: { itemId: "v1", kind: given.kind, label: given.envName } };
+      return { item: { itemId: "v1", kind: given.kind, label: given.label } };
     }),
     tool("vault_unlock", false, "VaultUnlock", (given) => (open(given.sealed), status)),
     ...(opts.relayListed ? [tool("push_relay_set", false, "PushRelaySet", (given) => ((relayOn = given.url !== ""), { key: false, default: false }))] : []),
@@ -407,8 +407,8 @@ test("sealed vault seeds, a phone only after pushes are off and removed last, ti
   const on = await run(true);
   expect(on.rows.filter((r) => !r.startsWith("pass")).map((r) => r.split(":")[0])).toEqual(["skip MCP skill_update"]);
   expect(on.rows).toContain("pass MCP skill_install answers failed: the fetch from outside is refused, as a run reaches nothing outside");
-  // Sealed to the hub's key, as the vault opens it: an env item's value and a passphrase, each with the run's mark.
-  expect(on.opened).toEqual([{ value: "contract value 1" }, { passphrase: "contract" }]);
+  // Sealed to the hub's key, as the vault opens it: a team login's password and a passphrase, each with the run's mark.
+  expect(on.opened).toEqual([{ username: "areas-1", password: "contract value 1" }, { passphrase: "contract" }]);
   // The phone is registered once pushes are off, and the phone the run made goes last.
   expect(on.calls.slice(on.calls.indexOf("push_relay_set"), on.calls.indexOf("push_relay_set") + 3)).toEqual(["push_relay_set", "push_device_register", "relay off"]);
   expect(on.calls.at(-1)).toBe("push_device_remove");
@@ -421,13 +421,14 @@ test("sealed vault seeds, a phone only after pushes are off and removed last, ti
   expect(off.rows).toContain("skip MCP push_device_register");
 });
 
-test("vault_reveal reveals the seeded env item's value to a 32-byte reply key, as the hub's rules allow", async () => {
+test("vault_reveal reveals the seeded team login's password to a 32-byte reply key, as the hub's rules allow", async () => {
   const secret = new Uint8Array(randomBytes(32));
   const status = { hubBoxKey: Buffer.from(publicKeyOf(secret)).toString("base64"), keyMode: "file", locked: false, keyMissing: false, recoverySaved: false, migration: "none" };
   const items = new Map<string, { kind: string; fields: Record<string, string> }>();
   const asked: Array<Record<string, unknown>> = [];
-  // The hub's rules (hub/vault): a kind reveals only its own fields (an env item's is `value`), to an X25519 key.
-  const FIELDS: Record<string, Array<string>> = { env: ["value"], login: ["username", "password", "otp"] };
+  // The hub's rules (hub/vault): a login, card or address names no scope (it goes in the team vault; one that names
+  // one is an older app's), and a kind reveals only its own fields, to an X25519 key.
+  const FIELDS: Record<string, Array<string>> = { env: ["value"], login: ["username", "password", "totp", "notes"] };
   const tools: Array<StandInTool> = [
     { name: "vault_status", readOnly: true, input: input("VaultStatusInput"), output: {}, run: () => status },
     {
@@ -436,10 +437,11 @@ test("vault_reveal reveals the seeded env item's value to a 32-byte reply key, a
       input: input("VaultSaveInput"),
       output: {},
       run: (_team, given) => {
+        if (given.kind !== "env" && given.scope !== undefined) throw new Refusal("invalid", "This app is older than the hub: update it to add vault items.");
         const fields = JSON.parse(Buffer.from(openSealed(secret, new Uint8Array(Buffer.from(given.sealed, "base64")))!).toString("utf8")) as Record<string, string>;
         const itemId = `V${String(items.size + 1).padStart(32, "0")}`;
         items.set(itemId, { kind: given.kind, fields });
-        return { item: { itemId, kind: given.kind, label: given.envName } };
+        return { item: { itemId, kind: given.kind, label: given.label } };
       },
     },
     {
@@ -463,7 +465,7 @@ test("vault_reveal reveals the seeded env item's value to a 32-byte reply key, a
     const checks = await areasContract(await target.team(""), doc, required);
     expect(checks.find((c) => c.name.includes("vault_reveal"))).toEqual({ name: "MCP vault_reveal decodes as vault_reveal.output", ok: true });
     expect(asked).toHaveLength(1);
-    expect(asked[0]!.fields).toEqual(["value"]);
+    expect(asked[0]!.fields).toEqual(["password"]);
     expect(Buffer.from(String(asked[0]!.replyKey), "base64")).toHaveLength(32);
   } finally {
     await target.close();
