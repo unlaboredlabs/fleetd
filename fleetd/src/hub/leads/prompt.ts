@@ -3,7 +3,7 @@
 // while the project allows more than the default, the human's custom instructions, then the memory. Its first message
 // holds the state it starts in: the digest, and, for a project with repos besides its own directory, those.
 import type { Profile, ProjectRef, ProjectRepo } from "../../shared/contracts.ts";
-import type { PromptSet } from "../prompts/store.ts";
+import type { PromptSet } from "../prompts/set.ts";
 
 /** An automation's order, and the tools that manage them. */
 const AUTOMATIONS =

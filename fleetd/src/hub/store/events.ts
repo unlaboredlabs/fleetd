@@ -5,6 +5,7 @@ import type { Clock } from "../../shared/clock.ts";
 import type { HubEvent, HubEventType, MachineId, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "./db.ts";
+import type { NewEvent } from "./new_event.ts";
 
 const PAGE = 100;
 /**
@@ -18,7 +19,7 @@ const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 60 * 60 * 1000;
 
 /** A `HubEvent` before the log numbers it; also exactly what a row's `data` column holds. */
-export type NewEvent = Omit<HubEvent, "seq">;
+export type { NewEvent } from "./new_event.ts";
 
 export type WaitInput = {
   /** Absent means start at the current end. */

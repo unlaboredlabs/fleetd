@@ -13,7 +13,7 @@ import type {
 } from "../../shared/sessions.ts";
 import { runActive } from "../../shared/sessions.ts";
 import { jsPrefix } from "../../shared/text.ts";
-import type { NewEvent } from "../store/events.ts";
+import type { NewEvent } from "../store/new_event.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { resultText } from "../tasks/render.ts";
 import { classifyLimit, type Limit, limitData } from "../usage/classify.ts";

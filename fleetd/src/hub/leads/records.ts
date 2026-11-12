@@ -1,31 +1,11 @@
 // Leads, project settings and workstreams as stored (tables `leads`,
 // `lead_mcp`, `workstreams`).
 import type { Database } from "bun:sqlite";
-import type { IntakeChannel, ProjectRef, Workstream, WorkstreamState } from "../../shared/contracts.ts";
+import type { ProjectRef, Workstream } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
+import { type StoredLead, type NewWorkstream, type WorkstreamFilter } from "./stored.ts";
 
-/** A lead as stored; its `state` (and `parked`) is derived from the lead thread when read. */
-export type StoredLead = {
-  projectRef: ProjectRef;
-  threadId: string;
-  startedAt: string;
-  lastWakeAt?: string;
-  sessionGeneration: number;
-};
-
-export const isClosed = (state: WorkstreamState) => state !== "open";
-
-export type NewWorkstream = {
-  projectRef: ProjectRef;
-  title: string;
-  text: string;
-  channel: IntakeChannel;
-  by: string;
-  at: string;
-  clientRequestId?: string;
-};
-
-export type WorkstreamFilter = { projectRef?: ProjectRef; state?: WorkstreamState; limit: number };
+export { type StoredLead, isClosed, type NewWorkstream, type WorkstreamFilter } from "./stored.ts";
 
 type LeadRow = {
   machine_id: string;
