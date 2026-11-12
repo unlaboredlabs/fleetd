@@ -92,7 +92,7 @@ export default defineConfig({
           label: "Reference",
           items: ["reference/cli", "reference/agent-tools", "config-and-files", "security", "glossary"],
         },
-        { label: "Help", items: ["troubleshooting", "updating-and-uninstall"] },
+        { label: "Help", items: ["troubleshooting", "updating-and-uninstall", "moving-a-hub"] },
       ],
     }),
   ],

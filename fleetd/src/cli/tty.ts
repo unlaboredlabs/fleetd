@@ -39,6 +39,40 @@ export async function readLine(): Promise<string | undefined> {
   });
 }
 
+/**
+ * Reads one line that never shows on the screen (a passphrase): in a terminal the keys aren't echoed; outside one it
+ * is stdin's next line. undefined when the person cancels (Ctrl-C, Ctrl-D).
+ */
+export async function readHidden(prompt: string): Promise<string | undefined> {
+  const stdin = process.stdin;
+  if (!stdin.isTTY) return readLine();
+  out(prompt);
+  stdin.setRawMode(true);
+  stdin.resume();
+  try {
+    return await new Promise((resolve) => {
+      let text = "";
+      const done = (value: string | undefined) => {
+        stdin.off("data", onData);
+        resolve(value);
+      };
+      const onData = (chunk: Buffer) => {
+        for (const ch of chunk.toString("utf8")) {
+          if (ch === "\r" || ch === "\n") return done(text);
+          if (ch === "\u0003" || ch === "\u0004") return done(undefined);
+          if (ch === "\u007f" || ch === "\b") text = [...text].slice(0, -1).join("");
+          else if (ch >= " ") text += ch;
+        }
+      };
+      stdin.on("data", onData);
+    });
+  } finally {
+    stdin.setRawMode(false);
+    stdin.pause();
+    out("\n");
+  }
+}
+
 /** Thrown when the person cancels a prompt. */
 export class Cancelled extends Error {}
 

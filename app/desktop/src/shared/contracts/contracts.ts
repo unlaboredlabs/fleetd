@@ -2987,6 +2987,155 @@ export type KnownHubEventType =
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
+/** Which folder of the hub's home a carried file belongs to: `recordings` is `browser/`, the others their own name. */
+export type HubExportArea = "attachments" | "recordings" | "memory" | "skills" | "prompts";
+
+/** A BLOB in a row of a hub's export. */
+export type HubExportBytes = {
+  /** Standard base64. */
+  $bytes: string;
+};
+
+/** A file of the hub's home in a hub's export. */
+export type HubExportFile = {
+  bytes: number;
+  /** When the file last changed, which is when a memory or a skill says it was last written. Absent: when it is imported. */
+  modifiedAt?: Timestamp;
+  /** Its path inside its area's folder, with `/` between its parts. */
+  name: string;
+  /** The entry that holds it: `files/<n>`. */
+  path: string;
+  /** Of the file's bytes, in hex. */
+  sha256: string;
+};
+
+/** One area's files in a hub's export. */
+export type HubExportFiles = {
+  area: HubExportArea;
+  files: HubExportFile[];
+};
+
+/**
+ * The first entry of a hub's export (`fleetd-export.json`): what a reader needs before the rest. The file is one
+ * uncompressed tar, read front to back: this header, each table's rows (`tables/<table>/<n>.jsonl.gz`, one
+ * HubExportRow a line), the hub's files (`files/<n>`), then HubExportManifest (`manifest.json`) and the manifest's
+ * SHA-256 in hex (`manifest.sha256`).
+ */
+export type HubExportHeader = {
+  /** When the export's snapshot of the hub was taken. */
+  createdAt: Timestamp;
+  /** The fleetd version that wrote it. */
+  fleetd: string;
+  /** Always `fleetd-export`. */
+  format: string;
+  /** The key its secrets are sealed under, wrapped under the passphrase. Absent: it carries no secrets. */
+  secrets?: HubExportSecrets;
+  /** The format's version, 1 today. A reader refuses a version newer than it knows and says to update fleetd. */
+  version: number;
+};
+
+/** How an export's passphrase becomes a key: scrypt. */
+export type HubExportKdf = {
+  N: number;
+  /** Always `scrypt`. */
+  alg: string;
+  p: number;
+  r: number;
+  /** 16 random bytes, base64. */
+  salt: string;
+};
+
+/** A machine the exported hub had. Machines aren't carried: each joins the new hub again under its id. */
+export type HubExportMachine = {
+  machineId: MachineId;
+  name: string;
+};
+
+/**
+ * What a hub's export holds (`manifest.json`, after everything it names): every part with its size and checksum. A
+ * reader checks them all, and the manifest against `manifest.sha256`, before it changes anything.
+ */
+export type HubExportManifest = {
+  createdAt: Timestamp;
+  /** The carried files of the hub's home, by area. */
+  files: HubExportFiles[];
+  /** The fleetd version that wrote it. */
+  fleetd: string;
+  /** Always `fleetd-export`. */
+  format: string;
+  /** The header entry. */
+  header: HubExportPart;
+  /** The machines to join again. */
+  machines: HubExportMachine[];
+  /**
+   * The hub migrations the rows are at, in the order fleetd runs them. A reader that lacks one refuses the file and
+   * says to update fleetd; it runs the ones it has after them.
+   */
+  schema: HubExportMigration[];
+  /** True when the export was written without secrets: the tables that hold them aren't in it. */
+  secretsLeftOut?: boolean;
+  /** One per carried table, a table with no rows too. */
+  tables: HubExportTable[];
+  version: number;
+};
+
+/** A hub migration, as `migrations_applied` records it. */
+export type HubExportMigration = {
+  name: string;
+  /** Of the migration's SQL, in hex. */
+  sha256: string;
+};
+
+/** An entry of a hub's export under the manifest's checksum. */
+export type HubExportPart = {
+  bytes: number;
+  path: string;
+  /** Of the entry's bytes, in hex. */
+  sha256: string;
+};
+
+/** A row of a carried table: each column by its name. */
+export type HubExportRow = Record<string, HubExportValue>;
+
+/**
+ * A secret in a row of a hub's export, in place of a value the hub held sealed to its own key: sealed under the
+ * export's key (HubExportSecrets), never in the clear.
+ */
+export type HubExportSealed = {
+  /** Standard base64. */
+  $sealed: string;
+};
+
+/** The export's own key, as the header keeps it. */
+export type HubExportSecrets = {
+  kdf: HubExportKdf;
+  /** The 32-byte key under AES-256-GCM with the passphrase's key: nonce, ciphertext and tag, base64. */
+  wrapped: string;
+};
+
+/** One table's rows in a hub's export. */
+export type HubExportTable = {
+  /** The table's columns, as each row names them. */
+  columns: string[];
+  name: string;
+  parts: HubExportTablePart[];
+  rows: number;
+  /** The table's AUTOINCREMENT counter, so the numbers the new hub gives go on after it. */
+  sequence?: number;
+};
+
+/** One part of a table's rows: gzip of one JSON object a line. */
+export type HubExportTablePart = {
+  bytes: number;
+  path: string;
+  rows: number;
+  /** Of the part's bytes as stored, in hex. */
+  sha256: string;
+};
+
+/** A database value in a row of a hub's export: NULL, INTEGER or REAL, TEXT, a BLOB, or a secret. */
+export type HubExportValue = null | number | string | HubExportBytes | HubExportSealed;
+
 export type HubInfoInput = {
   /** Only what runs on this machine (before restarting its node); absent: everything. */
   machineId?: MachineId;
