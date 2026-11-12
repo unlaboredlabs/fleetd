@@ -12,24 +12,39 @@ const TAIL = Buffer.from([0x00, 0x00, 0xff, 0xff]);
 /** Frames this short go as Text: a heartbeat ack or an empty reply gains nothing from a binary frame. */
 export const MIN_DEFLATE_BYTES = 64;
 
-/** One zlib stream, fed a message at a time: each one's output is what came out up to its sync flush. */
+/**
+ * One zlib stream, fed a message at a time: each one's output is what came out up to its sync flush. A message past
+ * `max`, or any zlib error, fails the stream for good: the message in flight and every later one reject, and zlib is
+ * stopped, so it neither holds more than `max` plus one chunk nor keeps inflating.
+ */
 class Stream {
   private chunks: Buffer[] = [];
   private size = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private failed: Error | undefined;
+  /** The message waiting on its flush: a failure rejects it, as zlib then never calls the flush back. */
+  private pending: ((error: Error) => void) | undefined;
 
   constructor(
     private readonly z: zlib.DeflateRaw | zlib.InflateRaw,
     private readonly max = Number.POSITIVE_INFINITY,
   ) {
     z.on("data", (chunk: Buffer) => {
-      this.chunks.push(chunk);
+      if (this.failed) return;
       this.size += chunk.length;
+      if (this.size > this.max) return this.fail(new Error(`a compressed frame inflates past ${this.max} bytes`));
+      this.chunks.push(chunk);
     });
-    z.on("error", (error: Error) => {
-      this.failed = error;
-    });
+    z.on("error", (error: Error) => this.fail(error));
+  }
+
+  private fail(error: Error): void {
+    this.failed ??= error;
+    this.chunks = [];
+    this.size = 0;
+    this.pending?.(this.failed);
+    this.pending = undefined;
+    this.z.destroy();
   }
 
   run(input: Buffer): Promise<Buffer> {
@@ -37,14 +52,14 @@ class Stream {
       () =>
         new Promise<Buffer>((resolve, reject) => {
           if (this.failed) return reject(this.failed);
+          this.pending = reject;
           this.z.write(input);
           this.z.flush(zlib.constants.Z_SYNC_FLUSH, () => {
+            if (this.failed) return reject(this.failed);
+            this.pending = undefined;
             const out = this.chunks.length === 1 ? (this.chunks[0] as Buffer) : Buffer.concat(this.chunks, this.size);
-            const size = this.size;
             this.chunks = [];
             this.size = 0;
-            if (this.failed) return reject(this.failed);
-            if (size > this.max) return reject(new Error(`a compressed frame inflates past ${this.max} bytes`));
             resolve(out);
           });
         }),

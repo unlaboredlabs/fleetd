@@ -7,7 +7,7 @@ import { build } from "../src/hub/serve/index.ts";
 import { events, type NewEvent } from "../src/hub/store/events.ts";
 import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 import { FakeApp } from "./fake-app.ts";
-import { hubHome, insertKey } from "./helpers.ts";
+import { deflateBomb, hubHome, insertKey } from "./helpers.ts";
 
 const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
@@ -112,6 +112,15 @@ test("deflate: frames after ready may come compressed", async () => {
   expect(result.binary).toBe(true);
   expect(result.output).toMatchObject({ machines: [] });
   app.close();
+});
+
+test("a compressed frame that inflates past the cap, or isn't DEFLATE, closes the connection as bad data", async () => {
+  const key = insertKey(hub.db, all, "zip-bad");
+  for (const frame of [await deflateBomb(65), new Uint8Array(16).fill(0xff)]) {
+    const { app } = await authed(key, ["deflate"]);
+    app.ws.send(frame);
+    expect(await app.closed).toEqual({ code: 1007, reason: "a compressed frame does not inflate" });
+  }
 });
 
 test("a key revoked on this hub closes its connections as unauthorized", async () => {

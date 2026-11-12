@@ -6,27 +6,37 @@ import zlib from "node:zlib";
 const TAIL = Buffer.from([0x00, 0x00, 0xff, 0xff]);
 export const MIN_DEFLATE_BYTES = 64;
 
-/** One zlib stream fed a message at a time, each answered with what its sync flush wrote. Calls run in order. */
+/**
+ * One zlib stream fed a message at a time, each answered with what its sync flush wrote. Calls run in order. A message
+ * past `max`, or any zlib error, fails it for good: zlib is stopped there, holding at most `max` plus one chunk.
+ */
 class Flushed {
   #chunks: Buffer[] = [];
   #size = 0;
   #queue: Promise<unknown> = Promise.resolve();
   #error: Error | undefined;
-  /** The push waiting on its flush: an error rejects it, as zlib then never calls the flush back. */
+  /** The push waiting on its flush: a failure rejects it, as zlib then never calls the flush back. */
   #pending: ((error: Error) => void) | undefined;
   constructor(
     readonly stream: zlib.DeflateRaw | zlib.InflateRaw,
     readonly max = Number.POSITIVE_INFINITY,
   ) {
     stream.on("data", (chunk: Buffer) => {
-      this.#chunks.push(chunk);
+      if (this.#error) return;
       this.#size += chunk.length;
+      if (this.#size > this.max) return this.#fail(new Error(`a compressed frame inflates past ${this.max} bytes`));
+      this.#chunks.push(chunk);
     });
-    stream.on("error", (error: Error) => {
-      this.#error = error;
-      this.#pending?.(error);
-      this.#pending = undefined;
-    });
+    stream.on("error", (error: Error) => this.#fail(error));
+  }
+
+  #fail(error: Error): void {
+    this.#error ??= error;
+    this.#chunks = [];
+    this.#size = 0;
+    this.#pending?.(this.#error);
+    this.#pending = undefined;
+    this.stream.destroy();
   }
 
   push(input: Buffer): Promise<Buffer> {
@@ -37,13 +47,12 @@ class Flushed {
           this.#pending = reject;
           this.stream.write(input);
           this.stream.flush(zlib.constants.Z_SYNC_FLUSH, () => {
+            if (this.#error) return reject(this.#error);
             this.#pending = undefined;
             const out = Buffer.concat(this.#chunks, this.#size);
             this.#chunks = [];
             this.#size = 0;
-            if (this.#error) reject(this.#error);
-            else if (out.length > this.max) reject(new Error(`a compressed frame inflates past ${this.max} bytes`));
-            else resolve(out);
+            resolve(out);
           });
         }),
     );
