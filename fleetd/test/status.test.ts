@@ -7,6 +7,14 @@ import { Fresh } from "../src/hub/status/fresh.ts";
 import { agentGroup, grouped, STATUS_ITEMS_PER_GROUP } from "../src/hub/status/groups.ts";
 import { status, statusRows } from "../src/hub/status/index.ts";
 import { clock, readChanges, stateOf, statusInputs } from "../src/hub/status/rows.ts";
+import { start as startMetrics } from "../src/hub/metrics/loops.ts";
+import { noSources } from "../src/hub/metrics/source.ts";
+import { slots } from "../src/hub/slots/index.ts";
+import { start as startSlots } from "../src/hub/slots/loops.ts";
+import { trainArea } from "../src/hub/train/index.ts";
+import { start as startTrain } from "../src/hub/train/loops.ts";
+import { start as startUsage } from "../src/hub/usage/loops.ts";
+import { usage } from "../src/hub/usage/wire.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -192,4 +200,52 @@ test("the status area hands factory_status its rows through the inbox bridge's h
   start(hub);
   expect(found.statusRows?.(hub, NOW).map((r) => r.title)).toEqual(["app"]);
   hub.shutdown.abort();
+});
+
+test("the areas the hub starts give a row its running agents, a red main, a usage pause and the week's merges", async () => {
+  const { hub, r } = setup();
+  const other = { machineId: "lab-b", projectId: "docs" };
+  store(hub).projectsUpsertMany("lab-b", [{ ...other, title: "docs", workspaceRoot: "/work/docs", lastActivityAt: "2026-10-19T10:00:00.000Z" } as never]);
+  for (const m of ["devbox", "lab-b"]) store(hub).machineUpsert({ machineId: m, name: m, status: "online", lastSeenAt: isoMs(NOW) } as never);
+  startSlots(hub);
+  startUsage(hub);
+  startMetrics(hub, noSources());
+  startTrain(hub);
+  // Usage's replay of the log so far is done: what follows reaches it live.
+  await usage(hub).drain();
+  const row = (p: typeof r) => statusRows(hub).find((x) => x.projectRef.projectId === p.projectId)!;
+  const quiet = (p: typeof r) => {
+    const x = row(p);
+    return [x.agentsRunning, x.warning, x.usagePausedOn, x.merged7d];
+  };
+  expect(quiet(r)).toEqual([0, undefined, undefined, undefined]);
+
+  // A task holds a slot in the project.
+  slots(hub).acquire({ holder: "T1", projectRef: r, priority: "work" });
+  // The project's train repo, its main red, and a PR merged there outside the train yesterday.
+  hub.db.conn.run("INSERT INTO trains (repo, machine_id, project_id, watch_since_ms) VALUES ('acme/app', 'devbox', 'app', 0)");
+  trainArea(hub).train.sync.record("acme/app", "a".repeat(40), "red", ["fleetd"], NOW);
+  events(hub).append({ at: isoMs(NOW - 86_400_000), type: "pr.merged_outside", machineId: "devbox", summary: "merged", data: { repo: "acme/app", prNumber: 9 } });
+  // Two limits on devbox's login trip its breaker.
+  for (const [i, thread] of ["w1", "w2"].entries()) {
+    events(hub).append({
+      at: isoMs(NOW - 2000 + i * 1000),
+      type: "thread.usage_limited",
+      machineId: "devbox",
+      threadId: thread,
+      summary: "hit the usage limit",
+      data: { usageClass: "usage_limit", resumeAt: isoMs(NOW + 3_600_000) },
+    });
+  }
+  await usage(hub).drain();
+
+  const app = row(r);
+  expect(app.agentsRunning).toBe(1);
+  expect(app.warning).toBe("`fleetd` is red on main, no fix under way");
+  expect(app.usagePausedOn).toBe("devbox");
+  expect(app.usagePausedReason).toContain("usage limit on devbox's login");
+  expect(app.merged7d).toBe(1);
+  expect(quiet(other)).toEqual([0, undefined, undefined, undefined]);
+  hub.shutdown.abort();
+  await Bun.sleep(10);
 });

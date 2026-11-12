@@ -1,7 +1,7 @@
 // What the doctor's checks read from the hub ("What the doctor's checks read
-// from the hub"): each through its area's own exported reads. The few that live in memory in an area not ported yet
-// (the tasks sweep's recovery breakers and unowned sessions) answer "all clear" until that
-// area's owner sets its own: `doctor(hub).sources.recoveryPaused = …`.
+// from the hub"): each through its area's own exported reads. The few that live in memory in another area (the tasks
+// sweep's recovery breakers and unowned sessions) answer "all clear" until that area's start sets its own
+// (tasks/loops.ts).
 import type { MachineId } from "../../shared/contracts.ts";
 import type { NodeLoad } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -145,7 +145,7 @@ export function hubSources(hub: Hub): DoctorSources {
           base,
         ]),
       ),
-    // The tasks sweep keeps its recovery breakers and the unowned sessions in memory (hub/tasks/sweep.rs).
+    // The tasks sweep keeps its recovery breakers and the unowned sessions in memory: tasks' start sets these two.
     recoveryPaused: () => undefined,
     claudeSetup: () =>
       logged("the hub's Claude accounts", undefined, () => {

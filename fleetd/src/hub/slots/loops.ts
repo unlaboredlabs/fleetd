@@ -1,5 +1,6 @@
 import type { Hub } from "../api/hub.ts";
 import { CAP_AGENTS_MAC, link, type NodeLoad } from "../link/index.ts";
+import { statusInputs } from "../status/rows.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { slots } from "./index.ts";
@@ -7,11 +8,13 @@ import { slots } from "./index.ts";
 /**
  * Starts this module's loops (Rust: slots.run): the board follows thread events from the log's head as of now. It
  * also takes what the Rust link server hands the board itself: each heartbeat's facts about its machine
- * (`observe_load`), and the agents' Mac's hello, which keeps its agents role off (`keep_tool_only`).
+ * (`observe_load`), and the agents' Mac's hello, which keeps its agents role off (`keep_tool_only`). A status row's
+ * agents are the board's running ones (rows.rs `hub.slots.agents`).
  */
 export function start(hub: Hub): void {
   const board = slots(hub);
   void board.run(events(hub), hub.shutdown.signal);
+  statusInputs(hub).agentsRunning = (r) => board.agents(r).running;
   const nodeLink = link(hub);
   nodeLink.on("hb", (machineId, frame) => {
     const load = frame.load as NodeLoad | undefined;

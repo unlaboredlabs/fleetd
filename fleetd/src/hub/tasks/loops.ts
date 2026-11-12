@@ -1,5 +1,6 @@
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
+import { doctor } from "../doctor/index.ts";
 import { executors } from "../executor/index.ts";
 import { leadWiring } from "../leads/ports.ts";
 import { registerLeadCalls as registerLedger } from "../ledger/calls.ts";
@@ -11,6 +12,7 @@ import { registerLeadCalls } from "./calls.ts";
 import { run as ciWaits } from "./ci_wait.ts";
 import { tasks } from "./index.ts";
 import { taskHooks } from "./ports.ts";
+import { clockTime } from "./sweep.ts";
 import { run as worktrees } from "./worktrees.ts";
 
 const sleep = (hub: Hub) => (ms: number) =>
@@ -50,6 +52,14 @@ export function start(hub: Hub): void {
       cancel: (r: ProjectRef, taskId: string, reason: string) => t.cancelForRemoval(r, taskId, reason),
       leftovers: (r: ProjectRef, workstreamId: string) => t.liveIn(r, workstreamId).filter((id) => !(taskHooks(hub).reviews?.isReviewer(id) ?? false)),
   };
+  // The doctor's recovery breaker and unowned sessions checks read the tasks sweep's memory (usage/wire.rs `Fleet`).
+  Object.assign(doctor(hub).sources, {
+    recoveryPaused: (machineId: string) => {
+      const paused = t.recoveryPausedOn(machineId);
+      return paused && { openedBy: paused.openedBy, waiting: paused.held, until: clockTime(paused.untilMs) };
+    },
+    unownedSessions: (machineId: string) => t.unownedOn(machineId),
+  });
   // A steer to a task that isn't running waits in its next run's message.
   Object.assign(steerTasks(hub), {
     message: async (caller: { projectRef: ProjectRef; by: string }, taskId: string, text: string) => void (await t.message(caller, taskId, text)),
