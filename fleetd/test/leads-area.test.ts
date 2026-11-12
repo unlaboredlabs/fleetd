@@ -7,11 +7,16 @@ import { end } from "../src/hub/leads/cut_off.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { Debouncer, WAKE_COALESCE_MS, WAKE_DEBOUNCE_MS, WAKE_MAX_WAIT_MS } from "../src/hub/leads/lead_wakes.ts";
 import { start } from "../src/hub/leads/loops.ts";
+import { start as startUsage } from "../src/hub/usage/loops.ts";
+import { usage } from "../src/hub/usage/wire.ts";
+import { work } from "../src/hub/work/index.ts";
+import { start as startWork } from "../src/hub/work/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { changeRecords } from "../src/hub/train/index.ts";
-import type { Change, HubEvent } from "../src/shared/contracts.ts";
+import { isoMs } from "../src/hub/store/time.ts";
+import type { Change, HubEvent, ProjectRef } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 /** A manual clock whose sleeps resolve as it advances. */
@@ -261,5 +266,72 @@ test("the digest's Merge train section comes from the train: a merged PR shows a
   expect(launches[0]?.prompt).toContain("Merge train");
   expect(launches[0]?.prompt).toContain("- X1 merged: ");
   expect(leadWiring(hub).hooks.trainLines?.(PROJECT, "2026-11-08T10:00:00.000Z")).toEqual([]);
+  done();
+});
+
+test("the digest's usage pause and Elsewhere lines come from the usage and work areas the hub starts", async () => {
+  const { hub, clock, done } = testHub();
+  start(hub);
+  startUsage(hub);
+  startWork(hub);
+  const digest = (r: ProjectRef) => leads(hub).wakes.digest(r);
+  const elsewhere = (r: ProjectRef) => digest(r).split("## Elsewhere\n")[1]?.split("\n## ")[0];
+
+  // No pause on the machine: no usage line.
+  await usage(hub).drain();
+  expect(digest(PROJECT)).not.toContain("Usage pause on");
+  // Two limits on the machine's login trip its breaker: the lead's digest says so.
+  for (const [i, thread] of ["w1", "w2"].entries()) {
+    events(hub).append({
+      at: isoMs(clock.ms + i * 1000),
+      type: "thread.usage_limited",
+      machineId: PROJECT.machineId,
+      threadId: thread,
+      summary: "hit the usage limit",
+      data: { usageClass: "usage_limit", resumeAt: isoMs(clock.ms + 3_600_000) },
+    });
+  }
+  await usage(hub).drain();
+  expect(digest(PROJECT)).toContain(`Usage pause on lab-a: paused until `);
+  expect(digest(PROJECT)).toContain("(usage limit on lab-a's login). Its parked agents go on by themselves when it ends.");
+  expect(digest({ machineId: "lab-b", projectId: "p1" })).not.toContain("Usage pause on");
+
+  // Work on the project's repo and base elsewhere: a claim by another project's lead, and a push outside fleetd.
+  const shop = { repoKey: "github.com/acme/shop", base: "main" };
+  const api = { machineId: "lab-a", projectId: "api" };
+  const docs = { machineId: "lab-a", projectId: "docs" };
+  const w = work(hub);
+  w.bindProject(PROJECT, shop);
+  w.bindProject(api, shop);
+  w.bindProject(docs, { repoKey: "github.com/acme/docs", base: "main" });
+  expect(digest(PROJECT)).not.toContain("## Elsewhere");
+  const claim = w.claim({ scope: shop, owner: { kind: "lead", keyId: "lab-a/api" }, title: "checkout retries", keys: [], paths: [] });
+  w.recordLanding(
+    {
+      repoKey: shop.repoKey,
+      base: "main",
+      sha: "abc1234".padEnd(40, "0"),
+      at: isoMs(clock.ms - 60_000),
+      seenAt: isoMs(clock.ms),
+      route: "direct_push",
+      subject: "feat: dark mode toggle",
+      paths: [],
+      claimIds: [],
+      authorEmail: "ada@example.com",
+    },
+    "abc1234",
+    api,
+  );
+  expect(elsewhere(PROJECT)).toBe(
+    [
+      `- ${claim.claimId} claimed by the lead of lab-a/api: checkout retries`,
+      "- abc1234 pushed straight to main, outside fleetd by ada@example.com: feat: dark mode toggle",
+    ].join("\n"),
+  );
+  // Another repo's project sees none of it.
+  expect(digest(docs)).not.toContain("## Elsewhere");
+  // The followers the starts began stop before the database closes.
+  hub.shutdown.abort();
+  await new Promise((resolve) => setTimeout(resolve, 10));
   done();
 });
