@@ -55,7 +55,7 @@ export async function openSession(url: string, key: string): Promise<Session> {
       try {
         frame = await rpc("tools/call", { name, arguments: input }, ms);
       } catch (e) {
-        return { isError: true, body: { code: "no_answer", message: e instanceof Error ? e.name : String(e) } };
+        return { isError: true, body: { code: "no_answer", message: e instanceof Error ? `${e.name}: ${e.message}` : String(e) } };
       }
       if (frame.error !== undefined) return { isError: true, body: { code: "rpc", message: frame.error.message, rpc: frame.error.code } };
       // Not JSON-RPC at all: the server's own refusal of the request (a revoked key's 401 is `{ code, message }`).
