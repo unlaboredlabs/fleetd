@@ -9,11 +9,17 @@
     "fleetd/test/fake-app.ts",
     "fleetd/test/fake-node.ts",
     "fleetd/test/fake-accounts.ts",
-    "app/desktop/src/shared/contracts"
+    "app/desktop/src/shared/contracts",
+    "app/desktop/src/shared/hub.ts",
+    "app/desktop/src/shared/hubs.ts",
+    "app/desktop/src/shared/pairing.ts",
+    "app/mobile/src/hub/pairLink.ts"
   ],
   "exports": {
     "./contracts": "./app/desktop/src/shared/contracts/contracts.ts",
     "./contracts/schema/*.json": "./app/desktop/src/shared/contracts/schema/*.json",
+    "./apps/pairing": "./app/desktop/src/shared/pairing.ts",
+    "./apps/pair_link": "./app/mobile/src/hub/pairLink.ts",
     "./tools": "./fleetd/src/pkg/tools.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",

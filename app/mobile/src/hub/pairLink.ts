@@ -1,7 +1,8 @@
 // A pairing QR code's link (D232): `fleetd://pair?hub=<url-encoded hub URL>&code=<one-time code>`, which the desktop
 // app and `fleetd pair` show. The app's scanner reads it, and so does iOS's Camera, which opens the app with it. Parsed
-// by hand: React Native's URL has no searchParams.
-import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../desktop";
+// by hand: React Native's URL has no searchParams. It imports the desktop's pairing module itself, not the ../desktop
+// barrel, so it loads outside the phone too (the package's `fleetd/apps/pair_link`), with no React.
+import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../../desktop/src/shared/pairing";
 
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
 
