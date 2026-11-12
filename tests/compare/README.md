@@ -78,8 +78,10 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   `device_revoke`), each only on what the run made: what the target seeded, the phone, the invited person and invite,
   and a spare device key (`areas-spare`: `key` makes the same person more than one), never the caller or the key it
   calls with. A write a machine does (`project_add`, `project_repo_add`, and `project_remove` while the machine is
-  known) is called on the machine the reads turn up and may answer `machine_offline`, or is skipped when there is none; `claude_hub_api_set` (machines take the key) and `hub_link_add` (another hub answers a hello first)
-  are skipped, saying why. Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub
+  known) is called on the machine the reads turn up and may answer `machine_offline`, or is skipped when there is
+  none; `claude_hub_api_set` (machines take the key) and `hub_link_add` (another hub answers a hello first) are
+  skipped, saying why. The vault's seeds seal with fleetd's sealed box, from this checkout or from the installed fleetd
+  package beside a copy of tests/compare. Then `/app` on that team, with no machine: `ready` and `snapshot`, every event the hub
   keeps (asked from cursor 0, up to the snapshot's), a call of a listed read-only tool (`fleetd_status`, `hub_info` or
   `people_list` first), and a call of a name the team doesn't list, which must come back as an `error` with the call's
   id; each frame decoded as `AppServerMessage`. The CLI's rows are skipped.

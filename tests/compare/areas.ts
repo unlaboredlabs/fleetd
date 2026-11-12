@@ -5,7 +5,9 @@
 // Imports nothing but ./mcp.ts and ./twoTeams.ts, and fleetd's sealed boxes when a seed needs them: fleetd's own tests
 // run it against the stand-in (standIn.ts).
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type Answer, openSession, type Session, type Tool } from "./mcp.ts";
 import type { Target, Team } from "./target.ts";
 import { type Contract, harvest, type Ids, idsIn, inputFrom, type Reads, readIds, type Report, runTwoTeams } from "./twoTeams.ts";
@@ -19,17 +21,30 @@ const REPO = "https://github.com/example/areas";
 interface Seeding {
   readonly made: Ids;
   readonly as: Session;
+  readonly listed: ReadonlyArray<Tool>;
 }
 
 /**
- * fleetd's `crypto_box_seal`: from this checkout, else from the fleetd package beside a copy of tests/ (a service's
- * suite runs a copy of tests/compare, with the pinned package installed, which exports it).
+ * fleetd's `crypto_box_seal`: from this checkout, else from the fleetd package installed beside a copy of tests/ (a
+ * service's suite runs a copy of tests/compare, with the pinned package, which exports it). Node strips no types under
+ * node_modules, so the package's file is read, stripped and loaded as it is: it imports nothing but node:crypto.
  */
 const sealing = async (): Promise<(publicKey: Uint8Array, plain: Uint8Array) => Uint8Array> => {
   type Core = { seal: (publicKey: Uint8Array, plain: Uint8Array) => Uint8Array };
   const here = "../../fleetd/src/shared/sealed_box_core.ts";
-  const packaged = "fleetd/shared/sealed_box_core";
-  return ((await import(here).catch(() => import(packaged))) as Core).seal;
+  try {
+    return ((await import(here)) as Core).seal;
+  } catch (inCheckout) {
+    try {
+      // Node's own, imported here: only Node runs a copy, and Bun, which runs this checkout, lacks it.
+      const { stripTypeScriptTypes } = (await import("node:module")) as unknown as { stripTypeScriptTypes: (code: string) => string };
+      const file = fileURLToPath(import.meta.resolve("fleetd/shared/sealed_box_core"));
+      const js = stripTypeScriptTypes(fs.readFileSync(file, "utf8"));
+      return ((await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`)) as Core).seal;
+    } catch (packaged) {
+      throw new Error(`fleetd's sealed box is in neither this checkout (${String(inCheckout)}) nor an installed fleetd package (${String(packaged)})`);
+    }
+  }
 };
 
 /** `fields` as JSON sealed to the hub's box key (vault_status's hubBoxKey), in base64; undefined when it isn't read. */
@@ -74,10 +89,11 @@ const SEEDS: ReadonlyArray<readonly [tool: string, input: (mark: string, n: numb
     const sealed = await sealedToHub(as, { passphrase: mark });
     return sealed === undefined ? undefined : { sealed };
   }],
-  // A phone, after pushes are turned off (an empty relay URL): nothing the run makes may reach a real relay. Its key is
-  // any 32 bytes, as an X25519 public key is.
+  // A phone, after pushes are turned off (an empty relay URL), and only then: nothing the run makes may reach a real
+  // relay. Its key is any 32 bytes, as an X25519 public key is.
   ["push_relay_set", () => ({ url: "" })],
-  ["push_device_register", (mark, n) => ({ platform: "ios", token: `areas-${n}`, name: `${mark} phone ${n}`, publicKey: randomBytes(32).toString("base64") })],
+  ["push_device_register", (mark, n, { listed }) =>
+    listed.some((t) => t.name === "push_relay_set") ? { platform: "ios", token: `areas-${n}`, name: `${mark} phone ${n}`, publicKey: randomBytes(32).toString("base64") } : undefined],
 ];
 
 /**
@@ -131,7 +147,7 @@ export async function seed(team: Team, as: Session, listed: ReadonlyArray<Tool>,
   const made: Array<{ tool: string; answer: Answer }> = [];
   for (let n = 1; n <= times; n++) {
     for (const [tool, input] of SEEDS.filter(([tool]) => listed.some((t) => t.name === tool))) {
-      const given = await input(mark, n, { made: idsIn(made, contract), as });
+      const given = await input(mark, n, { made: idsIn(made, contract), as, listed });
       if (given === undefined) continue;
       const answer = await as.call(tool, given);
       if (answer.isError) throw new Error(`${tool}: ${JSON.stringify(answer.body)}`);
