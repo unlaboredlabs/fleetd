@@ -93,13 +93,47 @@ export function linkWords(link: TodoLink | undefined): string {
   return ` (${words.join(", ")})`;
 }
 
-/** The digest's Checklist section of `list`: how far along it is, then every item not done, in order. Undefined while empty. */
-export function digestOf(list: Checklist): string[] | undefined {
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** An item not done, unchanged this long with nothing live behind its link, is stale. */
+export const STALE_MS = 3 * DAY_MS;
+/** Stale items the digest lists by name; the rest it counts. */
+export const STALE_SHOWN = 10;
+
+/** What runs behind a link, as the hub stores it: an open order with a queued, running or idle agent, a live task, a PR on the train. */
+export type Liveness = { order(workstreamId: string): boolean; task(taskId: string): boolean; pr(url: string): boolean };
+
+/** Whether any part of the item's link has something live behind it; no link has nothing. */
+export function linkLive(link: TodoLink | undefined, live: Liveness): boolean {
+  if (!link) return false;
+  return (
+    (link.workstreamId !== undefined && live.order(link.workstreamId)) ||
+    (link.taskId !== undefined && live.task(link.taskId)) ||
+    (link.pr !== undefined && live.pr(link.pr))
+  );
+}
+
+/** Whole days the item has been unchanged at `nowMs` when it is stale; undefined when it isn't. */
+export function staleDays(i: TodoItem, nowMs: number, live: Liveness): number | undefined {
+  if (i.state === "done") return undefined;
+  const age = nowMs - Date.parse(i.updatedAt);
+  if (!(age >= STALE_MS) || linkLive(i.link, live)) return undefined;
+  return Math.floor(age / DAY_MS);
+}
+
+const itemLine = (i: TodoItem) => `- ${i.id} ${i.state === "doing" ? "doing" : "todo"}: ${i.text}${linkWords(i.link)}`;
+
+/**
+ * The digest's Checklist section of `list`: how far along it is, then the stale items not done (at most STALE_SHOWN,
+ * then a count of the rest), then every other item not done, in order. Undefined while empty.
+ */
+export function digestOf(list: Checklist, nowMs: number, live: Liveness): string[] | undefined {
   if (list.items.length === 0) return undefined;
   const lines = [`${doneCount(list)} of ${list.items.length} done; keep it current with \`checklist\``];
-  for (const i of list.items.filter((i) => i.state !== "done")) {
-    lines.push(`- ${i.id} ${i.state === "doing" ? "doing" : "todo"}: ${i.text}${linkWords(i.link)}`);
-  }
+  const open = list.items.filter((i) => i.state !== "done").map((i) => ({ i, days: staleDays(i, nowMs, live) }));
+  const stale = open.filter((x) => x.days !== undefined);
+  for (const { i, days } of stale.slice(0, STALE_SHOWN)) lines.push(`${itemLine(i)} (unchanged ${days} d, nothing running)`);
+  if (stale.length > STALE_SHOWN) lines.push(`(+${stale.length - STALE_SHOWN} more stale items)`);
+  for (const { i } of open.filter((x) => x.days === undefined)) lines.push(itemLine(i));
   return lines;
 }
 

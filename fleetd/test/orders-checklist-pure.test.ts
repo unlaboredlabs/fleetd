@@ -24,8 +24,10 @@ test("a checklist edit adds and sets items, and the digest lists what's not done
     [2, "Tell them", "todo"],
   ]);
   const done = edited(added, { items: [{ id: 1, state: "done" }] }, "2026-01-01T00:01:00Z");
-  expect(digestOf(done)).toEqual(["1 of 2 done; keep it current with `checklist`", "- 2 todo: Tell them"]);
-  expect(digestOf(empty)).toBeUndefined();
+  const now = Date.parse("2026-01-01T00:02:00Z");
+  const nothing = { order: () => false, task: () => false, pr: () => false };
+  expect(digestOf(done, now, nothing)).toEqual(["1 of 2 done; keep it current with `checklist`", "- 2 todo: Tell them"]);
+  expect(digestOf(empty, now, nothing)).toBeUndefined();
 });
 
 test("an order's title and row, a PR's ref, and an ask's footer", () => {
